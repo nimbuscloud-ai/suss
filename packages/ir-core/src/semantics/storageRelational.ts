@@ -26,5 +26,10 @@ export type StorageRelationalSemantics = z.infer<
 export const storageRelationalSemantics = defineBoundarySemantics({
   name: "storage-relational",
   schema: StorageRelationalSemanticsSchema,
-  behavior: { identityKey: () => null },
+  behavior: {
+    /** A query returns rows, not a status and a body. */
+    exchangesHttpResponses: false,
+    reportsUnpairedItself: false,
+    identityKey: () => null,
+  },
 });

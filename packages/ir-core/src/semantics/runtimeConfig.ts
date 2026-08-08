@@ -27,5 +27,10 @@ export type RuntimeConfigSemantics = z.infer<
 export const runtimeConfigSemantics = defineBoundarySemantics({
   name: "runtime-config",
   schema: RuntimeConfigSemanticsSchema,
-  behavior: { identityKey: () => null },
+  behavior: {
+    /** A process reads its config at startup; nothing answers it. */
+    exchangesHttpResponses: false,
+    reportsUnpairedItself: false,
+    identityKey: () => null,
+  },
 });

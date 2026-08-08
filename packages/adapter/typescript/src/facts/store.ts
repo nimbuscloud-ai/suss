@@ -27,6 +27,8 @@ import {
   lit,
   type OnDemandRules,
   rule,
+  tupleKey,
+  tupleKeyParts,
   variable as v,
 } from "@suss/datalog";
 import {
@@ -113,13 +115,6 @@ const QUERY_FACTS: readonly string[] =
  * graph stays cheap.
  */
 const MAX_MODULE_HOPS = 6;
-
-/**
- * Joins the two trailing columns of a three-column relation into one
- * index key. The ASCII unit separator cannot appear in a module
- * specifier or an identifier, so the halves come back apart intact.
- */
-const PAIR_SEPARATOR = "\u001f";
 
 export class ResolutionStore {
   private readonly db = new Database();
@@ -246,7 +241,9 @@ export class ResolutionStore {
     if (names.length > 0) {
       return names;
     }
-    return origins.some((pair) => namesAPackage(moduleOf(pair))) ? [] : null;
+    return origins.some((pair) => namesAPackage(pairHalves(pair).module))
+      ? []
+      : null;
   }
 
   private resolveByWaves<T>(
@@ -447,11 +444,20 @@ export class ResolutionStore {
     return this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1]));
   }
 
-  /** The trailing pair of a three-column answer relation, joined. */
+  /**
+   * The trailing pair of a three-column answer relation, joined into
+   * one string so a Set can dedupe on both halves at once.
+   *
+   * The join is the database's own tuple encoding, where every half
+   * carries its own length. A module specifier or an identifier can
+   * hold any character, so a separator picked here would sooner or
+   * later be one of them and two different pairs would answer to the
+   * same string.
+   */
   private answerPairsFor(relation: string, value: string): string[] {
     return this.db
       .lookup(relation, 0, value)
-      .map((tuple) => `${tuple[1]}${PAIR_SEPARATOR}${tuple[2]}`);
+      .map((tuple) => tupleKey([String(tuple[1]), String(tuple[2])]));
   }
 
   /** Emit a file's facts, unless some earlier query already did. */
@@ -470,16 +476,18 @@ export class ResolutionStore {
 function namesFrom(pairs: string[], packages: string[]): string[] {
   const names = new Set<string>();
   for (const pair of pairs) {
-    if (namesPackage(moduleOf(pair), packages)) {
-      names.add(pair.slice(pair.indexOf(PAIR_SEPARATOR) + 1));
+    const { module, name } = pairHalves(pair);
+    if (namesPackage(module, packages)) {
+      names.add(name);
     }
   }
   return [...names].sort();
 }
 
-/** The module half of a joined module-and-name pair. */
-function moduleOf(pair: string): string {
-  return pair.slice(0, pair.indexOf(PAIR_SEPARATOR));
+/** The two halves of a joined module-and-name pair, back apart. */
+function pairHalves(pair: string): { module: string; name: string } {
+  const [module = "", name = ""] = tupleKeyParts(pair);
+  return { module, name };
 }
 
 /**

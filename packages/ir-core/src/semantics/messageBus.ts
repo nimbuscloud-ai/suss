@@ -46,6 +46,13 @@ export const messageBusSemantics = defineBoundarySemantics({
   name: "message-bus",
   schema: MessageBusSemanticsSchema,
   behavior: {
+    /** A message goes onto the channel and nothing comes back. */
+    exchangesHttpResponses: false,
+    /**
+     * `checkMessageBus` judges every channel, unused ones included, so
+     * the generic unmatched lists leave them alone.
+     */
+    reportsUnpairedItself: true,
     /**
      * `"bus:<messageBus> <subject>"`; null when the channel is null
      * or its subject empty.

@@ -45,6 +45,8 @@ export {
   type DispatchTable,
   dispatchByType,
   displayLabel,
+  exchangesHttpResponses,
+  formatChannel,
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,

@@ -26,6 +26,9 @@ export const graphqlResolverSemantics = defineBoundarySemantics({
   name: "graphql-resolver",
   schema: GraphqlResolverSemanticsSchema,
   behavior: {
+    /** A resolver returns a field value, not a status and a body. */
+    exchangesHttpResponses: false,
+    reportsUnpairedItself: false,
     /**
      * `"gql:<TypeName>.<fieldName>"`; null when the type is null or
      * the field empty, which is how a resolver says the source never

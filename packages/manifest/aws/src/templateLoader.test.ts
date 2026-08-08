@@ -93,6 +93,26 @@ describe("loadCloudFormationTemplate", () => {
     expect(props.X).toEqual({ "Fn::GetAtt": ["Solo"] });
   });
 
+  it("keeps a nested stack's attribute whole", () => {
+    // Only the first dot separates the logical id from the attribute.
+    // A nested stack's output is read as NestedStack.Outputs.QueueUrl,
+    // and cutting it at every dot loses which output was named.
+    const file = writeTemp(
+      "template.yaml",
+      [
+        "Resources:",
+        "  R:",
+        "    Properties:",
+        "      X: !GetAtt Orders.Outputs.QueueUrl",
+      ].join("\n"),
+    );
+
+    const template = loadCloudFormationTemplate(file);
+    const props = template.Resources?.R?.Properties as Record<string, unknown>;
+
+    expect(props.X).toEqual({ "Fn::GetAtt": ["Orders", "Outputs.QueueUrl"] });
+  });
+
   it("parses .json templates as JSON", () => {
     const file = writeTemp(
       "template.json",
@@ -121,6 +141,12 @@ describe("refTarget", () => {
 
   it("reads { Ref } objects", () => {
     expect(refTarget({ Ref: "OrdersQueue" })).toBe("OrdersQueue");
+  });
+
+  it("reads the logical id from a nested stack's dotted Fn::GetAtt", () => {
+    expect(refTarget({ "Fn::GetAtt": "Orders.Outputs.QueueUrl" })).toBe(
+      "Orders",
+    );
   });
 
   it("reads the logical id from Fn::GetAtt", () => {

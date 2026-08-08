@@ -1,0 +1,39 @@
+# The same AppSync API as the other fixtures, with the intrinsics
+# written in their list and flow forms. CloudFormation accepts both
+# spellings, so both readers have to.
+Resources:
+  NotesApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: !Sub ["notes-${Stage}", { Stage: prod }]
+      AuthenticationType: API_KEY
+
+  NotesSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt [NotesApi, ApiId]
+      Definition: |
+        type Note {
+          id: ID!
+          body: String!
+        }
+        type Query {
+          note(id: ID!): Note
+        }
+
+  NotesDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt [NotesApi, ApiId]
+      Name: NotesLambda
+      Type: AWS_LAMBDA
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt [NotesFunction, Arn]
+
+  QueryNoteResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId: !GetAtt [NotesApi, ApiId]
+      TypeName: Query
+      FieldName: note
+      DataSourceName: !Ref NotesDataSource

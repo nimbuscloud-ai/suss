@@ -24,6 +24,12 @@ export const graphqlOperationSemantics = defineBoundarySemantics({
   name: "graphql-operation",
   schema: GraphqlOperationSemanticsSchema,
   behavior: {
+    /**
+     * An operation gets a data-and-errors document back, which the
+     * GraphQL contract checker reads. Status codes say nothing here.
+     */
+    exchangesHttpResponses: false,
+    reportsUnpairedItself: false,
     identityKey: () => null,
     /** "query GetUser"; the contract checker pairs it, not the key. */
     displayLabel(semantics) {

@@ -126,6 +126,34 @@ const twoPathRaw: RawCodeStructure = {
   declaredContract: null,
 };
 
+/**
+ * A REST handler that answers 200 and nothing else, under a contract
+ * that also declares 404. Whether the summary mentions the 404 is what
+ * the gap comparison decides.
+ */
+const restHandlerWithDeclaredStatuses: RawCodeStructure = {
+  ...twoPathRaw,
+  branches: [
+    ...twoPathRaw.branches.slice(1),
+    // A branch that returns rather than answering. It produces no
+    // status, so it takes no part in the comparison.
+    {
+      conditions: [],
+      terminal: makeTerminal({
+        kind: "return",
+        location: { start: 23, end: 23 },
+      }),
+      effects: [],
+      location: { start: 23, end: 23 },
+      isDefault: false,
+    },
+  ],
+  declaredContract: {
+    framework: "ts-rest",
+    responses: [{ statusCode: 200 }, { statusCode: 404 }],
+  },
+};
+
 describe("assembleSummary — optional metadata plumbing", () => {
   it("threads expectedInput, accessors, graphql, and invocation preconditions through", () => {
     const raw: RawCodeStructure = {
@@ -282,9 +310,9 @@ describe("assembleSummary — optional metadata plumbing", () => {
         },
       ],
       dependencyCalls: [],
-      // A declared contract alongside a non-response transition: gap
-      // detection must skip the return branch when collecting produced
-      // statuses.
+      // A declared contract on a resolver. Status codes describe the
+      // HTTP call that carried the GraphQL request, not the field this
+      // unit answers, so nothing here compares them.
       declaredContract: {
         framework: "test",
         responses: [{ statusCode: 200 }, { statusCode: 404 }],
@@ -313,7 +341,48 @@ describe("assembleSummary — optional metadata plumbing", () => {
       type: "response",
       body: null,
     });
-    expect(summary.gaps.some((g) => g.description.includes("404"))).toBe(true);
+    expect(summary.gaps.some((g) => g.description.includes("404"))).toBe(false);
+  });
+
+  it("tells a handler which declared status it never produces", () => {
+    const summary = assembleSummary(restHandlerWithDeclaredStatuses);
+
+    expect(summary.gaps.map((gap) => gap.description).join("\n")).toContain(
+      "Declared response 404 is never produced",
+    );
+  });
+
+  it("compares the statuses when nothing named the boundary", () => {
+    // Whoever filled the contract in said the unit has declared
+    // responses. With no binding to say otherwise, they are read as
+    // HTTP ones.
+    const summary = assembleSummary({
+      ...restHandlerWithDeclaredStatuses,
+      boundaryBinding: null,
+    });
+
+    expect(summary.gaps.map((gap) => gap.description).join("\n")).toContain(
+      "Declared response 404 is never produced",
+    );
+  });
+
+  it("says nothing about statuses on a boundary that answers no request", () => {
+    const summary = assembleSummary({
+      ...restHandlerWithDeclaredStatuses,
+      boundaryBinding: {
+        transport: "queue",
+        semantics: {
+          name: "message-bus",
+          messageBus: "sqs",
+          channel: "OrdersQueue",
+        },
+        recognition: "aws-sqs",
+      },
+    });
+
+    expect(summary.gaps.map((gap) => gap.description).join("\n")).not.toContain(
+      "Declared response",
+    );
   });
 });
 

@@ -75,6 +75,25 @@ export function normalizeRuleBoundary(raw: string): string {
 }
 
 /**
+ * Whether the two sides of this binding exchange an HTTP response, so
+ * that comparing status codes and response bodies says something about
+ * them. Ask before running any response-shaped check; a queue and the
+ * handler draining it answer no.
+ */
+export function exchangesHttpResponses(binding: BoundaryBinding): boolean {
+  return behaviorOf(binding.semantics).exchangesHttpResponses;
+}
+
+/**
+ * Whether this binding's protocol already reports its own unpaired
+ * boundaries, so a generic unmatched list should leave it out rather
+ * than say the same thing again in weaker words.
+ */
+export function reportsUnpairedItself(binding: BoundaryBinding): boolean {
+  return behaviorOf(binding.semantics).reportsUnpairedItself;
+}
+
+/**
  * Whether a binding's declared boundary would answer a concrete HTTP
  * request, by the protocol's own matching. Null when the protocol
  * does not address its boundaries by method and path at all, so a

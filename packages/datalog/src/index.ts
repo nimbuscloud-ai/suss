@@ -29,6 +29,7 @@ import {
   chargeRule,
   isProfiling,
 } from "./profile.js";
+import { tupleKey } from "./tupleKey.js";
 
 export { deriveOnDemand, type OnDemandRules } from "./onDemand.js";
 export {
@@ -38,6 +39,7 @@ export {
   profileEvaluationAsync,
   type RuleCost,
 } from "./profile.js";
+export { tupleKey, tupleKeyParts } from "./tupleKey.js";
 
 /** Tuple values. Callers intern richer identities (AST nodes, summaries) to atoms. */
 export type Atom = string | number;
@@ -92,13 +94,7 @@ export const rule = (
 // Tuple store
 // ---------------------------------------------------------------------------
 
-// A tuple value can be any string a caller interns, so no separator
-// character is safe to join on. Each atom carries its own length
-// instead, which no value can forge.
-const atomKey = (a: Atom): string =>
-  typeof a === "number" ? `n${a}:` : `s${a.length}:${a}`;
-
-const keyOf = (tuple: Tuple): string => tuple.map(atomKey).join("");
+const keyOf = (tuple: Tuple): string => tupleKey(tuple);
 
 interface Relation {
   keys: Set<string>;
@@ -157,7 +153,7 @@ export class Database {
     for (const [column, index] of relation.indexes) {
       const value = tuple[column];
       if (value !== undefined) {
-        addToBucket(index, atomKey(value), tuple);
+        addToBucket(index, tupleKey([value]), tuple);
       }
     }
     return true;
@@ -191,12 +187,12 @@ export class Database {
       for (const tuple of relation.tuples) {
         const at = tuple[column];
         if (at !== undefined) {
-          addToBucket(index, atomKey(at), tuple);
+          addToBucket(index, tupleKey([at]), tuple);
         }
       }
       relation.indexes.set(column, index);
     }
-    return index.get(atomKey(value)) ?? [];
+    return index.get(tupleKey([value])) ?? [];
   }
 
   /**

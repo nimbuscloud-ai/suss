@@ -103,6 +103,36 @@ export interface BoundaryBehavior<S extends { name: string }> {
    * unnamed method or path).
    */
   servesRequest?(semantics: S, method: string, path: string): MatchResult;
+
+  /**
+   * Whether the two sides of this protocol exchange an HTTP response:
+   * a status code and a body shape that a provider produces and a
+   * consumer reads back.
+   *
+   * Every check that compares a declared status against a produced
+   * one, or a response body against what a consumer expects, needs a
+   * yes here before it means anything. A queue and the handler
+   * draining it exchange a message and nothing comes back, so those
+   * checks would either say nothing or say something false about it.
+   *
+   * Answering is required, so a protocol added later says what it is
+   * rather than falling into the HTTP-shaped checks because nobody
+   * remembered to exclude it.
+   */
+  exchangesHttpResponses: boolean;
+
+  /**
+   * Whether this protocol's own checking pass already reports a
+   * boundary that paired with nothing.
+   *
+   * A message-bus channel that nobody sends to is reported by
+   * `checkMessageBus`, with a severity and with knowledge of who was
+   * involved. The generic "no client to compare against" list leaves
+   * those out, because listing them again says the same thing a second
+   * time in weaker words. A protocol with no pass of its own says no
+   * and keeps the generic list.
+   */
+  reportsUnpairedItself: boolean;
 }
 
 /**

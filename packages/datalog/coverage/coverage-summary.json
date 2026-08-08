@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 434,
-      "covered": 429,
+      "total": 457,
+      "covered": 452,
       "skipped": 0,
-      "pct": 98.84
+      "pct": 98.9
     },
     "statements": {
-      "total": 461,
-      "covered": 456,
+      "total": 484,
+      "covered": 479,
       "skipped": 0,
-      "pct": 98.91
+      "pct": 98.96
     },
     "functions": {
-      "total": 100,
-      "covered": 100,
+      "total": 102,
+      "covered": 102,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 206,
-      "covered": 187,
+      "total": 217,
+      "covered": 198,
       "skipped": 0,
-      "pct": 90.77
+      "pct": 91.24
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 269,
-      "covered": 264,
+      "total": 267,
+      "covered": 262,
       "skipped": 0,
-      "pct": 98.14
+      "pct": 98.12
     },
     "functions": {
-      "total": 53,
-      "covered": 53,
+      "total": 52,
+      "covered": 52,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 286,
-      "covered": 281,
+      "total": 284,
+      "covered": 279,
       "skipped": 0,
-      "pct": 98.25
+      "pct": 98.23
     },
     "branches": {
-      "total": 144,
-      "covered": 130,
+      "total": 142,
+      "covered": 128,
       "skipped": 0,
-      "pct": 90.27
+      "pct": 90.14
     }
   },
   "src/onDemand.ts": {
@@ -107,6 +107,32 @@
       "covered": 16,
       "skipped": 0,
       "pct": 88.88
+    }
+  },
+  "src/tupleKey.ts": {
+    "lines": {
+      "total": 25,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 3,
+      "covered": 3,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 25,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 13,
+      "covered": 13,
+      "skipped": 0,
+      "pct": 100
     }
   }
 }
