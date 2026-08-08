@@ -166,36 +166,33 @@ export function loadImportGraphsDepthFirst(
   const host = project.getModuleResolutionHost();
   const options = project.getCompilerOptions();
 
+  const resolvedByFile = specifierCacheFor(project);
+
   const specifierPaths = (filePath: string): string[] => {
-    const text = readFileText(project, filePath);
-    if (text === null) {
-      return [];
+    const already = resolvedByFile.get(filePath);
+    if (already !== undefined) {
+      return already;
     }
-    const scanned = ts.preProcessFile(text, true, true);
-    const paths: string[] = [];
-    for (const imported of scanned.importedFiles) {
-      const resolved = ts.resolveModuleName(
-        imported.fileName,
-        filePath,
-        options,
-        host,
-      ).resolvedModule?.resolvedFileName;
-      if (resolved !== undefined && !resolved.includes("/node_modules/")) {
-        paths.push(resolved);
-      }
-    }
+
+    const paths = readSpecifierPaths(project, filePath, options, host);
+    resolvedByFile.set(filePath, paths);
     return paths;
   };
 
   // Post-order over the import graph, so a file is loaded only after
   // everything it imports. The visited set is what ends a cycle, and
   // barrels that import each other are ordinary.
+  //
+  // A file whose graph an earlier walk already settled is not descended
+  // into again. Without that, files sharing a tail each walk the whole
+  // tail, which is the same work the specifier cache saves per file
+  // paid back once per walk instead.
+  const chainDepth = settledDepthsFor(project);
   const visited = new Set<string>();
   const loadOrder: string[] = [];
-  const chainDepth = new Map<string, number>();
   for (const root of roots) {
     const rootPath = root.getFilePath();
-    if (visited.has(rootPath)) {
+    if (visited.has(rootPath) || chainDepth.has(rootPath)) {
       continue;
     }
 
@@ -208,7 +205,7 @@ export function loadImportGraphsDepthFirst(
       const dep = top.deps[top.next];
       if (dep !== undefined) {
         top.next += 1;
-        if (!visited.has(dep)) {
+        if (!visited.has(dep) && !chainDepth.has(dep)) {
           visited.add(dep);
           stack.push({ path: dep, deps: specifierPaths(dep), next: 0 });
         }
@@ -273,6 +270,105 @@ export interface DeepImportGraphs {
  * above what an ordinary barrel reaches.
  */
 const WARM_DEPTH = 100;
+
+/**
+ * The files one file's imports name, from the answers the load walk
+ * already worked out. Lets a caller ask what a file sits on top of
+ * without going near the checker or the program.
+ */
+export function importedFilePathsOf(
+  project: Project,
+  filePath: string,
+): string[] {
+  const cache = specifierCacheFor(project);
+  const already = cache.get(filePath);
+  if (already !== undefined) {
+    return already;
+  }
+
+  const paths = readSpecifierPaths(
+    project,
+    filePath,
+    project.getCompilerOptions(),
+    project.getModuleResolutionHost(),
+  );
+  cache.set(filePath, paths);
+  return paths;
+}
+
+/**
+ * Which files one file's import specifiers name, worked out once per
+ * project rather than once per walk.
+ *
+ * The walk starts again at every file whose chain is not resolved yet,
+ * and files sharing a long tail send it down that same tail each time.
+ * Reading and resolving one file's specifiers costs the same whichever
+ * walk asks, so the answer is kept: on a project where hundreds of
+ * entry points sit above one deep core, that is the difference between
+ * resolving the core once and resolving it hundreds of times.
+ *
+ * The project owns the entry, so it goes when the project does, and two
+ * projects in one process never read each other's answers. A file's
+ * text does not change under a run, which is as long as this lives.
+ */
+function specifierCacheFor(project: Project): Map<string, string[]> {
+  const existing = specifiersByProject.get(project);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const fresh = new Map<string, string[]>();
+  specifiersByProject.set(project, fresh);
+  return fresh;
+}
+
+const specifiersByProject = new WeakMap<Project, Map<string, string[]>>();
+
+/**
+ * How deep the import graph under each file goes, for files an earlier
+ * walk already finished. Kept per project for the same reason and the
+ * same lifetime as the specifier answers.
+ */
+function settledDepthsFor(project: Project): Map<string, number> {
+  const existing = depthsByProject.get(project);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const fresh = new Map<string, number>();
+  depthsByProject.set(project, fresh);
+  return fresh;
+}
+
+const depthsByProject = new WeakMap<Project, Map<string, number>>();
+
+/** The files a file's import specifiers resolve to, read from its text. */
+function readSpecifierPaths(
+  project: Project,
+  filePath: string,
+  options: ts.CompilerOptions,
+  host: ts.ModuleResolutionHost,
+): string[] {
+  const text = readFileText(project, filePath);
+  if (text === null) {
+    return [];
+  }
+
+  const scanned = ts.preProcessFile(text, true, true);
+  const paths: string[] = [];
+  for (const imported of scanned.importedFiles) {
+    const resolved = ts.resolveModuleName(
+      imported.fileName,
+      filePath,
+      options,
+      host,
+    ).resolvedModule?.resolvedFileName;
+    if (resolved !== undefined && !resolved.includes("/node_modules/")) {
+      paths.push(resolved);
+    }
+  }
+  return paths;
+}
 
 /** A file's text, from the parse the project already has or from disk. */
 function readFileText(project: Project, filePath: string): string | null {

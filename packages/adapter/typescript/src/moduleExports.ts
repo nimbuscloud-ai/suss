@@ -1,10 +1,14 @@
 import { Node } from "ts-morph";
 
-import { loadImportGraphDepthFirst } from "./bootstrap/lazyProjectInit.js";
+import {
+  importedFilePathsOf,
+  loadImportGraphDepthFirst,
+} from "./bootstrap/lazyProjectInit.js";
 import { createPerFileCache } from "./perFileCache.js";
 
 import type {
   ImportDeclaration,
+  Project,
   SourceFile,
   Symbol as TsSymbol,
 } from "ts-morph";
@@ -121,6 +125,14 @@ function warmReExportChains(
     return;
   }
 
+  if (sitsOnWarmChains(root)) {
+    // One hop from answers the checker already has, which is the depth
+    // it handles by itself. On a project where hundreds of entry points
+    // share one deep core, this is every entry point but the first.
+    markWarmed(root);
+    return;
+  }
+
   try {
     loadImportGraphDepthFirst(root);
     walkAndWarm(root, reach);
@@ -158,11 +170,52 @@ function walkAndWarm(root: SourceFile, reach: Reach): void {
 
     stack.pop();
     warmFileAliases(top.file, top.shape.aliasNodes);
-    warmedFiles.set(top.file, true);
+    markWarmed(top.file);
   }
 }
 
 const warmedFiles = createPerFileCache<true>();
+
+/**
+ * Whether everything this file imports is already resolved.
+ *
+ * Read from the load walk's own record of what each file imports, so
+ * the question costs two map lookups and never touches the checker.
+ * Asking it any other way would cost more than warming the file.
+ */
+function sitsOnWarmChains(file: SourceFile): boolean {
+  const project = file.getProject();
+  const warmed = warmedPathsIn(project);
+  if (warmed.size === 0) {
+    return false;
+  }
+
+  const imported = importedFilePathsOf(project, file.getFilePath());
+  return imported.length > 0 && imported.every((path) => warmed.has(path));
+}
+
+function markWarmed(file: SourceFile): void {
+  warmedFiles.set(file, true);
+  warmedPathsIn(file.getProject()).add(file.getFilePath());
+}
+
+/**
+ * Files this run has resolved, by path. The per-parse record answers
+ * "is this SourceFile warm"; this answers "is the file at this path
+ * warm", which is what a caller holding only a path can ask.
+ */
+function warmedPathsIn(project: Project): Set<string> {
+  const existing = warmedPathsByProject.get(project);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const fresh = new Set<string>();
+  warmedPathsByProject.set(project, fresh);
+  return fresh;
+}
+
+const warmedPathsByProject = new WeakMap<Project, Set<string>>();
 
 interface WalkFrame {
   file: SourceFile;
