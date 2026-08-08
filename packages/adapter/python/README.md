@@ -47,6 +47,58 @@ What the reader does with each answer: a stated prefix composes; an unstated one
 
 Note the asymmetry in the trailing-slash rows: flask-restx trims at the constructor and not at the mount, because only the constructor's path goes through the property that strips it. The pack declares trimming per library, and the mount side does not need it, since a mount that states a prefix on that library abstains anyway.
 
+## Where a mount is written
+
+Almost no service mounts at the top level of a module. It builds its routers or namespaces there, with a literal prefix each, and registers them inside the function that builds the app, often by looping over a list that another function assembled:
+
+```python
+def create_app():
+    app = Flask(__name__)
+    api = Api(app)
+    for namespace in loader.load_namespaces():
+        api.add_namespace(namespace)
+    return app
+```
+
+So the reading looks for mounts inside function bodies as well as at the top level. Constructions are still read at the top level only, which is where they are written. A mount inside an `if`, a `try`, a `with`, a `while`, or a class method stays invisible, because the binder records no name written inside one of those and a mount there would resolve nothing anyway.
+
+A mount inside a `for` splits in two, on whether the source says which routers the loop covers.
+
+| The loop reads | The reading | Why |
+| --- | --- | --- |
+| a list or tuple of bare names, `for ns in [orders, users]` | mounts each of those names, exactly as a mount call naming it would | every element is a name the existing one-hop rule already follows |
+| anything else, `for ns in loader.load_namespaces()` | mounts nothing, and every router the run never saw mounted by name says the loop is why | which routers the call returns is not written in any file |
+
+Claiming a path off the second row would take two guesses at once: that this router is in the collection at all, and that the mount states no prefix that would replace or extend its own. A wrong path is worse than no path here, because a claimed path pairs the route with a contract on the other side and every check downstream reads it as fact, with nothing to distinguish it from a path the reading followed all the way.
+
+What the second row does buy is the sentence. A router nobody mounts by name used to read as "is never mounted through a single variable binding in the files read", which sends a reader looking for a registration that is right there in the app factory. When the run saw a loop it could not enumerate, the reason says so instead, and the repair it points at (enumerate the list in the source, or hand suss the list) is the one that works.
+
+Both rows were checked against a running app: a loop over a literal list serves each namespace under its constructor path, the same paths the direct mounts serve, and a `path=` written on the mount inside the loop replaces every namespace's own path, one more reason not to read a loop's mount as a plain registration.
+
+### A mount inside a function runs only if the app calls that function
+
+A mount at a module's top level runs on import, so it is the mount. A mount inside a function is a candidate, and the reading has no idea which functions the app calls. A repo with a test factory beside the app factory is where that bites:
+
+```python
+def create_test_app():
+    app = FastAPI()
+    app.include_router(router, prefix="/test")   # only tests call this
+    return app
+
+
+def create_app():
+    app = FastAPI()
+    for r in loader.load_routers():              # what production runs
+        app.include_router(r)
+    return app
+```
+
+Taking the only mount it could follow would serve the route at `/test`, which no request ever reaches. So a mount written inside a function is dropped when the run also saw a loop it could not enumerate, written anywhere other than that same function. The route abstains, naming both the function and the loop.
+
+The two qualifiers matter. Restricting it to loops keeps the ordinary shape working: two factories that each register their own routers by name are not rivals, because neither could have registered the other's. Restricting it to a *different* site keeps a factory that mixes an explicit registration with a loop working, since both of those run together whenever that function runs.
+
+A module-level mount is never dropped this way. It runs whichever factory the app calls. flask-restx trims at the constructor and not at the mount, because only the constructor's path goes through the property that strips it. The pack declares trimming per library, and the mount side does not need it, since a mount that states a prefix on that library abstains anyway.
+
 ## Grammar asset
 
 `grammar/tree-sitter-python.wasm` is a checked-in binary asset, not a build output. See [`grammar/README.md`](./grammar/README.md) for its provenance and how to bump it.

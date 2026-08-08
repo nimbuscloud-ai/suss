@@ -58,12 +58,21 @@ export async function extractPythonProject(
   // mount call in another file (a router constructed here, included
   // there), so the router index has to see the whole project before
   // any file's discovery runs.
+  // Facts key on the filesystem path throughout, since they're an
+  // internal join surface rather than user-facing text; a summary's
+  // `location.file` is what a workspace convention gets to shorten.
+  const displayPathOf = (file: string): string =>
+    options.workspaceRoot !== undefined
+      ? path.relative(options.workspaceRoot, file)
+      : file;
+
   const bound: BoundPythonFile[] = [];
   for (const file of options.files) {
     const source = fs.readFileSync(file, "utf8");
     const tree = await parsePython(source);
     bound.push({
       file,
+      displayPath: displayPathOf(file),
       root: tree.rootNode,
       module: bindModule(tree.rootNode),
     });
@@ -74,14 +83,7 @@ export async function extractPythonProject(
   });
 
   for (const { file, root, module: moduleBinding } of bound) {
-    // Facts key on the filesystem path throughout, since they're an
-    // internal join surface rather than user-facing text. The
-    // summary's own `location.file` is what a project's workspace
-    // convention gets to shorten.
-    const displayPath =
-      options.workspaceRoot !== undefined
-        ? path.relative(options.workspaceRoot, file)
-        : file;
+    const displayPath = displayPathOf(file);
 
     const rawUnits = discoverUnits(root, moduleBinding, {
       packs: options.packs,
