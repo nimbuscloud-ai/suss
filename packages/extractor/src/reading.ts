@@ -28,7 +28,12 @@ export type Reading<T> =
   | { kind: "written"; value: T; range: SourceRange }
   | { kind: "absent" }
   | { kind: "unreadable"; reason: string; range: SourceRange }
-  | { kind: "ambiguous"; candidates: readonly T[]; reason: string };
+  | {
+      kind: "ambiguous";
+      candidates: readonly T[];
+      reason: string;
+      range: SourceRange;
+    };
 
 /** The source states this value, here, and the reader read it. */
 export function writtenReading<T>(value: T, range: SourceRange): Reading<T> {
@@ -57,13 +62,20 @@ export function unreadableReading<T>(
 /**
  * Several values could be the answer and the reader picked none.
  * Carrying the candidates keeps what was found available to whoever
- * later teaches the reader to choose between them.
+ * later teaches the reader to choose between them, and every step this
+ * reading goes through afterwards carries them along.
+ *
+ * The range is where a reader should look to see the ambiguity. An
+ * ambiguity often spans more than one site (two mounts of one router,
+ * in two files); name the site the reading was taken at, the same one
+ * an `unreadable` reading here would have named.
  */
 export function ambiguousReading<T>(
   candidates: readonly T[],
   reason: string,
+  range: SourceRange,
 ): Reading<T> {
-  return { kind: "ambiguous", candidates, reason };
+  return { kind: "ambiguous", candidates, reason, range };
 }
 
 /**
@@ -109,19 +121,21 @@ export function mapReading<T, U>(
     written: (r) => writtenReading(f(r.value), r.range),
     absent: () => absentReading,
     unreadable: (r) => unreadableReading(r.reason, r.range),
-    ambiguous: (r) => ambiguousReading(r.candidates.map(f), r.reason),
+    ambiguous: (r) => ambiguousReading(r.candidates.map(f), r.reason, r.range),
   };
   return dispatchReading(table, reading);
 }
 
 /**
- * Read further from what this reading found. `f` runs only on a written
- * value, with the range it was written at, so a step that turns out to
+ * Read further from what this reading found. `f` runs on a written
+ * value with the range it was written at, so a step that turns out to
  * be unreadable can say so against the same syntax.
  *
- * An ambiguous reading comes back ambiguous with its reason and no
- * candidates: `f` never ran, because there is no one value to hand it
- * and no range to hand with it.
+ * `f` runs on each of an ambiguous reading's candidates too, and the
+ * ones that read come back as the candidates of an ambiguous reading
+ * with the same reason. The alternatives stay alongside the answer all
+ * the way to the summary rather than being dropped at the first step
+ * that reads further.
  */
 export function andThenReading<T, U>(
   reading: Reading<T>,
@@ -131,25 +145,83 @@ export function andThenReading<T, U>(
     written: (r) => f(r.value, r.range),
     absent: () => absentReading,
     unreadable: (r) => unreadableReading(r.reason, r.range),
-    ambiguous: (r) => ambiguousReading<U>([], r.reason),
+    ambiguous: (r) =>
+      ambiguousReading(
+        r.candidates.flatMap((candidate) => {
+          const next = f(candidate, r.range);
+          return next.kind === "written" ? [next.value] : [];
+        }),
+        r.reason,
+        r.range,
+      ),
   };
   return dispatchReading(table, reading);
 }
 
 /**
- * The first reading that came back written, for a value a library lets
- * a source state in more than one place. When none of them was written,
- * the first that failed to read comes back instead, so its reason still
- * reaches the summary; only readings that were all absent come back
- * absent.
+ * Which of several readings a claim comes from, for a value a library
+ * lets a source state in more than one place.
+ */
+export interface ChosenReading<T> {
+  /**
+   * The reading a claim comes from: the first that was written, or,
+   * when none was, the first that failed to read, or absent when every
+   * one of them was.
+   */
+  reading: Reading<T>;
+  /**
+   * The readings the choice passed over that nobody could resolve. A
+   * later reading supplying the value does not settle what an earlier
+   * one said and could not be read, so these are still handed to the
+   * builder and their reasons still reach the summary.
+   */
+  passedOver: readonly Reading<T>[];
+}
+
+/**
+ * Choose among readings of the same value, taking the first that was
+ * written. Nothing is thrown away: whatever the choice passed over and
+ * could not read comes back alongside it in `passedOver`, so a
+ * `response_model` nobody could read still lands as a gap even when the
+ * return annotation after it supplies the shape.
  */
 export function firstWrittenReading<T>(
   readings: readonly Reading<T>[],
-): Reading<T> {
+): ChosenReading<T> {
   const written = readings.find((reading) => reading.kind === "written");
-  if (written !== undefined) {
-    return written;
-  }
+  const chosen =
+    written ??
+    readings.find((reading) => reading.kind !== "absent") ??
+    absentReading;
 
-  return readings.find((reading) => reading.kind !== "absent") ?? absentReading;
+  return {
+    reading: chosen,
+    passedOver: readings.filter(
+      (reading) =>
+        reading !== chosen &&
+        (reading.kind === "unreadable" || reading.kind === "ambiguous"),
+    ),
+  };
+}
+
+/**
+ * What a written reading found, for a reader that has to read further
+ * from it before anything is claimed: a route's path template names the
+ * parameters that decide what each of the handler's parameters is, and
+ * that has to be settled before there is a summary field to fill.
+ *
+ * This applies no default and states no reason, so most of what a
+ * summary says must not be written from it. Hand the reading to the
+ * builder instead, and the fixed rule applies to it once, where review
+ * can see it.
+ *
+ * The identity fields of a boundary binding are the exception, and the
+ * path this reads is one of them. A binding either names where a unit
+ * sits or names nothing and pairs with nothing, and no pack declares a
+ * default for what a boundary is called, so the value the builder would
+ * place is the value this gives back. Hand the reading over as well and
+ * the reason still becomes a gap.
+ */
+export function valueToReadFurtherFrom<T>(reading: Reading<T>): T | null {
+  return reading.kind === "written" ? reading.value : null;
 }

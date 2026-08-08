@@ -33,6 +33,16 @@ function claimedStatusOf(unit: RawCodeStructure | undefined) {
   return output?.type === "response" ? output.statusCode : undefined;
 }
 
+/** The body shape a unit's summary claims for its first declared response. */
+function claimedBodyOf(unit: RawCodeStructure | undefined) {
+  if (unit === undefined) {
+    return undefined;
+  }
+
+  const output = assembleSummary(unit).transitions[0]?.output;
+  return output?.type === "response" ? output.body : undefined;
+}
+
 const flaskRestxLike: PythonPack = {
   name: "flask-restx",
   protocol: "http",
@@ -48,6 +58,7 @@ const flaskRestxLike: PythonPack = {
         delete: "DELETE",
       },
       pathParamSyntax: "flaskConverters",
+      defaultStatusCode: 200,
     },
   ],
 };
@@ -112,6 +123,30 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
       semantics: { name: "rest", method: "GET", path: "/todos" },
       recognition: "flask-restx",
     });
+  });
+
+  it("takes the pack's declared default for a method whose return annotation states a shape", async () => {
+    // Flask answers an unmarked return with 200, which flask-restx's
+    // pack declares. A class route whose method annotates what it
+    // returns states a status too, and a consumer branching on 200
+    // pairs with it rather than reading as unreachable.
+    const annotated = [
+      "from myapp.wrappers.restx import route",
+      "",
+      "",
+      "class TodoResponse:",
+      "    id: int",
+      "",
+      "",
+      '@route("/todos")',
+      "class TodoList:",
+      "    def get(self) -> TodoResponse:",
+      "        return TodoResponse()",
+      "",
+    ].join("\n");
+    const units = await unitsOf(annotated, [flaskRestxLike]);
+    const get = units.find((u) => u.identity.name === "TodoList.get");
+    expect(claimedStatusOf(get)).toEqual({ type: "literal", value: 200 });
   });
 
   it("skips the self parameter and reports an empty parameter list otherwise", async () => {
@@ -432,7 +467,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       type: "literal",
       value: 201,
     });
-    expect(branch?.terminal.body?.shape?.type).toBe("ref");
+    expect(claimedBodyOf(createItem)?.type).toBe("ref");
     expect(branch?.isDefault).toBe(true);
     expect(branch?.conditions).toEqual([]);
   });
@@ -462,7 +497,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     const createItem = units.find((u) => u.identity.name === "create_item");
     expect(createItem?.branches).toHaveLength(1);
     expect(claimedStatusOf(createItem)).toBeNull();
-    expect(createItem?.branches[0]?.terminal.body?.shape?.type).toBe("ref");
+    expect(claimedBodyOf(createItem)?.type).toBe("ref");
     expect(unreadTextOf(createItem)).toContain("not a literal number");
   });
 
@@ -515,7 +550,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     const units = await unitsOf(returnOnly, [fastapiLike]);
     const listItems = units.find((u) => u.identity.name === "list_items");
     expect(listItems?.branches).toHaveLength(1);
-    expect(listItems?.branches[0]?.terminal.body?.shape?.type).toBe("ref");
+    expect(claimedBodyOf(listItems)?.type).toBe("ref");
   });
 
   it("keeps a route whose path is not a literal, with no path and a stated gap", async () => {

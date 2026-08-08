@@ -20,6 +20,8 @@ import {
   writtenReading,
 } from "./index.js";
 
+import type { TypeShape } from "@suss/behavioral-ir";
+
 // Minimal RawTerminal builder — every call site overrides only the fields it cares about.
 const makeTerminal = (overrides: Partial<RawTerminal>): RawTerminal => ({
   kind: "void",
@@ -378,7 +380,11 @@ describe("assembleSummary: collapsing a status reading", () => {
   it("claims nothing and says why when several statuses could be the answer", () => {
     const summary = assembleSummary(
       responseBranch({
-        reading: ambiguousReading([200, 204], "two decorators state a status"),
+        reading: ambiguousReading(
+          [200, 204],
+          "two decorators state a status",
+          range,
+        ),
         libraryDefault: 200,
       }),
     );
@@ -396,6 +402,60 @@ describe("assembleSummary: collapsing a status reading", () => {
       responseBranch({ reading: writtenReading(200, range) }),
     );
     expect(read.transitions[0]?.id).toBe(stated.transitions[0]?.id);
+  });
+});
+
+describe("assembleSummary: collapsing a body shape reading", () => {
+  const range = { start: 0, end: 4 };
+  const shape: TypeShape = { type: "ref", name: "Todo" };
+  const responseBranch = (
+    bodyShapeReading: DefaultedReading<TypeShape>,
+  ): RawCodeStructure => ({
+    ...twoPathRaw,
+    declaredContract: null,
+    branches: [
+      {
+        conditions: [],
+        terminal: makeTerminal({
+          kind: "response",
+          body: { typeText: null, shape: null },
+        }),
+        bodyShapeReading,
+        effects: [],
+        location: { start: 0, end: 4 },
+        isDefault: true,
+      },
+    ],
+  });
+
+  it("claims the shape the source states", () => {
+    const summary = assembleSummary(
+      responseBranch({ reading: writtenReading(shape, range) }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({ body: shape });
+    expect(summary.gaps).toEqual([]);
+  });
+
+  it("claims nothing and says why when the source states a shape nobody could read", () => {
+    const summary = assembleSummary(
+      responseBranch({
+        reading: unreadableReading(
+          "response_model is a call, not a name",
+          range,
+        ),
+      }),
+    );
+    expect(summary.transitions[0]?.output).toMatchObject({ body: null });
+    expect(summary.gaps.map((gap) => gap.description)).toEqual([
+      "response_model is a call, not a name",
+    ]);
+  });
+
+  it("leaves the terminal's type text alone", () => {
+    const raw = responseBranch({ reading: writtenReading(shape, range) });
+    raw.branches[0].terminal.body = { typeText: "Todo", shape: null };
+    const summary = assembleSummary(raw);
+    expect(summary.transitions[0]?.output).toMatchObject({ body: shape });
   });
 });
 
@@ -1249,7 +1309,10 @@ describe("detectGaps", () => {
           start: 0,
           end: 4,
         }),
-        ambiguousReading(["/a", "/b"], "Two routers mount this path"),
+        ambiguousReading(["/a", "/b"], "Two routers mount this path", {
+          start: 0,
+          end: 4,
+        }),
         writtenReading("/users", { start: 0, end: 4 }),
         absentReading,
       ],

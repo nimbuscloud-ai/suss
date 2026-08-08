@@ -19,6 +19,7 @@ import {
   firstWrittenReading,
   mapReading,
   unreadableReading,
+  valueToReadFurtherFrom,
   writtenReading,
 } from "@suss/extractor";
 
@@ -34,6 +35,7 @@ import { classifyDecorator } from "./decorators.js";
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
 import type {
   BodyContent,
+  ChosenReading,
   DefaultedReading,
   RawBranch,
   RawCodeStructure,
@@ -567,11 +569,6 @@ interface BuildRouteUnitOptions {
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
 }
 
-/** What a written reading found, or null when it found nothing this unit can claim. Everything else a reading decides (whether a library default applies, what gap its reason lands as) belongs to the summary builder in @suss/extractor. */
-function writtenValue<T>(reading: Reading<T>): T | null {
-  return reading.kind === "written" ? reading.value : null;
-}
-
 /**
  * The shape a route declares for its response body: what its decorator
  * states, and otherwise its return annotation. The annotation is read
@@ -581,9 +578,9 @@ function writtenValue<T>(reading: Reading<T>): T | null {
 function readResponseShape(
   declared: Reading<TypeShape>,
   readAnnotation: () => Reading<TypeShape>,
-): Reading<TypeShape> {
+): ChosenReading<TypeShape> {
   if (declared.kind === "written") {
-    return declared;
+    return { reading: declared, passedOver: [] };
   }
 
   return firstWrittenReading([declared, readAnnotation()]);
@@ -606,7 +603,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     definitionsCtx,
   } = options;
 
-  const template = writtenValue(routePath);
+  // The path template names which of the handler's parameters are path
+  // parameters, and that has to be settled before there is a summary
+  // field to fill, so this is read further from rather than claimed.
+  const template = valueToReadFurtherFrom(routePath);
   const ctx = definitionsCtx ?? createAnnotationContext(module.scopeFor);
   const parameters = readParameters(
     definitionNode,
@@ -621,24 +621,24 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     readReturnAnnotation(definitionNode, enclosingScope, ctx),
   );
 
-  // The route declares a response when it states a body shape or says
-  // anything at all about its status, including a status nobody could
-  // read. A route that states neither declares nothing, and the
-  // library's default status has nothing to apply to.
+  // The route declares a response when it says anything at all about
+  // the body shape or the status, including something nobody could
+  // read. A route that says neither declares nothing, and the library's
+  // default status has nothing to apply to.
   const branches: RawBranch[] = [];
   if (
-    responseShape.kind === "written" ||
+    responseShape.reading.kind !== "absent" ||
     statusCode.reading.kind !== "absent"
   ) {
     branches.push({
       conditions: [],
       terminal: {
         kind: "response",
-        // The status this branch answers with rides along as a reading
-        // in `statusCodeReading`, and the extractor is what turns it
-        // into a claim.
+        // What this branch answers with rides along as readings in
+        // `statusCodeReading` and `bodyShapeReading`, and the extractor
+        // is what turns either into a claim.
         statusCode: null,
-        body: { typeText: null, shape: writtenValue(responseShape) },
+        body: { typeText: null, shape: null },
         exceptionType: null,
         message: null,
         component: null,
@@ -648,6 +648,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
         location: rangeOf(definitionNode),
       },
       statusCodeReading: statusCode,
+      bodyShapeReading: { reading: responseShape.reading },
       effects: [],
       location: rangeOf(definitionNode),
       isDefault: true,
@@ -677,7 +678,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     bodyContent: bodyNode !== null ? bodyContentOf(bodyNode) : "statements",
     dependencyCalls: [],
     declaredContract: null,
-    readings: [routePath, responseShape],
+    // The chosen shape reading rides on the branch; what the choice
+    // passed over and could not read has no branch to ride on and is
+    // stated here.
+    readings: [routePath, ...responseShape.passedOver],
     ...(collectedDefinitions(ctx) !== null
       ? { definitions: collectedDefinitions(ctx) }
       : {}),

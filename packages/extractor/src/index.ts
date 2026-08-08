@@ -41,6 +41,7 @@ export {
   firstWrittenReading,
   mapReading,
   unreadableReading,
+  valueToReadFurtherFrom,
   writtenReading,
 } from "./reading.js";
 
@@ -77,7 +78,12 @@ export type {
   StatementBlock,
   StructuredStatement,
 } from "./paths/structuredStatement.js";
-export type { DefaultedReading, Reading, SourceRange } from "./reading.js";
+export type {
+  ChosenReading,
+  DefaultedReading,
+  Reading,
+  SourceRange,
+} from "./reading.js";
 
 // =============================================================================
 // RawCodeStructure — the interface between language adapters and the engine
@@ -240,6 +246,15 @@ export interface RawBranch {
    * `terminal.statusCode` as before.
    */
   statusCodeReading?: DefaultedReading<number>;
+  /**
+   * The shape this branch's response body carries, as the adapter read
+   * it. Set instead of `terminal.body.shape`, on the same terms as
+   * `statusCodeReading`: the reading crosses into this module and the
+   * fixed rule turns it into a claim, a pack-declared default, or a
+   * gap. `terminal.body.typeText` is untouched, so a pack that names a
+   * type in text and reads its shape can do both.
+   */
+  bodyShapeReading?: DefaultedReading<TypeShape>;
 }
 
 /** The values an outcome names, so a read through one is not missed. */
@@ -556,25 +571,58 @@ function unreadReasonOf(reading: Reading<unknown>): string | null {
   return collapseReading(table, reading);
 }
 
+/** The terminal's response body with a shape the adapter handed over as a reading collapsed onto it. */
+function bodyWithClaimedShape(
+  terminal: RawTerminal,
+  reading: DefaultedReading<TypeShape>,
+): RawTerminal["body"] {
+  return {
+    typeText: terminal.body?.typeText ?? null,
+    shape: claimedValue(reading),
+  };
+}
+
 /**
- * The branch as this module reads it. A status the adapter handed over
- * as a reading is collapsed onto the terminal here, before anything
- * else looks at the branch, so the transition's identity and its output
- * agree about what status it answers with.
+ * The branch as this module reads it. Readings the adapter handed over
+ * are collapsed onto the terminal here, before anything else looks at
+ * the branch, so the transition's identity and its output agree about
+ * what it answers with.
  */
 function branchWithCollapsedReadings(branch: RawBranch): RawBranch {
-  if (branch.statusCodeReading === undefined) {
+  const { statusCodeReading, bodyShapeReading } = branch;
+  if (statusCodeReading === undefined && bodyShapeReading === undefined) {
     return branch;
   }
 
-  const value = claimedValue(branch.statusCodeReading);
+  const status =
+    statusCodeReading !== undefined ? claimedValue(statusCodeReading) : null;
   return {
     ...branch,
     terminal: {
       ...branch.terminal,
-      statusCode: value !== null ? { type: "literal", value } : null,
+      ...(statusCodeReading !== undefined
+        ? {
+            statusCode:
+              status !== null ? { type: "literal", value: status } : null,
+          }
+        : {}),
+      ...(bodyShapeReading !== undefined
+        ? { body: bodyWithClaimedShape(branch.terminal, bodyShapeReading) }
+        : {}),
     },
   };
+}
+
+/** Every reading a branch handed over for this module to collapse, in the order their sentences read. */
+function readingsOfBranch(branch: RawBranch): Reading<unknown>[] {
+  return [
+    ...(branch.bodyShapeReading !== undefined
+      ? [branch.bodyShapeReading.reading]
+      : []),
+    ...(branch.statusCodeReading !== undefined
+      ? [branch.statusCodeReading.reading]
+      : []),
+  ];
 }
 
 /**
@@ -585,11 +633,7 @@ function branchWithCollapsedReadings(branch: RawBranch): RawBranch {
 function unreadSentences(raw: RawCodeStructure): string[] {
   const handedOver: Reading<unknown>[] = [
     ...(raw.readings ?? []),
-    ...raw.branches.flatMap((branch) =>
-      branch.statusCodeReading !== undefined
-        ? [branch.statusCodeReading.reading]
-        : [],
-    ),
+    ...raw.branches.flatMap(readingsOfBranch),
   ];
 
   return [

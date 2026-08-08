@@ -7,6 +7,7 @@ import {
   firstWrittenReading,
   mapReading,
   unreadableReading,
+  valueToReadFurtherFrom,
   writtenReading,
 } from "./reading.js";
 
@@ -25,11 +26,12 @@ describe("mapReading", () => {
 
   it("converts an ambiguous reading's candidates too", () => {
     expect(
-      mapReading(ambiguousReading([1, 2], "two routers"), (n) => n * 5),
+      mapReading(ambiguousReading([1, 2], "two routers", range), (n) => n * 5),
     ).toEqual({
       kind: "ambiguous",
       candidates: [5, 10],
       reason: "two routers",
+      range,
     });
   });
 
@@ -75,12 +77,35 @@ describe("andThenReading", () => {
     expect(ran).toBe(false);
   });
 
-  it("carries an ambiguous reading's reason on with no candidates", () => {
+  it("reads further from every candidate of an ambiguous reading", () => {
     expect(
-      andThenReading(ambiguousReading(["a", "b"], "two mounts"), () =>
-        writtenReading("x", range),
+      andThenReading(
+        ambiguousReading(["/items", "/things"], "two mounts", range),
+        (prefix, at) => writtenReading(`${prefix}/{id}`, at),
       ),
-    ).toEqual({ kind: "ambiguous", candidates: [], reason: "two mounts" });
+    ).toEqual({
+      kind: "ambiguous",
+      candidates: ["/items/{id}", "/things/{id}"],
+      reason: "two mounts",
+      range,
+    });
+  });
+
+  it("keeps only the candidates the next step could read", () => {
+    expect(
+      andThenReading(
+        ambiguousReading(["/items", "/things"], "two mounts", range),
+        (prefix, at) =>
+          prefix === "/items"
+            ? writtenReading(prefix, at)
+            : unreadableReading<string>("no reader for this one", at),
+      ),
+    ).toEqual({
+      kind: "ambiguous",
+      candidates: ["/items"],
+      reason: "two mounts",
+      range,
+    });
   });
 });
 
@@ -91,23 +116,64 @@ describe("firstWrittenReading", () => {
         absentReading,
         writtenReading(1, range),
         writtenReading(2, range),
-      ]),
+      ]).reading,
     ).toEqual({ kind: "written", value: 1, range });
   });
 
-  it("keeps a reason when nothing was written", () => {
+  it("hands back what it passed over and could not read", () => {
+    const unread = unreadableReading<number>("not a name", range);
+    const chosen = firstWrittenReading([unread, writtenReading(7, range)]);
+
+    expect(chosen.reading).toEqual({ kind: "written", value: 7, range });
+    expect(chosen.passedOver).toEqual([unread]);
+  });
+
+  it("passes over nothing when every other reading was absent", () => {
     expect(
-      firstWrittenReading([
-        absentReading,
-        unreadableReading<number>("not a name", range),
-      ]),
-    ).toEqual({ kind: "unreadable", reason: "not a name", range });
+      firstWrittenReading([absentReading, writtenReading(7, range)]).passedOver,
+    ).toEqual([]);
+  });
+
+  it("keeps a reason when nothing was written", () => {
+    const chosen = firstWrittenReading([
+      absentReading,
+      unreadableReading<number>("not a name", range),
+    ]);
+
+    expect(chosen.reading).toEqual({
+      kind: "unreadable",
+      reason: "not a name",
+      range,
+    });
+    // The reading a claim would come from is not also passed over, so
+    // its reason reaches the summary once.
+    expect(chosen.passedOver).toEqual([]);
   });
 
   it("comes back absent when every reading was absent", () => {
-    expect(firstWrittenReading([absentReading, absentReading])).toEqual({
-      kind: "absent",
-    });
-    expect(firstWrittenReading<number>([])).toEqual({ kind: "absent" });
+    expect(firstWrittenReading([absentReading, absentReading]).reading).toEqual(
+      {
+        kind: "absent",
+      },
+    );
+    expect(firstWrittenReading<number>([]).reading).toEqual({ kind: "absent" });
+  });
+});
+
+describe("valueToReadFurtherFrom", () => {
+  it("gives back what a written reading found", () => {
+    expect(valueToReadFurtherFrom(writtenReading("/items", range))).toBe(
+      "/items",
+    );
+  });
+
+  it("gives back nothing for a reading that found nothing, and no default", () => {
+    expect(valueToReadFurtherFrom(absentReading)).toBeNull();
+    expect(
+      valueToReadFurtherFrom(unreadableReading<string>("computed", range)),
+    ).toBeNull();
+    expect(
+      valueToReadFurtherFrom(ambiguousReading(["a", "b"], "two", range)),
+    ).toBeNull();
   });
 });
