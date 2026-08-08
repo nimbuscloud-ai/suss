@@ -69,6 +69,8 @@ export {
   type FlowCertainty,
   type FlowChain,
   type FlowChainContext,
+  type FlowChains,
+  type FlowChainsOmitted,
   type FlowEdgeKind,
   type FlowEnd,
   type FlowHop,
@@ -92,6 +94,7 @@ export {
   type ScopedAnswer,
   type ScopedUnit,
   type ServingClaimSite,
+  type UnfollowedEdge,
 } from "./flow/routingFacts.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export { checkMessageBus } from "./message-bus/messageBusPairing.js";

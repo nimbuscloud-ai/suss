@@ -261,6 +261,74 @@ describe("applySuppressions", () => {
     expect(out.suppressed?.reason).toBe("x");
   });
 
+  it("keeps matching a document a rule names by file name, now that labels carry the path", () => {
+    const declared = finding({
+      provider: {
+        summary: "cloudformation:services/alpha/template.yaml::OrdersQueue",
+        location: {
+          file: "cloudformation:services/alpha/template.yaml",
+          range: { start: 1, end: 1 },
+          exportName: null,
+        },
+      },
+    });
+    const [out] = applySuppressions(
+      [declared],
+      [
+        SuppressionRuleSchema.parse({
+          kind: "deadConsumerBranch",
+          boundary: "GET /pet/:id",
+          provider: { summary: "cloudformation:template.yaml::OrdersQueue" },
+          reason: "x",
+        }),
+      ],
+    );
+
+    expect(out.suppressed?.reason).toBe("x");
+  });
+
+  it("does not read a rule naming source code as a file name to search for", () => {
+    const [out] = applySuppressions(
+      [finding()],
+      [
+        SuppressionRuleSchema.parse({
+          kind: "deadConsumerBranch",
+          boundary: "GET /pet/:id",
+          provider: { summary: "pet.ts::getPet" },
+          reason: "x",
+        }),
+      ],
+    );
+
+    expect(out.suppressed).toBeUndefined();
+  });
+
+  it("keeps a rule for one reader off another reader's document", () => {
+    const declared = finding({
+      provider: {
+        summary: "serverless:services/alpha/template.yaml::OrdersQueue",
+        location: {
+          file: "serverless:services/alpha/template.yaml",
+          range: { start: 1, end: 1 },
+          exportName: null,
+        },
+      },
+    });
+    const [out] = applySuppressions(
+      [declared],
+      [
+        SuppressionRuleSchema.parse({
+          kind: "deadConsumerBranch",
+          boundary: "GET /pet/:id",
+          provider: { summary: "cloudformation:template.yaml::OrdersQueue" },
+          reason: "x",
+        }),
+      ],
+    );
+
+    expect(out.suppressed).toBeUndefined();
+  });
+
   it("broad-scope kind-only rule matches any finding of that kind", () => {
     const rules: SuppressionRule[] = [
       SuppressionRuleSchema.parse({

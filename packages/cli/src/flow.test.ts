@@ -296,6 +296,132 @@ describe("what the answer says when it is not settled", () => {
     expect(io.stdout).toContain("ApiRule (priority 7; path-pattern /alpha/*)");
   });
 
+  it("hedges the line that names what serves it, not only the heading", async () => {
+    writeSummaries(
+      "infra.json",
+      cloudFormationToSummaries(serviceTemplate("/alpha/*", "TgAlpha"), {
+        source: "cloudformation:services/alpha/template.yaml",
+      }),
+    );
+    const { io } = await capture([
+      "inspect",
+      "--flow",
+      "GET /alpha/1",
+      "--dir",
+      dir,
+    ]);
+
+    // The listener's default is reached only if the gated rule does not
+    // take the request, so the line that names the response has to say
+    // so on its own.
+    expect(io.stdout).toContain("HttpListener may answer it itself: 404");
+    expect(io.stdout).not.toContain("HttpListener answers it itself");
+  });
+
+  it("says where the trail ended when an admitted rule forwards somewhere nothing resolved", async () => {
+    writeSummaries("infra.json", [
+      {
+        kind: "library",
+        location: {
+          file: "cloudformation:services/alpha/template.yaml",
+          range: { start: 1, end: 1 },
+          exportName: null,
+        },
+        identity: { name: "ApiRule", exportPath: null, boundaryBinding: null },
+        inputs: [],
+        transitions: [],
+        gaps: [],
+        confidence: { source: "declared", level: "high" },
+        metadata: withRoutingMetadata(undefined, {
+          edge: "routesTo",
+          router: "HttpListener",
+          target: null,
+          unresolvedTarget: {
+            reference: "OrdersStack.TargetGroupArn",
+            reason: "another template declares it",
+          },
+          matchId: "ApiRule",
+          priority: 1,
+          matchLanguage: "alb",
+          conditions: [
+            { field: "path-pattern", values: ["/alpha/*"], evaluated: true },
+          ],
+        }),
+      },
+    ]);
+    const { exit, io } = await capture([
+      "inspect",
+      "--flow",
+      "GET /alpha/1",
+      "--dir",
+      dir,
+    ]);
+
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain("Where the trail ends");
+    expect(io.stdout).toContain(
+      "HttpListener sends it on, and suss cannot follow where",
+    );
+    expect(io.stdout).toContain(
+      "ApiRule sends it on to OrdersStack.TargetGroupArn: another template declares it",
+    );
+    expect(io.stdout).not.toContain("nothing below it is declared");
+  });
+
+  it("says how many chains it left out rather than dropping them silently", async () => {
+    const targets = Array.from({ length: 60 }, (_, index) => `Tg${index}`);
+    writeSummaries(
+      "infra.json",
+      cloudFormationToSummaries(
+        {
+          Resources: {
+            Alb: {
+              Type: "AWS::ElasticLoadBalancingV2::LoadBalancer",
+              Properties: {},
+            },
+            HttpListener: {
+              Type: "AWS::ElasticLoadBalancingV2::Listener",
+              Properties: {
+                LoadBalancerArn: { Ref: "Alb" },
+                DefaultActions: [
+                  {
+                    Type: "forward",
+                    ForwardConfig: {
+                      TargetGroups: targets.map((target) => ({
+                        TargetGroupArn: { Ref: target },
+                        Weight: 1,
+                      })),
+                    },
+                  },
+                ],
+              },
+            },
+            ...Object.fromEntries(
+              targets.map((target) => [
+                target,
+                {
+                  Type: "AWS::ElasticLoadBalancingV2::TargetGroup",
+                  Properties: { TargetType: "ip" },
+                },
+              ]),
+            ),
+          },
+        },
+        { source: "cloudformation:services/alpha/template.yaml" },
+      ),
+    );
+    const { exit, io } = await capture([
+      "inspect",
+      "--flow",
+      "GET /alpha/1",
+      "--dir",
+      dir,
+    ]);
+
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain("and 10 more chains not shown");
+  });
+
   it("ends where the wiring ends, when a target group fronts nothing declared", async () => {
     writeSummaries(
       "infra.json",
@@ -352,8 +478,9 @@ describe("what the answer says when it is not settled", () => {
     ]);
 
     expect(exit).toBe(0);
+    expect(io.stdout).toContain("TgAlpha sends it on, and suss cannot follow");
     expect(io.stdout).toContain(
-      "The wiring ends at TgAlpha: nothing below it is declared",
+      "the wiring sends it on: no ECS::Service registers this target group",
     );
   });
 });

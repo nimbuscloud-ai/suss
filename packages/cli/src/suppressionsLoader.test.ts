@@ -100,4 +100,62 @@ describe("loadSuppressions", () => {
       transitionId: "get:response:410:3b915da",
     });
   });
+
+  it("says when a rule names a document the way readers used to label them", () => {
+    const file = path.join(root, ".sussignore.yml");
+    fs.writeFileSync(
+      file,
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: unhandledProviderCase",
+        '    boundary: "GET /orders"',
+        '    provider: { summary: "cloudformation:template.yaml::GetOrders" }',
+        "    reason: the queue is drained elsewhere",
+      ].join("\n"),
+    );
+    const written: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      loadSuppressions(file);
+    } finally {
+      process.stderr.write = original;
+    }
+
+    expect(written.join("")).toContain("cloudformation:template.yaml");
+    expect(written.join("")).toContain("write the path to pin it to one");
+  });
+
+  it("says nothing about a rule that already names the path", () => {
+    const file = path.join(root, ".sussignore.yml");
+    fs.writeFileSync(
+      file,
+      [
+        "version: 1",
+        "rules:",
+        "  - kind: unhandledProviderCase",
+        '    boundary: "GET /orders"',
+        "    provider:",
+        '      summary: "cloudformation:services/orders/template.yaml::GetOrders"',
+        "    reason: the queue is drained elsewhere",
+      ].join("\n"),
+    );
+    const written: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      loadSuppressions(file);
+    } finally {
+      process.stderr.write = original;
+    }
+
+    expect(written.join("")).toBe("");
+  });
 });

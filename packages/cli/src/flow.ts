@@ -5,11 +5,14 @@
 // that hop, the unit it landed in, and the handler inside that unit.
 //
 // Two things this rendering will not do. It will not print a possible
-// answer as though it were settled: a chain gated on a condition
-// nobody here evaluates says so on the hop that is gated and again in
-// the heading above it. And when nothing serves the request it says
-// where the walk stopped and what was declared there that refused,
-// which is the answer somebody debugging a 404 actually needs.
+// answer as though it were settled: a chain gated on a condition nobody
+// here evaluates says so on the hop that is gated, in the heading above
+// it, and on the line that names what serves the request, which is the
+// line somebody pastes into a ticket. And it will not report an absence
+// it did not find: when nothing serves the request it says where the
+// walk stopped and why, whether that is a declared response, the rules
+// that refused, or a rule that took the request and sent it somewhere
+// nothing here could follow.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -32,9 +35,11 @@ import type {
   FlowAnalysis,
   FlowCertainty,
   FlowChain,
+  FlowChainsOmitted,
   FlowEnd,
   FlowEntry,
   FlowHop,
+  UnfollowedEdge,
 } from "@suss/checker";
 
 export interface FlowOptions {
@@ -247,10 +252,14 @@ function hopLine(hop: FlowHop): string {
 }
 
 /** A response as it reads: the status, the type, and the body a client gets. */
-function responseText(end: Extract<FlowEnd, { type: "answers" }>): string {
+function responseText(
+  end: Extract<FlowEnd, { type: "answers" }>,
+  certainty: FlowCertainty,
+): string {
+  const answers = certainty === "certain" ? "answers" : "may answer";
   const response = end.answer.response;
   if (response === undefined) {
-    return `${end.router} answers it itself`;
+    return `${end.router} ${answers} it itself`;
   }
 
   const parts = [
@@ -260,12 +269,33 @@ function responseText(end: Extract<FlowEnd, { type: "answers" }>): string {
   ];
   const said =
     parts.length === 0 ? (response.type ?? "no response") : parts.join(" ");
-  return `${end.router} answers it itself: ${said}`;
+  return `${end.router} ${answers} it itself: ${said}`;
 }
 
 function refusedLines(matches: RoutingMatchRecord[]): string {
   return matches
     .map((match) => `      ${match.matchId}${matchText(match)}`)
+    .join("\n");
+}
+
+/**
+ * Where a reference went, and why nobody could follow it. A reader that
+ * names the node itself as the reference (a target group nothing
+ * registers behind) has already said which node this is, so the line
+ * does not repeat it.
+ */
+function unfollowedLines(node: string, edges: UnfollowedEdge[]): string {
+  return edges
+    .map((edge) => {
+      const who = edge.matchId === null ? "the wiring" : edge.matchId;
+      const to =
+        edge.reference === null || edge.reference === node
+          ? ""
+          : ` to ${edge.reference}`;
+      const why =
+        edge.reason === null ? "nothing here answers to it" : edge.reason;
+      return `      ${who} sends it on${to}: ${why}`;
+    })
     .join("\n");
 }
 
@@ -286,30 +316,49 @@ function claimLine(
   return `    ${summary.identity.name} ${answers}${serves}   (${summary.location.file})`;
 }
 
-interface EndContext {
+interface FlowRenderContext {
   request: FlowRequest;
   byRef: Map<string, BehavioralSummary>;
 }
 
+interface EndContext extends FlowRenderContext {
+  /**
+   * The certainty of the chain this ending closes, which is what every
+   * line of it has to read as. A hop nobody could settle leaves the
+   * whole chain unsettled, and a terminal line saying a handler answers
+   * the request is the line somebody pastes into a ticket.
+   */
+  certainty: FlowCertainty;
+}
+
 function renderEnd(end: FlowEnd, context: EndContext): string {
+  const settled = context.certainty === "certain";
   const renderers: DispatchTable<FlowEnd, string> = {
     serves: (served) =>
       [
-        `  ${served.unit} serves it`,
+        `  ${served.unit} ${settled ? "serves it" : "may serve it"}`,
         ...served.claims.map((claim) =>
-          claimLine(claim.ref, claim.certainty, context.byRef),
+          claimLine(claim.ref, context.certainty, context.byRef),
         ),
       ].join("\n"),
-    answers: (answered) => `  ${responseText(answered)}`,
+    answers: (answered) => `  ${responseText(answered, context.certainty)}`,
     unserved: (unserved) =>
-      `  ${unserved.unit} takes it, and nothing suss can read inside it answers ${context.request.method} ${context.request.path}`,
+      `  ${unserved.unit} ${settled ? "takes it" : "may take it"}, and nothing suss can read inside it answers ${context.request.method} ${context.request.path}`,
+    unfollowed: (lost) =>
+      [
+        `  ${lost.node} ${settled ? "sends it on" : "may send it on"}, and suss cannot follow where:`,
+        unfollowedLines(lost.node, lost.edges),
+      ].join("\n"),
     stops: (stopped) => {
+      const reached = settled
+        ? `Nothing below ${stopped.node} takes it`
+        : `If the request gets to ${stopped.node}, nothing below it takes it`;
       if (stopped.refused.length === 0) {
-        return `  The wiring ends at ${stopped.node}: nothing below it is declared`;
+        return `  ${reached}: nothing below it is declared`;
       }
 
       return [
-        `  Nothing below ${stopped.node} takes it. What is declared there:`,
+        `  ${reached}. What is declared there:`,
         refusedLines(stopped.refused),
       ].join("\n");
     },
@@ -318,11 +367,11 @@ function renderEnd(end: FlowEnd, context: EndContext): string {
   return dispatchByType(renderers, end);
 }
 
-function renderChain(chain: FlowChain, context: EndContext): string {
+function renderChain(chain: FlowChain, context: FlowRenderContext): string {
   return [
     `  ${chain.entry}`,
     ...chain.hops.map(hopLine),
-    renderEnd(chain.end, context),
+    renderEnd(chain.end, { ...context, certainty: chain.certainty }),
   ].join("\n");
 }
 
@@ -344,21 +393,38 @@ function heading(certainty: FlowCertainty, chains: FlowChain[]): string {
     return `Nothing serves it. What answers it instead${openEnded}:`;
   }
 
+  if (chains.some((chain) => chain.end.type === "unfollowed")) {
+    return "Nothing suss can name serves it. Where the trail ends:";
+  }
+
   return `Nothing serves it. Where the request stops${openEnded}:`;
+}
+
+/**
+ * What was left out, when the walk found more chains than an answer
+ * keeps. The count is a floor once the walk stopped enumerating, and it
+ * says so, because a wrong number reads worse than a bounded one.
+ */
+function omittedLine(omitted: FlowChainsOmitted): string {
+  const count = omitted.exact
+    ? `${omitted.count}`
+    : `more than ${omitted.count}`;
+  const chains = omitted.count === 1 && omitted.exact ? "chain" : "chains";
+  return `and ${count} more ${chains} not shown; ask about a node further in with --entry to see them.`;
 }
 
 function renderFlow(
   request: FlowRequest,
   entry: FlowEntry,
-  chains: FlowChain[],
+  view: { chains: FlowChain[]; omitted: FlowChainsOmitted },
   byRef: Map<string, BehavioralSummary>,
 ): string {
-  const context: EndContext = { request, byRef };
+  const context: FlowRenderContext = { request, byRef };
   const lines = [
     requestLine(request),
     `in by ${entry.name}, declared in ${entry.scope}`,
   ];
-  if (chains.length === 0) {
+  if (view.chains.length === 0) {
     lines.push(
       "",
       `Nothing serves it: ${entry.name} hands ${request.method} ${request.path} to nothing at all.`,
@@ -367,7 +433,7 @@ function renderFlow(
   }
 
   for (const certainty of ["certain", "possible"] as FlowCertainty[]) {
-    const group = chains.filter((chain) => chain.certainty === certainty);
+    const group = view.chains.filter((chain) => chain.certainty === certainty);
     if (group.length === 0) {
       continue;
     }
@@ -377,6 +443,11 @@ function renderFlow(
       lines.push("", renderChain(chain, context));
     }
   }
+
+  if (view.omitted.count > 0) {
+    lines.push("", omittedLine(view.omitted));
+  }
+
   return `${lines.join("\n")}\n`;
 }
 
@@ -436,6 +507,7 @@ export async function inspectFlow(options: FlowOptions): Promise<number> {
         request: parsed.request,
         entry: chosen.entry,
         chains: view.chains,
+        omitted: view.omitted,
       },
       indent: 2,
     });
@@ -445,8 +517,6 @@ export async function inspectFlow(options: FlowOptions): Promise<number> {
   const byRef = new Map(
     summaries.map((summary) => [summaryRef(summary), summary]),
   );
-  process.stdout.write(
-    renderFlow(parsed.request, chosen.entry, view.chains, byRef),
-  );
+  process.stdout.write(renderFlow(parsed.request, chosen.entry, view, byRef));
   return 0;
 }

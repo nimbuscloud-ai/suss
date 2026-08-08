@@ -19,7 +19,11 @@ import type {
   RoutingMatchCondition,
   RoutingMatchRecord,
 } from "@suss/behavioral-ir";
-import type { AnsweredMatch, FlowInputs } from "./routingFacts.js";
+import type {
+  AnsweredMatch,
+  FlowInputs,
+  UnfollowedEdge,
+} from "./routingFacts.js";
 
 /** Settled by the declarations, or waiting on something they do not say. */
 export type FlowCertainty = "certain" | "possible";
@@ -65,6 +69,7 @@ export type FlowEnd =
       certainty: FlowCertainty;
     }
   | { type: "unserved"; unit: string }
+  | { type: "unfollowed"; node: string; edges: UnfollowedEdge[] }
   | { type: "stops"; node: string; refused: RoutingMatchRecord[] }
   | { type: "loops"; node: string };
 
@@ -73,6 +78,18 @@ export interface FlowChain {
   hops: FlowHop[];
   end: FlowEnd;
   certainty: FlowCertainty;
+}
+
+/** Chains an answer left out, and whether the walk got to count them all. */
+export interface FlowChainsOmitted {
+  count: number;
+  /** False when the walk stopped enumerating, so `count` is a floor. */
+  exact: boolean;
+}
+
+export interface FlowChains {
+  chains: FlowChain[];
+  omitted: FlowChainsOmitted;
 }
 
 /** What the walk settled for this request, keyed the way the walk keys nodes. */
@@ -94,6 +111,15 @@ export interface FlowChainContext {
  * for a page answers nobody.
  */
 const MAX_CHAINS = 50;
+
+/**
+ * How many chains the walk finds before it stops looking. Past the
+ * display limit it keeps enumerating, so the answer can say how many
+ * more there were rather than dropping them in silence; past this one
+ * the count becomes a floor, because a graph can branch faster than
+ * anybody wants to wait.
+ */
+const MAX_CHAINS_FOUND = 500;
 
 interface Adjacency {
   to: string;
@@ -147,12 +173,14 @@ function adjacencyOf(inputs: FlowInputs): Map<string, Adjacency[]> {
 export function buildFlowChains(
   ctx: FlowChainContext,
   entryNode: string,
-): FlowChain[] {
+): FlowChains {
   const adjacency = adjacencyOf(ctx.inputs);
   const bare = (key: string): string => ctx.inputs.nodeNames.get(key) ?? key;
   const chains: FlowChain[] = [];
+  let found = 0;
 
   const record = (hops: FlowHop[], end: FlowEnd, certainty: FlowCertainty) => {
+    found += 1;
     if (chains.length >= MAX_CHAINS) {
       return;
     }
@@ -166,17 +194,19 @@ export function buildFlowChains(
   };
 
   const walk = (node: string, hops: FlowHop[], onPath: Set<string>): void => {
-    if (chains.length >= MAX_CHAINS) {
+    if (found >= MAX_CHAINS_FOUND) {
       return;
     }
 
     const answered = recordAnswers(ctx, node, hops, record);
     const served = recordServing(ctx, node, hops, record);
+    const lost = recordUnfollowed(ctx, node, hops, bare, record);
     const onward = takeable(ctx, adjacency.get(node) ?? []);
     if (onward.length === 0) {
-      // A node that answered or served has said what happens to the
-      // request; the rules it also refused are not the story there.
-      if (!served && !answered) {
+      // A node that answered, served, or ran out of trail has said what
+      // happens to the request; the rules it also refused are not the
+      // story there.
+      if (!served && !answered && !lost) {
         record(hops, terminalEnd(ctx, node, bare), "certain");
       }
 
@@ -198,7 +228,13 @@ export function buildFlowChains(
   };
 
   walk(entryNode, [], new Set([entryNode]));
-  return chains;
+  return {
+    chains,
+    omitted: {
+      count: found - chains.length,
+      exact: found < MAX_CHAINS_FOUND,
+    },
+  };
 }
 
 /** The edges out of a node the request can take: refused matches are not among them. */
@@ -299,6 +335,42 @@ function recordAnswers(
   }
 
   return answered;
+}
+
+/**
+ * An edge out of this node that the request takes and nothing here can
+ * follow: the far end never resolved, so the walk has to stop, and the
+ * answer says which rule sent it there and why the trail ended rather
+ * than reporting the node as a place where nothing is declared.
+ */
+function recordUnfollowed(
+  ctx: FlowChainContext,
+  node: string,
+  hops: FlowHop[],
+  bare: (key: string) => string,
+  record: ChainRecorder,
+): boolean {
+  const taken = (ctx.inputs.edges.unfollowed.get(node) ?? []).filter(
+    (edge) =>
+      edge.scopedMatchId === null ||
+      ctx.admits.has(edge.scopedMatchId) ||
+      ctx.mayAdmit.has(edge.scopedMatchId),
+  );
+  if (taken.length === 0) {
+    return false;
+  }
+
+  const certainty = taken.every(
+    (edge) => edge.scopedMatchId === null || ctx.admits.has(edge.scopedMatchId),
+  )
+    ? "certain"
+    : "possible";
+  record(
+    hops,
+    { type: "unfollowed", node: bare(node), edges: taken },
+    certainty,
+  );
+  return true;
 }
 
 /** A unit whose own boundaries answer the request ends a chain there. */

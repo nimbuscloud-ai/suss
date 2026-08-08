@@ -32,6 +32,39 @@ export {
 } from "@suss/ir-core";
 
 /**
+ * A document label written by a reader: the reader's name, a colon, and
+ * where the document sits. The `(?!:)` keeps the `::` of a summary ref
+ * out of it, so a rule naming source code never looks like one of these.
+ */
+const READER_LABEL = /^([a-z][a-z0-9-]*):(?!:)(.+)$/;
+
+/**
+ * Does a rule's `summary` name this summary? Exact match first. Then
+ * the one legacy spelling: a manifest reader used to label a document
+ * by its file name alone, so `cloudformation:template.yaml` named every
+ * template.yaml a run read at once. The label now carries the path, and
+ * an old rule would quietly stop matching, so a rule naming a document
+ * by file name still matches that reader's documents with that file
+ * name. It matches exactly the set it matched before the label
+ * changed, and nothing more: a rule with no reader label (every rule
+ * naming source code) and a rule already written with a path both take
+ * the exact comparison above.
+ */
+function summaryMatches(ruleSummary: string, findingSummary: string): boolean {
+  if (ruleSummary === findingSummary) {
+    return true;
+  }
+
+  const named = READER_LABEL.exec(ruleSummary);
+  const found = READER_LABEL.exec(findingSummary);
+  if (named === null || found === null || named[1] !== found[1]) {
+    return false;
+  }
+
+  return !named[2].includes("/") && found[2].endsWith(`/${named[2]}`);
+}
+
+/**
  * Both sides of a finding carry the same two discriminators, so one
  * helper answers for either side.
  */
@@ -42,7 +75,10 @@ function ruleSideMatches(
   if (side === undefined) {
     return true;
   }
-  if (side.summary !== undefined && side.summary !== findingSide.summary) {
+  if (
+    side.summary !== undefined &&
+    !summaryMatches(side.summary, findingSide.summary)
+  ) {
     return false;
   }
   if (
@@ -68,7 +104,11 @@ function providerSideMatches(
   if (side?.summary === undefined || side.transitionId !== undefined) {
     return false;
   }
-  return finding.sources?.includes(side.summary) ?? false;
+
+  const named = side.summary;
+  return (
+    finding.sources?.some((source) => summaryMatches(named, source)) ?? false
+  );
 }
 
 function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {

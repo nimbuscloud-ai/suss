@@ -30,7 +30,11 @@ import type {
   RouterMatchSelector,
 } from "@suss/behavioral-ir";
 import type { Rule } from "@suss/datalog";
-import type { FlowChain, FlowServingClaim } from "./flowChains.js";
+import type {
+  FlowChain,
+  FlowChainsOmitted,
+  FlowServingClaim,
+} from "./flowChains.js";
 import type {
   AnsweredMatch,
   FlowInputs,
@@ -164,6 +168,8 @@ export interface FlowView {
   claims: FlowEndpointSets;
   /** The same answer as a route: each path the request takes, hop by hop. */
   chains: FlowChain[];
+  /** Chains beyond the ones kept, so an answer can say it is not the whole of it. */
+  omitted: FlowChainsOmitted;
 }
 
 /** A node a question can start from: one that hands traffic on and takes none. */
@@ -400,6 +406,7 @@ const EMPTY_VIEW: FlowView = {
   answers: { certain: [], possible: [] },
   claims: { certain: [], possible: [] },
   chains: [],
+  omitted: { count: 0, exact: true },
 };
 
 /**
@@ -423,6 +430,12 @@ function entryNodes(inputs: FlowInputs): FlowEntry[] {
   for (const [listener, balancer] of inputs.edges.belongsTo) {
     entered.add(listener);
     leaves.add(balancer);
+  }
+
+  // A node whose only edge out is one nothing could follow still hands
+  // traffic on, and is still where a question starts.
+  for (const node of inputs.edges.unfollowed.keys()) {
+    leaves.add(node);
   }
 
   const entries: FlowEntry[] = [];
@@ -488,6 +501,16 @@ export function analyzeFlow(
         };
       const byMatchId = (a: AnsweredMatch, b: AnsweredMatch): number =>
         a.matchId.localeCompare(b.matchId);
+      const walked = buildFlowChains(
+        {
+          inputs,
+          admits: admissions.admits,
+          mayAdmit: admissions.may,
+          serving: serving.byUnit,
+          reachable: new Set([entryNode, ...mayNodes]),
+        },
+        entryNode,
+      );
 
       return {
         nodes: endpointSets(certainNodes, mayNodes, bare),
@@ -508,16 +531,8 @@ export function analyzeFlow(
           targetsOf(db, "mayServedBy", entryNode),
           (key) => key,
         ),
-        chains: buildFlowChains(
-          {
-            inputs,
-            admits: admissions.admits,
-            mayAdmit: admissions.may,
-            serving: serving.byUnit,
-            reachable: new Set([entryNode, ...mayNodes]),
-          },
-          entryNode,
-        ),
+        chains: walked.chains,
+        omitted: walked.omitted,
       };
     },
   };

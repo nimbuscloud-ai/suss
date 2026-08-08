@@ -367,7 +367,7 @@ rendering a file, and `--json` gives you that answer as data.
 
 Ask who serves a request, and get the chain back.
 
-**What it does.** Walks the routing those summaries declare, hop by
+**What it does.** Walks the routing a set of summaries declares, hop by
 hop, and answers with the entry the request came in by, every hop it
 took and the rule that admitted that hop, the unit it lands in, and the
 handler inside that unit.
@@ -416,8 +416,15 @@ carrying it is grouped under its own heading and says which hop is
 unsettled.
 
 When nothing serves the request, the answer says where the walk
-stopped: the response a listener's own default action gives it, or the
-last node it got to and the rules declared there that refused it.
+stopped: the response a listener's own default action gives it, the last
+node it got to and the rules declared there that refused it, or a rule
+that took the request and sent it somewhere nothing here resolved, which
+reads with the reference the document wrote and the reader's reason for
+stopping (a target another template declares, for instance).
+
+A question whose wiring branches wider than the answer prints ends with
+how many chains were left out, so a partial answer never reads as the
+whole of it. The JSON form carries the same count under `omitted`.
 
 Two documents that both declare a listener called `HttpListener` are
 two listeners, and neither one's rules may answer the other's question.

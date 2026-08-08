@@ -65,6 +65,18 @@ describe("documentSourceLabel", () => {
     ).toBe("cloudformation:https://example.com/infra/template.yaml");
   });
 
+  it("answers from the nearest repository, so a vendored one speaks for its own files", () => {
+    const outer = repository();
+    const inner = path.join(outer, "vendor", "widgets");
+    fs.mkdirSync(inner, { recursive: true });
+    fs.mkdirSync(path.join(inner, ".git"));
+    const file = write(outer, "vendor/widgets/infra/template.yaml");
+
+    expect(documentSourceLabel("cloudformation", file)).toBe(
+      "cloudformation:infra/template.yaml",
+    );
+  });
+
   it("falls back to the whole path for a file no repository holds", () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "suss-doc-label-"));
     made.push(outside);

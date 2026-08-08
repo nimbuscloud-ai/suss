@@ -621,6 +621,106 @@ describe("the chain behind an answer", () => {
     });
   });
 
+  it("says an admitted rule sent it somewhere nothing could follow", () => {
+    // The rule takes the request; its target lives in another stack, so
+    // the walk has nowhere to go. Reporting the node as declaring
+    // nothing would lose the one fact the reader needs.
+    const crossStack = [
+      routingSummary("forward", {
+        edge: "routesTo",
+        router: "L",
+        target: null,
+        unresolvedTarget: {
+          reference: "OrdersStack.TargetGroup",
+          reason: "declared in another template",
+        },
+        matchId: "yes-1",
+        conditions: [],
+        matchLanguage: "toy",
+      }),
+    ];
+    const [chain] = analyzeFlow(crossStack, REQUEST, TOY).from("L").chains;
+
+    expect(chain.certainty).toBe("certain");
+    expect(chain.end).toEqual({
+      type: "unfollowed",
+      node: "L",
+      edges: [
+        {
+          matchId: "yes-1",
+          scopedMatchId: scopedFlowNode(DOCUMENT, "yes-1"),
+          reference: "OrdersStack.TargetGroup",
+          reason: "declared in another template",
+        },
+      ],
+    });
+  });
+
+  it("keeps a rule that refused out of the trail-ends answer", () => {
+    const refusedCrossStack = [
+      routingSummary("forward", {
+        edge: "routesTo",
+        router: "L",
+        target: null,
+        unresolvedTarget: { reference: "Gone", reason: "not declared" },
+        matchId: "no-1",
+        conditions: [],
+        matchLanguage: "toy",
+      }),
+    ];
+    const [chain] = analyzeFlow(refusedCrossStack, REQUEST, TOY).from(
+      "L",
+    ).chains;
+
+    expect(chain.end.type).toBe("stops");
+  });
+
+  it("says a target group fronts something it could not follow", () => {
+    const dangling = [
+      routingSummary("forward", {
+        edge: "routesTo",
+        router: "L",
+        target: "Tg",
+        matchId: "yes-1",
+        conditions: [],
+        matchLanguage: "toy",
+      }),
+      routingSummary("backing", {
+        edge: "fronts",
+        target: "Tg",
+        resource: null,
+        unresolvedResource: {
+          reference: "arn:aws:elasticloadbalancing:...",
+          reason: "an arn no resource in this template answers to",
+        },
+      }),
+    ];
+    const [chain] = analyzeFlow(dangling, REQUEST, TOY).from("L").chains;
+
+    expect(chain.end).toMatchObject({ type: "unfollowed", node: "Tg" });
+  });
+
+  it("counts the chains it did not keep rather than dropping them silently", () => {
+    // One router forwarding to 60 target groups: more chains than an
+    // answer prints, and the answer has to say how many more.
+    const many = [
+      ...Array.from({ length: 60 }, (_, index) =>
+        routingSummary(`edge-${index}`, {
+          edge: "routesTo",
+          router: "L",
+          target: `Tg${index}`,
+          matchId: `yes-${index}`,
+          conditions: [],
+          matchLanguage: "toy",
+        }),
+      ),
+    ];
+    const view = analyzeFlow(many, REQUEST, TOY).from("L");
+
+    expect(view.chains).toHaveLength(50);
+    expect(view.omitted).toEqual({ count: 10, exact: true });
+  });
+
   it("reports a cycle as a loop rather than walking it twice", () => {
     const cyclic = [
       routingSummary("out", {

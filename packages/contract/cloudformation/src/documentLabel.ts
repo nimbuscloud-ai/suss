@@ -19,6 +19,12 @@ const URL_ORIGIN = /^https?:\/\//i;
  * The repository the file belongs to: the nearest ancestor holding a
  * `.git` entry. A linked worktree writes a file there rather than a
  * directory, so both count.
+ *
+ * Nearest, not outermost, which is worth knowing: a repository vendored
+ * inside another repository answers for its own files, so two of its
+ * documents that sit at the same path within it collide again. A caller
+ * that reads across such a tree passes `source` and says what each
+ * document is called.
  */
 function repositoryRoot(file: string): string | null {
   let dir = path.dirname(file);

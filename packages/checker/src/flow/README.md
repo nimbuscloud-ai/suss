@@ -63,4 +63,10 @@ The residual hole is names that cross documents by design, like channels.
 - `flowChains.ts` reconstructs the route behind an answer: the hops a request
   took and the match record that carried each one, so a person can be told
   which rule sent them where. It only steps into nodes the fixpoint already
-  put in reach, so the chains and the reachable sets cannot disagree.
+  put in reach, so the chains and the reachable sets cannot disagree. A rule
+  that took the request and named a target nothing resolved ends its chain as
+  `unfollowed`, carrying the reference and the reader's reason, because "the
+  request goes here and suss cannot say what happens next" and "nothing is
+  declared here" are different answers. It keeps a bounded number of chains
+  and reports how many more it found, so a wide answer is never quietly a
+  partial one.

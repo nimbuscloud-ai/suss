@@ -79,6 +79,27 @@ export interface RoutingEdgeFacts {
   answers: Map<string, ScopedAnswer>;
   /** Keyed by the scoped router node. */
   routers: Map<string, RouterMatches>;
+  /** Keyed by the scoped node the edge leaves: what it forwards to, that nothing here could follow. */
+  unfollowed: Map<string, UnfollowedEdge[]>;
+}
+
+/**
+ * An edge a document declares whose far end nothing resolved: a
+ * cross-stack import, a reference to a resource another template owns.
+ * It joins nothing, so the walk cannot take it, and dropping it would
+ * turn "the request goes here and suss cannot say what happens next"
+ * into "nothing is declared here". They are different answers, so the
+ * reference and the reader's reason travel with the edge.
+ */
+export interface UnfollowedEdge {
+  /** The match that has to take the request for this edge to matter, or null when the wiring itself declares it. */
+  matchId: string | null;
+  /** The same match, keyed the way admissions are, so a reader can ask whether it took the request. */
+  scopedMatchId: string | null;
+  /** The reference as the document wrote it. */
+  reference: string | null;
+  /** Why the reader stopped there. */
+  reason: string | null;
 }
 
 /** One deployable unit as a walk node: its document scope and the bare instance name. */
@@ -125,6 +146,7 @@ export function collectFlowInputs(summaries: BehavioralSummary[]): FlowInputs {
       belongsTo: [],
       answers: new Map(),
       routers: new Map(),
+      unfollowed: new Map(),
     },
     units: new Set(),
     claims: [],
@@ -165,11 +187,26 @@ type EdgeReaders = {
 const EDGE_READERS: EdgeReaders = {
   routesTo(routing, scope, inputs) {
     recordMatch(routing, scope, inputs);
+    if (routing.weight === 0) {
+      return;
+    }
+
+    if (unset(routing.target) && !unset(routing.router)) {
+      recordUnfollowed(inputs, registerNode(inputs, scope, routing.router), {
+        matchId: routing.matchId ?? null,
+        scopedMatchId: unset(routing.matchId)
+          ? null
+          : scopedFlowNode(scope, routing.matchId),
+        reference: routing.unresolvedTarget?.reference ?? null,
+        reason: routing.unresolvedTarget?.reason ?? null,
+      });
+      return;
+    }
+
     if (
       unset(routing.router) ||
       unset(routing.target) ||
-      unset(routing.matchId) ||
-      routing.weight === 0
+      unset(routing.matchId)
     ) {
       return;
     }
@@ -198,6 +235,16 @@ const EDGE_READERS: EdgeReaders = {
     });
   },
   fronts(routing, scope, inputs) {
+    if (unset(routing.resource) && !unset(routing.target)) {
+      recordUnfollowed(inputs, registerNode(inputs, scope, routing.target), {
+        matchId: null,
+        scopedMatchId: null,
+        reference: routing.unresolvedResource?.reference ?? null,
+        reason: routing.unresolvedResource?.reason ?? null,
+      });
+      return;
+    }
+
     if (unset(routing.target) || unset(routing.resource)) {
       return;
     }
@@ -218,6 +265,17 @@ const EDGE_READERS: EdgeReaders = {
     ]);
   },
 };
+
+function recordUnfollowed(
+  inputs: FlowInputs,
+  node: string,
+  edge: UnfollowedEdge,
+): void {
+  inputs.edges.unfollowed.set(node, [
+    ...(inputs.edges.unfollowed.get(node) ?? []),
+    edge,
+  ]);
+}
 
 /**
  * File a routesTo / answers row under its router's matches. A weighted
