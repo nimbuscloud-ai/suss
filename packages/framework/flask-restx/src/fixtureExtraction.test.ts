@@ -5,8 +5,9 @@
 // (sourced from nothing private) anchoring the shape the proposal's
 // corpus measurement found: an internal wrapper module re-exporting
 // flask-restx's route decorator, route files importing it (one
-// aliased), and a FastAPI-style file with annotated parameters and a
-// response model class. `pairSummaries` (the same pairing @suss/checker
+// aliased), namespaces constructed with a path and mounted with
+// `add_namespace`, and a FastAPI-style file with annotated parameters
+// and a response model class. `pairSummaries` (the same pairing @suss/checker
 // runs for same-language boundaries) buckets the extracted provider
 // routes against hand-built consumer summaries by method and path
 // alone, which is the existence-pairing acceptance bar the proposal
@@ -101,6 +102,13 @@ function consumer(
   };
 }
 
+/** Everything a summary says about what nobody could read, as one string to match against. */
+function gapTextOf(summary: BehavioralSummary | undefined): string {
+  return summary === undefined
+    ? ""
+    : summary.gaps.map((gap) => gap.description).join("\n");
+}
+
 async function extractFixture() {
   const files = findPythonFiles(fixtureRoot);
   return extractPythonProject({
@@ -124,6 +132,12 @@ describe("extraction over fixtures/python-webapp", () => {
         "OrderDetail.get",
         "OrderDetail.delete",
         "UserList.get",
+        "BehaviorList.get",
+        "BehaviorDetail.get",
+        "InvoiceList.get",
+        "InvoiceDetail.get",
+        "ReportDetail.get",
+        "ExportDetail.get",
         "read_item",
         "create_item",
       ].sort(),
@@ -169,6 +183,104 @@ describe("extraction over fixtures/python-webapp", () => {
     ]);
   });
 
+  it("serves a namespace's routes under the path the namespace was constructed with", async () => {
+    const { summaries } = await extractFixture();
+    const detail = summaries.find(
+      (s) => s.identity.name === "BehaviorDetail.get",
+    );
+    expect(detail?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/behaviors/{school_id}/{behavior_id}",
+    });
+  });
+
+  it("reads an empty route path as the namespace's own path, parameter roles and all", async () => {
+    // The resource sitting at the mount point writes no path of its
+    // own, and its only parameter is named in the namespace's path.
+    // Both readings come from the same composition.
+    const { summaries } = await extractFixture();
+    const list = summaries.find((s) => s.identity.name === "BehaviorList.get");
+    expect(list?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/behaviors/{school_id}",
+    });
+    expect(list?.inputs).toEqual([
+      {
+        type: "parameter",
+        name: "school_id",
+        position: 1,
+        role: "pathParams",
+        shape: null,
+      },
+    ]);
+  });
+
+  it("serves a namespace written with a trailing slash where the library serves it", async () => {
+    // flask-restx holds the path with trailing slashes stripped, so
+    // joining what the source wrote would report a doubled slash the
+    // app never serves.
+    const { summaries } = await extractFixture();
+    const paths = ["InvoiceList.get", "InvoiceDetail.get"].map((name) => {
+      const semantics = summaries.find((s) => s.identity.name === name)
+        ?.identity.boundaryBinding?.semantics;
+      return semantics?.name === "rest" ? semantics.path : undefined;
+    });
+    expect(paths).toEqual(["/invoices", "/invoices/{invoice_id}"]);
+  });
+
+  it("names no path for a namespace whose path is not a literal", async () => {
+    const { summaries } = await extractFixture();
+    const report = summaries.find(
+      (s) => s.identity.name === "ReportDetail.get",
+    );
+    expect(report?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(gapTextOf(report)).toContain(
+      "declares a prefix that is not a string literal",
+    );
+  });
+
+  it("names no role either, for a route whose path nobody could read", async () => {
+    // `report_id` is a path parameter, and the only thing that would
+    // say so is the path. Calling it a query parameter because the
+    // path went unread is the same confident guess the composed path
+    // exists to remove.
+    const { summaries } = await extractFixture();
+    const report = summaries.find(
+      (s) => s.identity.name === "ReportDetail.get",
+    );
+    expect(report?.inputs).toEqual([
+      {
+        type: "parameter",
+        name: "report_id",
+        position: 1,
+        role: null,
+        shape: null,
+      },
+    ]);
+    expect(gapTextOf(report)).toContain(
+      "its parameters name no role and a path parameter here does not read as one",
+    );
+  });
+
+  it("names no path for a namespace mounted more than once", async () => {
+    const { summaries } = await extractFixture();
+    const exported = summaries.find(
+      (s) => s.identity.name === "ExportDetail.get",
+    );
+    expect(exported?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(gapTextOf(exported)).toContain("is mounted more than once");
+  });
+
   it("every discovered route is low-confidence: v0 reads no body", async () => {
     const { summaries } = await extractFixture();
     expect(summaries.every((s) => s.confidence.level === "low")).toBe(true);
@@ -180,6 +292,10 @@ describe("extraction over fixtures/python-webapp", () => {
       consumer("listTodos", "GET", "/todos"),
       consumer("getOrder", "GET", "/orders/{order_id}"),
       consumer("readItem", "GET", "/items/{item_id}"),
+      // The path this consumer calls only exists once the namespace's
+      // own path is composed in front of the route's; against the route
+      // path alone it lands unmatched.
+      consumer("listBehaviors", "GET", "/behaviors/{school_id}"),
       consumer("getNothing", "GET", "/does-not-exist"),
     ];
 
@@ -193,6 +309,7 @@ describe("extraction over fixtures/python-webapp", () => {
         "listTodos<->TodoList.get",
         "getOrder<->OrderDetail.get",
         "readItem<->read_item",
+        "listBehaviors<->BehaviorList.get",
       ].sort(),
     );
 

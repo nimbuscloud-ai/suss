@@ -3,13 +3,21 @@
 // A spec describes a small web app in the shapes the shipped Python
 // packs read (fastapi's decorated function routes with router
 // mounting, flask-restx's decorated resource classes behind a direct
-// import or a project wrapper module) plus the shapes those packs
-// document as abstentions: a path that is not a string literal, a
-// computed prefix, a router variable assigned twice, a router mounted
-// twice or never or onto another router. Rendering produces the
-// program's files and, alongside them, one `PyRouteIntent` per
-// declared route saying where the running app will serve it and
-// whether extraction is expected to claim that path or abstain.
+// import, a project wrapper module, or a namespace the app mounts)
+// plus the shapes those packs document as abstentions: a path that is
+// not a string literal, a computed prefix, a namespace with no path
+// of its own or a mount that overrides it, a router or namespace
+// variable assigned twice, one mounted twice or never or onto another
+// router. Rendering produces the program's files and, alongside them,
+// one `PyRouteIntent` per declared route saying where the running app
+// will serve it and whether extraction is expected to claim that path
+// or abstain.
+//
+// The two frameworks carry the same dimensions on purpose. A mount
+// the generator always writes one way is a mount the differential
+// cannot judge: while every generated namespace mounted at "/", a
+// pack that ignored namespace paths entirely scored the same as one
+// that composed them.
 //
 // Bodies stay inside what v0 extraction reads, which is declarations
 // only: an annotated handler returns a dict matching its annotation,
@@ -114,9 +122,69 @@ export interface FlaskResourceSpec {
 /** How the route decorator reaches the resource file: flask_restx directly, or a project wrapper module, imported plain or aliased. */
 export type FlaskImportStyle = "direct" | "wrapper" | "wrapperAliased";
 
+/**
+ * How a namespace states the path its resources hang under. The
+ * library keeps that path with trailing slashes stripped and falls
+ * back to one it derives from the namespace's name, so what the
+ * source writes and what the app serves come apart in exactly the
+ * ways this union names.
+ */
+export type FlaskNamespacePath =
+  /** `path="/nsK"`, or `path="/nsK/"` with `trailingSlash`, which serves the same paths. */
+  | { type: "literal"; trailingSlash: boolean }
+  /** `path="/"`, which adds nothing to the paths its routes are served at. */
+  | { type: "root" }
+  /** No `path` at all: the library serves the namespace under its name. */
+  | { type: "absent" }
+  /** `path=""`, `path=None`, `path=False`, `path=0`: all falsy, and the library serves all of them under the name, same as writing none. */
+  | { type: "noValue"; written: FlaskNoValue }
+  /** `path=NS_PATH_K`, a module constant rather than a literal. */
+  | { type: "computed" };
+
+/** The spellings of a value flask-restx reads as no value at all, at either site. */
+export type FlaskNoValue = "empty" | "none" | "false" | "zero";
+
+/** How the mount call states a path of its own, if it states one. */
+export type FlaskNamespaceMountPath =
+  /** `add_namespace(ns)`, leaving the namespace where its constructor put it. */
+  | { type: "absent" }
+  /** `add_namespace(ns, path="/oK")`, which replaces the namespace's own path. */
+  | { type: "override" }
+  /** A falsy path at the mount, which the library reads as no override at all. */
+  | { type: "noValue"; written: FlaskNoValue }
+  /** `add_namespace(ns, path=OVERRIDE_K)`, a module constant rather than a literal. */
+  | { type: "computed" };
+
+/**
+ * One namespace, its resources, and how the app mounts it. "mounted"
+ * is the shape the pack claims paths for; the rest are the mount
+ * readings it documents as abstentions, the same list the FastAPI
+ * router groups cover.
+ */
+export type FlaskNamespaceSpec =
+  | {
+      type: "mounted";
+      path: FlaskNamespacePath;
+      /** What the mount call says about the path, which for this library can override the namespace's own. */
+      mountPath: FlaskNamespaceMountPath;
+      /** Declares the first resource with an empty route path, the idiom for the mount point itself. */
+      emptyPathResource: boolean;
+      resources: FlaskResourceSpec[];
+    }
+  | { type: "unmounted"; resources: FlaskResourceSpec[] }
+  | { type: "mountedTwice"; resources: FlaskResourceSpec[] }
+  | {
+      type: "reassigned";
+      firstResources: FlaskResourceSpec[];
+      secondResources: FlaskResourceSpec[];
+    };
+
 export interface FlaskProgramSpec {
   importStyle: FlaskImportStyle;
+  /** Resources decorated through the app's own `Api` or the project wrapper, with no namespace of their own. */
   resources: FlaskResourceSpec[];
+  /** Resources declared on a namespace, one module per namespace, mounted from main.py. */
+  namespaces: FlaskNamespaceSpec[];
 }
 
 export type PythonProgramSpec =
@@ -679,14 +747,14 @@ function flaskResourceLines(
   resource: FlaskResourceSpec,
   ri: number,
   routeDecorator: string,
+  writtenPath: string,
 ): string[] {
   const className = flaskResourceName(resource, ri);
-  const path = flaskResourcePath(resource, ri);
   const needsShape = resource.methods.some((m) => m.annotated);
   const shapeName = needsShape ? `Shape${ri}` : null;
   const pathExpr = resource.pathComputed
-    ? `BASE_${ri} + "${path}"`
-    : `"${path}"`;
+    ? `BASE_${ri} + "${writtenPath}"`
+    : `"${writtenPath}"`;
 
   return [
     ...(shapeName !== null
@@ -713,23 +781,303 @@ function canonicalFlaskPath(path: string): string {
   return path.replace(/<(?:\w+(?:\(.*?\))?:)?(\w+)>/g, "{$1}");
 }
 
-function flaskIntents(spec: FlaskProgramSpec): PyRouteIntent[] {
-  return spec.resources.flatMap((resource, ri) => {
-    const className = flaskResourceName(resource, ri);
-    const path = flaskResourcePath(resource, ri);
-    const served = canonicalFlaskPath(
-      resource.pathComputed ? `/b${ri}${path}` : path,
+interface FlaskRenderState {
+  resourceIndex: number;
+  intents: PyRouteIntent[];
+}
+
+interface RenderFlaskResourcesOptions {
+  resources: FlaskResourceSpec[];
+  state: FlaskRenderState;
+  /** What the resource decorator is written as at this site (`api.route`, `route`, `ns.route`). */
+  routeDecorator: string;
+  /** What the app puts in front of every resource's own path here, already as the library holds it. */
+  prefix: string;
+  /** Whether a literal-path resource here is one the pack claims a path for. */
+  claimable: boolean;
+  /** Declares the first resource with an empty route path, which serves the prefix itself. Ignored when the prefix is empty, since the app refuses a rule with no path at all. */
+  emptyFirstPath?: boolean;
+  /** Overrides where the app serves these, for resources served nowhere. */
+  servedPathsOf?: (served: string) => string[];
+}
+
+/** Render a set of resources, recording one intent per declared method as it goes. */
+function renderFlaskResources(options: RenderFlaskResourcesOptions): string[] {
+  const lines: string[] = [];
+  for (const [index, resource] of options.resources.entries()) {
+    const ri = options.state.resourceIndex;
+    options.state.resourceIndex += 1;
+
+    const empty =
+      index === 0 && options.emptyFirstPath === true && options.prefix !== "";
+    // An empty route path states no parameter, so the methods must
+    // take none either: a handler asking for one the rule never binds
+    // is a program that answers 500, not a program under test.
+    const declared = empty ? { ...resource, hasPathParam: false } : resource;
+    const writtenPath = empty ? "" : flaskResourcePath(declared, ri);
+    lines.push(
+      ...flaskResourceLines(declared, ri, options.routeDecorator, writtenPath),
     );
-    return resource.methods.map(
-      (method): PyRouteIntent => ({
+
+    const suffix = declared.pathComputed
+      ? `/b${ri}${writtenPath}`
+      : writtenPath;
+    const served = canonicalFlaskPath(`${options.prefix}${suffix}`);
+    const className = flaskResourceName(declared, ri);
+    for (const method of declared.methods) {
+      options.state.intents.push({
         name: `${className}.${method.verb.toLowerCase()}`,
         method: method.verb,
-        servedPaths: [served],
-        expectation: resource.pathComputed ? "abstain" : "claim",
+        servedPaths:
+          options.servedPathsOf !== undefined
+            ? options.servedPathsOf(served)
+            : [served],
+        expectation:
+          options.claimable && !declared.pathComputed ? "claim" : "abstain",
         requestBody: null,
-      }),
-    );
+      });
+    }
+  }
+  return lines;
+}
+
+/** One namespace module, the import that reaches it from main.py, and the mount calls that put it on the app. */
+interface NamespaceRendering {
+  file: { path: string; lines: string[] };
+  mainImport: string;
+  mountLines: string[];
+}
+
+/** What the library holds a namespace's path as, and what the source writes to get it. */
+interface NamespacePathRendering {
+  /** The keyword argument on the constructor call, empty when the source writes none. */
+  constructorArg: string;
+  /** A module constant the constructor reads its path from, for the non-literal shape. */
+  prelude: string[];
+  /** The path the app serves this namespace's resources under. */
+  prefix: string;
+  /** Whether the pack reads this path, as opposed to documenting an abstention over it. */
+  readable: boolean;
+}
+
+function namespacePathRenderings(
+  k: number,
+): DispatchTable<FlaskNamespacePath, NamespacePathRendering> {
+  return {
+    literal: (path) => ({
+      constructorArg: `, path="/ns${k}${path.trailingSlash ? "/" : ""}"`,
+      prelude: [],
+      prefix: `/ns${k}`,
+      readable: true,
+    }),
+    root: () => ({
+      constructorArg: ', path="/"',
+      prelude: [],
+      prefix: "",
+      readable: true,
+    }),
+    // No path at all: the library serves the namespace under a path it
+    // derives from the name, which the pack declines to derive.
+    absent: () => ({
+      constructorArg: "",
+      prelude: [],
+      prefix: `/ns${k}`,
+      readable: false,
+    }),
+    // A falsy path is no path as far as the library is concerned, so
+    // all four spellings serve exactly where the absent one does.
+    noValue: (path) => ({
+      constructorArg: `, path=${FLASK_NO_VALUE_SOURCE[path.written]}`,
+      prelude: [],
+      prefix: `/ns${k}`,
+      readable: false,
+    }),
+    computed: () => ({
+      constructorArg: `, path=NS_PATH_${k}`,
+      prelude: [`NS_PATH_${k} = "/c${k}"`, ""],
+      prefix: `/c${k}`,
+      readable: false,
+    }),
+  };
+}
+
+function namespaceFileLines(body: string[]): string[] {
+  return ["from flask_restx import Namespace, Resource", "", "", ...body];
+}
+
+/** How each no-value spelling is written in Python. All four are falsy, which is the only thing the library asks. */
+const FLASK_NO_VALUE_SOURCE: Record<FlaskNoValue, string> = {
+  empty: '""',
+  none: "None",
+  false: "False",
+  zero: "0",
+};
+
+/** What the mount call writes, and what the app serves the namespace under once it has. */
+interface MountPathRendering {
+  /** The keyword argument on `add_namespace`, empty when the call states none. */
+  mountArg: string;
+  /** A module constant the mount reads its path from, for the non-literal shape. */
+  prelude: string[];
+  /** The path the app serves under, when the mount overrides the namespace's own; null when it leaves the namespace where it was. */
+  overridePrefix: string | null;
+  /** Whether the pack reads this mount, as opposed to documenting an abstention over it. */
+  readable: boolean;
+}
+
+function mountPathRenderings(
+  k: number,
+): DispatchTable<FlaskNamespaceMountPath, MountPathRendering> {
+  return {
+    absent: () => ({
+      mountArg: "",
+      prelude: [],
+      overridePrefix: null,
+      readable: true,
+    }),
+    // The mount states a path of its own, which replaces the
+    // namespace's rather than going in front of it. The library does
+    // not strip a trailing slash here, and the pack abstains anyway.
+    override: () => ({
+      mountArg: `, path="/o${k}"`,
+      prelude: [],
+      overridePrefix: `/o${k}`,
+      readable: false,
+    }),
+    // Falsy at the mount is no override at all, so the namespace
+    // stays where its constructor put it and the pack composes.
+    noValue: (mount) => ({
+      mountArg: `, path=${FLASK_NO_VALUE_SOURCE[mount.written]}`,
+      prelude: [],
+      overridePrefix: null,
+      readable: true,
+    }),
+    computed: () => ({
+      mountArg: `, path=OVERRIDE_${k}`,
+      prelude: [`OVERRIDE_${k} = "/mo${k}"`, ""],
+      overridePrefix: `/mo${k}`,
+      readable: false,
+    }),
+  };
+}
+
+function namespaceRenderers(
+  k: number,
+  state: FlaskRenderState,
+  apiVariable: string,
+): DispatchTable<FlaskNamespaceSpec, NamespaceRendering> {
+  const file = (lines: string[]) => ({
+    path: `namespaces/ns${k}.py`,
+    lines: namespaceFileLines(lines),
   });
+  const mainImport = `from PACKAGE.namespaces.ns${k} import ns as ns_${k}`;
+  const constructed = (name: string, arg: string) =>
+    `ns = Namespace("${name}"${arg})`;
+
+  return {
+    mounted: (namespace) => {
+      const path = dispatchByType(namespacePathRenderings(k), namespace.path);
+      const mount = dispatchByType(mountPathRenderings(k), namespace.mountPath);
+      // A mount that overrides the path serves under that one; a
+      // mount that states nothing leaves the namespace where its
+      // constructor put it.
+      const prefix = mount.overridePrefix ?? path.prefix;
+      // The composed path is readable only when both ends are: an
+      // override the pack declines to follow costs the namespace's
+      // own readable path too.
+      const claimable = path.readable && mount.readable;
+      return {
+        file: file([
+          ...path.prelude,
+          constructed(`ns${k}`, path.constructorArg),
+          "",
+          "",
+          ...renderFlaskResources({
+            resources: namespace.resources,
+            state,
+            routeDecorator: "ns.route",
+            prefix,
+            claimable,
+            emptyFirstPath: namespace.emptyPathResource,
+          }),
+        ]),
+        mainImport,
+        mountLines: [
+          ...mount.prelude,
+          `${apiVariable}.add_namespace(ns_${k}${mount.mountArg})`,
+        ],
+      };
+    },
+    unmounted: (namespace) => ({
+      file: file([
+        constructed(`ns${k}`, `, path="/u${k}"`),
+        "",
+        "",
+        ...renderFlaskResources({
+          resources: namespace.resources,
+          state,
+          routeDecorator: "ns.route",
+          prefix: `/u${k}`,
+          claimable: false,
+          servedPathsOf: () => [],
+        }),
+      ]),
+      mainImport,
+      mountLines: [],
+    }),
+    // Both mounts register the same resources at the same path, so the
+    // app serves one path and which mount put it there is not written
+    // down: the pack abstains rather than pick one.
+    mountedTwice: (namespace) => ({
+      file: file([
+        constructed(`ns${k}`, `, path="/t${k}"`),
+        "",
+        "",
+        ...renderFlaskResources({
+          resources: namespace.resources,
+          state,
+          routeDecorator: "ns.route",
+          prefix: `/t${k}`,
+          claimable: false,
+        }),
+      ]),
+      mainImport,
+      mountLines: [
+        `${apiVariable}.add_namespace(ns_${k})`,
+        `${apiVariable}.add_namespace(ns_${k})`,
+      ],
+    }),
+    // Decoration binds to whichever namespace the name holds at that
+    // point, so the first construction's resources are never mounted
+    // and never served. Extraction abstains on both sets.
+    reassigned: (namespace) => ({
+      file: file([
+        constructed(`ns${k}a`, `, path="/ra${k}"`),
+        "",
+        "",
+        ...renderFlaskResources({
+          resources: namespace.firstResources,
+          state,
+          routeDecorator: "ns.route",
+          prefix: `/ra${k}`,
+          claimable: false,
+          servedPathsOf: () => [],
+        }),
+        constructed(`ns${k}b`, `, path="/rb${k}"`),
+        "",
+        "",
+        ...renderFlaskResources({
+          resources: namespace.secondResources,
+          state,
+          routeDecorator: "ns.route",
+          prefix: `/rb${k}`,
+          claimable: false,
+        }),
+      ]),
+      mainImport,
+      mountLines: [`${apiVariable}.add_namespace(ns_${k})`],
+    }),
+  };
 }
 
 const FLASK_ROUTE_DECORATORS: Record<FlaskImportStyle, string> = {
@@ -738,25 +1086,64 @@ const FLASK_ROUTE_DECORATORS: Record<FlaskImportStyle, string> = {
   wrapperAliased: "api_route",
 };
 
+/** The `Api` variable main.py mounts namespaces on, which each import style names differently. */
+const FLASK_API_VARIABLES: Record<FlaskImportStyle, string> = {
+  direct: "api",
+  wrapper: "restx_api",
+  wrapperAliased: "restx_api",
+};
+
 function renderFlaskProgram(
   spec: FlaskProgramSpec,
   packageName: string,
 ): RenderedPythonProgram {
+  const state: FlaskRenderState = { resourceIndex: 0, intents: [] };
   const routeDecorator = FLASK_ROUTE_DECORATORS[spec.importStyle];
-  const resourceLines = spec.resources.flatMap((resource, ri) =>
-    flaskResourceLines(resource, ri, routeDecorator),
+  const apiVariable = FLASK_API_VARIABLES[spec.importStyle];
+
+  // Resources with no namespace of their own hang on whatever the
+  // import style gives them, and are served at the paths their
+  // decorators write.
+  const resourceLines = renderFlaskResources({
+    resources: spec.resources,
+    state,
+    routeDecorator,
+    prefix: "",
+    claimable: true,
+  });
+
+  const namespaces = spec.namespaces.map((namespace, k) =>
+    dispatchByType(namespaceRenderers(k, state, apiVariable), namespace),
   );
+  const namespaceImports = namespaces.map((rendering) =>
+    rendering.mainImport.replace("PACKAGE", packageName),
+  );
+  const namespaceMounts = namespaces.flatMap(
+    (rendering) => rendering.mountLines,
+  );
+  const namespaceFiles: Record<string, string> =
+    namespaces.length > 0
+      ? { [`${packageName}/namespaces/__init__.py`]: "" }
+      : {};
+  for (const rendering of namespaces) {
+    namespaceFiles[`${packageName}/${rendering.file.path}`] = joinLines(
+      rendering.file.lines,
+    );
+  }
 
   if (spec.importStyle === "direct") {
     const mainLines = [
       "from flask import Flask",
       "from flask_restx import Api, Resource",
+      ...namespaceImports,
       "",
       "app = Flask(__name__)",
       "api = Api(app, doc=False)",
       "",
       "",
       ...resourceLines,
+      ...namespaceMounts,
+      "",
     ];
     return {
       framework: "flask-restx",
@@ -764,8 +1151,9 @@ function renderFlaskProgram(
       files: {
         [`${packageName}/__init__.py`]: "",
         [`${packageName}/main.py`]: joinLines(mainLines),
+        ...namespaceFiles,
       },
-      intents: flaskIntents(spec),
+      intents: state.intents,
       wrapperModules: [],
     };
   }
@@ -806,10 +1194,12 @@ function renderFlaskProgram(
     "",
     `from ${packageName}.routes import resources as _resources`,
     `from ${packageName}.wrappers.restx import api as resource_namespace`,
+    ...namespaceImports,
     "",
     "app = Flask(__name__)",
     "restx_api = Api(app, doc=False)",
     "restx_api.add_namespace(resource_namespace)",
+    ...namespaceMounts,
     "",
   ];
 
@@ -823,8 +1213,9 @@ function renderFlaskProgram(
       [`${packageName}/routes/__init__.py`]: "",
       [`${packageName}/routes/resources.py`]: joinLines(resourcesFileLines),
       [`${packageName}/main.py`]: joinLines(mainLines),
+      ...namespaceFiles,
     },
-    intents: flaskIntents(spec),
+    intents: state.intents,
     wrapperModules: [wrapperModule],
   };
 }

@@ -25,8 +25,23 @@ import { summaryIdFromParts } from "./summaryId.js";
  *
  * 2: identity fields a source can fail to name are null, the empty
  *    string is invalid, and `"*"` is the REST method wildcard.
+ * 3: a parameter input's `role` is null where nobody could read which
+ *    role it has. Nothing needs rewriting on the way in, since every
+ *    older artifact names a role; the bump is here so a reader holding
+ *    a v3 artifact can tell a null role from a field its own version
+ *    never allowed.
  */
-export const SUMMARY_SCHEMA_VERSION = 2;
+export const SUMMARY_SCHEMA_VERSION = 3;
+
+/**
+ * The version that started spelling an unnamed identity field null.
+ * The rewriting below belongs to the versions before it and to no
+ * other, so it is gated on this rather than on whatever the current
+ * version happens to be: an artifact at or above it says what it
+ * means, and an empty identity field there is invalid rather than
+ * something to quietly fix on the way in.
+ */
+const NULL_IDENTITY_VERSION = 2;
 
 type LooseRecord = Record<string, unknown>;
 
@@ -94,9 +109,9 @@ function backfillIdentityId(input: LooseRecord): void {
 /**
  * Rewrite a version-1 summary's empty identity fields to null and
  * backfill a missing `identity.id`, in the summary's own untyped form,
- * before validation sees it. A summary already at the current version
- * passes through untouched: its producer spoke the current format in
- * full, id included, so there is nothing left to fill in. Mutates and
+ * before validation sees it. A summary from version 2 on passes
+ * through untouched: its producer spelled identity the current way,
+ * id included, so there is nothing left to fill in. Mutates and
  * returns its input: parse boundaries own the object they are decoding.
  */
 export function normalizeLegacySummary(input: unknown): unknown {
@@ -105,7 +120,7 @@ export function normalizeLegacySummary(input: unknown): unknown {
   }
   const version =
     typeof input.schemaVersion === "number" ? input.schemaVersion : 1;
-  if (version >= SUMMARY_SCHEMA_VERSION) {
+  if (version >= NULL_IDENTITY_VERSION) {
     return input;
   }
 

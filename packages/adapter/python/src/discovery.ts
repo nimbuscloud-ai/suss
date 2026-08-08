@@ -37,6 +37,7 @@ import type {
   BodyContent,
   ChosenReading,
   DefaultedReading,
+  ExtractorOptions,
   RawBranch,
   RawCodeStructure,
   RawParameter,
@@ -65,6 +66,14 @@ export interface DiscoveryOptions {
    * reads as the app itself, paths as written.
    */
   routerIndex?: RouterIndex;
+  /**
+   * What to do with a route whose unit cannot be built at all. Under
+   * the default, the route abstains with the reason and every other
+   * route still lands; under "strict", the error stands and the run
+   * stops on it. Same flag the extractor takes for gaps, so a caller
+   * asks for the stricter reading once.
+   */
+  gapHandling?: ExtractorOptions["gapHandling"];
 }
 
 export function discoverUnits(
@@ -137,7 +146,7 @@ function unitsFor(
         classification,
         definition,
         module,
-        options.filePath,
+        options,
       );
     },
     decoratedFunctionRoute: (p) => {
@@ -262,7 +271,7 @@ function classRouteUnits(
   classification: DecoratorClassification,
   classNode: PyNode,
   module: ModuleBinding,
-  filePath: string,
+  options: DiscoveryOptions,
 ): RawCodeStructure[] {
   // The path is the whole of what a class decorator says about this
   // route, so a class whose decorator states none readable is not
@@ -282,8 +291,12 @@ function classRouteUnits(
   ) {
     return [];
   }
-  const routePath = andThenReading(pathArgument, (path, range) =>
-    readPathTemplate(pattern, path, range),
+  const routePath = readRoutePath(
+    pattern,
+    pathArgument,
+    classification,
+    module,
+    options,
   );
 
   const units: RawCodeStructure[] = [];
@@ -301,51 +314,46 @@ function classRouteUnits(
       continue;
     }
     units.push(
-      buildRouteUnit({
-        pack,
-        name: `${className}.${methodName}`,
-        exportPath: [className, methodName],
-        method: verb,
-        routePath,
-        requestBodyFromAnnotatedClass:
-          pattern.annotatedClassIsRequestBody === true,
-        definitionNode: maybeMethod,
-        enclosingScope: classScope,
-        module,
-        filePath,
-        skipReceiverParam: true,
-        responseShape: absentReading,
-        statusCode: defaultedStatus(absentReading, pattern),
-      }),
+      ...routeUnitOrAbstention(
+        {
+          pack,
+          name: `${className}.${methodName}`,
+          exportPath: [className, methodName],
+          method: verb,
+          routePath,
+          requestBodyFromAnnotatedClass:
+            pattern.annotatedClassIsRequestBody === true,
+          definitionNode: maybeMethod,
+          enclosingScope: classScope,
+          module,
+          filePath: options.filePath,
+          skipReceiverParam: true,
+          responseShape: absentReading,
+          statusCode: defaultedStatus(absentReading, pattern),
+        },
+        options,
+      ),
     );
   }
   return units;
 }
 
 /**
- * The path a function route is served at: what its decorator states,
- * with the router's prefix in front of it, spelled the way the IR
- * spells a path template. Each step reads further from what the one
- * before it found, so a step that cannot read hands its reason on and
- * the ones after it never run.
+ * The path a route is served at: what its decorator states, with the
+ * prefix of whatever it is declared on in front of it, spelled the way
+ * the IR spells a path template. Each step reads further from what the
+ * one before it found, so a step that cannot read hands its reason on
+ * and the ones after it never run.
  */
 function readRoutePath(
-  pattern: DecoratedFunctionRoute,
+  pattern: PythonDiscoveryPattern,
+  pathArgument: Reading<string>,
   classification: DecoratorClassification,
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): Reading<PathTemplateReading> {
-  const composed = andThenReading(
-    readPathArgument(classification),
-    (literal, range) =>
-      composeRoutePath(
-        pattern,
-        classification,
-        module,
-        options,
-        literal,
-        range,
-      ),
+  const composed = andThenReading(pathArgument, (literal, range) =>
+    composeRoutePath(pattern, classification, module, options, literal, range),
   );
   return andThenReading(composed, (path, range) =>
     readPathTemplate(pattern, path, range),
@@ -354,7 +362,7 @@ function readRoutePath(
 
 /** The decorator's own path with the router's prefix in front of it, when the route hangs on a router that composes one. */
 function composeRoutePath(
-  pattern: DecoratedFunctionRoute,
+  pattern: PythonDiscoveryPattern,
   classification: DecoratorClassification,
   module: ModuleBinding,
   options: DiscoveryOptions,
@@ -382,7 +390,7 @@ function composeRoutePath(
  * constructed, or a pack that declares no router mounting at all.
  */
 function readRouterPrefix(
-  pattern: DecoratedFunctionRoute,
+  pattern: PythonDiscoveryPattern,
   classification: DecoratorClassification,
   module: ModuleBinding,
   options: DiscoveryOptions,
@@ -526,26 +534,35 @@ function functionRouteUnits(
   }
 
   const ctx = createAnnotationContext(module.scopeFor);
-  const unit = buildRouteUnit({
-    pack,
-    name: functionName,
-    exportPath: [functionName],
-    method: verb,
-    routePath: readRoutePath(pattern, classification, module, options),
-    requestBodyFromAnnotatedClass: pattern.annotatedClassIsRequestBody === true,
-    definitionNode: functionNode,
-    enclosingScope: module.moduleScope,
-    module,
-    filePath: options.filePath,
-    skipReceiverParam: false,
-    responseShape: readResponseModel(pattern, classification, module, ctx),
-    statusCode: defaultedStatus(
-      readStatusCode(pattern, classification),
-      pattern,
-    ),
-    definitionsCtx: ctx,
-  });
-  return [unit];
+  return routeUnitOrAbstention(
+    {
+      pack,
+      name: functionName,
+      exportPath: [functionName],
+      method: verb,
+      routePath: readRoutePath(
+        pattern,
+        readPathArgument(classification),
+        classification,
+        module,
+        options,
+      ),
+      requestBodyFromAnnotatedClass:
+        pattern.annotatedClassIsRequestBody === true,
+      definitionNode: functionNode,
+      enclosingScope: module.moduleScope,
+      module,
+      filePath: options.filePath,
+      skipReceiverParam: false,
+      responseShape: readResponseModel(pattern, classification, module, ctx),
+      statusCode: defaultedStatus(
+        readStatusCode(pattern, classification),
+        pattern,
+      ),
+      definitionsCtx: ctx,
+    },
+    options,
+  );
 }
 
 interface BuildRouteUnitOptions {
@@ -586,6 +603,76 @@ function readResponseShape(
   return firstWrittenReading([declared, readAnnotation()]);
 }
 
+/**
+ * One route's unit, or, when building it threw, a unit saying what
+ * stopped it. A route the readers cannot turn into a unit costs that
+ * route and not the run: every other route in the file, and every
+ * other file, still lands, and the reason reaches the summary as a
+ * gap. A caller who would rather the run stop on it says so with
+ * strict gap handling.
+ */
+function routeUnitOrAbstention(
+  unitOptions: BuildRouteUnitOptions,
+  options: DiscoveryOptions,
+): RawCodeStructure[] {
+  try {
+    return [buildRouteUnit(unitOptions)];
+  } catch (error) {
+    if (options.gapHandling === "strict") {
+      throw error;
+    }
+
+    return [unbuiltRouteUnit(unitOptions, error)];
+  }
+}
+
+/** The empty string a builder refuses, as the null that means the source names nothing. */
+function nullIfEmpty(value: string): string | null {
+  return value === "" ? null : value;
+}
+
+/**
+ * What a route that could not be built leaves behind: its name and
+ * where it is written, no path, and the reason nobody could build it.
+ * Nothing here reads the route again, so whatever threw the first time
+ * has nothing left to throw from.
+ */
+function unbuiltRouteUnit(
+  unitOptions: BuildRouteUnitOptions,
+  error: unknown,
+): RawCodeStructure {
+  const range = rangeOf(unitOptions.definitionNode);
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    identity: {
+      name: unitOptions.name,
+      nameKind: "binding",
+      kind: "handler",
+      file: unitOptions.filePath,
+      range,
+      exportName: unitOptions.exportPath[0] ?? unitOptions.name,
+      exportPath: unitOptions.exportPath,
+    },
+    boundaryBinding: restBinding({
+      transport: unitOptions.pack.protocol,
+      method: nullIfEmpty(unitOptions.method),
+      path: null,
+      recognition: unitOptions.pack.name,
+    }),
+    parameters: [],
+    branches: [],
+    bodyContent: "statements",
+    dependencyCalls: [],
+    declaredContract: null,
+    readings: [
+      unreadableReading(
+        `This route could not be read into a unit (${message}), so the binding names no path and nothing pairs with it`,
+        range,
+      ),
+    ],
+  };
+}
+
 function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   const {
     pack,
@@ -606,13 +693,15 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // The path template names which of the handler's parameters are path
   // parameters, and that has to be settled before there is a summary
   // field to fill, so this is read further from rather than claimed.
+  // Null carries through: no path read means no parameter can be told
+  // apart from another, and the roles say so instead of guessing.
   const template = valueToReadFurtherFrom(routePath);
   const ctx = definitionsCtx ?? createAnnotationContext(module.scopeFor);
   const parameters = readParameters(
     definitionNode,
     enclosingScope,
     ctx,
-    template?.paramNames ?? NO_PATH_PARAMS,
+    template?.paramNames ?? null,
     requestBodyFromAnnotatedClass,
     skipReceiverParam,
   );
@@ -680,12 +769,39 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     declaredContract: null,
     // The chosen shape reading rides on the branch; what the choice
     // passed over and could not read has no branch to ride on and is
-    // stated here.
-    readings: [routePath, ...responseShape.passedOver],
+    // stated here, and so are the roles a path nobody read left
+    // unnamed.
+    readings: [
+      routePath,
+      ...unreadRoleReadings(parameters, rangeOf(definitionNode)),
+      ...responseShape.passedOver,
+    ],
     ...(collectedDefinitions(ctx) !== null
       ? { definitions: collectedDefinitions(ctx) }
       : {}),
   };
+}
+
+/**
+ * The one sentence a route says about roles nobody could read. Which
+ * parameters a path names is the whole basis for telling one role
+ * from another here, so a route whose path went unread has the same
+ * thing to say about all of them, and says it once.
+ */
+function unreadRoleReadings(
+  parameters: RawParameter[],
+  range: SourceRange,
+): Reading<never>[] {
+  if (!parameters.some((parameter) => parameter.role === null)) {
+    return [];
+  }
+
+  return [
+    unreadableReading(
+      "Nothing read this route's path, so its parameters name no role and a path parameter here does not read as one",
+      range,
+    ),
+  ];
 }
 
 /** Whether a body holds only a docstring and/or a bare `pass`, or something more. v0 doesn't read past this: the distinction only feeds `bodyContent`, not what a transition claims. */
@@ -709,7 +825,7 @@ function readParameters(
   definitionNode: PyNode,
   scope: Scope,
   ctx: ReturnType<typeof createAnnotationContext>,
-  pathParamNames: ReadonlySet<string>,
+  pathParamNames: ReadonlySet<string> | null,
   requestBodyFromAnnotatedClass: boolean,
   skipReceiverParam: boolean,
 ): RawParameter[] {
@@ -755,7 +871,7 @@ function readParameter(
   param: PyNode,
   scope: Scope,
   ctx: ReturnType<typeof createAnnotationContext>,
-  pathParamNames: ReadonlySet<string>,
+  pathParamNames: ReadonlySet<string> | null,
   requestBodyFromAnnotatedClass: boolean,
   position: number,
 ): RawParameter | null {
@@ -787,14 +903,21 @@ function readParameter(
  * request body only when the pattern declares that convention (see
  * `RouteConventions` in pack.ts); a library without it leaves such a
  * parameter a query parameter, like everything else here.
+ *
+ * All of that rests on having read the path. When nobody could, a
+ * null `pathParamNames` says so, and every parameter the request-body
+ * convention does not answer for names no role at all. Calling those
+ * query parameters would be the same confident guess a composed path
+ * exists to remove: a path parameter reads as a query parameter, and
+ * nothing in the summary says the reading is why.
  */
 function roleOf(
   name: string,
   shape: TypeShape | null,
-  pathParamNames: ReadonlySet<string>,
+  pathParamNames: ReadonlySet<string> | null,
   requestBodyFromAnnotatedClass: boolean,
-): string {
-  if (pathParamNames.has(name)) {
+): string | null {
+  if (pathParamNames?.has(name) === true) {
     return "pathParams";
   }
   if (
@@ -805,6 +928,10 @@ function roleOf(
   ) {
     return "requestBody";
   }
+  if (pathParamNames === null) {
+    return null;
+  }
+
   return "queryParams";
 }
 

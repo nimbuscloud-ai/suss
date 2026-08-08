@@ -10,10 +10,22 @@
 // or imported from the file that constructed it), and the literal
 // prefixes on both. Everything else abstains with a reason: a
 // non-literal prefix, a router nobody mounts by name, a router
-// mounted twice, or a router mounted onto another router (a second
-// hop). Discovery turns an abstention into a unit that keeps its name
-// and carries no path, so it pairs with nothing rather than with
-// whatever a guessed path would have named.
+// mounted twice, a router mounted onto another router (a second hop),
+// or a mount that overrides the prefix the constructor stated.
+// Discovery turns an abstention into a unit that keeps its name and
+// carries no path, so it pairs with nothing rather than with whatever
+// a guessed path would have named.
+//
+// A route reaches its router through a function decorator in one
+// library and through a class decorator in another. Neither shape
+// changes the question this module answers, so both go through the
+// same index.
+//
+// Every prefix, at either site, is read by `readPrefixKeyword` and
+// comes back stated, unstated, or unreadable. Which spelling lands
+// where differs by library and the pack says so: this package's
+// README has the grid, every cell of it checked against a running
+// app. Read it before teaching a new library's mount to compose.
 
 import { bodyStatements, field } from "./ast.js";
 import { readCallArguments } from "./decorators.js";
@@ -23,7 +35,9 @@ import { resolveName } from "./scope.js";
 import type { DecoratorArg } from "./decorators.js";
 import type { ModuleResolverOptions } from "./moduleResolver.js";
 import type {
-  DecoratedFunctionRoute,
+  MountPrefixEffect,
+  PrefixTrailingSlash,
+  PythonDiscoveryPattern,
   PythonPack,
   RouterComposition,
 } from "./pack.js";
@@ -53,15 +67,16 @@ export type RoutePrefixResolution =
 
 export interface RouterIndex {
   resolve(
-    pattern: DecoratedFunctionRoute,
+    pattern: PythonDiscoveryPattern,
     module: ModuleBinding,
     objectName: string,
   ): RoutePrefixResolution;
 }
 
-/** A module-level `x = <RouterConstructor>(...)`. `ownPrefix` is null when the prefix keyword's value isn't a string literal. */
+/** A module-level `x = <RouterConstructor>(...)`, and what its call said about the prefix. */
 interface RouterConstruction {
-  ownPrefix: string | null;
+  /** What the constructor stated, with the library's trailing-slash handling already applied. */
+  prefix: PrefixReading;
   /**
    * True when the same module-level name is assigned a router
    * construction more than once. The binder keeps one binding per
@@ -73,11 +88,31 @@ interface RouterConstruction {
   reassigned: boolean;
 }
 
+/**
+ * What a prefix keyword turned out to say at one site. "unstated"
+ * covers a keyword nobody wrote and one written with a value the
+ * library takes as none of its own; "unreadable" is an expression
+ * this reading does not evaluate.
+ */
+type PrefixReading =
+  | { kind: "stated"; value: string }
+  | { kind: "unstated" }
+  | { kind: "unreadable" };
+
+const UNSTATED_PREFIX: PrefixReading = { kind: "unstated" };
+const UNREADABLE_PREFIX: PrefixReading = { kind: "unreadable" };
+
+/** What a construction's own prefix contributes, or why nothing can be said about it. */
+type OwnPrefixResolution =
+  | { kind: "composed"; value: string }
+  | { kind: "abstain"; reason: string };
+
 type MountState =
   | { kind: "mounted"; includePrefix: string }
   | { kind: "abstain"; reason: string };
 
 interface PatternIndex {
+  composition: RouterComposition;
   constructions: Map<ModuleBinding, Map<string, RouterConstruction>>;
   mounts: Map<RouterConstruction, MountState>;
 }
@@ -95,13 +130,10 @@ export function buildRouterIndex(
   packs: PythonPack[],
   resolverOptions: ModuleResolverOptions,
 ): RouterIndex {
-  const byPattern = new Map<DecoratedFunctionRoute, PatternIndex>();
+  const byPattern = new Map<PythonDiscoveryPattern, PatternIndex>();
   for (const pack of packs) {
     for (const pattern of pack.discovery) {
-      if (
-        pattern.type === "decoratedFunctionRoute" &&
-        pattern.routerComposition !== undefined
-      ) {
+      if (pattern.routerComposition !== undefined) {
         byPattern.set(
           pattern,
           buildPatternIndex(
@@ -134,11 +166,12 @@ export function buildRouterIndex(
         };
       }
 
-      if (construction.ownPrefix === null) {
-        return {
-          kind: "abstain",
-          reason: "declares a prefix that is not a string literal",
-        };
+      const ownPrefix = composedOwnPrefix(
+        construction.prefix,
+        index.composition,
+      );
+      if (ownPrefix.kind === "abstain") {
+        return ownPrefix;
       }
 
       const mount = index.mounts.get(construction);
@@ -156,10 +189,47 @@ export function buildRouterIndex(
 
       return {
         kind: "composed",
-        value: mount.includePrefix + construction.ownPrefix,
+        value: mount.includePrefix + ownPrefix.value,
       };
     },
   };
+}
+
+/**
+ * What the constructor's own prefix contributes to the path, or why
+ * nothing can be said about it. A prefix nobody stated adds nothing,
+ * unless the library derives one from elsewhere when it is unstated,
+ * and then the path is somewhere this reading never looked.
+ */
+function composedOwnPrefix(
+  prefix: PrefixReading,
+  composition: RouterComposition,
+): OwnPrefixResolution {
+  const readings: Record<
+    PrefixReading["kind"],
+    (reading: PrefixReading) => OwnPrefixResolution
+  > = {
+    stated: (reading) => ({
+      kind: "composed",
+      value: reading.kind === "stated" ? reading.value : "",
+    }),
+    unreadable: () => ({
+      kind: "abstain",
+      reason: "declares a prefix that is not a string literal",
+    }),
+    unstated: () => {
+      if (composition.constructorPrefixRequired === true) {
+        return {
+          kind: "abstain",
+          reason:
+            "states no prefix where it is constructed, and its library derives one from elsewhere",
+        };
+      }
+
+      return { kind: "composed", value: "" };
+    },
+  };
+  return readings[prefix.kind](prefix);
 }
 
 function buildPatternIndex(
@@ -168,7 +238,11 @@ function buildPatternIndex(
   composition: RouterComposition,
   resolverOptions: ModuleResolverOptions,
 ): PatternIndex {
-  const index: PatternIndex = { constructions: new Map(), mounts: new Map() };
+  const index: PatternIndex = {
+    composition,
+    constructions: new Map(),
+    mounts: new Map(),
+  };
   const byFile = new Map(files.map((bound) => [bound.file, bound]));
 
   for (const bound of files) {
@@ -223,21 +297,80 @@ function constructionOf(
   return { constructorName: calleeBinding.importedName, call: binding.value };
 }
 
-/** The literal a prefix keyword states: "" when absent, the string when literal, null when written as anything else. */
-function prefixOf(
+/**
+ * The prefix as the library holds it, which for some libraries is not
+ * quite what the source wrote: one joins a route's path to the prefix
+ * as written, another drops trailing slashes first, and composing
+ * without that reports a doubled slash nobody serves.
+ */
+const PREFIX_TRAILING_SLASH_READERS: Record<
+  PrefixTrailingSlash,
+  (prefix: string) => string
+> = {
+  kept: (prefix) => prefix,
+  trimmed: (prefix) => prefix.replace(/\/+$/, ""),
+};
+
+/**
+ * Whether a written argument is one of the values a library can take
+ * as no value at all. Python's `None` and `False`, zero, and the
+ * empty string are the four, and a library reaches them all at once
+ * by asking whether the value is truthy. Whether this library does
+ * that is the pack's to say; what the four are is the language's.
+ */
+const NO_VALUE_LITERALS: Partial<
+  Record<DecoratorArg["kind"], (arg: DecoratorArg) => boolean>
+> = {
+  string: (arg) => arg.kind === "string" && arg.value === "",
+  number: (arg) => arg.kind === "number" && arg.value === 0,
+  boolean: (arg) => arg.kind === "boolean" && !arg.value,
+  none: () => true,
+};
+
+/**
+ * What a prefix keyword says at one site. Every site reads it through
+ * here, so a spelling means the same thing at a constructor and at a
+ * mount, which is the property this reading kept getting wrong one
+ * site at a time.
+ */
+function readPrefixKeyword(
   keywordArgs: Record<string, DecoratorArg>,
-  prefixKeyword: string,
-): string | null {
-  const arg = keywordArgs[prefixKeyword];
+  composition: RouterComposition,
+): PrefixReading {
+  const arg = keywordArgs[composition.prefixKeyword];
   if (arg === undefined) {
-    return "";
+    return UNSTATED_PREFIX;
+  }
+
+  if (
+    (composition.noValuePrefix ?? "unreadable") === "unstated" &&
+    NO_VALUE_LITERALS[arg.kind]?.(arg) === true
+  ) {
+    return UNSTATED_PREFIX;
   }
 
   if (arg.kind === "string") {
-    return arg.value;
+    return { kind: "stated", value: arg.value };
   }
 
-  return null;
+  return UNREADABLE_PREFIX;
+}
+
+/** The prefix a constructor call leaves the router holding, trailing slash handled the way the library handles it. */
+function constructorPrefix(
+  keywordArgs: Record<string, DecoratorArg>,
+  composition: RouterComposition,
+): PrefixReading {
+  const reading = readPrefixKeyword(keywordArgs, composition);
+  if (reading.kind !== "stated") {
+    return reading;
+  }
+
+  const trailingSlash = composition.constructorPrefixTrailingSlash ?? "kept";
+  return {
+    kind: "stated",
+    value: PREFIX_TRAILING_SLASH_READERS[trailingSlash](reading.value),
+  };
 }
 
 /** The name and call of a module-level `name = <RouterConstructor>(...)` statement; null for any other statement. */
@@ -319,7 +452,7 @@ function collectConstructions(
       field(construction.call, "arguments"),
     );
     perModule.set(construction.name, {
-      ownPrefix: prefixOf(keywordArgs, composition.prefixKeyword),
+      prefix: constructorPrefix(keywordArgs, composition),
       reassigned: false,
     });
   }
@@ -382,6 +515,27 @@ function mountTarget(
 
   return resolvers[binding.kind]?.() ?? null;
 }
+
+/**
+ * What a prefix the mount call states leaves the router mounted at,
+ * per what the library does with it. A mount that states none, in any
+ * of the spellings the library takes as none, never reaches here: it
+ * leaves the router mounted where its constructor put it.
+ */
+const MOUNT_STATE_BY_EFFECT: Record<
+  MountPrefixEffect,
+  (statedPrefix: string) => MountState
+> = {
+  prefixes: (statedPrefix) => ({
+    kind: "mounted",
+    includePrefix: statedPrefix,
+  }),
+  replaces: () => ({
+    kind: "abstain",
+    reason:
+      "is mounted under a prefix that replaces the one it was constructed with, which this reading does not follow",
+  }),
+};
 
 function recordMount(
   index: PatternIndex,
@@ -459,8 +613,8 @@ function collectMounts(
       continue;
     }
 
-    const includePrefix = prefixOf(keywordArgs, composition.prefixKeyword);
-    if (includePrefix === null) {
+    const mountPrefix = readPrefixKeyword(keywordArgs, composition);
+    if (mountPrefix.kind === "unreadable") {
       recordMount(index, target, {
         kind: "abstain",
         reason: "is mounted with a prefix that is not a string literal",
@@ -468,6 +622,19 @@ function collectMounts(
       continue;
     }
 
-    recordMount(index, target, { kind: "mounted", includePrefix });
+    // A mount that states nothing leaves the router where its
+    // constructor put it, whichever way the library reads a prefix
+    // that is stated.
+    if (mountPrefix.kind === "unstated") {
+      recordMount(index, target, { kind: "mounted", includePrefix: "" });
+      continue;
+    }
+
+    const effect = composition.mountPrefixEffect ?? "prefixes";
+    recordMount(
+      index,
+      target,
+      MOUNT_STATE_BY_EFFECT[effect](mountPrefix.value),
+    );
   }
 }

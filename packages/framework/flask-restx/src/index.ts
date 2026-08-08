@@ -62,6 +62,31 @@ export function flaskRestxFramework(
         // reader; there is no annotated-class body convention to
         // declare.
         pathParamSyntax: "flaskConverters",
+        // A resource declared on a namespace is served under the
+        // namespace's own path, and the route's decorator states only
+        // the part after it: `Namespace(path="/orders")` plus
+        // `@ns.route("/<int:order_id>")` is served at
+        // `/orders/<int:order_id>`. `add_namespace` is where the app
+        // mounts it, and a `path` there replaces the namespace's own
+        // rather than going in front of it, so the adapter abstains on
+        // one instead of composing it. A namespace constructed without
+        // `path` is served under a path flask-restx derives from its
+        // name, which nothing reads here, so it abstains too. The
+        // namespace strips trailing slashes off its own path before
+        // the route's path joins it, so `path="/orders/"` serves what
+        // `path="/orders"` serves, and `path="/"` adds nothing.
+        // Both sites ask whether the path is truthy, so `path=""`,
+        // `path=None`, `path=False` and `path=0` all say exactly what
+        // writing no `path` says.
+        routerComposition: {
+          routerConstructorName: "Namespace",
+          includeMethodName: "add_namespace",
+          prefixKeyword: "path",
+          mountPrefixEffect: "replaces",
+          constructorPrefixRequired: true,
+          constructorPrefixTrailingSlash: "trimmed",
+          noValuePrefix: "unstated",
+        },
         // A resource method that returns a value and marks no status
         // answers 200, which is Flask's own behavior behind
         // flask-restx, so a method whose return annotation states a

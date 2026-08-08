@@ -25,6 +25,10 @@ import type { Scope } from "./scope.js";
 export type DecoratorArg =
   | { kind: "string"; value: string }
   | { kind: "number"; value: number }
+  /** `True` or `False`. Read as literals because a library can give a written `False` the same meaning as writing nothing. */
+  | { kind: "boolean"; value: boolean }
+  /** `None`, which a library may read as a value it was never given. */
+  | { kind: "none" }
   /** A bare name, e.g. `response_model=TodoResponse`: the class the name resolves to (if any) is for the caller to look up via the scope it already has. */
   | { kind: "identifier"; name: string }
   | { kind: "list"; items: DecoratorArg[] }
@@ -71,6 +75,12 @@ function readArg(node: PyNode): DecoratorArg {
       return { kind: "number", value };
     }
     return { kind: "other" };
+  }
+  if (node.type === "none") {
+    return { kind: "none" };
+  }
+  if (node.type === "true" || node.type === "false") {
+    return { kind: "boolean", value: node.type === "true" };
   }
   if (node.type === "identifier") {
     return { kind: "identifier", name: node.text };

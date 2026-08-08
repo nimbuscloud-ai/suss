@@ -642,7 +642,18 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       .map((submodule) => submodule.directory),
   ];
 
-  const { summaries } = await extractPythonProject({ files, packs, roots });
+  // `--gaps` reaches the Python adapter too: on top of what it records
+  // on a summary, strict is what turns a route the readers cannot
+  // build at all back into an error that stops the run, rather than
+  // one abstaining route.
+  const { summaries } = await extractPythonProject({
+    files,
+    packs,
+    roots,
+    ...(runOptions.options.gaps !== undefined
+      ? { gapHandling: runOptions.options.gaps }
+      : {}),
+  });
   return languageRun(summaries, runOptions.root, files.length);
 }
 

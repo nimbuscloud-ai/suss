@@ -237,14 +237,23 @@ transitions. Its seams:
 - **Program DSL + generators** (`pythonProgram.ts`,
   `pythonGenerators.ts`). Specs cover the shapes the shipped
   flask-restx and fastapi packs read (decorated resource classes
-  behind a direct import or a project wrapper module; decorated
-  functions on the app or on mounted routers, with `response_model`
-  / `status_code` and prefix composition) and the shapes those packs
-  document as abstentions: a non-literal path, a computed prefix, a
-  reassigned router variable, a router mounted twice or never or
-  onto another router. Rendering emits the program's files plus one
-  intent per route saying where the running app serves it and which
-  tier the shape sits in.
+  behind a direct import, a project wrapper module, or a namespace
+  mounted with `add_namespace`; decorated functions on the app or on
+  mounted routers, with `response_model` / `status_code` and prefix
+  composition) and the shapes those packs document as abstentions: a
+  non-literal path, a computed prefix, a namespace with no path of
+  its own or a mount that overrides it, a reassigned router or
+  namespace variable, one mounted twice or never or onto another
+  router. Rendering emits the program's files plus one intent per
+  route saying where the running app serves it and which tier the
+  shape sits in.
+
+  Both frameworks get the same dimensions, and the reason is a bug
+  that hid: the flask-restx arm once always mounted its namespace at
+  `"/"`, so no generated program could tell composing a namespace
+  path from ignoring it, and a whole class of wrong path went
+  unmeasured through runs that reported no findings. A dimension the
+  generator cannot vary is a dimension the differential cannot see.
 - **Extraction** runs the same pipeline `suss extract` runs for
   Python (tree-sitter, binder, router index, the shipped pack) over
   the same files on disk the runtime side imports.
