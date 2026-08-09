@@ -17,7 +17,6 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { discoverUnits } from "./discovery.js";
-import { emitValueFacts } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
@@ -38,13 +37,6 @@ export interface ExtractPythonOptions {
   workspaceRoot?: string;
   /** As well as deciding how much of what nobody could read reaches a summary, "strict" lets a route that cannot be built stop the run. */
   gapHandling?: ExtractorOptions["gapHandling"];
-  /**
-   * Emit the value facts the shared resolution rules join. Off by default,
-   * because walking every expression in a project costs about as much again
-   * as the extraction does, and nothing in the shipped path reads them yet.
-   * A caller that wants to follow a value turns it on.
-   */
-  valueFacts?: boolean;
 }
 
 export interface ExtractPythonResult {
@@ -82,15 +74,8 @@ export async function extractPythonProject(
     });
   }
 
-  // Facts first, so a reader that wants to know what a call comes down to
-  // has them to ask of. Deriving is left to whoever asks, because asking
-  // about every call in a project costs seconds and answers nothing anyone
-  // wanted.
-  for (const { file, root, module: moduleBinding } of bound) {
+  for (const { file, module: moduleBinding } of bound) {
     emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
-    if (options.valueFacts === true) {
-      emitValueFacts(db, file, root);
-    }
   }
 
   const routerIndex = buildRouterIndex(bound, options.packs, {
