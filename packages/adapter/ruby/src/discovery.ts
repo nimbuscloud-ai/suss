@@ -28,6 +28,7 @@ import {
   readCallArgs,
   symbolValue,
 } from "./ast.js";
+import { invocationEffects } from "./paths/effects.js";
 import {
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
@@ -42,7 +43,9 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   BodyContent,
+  RawBranch,
   RawCodeStructure,
+  RawEffect,
   RawParameter,
   Reading,
 } from "@suss/extractor";
@@ -235,6 +238,33 @@ interface FieldDeclaration {
 }
 
 /** What one field's declaration and the method behind it come to together, since a wiring keyword settles both at once. */
+/** One branch recording what the resolver does, when anything was read of it. */
+function branchesFor(body: BodyReport, range: Range): RawBranch[] {
+  if (body.effects === undefined) {
+    return [];
+  }
+  return [
+    {
+      conditions: [],
+      terminal: {
+        kind: "void",
+        statusCode: null,
+        body: null,
+        exceptionType: null,
+        message: null,
+        component: null,
+        renderTree: null,
+        delegateTarget: null,
+        emitEvent: null,
+        location: range,
+      },
+      effects: body.effects,
+      location: range,
+      isDefault: true,
+    },
+  ];
+}
+
 interface FieldReading {
   contract: FieldContract | null;
   body: BodyReport;
@@ -244,12 +274,16 @@ interface BodyReport {
   /** Left unset when no value of it would be true: the extractor writes its own sentence from this one, and there is a truer sentence in `readings`. */
   bodyContent?: BodyContent;
   readings: Reading<unknown>[];
+  /** The calls the method makes, each with what gates it. */
+  effects?: RawEffect[];
 }
 
 function bodyOfMethod(method: RbNode): BodyReport {
+  const effects = invocationEffects(method);
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",
     readings: [],
+    ...(effects.length > 0 ? { effects } : {}),
   };
 }
 
@@ -619,7 +653,7 @@ function buildFieldUnit(
       fieldName: decl.fieldName,
     }),
     parameters,
-    branches: [],
+    branches: branchesFor(decl.body, rangeOf(decl.node)),
     ...(decl.body.bodyContent !== undefined
       ? { bodyContent: decl.body.bodyContent }
       : {}),

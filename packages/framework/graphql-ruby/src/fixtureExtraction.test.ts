@@ -96,9 +96,21 @@ describe("extraction over fixtures/ruby-graphql", () => {
     expect(summaries.every((s) => s.confidence.level === "low")).toBe(true);
   });
 
-  it("every discovered field is transitionless: v0 does no path-engine work", async () => {
+  it("gives a field with a method behind it one transition carrying what that method calls", async () => {
     const { summaries } = await extractFixture();
-    expect(summaries.every((s) => s.transitions.length === 0)).toBe(true);
+    const withTransitions = summaries.filter((s) => s.transitions.length > 0);
+    expect(withTransitions.length).toBeGreaterThan(0);
+    expect(
+      withTransitions.every((s) =>
+        s.transitions.every((transition) => transition.effects.length > 0),
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves a field with no method behind it transitionless", async () => {
+    const { summaries } = await extractFixture();
+    const noBody = summaries.filter((s) => s.transitions.length === 0);
+    expect(noBody.length).toBeGreaterThan(0);
   });
 
   describe("the method behind a field", () => {
@@ -110,9 +122,9 @@ describe("extraction over fixtures/ruby-graphql", () => {
     }
 
     it("attaches the method written below the field in the same class", async () => {
-      expect(await gapsFor("Organizer.displayName")).toEqual([
-        BODY_READ_NOTHING_MATCHED,
-      ]);
+      // The method's own calls are described now, so the sentence saying
+      // nothing matched is no longer true of it.
+      expect(await gapsFor("Organizer.displayName")).toEqual([]);
     });
 
     it("attaches the method a concern the class includes defines", async () => {
@@ -122,15 +134,15 @@ describe("extraction over fixtures/ruby-graphql", () => {
     });
 
     it("attaches the resolve method of the class a mutation-wired field points at", async () => {
-      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([
-        BODY_READ_NOTHING_MATCHED,
-      ]);
+      // The method's own calls are described now, so the sentence saying
+      // nothing matched is no longer true of it.
+      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([]);
     });
 
     it("attaches the resolve method of the class a resolver-wired field points at", async () => {
-      expect(await gapsFor("Query.campaign")).toEqual([
-        BODY_READ_NOTHING_MATCHED,
-      ]);
+      // The method's own calls are described now, so the sentence saying
+      // nothing matched is no longer true of it.
+      expect(await gapsFor("Query.campaign")).toEqual([]);
     });
 
     it("still says a field with no method behind it has no body, and says nothing else", async () => {
