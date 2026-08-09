@@ -56,7 +56,7 @@ export function emitModuleImportFacts(
   module: ModuleBinding,
   resolverOptions: ModuleResolverOptions,
 ): void {
-  for (const binding of module.moduleScope.bindings.values()) {
+  for (const [localName, binding] of module.moduleScope.bindings) {
     if (binding.kind !== "import" && binding.kind !== "importFrom") {
       continue;
     }
@@ -76,6 +76,13 @@ export function emitModuleImportFacts(
     ]);
     if (resolution.status === "resolved") {
       db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
+      // The shared rules follow a name across files through these two, so a
+      // resolved module is keyed by the file it resolved to.
+      db.add("imports", [
+        `${filePath}#${localName}`,
+        resolution.file,
+        binding.kind === "import" ? binding.localName : binding.importedName,
+      ]);
     }
   }
 

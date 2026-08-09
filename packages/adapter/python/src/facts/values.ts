@@ -200,6 +200,8 @@ function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
   const name = field(fn, "name");
   if (name !== null) {
     add(emitter, "binds", nameId(emitter.filePath, name.text), funcKey);
+    // A module-level def is what another file gets when it imports the name.
+    add(emitter, "exportsAs", emitter.filePath, name.text, funcKey);
   }
 
   const params = field(fn, "parameters");
@@ -263,6 +265,13 @@ function emitAssignment(emitter: Emitter, assignment: PyNode): void {
     emitter,
     "binds",
     nameId(emitter.filePath, left.text),
+    valueKey(emitter, right),
+  );
+  add(
+    emitter,
+    "exportsAs",
+    emitter.filePath,
+    left.text,
     valueKey(emitter, right),
   );
 }
