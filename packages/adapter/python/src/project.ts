@@ -17,6 +17,7 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { discoverUnits } from "./discovery.js";
+import { resolveValues } from "./facts/resolve.js";
 import { emitValueFacts } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
@@ -75,6 +76,14 @@ export async function extractPythonProject(
     });
   }
 
+  // Facts first, then the rules. A reader that wants to know what a call
+  // comes down to needs both to have run before it asks.
+  for (const { file, root, module: moduleBinding } of bound) {
+    emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
+    emitValueFacts(db, file, root);
+  }
+  resolveValues(db);
+
   const routerIndex = buildRouterIndex(bound, options.packs, {
     roots: options.roots,
   });
@@ -97,9 +106,6 @@ export async function extractPythonProject(
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
     }
-
-    emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
-    emitValueFacts(db, file, root);
   }
 
   return { summaries, facts: db };
