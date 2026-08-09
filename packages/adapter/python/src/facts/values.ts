@@ -44,6 +44,12 @@ function children(node: PyNode): PyNode[] {
 interface Emitter {
   db: Database;
   filePath: string;
+  /**
+   * The function whose body is being walked, and the parameters it declares.
+   * A parameter is keyed under its own function, because two functions in one
+   * file can both declare a `loader` and they are not the same value.
+   */
+  enclosing: { funcKey: string; params: ReadonlySet<string> } | null;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -100,10 +106,14 @@ function emitCall(emitter: Emitter, call: PyNode): void {
  * meets whatever `x` was bound to; anything else joins on its own node.
  */
 function valueKey(emitter: Emitter, value: PyNode): string {
-  if (value.type === "identifier") {
-    return nameId(emitter.filePath, value.text);
+  if (value.type !== "identifier") {
+    return nodeId(emitter.filePath, value);
   }
-  return nodeId(emitter.filePath, value);
+  const enclosing = emitter.enclosing;
+  if (enclosing !== null && enclosing.params.has(value.text)) {
+    return `${enclosing.funcKey}#${value.text}`;
+  }
+  return nameId(emitter.filePath, value.text);
 }
 
 /** A sequence is an object whose keys are positions. */
@@ -215,21 +225,28 @@ function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
   }
 
   const params = field(fn, "parameters");
+  const declared = new Set<string>();
   let position = 0;
   for (const param of params === null ? [] : children(params)) {
     const paramName =
       param.type === "identifier" ? param : (field(param, "name") ?? null);
     if (paramName !== null) {
+      declared.add(paramName.text);
       add(
         emitter,
         "paramOf",
         funcKey,
         String(position),
-        nameId(emitter.filePath, paramName.text),
+        `${funcKey}#${paramName.text}`,
       );
     }
     position += 1;
   }
+
+  const inside: Emitter = {
+    ...emitter,
+    enclosing: { funcKey, params: declared },
+  };
 
   const body = field(fn, "body");
   if (body === null) {
@@ -251,17 +268,17 @@ function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
 
   // One walk for both, since this function's own facts and the expression
   // facts want the same nodes and the walk is the expensive part.
-  walkExpressions(emitter, body, (child) => {
+  walkExpressions(inside, body, (child) => {
     if (child.type === "return_statement") {
       const returned = child.namedChildren[0];
       if (returned != null) {
-        add(emitter, "returnsValue", funcKey, valueKey(emitter, returned));
+        add(inside, "returnsValue", funcKey, valueKey(inside, returned));
       }
     }
     if (child.type === "call") {
-      add(emitter, "bodyCalls", funcKey, nodeId(emitter.filePath, child));
+      add(inside, "bodyCalls", funcKey, nodeId(inside.filePath, child));
     }
-    emitExpressionFact(emitter, child);
+    emitExpressionFact(inside, child);
   });
 }
 
@@ -297,7 +314,7 @@ export function emitValueFacts(
   filePath: string,
   root: PyNode,
 ): void {
-  const emitter: Emitter = { db, filePath };
+  const emitter: Emitter = { db, filePath, enclosing: null };
 
   const walk = (node: PyNode): void => {
     for (const child of children(node)) {

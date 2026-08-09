@@ -26,12 +26,13 @@ describe("python value facts", () => {
     expect(rows(db, "binds")[0]?.[0]).toBe("#handler");
   });
 
-  it("gives each parameter its position", async () => {
+  it("gives each parameter its position, keyed under the function that declares it", async () => {
     const db = await factsFor("def handler(a, b, c):\n    pass\n");
+    const [funcKey] = rows(db, "func")[0] ?? [];
     expect(rows(db, "paramOf").map((row) => [row[1], row[2]])).toEqual([
-      ["0", "#a"],
-      ["1", "#b"],
-      ["2", "#c"],
+      ["0", `${funcKey}#a`],
+      ["1", `${funcKey}#b`],
+      ["2", `${funcKey}#c`],
     ]);
   });
 
@@ -128,5 +129,52 @@ describe("python value facts", () => {
   it("treats a lambda as a function of its own", async () => {
     const db = await factsFor("pick = lambda item: item\n");
     expect(db.size("func")).toBe(1);
+  });
+  it("keys a parameter under its own function, so two functions can both take a loader", async () => {
+    const db = await factsFor(
+      [
+        "def outer(loader):",
+        "    return inner(loader=loader)",
+        "",
+        "def inner(loader):",
+        "    return loader",
+        "",
+      ].join("\n"),
+    );
+    const params = rows(db, "paramOf").map((row) => row[2]);
+    expect(new Set(params).size, "the two loaders collided").toBe(2);
+  });
+
+  it("reads a name inside a function as that function's parameter", async () => {
+    const db = await factsFor(
+      ["def handler(order):", "    return order", ""].join("\n"),
+    );
+    const [param] = rows(db, "paramOf");
+    const [returned] = rows(db, "returnsValue");
+    expect(returned?.[1]).toBe(param?.[2]);
+  });
+
+  it("reads a name that is not a parameter as the module's own", async () => {
+    const db = await factsFor(
+      ["def handler(order):", "    return registry", ""].join("\n"),
+    );
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe("#registry");
+  });
+
+  it("passes the outer function's parameter as the argument, keyed to the outer one", async () => {
+    const db = await factsFor(
+      [
+        "def outer(loader):",
+        "    return inner(loader=loader)",
+        "",
+        "def inner(loader):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const outerParam = rows(db, "paramOf").find((row) =>
+      row[2]?.includes("#loader"),
+    );
+    expect(rows(db, "callKeywordArg")[0]?.[2]).toBe(outerParam?.[2]);
   });
 });
