@@ -187,9 +187,9 @@ describe("the method behind a field", () => {
       "app/graphql/types/query_type.rb",
       "class Types::QueryType < Types::BaseObject\n  field :campaign, resolver: Queries::CampaignQuery\nend\n",
     );
-    expect(await gapsOfOnlyField(queryType)).toEqual([
-      "Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here",
-    ]);
+    // The inherited resolve calls `scope.find_by`, so the summary now says
+    // what the body does rather than that nothing matched.
+    expect(await gapsOfOnlyField(queryType)).toEqual([]);
   });
 
   it("reads the arguments a wired class inherits from its base class", async () => {
