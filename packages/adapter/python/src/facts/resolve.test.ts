@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "../index.js";
-import { containedValues, objectReturnedBy } from "./resolve.js";
+import { containedValues, objectReturnedBy, resolveCalls } from "./resolve.js";
 
 /** A project on disk, since resolution is about how files reach each other. */
 function project(files: Record<string, string>): string {
@@ -25,6 +25,7 @@ async function factsFor(files: Record<string, string>) {
     packs: [],
     roots: [dir],
     workspaceRoot: dir,
+    valueFacts: true,
   });
   return { facts, dir };
 }
@@ -54,6 +55,7 @@ describe("resolving a value across files", () => {
       .find((row) => String(row[1]).endsWith("#all_namespaces"));
     expect(call, "the call was not recorded").toBeDefined();
 
+    resolveCalls(facts, [String(call?.[0])]);
     const returned = objectReturnedBy(facts, String(call?.[0]));
     expect(returned, "the call did not resolve to an object").not.toBeNull();
     expect(containedValues(facts, returned as string)).toEqual([
@@ -90,6 +92,39 @@ describe("resolving a value across files", () => {
   it("claims nothing for a call whose callee it never reached", async () => {
     const { facts } = await factsFor({ "app.py": "registry = missing()\n" });
     const call = facts.facts("call")[0];
+    resolveCalls(facts, [String(call?.[0])]);
     expect(objectReturnedBy(facts, String(call?.[0]))).toBeNull();
+  });
+  it("derives nothing when nobody asked about a call", async () => {
+    const { facts } = await factsFor({ "app.py": "registry = build()\n" });
+    const before = facts.size("wantedObjectOf");
+    resolveCalls(facts, []);
+    expect(facts.size("wantedObjectOf")).toBe(before);
+  });
+
+  it("reads a returned list back in the order the source writes it", async () => {
+    const { facts, dir } = await factsFor({
+      "loader.py": [
+        "def all_types():",
+        "    return [first, second, third]",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from loader import all_types",
+        "",
+        "registry = all_types()",
+        "",
+      ].join("\n"),
+    });
+    const call = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#all_types"));
+    resolveCalls(facts, [String(call?.[0])]);
+    const returned = objectReturnedBy(facts, String(call?.[0]));
+    expect(containedValues(facts, returned as string)).toEqual([
+      `${path.join(dir, "loader.py")}#first`,
+      `${path.join(dir, "loader.py")}#second`,
+      `${path.join(dir, "loader.py")}#third`,
+    ]);
   });
 });

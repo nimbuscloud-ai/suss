@@ -385,6 +385,14 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("isWrittenAs", v("x"), v("z"))],
   ),
+  // A call is given no `comesTo`, so this is the only way to ask what
+  // object one arrives at, and without it a demand-driven run derives
+  // `objectOf` nowhere.
+  rule(
+    "wantedObjectOf",
+    [v("x"), v("z")],
+    [lit("wanted", v("x")), lit("objectOf", v("x"), v("z"))],
+  ),
   rule(
     "wantedComesFrom",
     [v("x"), v("m"), v("n")],

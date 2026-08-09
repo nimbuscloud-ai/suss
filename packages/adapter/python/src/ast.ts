@@ -1,3 +1,5 @@
+import { IdMap, IdSet } from "@suss/extractor";
+
 /**
  * Small helpers for reading a tree-sitter-python parse tree.
  *
@@ -88,69 +90,11 @@ export function stripDecorators(node: PyNode): {
 
 /**
  * tree-sitter hands back a fresh wrapper object every time a child is read,
- * so two reads of the same node are never `===`. Anything keyed on a node has
- * to key on `nodeKey` instead, which is why these two exist rather than a
- * plain Set and Map. `checkStyle` fails a build that keys either on a node.
+ * so two reads of one node are never `===`. These key on the node id, and
+ * `checkStyle` fails a build that keys a plain Set or Map on a node.
  */
-export function nodeKey(node: PyNode): number {
-  return node.id;
-}
-
 /** A set of nodes, compared the way tree-sitter compares them. */
-export class NodeSet implements Iterable<PyNode> {
-  private readonly byKey = new Map<number, PyNode>();
-
-  constructor(nodes: Iterable<PyNode> = []) {
-    for (const node of nodes) {
-      this.add(node);
-    }
-  }
-
-  add(node: PyNode): this {
-    this.byKey.set(nodeKey(node), node);
-    return this;
-  }
-
-  has(node: PyNode): boolean {
-    return this.byKey.has(nodeKey(node));
-  }
-
-  /** The node this set was built with, which is the caller's own handle for it. */
-  get(node: PyNode): PyNode | undefined {
-    return this.byKey.get(nodeKey(node));
-  }
-
-  get size(): number {
-    return this.byKey.size;
-  }
-
-  [Symbol.iterator](): Iterator<PyNode> {
-    return this.byKey.values();
-  }
-}
+export class NodeSet extends IdSet<PyNode> {}
 
 /** A map keyed by node, compared the way tree-sitter compares them. */
-export class NodeMap<V> implements Iterable<[PyNode, V]> {
-  private readonly entries = new Map<number, [PyNode, V]>();
-
-  set(node: PyNode, value: V): this {
-    this.entries.set(nodeKey(node), [node, value]);
-    return this;
-  }
-
-  get(node: PyNode): V | undefined {
-    return this.entries.get(nodeKey(node))?.[1];
-  }
-
-  has(node: PyNode): boolean {
-    return this.entries.has(nodeKey(node));
-  }
-
-  get size(): number {
-    return this.entries.size;
-  }
-
-  [Symbol.iterator](): Iterator<[PyNode, V]> {
-    return this.entries.values();
-  }
-}
+export class NodeMap<V> extends IdMap<PyNode, V> {}

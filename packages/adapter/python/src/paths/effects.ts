@@ -2,12 +2,15 @@
 // A call written under an `if` records that test as a precondition, which is
 // what the IR means by a call that does not always fire.
 
-import { enumerateStructuredPaths } from "@suss/extractor";
+import {
+  enumerateStructuredPaths,
+  sharedGatingConditions,
+} from "@suss/extractor";
 
 import { field } from "../ast.js";
 import { lowerPythonBody } from "./lowering.js";
 
-import type { EffectArg, RawCondition, RawEffect } from "@suss/extractor";
+import type { EffectArg, RawEffect } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
 
 /** A body written in one of these belongs to the function it declares. */
@@ -123,7 +126,7 @@ export function invocationEffects(
 
   return calls.map((call) => {
     const statement = statementOf.get(call.id);
-    const conditions = conditionsReaching(
+    const conditions = sharedGatingConditions(
       statement === undefined
         ? undefined
         : enumerated.byTerminal.get(statement),
@@ -136,45 +139,4 @@ export function invocationEffects(
       ...(conditions.length > 0 ? { preconditions: conditions } : {}),
     };
   });
-}
-
-/**
- * The conditions every path to a call agrees on. A call reached more than one
- * way keeps only what all of those ways share, so a precondition is never
- * claimed for a path that does not have it.
- */
-function conditionsReaching(
-  paths:
-    | readonly (readonly {
-        sourceText: string;
-        polarity: "positive" | "negative";
-        source: string;
-      }[])[]
-    | undefined,
-): RawCondition[] {
-  const [first, ...rest] = paths ?? [];
-  if (first === undefined) {
-    return [];
-  }
-
-  const key = (condition: { sourceText: string; polarity: string }): string =>
-    `${condition.polarity}:${condition.sourceText}`;
-  const shared = new Set(first.map(key));
-  for (const path of rest) {
-    const here = new Set(path.map(key));
-    for (const value of shared) {
-      if (!here.has(value)) {
-        shared.delete(value);
-      }
-    }
-  }
-
-  return first
-    .filter((condition) => shared.has(key(condition)))
-    .map((condition) => ({
-      sourceText: condition.sourceText,
-      structured: null,
-      polarity: condition.polarity,
-      source: condition.source as RawCondition["source"],
-    }));
 }

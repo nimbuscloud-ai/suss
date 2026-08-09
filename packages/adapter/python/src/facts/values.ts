@@ -172,23 +172,28 @@ function walkExpressions(
   }
 }
 
+/** What one expression says about itself, whichever walk reached it. */
+function emitExpressionFact(emitter: Emitter, child: PyNode): void {
+  if (child.type === "call") {
+    emitCall(emitter, child);
+  }
+  if (child.type === "dictionary") {
+    emitDictionary(emitter, child);
+  }
+  if (SEQUENCE_TYPES.has(child.type)) {
+    emitSequence(emitter, child);
+  }
+  if (child.type === "attribute") {
+    emitAttribute(emitter, child);
+  }
+  if (WRITTEN_VALUE_TYPES.has(child.type)) {
+    add(emitter, "writtenValue", nodeId(emitter.filePath, child));
+  }
+}
+
 function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
   walkExpressions(emitter, node, (child) => {
-    if (child.type === "call") {
-      emitCall(emitter, child);
-    }
-    if (child.type === "dictionary") {
-      emitDictionary(emitter, child);
-    }
-    if (SEQUENCE_TYPES.has(child.type)) {
-      emitSequence(emitter, child);
-    }
-    if (child.type === "attribute") {
-      emitAttribute(emitter, child);
-    }
-    if (WRITTEN_VALUE_TYPES.has(child.type)) {
-      add(emitter, "writtenValue", nodeId(emitter.filePath, child));
-    }
+    emitExpressionFact(emitter, child);
   });
 }
 
@@ -239,6 +244,8 @@ function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
   };
   recordNested(body);
 
+  // One walk for both, since this function's own facts and the expression
+  // facts want the same nodes and the walk is the expensive part.
   walkExpressions(emitter, body, (child) => {
     if (child.type === "return_statement") {
       const returned = child.namedChildren[0];
@@ -249,9 +256,8 @@ function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
     if (child.type === "call") {
       add(emitter, "bodyCalls", funcKey, nodeId(emitter.filePath, child));
     }
+    emitExpressionFact(emitter, child);
   });
-
-  emitExpressionFacts(emitter, body);
 }
 
 /** `name = value` at any level, which is what a chain follows one hop of. */

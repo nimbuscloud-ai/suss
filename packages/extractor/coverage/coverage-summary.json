@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 383,
-      "covered": 380,
+      "total": 413,
+      "covered": 410,
       "skipped": 0,
-      "pct": 99.21
+      "pct": 99.27
     },
     "statements": {
-      "total": 388,
-      "covered": 385,
+      "total": 418,
+      "covered": 415,
       "skipped": 0,
-      "pct": 99.22
+      "pct": 99.28
     },
     "functions": {
-      "total": 106,
-      "covered": 106,
+      "total": 121,
+      "covered": 121,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 323,
-      "covered": 310,
+      "total": 330,
+      "covered": 317,
       "skipped": 0,
-      "pct": 95.97
+      "pct": 96.06
     },
     "branchesTrue": {
       "total": 0,
@@ -185,6 +185,58 @@
       "covered": 95,
       "skipped": 0,
       "pct": 96.93
+    }
+  },
+  "src/paths/gatingConditions.ts": {
+    "lines": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 6,
+      "covered": 6,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "src/paths/nodeIdentity.ts": {
+    "lines": {
+      "total": 16,
+      "covered": 16,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 11,
+      "covered": 11,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 16,
+      "covered": 16,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 1,
+      "covered": 1,
+      "skipped": 0,
+      "pct": 100
     }
   },
   "src/paths/structuredStatement.ts": {
