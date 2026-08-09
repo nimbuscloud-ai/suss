@@ -101,6 +101,48 @@ A registration nobody wrote leaves the reading standing rather than abstaining. 
 
 A prefix written with a trailing slash leaves the composed path with two. Werkzeug answers such a rule at the merged path and redirects the written one, so `/api/v1//orders` is reached at `/api/v1/orders`; the pack says so, and the reader merges repeated slashes in every path it composes. Starlette does not do this, so FastAPI's pack says nothing and its paths stand as composed.
 
+## What a body lowers to
+
+A route's own returns are what make it produce more than one transition, so the
+adapter lowers a function body into the statement form the shared path engine
+in `@suss/extractor` walks. That engine is generic over the language's own
+condition handle and never looks inside one, so the enumeration, the negation
+of an earlier arm, and the budget are all shared with TypeScript.
+
+| Python | Lowers to |
+| --- | --- |
+| `if` / `elif` / `else` | one `if` per test, with the elif chain nested into the else arm the way Python reads it |
+| `while`, `for` | `loop` |
+| `try` / `except` / `finally` | `try`, with every except arm as the catch body |
+| `match` / `case` | `switch`, one group per case, `case _` as the default group |
+| `return`, `raise` | `exit`, which is what gives each return its own transition |
+| `break`, `continue` | `exit`, which the engine uses for reachability rather than as an outcome |
+| anything else | `opaque` |
+
+A statement's exit kind comes from scanning its own subtree for a return or a
+raise, stopping at a nested `def` or `lambda`, because those belong to the
+function they declare. A raise anywhere beats a return anywhere.
+
+So a handler written this way:
+
+```python
+def get(self, order_id) -> dict:
+    if not found:
+        return {"error": "nope"}, 404
+    return {"a": 1}, 200
+```
+
+comes out as two transitions, the 404 gated on the opaque condition
+`not found` and the 200 gated on its negation, rather than as one claim with a
+guessed status.
+
+### Keying anything on a node
+
+tree-sitter hands back a fresh wrapper object every time a child is read, so
+two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
+node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
+`npm run check:style` fails a build that keys either on a node.
+
 ## Where a mount is written
 
 Almost no service mounts anything at the top level of a module. It builds its routers or namespaces there, each with a literal prefix, and registers them inside the function that builds the app, often by looping over a list that another function put together:

@@ -6,6 +6,7 @@ import { discoverUnits } from "./discovery.js";
 import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 
+import type { Predicate } from "@suss/behavioral-ir";
 import type { RawCodeStructure } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 
@@ -109,6 +110,14 @@ function resourceReturning(body: string[]): string {
     ...body.map((line) => `        ${line}`),
     "",
   ].join("\n");
+}
+
+/** An opaque predicate's text, with a leading `!` when the path negated it. */
+function conditionText(condition: Predicate): string {
+  if (condition.type === "negation") {
+    return `!${conditionText(condition.operand)}`;
+  }
+  return condition.type === "opaque" ? condition.sourceText : condition.type;
 }
 
 async function unitsOf(source: string, packs: PythonPack[]) {
@@ -549,7 +558,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     ).toEqual({ type: "literal", value: 200 });
   });
 
-  it("claims no status when the branches return different ones", async () => {
+  it("gives each return its own transition, gated on the condition that reaches it", async () => {
     const units = await unitsOf(
       resourceReturning([
         "if x:",
@@ -558,9 +567,20 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       ]),
       [flaskRestxWithReturnStatus],
     );
-    const unit = units.find((u) => u.identity.name === "Thing.get");
-    expect(claimedStatusOf(unit)).toBeNull();
-    expect(unreadTextOf(unit)).toContain("more than one status");
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "Thing.get") as RawCodeStructure,
+    );
+    expect(
+      summary.transitions.map((transition) => [
+        transition.output.type === "response"
+          ? transition.output.statusCode
+          : null,
+        transition.conditions.map((condition) => conditionText(condition)),
+      ]),
+    ).toEqual([
+      [{ type: "literal", value: 201 }, ["x"]],
+      [{ type: "literal", value: 200 }, ["!x"]],
+    ]);
   });
 
   it("claims no status when a returned status is not a literal", async () => {
