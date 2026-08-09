@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 330,
-      "covered": 317,
+      "total": 334,
+      "covered": 319,
       "skipped": 0,
-      "pct": 96.06
+      "pct": 95.5
     },
     "branchesTrue": {
       "total": 0,
@@ -207,10 +207,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 6,
-      "covered": 6,
+      "total": 10,
+      "covered": 8,
       "skipped": 0,
-      "pct": 100
+      "pct": 80
     }
   },
   "src/paths/nodeIdentity.ts": {

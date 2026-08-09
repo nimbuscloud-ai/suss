@@ -41,6 +41,7 @@ import {
 import { classifyDecorator } from "./decorators.js";
 import { invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
+import { predicateOf } from "./paths/predicates.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
@@ -564,7 +565,10 @@ function branchesFromReturns(
     for (const path of paths) {
       const conditions: RawCondition[] = path.map((condition) => ({
         sourceText: condition.sourceText,
-        structured: null,
+        structured:
+          condition.expression === null
+            ? null
+            : predicateOf(condition.expression),
         polarity: condition.polarity,
         source: condition.source,
       }));
