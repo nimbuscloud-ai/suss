@@ -170,7 +170,7 @@ export type FlaskMountSite =
   | "factory"
   /** Inside that function, looping over a list literal holding the namespace. */
   | "loopLiteral"
-  /** Inside that function, looping over what a call returns, which points at no namespace the source writes. */
+  /** Inside that function, looping over what a call returns, which the rules follow to the namespaces it gives back. */
   | "loopCall";
 
 /**
@@ -1100,14 +1100,14 @@ function mountSiteRenderings(
       factoryMounts: looped(`[ns_${k}]`),
       readable: true,
     },
-    // The list comes back from a call, so which namespaces this
-    // registers is nowhere in the source and the pack claims no path
-    // for any of them.
+    // The list comes back from a call, and the rules follow the call to
+    // the function, its return to the list, and each element to the
+    // namespace it was built as, so the pack composes these too.
     loopCall: {
       prelude: [`def load_ns_${k}():`, `    return [ns_${k}]`, "", ""],
       moduleMounts: [],
       factoryMounts: looped(`load_ns_${k}()`),
-      readable: false,
+      readable: true,
     },
   };
 }

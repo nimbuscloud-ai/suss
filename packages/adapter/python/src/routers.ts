@@ -32,9 +32,16 @@
 
 import { bodyStatements, field, rangeOf, stripDecorators } from "./ast.js";
 import { readCallArguments } from "./decorators.js";
+import {
+  containedValues,
+  objectReturnedBy,
+  resolveCalls,
+} from "./facts/resolve.js";
+import { nodeId } from "./facts/values.js";
 import { resolveModule } from "./moduleResolver.js";
 import { resolveName } from "./scope.js";
 
+import type { Database } from "@suss/datalog";
 import type { DecoratorArg } from "./decorators.js";
 import type { ModuleResolverOptions } from "./moduleResolver.js";
 import type {
@@ -83,6 +90,8 @@ export interface RouterIndex {
 interface Construction {
   /** The constructor's name as its module exports it, so a caller can tell a router from an app from a blueprint. */
   constructorName: string;
+  /** The value key of the call this was built by, so a resolved value can be matched to it. */
+  valueKey: string;
   /** What the call stated, with the library's trailing-slash handling already applied. */
   prefix: PrefixReading;
   /**
@@ -137,6 +146,10 @@ type ConstructionsByName = Map<ModuleBinding, Map<string, Construction>>;
 
 interface PatternIndex {
   composition: RouterComposition;
+  /** Every construction by the value key of the call that built it, so a resolved value finds one whatever module wrote it. */
+  byValueKey: Map<string, Construction>;
+  /** The project's facts, when the caller built them, so a loop over a call can be settled. */
+  facts?: Database;
   constructions: ConstructionsByName;
   mounts: Map<Construction, MountState>;
   /** Keyed by location, so one loop counts once however many routers ask about it. */
@@ -156,10 +169,15 @@ interface PatternIndex {
 
 const NOT_ROUTER: RoutePrefixResolution = { kind: "notRouter" };
 
+export interface RouterIndexOptions extends ModuleResolverOptions {
+  /** The project's facts, so a loop over a call can be settled by the rules. */
+  facts?: Database;
+}
+
 export function buildRouterIndex(
   files: BoundPythonFile[],
   packs: PythonPack[],
-  resolverOptions: ModuleResolverOptions,
+  resolverOptions: RouterIndexOptions,
 ): RouterIndex {
   const byPattern = new Map<PythonDiscoveryPattern, PatternIndex>();
   for (const pack of packs) {
@@ -338,10 +356,14 @@ function buildPatternIndex(
   files: BoundPythonFile[],
   importModule: string[],
   composition: RouterComposition,
-  resolverOptions: ModuleResolverOptions,
+  resolverOptions: RouterIndexOptions,
 ): PatternIndex {
   const index: PatternIndex = {
     composition,
+    byValueKey: new Map(),
+    ...(resolverOptions.facts !== undefined
+      ? { facts: resolverOptions.facts }
+      : {}),
     constructions: new Map(),
     mounts: new Map(),
     unenumerableLoops: new Map(),
@@ -547,8 +569,10 @@ function constructionStatement(
 function recordConstruction(
   construction: { name: string; constructorName: string; call: PyNode },
   module: ModuleBinding,
+  file: string,
   prefixOf: (keywordArgs: Record<string, DecoratorArg>) => PrefixReading,
   into: ConstructionsByName,
+  byValueKey: Map<string, Construction>,
 ): void {
   const perModule = into.get(module) ?? new Map<string, Construction>();
   into.set(module, perModule);
@@ -562,11 +586,14 @@ function recordConstruction(
   const { keywordArgs } = readCallArguments(
     field(construction.call, "arguments"),
   );
-  perModule.set(construction.name, {
+  const recorded: Construction = {
     constructorName: construction.constructorName,
+    valueKey: nodeId(file, construction.call),
     prefix: prefixOf(keywordArgs),
     reassigned: false,
-  });
+  };
+  perModule.set(construction.name, recorded);
+  byValueKey.set(recorded.valueKey, recorded);
 }
 
 function collectConstructions(
@@ -591,8 +618,10 @@ function collectConstructions(
     recordConstruction(
       construction,
       bound.module,
+      bound.file,
       (keywordArgs) => constructorPrefix(keywordArgs, composition),
       index.constructions,
+      index.byValueKey,
     );
   }
 }
@@ -628,9 +657,11 @@ function collectCarrierConstructions(
       recordConstruction(
         construction,
         scan.bound.module,
+        scan.bound.file,
         (keywordArgs) =>
           readPrefixKeyword(keywordArgs, carrier.prefixKeyword, composition),
         scan.index.carriers,
+        scan.index.byValueKey,
       );
     },
   );
@@ -732,6 +763,7 @@ interface Scan {
 /** What a `for` around a mount call binds one name to: a literal sequence, or an iterable this reading does not evaluate. */
 type LoopTarget =
   | { kind: "sequence"; elements: string[] }
+  | { kind: "call"; call: PyNode; file: string; location: string }
   | { kind: "unenumerable"; location: string };
 
 /** Where the walk currently is: what resolves a name, what the loops around it bind, and whose body it is in. */
@@ -889,6 +921,17 @@ function loopBindingsOf(
   }
 
   const location = `${scan.bound.displayPath}:${rangeOf(stmt).start}`;
+  const iterated = field(stmt, "right");
+  if (left.type === "identifier" && iterated?.type === "call") {
+    bindings.set(left.text, {
+      kind: "call",
+      call: iterated,
+      file: scan.bound.file,
+      location,
+    });
+    return bindings;
+  }
+
   for (const name of targetNames(left)) {
     bindings.set(name, { kind: "unenumerable", location });
   }
@@ -946,26 +989,89 @@ function mountCallOf(
   };
 }
 
-/** The names one mount call registers: the argument's own, or the literal sequence a loop binds it from. Empty when the loop registers nobody, and then the loop itself is recorded. */
-function mountedNames(
+/**
+ * The constructions a loop's own call comes down to. The rules settle the
+ * call on an object, the object says what it contains, and each of those is
+ * followed to the construction it is. Empty when any step does not settle,
+ * and then the loop keeps its abstention.
+ */
+function constructionsReturnedBy(
+  target: Extract<LoopTarget, { kind: "call" }>,
+  index: PatternIndex,
+): Construction[] {
+  const facts = index.facts;
+  if (facts === undefined) {
+    return [];
+  }
+
+  const callKey = nodeId(target.file, target.call);
+  resolveCalls(facts, [callKey]);
+  const returned = objectReturnedBy(facts, callKey);
+  if (returned === null) {
+    return [];
+  }
+
+  // What the object contains are names, and each has to be asked about in
+  // its own right before the rules will follow it to what it was built as.
+  const contained = containedValues(facts, returned);
+  resolveCalls(facts, contained);
+
+  const found: Construction[] = [];
+  for (const value of contained) {
+    const construction = index.byValueKey.get(resolvedValueKey(facts, value));
+    if (construction === undefined) {
+      return [];
+    }
+    found.push(construction);
+  }
+  return found;
+}
+
+/** A contained value is a name, and `isWrittenAs` gives the expression it was written as, which for a router is the constructor call. */
+function resolvedValueKey(facts: Database, value: string): string {
+  const row = facts
+    .facts("wantedIsWrittenAs")
+    .find((entry: readonly unknown[]) => String(entry[0]) === value);
+  return row === undefined ? value : String(row[1]);
+}
+
+/**
+ * The constructions one mount call registers: the argument's own, the ones a
+ * loop's written-out list binds it from, or the ones the rules settle a
+ * loop's call on. Empty when nothing settles, and then the loop is recorded
+ * as one this reading could not enumerate.
+ */
+function mountedConstructions(
   arg: DecoratorArg | undefined,
   position: WalkPosition,
-  index: PatternIndex,
-): string[] {
+  scan: Scan,
+): Construction[] {
   if (arg?.kind !== "identifier") {
     return [];
   }
 
+  const named = (name: string): Construction[] => {
+    const construction = constructionNamed(name, position.scope, scan);
+    return construction === null ? [] : [construction];
+  };
+
   const target = position.loopBindings.get(arg.name);
   if (target === undefined) {
-    return [arg.name];
+    return named(arg.name);
   }
 
   if (target.kind === "sequence") {
-    return target.elements;
+    return target.elements.flatMap(named);
   }
 
-  index.unenumerableLoops.set(target.location, {
+  if (target.kind === "call") {
+    const settled = constructionsReturnedBy(target, scan.index);
+    if (settled.length > 0) {
+      return settled;
+    }
+  }
+
+  scan.index.unenumerableLoops.set(target.location, {
     site: position.site,
     location: target.location,
   });
@@ -1001,11 +1107,8 @@ function recordMountStatement(
     scan.composition,
     position.site,
   );
-  for (const name of mountedNames(args[0], position, scan.index)) {
-    const target = constructionNamed(name, position.scope, scan);
-    if (target !== null) {
-      recordMount(scan.index, target, state);
-    }
+  for (const target of mountedConstructions(args[0], position, scan)) {
+    recordMount(scan.index, target, state);
   }
 }
 
