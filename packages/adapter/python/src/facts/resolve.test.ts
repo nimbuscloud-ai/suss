@@ -4,8 +4,14 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { extractPythonProject, findPythonFiles } from "../index.js";
+import { Database } from "@suss/datalog";
+
+import { emitModuleImportFacts } from "../facts.js";
+import { findPythonFiles } from "../index.js";
+import { parsePython } from "../parser.js";
+import { bindModule } from "../scope.js";
 import { containedValues, objectReturnedBy, resolveCalls } from "./resolve.js";
+import { emitValueFacts } from "./values.js";
 
 /** A project on disk, since resolution is about how files reach each other. */
 function project(files: Record<string, string>): string {
@@ -18,16 +24,21 @@ function project(files: Record<string, string>): string {
   return dir;
 }
 
+/**
+ * The facts a reader that wants to follow a value builds for itself, which is
+ * what the router index will do when it enumerates a loop over a call.
+ */
 async function factsFor(files: Record<string, string>) {
   const dir = project(files);
-  const { facts } = await extractPythonProject({
-    files: findPythonFiles(dir),
-    packs: [],
-    roots: [dir],
-    workspaceRoot: dir,
-    valueFacts: true,
-  });
-  return { facts, dir };
+  const db = new Database();
+  for (const file of findPythonFiles(dir)) {
+    const tree = await parsePython(fs.readFileSync(file, "utf8"));
+    emitModuleImportFacts(db, file, bindModule(tree.rootNode), {
+      roots: [dir],
+    });
+    emitValueFacts(db, file, tree.rootNode);
+  }
+  return { facts: db, dir };
 }
 
 describe("resolving a value across files", () => {

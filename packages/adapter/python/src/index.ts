@@ -14,6 +14,12 @@
 export { annotationToShape, shapeFromName } from "./annotations.js";
 export { classifyDecorator } from "./decorators.js";
 export { discoverUnits } from "./discovery.js";
+export {
+  containedValues,
+  objectReturnedBy,
+  resolveCalls,
+} from "./facts/resolve.js";
+export { emitValueFacts, nodeId } from "./facts/values.js";
 export { emitEntryFact, emitModuleImportFacts, unitKey } from "./facts.js";
 export {
   resolveAbsoluteModule,
