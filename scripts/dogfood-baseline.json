@@ -1,30 +1,30 @@
 {
   "totals": {
     "packages": 44,
-    "packagesWithExports": 43,
-    "exports": 402,
-    "internal": 1550,
-    "consumers": 627,
-    "pairs": 619
+    "packagesWithExports": 44,
+    "exports": 403,
+    "internal": 1551,
+    "consumers": 631,
+    "pairs": 623
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 49,
       "internal": 123,
-      "consumers": 45
+      "consumers": 46
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 46,
       "internal": 82,
-      "consumers": 10
+      "consumers": 11
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 32,
-      "internal": 582,
-      "consumers": 32
+      "internal": 583,
+      "consumers": 33
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -262,9 +262,9 @@
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 0,
+      "exports": 1,
       "internal": 3,
-      "consumers": 14
+      "consumers": 15
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",

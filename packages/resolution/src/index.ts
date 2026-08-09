@@ -1,3 +1,15 @@
+export {
+  checkFactContract,
+  FACT_CONTRACT_CASES,
+} from "./contract.js";
+
+export type {
+  CaseFiles,
+  ContractCase,
+  ContractOptions,
+  FactsOf,
+} from "./contract.js";
+
 // @suss/resolution - following a value to the function it comes down to.
 //
 // These rules are about programming languages rather than about any one

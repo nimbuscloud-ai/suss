@@ -53,6 +53,7 @@
     "web-tree-sitter": "^0.26.11"
   },
   "devDependencies": {
+    "@suss/resolution": "0.3.2",
     "@types/node": "*",
     "tsup": "*",
     "typescript": "*",

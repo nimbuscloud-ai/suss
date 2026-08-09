@@ -26,11 +26,12 @@ describe("ruby value facts", () => {
     expect(rows(db, "binds")[0]?.[0]).toBe("#handler");
   });
 
-  it("gives each parameter its position", async () => {
+  it("gives each parameter its position, keyed under the method that declares it", async () => {
     const db = await factsFor("def handler(a, b)\nend\n");
+    const [funcKey] = rows(db, "func")[0] ?? [];
     expect(rows(db, "paramOf").map((row) => [row[1], row[2]])).toEqual([
-      ["0", "#a"],
-      ["1", "#b"],
+      ["0", `${funcKey}#a`],
+      ["1", `${funcKey}#b`],
     ]);
   });
 

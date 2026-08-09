@@ -1,0 +1,161 @@
+import { describe, expect, it } from "vitest";
+
+import { Database } from "@suss/datalog";
+
+import { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
+
+/** Facts an adapter that satisfies every case would produce. */
+function conformingFacts(): Database {
+  const db = new Database();
+  db.add("paramOf", ["fn:a", "0", "fn:a#loader"]);
+  db.add("paramOf", ["fn:b", "0", "fn:b#loader"]);
+  db.add("returnsValue", ["fn:a", "fn:a#loader"]);
+  db.add("call", ["call:1", "f#build"]);
+  db.add("writtenValue", ["call:1"]);
+  db.add("objectValue", ["list:1"]);
+  db.add("holdsProperty", ["list:1", "0", "f#first"]);
+  db.add("holdsProperty", ["list:1", "1", "f#second"]);
+  db.add("func", ["fn:a"]);
+  db.add("exportsAs", ["f.py", "build", "fn:a"]);
+  db.add("imports", ["f.py#renamed", "source.py", "value"]);
+  return db;
+}
+
+const everyCase = Object.fromEntries(
+  FACT_CONTRACT_CASES.map((c) => [c.name, { "f.py": "" }]),
+);
+
+describe("the fact contract", () => {
+  it("passes an adapter that keys everything the way the rules expect", async () => {
+    expect(await checkFactContract(everyCase, conformingFacts)).toEqual([]);
+  });
+
+  it("catches two parameters sharing a key", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("paramOf", [["fn:b", "0", "fn:b#loader"]]);
+      db.add("paramOf", ["fn:b", "0", "fn:a#loader"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain(
+      "two functions, one parameter name",
+    );
+  });
+
+  it("catches a call that is not a written value", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("writtenValue", [["call:1"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "not a written value",
+    );
+  });
+
+  it("catches a call the rules were given a comesTo for", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.add("comesTo", ["call:1", "fn:a"]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "withhold on purpose",
+    );
+  });
+
+  it("catches a sequence that keeps its elements under something other than positions", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("holdsProperty", [["list:1", "0", "f#first"]]);
+      db.add("holdsProperty", ["list:1", "first", "f#first"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain("a written-out sequence");
+  });
+
+  it("catches a module exporting something other than the declaring node", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("exportsAs", [["f.py", "build", "fn:a"]]);
+      db.add("exportsAs", ["f.py", "build", "f.py#build"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain("a module exporting a name");
+  });
+
+  it("catches an import keyed by the name it brings in rather than the local one", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("imports", [["f.py#renamed", "source.py", "value"]]);
+      db.add("imports", ["f.py#value", "source.py", "value"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain(
+      "an import renaming what it brings in",
+    );
+  });
+
+  it("accepts a read linked to its parameter by binds rather than keyed as it", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("returnsValue", [["fn:a", "fn:a#loader"]]);
+      db.add("returnsValue", ["fn:a", "read:1"]);
+      db.add("binds", ["read:1", "fn:a#loader"]);
+      return db;
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it("says which case has no source rather than passing it", async () => {
+    const failures = await checkFactContract({}, conformingFacts);
+    expect(failures).toHaveLength(FACT_CONTRACT_CASES.length);
+    expect(failures[0]?.problem).toContain("no source supplied");
+  });
+
+  it("keeps quiet about a case written down as a known gap", async () => {
+    const failures = await checkFactContract(
+      everyCase,
+      () => {
+        const db = conformingFacts();
+        db.retract("imports", [["f.py#renamed", "source.py", "value"]]);
+        return db;
+      },
+      { known: { "an import renaming what it brings in": "no require yet" } },
+    );
+    expect(failures).toEqual([]);
+  });
+
+  it("reports a known gap that has started passing, so the list cannot rot", async () => {
+    const failures = await checkFactContract(everyCase, conformingFacts, {
+      known: { "a written-out sequence": "not done yet" },
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "take it off the list",
+    );
+  });
+  it("says what a case needed when the source produced none of it", async () => {
+    const failures = await checkFactContract(everyCase, () => new Database());
+    expect(failures).toHaveLength(FACT_CONTRACT_CASES.length);
+    const problems = failures.map((f) => f.problem).join(" | ");
+    expect(problems).toContain("expected two parameters");
+    expect(problems).toContain("expected one parameter and one return");
+    expect(problems).toContain("expected one call");
+    expect(problems).toContain("not an object value");
+    expect(problems).toContain("exports nothing");
+  });
+
+  it("says a sequence keeps no elements when it is an object with none", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("holdsProperty", [
+        ["list:1", "0", "f#first"],
+        ["list:1", "1", "f#second"],
+      ]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "keeps no elements",
+    );
+  });
+});

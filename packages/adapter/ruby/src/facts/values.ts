@@ -49,6 +49,12 @@ function children(node: RbNode): RbNode[] {
 interface Emitter {
   db: Database;
   filePath: string;
+  /**
+   * The method whose body is being walked, and the parameters it declares.
+   * A parameter is keyed under its own method, because two methods in one
+   * file can both declare a `loader` and they are not the same value.
+   */
+  enclosing: { funcKey: string; params: ReadonlySet<string> } | null;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -60,10 +66,14 @@ function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
  * meets whatever `x` was bound to; anything else joins on its own node.
  */
 function valueKey(emitter: Emitter, value: RbNode): string {
-  if (value.type === "identifier" || value.type === "constant") {
-    return nameId(emitter.filePath, value.text);
+  if (value.type !== "identifier" && value.type !== "constant") {
+    return nodeId(emitter.filePath, value);
   }
-  return nodeId(emitter.filePath, value);
+  const enclosing = emitter.enclosing;
+  if (enclosing !== null && enclosing.params.has(value.text)) {
+    return `${enclosing.funcKey}#${value.text}`;
+  }
+  return nameId(emitter.filePath, value.text);
 }
 
 /** A pair's key when it is written as a symbol or a string, which is what a property joins on. */
@@ -109,6 +119,10 @@ function emitPropertyRead(emitter: Emitter, node: RbNode): void {
 }
 
 function emitCall(emitter: Emitter, call: RbNode): void {
+  // A call is written out in the source, so a name bound to one ends its
+  // chain there and `isWrittenAs` reads it back.
+  add(emitter, "writtenValue", nodeId(emitter.filePath, call));
+
   const method = field(call, "method");
   if (method === null) {
     return;
@@ -227,24 +241,33 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): void {
   const name = field(method, "name");
   if (name !== null) {
     add(emitter, "binds", nameId(emitter.filePath, name.text), funcKey);
+    // A method at the top of a file is what another file gets by name.
+    add(emitter, "exportsAs", emitter.filePath, name.text, funcKey);
   }
 
   const params = field(method, "parameters");
+  const declared = new Set<string>();
   let position = 0;
   for (const param of params === null ? [] : children(params)) {
     const paramName =
       param.type === "identifier" ? param : (field(param, "name") ?? null);
     if (paramName !== null) {
+      declared.add(paramName.text);
       add(
         emitter,
         "paramOf",
         funcKey,
         String(position),
-        nameId(emitter.filePath, paramName.text),
+        `${funcKey}#${paramName.text}`,
       );
     }
     position += 1;
   }
+
+  const inside: Emitter = {
+    ...emitter,
+    enclosing: { funcKey, params: declared },
+  };
 
   const body = field(method, "body");
   if (body === null) {
@@ -270,20 +293,20 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): void {
       const returned =
         first?.type === "argument_list" ? children(first)[0] : first;
       if (returned !== undefined) {
-        add(emitter, "returnsValue", funcKey, valueKey(emitter, returned));
+        add(inside, "returnsValue", funcKey, valueKey(inside, returned));
       }
     }
     if (child.type === "call") {
-      add(emitter, "bodyCalls", funcKey, nodeId(emitter.filePath, child));
+      add(inside, "bodyCalls", funcKey, nodeId(inside.filePath, child));
     }
   });
 
   const implicit = implicitReturn(body);
   if (implicit !== null) {
-    add(emitter, "returnsValue", funcKey, valueKey(emitter, implicit));
+    add(inside, "returnsValue", funcKey, valueKey(inside, implicit));
   }
 
-  emitExpressionFacts(emitter, body);
+  emitExpressionFacts(inside, body);
 }
 
 function emitAssignment(emitter: Emitter, assignment: RbNode): void {
@@ -301,6 +324,13 @@ function emitAssignment(emitter: Emitter, assignment: RbNode): void {
     nameId(emitter.filePath, left.text),
     valueKey(emitter, right),
   );
+  add(
+    emitter,
+    "exportsAs",
+    emitter.filePath,
+    left.text,
+    valueKey(emitter, right),
+  );
 }
 
 /**
@@ -312,7 +342,7 @@ export function emitValueFacts(
   filePath: string,
   root: RbNode,
 ): void {
-  const emitter: Emitter = { db, filePath };
+  const emitter: Emitter = { db, filePath, enclosing: null };
 
   const walk = (node: RbNode): void => {
     for (const child of children(node)) {
