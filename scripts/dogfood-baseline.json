@@ -3,16 +3,16 @@
     "packages": 44,
     "packagesWithExports": 43,
     "exports": 388,
-    "internal": 1528,
-    "consumers": 622,
-    "pairs": 614
+    "internal": 1537,
+    "consumers": 623,
+    "pairs": 615
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 44,
-      "internal": 109,
-      "consumers": 42
+      "internal": 118,
+      "consumers": 43
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
