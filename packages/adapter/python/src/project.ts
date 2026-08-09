@@ -17,6 +17,7 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { discoverUnits } from "./discovery.js";
+import { emitValueFacts } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
@@ -74,12 +75,22 @@ export async function extractPythonProject(
     });
   }
 
-  for (const { file, module: moduleBinding } of bound) {
+  // A pack that mounts routers may meet a loop over a call, and only the
+  // rules can say what that call registers. The facts they read are built
+  // once, here, for the packs that could need them.
+  const mountsRouters = options.packs.some((pack) =>
+    pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
+  );
+  for (const { file, root, module: moduleBinding } of bound) {
     emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
+    if (mountsRouters) {
+      emitValueFacts(db, file, root);
+    }
   }
 
   const routerIndex = buildRouterIndex(bound, options.packs, {
     roots: options.roots,
+    ...(mountsRouters ? { facts: db } : {}),
   });
 
   for (const { file, root, module: moduleBinding } of bound) {

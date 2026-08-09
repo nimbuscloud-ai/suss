@@ -437,7 +437,9 @@ describe("renderPythonProgram", () => {
     ).toEqual([
       ["Alpha0.get", "claim", ["/ns0/alpha0"]],
       ["Beta1.get", "claim", ["/ns1/beta1"]],
-      ["Gamma2.get", "abstain", ["/ns2/gamma2"]],
+      // A loop over a call: the rules follow the call to what it returns,
+      // so this one is claimed now rather than abstained over.
+      ["Gamma2.get", "claim", ["/ns2/gamma2"]],
     ]);
   });
 

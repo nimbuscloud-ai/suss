@@ -52,6 +52,11 @@ function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
 
 /** The callee of a call, and the arguments it passes by position. */
 function emitCall(emitter: Emitter, call: PyNode): void {
+  // A call is written out in the source, so a name bound to one ends its
+  // chain there. It gets no `comesTo`, which is the rules' own decision
+  // about a factory call, and `isWrittenAs` is what reads it back.
+  add(emitter, "writtenValue", nodeId(emitter.filePath, call));
+
   const callee = field(call, "function");
   if (callee === null) {
     return;
