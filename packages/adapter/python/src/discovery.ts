@@ -39,6 +39,7 @@ import {
   stripDecorators,
 } from "./ast.js";
 import { classifyDecorator } from "./decorators.js";
+import { invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
@@ -49,6 +50,8 @@ import type {
   ExtractorOptions,
   RawBranch,
   RawCodeStructure,
+  RawCondition,
+  RawEffect,
   RawParameter,
   Reading,
   SourceRange,
@@ -497,9 +500,27 @@ function statusOfReturn(
  * writes no return worth a branch of its own, and then the caller keeps the
  * single declared branch.
  */
+type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
+
+/** A call belongs to a path when everything gating the call also gates the path. */
+function effectsReaching(
+  effects: readonly InvocationEffect[],
+  conditions: readonly RawCondition[],
+): RawEffect[] {
+  const key = (condition: RawCondition): string =>
+    `${condition.polarity}:${condition.sourceText}`;
+  const onPath = new Set(conditions.map(key));
+  return effects.filter((effect) =>
+    (effect.preconditions ?? []).every((precondition) =>
+      onPath.has(key(precondition)),
+    ),
+  );
+}
+
 function branchesFromReturns(
   readsReturnedStatus: boolean,
   definitionNode: PyNode,
+  effects: readonly InvocationEffect[],
   responseShape: DefaultedReading<TypeShape>,
   declaredStatus: DefaultedReading<number>,
 ): RawBranch[] | null {
@@ -539,13 +560,14 @@ function branchesFromReturns(
             );
 
     for (const path of paths) {
+      const conditions: RawCondition[] = path.map((condition) => ({
+        sourceText: condition.sourceText,
+        structured: null,
+        polarity: condition.polarity,
+        source: condition.source,
+      }));
       branches.push({
-        conditions: path.map((condition) => ({
-          sourceText: condition.sourceText,
-          structured: null,
-          polarity: condition.polarity,
-          source: condition.source,
-        })),
+        conditions,
         terminal: {
           kind: "response",
           statusCode: null,
@@ -565,7 +587,7 @@ function branchesFromReturns(
             : {}),
         },
         bodyShapeReading: { reading: responseShape.reading },
-        effects: [],
+        effects: effectsReaching(effects, conditions),
         location: range,
         isDefault: path.length === 0,
       });
@@ -871,9 +893,11 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // A route that says nothing about the body shape and nothing about the
   // status declares no response at all, so the library's default status has
   // nothing to apply to.
+  const effects = invocationEffects(definitionNode);
   const perReturn = branchesFromReturns(
     readsReturnedStatus,
     definitionNode,
+    effects,
     responseShape,
     statusCode,
   );
@@ -901,7 +925,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       },
       statusCodeReading: statusCode,
       bodyShapeReading: { reading: responseShape.reading },
-      effects: [],
+      effects,
       location: rangeOf(definitionNode),
       isDefault: true,
     });
