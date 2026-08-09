@@ -17,6 +17,7 @@ import {
   absentReading,
   ambiguousReading,
   andThenReading,
+  enumerateStructuredPaths,
   firstWrittenReading,
   mapReading,
   unreadableReading,
@@ -38,6 +39,7 @@ import {
   stripDecorators,
 } from "./ast.js";
 import { classifyDecorator } from "./decorators.js";
+import { lowerPythonBody } from "./paths/lowering.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
 import type {
@@ -289,6 +291,7 @@ function classRouteUnits(
           routePath,
           requestBodyFromAnnotatedClass:
             pattern.annotatedClassIsRequestBody === true,
+          readsReturnedStatus: pattern.statusFromReturnedTuple === true,
           injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
           definitionNode: maybeMethod,
           enclosingScope: classScope,
@@ -485,6 +488,93 @@ function statusOfReturn(
  * every return agrees on claims nothing, so the library default cannot
  * stand in for a status the body actually sets.
  */
+/**
+ * One branch per return the body writes, with the conditions that gate it.
+ * The shared path engine does the enumeration; this only lowers Python into
+ * the form it takes and turns each result back into a `RawBranch`.
+ *
+ * Null when the pack does not read a returned status, or when the body
+ * writes no return worth a branch of its own, and then the caller keeps the
+ * single declared branch.
+ */
+function branchesFromReturns(
+  readsReturnedStatus: boolean,
+  definitionNode: PyNode,
+  responseShape: DefaultedReading<TypeShape>,
+  declaredStatus: DefaultedReading<number>,
+): RawBranch[] | null {
+  if (!readsReturnedStatus) {
+    return null;
+  }
+
+  const body = field(definitionNode, "body");
+  const returns = returnStatements(body);
+  if (returns.length < 2) {
+    return null;
+  }
+
+  const lowered = lowerPythonBody(body, returns);
+  const enumerated = enumerateStructuredPaths({
+    statements: lowered.statements,
+    terminalsByStmt: lowered.terminalsByStmt,
+  });
+
+  const branches: RawBranch[] = [];
+  for (const statement of returns) {
+    const paths = enumerated.byTerminal.get(statement);
+    if (paths === undefined) {
+      continue;
+    }
+
+    const read = statusOfReturn(statement);
+    const range = rangeOf(statement);
+    const statusReading: Reading<number> =
+      read.kind === "status"
+        ? writtenReading(read.value, range)
+        : read.kind === "none"
+          ? absentReading
+          : unreadableReading(
+              "This return gives a status this reading cannot resolve to a number, so this outcome claims none",
+              range,
+            );
+
+    for (const path of paths) {
+      branches.push({
+        conditions: path.map((condition) => ({
+          sourceText: condition.sourceText,
+          structured: null,
+          polarity: condition.polarity,
+          source: condition.source,
+        })),
+        terminal: {
+          kind: "response",
+          statusCode: null,
+          body: { typeText: null, shape: null },
+          exceptionType: null,
+          message: null,
+          component: null,
+          renderTree: null,
+          delegateTarget: null,
+          emitEvent: null,
+          location: range,
+        },
+        statusCodeReading: {
+          reading: statusReading,
+          ...(declaredStatus.libraryDefault !== undefined
+            ? { libraryDefault: declaredStatus.libraryDefault }
+            : {}),
+        },
+        bodyShapeReading: { reading: responseShape.reading },
+        effects: [],
+        location: range,
+        isDefault: path.length === 0,
+      });
+    }
+  }
+
+  return branches.length > 1 ? branches : null;
+}
+
 function readReturnedStatus(
   pattern: PythonDiscoveryPattern,
   definitionNode: PyNode,
@@ -625,6 +715,7 @@ function functionRouteUnits(
       ),
       requestBodyFromAnnotatedClass:
         pattern.annotatedClassIsRequestBody === true,
+      readsReturnedStatus: pattern.statusFromReturnedTuple === true,
       injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
       definitionNode: functionNode,
       enclosingScope: module.moduleScope,
@@ -653,6 +744,8 @@ interface BuildRouteUnitOptions {
   /** The boundary binding only gets a path when this came back written. */
   routePath: Reading<PathTemplateReading>;
   requestBodyFromAnnotatedClass: boolean;
+  /** Whether the library takes a status off a returned tuple, so each return earns a branch. */
+  readsReturnedStatus: boolean;
   /** Names the pack says the library injects with, so those parameters claim no role. */
   injectedCallees: ReadonlySet<string>;
   definitionNode: PyNode;
@@ -748,6 +841,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     method,
     routePath,
     requestBodyFromAnnotatedClass,
+    readsReturnedStatus,
     injectedCallees,
     definitionNode,
     enclosingScope,
@@ -777,10 +871,17 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // A route that says nothing about the body shape and nothing about the
   // status declares no response at all, so the library's default status has
   // nothing to apply to.
-  const branches: RawBranch[] = [];
+  const perReturn = branchesFromReturns(
+    readsReturnedStatus,
+    definitionNode,
+    responseShape,
+    statusCode,
+  );
+  const branches: RawBranch[] = perReturn ?? [];
   if (
-    responseShape.reading.kind !== "absent" ||
-    statusCode.reading.kind !== "absent"
+    perReturn === null &&
+    (responseShape.reading.kind !== "absent" ||
+      statusCode.reading.kind !== "absent")
   ) {
     branches.push({
       conditions: [],

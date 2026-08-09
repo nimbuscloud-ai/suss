@@ -47,6 +47,17 @@ const RULES = [
       (file.endsWith(".ts") || file.endsWith(".tsx")) &&
       !file.endsWith(".test.ts"),
   },
+  {
+    name: "tree-sitter-node-identity",
+    // tree-sitter hands back a fresh wrapper object every time a child is
+    // read, so two reads of one node are never `===` and a plain Set or Map
+    // keyed on a node matches nothing. The adapters export NodeSet and
+    // NodeMap, which key on the node id instead.
+    pattern: /\b(?:Set|Map)\s*<\s*(?:PyNode|RbNode)\b/g,
+    message:
+      "key on the node id through NodeSet or NodeMap; a plain Set or Map keyed on a tree-sitter node matches nothing",
+    appliesTo: (file) => file.endsWith(".ts") || file.endsWith(".tsx"),
+  },
 ];
 
 function* sourceFiles(dir) {
