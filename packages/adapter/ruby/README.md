@@ -32,6 +32,42 @@ What a body does still goes unread. Reading it needs the path engine: statements
 
 One thing the walk deliberately leaves out. A `field` declared on a base object type is not discovered on its subclasses. That would change which units exist rather than what each one says about itself, and it is a separate piece of work.
 
+## What a body lowers to
+
+The adapter lowers a method body into the statement form the shared path
+engine in `@suss/extractor` walks, the same engine the Python and TypeScript
+adapters use. It is generic over the language's own condition handle and never
+looks inside one, so the enumeration and the negation of an earlier arm are
+shared rather than written again here.
+
+| Ruby | Lowers to |
+| --- | --- |
+| `if` / `elsif` / `else`, `unless` | one `if` per test, with the elsif chain nested into the else arm |
+| `while`, `until`, `for` | `loop` |
+| a call with a `do` block, such as `items.each do \|i\|` | `loop`, because the block runs per iteration |
+| `begin` / `rescue` / `ensure` | `try` |
+| `case` / `when` / `else` | `switch`, with `else` as the default group |
+| `return`, `raise`, `break`, `next` | `exit` |
+| anything else | `opaque` |
+
+Three things read differently from Python, and each one is why this file
+exists rather than a shared lowering:
+
+- **`raise` is an ordinary method call**, not a keyword, so a throw is
+  recognised by the call's name rather than by a node type.
+- **A `return` inside a `do` block returns from the method**, so the scan
+  descends into one. A lambda captures its own return, so the scan stops
+  there.
+- **A method returns its last expression** with no `return` written, which
+  Python has no equivalent of.
+
+### Keying anything on a node
+
+tree-sitter hands back a fresh wrapper object every time a child is read, so
+two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
+node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
+`npm run check:style` fails a build that keys either on a node.
+
 ## Where it fits in suss
 
 Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (starting with `@suss/framework-graphql-ruby`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes or DSL calls are named beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.
