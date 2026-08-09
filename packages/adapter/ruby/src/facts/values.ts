@@ -267,13 +267,9 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
       param.type === "identifier" ? param : (field(param, "name") ?? null);
     if (paramName !== null) {
       declared.add(paramName.text);
-      add(
-        emitter,
-        "paramOf",
-        funcKey,
-        String(position),
-        `${funcKey}#${paramName.text}`,
-      );
+      const paramKey = `${funcKey}#${paramName.text}`;
+      add(emitter, "paramOf", funcKey, String(position), paramKey);
+      add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
     }
     position += 1;
   }

@@ -85,6 +85,29 @@ describe("emitModuleImportFacts", () => {
     ]);
   });
 
+  it("records an import written inside a function, which Python code uses to break a cycle", async () => {
+    write("root/myapp/wrappers/restx.py");
+    const importingFile = write(
+      "root/myapp/routes/todos.py",
+      "def load():\n    from myapp.wrappers.restx import route\n    return route\n",
+    );
+    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
+    const module = bindModule(tree.rootNode);
+
+    const db = new Database();
+    emitModuleImportFacts(db, importingFile, module, {
+      roots: [path.join(tmpDir, "root")],
+    });
+
+    expect(db.facts("imports")).toEqual([
+      [
+        `${importingFile}#route`,
+        path.join(tmpDir, "root/myapp/wrappers/restx.py"),
+        "route",
+      ],
+    ]);
+  });
+
   it("records an external import with no resolved-file fact", async () => {
     const importingFile = write(
       "root/myapp/routes/todos.py",

@@ -233,4 +233,35 @@ describe("python value facts", () => {
     );
     expect(rows(db, "holdsProperty")[0]?.[1]).toBe("load");
   });
+  it("reads the name of a parameter written with a type annotation", async () => {
+    const db = await factsFor(
+      "def build(loader: Loader, name: str):\n    pass\n",
+    );
+    expect(rows(db, "paramNamed").map((row) => row[1])).toEqual([
+      "loader",
+      "name",
+    ]);
+    expect(rows(db, "paramOf").map((row) => row[1])).toEqual(["0", "1"]);
+  });
+
+  it("skips a method's receiver, which the caller does not write", async () => {
+    const db = await factsFor(
+      ["class Loader:", "    def load(self, key):", "        pass", ""].join(
+        "\n",
+      ),
+    );
+    expect(rows(db, "paramOf").map((row) => [row[1], row[2]])).toEqual([
+      ["0", rows(db, "func")[0]?.[0] + "#key"],
+    ]);
+    expect(rows(db, "paramNamed").map((row) => row[1])).toEqual([
+      "self",
+      "key",
+    ]);
+  });
+
+  it("gives a parameter after a splat a name but no position", async () => {
+    const db = await factsFor("def build(a, *rest, flag=False):\n    pass\n");
+    expect(rows(db, "paramOf").map((row) => row[1])).toEqual(["0"]);
+    expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
+  });
 });

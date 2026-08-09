@@ -173,6 +173,101 @@ describe("a factory that hands back what it was given", () => {
   });
 });
 
+describe("an argument reaching a parameter", () => {
+  it("follows a positional argument into the parameter it lands in", () => {
+    // function take(h) { ... }; take(handler)
+    expect(
+      resolutionsOf(
+        [
+          ["func", "handler"],
+          ["func", "take"],
+          ["binds", "takeRef", "take"],
+          ["binds", "handlerRef", "handler"],
+          ["paramOf", "take", "0", "take#h"],
+          ["call", "site", "takeRef"],
+          ["callArg", "site", "0", "handlerRef"],
+        ],
+        "take#h",
+      ),
+    ).toEqual(["handler"]);
+  });
+
+  it("follows a keyword argument by the name the caller wrote", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "handler"],
+          ["func", "take"],
+          ["binds", "takeRef", "take"],
+          ["binds", "handlerRef", "handler"],
+          ["paramNamed", "take", "h", "take#h"],
+          ["call", "site", "takeRef"],
+          ["callKeywordArg", "site", "h", "handlerRef"],
+        ],
+        "take#h",
+      ),
+    ).toEqual(["handler"]);
+  });
+
+  it("passes a parameter on through a second call", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "handler"],
+          ["func", "outer"],
+          ["func", "inner"],
+          ["binds", "outerRef", "outer"],
+          ["binds", "innerRef", "inner"],
+          ["binds", "handlerRef", "handler"],
+          ["paramNamed", "outer", "h", "outer#h"],
+          ["paramNamed", "inner", "h", "inner#h"],
+          ["call", "top", "outerRef"],
+          ["callKeywordArg", "top", "h", "handlerRef"],
+          ["call", "mid", "innerRef"],
+          ["callKeywordArg", "mid", "h", "outer#h"],
+        ],
+        "inner#h",
+      ),
+    ).toEqual(["handler"]);
+  });
+
+  it("gives a parameter every value its callers pass, so the caller can see there is more than one", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "first"],
+          ["func", "second"],
+          ["func", "take"],
+          ["binds", "takeRef", "take"],
+          ["binds", "firstRef", "first"],
+          ["binds", "secondRef", "second"],
+          ["paramOf", "take", "0", "take#h"],
+          ["call", "siteA", "takeRef"],
+          ["callArg", "siteA", "0", "firstRef"],
+          ["call", "siteB", "takeRef"],
+          ["callArg", "siteB", "0", "secondRef"],
+        ],
+        "take#h",
+      ),
+    ).toEqual(["first", "second"]);
+  });
+
+  it("says nothing about a parameter of a function nobody calls by name", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "handler"],
+          ["func", "take"],
+          ["paramOf", "take", "0", "take#h"],
+          ["call", "site", "someUnknownThing"],
+          ["callArg", "site", "0", "handler"],
+        ],
+        "take#h",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("a class the caller makes one of", () => {
   it("follows a method read off an instance to the method the class declares", () => {
     // class Loader { load() {} }; new Loader().load
