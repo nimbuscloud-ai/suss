@@ -15,6 +15,7 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { createFileCache, discoverUnits } from "./discovery.js";
+import { emitValueFacts } from "./facts/values.js";
 import { emitEntryFact } from "./facts.js";
 import { parseRuby } from "./parser.js";
 
@@ -73,6 +74,8 @@ export async function extractRubyProject(
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
     }
+
+    emitValueFacts(db, file, root);
   }
 
   return { summaries, facts: db };
