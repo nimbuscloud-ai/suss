@@ -117,7 +117,15 @@ function conditionText(condition: Predicate): string {
   if (condition.type === "negation") {
     return `!${conditionText(condition.operand)}`;
   }
-  return condition.type === "opaque" ? condition.sourceText : condition.type;
+  if (condition.type === "opaque") {
+    return condition.sourceText;
+  }
+  if (condition.type === "truthinessCheck" || condition.type === "nullCheck") {
+    return condition.subject.type === "unresolved"
+      ? condition.subject.sourceText
+      : condition.type;
+  }
+  return condition.type;
 }
 
 async function unitsOf(source: string, packs: PythonPack[]) {

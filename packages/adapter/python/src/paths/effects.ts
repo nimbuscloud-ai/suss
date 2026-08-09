@@ -9,6 +9,7 @@ import {
 
 import { field } from "../ast.js";
 import { lowerPythonBody } from "./lowering.js";
+import { predicateOf } from "./predicates.js";
 
 import type { EffectArg, RawEffect } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
@@ -130,6 +131,7 @@ export function invocationEffects(
       statement === undefined
         ? undefined
         : enumerated.byTerminal.get(statement),
+      predicateOf,
     );
     return {
       type: "invocation",
