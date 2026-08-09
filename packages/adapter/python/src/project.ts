@@ -17,6 +17,7 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { discoverUnits } from "./discovery.js";
+import { emitValueFacts } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
@@ -98,6 +99,7 @@ export async function extractPythonProject(
     }
 
     emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
+    emitValueFacts(db, file, root);
   }
 
   return { summaries, facts: db };
