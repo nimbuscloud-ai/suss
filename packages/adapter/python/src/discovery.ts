@@ -41,6 +41,7 @@ import {
 import { classifyDecorator } from "./decorators.js";
 import { invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
+import { returnedBodyShape } from "./paths/returnedShape.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
 import type {
@@ -549,6 +550,7 @@ function branchesFromReturns(
 
     const read = statusOfReturn(statement);
     const range = rangeOf(statement);
+    const writtenBody = returnedBodyShape(statement);
     const statusReading: Reading<number> =
       read.kind === "status"
         ? writtenReading(read.value, range)
@@ -586,7 +588,12 @@ function branchesFromReturns(
             ? { libraryDefault: declaredStatus.libraryDefault }
             : {}),
         },
-        bodyShapeReading: { reading: responseShape.reading },
+        bodyShapeReading: {
+          reading:
+            writtenBody === null
+              ? responseShape.reading
+              : writtenReading(writtenBody, range),
+        },
         effects: effectsReaching(effects, conditions),
         location: range,
         isDefault: path.length === 0,
