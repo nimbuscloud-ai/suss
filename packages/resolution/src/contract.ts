@@ -106,6 +106,27 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
+    name: "a class declaring a method",
+    requires:
+      "a module-level class with one method, exported where a language says so",
+    check: (facts) => {
+      const objects = new Set(facts("objectValue").map((row) => row[0]));
+      if (objects.size === 0) {
+        return "a class is not an object value, so nothing can be read off an instance of it";
+      }
+      const functions = new Set(facts("func").map((row) => row[0]));
+      const contained = facts("holdsProperty").filter((row) =>
+        objects.has(row[0]),
+      );
+      if (contained.length === 0) {
+        return "a class contains none of its methods, so a method read off an instance resolves to nothing";
+      }
+      return contained.some((row) => functions.has(row[2]))
+        ? null
+        : "what a class contains under a method name is not the node that declares the method";
+    },
+  },
+  {
     name: "an import renaming what it brings in",
     requires: "a file importing one name from another module under a new name",
     check: (facts) => {

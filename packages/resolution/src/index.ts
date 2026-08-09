@@ -159,6 +159,19 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
+  // Calling a class makes one of it, and reading a method off the
+  // result finds the method the class declares. The caveat above is
+  // about a factory function, and a class is not one.
+  rule(
+    "comesTo",
+    [v("r"), v("cls")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("comesTo", v("c"), v("cls")),
+      lit("objectValue", v("cls")),
+    ],
+  ),
+
   // Reading a property comes to what the object holds under that name,
   // whichever way the object arrived: `routes.list` off a name, or
   // `make(body).handle` off a call.

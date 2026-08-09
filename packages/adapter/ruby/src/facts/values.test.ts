@@ -87,10 +87,13 @@ describe("ruby value facts", () => {
     expect(db.size("call")).toBe(0);
   });
 
-  it("still reads a receiver call with arguments as a call", async () => {
+  it("still reads a receiver call with arguments as a call, whose callee reads the receiver", async () => {
     const db = await factsFor("value = config.fetch(key)\n");
     expect(db.size("call")).toBe(1);
-    expect(db.size("readsProperty")).toBe(0);
+    expect(rows(db, "readsProperty")[0]?.slice(1)).toEqual([
+      "#config",
+      "fetch",
+    ]);
   });
 
   it("binds a name to what an assignment writes", async () => {
@@ -157,5 +160,37 @@ describe("ruby value facts", () => {
     const db = await factsFor("merged = { **defaults }\n");
     expect(db.size("objectValue")).toBe(1);
     expect(db.size("holdsProperty")).toBe(0);
+  });
+  it("makes a class an object containing its methods", async () => {
+    const db = await factsFor("class Loader\n  def load\n  end\nend\n");
+    const [cls] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([
+      [cls?.[0], "load", method?.[0]],
+    ]);
+  });
+
+  it("keeps two classes' methods of one name apart", async () => {
+    const db = await factsFor(
+      "class First\n  def load\n  end\nend\n\nclass Second\n  def load\n  end\nend\n",
+    );
+    expect(rows(db, "binds").map((row) => row[0])).toEqual([
+      "#First",
+      "#Second",
+    ]);
+  });
+
+  it("keeps a class constant under its name", async () => {
+    const db = await factsFor("class Loader\n  REGISTRY = built\nend\n");
+    expect(rows(db, "holdsProperty")[0]?.slice(1)).toEqual([
+      "REGISTRY",
+      "#built",
+    ]);
+  });
+
+  it("reads a call with a receiver off the receiver rather than off the file", async () => {
+    const db = await factsFor("loader.load(key)\n");
+    const [callee] = rows(db, "call").map((row) => row[1]);
+    expect(rows(db, "readsProperty")).toEqual([[callee, "#loader", "load"]]);
   });
 });

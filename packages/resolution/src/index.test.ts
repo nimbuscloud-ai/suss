@@ -173,6 +173,41 @@ describe("a factory that hands back what it was given", () => {
   });
 });
 
+describe("a class the caller makes one of", () => {
+  it("follows a method read off an instance to the method the class declares", () => {
+    // class Loader { load() {} }; new Loader().load
+    expect(
+      resolutionsOf(
+        [
+          ["func", "load"],
+          ["objectValue", "Loader"],
+          ["holdsProperty", "Loader", "load", "load"],
+          ["binds", "LoaderRef", "Loader"],
+          ["call", "made", "LoaderRef"],
+          ["binds", "loader", "made"],
+          ["readsProperty", "x", "loader", "load"],
+        ],
+        "x",
+      ),
+    ).toEqual(["load"]);
+  });
+
+  it("leaves a factory call alone, since a function is not a class", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "make"],
+          ["func", "inner"],
+          ["binds", "makeRef", "make"],
+          ["returnsValue", "make", "inner"],
+          ["call", "made", "makeRef"],
+        ],
+        "made",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("a value reached through a property", () => {
   it("follows a name to what an object holds under it", () => {
     // const routes = { list: f }; routes.list

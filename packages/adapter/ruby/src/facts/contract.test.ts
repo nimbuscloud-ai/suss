@@ -24,6 +24,9 @@ const SOURCES: Record<string, CaseFiles> = {
   "a name bound to a call": { "f.rb": "registry = build()\n" },
   "a written-out sequence": { "f.rb": "items = [first, second]\n" },
   "a module exporting a name": { "f.rb": "def build\nend\n" },
+  "a class declaring a method": {
+    "f.rb": "class Loader\n  def load\n  end\nend\n",
+  },
   "an import renaming what it brings in": {
     "source.rb": "value = 1\n",
     "f.rb": "require 'source'\n",

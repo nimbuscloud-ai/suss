@@ -177,4 +177,60 @@ describe("python value facts", () => {
     );
     expect(rows(db, "callKeywordArg")[0]?.[2]).toBe(outerParam?.[2]);
   });
+  it("makes a class an object containing its methods", async () => {
+    const db = await factsFor(
+      ["class Loader:", "    def load(self):", "        pass", ""].join("\n"),
+    );
+    const [cls] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([
+      [cls?.[0], "load", method?.[0]],
+    ]);
+  });
+
+  it("keeps two classes' methods of one name apart", async () => {
+    const db = await factsFor(
+      [
+        "class First:",
+        "    def load(self):",
+        "        pass",
+        "",
+        "class Second:",
+        "    def load(self):",
+        "        pass",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "binds").map((row) => row[0])).toEqual([
+      "#First",
+      "#Second",
+    ]);
+    expect(rows(db, "exportsAs").map((row) => row[1])).toEqual([
+      "First",
+      "Second",
+    ]);
+  });
+
+  it("keeps a class attribute under its name", async () => {
+    const db = await factsFor(
+      ["class Loader:", "    registry = built", ""].join("\n"),
+    );
+    expect(rows(db, "holdsProperty")[0]?.slice(1)).toEqual([
+      "registry",
+      "#built",
+    ]);
+  });
+
+  it("reaches a decorated method the same way", async () => {
+    const db = await factsFor(
+      [
+        "class Loader:",
+        "    @cached",
+        "    def load(self):",
+        "        pass",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "holdsProperty")[0]?.[1]).toBe("load");
+  });
 });

@@ -212,17 +212,14 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
   });
 }
 
-/** A function's parameters by position, its returns, and the calls its body makes. */
-function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
+/**
+ * A function's parameters by position, its returns, and the calls its body
+ * makes. Where its name goes is the caller's to say, because a method belongs
+ * to its class and a def belongs to its module.
+ */
+function emitFunctionFacts(emitter: Emitter, fn: PyNode): string {
   const funcKey = nodeId(emitter.filePath, fn);
   add(emitter, "func", funcKey);
-
-  const name = field(fn, "name");
-  if (name !== null) {
-    add(emitter, "binds", nameId(emitter.filePath, name.text), funcKey);
-    // A module-level def is what another file gets when it imports the name.
-    add(emitter, "exportsAs", emitter.filePath, name.text, funcKey);
-  }
 
   const params = field(fn, "parameters");
   const declared = new Set<string>();
@@ -250,7 +247,7 @@ function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
 
   const body = field(fn, "body");
   if (body === null) {
-    return;
+    return funcKey;
   }
 
   // The expression walk stops at a nested function, so the nesting itself
@@ -280,6 +277,8 @@ function emitFunctionFacts(emitter: Emitter, fn: PyNode): void {
     }
     emitExpressionFact(inside, child);
   });
+
+  return funcKey;
 }
 
 /** `name = value` at any level, which is what a chain follows one hop of. */
@@ -304,6 +303,56 @@ function emitAssignment(emitter: Emitter, assignment: PyNode): void {
   );
 }
 
+/** The declaration a class-body statement makes, under whatever the grammar wraps it in. */
+function declaredBy(statement: PyNode): PyNode {
+  if (statement.type === "decorated_definition") {
+    return field(statement, "definition") ?? statement;
+  }
+  if (statement.type === "expression_statement") {
+    return children(statement)[0] ?? statement;
+  }
+  return statement;
+}
+
+/**
+ * A class is an object containing its methods, which is the treatment an
+ * object literal gets. That is what lets a method read off an instance
+ * resolve to the method the class declares.
+ */
+function emitClassFacts(emitter: Emitter, cls: PyNode): string {
+  const classKey = nodeId(emitter.filePath, cls);
+  add(emitter, "objectValue", classKey);
+
+  const body = field(cls, "body");
+  for (const statement of body === null ? [] : children(body)) {
+    const member = declaredBy(statement);
+    if (member.type === "assignment") {
+      const left = field(member, "left");
+      const right = field(member, "right");
+      if (left !== null && right !== null && left.type === "identifier") {
+        add(
+          emitter,
+          "holdsProperty",
+          classKey,
+          left.text,
+          valueKey(emitter, right),
+        );
+      }
+      continue;
+    }
+    if (!FUNCTION_TYPES.has(member.type)) {
+      continue;
+    }
+    const funcKey = emitFunctionFacts(emitter, member);
+    const name = field(member, "name");
+    if (name !== null) {
+      add(emitter, "holdsProperty", classKey, name.text, funcKey);
+    }
+  }
+
+  return classKey;
+}
+
 /**
  * Walk a module and emit the value facts. A nested function is walked in its
  * own right, so a body's returns and calls belong to the function that wrote
@@ -316,10 +365,25 @@ export function emitValueFacts(
 ): void {
   const emitter: Emitter = { db, filePath, enclosing: null };
 
+  const declaresName = (child: PyNode, key: string): void => {
+    const name = field(child, "name");
+    if (name === null) {
+      return;
+    }
+    add(emitter, "binds", nameId(filePath, name.text), key);
+    // A module-level declaration is what another file gets when it imports the name.
+    add(emitter, "exportsAs", filePath, name.text, key);
+  };
+
   const walk = (node: PyNode): void => {
     for (const child of children(node)) {
+      if (child.type === "class_definition") {
+        declaresName(child, emitClassFacts(emitter, child));
+        // Its methods are its own; descending would make them the module's.
+        continue;
+      }
       if (FUNCTION_TYPES.has(child.type)) {
-        emitFunctionFacts(emitter, child);
+        declaresName(child, emitFunctionFacts(emitter, child));
       }
       if (child.type === "assignment") {
         emitAssignment(emitter, child);

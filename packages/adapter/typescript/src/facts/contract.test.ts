@@ -30,6 +30,9 @@ const SOURCES: Record<string, CaseFiles> = {
       "declare const first: unknown, second: unknown;\nexport const items = [first, second];\n",
   },
   "a module exporting a name": { "/f.ts": "export function build() {}\n" },
+  "a class declaring a method": {
+    "/f.ts": "export class Loader {\n  load() {}\n}\n",
+  },
   "an import renaming what it brings in": {
     "/source.ts": "export const value = 1;\n",
     "/f.ts":
