@@ -1110,6 +1110,9 @@ function roleOf(
   return "queryParams";
 }
 
+/** How far into an annotation the search for an injector call goes. `Annotated[T, Depends(f)]` needs three, and the rest is headroom. */
+const MAX_ANNOTATION_DEPTH = 6;
+
 /** The callee's own name, for `Depends(...)` and for `fastapi.Depends(...)` alike. */
 function calleeName(call: PyNode): string | null {
   const callee = field(call, "function");
@@ -1158,7 +1161,7 @@ function isInjectedParameter(
     node: PyNode | null,
     depth: number,
   ): boolean => {
-    if (node === null || depth > 6) {
+    if (node === null || depth > MAX_ANNOTATION_DEPTH) {
       return false;
     }
     if (callsAnInjector(node)) {

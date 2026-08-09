@@ -1,3 +1,5 @@
+import { IdMap, IdSet } from "@suss/extractor";
+
 /**
  * Small helpers for reading a tree-sitter-ruby parse tree.
  *
@@ -143,68 +145,11 @@ export function readCallArgs(argumentList: RbNode | null): CallArgs {
 
 /**
  * tree-sitter hands back a fresh wrapper object every time a child is read,
- * so two reads of one node are never `===`. Anything keyed on a node keys on
- * `nodeKey`, which is why these exist rather than a plain Set and Map.
+ * so two reads of one node are never `===`. These key on the node id, and
+ * `checkStyle` fails a build that keys a plain Set or Map on a node.
  */
-export function nodeKey(node: RbNode): number {
-  return node.id;
-}
-
 /** A set of nodes, compared the way tree-sitter compares them. */
-export class NodeSet implements Iterable<RbNode> {
-  private readonly byKey = new Map<number, RbNode>();
-
-  constructor(nodes: Iterable<RbNode> = []) {
-    for (const node of nodes) {
-      this.add(node);
-    }
-  }
-
-  add(node: RbNode): this {
-    this.byKey.set(nodeKey(node), node);
-    return this;
-  }
-
-  has(node: RbNode): boolean {
-    return this.byKey.has(nodeKey(node));
-  }
-
-  /** The node this set was built with, which is the caller's own handle for it. */
-  get(node: RbNode): RbNode | undefined {
-    return this.byKey.get(nodeKey(node));
-  }
-
-  get size(): number {
-    return this.byKey.size;
-  }
-
-  [Symbol.iterator](): Iterator<RbNode> {
-    return this.byKey.values();
-  }
-}
+export class NodeSet extends IdSet<RbNode> {}
 
 /** A map keyed by node, compared the way tree-sitter compares them. */
-export class NodeMap<V> implements Iterable<[RbNode, V]> {
-  private readonly entries = new Map<number, [RbNode, V]>();
-
-  set(node: RbNode, value: V): this {
-    this.entries.set(nodeKey(node), [node, value]);
-    return this;
-  }
-
-  get(node: RbNode): V | undefined {
-    return this.entries.get(nodeKey(node))?.[1];
-  }
-
-  has(node: RbNode): boolean {
-    return this.entries.has(nodeKey(node));
-  }
-
-  get size(): number {
-    return this.entries.size;
-  }
-
-  [Symbol.iterator](): Iterator<[RbNode, V]> {
-    return this.entries.values();
-  }
-}
+export class NodeMap<V> extends IdMap<RbNode, V> {}

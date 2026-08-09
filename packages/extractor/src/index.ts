@@ -48,6 +48,8 @@ export {
   PathBudgetExceeded,
   UnmodeledFlow,
 } from "./paths/enumeratePaths.js";
+export { sharedGatingConditions } from "./paths/gatingConditions.js";
+export { IdMap, IdSet } from "./paths/nodeIdentity.js";
 export {
   absentReading,
   ambiguousReading,
@@ -83,6 +85,7 @@ export type {
   StructuredPathConditionsInput,
   StructuredPathConditionsResult,
 } from "./paths/enumeratePaths.js";
+export type { Identified } from "./paths/nodeIdentity.js";
 export type {
   CaseGroup,
   ConditionHandle,
