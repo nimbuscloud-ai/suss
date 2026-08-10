@@ -338,9 +338,10 @@ describe("computePathConditions: sound degradation on declined shapes", () => {
     ]);
   });
 
-  it("degrades when the path budget is exceeded", () => {
-    // 9 sequential ifs whose arms both contain a (non-exit) terminal call
-    // double the frontier each: 2^9 = 512 > 256.
+  it("keeps a run of rejoining guards at one path instead of degrading", () => {
+    // Nine sequential ifs whose arms both call `term` and neither exits.
+    // Each call keeps the guard that reached it, and the return after all
+    // nine did not depend on any of them.
     const branchy = Array.from(
       { length: 9 },
       (_, i) => `if (a${i}) { term(); } else { term(); }`,
@@ -355,6 +356,40 @@ describe("computePathConditions: sound degradation on declined shapes", () => {
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .filter((c) => c.getExpression().getText() === "term");
     expect(termCalls.length).toBe(18);
+
+    const result = computePathConditions(fn, termCalls);
+
+    const [first] = result.byTerminal.get(termCalls[0]) ?? [];
+    expect(first?.map((c) => `${c.polarity}:${c.sourceText}`)).toEqual([
+      "positive:a0",
+    ]);
+    const [second] = result.byTerminal.get(termCalls[1]) ?? [];
+    expect(second?.map((c) => `${c.polarity}:${c.sourceText}`)).toEqual([
+      "negative:a0",
+    ]);
+    // One way to each call, rather than one for every combination of the
+    // other eight guards.
+    const entries = [...result.byTerminal.values()].map((p) => p.length);
+    expect(entries).toEqual(Array.from({ length: 18 }, () => 1));
+  });
+
+  it("degrades when the path budget is exceeded", () => {
+    // Six sequential three-way switches reach 3^6 = 729 paths. A switch
+    // group has no complement to cancel against, so nothing merges.
+    const switches = Array.from(
+      { length: 6 },
+      (_, i) =>
+        `switch (k${i}) { case "a": term(); break; case "b": term(); break; default: term(); }`,
+    ).join("\n");
+    const fn = getFunction(`
+      export function handler(term: any, ${Array.from({ length: 6 }, (_, i) => `k${i}: any`).join(", ")}) {
+        ${switches}
+        return { status: 200 };
+      }
+    `);
+    const termCalls = fn
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .filter((c) => c.getExpression().getText() === "term");
     const result = computePathConditions(fn, termCalls);
     const [only] = result.byTerminal.get(termCalls[0]) ?? [];
     expect(only?.[only.length - 1]?.sourceText).toContain(
