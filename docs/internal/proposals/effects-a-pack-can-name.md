@@ -1,6 +1,7 @@
 # Proposal: how a pack says a call talks to a database
 
-Status: draft, seeking alignment. No implementation yet.
+Status: agreed. Matching on the return annotation for Python and on
+the ancestry for Ruby, one library each, a chain read as one effect.
 
 `effect-grammar.md` asks what belongs in the effect taxonomy. This asks
 the narrower question underneath it: given that `interaction` with
