@@ -128,8 +128,25 @@ function emitCall(emitter: Emitter, call: RbNode): void {
     return;
   }
 
+  // Ruby gives `receiver.method` no node of its own, so the method name is
+  // where the read is keyed. Keying on the bare name would find a method of
+  // that name at the top of the file instead.
+  const receiver = field(call, "receiver");
   const callKey = nodeId(emitter.filePath, call);
-  add(emitter, "call", callKey, valueKey(emitter, method));
+  const calleeKey =
+    receiver === null
+      ? valueKey(emitter, method)
+      : nodeId(emitter.filePath, method);
+  add(emitter, "call", callKey, calleeKey);
+  if (receiver !== null) {
+    add(
+      emitter,
+      "readsProperty",
+      calleeKey,
+      valueKey(emitter, receiver),
+      method.text,
+    );
+  }
 
   const args = field(call, "arguments");
   let position = 0;
@@ -234,16 +251,13 @@ function implicitReturn(body: RbNode): RbNode | null {
   return last === undefined || last.type === "return" ? null : last;
 }
 
-function emitMethodFacts(emitter: Emitter, method: RbNode): void {
+/**
+ * Where a method's name goes is the caller's to say, because a method inside a
+ * class belongs to that class and one at the top of a file belongs to the file.
+ */
+function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const funcKey = nodeId(emitter.filePath, method);
   add(emitter, "func", funcKey);
-
-  const name = field(method, "name");
-  if (name !== null) {
-    add(emitter, "binds", nameId(emitter.filePath, name.text), funcKey);
-    // A method at the top of a file is what another file gets by name.
-    add(emitter, "exportsAs", emitter.filePath, name.text, funcKey);
-  }
 
   const params = field(method, "parameters");
   const declared = new Set<string>();
@@ -271,7 +285,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): void {
 
   const body = field(method, "body");
   if (body === null) {
-    return;
+    return funcKey;
   }
 
   const recordNested = (node: RbNode): void => {
@@ -307,6 +321,8 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): void {
   }
 
   emitExpressionFacts(inside, body);
+
+  return funcKey;
 }
 
 function emitAssignment(emitter: Emitter, assignment: RbNode): void {
@@ -333,6 +349,46 @@ function emitAssignment(emitter: Emitter, assignment: RbNode): void {
   );
 }
 
+const METHOD_TYPES = new Set(["method", "singleton_method"]);
+
+/**
+ * A class is an object containing its methods, which is the treatment an
+ * array and a hash already get. That is what lets a method read off an
+ * instance resolve to the method the class declares.
+ */
+function emitClassFacts(emitter: Emitter, cls: RbNode): string {
+  const classKey = nodeId(emitter.filePath, cls);
+  add(emitter, "objectValue", classKey);
+
+  const body = field(cls, "body");
+  for (const statement of body === null ? [] : children(body)) {
+    if (statement.type === "assignment") {
+      const left = field(statement, "left");
+      const right = field(statement, "right");
+      if (left !== null && right !== null && left.type === "constant") {
+        add(
+          emitter,
+          "holdsProperty",
+          classKey,
+          left.text,
+          valueKey(emitter, right),
+        );
+      }
+      continue;
+    }
+    if (!METHOD_TYPES.has(statement.type)) {
+      continue;
+    }
+    const funcKey = emitMethodFacts(emitter, statement);
+    const name = field(statement, "name");
+    if (name !== null) {
+      add(emitter, "holdsProperty", classKey, name.text, funcKey);
+    }
+  }
+
+  return classKey;
+}
+
 /**
  * Walk a file and emit the value facts. A method is walked in its own right,
  * so a body's returns and calls belong to the method that wrote them.
@@ -344,10 +400,25 @@ export function emitValueFacts(
 ): void {
   const emitter: Emitter = { db, filePath, enclosing: null };
 
+  const declaresName = (child: RbNode, key: string): void => {
+    const name = field(child, "name");
+    if (name === null) {
+      return;
+    }
+    add(emitter, "binds", nameId(filePath, name.text), key);
+    // A declaration at the top of a file is what another file gets by name.
+    add(emitter, "exportsAs", filePath, name.text, key);
+  };
+
   const walk = (node: RbNode): void => {
     for (const child of children(node)) {
-      if (child.type === "method" || child.type === "singleton_method") {
-        emitMethodFacts(emitter, child);
+      if (child.type === "class") {
+        declaresName(child, emitClassFacts(emitter, child));
+        // Its methods are its own; descending would make them the file's.
+        continue;
+      }
+      if (METHOD_TYPES.has(child.type)) {
+        declaresName(child, emitMethodFacts(emitter, child));
       }
       if (child.type === "assignment") {
         emitAssignment(emitter, child);

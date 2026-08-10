@@ -31,6 +31,11 @@ const SOURCES: Record<string, CaseFiles> = {
   "a name bound to a call": { "f.py": "registry = build()\n" },
   "a written-out sequence": { "f.py": "items = [first, second]\n" },
   "a module exporting a name": { "f.py": "def build():\n    pass\n" },
+  "a class declaring a method": {
+    "f.py": ["class Loader:", "    def load(self):", "        pass", ""].join(
+      "\n",
+    ),
+  },
   "an import renaming what it brings in": {
     "source.py": "value = 1\n",
     "f.py": "from source import value as renamed\n",

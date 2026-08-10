@@ -16,6 +16,8 @@ function conformingFacts(): Database {
   db.add("holdsProperty", ["list:1", "0", "f#first"]);
   db.add("holdsProperty", ["list:1", "1", "f#second"]);
   db.add("func", ["fn:a"]);
+  db.add("objectValue", ["class:1"]);
+  db.add("holdsProperty", ["class:1", "load", "fn:a"]);
   db.add("exportsAs", ["f.py", "build", "fn:a"]);
   db.add("imports", ["f.py#renamed", "source.py", "value"]);
   return db;
@@ -39,6 +41,38 @@ describe("the fact contract", () => {
     });
     expect(failures.map((f) => f.case)).toContain(
       "two functions, one parameter name",
+    );
+  });
+
+  it("catches a class that is not an object value", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("objectValue", [["class:1"], ["list:1"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "a class is not an object value",
+    );
+  });
+
+  it("catches a class containing none of its methods", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("holdsProperty", [["class:1", "load", "fn:a"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain("a class declaring a method");
+  });
+
+  it("catches a class containing something that is not the method's node", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("holdsProperty", [["class:1", "load", "fn:a"]]);
+      db.add("holdsProperty", ["class:1", "load", "f#load"]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "not the node that declares the method",
     );
   });
 

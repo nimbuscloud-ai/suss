@@ -31,7 +31,7 @@ import {
 import { isWrittenAgain, writesToBinding } from "./assignments.js";
 
 import type { Database } from "@suss/datalog";
-import type { VariableDeclaration } from "ts-morph";
+import type { ClassDeclaration, VariableDeclaration } from "ts-morph";
 
 /** Arity sugar over `Database.add`, which takes a tuple array. */
 function fact(db: Database, relation: string, ...tuple: string[]): void {
@@ -655,6 +655,42 @@ function emitCallFacts(
 }
 
 /**
+ * A class is an object containing its methods, which is the treatment an
+ * object literal already gets. That is what lets a method read off an
+ * instance resolve to the method the class declares.
+ */
+function emitClassFacts(
+  db: Database,
+  table: NodeTable,
+  declaration: ClassDeclaration,
+): void {
+  const id = nodeId(declaration);
+  table.byId.set(id, declaration);
+  fact(db, "objectValue", id);
+
+  for (const method of declaration.getMethods()) {
+    const methodId = nodeId(method);
+    table.byId.set(methodId, method);
+    fact(db, "func", methodId);
+    emitFunctionFacts(db, table, method);
+    fact(db, "holdsProperty", id, method.getName(), methodId);
+  }
+
+  for (const property of declaration.getProperties()) {
+    const initializer = property.getInitializer();
+    if (initializer !== undefined) {
+      fact(
+        db,
+        "holdsProperty",
+        id,
+        property.getName(),
+        emitValue(db, table, initializer),
+      );
+    }
+  }
+}
+
+/**
  * Parameters, returned values, and body calls of a function. Body
  * calls are what the unwraps rule needs: an inner function that calls
  * a parameter of its enclosing factory.
@@ -832,6 +868,12 @@ export function extractFileFacts(
         fact(db, "func", id);
         emitFunctionFacts(db, table, declaration);
         fact(db, "exportsAs", filePath, name, id);
+        continue;
+      }
+
+      if (Node.isClassDeclaration(declaration)) {
+        emitClassFacts(db, table, declaration);
+        fact(db, "exportsAs", filePath, name, nodeId(declaration));
         continue;
       }
 
