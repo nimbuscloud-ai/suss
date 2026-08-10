@@ -1,23 +1,23 @@
 {
-  "name": "@suss/adapter-python",
+  "name": "@suss/framework-sqlalchemy",
   "version": "0.4.0",
   "type": "module",
-  "description": "Python language adapter for suss — parses source with tree-sitter (WASM), resolves names with a lexical binder, and emits raw extractions for the suss pipeline.",
+  "description": "Pattern pack that says which SQLAlchemy calls a Python body makes against the database.",
   "keywords": [
     "suss",
     "behavioral-summary",
-    "static-analysis",
+    "framework-pack",
+    "sqlalchemy",
     "python",
-    "tree-sitter",
-    "ast"
+    "static-analysis"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/adapter/python#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/sqlalchemy#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/adapter/python"
+    "directory": "packages/framework/sqlalchemy"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -34,7 +34,6 @@
   },
   "files": [
     "dist",
-    "grammar",
     "README.md",
     "LICENSE"
   ],
@@ -47,14 +46,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.4.0",
-    "@suss/datalog": "0.4.0",
-    "@suss/extractor": "0.4.0",
-    "web-tree-sitter": "^0.26.11"
+    "@suss/adapter-python": "0.4.0"
   },
   "devDependencies": {
-    "@suss/resolution": "*",
-    "@types/node": "*",
+    "@suss/checker": "*",
+    "@suss/behavioral-ir": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

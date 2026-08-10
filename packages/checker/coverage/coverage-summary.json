@@ -1,10 +1,10 @@
 {
   "total": {
     "lines": {
-      "total": 1842,
-      "covered": 1678,
+      "total": 1844,
+      "covered": 1680,
       "skipped": 0,
-      "pct": 91.09
+      "pct": 91.1
     },
     "statements": {
       "total": 1870,
@@ -111,10 +111,10 @@
   },
   "src/spelledOut.ts": {
     "lines": {
-      "total": 18,
-      "covered": 8,
+      "total": 19,
+      "covered": 9,
       "skipped": 0,
-      "pct": 44.44
+      "pct": 47.36
     },
     "functions": {
       "total": 7,
@@ -709,10 +709,10 @@
   },
   "src/runtime-config/runtimeConfigPairing.ts": {
     "lines": {
-      "total": 135,
-      "covered": 118,
+      "total": 136,
+      "covered": 119,
       "skipped": 0,
-      "pct": 87.4
+      "pct": 87.5
     },
     "functions": {
       "total": 25,

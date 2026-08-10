@@ -55,7 +55,7 @@
     "ts-morph": "^23.0.0"
   },
   "devDependencies": {
-    "@suss/resolution": "0.3.2",
+    "@suss/resolution": "*",
     "@suss/test-project": "*",
     "@types/node": "*",
     "@types/picomatch": "^4.0.3",

@@ -16,6 +16,7 @@ import path from "node:path";
 import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
+import { field } from "./ast.js";
 import { discoverUnits } from "./discovery.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
@@ -25,7 +26,7 @@ import { bindModule } from "./scope.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ExtractorOptions } from "@suss/extractor";
-import type { PythonPack } from "./pack.js";
+import type { PythonPack, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { BoundPythonFile } from "./routers.js";
 
@@ -97,6 +98,12 @@ export async function extractPythonProject(
     }
   }
 
+  // A chain that matches starts at a method some file importing the library
+  // declares, so its name is in here. A project that renames one on the way
+  // through is missed, which is what asking about every call would cost a
+  // minute to catch.
+  const couldMatch = methodsDeclaredNear(db, storagePatterns, definitions);
+
   const routerIndex = buildRouterIndex(bound, options.packs, {
     roots: options.roots,
     ...(mountsRouters ? { facts: db } : {}),
@@ -117,6 +124,7 @@ export async function extractPythonProject(
               factsPath: file,
               patterns: storagePatterns,
               definitionAt: (key: string) => definitions.get(key),
+              couldMatch,
             },
           }
         : {}),
@@ -177,4 +185,31 @@ function indexDefinitions(
       indexDefinitions(into, file, child);
     }
   }
+}
+
+/** What a file importing one of the libraries declares, by name. */
+function methodsDeclaredNear(
+  db: Database,
+  patterns: readonly StoragePattern[],
+  definitions: ReadonlyMap<string, PyNode>,
+): Set<string> {
+  const modules = new Set(patterns.map((pattern) => pattern.module));
+  const importing = new Set(
+    db
+      .facts("pyImport")
+      .filter((row) => modules.has(String(row[1])))
+      .map((row) => String(row[0])),
+  );
+  const found = new Set<string>();
+  for (const [key, node] of definitions) {
+    const at = key.lastIndexOf(":");
+    if (at === -1 || !importing.has(key.slice(0, at))) {
+      continue;
+    }
+    const name = field(node, "name");
+    if (name !== null) {
+      found.add(name.text);
+    }
+  }
+  return found;
 }

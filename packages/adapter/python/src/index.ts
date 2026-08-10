@@ -52,6 +52,7 @@ export type {
   PythonPack,
   RouteConventions,
   RouterComposition,
+  StoragePattern,
 } from "./pack.js";
 export type { PyNode, PyTree } from "./parser.js";
 export type { ExtractPythonOptions, ExtractPythonResult } from "./project.js";

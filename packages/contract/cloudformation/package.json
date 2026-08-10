@@ -55,7 +55,7 @@
     "yaml": "^2.4.0"
   },
   "devDependencies": {
-    "@suss/checker": "0.3.2",
+    "@suss/checker": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

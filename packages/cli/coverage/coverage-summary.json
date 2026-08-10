@@ -1,8 +1,8 @@
 {
   "total": {
     "lines": {
-      "total": 2638,
-      "covered": 2412,
+      "total": 2639,
+      "covered": 2413,
       "skipped": 0,
       "pct": 91.43
     },
@@ -293,10 +293,10 @@
   },
   "src/initInteractive.ts": {
     "lines": {
-      "total": 189,
-      "covered": 170,
+      "total": 190,
+      "covered": 171,
       "skipped": 0,
-      "pct": 89.94
+      "pct": 90
     },
     "functions": {
       "total": 46,

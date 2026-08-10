@@ -65,9 +65,14 @@ function prepare(manifest, { write }) {
 
   // A dependency is resolved for the consumer, so it gives the one
   // version this release was built against. A peer is resolved by the
-  // consumer, so it gives the range this release works against.
+  // consumer, so it gives the range this release works against. A dev
+  // dependency reaches no consumer at all, and npm fetches a sibling from
+  // the registry rather than linking it whenever the version disagrees,
+  // so an exact one breaks the workspace the moment a bump lands. `*`
+  // links whatever the workspace has and never goes stale.
   for (const [field, want] of [
     ["dependencies", VERSION],
+    ["devDependencies", "*"],
     ["peerDependencies", `^${VERSION}`],
   ]) {
     const deps = pkg[field];
