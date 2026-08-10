@@ -15,6 +15,11 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { createFileCache, discoverUnits } from "./discovery.js";
+import {
+  collectFileConstants,
+  emitConstantBindings,
+  type FileConstants,
+} from "./facts/constants.js";
 import { emitValueFacts } from "./facts/values.js";
 import { emitEntryFact } from "./facts.js";
 import { parseRuby } from "./parser.js";
@@ -40,6 +45,9 @@ export async function extractRubyProject(
 ): Promise<ExtractRubyResult> {
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
+  // Which file defines a constant is settled across the whole run, so the
+  // reading sites wait until every file has been walked.
+  const constants: FileConstants[] = [];
   // One cache for the whole run, so a class that shows up both as an input file
   // and through a wiring keyword only gets parsed once.
   const cache = createFileCache(
@@ -76,7 +84,10 @@ export async function extractRubyProject(
     }
 
     emitValueFacts(db, file, root);
+    constants.push(collectFileConstants(file, root));
   }
+
+  emitConstantBindings(db, constants);
 
   return { summaries, facts: db };
 }

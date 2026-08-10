@@ -13,11 +13,18 @@ export interface ContractCase {
   readonly name: string;
   /** What that source has to contain, for whoever writes it. */
   readonly requires: string;
-  /** Null when the facts satisfy the case; otherwise what is wrong with them. */
-  readonly check: (facts: FactsOf) => string | null;
+  /**
+   * Null when the facts satisfy the case; otherwise what is wrong with them.
+   * `files` is the source file names the adapter supplied, so a case about a
+   * value leaving its file can say which file it should have left.
+   */
+  readonly check: (facts: FactsOf, files: readonly string[]) => string | null;
 }
 
 const distinct = (values: string[]): number => new Set(values).size;
+
+/** The relations an adapter can use to say a value came from another file. */
+const RELATIONS_THAT_CAN_CROSS = ["imports", "binds", "reExports"];
 
 export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
   {
@@ -127,19 +134,35 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
-    name: "an import renaming what it brings in",
-    requires: "a file importing one name from another module under a new name",
-    check: (facts) => {
-      const imported = facts("imports")[0];
-      if (imported === undefined) {
-        return "an import states nothing, so a value cannot leave its file";
+    name: "a value another file declares",
+    requires:
+      "two files, one declaring a value and the other reading it by name",
+    // Which relation says so is the language's business. TypeScript and Python
+    // both write an import; Ruby has none and binds the reading site straight
+    // to the definition. What has to be true is that some fact reaches out of
+    // the file doing the reading into the file doing the declaring.
+    check: (facts, files) => {
+      if (files.length < 2) {
+        return "expected two files";
       }
-      const [local, , originalName] = imported;
-      return local !== undefined &&
-        originalName !== undefined &&
-        !local.endsWith(`#${originalName}`)
+      const mentions = (value: string, file: string): boolean =>
+        value.includes(file);
+      const crosses = RELATIONS_THAT_CAN_CROSS.some((relation) =>
+        facts(relation).some((row) =>
+          files.some(
+            (from) =>
+              mentions(row[0] ?? "", from) &&
+              row
+                .slice(1)
+                .some((cell) =>
+                  files.some((to) => to !== from && mentions(cell, to)),
+                ),
+          ),
+        ),
+      );
+      return crosses
         ? null
-        : "an import is keyed by the name it brings in rather than the local name it is read by";
+        : "nothing links a name read in one file to what another file declares, so a value cannot leave the file it is written in";
     },
   },
 ];
@@ -182,8 +205,9 @@ export function checkFactContract(
     }
 
     const db = await emit(files);
-    const problem = contractCase.check((relation) =>
-      db.facts(relation).map((row) => row.map(String)),
+    const problem = contractCase.check(
+      (relation) => db.facts(relation).map((row) => row.map(String)),
+      Object.keys(files),
     );
     const known = options.known?.[contractCase.name];
     if (known !== undefined) {

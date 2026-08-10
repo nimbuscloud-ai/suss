@@ -23,8 +23,10 @@ function conformingFacts(): Database {
   return db;
 }
 
+// Two files, because a case about a value leaving its file needs somewhere
+// for it to have come from. The fake adapter below ignores the source anyway.
 const everyCase = Object.fromEntries(
-  FACT_CONTRACT_CASES.map((c) => [c.name, { "f.py": "" }]),
+  FACT_CONTRACT_CASES.map((c) => [c.name, { "f.py": "", "source.py": "" }]),
 );
 
 describe("the fact contract", () => {
@@ -118,16 +120,25 @@ describe("the fact contract", () => {
     expect(failures.map((f) => f.case)).toContain("a module exporting a name");
   });
 
-  it("catches an import keyed by the name it brings in rather than the local one", async () => {
+  it("catches a file that reaches nothing another file declares", async () => {
     const failures = await checkFactContract(everyCase, () => {
       const db = conformingFacts();
       db.retract("imports", [["f.py#renamed", "source.py", "value"]]);
-      db.add("imports", ["f.py#value", "source.py", "value"]);
       return db;
     });
     expect(failures.map((f) => f.case)).toContain(
-      "an import renaming what it brings in",
+      "a value another file declares",
     );
+  });
+
+  it("accepts a binding straight to a definition in the other file", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("imports", [["f.py#renamed", "source.py", "value"]]);
+      db.add("binds", ["f.py#Order", "source.py:0-12"]);
+      return db;
+    });
+    expect(failures).toEqual([]);
   });
 
   it("accepts a read linked to its parameter by binds rather than keyed as it", async () => {
@@ -155,7 +166,11 @@ describe("the fact contract", () => {
         db.retract("imports", [["f.py#renamed", "source.py", "value"]]);
         return db;
       },
-      { known: { "an import renaming what it brings in": "no require yet" } },
+      {
+        known: {
+          "a value another file declares": "nothing crosses a file yet",
+        },
+      },
     );
     expect(failures).toEqual([]);
   });

@@ -33,7 +33,7 @@ const SOURCES: Record<string, CaseFiles> = {
   "a class declaring a method": {
     "/f.ts": "export class Loader {\n  load() {}\n}\n",
   },
-  "an import renaming what it brings in": {
+  "a value another file declares": {
     "/source.ts": "export const value = 1;\n",
     "/f.ts":
       "import { value as renamed } from './source';\nexport const used = renamed;\n",
