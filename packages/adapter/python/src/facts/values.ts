@@ -36,6 +36,25 @@ const WRITTEN_VALUE_TYPES = new Set([
 /** A sequence keeps its elements under their positions, the way TypeScript's arrays do, so one property rule covers `items[0]`. */
 const SEQUENCE_TYPES = new Set(["list", "tuple", "set"]);
 
+/** `*args` and `**kwargs` collect what is left rather than taking one value. */
+const SPLAT_TYPES = new Set(["list_splat_pattern", "dictionary_splat_pattern"]);
+
+/**
+ * What a parameter is called. `loader: ApplicationLoader` is a
+ * `typed_parameter`, which the grammar gives no name field, so the name is the
+ * identifier it starts with.
+ */
+function parameterName(param: PyNode): PyNode | null {
+  if (param.type === "identifier") {
+    return param;
+  }
+  const named = field(param, "name");
+  if (named !== null) {
+    return named;
+  }
+  return children(param).find((child) => child.type === "identifier") ?? null;
+}
+
 /** tree-sitter types a named child as nullable; dropping them once keeps every walk below flat. */
 function children(node: PyNode): PyNode[] {
   return node.namedChildren.filter((child): child is PyNode => child !== null);
@@ -217,25 +236,34 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
  * makes. Where its name goes is the caller's to say, because a method belongs
  * to its class and a def belongs to its module.
  */
-function emitFunctionFacts(emitter: Emitter, fn: PyNode): string {
+function emitFunctionFacts(
+  emitter: Emitter,
+  fn: PyNode,
+  isMethod = false,
+): string {
   const funcKey = nodeId(emitter.filePath, fn);
   add(emitter, "func", funcKey);
 
   const params = field(fn, "parameters");
   const declared = new Set<string>();
-  let position = 0;
+  // A method's first parameter is the receiver, which the caller does not
+  // write, so counting it would put the first written argument in it.
+  let position = isMethod ? -1 : 0;
+  let byPosition = true;
   for (const param of params === null ? [] : children(params)) {
-    const paramName =
-      param.type === "identifier" ? param : (field(param, "name") ?? null);
+    if (SPLAT_TYPES.has(param.type)) {
+      // What follows a `*` can only be passed by name.
+      byPosition = false;
+      continue;
+    }
+    const paramName = parameterName(param);
     if (paramName !== null) {
       declared.add(paramName.text);
-      add(
-        emitter,
-        "paramOf",
-        funcKey,
-        String(position),
-        `${funcKey}#${paramName.text}`,
-      );
+      const paramKey = `${funcKey}#${paramName.text}`;
+      if (byPosition && position >= 0) {
+        add(emitter, "paramOf", funcKey, String(position), paramKey);
+      }
+      add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
     }
     position += 1;
   }
@@ -343,7 +371,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
     if (!FUNCTION_TYPES.has(member.type)) {
       continue;
     }
-    const funcKey = emitFunctionFacts(emitter, member);
+    const funcKey = emitFunctionFacts(emitter, member, true);
     const name = field(member, "name");
     if (name !== null) {
       add(emitter, "holdsProperty", classKey, name.text, funcKey);

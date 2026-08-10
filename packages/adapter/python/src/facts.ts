@@ -49,14 +49,21 @@ function importedModuleText(module: string, relativeLevel: number): string {
   return relativeLevel > 0 ? `${".".repeat(relativeLevel)}${module}` : module;
 }
 
-/** Module scope only. A function- or class-scoped import is not recorded. */
+/**
+ * Every import in the file, wherever it is written. Python code puts an import
+ * inside a function to break a cycle between two modules, and a chain through
+ * one of those functions stops dead without it.
+ */
 export function emitModuleImportFacts(
   db: Database,
   filePath: string,
   module: ModuleBinding,
   resolverOptions: ModuleResolverOptions,
 ): void {
-  for (const [localName, binding] of module.moduleScope.bindings) {
+  const everyBinding = [...module.scopeFor.values()].flatMap((scope) => [
+    ...scope.bindings,
+  ]);
+  for (const [localName, binding] of everyBinding) {
     if (binding.kind !== "import" && binding.kind !== "importFrom") {
       continue;
     }

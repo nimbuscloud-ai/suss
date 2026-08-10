@@ -36,6 +36,7 @@ export type {
 //   endsHolding(x, y)           the name x is written more than once
 //                               and holds y once the writes have run
 //   paramOf(f, k, p)            p is f's parameter at position k
+//   paramNamed(f, n, p)         p is f's parameter called n
 //   returnsValue(f, v)          f returns v
 //   bodyCalls(f, c)             f's body calls c
 //   containsFn(f, g)            g is declared inside f
@@ -156,6 +157,63 @@ export const RESOLUTION_RULES = [
       lit("returnsValue", v("f"), v("ret")),
       lit("comesTo", v("ret"), v("obj")),
       lit("objectValue", v("obj")),
+    ],
+  ),
+
+  // Which calls a function, found by the name the call is written as
+  // rather than by resolving every callee in the project. Asking what
+  // reaches a parameter means looking for call sites, and looking for
+  // them the other way round costs a whole-project resolution.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [lit("call", v("r"), v("c")), lit("binds", v("c"), v("f"))],
+  ),
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("imports", v("c"), v("m"), v("n")),
+      lit("moduleExport", v("m"), v("n"), v("f")),
+    ],
+  ),
+
+  // A function whose return is itself a call arrives at the same object
+  // that call does, so a chain passing through two factories settles.
+  rule(
+    "objectOf",
+    [v("r"), v("obj")],
+    [
+      lit("call", v("r"), v("c")),
+      lit("comesTo", v("c"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("objectOf", v("ret"), v("obj")),
+    ],
+  ),
+
+  // An argument reaches the parameter it is passed to, by position or
+  // by the name the caller wrote. A function called from several places
+  // leaves its parameter with more than one value, and the caller
+  // decides what to do about that.
+  rule(
+    "comesTo",
+    [v("p"), v("z")],
+    [
+      lit("paramOf", v("f"), v("k"), v("p")),
+      lit("callsFunction", v("r"), v("f")),
+      lit("callArg", v("r"), v("k"), v("a")),
+      lit("comesTo", v("a"), v("z")),
+    ],
+  ),
+  rule(
+    "comesTo",
+    [v("p"), v("z")],
+    [
+      lit("paramNamed", v("f"), v("n"), v("p")),
+      lit("callsFunction", v("r"), v("f")),
+      lit("callKeywordArg", v("r"), v("n"), v("a")),
+      lit("comesTo", v("a"), v("z")),
     ],
   ),
 

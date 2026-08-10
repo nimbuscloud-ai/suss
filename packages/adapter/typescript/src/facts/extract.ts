@@ -719,6 +719,7 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
       const parameterId = nodeId(parameter);
       table.byId.set(parameterId, parameter);
       fact(db, "paramOf", fnId, String(position), parameterId);
+      fact(db, "paramNamed", fnId, parameter.getName(), parameterId);
     }
 
     const body = fn.getBody?.();
