@@ -36,7 +36,7 @@ const SOURCES: Record<string, CaseFiles> = {
       "\n",
     ),
   },
-  "an import renaming what it brings in": {
+  "a value another file declares": {
     "source.py": "value = 1\n",
     "f.py": "from source import value as renamed\n",
   },

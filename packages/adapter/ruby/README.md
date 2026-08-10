@@ -68,6 +68,36 @@ two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
 node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
 `npm run check:style` fails a build that keys either on a node.
 
+## Finding the definition behind a constant
+
+Ruby has no imports. A file says `require` to load another file, and after
+that every constant either one defines is reachable by name, so which file a
+name came from is settled by where the constant is defined rather than by
+anything written at the reading site. The other two adapters emit `imports`
+and this one binds a reference straight to its definition.
+
+Lookup follows Ruby's own rule. A name written inside `module Types; class
+Wrapper` is looked for as `Types::Wrapper::Order`, then `Types::Order`, then
+`Order`, and the first one that settles wins:
+
+```ruby
+module Types
+  class Order; end
+  class Wrapper
+    def build
+      Order      # Types::Order, not the top-level one
+    end
+  end
+end
+```
+
+A name two files define under the same nesting says nothing, because choosing
+between them would be a guess. Neither does a constant built at run time
+through `const_set` or `Object.const_get`, which nothing here reads.
+
+The definitions are collected per file and matched afterwards, since which
+file defines a constant is only settled once every file has been read.
+
 ## Where it fits in suss
 
 Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (starting with `@suss/framework-graphql-ruby`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes or DSL calls are named beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.
