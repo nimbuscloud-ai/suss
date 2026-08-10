@@ -2,10 +2,7 @@
 // A call written under an `if` records that test as a precondition, which is
 // what the IR means by a call that does not always fire.
 
-import {
-  enumerateStructuredPaths,
-  sharedGatingConditions,
-} from "@suss/extractor";
+import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 
 import { field } from "../ast.js";
 import { lowerRubyBody } from "./lowering.js";
@@ -158,10 +155,13 @@ export function invocationEffects(definitionNode: RbNode): InvocationEffect[] {
   }
 
   const lowered = lowerRubyBody(body, statements);
-  const enumerated = enumerateStructuredPaths({
-    statements: lowered.statements,
-    terminalsByStmt: lowered.terminalsByStmt,
-  });
+  const enumerated = enumerateOrDegrade(
+    {
+      statements: lowered.statements,
+      terminalsByStmt: lowered.terminalsByStmt,
+    },
+    statements,
+  );
 
   return calls.map((call) => {
     const statement = statementOf.get(call.id);

@@ -663,3 +663,49 @@ export function enumerateStructuredPaths<Cond, Terminal>(
 
   return { byTerminal: state.byTerminal, fallthrough: state.fallthrough };
 }
+
+/**
+ * Enumerate, and when the engine gives up say so instead of throwing. Each
+ * terminal comes back reachable under one condition nobody can read, which
+ * keeps everything the caller already knew about it. A caller that can do
+ * better, by walking the terminal's own ancestors for the conditions that
+ * enclose it, should.
+ */
+export function enumerateOrDegrade<Cond, Terminal>(
+  input: StructuredPathConditionsInput<Cond, Terminal>,
+  terminals: Iterable<Terminal>,
+): StructuredPathConditionsResult<Cond, Terminal> & {
+  /** Why the engine gave up, or null when it read the whole body. */
+  degraded: string | null;
+} {
+  try {
+    return { ...enumerateStructuredPaths(input), degraded: null };
+  } catch (error) {
+    const reason = reasonToDegrade(error);
+    if (reason === null) {
+      throw error;
+    }
+    const marker: ConditionInfo<Cond> = {
+      sourceText: `unmodeled control flow (${reason})`,
+      polarity: "positive",
+      source: "explicit",
+      expression: null,
+    };
+    const byTerminal = new Map<Terminal, ConditionInfo<Cond>[][]>();
+    for (const terminal of terminals) {
+      byTerminal.set(terminal, [[marker]]);
+    }
+    return { byTerminal, fallthrough: [[marker]], degraded: reason };
+  }
+}
+
+/** What to say about an error the engine threw, or null when it is not one of its own. */
+function reasonToDegrade(error: unknown): string | null {
+  if (error instanceof PathBudgetExceeded) {
+    return "path budget exceeded";
+  }
+  if (error instanceof UnmodeledFlow) {
+    return error.message;
+  }
+  return null;
+}

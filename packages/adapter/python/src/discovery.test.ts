@@ -828,6 +828,42 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
   });
 });
 
+describe("a handler whose control flow the path engine declines", () => {
+  const source = [
+    "from myapp.wrappers.restx import route",
+    "",
+    "",
+    '@route("/todos")',
+    "class TodoList:",
+    "    def get(self):",
+    "        try:",
+    "            if urgent:",
+    "                return [], 200",
+    "        finally:",
+    "            if failed:",
+    "                return [], 500",
+    "        return [], 204",
+    "",
+  ].join("\n");
+
+  it("keeps the path and the method rather than losing the route with the branches", async () => {
+    const units = await unitsOf(source, [flaskRestxWithReturnStatus]);
+    const unit = units.find((u) => u.identity.name === "TodoList.get");
+    const semantics = unit?.boundaryBinding?.semantics;
+    expect(semantics?.name === "rest" ? semantics.path : null).toBe("/todos");
+    expect(semantics?.name === "rest" ? semantics.method : null).toBe("GET");
+  });
+
+  it("says the control flow is what nobody could read", async () => {
+    const units = await unitsOf(source, [flaskRestxWithReturnStatus]);
+    const unit = units.find((u) => u.identity.name === "TodoList.get");
+    const conditions = (unit?.branches ?? []).flatMap((branch) =>
+      branch.conditions.map((condition) => condition.sourceText),
+    );
+    expect(conditions.join(" ")).toContain("unmodeled control flow");
+  });
+});
+
 describe("a route the readers cannot turn into a unit (an empty path, which the binding builder refuses)", () => {
   const source = [
     "from myapp.wrappers.restx import route",

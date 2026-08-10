@@ -17,7 +17,7 @@ import {
   absentReading,
   ambiguousReading,
   andThenReading,
-  enumerateStructuredPaths,
+  enumerateOrDegrade,
   firstWrittenReading,
   mapReading,
   unreadableReading,
@@ -537,10 +537,13 @@ function branchesFromReturns(
   }
 
   const lowered = lowerPythonBody(body, returns);
-  const enumerated = enumerateStructuredPaths({
-    statements: lowered.statements,
-    terminalsByStmt: lowered.terminalsByStmt,
-  });
+  const enumerated = enumerateOrDegrade(
+    {
+      statements: lowered.statements,
+      terminalsByStmt: lowered.terminalsByStmt,
+    },
+    returns,
+  );
 
   const branches: RawBranch[] = [];
   for (const statement of returns) {

@@ -44,6 +44,7 @@ import type { DefaultedReading, Reading } from "./reading.js";
 
 export { httpRouteDiscovery } from "./packHelpers.js";
 export {
+  enumerateOrDegrade,
   enumerateStructuredPaths,
   PathBudgetExceeded,
   UnmodeledFlow,

@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  enumerateOrDegrade,
   enumerateStructuredPaths,
   PathBudgetExceeded,
   UnmodeledFlow,
@@ -656,5 +657,55 @@ describe("enumerateStructuredPaths, opaque pass-through", () => {
 
     const [[info]] = result.byTerminal.get("T0") ?? [];
     expect(info?.expression).toBe("expr-handle");
+  });
+});
+
+describe("enumerateOrDegrade", () => {
+  it("gives every terminal one unreadable condition when the budget runs out", () => {
+    const threeWaySwitch = (): S =>
+      mkSwitch([group("a", true, [opq()]), group("b", false, [opq()])]);
+    const statements: S[] = Array.from({ length: 6 }, threeWaySwitch);
+    const terminalsByStmt = new Map<S, string[]>();
+
+    const result = enumerateOrDegrade({ statements, terminalsByStmt }, [
+      "T0",
+      "T1",
+    ]);
+
+    expect(result.degraded).toBe("path budget exceeded");
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      "positive:explicit:unmodeled control flow (path budget exceeded)",
+    ]);
+    expect(pathSigs(result.byTerminal.get("T1"))).toHaveLength(1);
+  });
+
+  it("says what the lowering declined when it declined one", () => {
+    const statements: S[] = [
+      mkSwitch([
+        group("a", false, [opq(), brk()]),
+        group(null, false, [opq()]),
+      ]),
+    ];
+
+    const result = enumerateOrDegrade(
+      { statements, terminalsByStmt: new Map<S, string[]>() },
+      ["T0"],
+    );
+
+    expect(result.degraded).toContain("break");
+    expect(pathSigs(result.byTerminal.get("T0"))[0]).toContain(
+      "unmodeled control flow",
+    );
+  });
+
+  it("says nothing was degraded when the whole body was read", () => {
+    const only = opq();
+    const result = enumerateOrDegrade(
+      { statements: [only], terminalsByStmt: new Map([[only, ["T0"]]]) },
+      ["T0"],
+    );
+
+    expect(result.degraded).toBeNull();
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
   });
 });
