@@ -828,6 +828,37 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
   });
 });
 
+describe("a route that declares no response but does something", () => {
+  const source = [
+    "from myapp.wrappers.restx import route",
+    "",
+    "",
+    '@route("/todos")',
+    "class TodoList:",
+    "    def get(self):",
+    '        audit.log("listing")',
+    "        return build()",
+    "",
+  ].join("\n");
+
+  it("keeps a transition for the calls to sit on", async () => {
+    const units = await unitsOf(source, [flaskRestxLike]);
+    const unit = units.find((u) => u.identity.name === "TodoList.get");
+    expect(unit?.branches).toHaveLength(1);
+  });
+
+  it("records what the body called, which had nowhere to go before", async () => {
+    const units = await unitsOf(source, [flaskRestxLike]);
+    const unit = units.find((u) => u.identity.name === "TodoList.get");
+    const callees = (unit?.branches ?? []).flatMap((branch) =>
+      branch.effects.map((effect) =>
+        effect.type === "invocation" ? effect.callee : null,
+      ),
+    );
+    expect(callees).toContain("audit.log");
+  });
+});
+
 describe("a handler whose control flow the path engine declines", () => {
   const source = [
     "from myapp.wrappers.restx import route",
