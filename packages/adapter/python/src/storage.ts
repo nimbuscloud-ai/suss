@@ -124,6 +124,17 @@ export interface StorageOptions {
 }
 
 /**
+ * What discovery carries for one file. `factsPath` is the path the facts were
+ * keyed under, which is the absolute one, while a summary shows the short one.
+ */
+export interface StorageLookup {
+  readonly facts: Database;
+  readonly factsPath: string;
+  readonly patterns: readonly StoragePattern[];
+  readonly definitionAt: (key: string) => PyNode | undefined;
+}
+
+/**
  * The database work a body does, one effect per chain. Empty when no pack
  * declares a storage pattern, or when nothing in the body settles on one.
  */

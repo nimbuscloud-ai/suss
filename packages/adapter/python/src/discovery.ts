@@ -39,10 +39,11 @@ import {
   stripDecorators,
 } from "./ast.js";
 import { classifyDecorator } from "./decorators.js";
-import { invocationEffects } from "./paths/effects.js";
+import { bodyCalls, invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
 import { predicateOf } from "./paths/predicates.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
+import { type StorageLookup, storageEffects } from "./storage.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
 import type {
@@ -78,6 +79,8 @@ export interface DiscoveryOptions {
   routerIndex?: RouterIndex;
   /** Under "strict" a route whose unit cannot be built stops the run instead of abstaining. */
   gapHandling?: ExtractorOptions["gapHandling"];
+  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
+  storage?: StorageLookup;
 }
 
 export function discoverUnits(
@@ -308,6 +311,7 @@ function classRouteUnits(
             readReturnedStatus(pattern, maybeMethod),
             pattern,
           ),
+          storage: options.storage,
         },
         options,
       ),
@@ -767,6 +771,7 @@ function functionRouteUnits(
         pattern,
       ),
       definitionsCtx: ctx,
+      storage: options.storage,
     },
     options,
   );
@@ -793,6 +798,8 @@ interface BuildRouteUnitOptions {
   responseShape: Reading<TypeShape>;
   /** Handed to the extractor uncollapsed, so it applies the library default itself. */
   statusCode: DefaultedReading<number>;
+  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
+  storage?: StorageLookup | undefined;
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
 }
 
@@ -886,6 +893,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     skipReceiverParam,
     statusCode,
     definitionsCtx,
+    storage: storageLookup,
   } = options;
 
   const template = valueToReadFurtherFrom(routePath);
@@ -908,6 +916,13 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // status declares no response at all, so the library's default status has
   // nothing to apply to.
   const effects = invocationEffects(definitionNode);
+  const storage =
+    storageLookup === undefined
+      ? []
+      : storageEffects(bodyCalls(definitionNode), {
+          ...storageLookup,
+          filePath: storageLookup.factsPath,
+        });
   const perReturn = branchesFromReturns(
     readsReturnedStatus,
     definitionNode,
@@ -915,11 +930,16 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     responseShape,
     statusCode,
   );
-  const branches: RawBranch[] = perReturn ?? [];
+  const branches: RawBranch[] = (perReturn ?? []).map((branch) =>
+    storage.length === 0 ? branch : { ...branch, extraEffects: storage },
+  );
+  // A body that talks to the database did so whether or not the route
+  // declares a response, so that work needs a transition to be recorded on.
   if (
     perReturn === null &&
     (responseShape.reading.kind !== "absent" ||
-      statusCode.reading.kind !== "absent")
+      statusCode.reading.kind !== "absent" ||
+      storage.length > 0)
   ) {
     branches.push({
       conditions: [],
@@ -940,6 +960,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       statusCodeReading: statusCode,
       bodyShapeReading: { reading: responseShape.reading },
       effects,
+      ...(storage.length === 0 ? {} : { extraEffects: storage }),
       location: rangeOf(definitionNode),
       isDefault: true,
     });

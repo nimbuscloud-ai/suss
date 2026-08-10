@@ -143,6 +143,53 @@ two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
 node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
 `npm run check:style` fails a build that keys either on a node.
 
+## What a body does with the database
+
+A pack says which query types its library defines, and a call chain matches
+when the method behind it says it returns one:
+
+```ts
+storage: [
+  {
+    module: "sqlalchemy.orm",
+    queryTypes: ["Query"],
+    writes: ["update", "delete", "add"],
+    storageSystem: "postgres",
+  },
+]
+```
+
+Matching on the return rather than on the import is what reads a project's own
+wrapper. A measured Flask service imports `sqlalchemy` in 50 files, and every
+one of its 157 queries still goes through a base class the call sites never
+import:
+
+```python
+# in the project, not in the library
+class Base:
+    @classmethod
+    def query(cls) -> Query: ...
+
+class Orders(Base): ...
+
+# in a handler, importing neither the base nor SQLAlchemy
+found = Orders.query().filter_by(id=1).first()
+```
+
+A recognizer keyed on the import finds none of that. Following the call to
+`Base.query` and reading what it says it returns finds all of it, and the
+inheritance hop comes from `contains`, which reads `holdsProperty` and adds
+what a base class declares.
+
+A chain is one thing the code does, so the three calls above are one read. The
+call that starts the chain is the one resolved, and the method the chain ends
+with tells a read from a write. A method a base and a subclass both declare
+gives two, and nothing is claimed.
+
+`fields` and `selector` come back empty, so an effect says which model and
+which operation and not which columns. Raw SQL handed to `execute` is not read
+at all.
+
 ## Where a mount is written
 
 Almost no service mounts anything at the top level of a module. It builds its routers or namespaces there, each with a literal prefix, and registers them inside the function that builds the app, often by looping over a list that another function put together:
