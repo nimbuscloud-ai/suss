@@ -16,6 +16,25 @@ export interface PythonPack {
   /** Wire protocol for the produced boundary bindings, e.g. "http". */
   protocol: string;
   discovery: PythonDiscoveryPattern[];
+  /** What the library's own database queries look like. The README says how one is matched. */
+  storage?: StoragePattern[];
+}
+
+/**
+ * A call talks to the database when the method behind it says it returns one
+ * of the library's query types. Matching on the return rather than on the
+ * import is what reads a project base class that wraps the library, which is
+ * how the measured corpus writes every one of its queries.
+ */
+export interface StoragePattern {
+  /** The module a query type is imported from, `sqlalchemy.orm` for a Session. */
+  module: string;
+  /** Type names that mean the value is a query against the database. */
+  queryTypes: string[];
+  /** Chain-ending methods that change what is stored. Anything else reads. */
+  writes: string[];
+  /** Which database the library is talking to, for the boundary binding. */
+  storageSystem: "postgres" | "mysql" | "sqlite";
 }
 
 export type PythonDiscoveryPattern =

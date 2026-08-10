@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1484,
-      "covered": 1422,
+      "total": 1555,
+      "covered": 1486,
       "skipped": 0,
-      "pct": 95.82
+      "pct": 95.56
     },
     "statements": {
-      "total": 1503,
-      "covered": 1440,
+      "total": 1574,
+      "covered": 1504,
       "skipped": 0,
-      "pct": 95.8
+      "pct": 95.55
     },
     "functions": {
-      "total": 289,
-      "covered": 287,
+      "total": 304,
+      "covered": 302,
       "skipped": 0,
-      "pct": 99.3
+      "pct": 99.34
     },
     "branches": {
-      "total": 1122,
-      "covered": 972,
+      "total": 1188,
+      "covered": 1019,
       "skipped": 0,
-      "pct": 86.63
+      "pct": 85.77
     },
     "branchesTrue": {
       "total": 0,
@@ -343,6 +343,32 @@
       "pct": 77.22
     }
   },
+  "src/storage.ts": {
+    "lines": {
+      "total": 68,
+      "covered": 60,
+      "skipped": 0,
+      "pct": 88.23
+    },
+    "functions": {
+      "total": 15,
+      "covered": 15,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 68,
+      "covered": 60,
+      "skipped": 0,
+      "pct": 88.23
+    },
+    "branches": {
+      "total": 64,
+      "covered": 44,
+      "skipped": 0,
+      "pct": 68.75
+    }
+  },
   "src/facts/resolve.ts": {
     "lines": {
       "total": 13,
@@ -371,10 +397,10 @@
   },
   "src/facts/values.ts": {
     "lines": {
-      "total": 163,
-      "covered": 157,
+      "total": 166,
+      "covered": 161,
       "skipped": 0,
-      "pct": 96.31
+      "pct": 96.98
     },
     "functions": {
       "total": 25,
@@ -383,16 +409,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 165,
-      "covered": 159,
+      "total": 168,
+      "covered": 163,
       "skipped": 0,
-      "pct": 96.36
+      "pct": 97.02
     },
     "branches": {
-      "total": 102,
-      "covered": 86,
+      "total": 104,
+      "covered": 89,
       "skipped": 0,
-      "pct": 84.31
+      "pct": 85.57
     }
   },
   "src/paths/effects.ts": {

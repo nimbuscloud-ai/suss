@@ -351,6 +351,11 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   const classKey = nodeId(emitter.filePath, cls);
   add(emitter, "objectValue", classKey);
 
+  const bases = field(cls, "superclasses");
+  for (const base of bases === null ? [] : children(bases)) {
+    add(emitter, "extends", classKey, valueKey(emitter, base));
+  }
+
   const body = field(cls, "body");
   for (const statement of body === null ? [] : children(body)) {
     const member = declaredBy(statement);
