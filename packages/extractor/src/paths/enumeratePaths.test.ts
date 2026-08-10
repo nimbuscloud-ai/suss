@@ -547,16 +547,15 @@ describe("enumerateStructuredPaths, switch", () => {
 });
 
 describe("enumerateStructuredPaths, path budget", () => {
-  it("degrades when the path count crosses the cap", () => {
+  it("stays at one path across a run of branches that all rejoin", () => {
     // Nine ifs in a row, both arms of each containing a terminal that does
-    // not exit. That doubles the frontier every time: 2^9 = 512 > 256.
-    let statements: S[] = [ret()];
+    // not exit. Reaching what follows did not depend on any of them, so the
+    // nine merge away instead of doubling the frontier to 2^9.
+    const last = opq();
+    let statements: S[] = [last];
     for (let i = 0; i < 9; i++) {
-      const thenTerm = opq();
-      const elseTerm = opq();
-      statements = [mkIf(cond(`a${i}`), [thenTerm], [elseTerm]), ...statements];
+      statements = [mkIf(cond(`a${i}`), [opq()], [opq()]), ...statements];
     }
-    // Register every leaf term as its own terminal so no if collapses.
     const terminalsByStmt = new Map<S, string[]>();
     let id = 0;
     const registerLeaves = (nodes: readonly S[]): void => {
@@ -572,10 +571,48 @@ describe("enumerateStructuredPaths, path budget", () => {
       }
     };
     registerLeaves(statements);
+    terminalsByStmt.set(last, ["LAST"]);
 
-    expect(() =>
-      enumerateStructuredPaths({ statements, terminalsByStmt }),
-    ).toThrow(PathBudgetExceeded);
+    const result = enumerateStructuredPaths({ statements, terminalsByStmt });
+
+    // Each arm's own terminal still records the condition that reached it.
+    // The loop above prepends, so the outermost branch is a8.
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      "positive:explicit:a8",
+    ]);
+    expect(pathSigs(result.byTerminal.get("T1"))).toEqual([
+      "negative:explicit:a8",
+    ]);
+    expect(pathSigs(result.byTerminal.get("LAST"))).toEqual([
+      "<unconditional>",
+    ]);
+  });
+
+  it("keeps both ways to a terminal when they do not cancel out", () => {
+    // `if a: return` then `if b: return`, so the second return is reached
+    // one way only and the tail keeps both guards.
+    const first = ret();
+    const second = ret();
+    const tail = opq();
+    const statements = [
+      mkIf(cond("a"), [first], null),
+      mkIf(cond("b"), [second], null),
+      tail,
+    ];
+    const terminalsByStmt = new Map<S, string[]>([
+      [first, ["T0"]],
+      [second, ["T1"]],
+      [tail, ["T2"]],
+    ]);
+
+    const result = enumerateStructuredPaths({ statements, terminalsByStmt });
+
+    expect(pathSigs(result.byTerminal.get("T1"))).toEqual([
+      "negative:earlyReturn:a ∧ positive:explicit:b",
+    ]);
+    expect(pathSigs(result.byTerminal.get("T2"))).toEqual([
+      "negative:earlyReturn:a ∧ negative:earlyReturn:b",
+    ]);
   });
 
   it("degrades when branching alone crosses the cap, with no terminal in sight", () => {

@@ -470,6 +470,84 @@ function stepStatement<Cond, Terminal>(
  * of every path that falls through past the end, which are the continuations
  * the caller resumes from.
  */
+/**
+ * The one position where two paths disagree about the same branch, or null
+ * when they disagree about nothing or about more than that. Conditions from a
+ * shared prefix are the same objects, so this compares by identity.
+ */
+function soleDisagreement<Cond>(
+  left: PathCond<Cond>[],
+  right: PathCond<Cond>[],
+): number | null {
+  if (left.length !== right.length) {
+    return null;
+  }
+  let found: number | null = null;
+  for (let at = 0; at < left.length; at++) {
+    const one = left[at];
+    const other = right[at];
+    if (one === other) {
+      continue;
+    }
+    if (found !== null) {
+      return null;
+    }
+    if (
+      one === undefined ||
+      other === undefined ||
+      one.branchStmt === null ||
+      one.branchStmt !== other.branchStmt ||
+      one.info.polarity === other.info.polarity
+    ) {
+      return null;
+    }
+    found = at;
+  }
+  return found;
+}
+
+/**
+ * Two paths that reach here differing only over one branch reach here whether
+ * that branch fired or not, so the two become one path without it. The arms
+ * recorded their own terminals on the way through and keep their conditions.
+ *
+ * This is what stops a run of guards multiplying. Nine of them that each
+ * rejoin are one path out rather than five hundred and twelve.
+ */
+function mergeRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
+  let current = paths;
+  for (let round = 0; round < current.length; round++) {
+    const out: PathCond<Cond>[][] = [];
+    const taken = new Set<number>();
+    let mergedAny = false;
+    for (let i = 0; i < current.length; i++) {
+      if (taken.has(i)) {
+        continue;
+      }
+      let combined = current[i] as PathCond<Cond>[];
+      for (let j = i + 1; j < current.length; j++) {
+        if (taken.has(j)) {
+          continue;
+        }
+        const at = soleDisagreement(combined, current[j] as PathCond<Cond>[]);
+        if (at === null) {
+          continue;
+        }
+        combined = [...combined.slice(0, at), ...combined.slice(at + 1)];
+        taken.add(j);
+        mergedAny = true;
+        break;
+      }
+      out.push(combined);
+    }
+    current = out;
+    if (!mergedAny) {
+      break;
+    }
+  }
+  return current;
+}
+
 function enumerate<Cond, Terminal>(
   ctx: Ctx<Cond, Terminal>,
   stmts: StatementBlock<Cond>,
@@ -482,7 +560,7 @@ function enumerate<Cond, Terminal>(
     for (const path of frontiers) {
       nextFrontiers.push(...stepStatement(ctx, stmt, path));
     }
-    frontiers = nextFrontiers;
+    frontiers = mergeRejoined(nextFrontiers);
     if (frontiers.length > MAX_PATHS) {
       throw new PathBudgetExceeded();
     }
