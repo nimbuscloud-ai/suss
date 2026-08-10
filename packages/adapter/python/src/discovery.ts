@@ -933,13 +933,14 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   const branches: RawBranch[] = (perReturn ?? []).map((branch) =>
     storage.length === 0 ? branch : { ...branch, extraEffects: storage },
   );
-  // A body that talks to the database did so whether or not the route
-  // declares a response, so that work needs a transition to be recorded on.
+  // Whatever a body does, it did so whether or not the route declares a
+  // response, and an effect with no transition to sit on is thrown away.
   if (
     perReturn === null &&
     (responseShape.reading.kind !== "absent" ||
       statusCode.reading.kind !== "absent" ||
-      storage.length > 0)
+      storage.length > 0 ||
+      effects.length > 0)
   ) {
     branches.push({
       conditions: [],
