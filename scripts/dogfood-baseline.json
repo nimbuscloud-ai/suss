@@ -2,8 +2,8 @@
   "totals": {
     "packages": 44,
     "packagesWithExports": 44,
-    "exports": 403,
-    "internal": 1560,
+    "exports": 404,
+    "internal": 1561,
     "consumers": 632,
     "pairs": 624
   },
@@ -130,8 +130,8 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 25,
-      "internal": 28,
+      "exports": 26,
+      "internal": 29,
       "consumers": 3
     },
     "packages/framework/apollo": {
