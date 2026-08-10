@@ -1,0 +1,16 @@
+{
+  "sqlalchemy": "SQLAlchemy: the package a query type is imported from, and this pack's name",
+  "Query": "SQLAlchemy: what a query against mapped classes comes back as",
+  "Session": "SQLAlchemy: the unit of work a query runs inside",
+  "Select": "SQLAlchemy: the 2.0 select() construct",
+  "Update": "SQLAlchemy: the 2.0 update() construct",
+  "Delete": "SQLAlchemy: the 2.0 delete() construct",
+  "Insert": "SQLAlchemy: the 2.0 insert() construct",
+  "update": "SQLAlchemy: the Query method that writes matched rows",
+  "delete": "SQLAlchemy: the Query method that removes matched rows",
+  "add": "SQLAlchemy: the Session method that stages a new object",
+  "add_all": "SQLAlchemy: the Session method that stages several",
+  "merge": "SQLAlchemy: the Session method that writes detached state back",
+  "commit": "SQLAlchemy: the Session method that makes staged work permanent",
+  "insert": "SQLAlchemy: the 2.0 construct that adds rows"
+}

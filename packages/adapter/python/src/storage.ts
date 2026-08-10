@@ -121,10 +121,12 @@ export interface StorageOptions {
   readonly patterns: readonly StoragePattern[];
   /** The function a resolved key was written as, for reading its annotation. */
   readonly definitionAt: (key: string) => PyNode | undefined;
+  /** Method names a file importing the library declares, the only ones that can match. */
+  readonly couldMatch: ReadonlySet<string>;
 }
 
 /**
- * What discovery carries for one file. `factsPath` is the path the facts were
+ * What discovery uses for one file. `factsPath` is the path the facts were
  * keyed under, which is the absolute one, while a summary shows the short one.
  */
 export interface StorageLookup {
@@ -132,6 +134,23 @@ export interface StorageLookup {
   readonly factsPath: string;
   readonly patterns: readonly StoragePattern[];
   readonly definitionAt: (key: string) => PyNode | undefined;
+  readonly couldMatch: ReadonlySet<string>;
+}
+
+/**
+ * Every callee a chain in this file starts at. Asking about all of them at
+ * once costs one derivation for the project rather than one per route.
+ */
+export function storageCallees(
+  calls: readonly PyNode[],
+  filePath: string,
+  couldMatch: ReadonlySet<string>,
+): string[] {
+  return chainsIn(calls)
+    .filter((chain) => couldMatch.has(methodName(chain.root)))
+    .map((chain) => field(chain.root, "function"))
+    .filter((callee): callee is PyNode => callee !== null)
+    .map((callee) => nodeId(filePath, callee));
 }
 
 /**
@@ -146,12 +165,23 @@ export function storageEffects(
     return [];
   }
 
-  const chains = chainsIn(calls);
-  const calleeKeys = chains
-    .map((chain) => field(chain.root, "function"))
-    .filter((callee): callee is PyNode => callee !== null)
-    .map((callee) => nodeId(options.filePath, callee));
-  resolveCalls(options.facts, calleeKeys);
+  const chains = chainsIn(calls).filter((chain) =>
+    options.couldMatch.has(methodName(chain.root)),
+  );
+  if (chains.length === 0) {
+    return [];
+  }
+  // Anything already asked about was derived when the run asked, so asking
+  // again would rerun the rules for an answer that is already there.
+  const asked = new Set(
+    options.facts.facts("wanted").map((row) => String(row[0])),
+  );
+  resolveCalls(
+    options.facts,
+    storageCallees(calls, options.filePath, options.couldMatch).filter(
+      (key) => !asked.has(key),
+    ),
+  );
 
   const effects: Effect[] = [];
   for (const chain of chains) {

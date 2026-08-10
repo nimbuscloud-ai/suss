@@ -1,24 +1,23 @@
 {
-  "name": "@suss/framework-graphql-ruby",
+  "name": "@suss/framework-sqlalchemy",
   "version": "0.4.0",
   "type": "module",
-  "description": "Pattern pack for extracting suss behavioral summaries from graphql-ruby's class-based field DSL, including mutation:/resolver: one-hop wiring.",
+  "description": "Pattern pack that says which SQLAlchemy calls a Python body makes against the database.",
   "keywords": [
     "suss",
     "behavioral-summary",
     "framework-pack",
-    "graphql-ruby",
-    "graphql",
-    "ruby",
+    "sqlalchemy",
+    "python",
     "static-analysis"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/graphql-ruby#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/sqlalchemy#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/framework/graphql-ruby"
+    "directory": "packages/framework/sqlalchemy"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -47,12 +46,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.4.0",
-    "@suss/contract-graphql": "0.4.0"
+    "@suss/adapter-python": "0.4.0"
   },
   "devDependencies": {
-    "@suss/behavioral-ir": "*",
     "@suss/checker": "*",
+    "@suss/behavioral-ir": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

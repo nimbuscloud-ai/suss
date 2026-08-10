@@ -89,6 +89,7 @@ async function effectsFor(handler: string, base = BASE) {
     filePath: handlerPath,
     patterns: [SQLALCHEMY],
     definitionAt: (key) => definitions.get(key),
+    couldMatch: new Set(["query"]),
   });
 }
 
@@ -177,6 +178,7 @@ describe("the database work a Python body does", () => {
         filePath: "f.py",
         patterns: [],
         definitionAt: () => undefined,
+        couldMatch: new Set(["query"]),
       }),
     ).toEqual([]);
   });

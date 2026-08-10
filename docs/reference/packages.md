@@ -67,6 +67,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 | [`@suss/framework-flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module that re-exports the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
 | [`@suss/framework-fastapi`](../../packages/framework/fastapi) | FastAPI routes (Python): the verb comes from the decorator's own attribute name, `APIRouter` prefixes are composed one `include_router` hop deep, and `response_model` / `status_code` are taken as the declared contract. | ![](../../.github/badges/coverage-fastapi.svg) |
+| [`@suss/framework-sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
 | [`@suss/framework-graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby), including `mutation:` / `resolver:` wiring one hop out to what the referenced class itself declares. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
 
 ## Clients

@@ -80,7 +80,7 @@ export interface DiscoveryOptions {
   /** Under "strict" a route whose unit cannot be built stops the run instead of abstaining. */
   gapHandling?: ExtractorOptions["gapHandling"];
   /** What a pack needs to say a call talks to the database. Absent when no pack does. */
-  storage?: StorageLookup;
+  storage?: StorageLookup | undefined;
 }
 
 export function discoverUnits(

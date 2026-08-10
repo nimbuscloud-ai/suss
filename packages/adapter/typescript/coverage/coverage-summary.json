@@ -1,8 +1,8 @@
 {
   "total": {
     "lines": {
-      "total": 7000,
-      "covered": 6023,
+      "total": 7007,
+      "covered": 6029,
       "skipped": 0,
       "pct": 86.04
     },
@@ -33,10 +33,10 @@
   },
   "src/adapter.ts": {
     "lines": {
-      "total": 654,
-      "covered": 549,
+      "total": 660,
+      "covered": 555,
       "skipped": 0,
-      "pct": 83.94
+      "pct": 84.09
     },
     "functions": {
       "total": 89,
@@ -1593,10 +1593,10 @@
   },
   "src/resolve/invocationEffects.ts": {
     "lines": {
-      "total": 214,
+      "total": 215,
       "covered": 185,
       "skipped": 0,
-      "pct": 86.44
+      "pct": 86.04
     },
     "functions": {
       "total": 26,
