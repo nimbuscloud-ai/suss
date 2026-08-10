@@ -205,3 +205,68 @@ describe("extractPythonProject", () => {
     expect(summaries[0]?.location.file).toBe(todos);
   });
 });
+
+describe("a route whose body talks to the database", () => {
+  const withStorage: PythonPack = {
+    ...flaskRestxLike,
+    storage: [
+      {
+        module: "sqlalchemy.orm",
+        queryTypes: ["Query"],
+        writes: ["update", "delete"],
+        storageSystem: "postgres",
+      },
+    ],
+  };
+
+  it("puts the database work on the route's own transitions", async () => {
+    write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    write(
+      "myapp/models.py",
+      [
+        "from sqlalchemy.orm import Query",
+        "",
+        "class Base:",
+        "    @classmethod",
+        "    def query(cls) -> Query:",
+        "        return session()",
+        "",
+        "class Orders(Base):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    write(
+      "myapp/routes/todos.py",
+      [
+        "from myapp.wrappers.restx import route",
+        "from myapp.models import Orders",
+        "",
+        '@route("/todos")',
+        "class TodoList:",
+        "    def get(self):",
+        "        return Orders.query().filter_by(id=1).first()",
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [...findPythonFiles(tmpDir)],
+      packs: [withStorage],
+      roots: [tmpDir],
+    });
+
+    const effects = summaries.flatMap((summary) =>
+      (summary.transitions ?? []).flatMap((transition) => transition.effects),
+    );
+    const storage = effects.filter(
+      (effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "storage-access",
+    );
+    expect(storage).toHaveLength(1);
+  });
+});

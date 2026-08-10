@@ -17,7 +17,7 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { discoverUnits } from "./discovery.js";
-import { emitValueFacts } from "./facts/values.js";
+import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
@@ -26,6 +26,7 @@ import { bindModule } from "./scope.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ExtractorOptions } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
+import type { PyNode } from "./parser.js";
 import type { BoundPythonFile } from "./routers.js";
 
 export interface ExtractPythonOptions {
@@ -81,10 +82,18 @@ export async function extractPythonProject(
   const mountsRouters = options.packs.some((pack) =>
     pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
   );
+  const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
+  const needsValues = mountsRouters || storagePatterns.length > 0;
+  // Which function a resolved key was written as, so a recognizer can read
+  // what it says it returns.
+  const definitions = new Map<string, PyNode>();
   for (const { file, root, module: moduleBinding } of bound) {
     emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
-    if (mountsRouters) {
+    if (needsValues) {
       emitValueFacts(db, file, root);
+    }
+    if (storagePatterns.length > 0) {
+      indexDefinitions(definitions, file, root);
     }
   }
 
@@ -101,6 +110,16 @@ export async function extractPythonProject(
       filePath: displayPath,
       routerIndex,
       gapHandling,
+      ...(storagePatterns.length > 0
+        ? {
+            storage: {
+              facts: db,
+              factsPath: file,
+              patterns: storagePatterns,
+              definitionAt: (key: string) => definitions.get(key),
+            },
+          }
+        : {}),
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling });
@@ -142,4 +161,20 @@ export function findPythonFiles(root: string): string[] {
   };
   walk(root);
   return found.sort();
+}
+
+/** Every function in a file, under the key the facts give it. */
+function indexDefinitions(
+  into: Map<string, PyNode>,
+  file: string,
+  node: PyNode,
+): void {
+  if (node.type === "function_definition") {
+    into.set(nodeId(file, node), node);
+  }
+  for (const child of node.namedChildren) {
+    if (child !== null) {
+      indexDefinitions(into, file, child);
+    }
+  }
 }

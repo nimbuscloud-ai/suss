@@ -37,6 +37,7 @@ export type {
 //                               and holds y once the writes have run
 //   paramOf(f, k, p)            p is f's parameter at position k
 //   paramNamed(f, n, p)         p is f's parameter called n
+//   extends(c, b)               class c is written as extending b
 //   returnsValue(f, v)          f returns v
 //   bodyCalls(f, c)             f's body calls c
 //   containsFn(f, g)            g is declared inside f
@@ -217,6 +218,26 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
+  // What an object contains, its base class included, so a method the base
+  // declares is found on a subclass that never overrode it. A method both
+  // declare gives two, and the caller decides. This is its own relation
+  // rather than more `holdsProperty`, which stays something an adapter
+  // states and the rules only read.
+  rule(
+    "contains",
+    [v("o"), v("n"), v("held")],
+    [lit("holdsProperty", v("o"), v("n"), v("held"))],
+  ),
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("extends", v("cls"), v("base")),
+      lit("comesTo", v("base"), v("baseCls")),
+      lit("contains", v("baseCls"), v("n"), v("held")),
+    ],
+  ),
+
   // Calling a class makes one of it, and reading a method off the
   // result finds the method the class declares. The caveat above is
   // about a factory function, and a class is not one.
@@ -239,7 +260,7 @@ export const RESOLUTION_RULES = [
     [
       lit("readsProperty", v("x"), v("o"), v("n")),
       lit("objectOf", v("o"), v("obj")),
-      lit("holdsProperty", v("obj"), v("n"), v("held")),
+      lit("contains", v("obj"), v("n"), v("held")),
       lit("comesTo", v("held"), v("z")),
     ],
   ),

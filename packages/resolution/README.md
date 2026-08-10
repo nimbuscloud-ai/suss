@@ -29,6 +29,8 @@ binds(x, y)                 the name x is declared as y
 endsHolding(x, y)           the name x is written more than once and
                             holds y once the writes have run
 paramOf(f, k, p)            p is f's parameter at position k
+paramNamed(f, n, p)         p is f's parameter called n
+extends(c, b)               class c is written as extending b
 returnsValue(f, v)          f returns v
 bodyCalls(f, c)             f's body calls c
 containsFn(f, g)            g is declared inside f
@@ -45,6 +47,13 @@ body nobody can read: `unwrapsByName(name, k)` and
 `wrapperModule(name, module)`. Both are checked against `calleeName` and
 `calleeOrigin`, so a local function that happens to be spelled the same
 as the library's does not match.
+
+`holdsProperty` is something an adapter states and the rules only read.
+What a value contains, a base class included, comes out as `contains`,
+so a method a base declares is found on a subclass that never overrode
+it. Deriving that into `holdsProperty` instead turns it from a fact into
+a derived relation, and the on-demand rewrite then gates it behind a
+demand nothing generates.
 
 Node identity is the adapter's business. The rules only join on it.
 
