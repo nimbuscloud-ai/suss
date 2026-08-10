@@ -1,9 +1,9 @@
 {
   "totals": {
-    "packages": 44,
-    "packagesWithExports": 44,
-    "exports": 404,
-    "internal": 1577,
+    "packages": 45,
+    "packagesWithExports": 45,
+    "exports": 407,
+    "internal": 1579,
     "consumers": 634,
     "pairs": 626
   },
@@ -11,7 +11,7 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 49,
-      "internal": 135,
+      "internal": 137,
       "consumers": 48
     },
     "packages/adapter/ruby": {
@@ -235,6 +235,12 @@
       "exports": 2,
       "internal": 0,
       "consumers": 8
+    },
+    "packages/framework/sqlalchemy": {
+      "name": "@suss/framework-sqlalchemy",
+      "exports": 3,
+      "internal": 0,
+      "consumers": 0
     },
     "packages/framework/ts-rest": {
       "name": "@suss/framework-ts-rest",
