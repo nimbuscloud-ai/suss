@@ -356,6 +356,15 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   const classKey = nodeId(emitter.filePath, cls);
   add(emitter, "objectValue", classKey);
 
+  const superclass = field(cls, "superclass");
+  const base = superclass === null ? null : (children(superclass)[0] ?? null);
+  if (base !== null) {
+    add(emitter, "extends", classKey, valueKey(emitter, base));
+    // A base class the project does not declare, `ActiveRecord::Base`, has no
+    // node to bind to, so the name it is written as is what a pack can match.
+    add(emitter, "extendsNamed", classKey, base.text);
+  }
+
   const body = field(cls, "body");
   for (const statement of body === null ? [] : children(body)) {
     if (statement.type === "assignment") {
