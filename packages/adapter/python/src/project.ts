@@ -103,6 +103,7 @@ export async function extractPythonProject(
   // through is missed, which is what asking about every call would cost a
   // minute to catch.
   const couldMatch = methodsDeclaredNear(db, storagePatterns, definitions);
+  const leadsToStorage = functionsReachingStorage(definitions, couldMatch);
 
   const routerIndex = buildRouterIndex(bound, options.packs, {
     roots: options.roots,
@@ -125,6 +126,7 @@ export async function extractPythonProject(
               patterns: storagePatterns,
               definitionAt: (key: string) => definitions.get(key),
               couldMatch,
+              leadsToStorage,
             },
           }
         : {}),
@@ -212,4 +214,66 @@ function methodsDeclaredNear(
     }
   }
   return found;
+}
+
+/** The method a call says, `query` in `Model.query()`. */
+function calledName(call: PyNode): string {
+  const callee = field(call, "function");
+  if (callee === null) {
+    return "";
+  }
+  return callee.type === "attribute"
+    ? (field(callee, "attribute")?.text ?? "")
+    : callee.text;
+}
+
+/** Every call written under a node, nested functions included. */
+function callsUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
+  for (const child of node.namedChildren) {
+    if (child === null) {
+      continue;
+    }
+    if (child.type === "call") {
+      found.push(child);
+    }
+    callsUnder(child, found);
+  }
+  return found;
+}
+
+/**
+ * Which functions reach the database, by name, following calls until the set
+ * stops growing. A walk that followed every call would ask the rules about
+ * every call in the project, which costs a minute on a large one.
+ */
+function functionsReachingStorage(
+  definitions: ReadonlyMap<string, PyNode>,
+  couldMatch: ReadonlySet<string>,
+): Set<string> {
+  const bodies: { name: string; calls: string[] }[] = [];
+  for (const node of definitions.values()) {
+    const name = field(node, "name");
+    if (name === null) {
+      continue;
+    }
+    bodies.push({ name: name.text, calls: callsUnder(node).map(calledName) });
+  }
+
+  const reaching = new Set<string>();
+  for (const body of bodies) {
+    if (body.calls.some((called) => couldMatch.has(called))) {
+      reaching.add(body.name);
+    }
+  }
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const body of bodies) {
+      if (reaching.has(body.name) || !body.calls.some((c) => reaching.has(c))) {
+        continue;
+      }
+      reaching.add(body.name);
+      grew = true;
+    }
+  }
+  return reaching;
 }

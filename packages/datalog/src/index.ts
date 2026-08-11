@@ -89,15 +89,16 @@ const keyOf = (tuple: Tuple): string => tupleKey(tuple);
 interface Relation {
   keys: Set<string>;
   tuples: Tuple[];
-  /** Column position, then value, then the tuples with that value. */
-  indexes: Map<number, Map<string, Tuple[]>>;
+  /**
+   * Column position, then value, then the tuples with that value. The value
+   * is the atom itself: a Map already tells 1 from "1", so encoding it first
+   * would build a string out of every node id on every lookup and buy
+   * nothing. `tupleKey` is for a key built out of several values.
+   */
+  indexes: Map<number, Map<Atom, Tuple[]>>;
 }
 
-function addToBucket(
-  index: Map<string, Tuple[]>,
-  key: string,
-  tuple: Tuple,
-): void {
+function addToBucket(index: Map<Atom, Tuple[]>, key: Atom, tuple: Tuple): void {
   const bucket = index.get(key);
   if (bucket === undefined) {
     index.set(key, [tuple]);
@@ -142,7 +143,7 @@ export class Database {
     for (const [column, index] of relation.indexes) {
       const value = tuple[column];
       if (value !== undefined) {
-        addToBucket(index, tupleKey([value]), tuple);
+        addToBucket(index, value, tuple);
       }
     }
     return true;
@@ -176,12 +177,12 @@ export class Database {
       for (const tuple of relation.tuples) {
         const at = tuple[column];
         if (at !== undefined) {
-          addToBucket(index, tupleKey([at]), tuple);
+          addToBucket(index, at, tuple);
         }
       }
       relation.indexes.set(column, index);
     }
-    return index.get(tupleKey([value])) ?? [];
+    return index.get(value) ?? [];
   }
 
   /**

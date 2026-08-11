@@ -90,6 +90,7 @@ async function effectsFor(handler: string, base = BASE) {
     patterns: [SQLALCHEMY],
     definitionAt: (key) => definitions.get(key),
     couldMatch: new Set(["query"]),
+    leadsToStorage: new Set(["load_orders", "one", "two"]),
   });
 }
 
@@ -179,7 +180,41 @@ describe("the database work a Python body does", () => {
         patterns: [],
         definitionAt: () => undefined,
         couldMatch: new Set(["query"]),
+        leadsToStorage: new Set<string>(),
       }),
     ).toEqual([]);
+  });
+
+  it("counts the work a function it called does, not only its own", async () => {
+    const effects = await effectsFor(
+      [
+        "def load_orders():",
+        "    return Orders.query().filter_by(id=1).first()",
+        "",
+        "found = load_orders()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toHaveLength(1);
+    expect(
+      effects[0]?.type === "interaction" ? effects[0].binding.semantics : null,
+    ).toMatchObject({ table: "Orders" });
+  });
+
+  it("stops rather than going round a pair of functions that call each other", async () => {
+    const effects = await effectsFor(
+      [
+        "def one():",
+        "    two()",
+        "    return Orders.query().first()",
+        "",
+        "def two():",
+        "    return one()",
+        "",
+        "found = one()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toHaveLength(1);
   });
 });
