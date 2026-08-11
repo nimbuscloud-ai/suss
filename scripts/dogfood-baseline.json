@@ -3,7 +3,7 @@
     "packages": 45,
     "packagesWithExports": 45,
     "exports": 407,
-    "internal": 1586,
+    "internal": 1587,
     "consumers": 634,
     "pairs": 626
   },
@@ -125,7 +125,7 @@
     "packages/datalog": {
       "name": "@suss/datalog",
       "exports": 21,
-      "internal": 48,
+      "internal": 49,
       "consumers": 0
     },
     "packages/extractor": {
