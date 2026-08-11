@@ -162,21 +162,22 @@ export const RESOLUTION_RULES = [
   ),
 
   // Which calls a function, found by the name the call is written as
-  // rather than by resolving every callee in the project. Asking what
-  // reaches a parameter means looking for call sites, and looking for
-  // them the other way round costs a whole-project resolution.
+  // rather than by resolving every callee in the project. A caller knows
+  // the function and wants its call sites, so both of these start from
+  // the function. Starting from `call` instead asks what every call in
+  // the project imports, which was 72% of everything derived.
   rule(
     "callsFunction",
     [v("r"), v("f")],
-    [lit("call", v("r"), v("c")), lit("binds", v("c"), v("f"))],
+    [lit("binds", v("c"), v("f")), lit("call", v("r"), v("c"))],
   ),
   rule(
     "callsFunction",
     [v("r"), v("f")],
     [
-      lit("call", v("r"), v("c")),
-      lit("imports", v("c"), v("m"), v("n")),
       lit("moduleExport", v("m"), v("n"), v("f")),
+      lit("imports", v("c"), v("m"), v("n")),
+      lit("call", v("r"), v("c")),
     ],
   ),
 
