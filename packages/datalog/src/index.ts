@@ -636,6 +636,18 @@ function shapeOf(rules: Rule[]): RuleSetShape {
   return shape;
 }
 
+/**
+ * Whether a rule can produce anything at all right now. A join reads every
+ * positive literal, so one of them being empty means there is nothing to
+ * find, and a rule set has rules for shapes a given project never writes.
+ * A relation that fills up later gets the rule run in a later round.
+ */
+function couldProduce(db: Database, rule: Rule): boolean {
+  return rule.body.every(
+    (literal) => literal.negated || db.size(literal.relation) > 0,
+  );
+}
+
 function runRules(db: Database, rules: Rule[]): Database {
   const {
     signature,
@@ -715,6 +727,9 @@ function runRules(db: Database, rules: Rule[]): Database {
       derivedOnly: boolean,
     ): void => {
       for (const r of stratum) {
+        if (!couldProduce(db, r)) {
+          continue;
+        }
         const positives = r.body.filter((l) => !l.negated);
         for (let i = 0; i < positives.length; i++) {
           const literal = positives[i];
@@ -736,6 +751,9 @@ function runRules(db: Database, rules: Rule[]): Database {
       // Seed round: naive evaluation with every positive literal drawn
       // from the full database.
       for (const r of stratum) {
+        if (!couldProduce(db, r)) {
+          continue;
+        }
         const all = new Map<string, readonly Tuple[]>();
         for (const l of r.body) {
           if (!l.negated) {
