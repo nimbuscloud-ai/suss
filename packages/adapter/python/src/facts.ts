@@ -81,6 +81,14 @@ export function emitModuleImportFacts(
       moduleText,
       resolution.status === "resolved" ? "resolved" : resolution.reason,
     ]);
+    // Which name came from which module, for a library nobody can read. The
+    // `imports` relation says this too, and only once a module resolves to a
+    // file in the repo, which a third-party package never does.
+    db.add("pyImportedName", [
+      `${filePath}#${localName}`,
+      moduleText,
+      binding.kind === "import" ? binding.localName : binding.importedName,
+    ]);
     if (resolution.status === "resolved") {
       db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
       // The shared rules follow a name across files through these two, so a

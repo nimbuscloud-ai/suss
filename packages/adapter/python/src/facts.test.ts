@@ -108,6 +108,24 @@ describe("emitModuleImportFacts", () => {
     ]);
   });
 
+  it("says which module a plain import brought a name in from", async () => {
+    const importingFile = write(
+      "root/myapp/routes/todos.py",
+      "import sqlalchemy\n",
+    );
+    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
+    const module = bindModule(tree.rootNode);
+
+    const db = new Database();
+    emitModuleImportFacts(db, importingFile, module, {
+      roots: [path.join(tmpDir, "root")],
+    });
+
+    expect(db.facts("pyImportedName")).toEqual([
+      [`${importingFile}#sqlalchemy`, "sqlalchemy", "sqlalchemy"],
+    ]);
+  });
+
   it("records an external import with no resolved-file fact", async () => {
     const importingFile = write(
       "root/myapp/routes/todos.py",

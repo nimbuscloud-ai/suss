@@ -17,12 +17,21 @@ import { storageEffects } from "./storage.js";
 import type { StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 
-const SQLALCHEMY: StoragePattern = {
-  module: "sqlalchemy.orm",
-  queryTypes: ["Query"],
-  writes: ["update", "delete", "add"],
-  storageSystem: "postgres",
-};
+const SQLALCHEMY: StoragePattern[] = [
+  {
+    module: "sqlalchemy.orm",
+    queryTypes: ["Query"],
+    writes: ["update", "delete", "add"],
+    storageSystem: "postgres",
+  },
+  {
+    module: "sqlalchemy",
+    queryTypes: ["Select"],
+    writes: ["update", "delete"],
+    queryFunctions: ["select"],
+    storageSystem: "postgres",
+  },
+];
 
 /**
  * The shape the measured corpus writes. A project base class wraps the
@@ -87,7 +96,7 @@ async function effectsFor(handler: string, base = BASE) {
   return storageEffects(bodyCalls(handlerRoot as PyNode), {
     facts: db,
     filePath: handlerPath,
-    patterns: [SQLALCHEMY],
+    patterns: SQLALCHEMY,
     definitionAt: (key) => definitions.get(key),
     couldMatch: new Set(["query"]),
     leadsToStorage: new Set(["load_orders", "one", "two"]),
@@ -107,6 +116,7 @@ describe("the database work a Python body does", () => {
       kind: "read",
       fields: [],
       operation: "first",
+      selector: ["id"],
     });
   });
 
@@ -216,5 +226,99 @@ describe("the database work a Python body does", () => {
       ].join("\n"),
     );
     expect(effects).toHaveLength(1);
+  });
+
+  it("reads a query built from a function the file imported", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "",
+        "found = select(User.email, User.id).where(User.id == 1).all()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toHaveLength(1);
+    const [effect] = effects;
+    expect(
+      effect?.type === "interaction" &&
+        effect.interaction.class === "storage-access"
+        ? effect.interaction.fields
+        : null,
+    ).toEqual(["email", "id"]);
+  });
+
+  it("says nothing about a function of the same name from somewhere else", async () => {
+    const effects = await effectsFor(
+      [
+        "from myapp.helpers import select",
+        "",
+        "found = select(a).all()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toEqual([]);
+  });
+
+  it("takes a column named by a keyword when a query is built that way", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "",
+        "found = select(whole=User.email).all()",
+        "",
+      ].join("\n"),
+    );
+    expect(
+      effects[0]?.type === "interaction" &&
+        effects[0].interaction.class === "storage-access"
+        ? effects[0].interaction.fields
+        : null,
+    ).toEqual(["whole"]);
+  });
+
+  it("says no columns for a query given a bare name", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "",
+        "found = select(User).all()",
+        "",
+      ].join("\n"),
+    );
+    expect(
+      effects[0]?.type === "interaction" &&
+        effects[0].interaction.class === "storage-access"
+        ? effects[0].interaction.fields
+        : null,
+    ).toEqual([]);
+  });
+
+  it("says nothing about a wrapper that says nothing about what it returns", async () => {
+    const effects = await effectsFor(
+      "found = Orders.query().first()\n",
+      [
+        "from sqlalchemy.orm import Query",
+        "",
+        "class Base:",
+        "    @classmethod",
+        "    def query(cls):",
+        "        return session()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toEqual([]);
+  });
+
+  it("says nothing about a query function the file declares itself", async () => {
+    const effects = await effectsFor(
+      [
+        "def select(*columns):",
+        "    return build()",
+        "",
+        "found = select(User.id).all()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toEqual([]);
   });
 });

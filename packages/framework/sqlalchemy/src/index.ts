@@ -33,6 +33,10 @@ export function sqlalchemyStorage(
       module: "sqlalchemy",
       queryTypes: ["Select", "Update", "Delete", "Insert"],
       writes: ["update", "delete", "insert", "commit"],
+      // 2.0 style writes `select(User.id).where(...)`, importing the
+      // constructor rather than reaching it through a mapped class, so there
+      // is no project method in between whose return says what it is.
+      queryFunctions: ["select", "insert", "update", "delete"],
       storageSystem: options.storageSystem,
     },
   ];

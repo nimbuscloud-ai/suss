@@ -186,8 +186,18 @@ call that starts the chain is the one resolved, and the method the chain ends
 with tells a read from a write. A method a base and a subclass both declare
 gives two, and nothing is claimed.
 
-`fields` and `selector` come back empty, so an effect says which model and
-which operation and not which columns. Raw SQL handed to `execute` is not read
+A query built from a function the library exports has no project method in
+between for its return to be read off, so a pack lists those by name and a call
+site importing one matches on that:
+
+```ts
+queryFunctions: ["select", "insert", "update", "delete"]
+```
+
+`fields` comes from the columns a query names, `User.id` in
+`select(User.id, User.email)`. `selector` comes from the keywords the chain
+picks rows by, `id` in `filter_by(id=user_id)`, gathered from every call in
+the chain rather than only the last. Raw SQL handed to `execute` is not read
 at all.
 
 ## Where a mount is written

@@ -21,6 +21,8 @@ interface Chain {
   readonly subject: string;
   /** The method the last call says, which is what tells a read from a write. */
   readonly operation: string;
+  /** The calls between the first and the last, where `filter_by(id=x)` picks rows. */
+  readonly between: readonly PyNode[];
 }
 
 /** The call a method is read off, or null when the callee is not a method read. */
@@ -89,9 +91,113 @@ function chainsIn(calls: readonly PyNode[]): Chain[] {
       last,
       subject: subjectOf(call),
       operation: methodName(last),
+      between: calls.filter(
+        (other) =>
+          other !== call &&
+          other !== last &&
+          other.startIndex >= call.startIndex &&
+          other.endIndex <= last.endIndex,
+      ),
     });
   }
   return chains;
+}
+
+/**
+ * The pattern a chain matches because it starts at a function the library
+ * exports and the file imported, rather than at a method on a project class.
+ * SQLAlchemy 2.0 writes `select(...)` that way, and no project method comes
+ * between the call site and the library for its return to be read.
+ */
+function importedQueryFunction(
+  options: StorageOptions,
+  chain: Chain,
+): StoragePattern | undefined {
+  const callee = field(chain.root, "function");
+  if (callee === null || callee.type !== "identifier") {
+    return undefined;
+  }
+  const from = options.facts
+    .facts("pyImportedName")
+    .find((row) => String(row[0]) === `${options.filePath}#${callee.text}`);
+  if (from === undefined) {
+    return undefined;
+  }
+  return options.patterns.find(
+    (pattern) =>
+      String(from[1]) === pattern.module &&
+      (pattern.queryFunctions ?? []).includes(String(from[2])),
+  );
+}
+
+/** The columns a chain says it wants, as written. */
+function fieldsOf(chain: Chain): string[] {
+  const args = field(chain.root, "arguments");
+  const named: string[] = [];
+  for (const argument of args === null ? [] : children(args)) {
+    if (argument.type === "keyword_argument") {
+      const name = field(argument, "name");
+      if (name !== null) {
+        named.push(name.text);
+      }
+      continue;
+    }
+    // `User.id` in `select(User.id)` says the column, and a bare name does not.
+    if (argument.type === "attribute") {
+      const property = field(argument, "attribute");
+      if (property !== null) {
+        named.push(property.text);
+      }
+    }
+  }
+  return named;
+}
+
+/** What a call was given to pick rows by, as written. */
+function selectorOf(call: PyNode): string[] {
+  const args = field(call, "arguments");
+  const picked: string[] = [];
+  for (const argument of args === null ? [] : children(args)) {
+    if (argument.type === "keyword_argument") {
+      const name = field(argument, "name");
+      if (name !== null) {
+        picked.push(name.text);
+      }
+    }
+  }
+  return picked;
+}
+
+function effectFor(
+  pattern: StoragePattern,
+  chain: Chain,
+  options: StorageOptions,
+): Effect {
+  const picked = [
+    ...new Set([chain.last, ...chain.between].flatMap(selectorOf)),
+  ];
+  return {
+    type: "interaction",
+    binding: storageRelationalBinding({
+      recognition: "python-storage",
+      storageSystem: pattern.storageSystem,
+      scope: pattern.module,
+      table: chain.subject,
+    }),
+    callee: chain.last.text,
+    interaction: {
+      class: "storage-access",
+      kind: pattern.writes.includes(chain.operation) ? "write" : "read",
+      fields: fieldsOf(chain),
+      operation: chain.operation,
+      ...(picked.length > 0 ? { selector: picked } : {}),
+    },
+  };
+}
+
+/** tree-sitter types a named child as nullable; dropping them keeps the walks flat. */
+function children(node: PyNode): PyNode[] {
+  return node.namedChildren.filter((child): child is PyNode => child !== null);
 }
 
 /** The file part of a node key, which says where a definition was written. */
@@ -253,8 +359,15 @@ function directStorageEffects(
     return [];
   }
 
-  const chains = chainsIn(calls).filter((chain) =>
-    options.couldMatch.has(methodName(chain.root)),
+  // A method a file importing the library declares, or a function the library
+  // exports and a call site imported. Nothing else can start a query.
+  const named = new Set(
+    options.patterns.flatMap((pattern) => pattern.queryFunctions ?? []),
+  );
+  const chains = chainsIn(calls).filter(
+    (chain) =>
+      options.couldMatch.has(methodName(chain.root)) ||
+      named.has(methodName(chain.root)),
   );
   if (chains.length === 0) {
     return [];
@@ -275,6 +388,11 @@ function directStorageEffects(
   for (const chain of chains) {
     const callee = field(chain.root, "function");
     if (callee === null) {
+      continue;
+    }
+    const imported = importedQueryFunction(options, chain);
+    if (imported !== undefined) {
+      effects.push(effectFor(imported, chain, options));
       continue;
     }
     const resolved = options.facts
@@ -305,22 +423,7 @@ function directStorageEffects(
       continue;
     }
 
-    effects.push({
-      type: "interaction",
-      binding: storageRelationalBinding({
-        recognition: "python-storage",
-        storageSystem: pattern.storageSystem,
-        scope: pattern.module,
-        table: chain.subject,
-      }),
-      callee: chain.last.text,
-      interaction: {
-        class: "storage-access",
-        kind: pattern.writes.includes(chain.operation) ? "write" : "read",
-        fields: [],
-        operation: chain.operation,
-      },
-    });
+    effects.push(effectFor(pattern, chain, options));
   }
   return effects;
 }
