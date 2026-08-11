@@ -98,6 +98,27 @@ through `const_set` or `Object.const_get`, which nothing here reads.
 The definitions are collected per file and matched afterwards, since which
 file defines a constant is only settled once every file has been read.
 
+## What a class inherits
+
+A class says which class it extends, twice. `extends` points at whatever the
+superclass name binds to, so the shared rules find a method a base class
+declares on a subclass that never overrode it. `extendsNamed` keeps the name
+as written, because a base class the project does not declare, like
+`ActiveRecord::Base`, has no node in the run to point at:
+
+```ruby
+class Order < ApplicationRecord
+end
+```
+
+```
+extends       order.rb:0-31  order.rb#ApplicationRecord
+extendsNamed  order.rb:0-31  ApplicationRecord
+```
+
+A pack matching a library base class reads the second one, and follows the
+first to keep going up.
+
 ## Where it fits in suss
 
 Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (starting with `@suss/framework-graphql-ruby`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes or DSL calls are named beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.

@@ -193,4 +193,16 @@ describe("ruby value facts", () => {
     const [callee] = rows(db, "call").map((row) => row[1]);
     expect(rows(db, "readsProperty")).toEqual([[callee, "#loader", "load"]]);
   });
+
+  it("says which class a class is written as extending", async () => {
+    const db = await factsFor("class Order < ApplicationRecord\nend\n");
+    const [cls] = rows(db, "objectValue");
+    expect(rows(db, "extendsNamed")).toEqual([[cls?.[0], "ApplicationRecord"]]);
+    expect(rows(db, "extends")).toEqual([[cls?.[0], "#ApplicationRecord"]]);
+  });
+
+  it("says nothing about a class written with no superclass", async () => {
+    const db = await factsFor("class Order\nend\n");
+    expect(db.size("extendsNamed")).toBe(0);
+  });
 });
