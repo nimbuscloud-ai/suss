@@ -33,6 +33,12 @@ export interface StoragePattern {
   queryTypes: string[];
   /** Chain-ending methods that change what is stored. Anything else reads. */
   writes: string[];
+  /**
+   * Functions the library exports that start a query on their own, for the
+   * case where a call site imports one rather than reaching it through a
+   * project class. `select(...)` in SQLAlchemy 2.0 is one.
+   */
+  queryFunctions?: string[];
   /** Which database the library is talking to, for the boundary binding. */
   storageSystem: "postgres" | "mysql" | "sqlite";
 }

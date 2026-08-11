@@ -12,5 +12,6 @@
   "add_all": "SQLAlchemy: the Session method that stages several",
   "merge": "SQLAlchemy: the Session method that writes detached state back",
   "commit": "SQLAlchemy: the Session method that makes staged work permanent",
-  "insert": "SQLAlchemy: the 2.0 construct that adds rows"
+  "insert": "SQLAlchemy: the 2.0 construct that adds rows",
+  "select": "SQLAlchemy: the 2.0 function that builds a SELECT, imported at the call site"
 }
