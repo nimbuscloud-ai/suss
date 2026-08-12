@@ -61,7 +61,6 @@ async function effectsFor(source: string, models = MODELS) {
 
   return storageEffects(callsIn(root as RbNode), {
     facts: db,
-    filePath: "use.rb",
     patterns: [ACTIVE_RECORD],
   });
 }
@@ -126,8 +125,44 @@ describe("the database work a Ruby body does", () => {
     expect(
       storageEffects(callsIn(tree.rootNode), {
         facts: new Database(),
-        filePath: "f.rb",
         patterns: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it("stops rather than going round classes that extend each other", async () => {
+    const effects = await effectsFor(
+      "found = Order.where(id: 1).first\n",
+      ["class Order < Loop", "end", "", "class Loop < Order", "end", ""].join(
+        "\n",
+      ),
+    );
+    expect(effects).toEqual([]);
+  });
+
+  it("says nothing about a name two files declare", async () => {
+    const db = new Database();
+    const constants = [];
+    let root: RbNode | null = null;
+    for (const [file, text] of Object.entries({
+      "one.rb": "class Order < ApplicationRecord\nend\n",
+      "two.rb": "class Order\nend\n",
+      "models.rb": MODELS,
+      "use.rb": "found = Order.where(id: 1).first\n",
+    })) {
+      const tree = await parseRuby(text);
+      emitValueFacts(db, file, tree.rootNode);
+      constants.push(collectFileConstants(file, tree.rootNode));
+      if (file === "use.rb") {
+        root = tree.rootNode;
+      }
+    }
+    emitConstantBindings(db, constants);
+
+    expect(
+      storageEffects(callsIn(root as RbNode), {
+        facts: db,
+        patterns: [ACTIVE_RECORD],
       }),
     ).toEqual([]);
   });

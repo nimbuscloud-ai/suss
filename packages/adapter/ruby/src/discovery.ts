@@ -34,10 +34,12 @@ import {
   qualifyConstantRef,
   walkClasses,
 } from "./scope.js";
+import { type RbStorageOptions, storageEffects } from "./storage.js";
 import { typeShapeFromNode } from "./typeShape.js";
 
 import type {
   DispatchTable,
+  Effect,
   GraphqlDeclaredContract,
   TypeShape,
 } from "@suss/behavioral-ir";
@@ -94,6 +96,8 @@ export interface DiscoveryOptions {
   /** Repo-relative or absolute path recorded on each summary's `location.file`. */
   filePath: string;
   cache: FileCache;
+  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
+  storage?: RbStorageOptions | undefined;
 }
 
 /** What a bare constant is resolved against: the nesting chain in effect, plus every class the file defines, so we can spot shadowing. */
@@ -106,15 +110,18 @@ interface FieldReadContext {
   pattern: GraphqlObjectFields;
   cache: FileCache;
   lookup: AncestorLookup;
+  storage?: RbStorageOptions | undefined;
 }
 
 function fieldReadContext(
   pattern: GraphqlObjectFields,
   cache: FileCache,
+  storage?: RbStorageOptions,
 ): FieldReadContext {
   return {
     pattern,
     cache,
+    storage,
     lookup: {
       root: pattern.root,
       pathConvention: pattern.pathConvention,
@@ -198,7 +205,7 @@ async function graphqlObjectFieldUnits(
     info.qualifiedName,
     pattern.typeNameConvention,
   );
-  const ctx = fieldReadContext(pattern, options.cache);
+  const ctx = fieldReadContext(pattern, options.cache, options.storage);
   const knownClasses = ownBlocks[0]?.knownClasses ?? new Set<string>();
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
@@ -240,7 +247,7 @@ interface FieldDeclaration {
 /** What one field's declaration and the method behind it come to together, since a wiring keyword settles both at once. */
 /** One branch recording what the resolver does, when anything was read of it. */
 function branchesFor(body: BodyReport, range: Range): RawBranch[] {
-  if (body.effects === undefined) {
+  if (body.effects === undefined && body.extraEffects === undefined) {
     return [];
   }
   return [
@@ -258,7 +265,10 @@ function branchesFor(body: BodyReport, range: Range): RawBranch[] {
         emitEvent: null,
         location: range,
       },
-      effects: body.effects,
+      effects: body.effects ?? [],
+      ...(body.extraEffects === undefined
+        ? {}
+        : { extraEffects: body.extraEffects }),
       location: range,
       isDefault: true,
     },
@@ -276,15 +286,34 @@ interface BodyReport {
   readings: Reading<unknown>[];
   /** The calls the method makes, each with what gates it. */
   effects?: RawEffect[];
+  /** Effects a recognizer built in IR form, the database work among them. */
+  extraEffects?: Effect[];
 }
 
-function bodyOfMethod(method: RbNode): BodyReport {
+function bodyOfMethod(method: RbNode, storage?: RbStorageOptions): BodyReport {
   const effects = invocationEffects(method);
+  const database =
+    storage === undefined ? [] : storageEffects(callsUnder(method), storage);
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",
     readings: [],
     ...(effects.length > 0 ? { effects } : {}),
+    ...(database.length > 0 ? { extraEffects: database } : {}),
   };
+}
+
+/** Every call written under a node. */
+function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
+  for (const child of node.namedChildren) {
+    if (child === null) {
+      continue;
+    }
+    if (child.type === "call") {
+      found.push(child);
+    }
+    callsUnder(child, found);
+  }
+  return found;
 }
 
 /** The library resolves a field with no method behind it by reading the attribute off the object it was resolved against, so there is no body anywhere to read. */
@@ -306,9 +335,10 @@ function bodyFromLookup(
   range: Range,
   subject: string,
   nothingThere: BodyReport,
+  storage?: RbStorageOptions,
 ): BodyReport {
   const table: DispatchTable<MethodLookup, BodyReport> = {
-    found: (lookup) => bodyOfMethod(lookup.method),
+    found: (lookup) => bodyOfMethod(lookup.method, storage),
     unsettled: (lookup) =>
       methodNotSettled(
         `${subject} could be answered by a method ${lookup.reason}, so whether one exists was not settled here`,
@@ -393,6 +423,7 @@ async function readFieldShape(
       range,
       "This field",
       NO_METHOD_BEHIND_IT,
+      ctx.storage,
     ),
   };
 }
@@ -455,6 +486,7 @@ async function readWiredClass(
         `This field is wired to ${targetQualifiedName}, which defines no ${ctx.pattern.resolverMethodName} method anywhere in its ancestry, so nothing about what it does was read here`,
         range,
       ),
+      ctx.storage,
     ),
   };
 }

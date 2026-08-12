@@ -26,6 +26,7 @@ import { parseRuby } from "./parser.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { RubyPack } from "./pack.js";
+import type { RbNode } from "./parser.js";
 
 export interface ExtractRubyOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -56,11 +57,23 @@ export async function extractRubyProject(
       fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null,
   );
 
+  // Two passes, because which file declares a constant is settled across the
+  // whole run, and the storage recognizer asks about that during discovery.
+  const parsed: { file: string; root: RbNode }[] = [];
   for (const file of options.files) {
     const root = await cache.get(file);
     if (root === null) {
       continue;
     }
+    parsed.push({ file, root });
+    emitValueFacts(db, file, root);
+    constants.push(collectFileConstants(file, root));
+  }
+  emitConstantBindings(db, constants);
+
+  const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
+
+  for (const { file, root } of parsed) {
     // Facts keep the full filesystem path, because they are joined against
     // internally. Only the summary's `location.file` gets shortened.
     const displayPath =
@@ -72,6 +85,9 @@ export async function extractRubyProject(
       packs: options.packs,
       filePath: displayPath,
       cache,
+      ...(storagePatterns.length > 0
+        ? { storage: { facts: db, patterns: storagePatterns } }
+        : {}),
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling: "permissive" });
@@ -82,12 +98,7 @@ export async function extractRubyProject(
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
     }
-
-    emitValueFacts(db, file, root);
-    constants.push(collectFileConstants(file, root));
   }
-
-  emitConstantBindings(db, constants);
 
   return { summaries, facts: db };
 }
