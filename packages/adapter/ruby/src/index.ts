@@ -50,6 +50,7 @@ export type {
 export type { ConstantPathConvention } from "./constantPath.js";
 export type {
   GraphqlObjectFields,
+  RbStoragePattern,
   RubyDiscoveryPattern,
   RubyPack,
 } from "./pack.js";

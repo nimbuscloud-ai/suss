@@ -1,0 +1,16 @@
+{
+  "activerecord": "ActiveRecord: the library, and this pack's name",
+  "create": "ActiveRecord: builds and stores a row",
+  "insert": "ActiveRecord: adds a row without callbacks",
+  "insert_all": "ActiveRecord: adds several rows without callbacks",
+  "update": "ActiveRecord: writes changed attributes to matched rows",
+  "update_all": "ActiveRecord: writes to every matched row without callbacks",
+  "upsert": "ActiveRecord: adds or overwrites one row",
+  "upsert_all": "ActiveRecord: adds or overwrites several rows",
+  "save": "ActiveRecord: stores the receiver's changes",
+  "destroy": "ActiveRecord: removes a row, running callbacks",
+  "destroy_all": "ActiveRecord: removes every matched row, running callbacks",
+  "delete": "ActiveRecord: removes a row without callbacks",
+  "delete_all": "ActiveRecord: removes every matched row without callbacks",
+  "touch": "ActiveRecord: writes the timestamp columns"
+}
