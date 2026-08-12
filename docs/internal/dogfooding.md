@@ -283,7 +283,7 @@ public exports of the two checker packages and runs the CLI's
 `check` against the intent specs under `intent/`, asking whether
 those exports still behave the way the specs say. It reports and
 never fails. The dogfood run asks how much of its own source suss
-can see at all, across all 45 packages, and it does fail. Neither
+can see at all, across all 46 packages, and it does fail. Neither
 one replaces the other. `check:self` covers two packages in depth
 against intent someone wrote by hand, and the dogfood run covers
 the whole workspace by breadth.
