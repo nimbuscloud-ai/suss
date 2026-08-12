@@ -349,4 +349,55 @@ describe("the method behind a field", () => {
       "This field is wired to resolver_for(:campaign), which is not a constant path this reader follows, so nothing about what it does was read here",
     ]);
   });
+
+  it("puts the database work a resolver method does on the field's transitions", async () => {
+    const graphqlRoot = path.join(tmpDir, "app", "graphql");
+    const orderType = write(
+      "app/graphql/types/order_type.rb",
+      [
+        "class Types::OrderType < Types::BaseObject",
+        "  field :total, Integer, null: false",
+        "",
+        "  def total",
+        "    Order.where(id: 1).first",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    write(
+      "app/models/order.rb",
+      ["class Order < ApplicationRecord", "end", ""].join("\n"),
+    );
+    const models = write(
+      "app/models/application_record.rb",
+      ["class ApplicationRecord < ActiveRecord::Base", "end", ""].join("\n"),
+    );
+
+    const pack: RubyPack = {
+      ...graphqlRubyPack(graphqlRoot),
+      storage: [
+        {
+          baseClasses: ["ActiveRecord::Base"],
+          writes: ["update", "destroy", "save"],
+          storageSystem: "postgres",
+        },
+      ],
+    };
+    const { summaries } = await extractRubyProject({
+      files: [orderType, path.join(tmpDir, "app/models/order.rb"), models],
+      packs: [pack],
+    });
+
+    const storage = summaries
+      .flatMap((summary) =>
+        (summary.transitions ?? []).flatMap((transition) => transition.effects),
+      )
+      .filter(
+        (effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "storage-access",
+      );
+    expect(storage).toHaveLength(1);
+  });
 });

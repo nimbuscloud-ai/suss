@@ -5,7 +5,6 @@
 import { storageRelationalBinding } from "@suss/ir-core";
 
 import { field } from "./ast.js";
-import { nodeId } from "./facts/values.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -40,7 +39,6 @@ function rootConstant(node: RbNode): RbNode | null {
 
 export interface RbStorageOptions {
   readonly facts: Database;
-  readonly filePath: string;
   readonly patterns: readonly RbStoragePattern[];
 }
 
@@ -81,21 +79,20 @@ function reachesBase(
     .some((next) => reachesBase(facts, next, bases, seen));
 }
 
-/** The class a constant refers to, when one thing in the run declares it. */
-function classBehind(
-  facts: Database,
-  filePath: string,
-  constant: RbNode,
-): string | undefined {
-  const key =
-    constant.type === "constant"
-      ? `${filePath}#${constant.text}`
-      : nodeId(filePath, constant);
-  const bound = facts
-    .facts("binds")
-    .filter((row) => String(row[0]) === key)
-    .map((row) => String(row[1]));
-  return bound.length === 1 ? bound[0] : undefined;
+/**
+ * The class a constant refers to, when every mention of that name in the run
+ * settles on one class. Two classes answering to it would make picking one a
+ * guess, so nothing is said, the same caution the constant bindings apply.
+ */
+function classBehind(facts: Database, constant: RbNode): string | undefined {
+  const wanted = `#${constant.text}`;
+  const bound = new Set(
+    facts
+      .facts("binds")
+      .filter((row) => String(row[0]).endsWith(wanted))
+      .map((row) => String(row[1])),
+  );
+  return bound.size === 1 ? [...bound][0] : undefined;
 }
 
 /** What a chain was given to pick rows by, `id` in `where(id: 1)`. */
@@ -150,7 +147,7 @@ export function storageEffects(
     if (constant === null) {
       continue;
     }
-    const classKey = classBehind(options.facts, options.filePath, constant);
+    const classKey = classBehind(options.facts, constant);
     if (classKey === undefined) {
       continue;
     }
