@@ -3,7 +3,7 @@
     "packages": 45,
     "packagesWithExports": 45,
     "exports": 407,
-    "internal": 1599,
+    "internal": 1600,
     "consumers": 636,
     "pairs": 628
   },
@@ -17,7 +17,7 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 46,
-      "internal": 100,
+      "internal": 101,
       "consumers": 13
     },
     "packages/adapter/typescript": {
