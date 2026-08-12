@@ -1,8 +1,8 @@
 {
   "totals": {
-    "packages": 45,
-    "packagesWithExports": 45,
-    "exports": 407,
+    "packages": 46,
+    "packagesWithExports": 46,
+    "exports": 410,
     "internal": 1600,
     "consumers": 636,
     "pairs": 628
@@ -133,6 +133,12 @@
       "exports": 26,
       "internal": 29,
       "consumers": 3
+    },
+    "packages/framework/activerecord": {
+      "name": "@suss/framework-activerecord",
+      "exports": 3,
+      "internal": 0,
+      "consumers": 0
     },
     "packages/framework/apollo": {
       "name": "@suss/framework-apollo",
