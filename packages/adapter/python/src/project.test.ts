@@ -207,6 +207,19 @@ describe("extractPythonProject", () => {
 });
 
 describe("a route whose body talks to the database", () => {
+  const withStorage2: PythonPack = {
+    ...flaskRestxLike,
+    storage: [
+      {
+        module: "sqlalchemy",
+        queryTypes: ["Select"],
+        writes: ["update", "delete"],
+        queryFunctions: ["select"],
+        storageSystem: "postgres",
+      },
+    ],
+  };
+
   const withStorage: PythonPack = {
     ...flaskRestxLike,
     storage: [
@@ -218,6 +231,53 @@ describe("a route whose body talks to the database", () => {
       },
     ],
   };
+
+  it("follows a handler into a service function that builds a query from an imported constructor", async () => {
+    write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    write(
+      "myapp/services.py",
+      [
+        "from sqlalchemy import select",
+        "",
+        "def load_orders():",
+        "    return select(Orders.id).all()",
+        "",
+      ].join("\n"),
+    );
+    write(
+      "myapp/routes/todos.py",
+      [
+        "from myapp.wrappers.restx import route",
+        "from myapp.services import load_orders",
+        "",
+        '@route("/todos")',
+        "class TodoList:",
+        "    def get(self):",
+        "        return load_orders()",
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [...findPythonFiles(tmpDir)],
+      packs: [withStorage2],
+      roots: [tmpDir],
+    });
+
+    const storage = summaries
+      .flatMap((summary) =>
+        (summary.transitions ?? []).flatMap((transition) => transition.effects),
+      )
+      .filter(
+        (effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "storage-access",
+      );
+    expect(storage).toHaveLength(1);
+  });
 
   it("puts the database work on the route's own transitions", async () => {
     write(

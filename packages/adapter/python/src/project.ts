@@ -103,7 +103,13 @@ export async function extractPythonProject(
   // through is missed, which is what asking about every call would cost a
   // minute to catch.
   const couldMatch = methodsDeclaredNear(db, storagePatterns, definitions);
-  const leadsToStorage = functionsReachingStorage(definitions, couldMatch);
+  // A body that builds a query from an imported function reaches the
+  // database too, so those functions seed the walk alongside the wrappers.
+  const startsAQuery = new Set([
+    ...couldMatch,
+    ...storagePatterns.flatMap((pattern) => pattern.queryFunctions ?? []),
+  ]);
+  const leadsToStorage = functionsReachingStorage(definitions, startsAQuery);
 
   const routerIndex = buildRouterIndex(bound, options.packs, {
     roots: options.roots,

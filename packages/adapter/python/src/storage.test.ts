@@ -321,4 +321,19 @@ describe("the database work a Python body does", () => {
     );
     expect(effects).toEqual([]);
   });
+
+  it("counts a query a called function builds from an imported constructor", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "",
+        "def load_orders():",
+        "    return select(User.id).all()",
+        "",
+        "found = load_orders()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toHaveLength(1);
+  });
 });
