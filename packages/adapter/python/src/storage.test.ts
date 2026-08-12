@@ -209,6 +209,18 @@ describe("the database work a Python body does", () => {
     expect(
       effects[0]?.type === "interaction" ? effects[0].binding.semantics : null,
     ).toMatchObject({ table: "Orders" });
+    expect(
+      effects[0]?.type === "interaction" ? effects[0].origin : null,
+    ).toMatchObject({ function: "load_orders", line: 3 });
+  });
+
+  it("says nothing about where work in the route's own body happens, since the route says that", async () => {
+    const effects = await effectsFor(
+      "found = Orders.query().filter_by(id=1).first()\n",
+    );
+    expect(
+      effects[0]?.type === "interaction" ? effects[0].origin : "missing",
+    ).toBeUndefined();
   });
 
   it("stops rather than going round a pair of functions that call each other", async () => {
