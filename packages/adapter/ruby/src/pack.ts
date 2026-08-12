@@ -16,6 +16,22 @@ export interface RubyPack {
   /** Wire protocol for the produced boundary bindings, e.g. "http-graphql". */
   protocol: string;
   discovery: RubyDiscoveryPattern[];
+  /** What the library's own database calls look like. The README says how one is matched. */
+  storage?: RbStoragePattern[];
+}
+
+/**
+ * Ruby writes no return type, so a call is matched by what its receiver
+ * inherits from. A model is a class that reaches one of these base classes,
+ * whether the project declares an intermediate one or not.
+ */
+export interface RbStoragePattern {
+  /** Base classes the library gives a model, `ActiveRecord::Base` for Rails. */
+  baseClasses: string[];
+  /** Methods that change what is stored. Anything else reads. */
+  writes: string[];
+  /** Which database is behind the connection, which the project settles. */
+  storageSystem: "postgres" | "mysql" | "sqlite";
 }
 
 export type RubyDiscoveryPattern = GraphqlObjectFields;
