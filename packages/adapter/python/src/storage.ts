@@ -293,7 +293,21 @@ export function storageEffects(
         continue;
       }
       seen.add(key);
-      found.push(...gather(callsIn(body), fileOf(key)));
+      // Work found inside a called function says where it happens, so a
+      // reader can go there rather than to the route that reached it.
+      const name = field(body, "name")?.text;
+      const origin = {
+        file: fileOf(key),
+        line: body.startPosition.row + 1,
+        ...(name === undefined ? {} : { function: name }),
+      };
+      found.push(
+        ...gather(callsIn(body), fileOf(key)).map((effect) =>
+          effect.type === "interaction" && effect.origin === undefined
+            ? { ...effect, origin }
+            : effect,
+        ),
+      );
     }
     return found;
   };

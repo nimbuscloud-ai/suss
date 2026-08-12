@@ -937,6 +937,22 @@
                       "groupId": {
                         "type": "string"
                       },
+                      "origin": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "line": {
+                            "type": "number"
+                          },
+                          "function": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["file", "line"],
+                        "additionalProperties": false
+                      },
                       "preconditions": {
                         "type": "array",
                         "items": {
