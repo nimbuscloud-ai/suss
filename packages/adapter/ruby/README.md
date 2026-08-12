@@ -119,6 +119,39 @@ extendsNamed  order.rb:0-31  ApplicationRecord
 A pack matching a library base class reads the second one, and follows the
 first to keep going up.
 
+## What a body does with the database
+
+Ruby writes no return type, so the Python adapter's trick of reading what a
+method says it gives back has no counterpart here. A pack says which base
+class the library gives a model instead:
+
+```ts
+storage: [
+  {
+    baseClasses: ["ActiveRecord::Base"],
+    writes: ["update", "destroy", "save", "create", "delete_all"],
+    storageSystem: "postgres",
+  },
+]
+```
+
+A call matches when the constant its receivers start at reaches one of those
+base classes. Rails puts its own class in between, and following `extends`
+through the project and matching `extendsNamed` at the library takes care of
+that:
+
+```ruby
+class ApplicationRecord < ActiveRecord::Base; end
+class Order < ApplicationRecord; end
+
+Order.where(id: 1).first   # one read, against Order, picking rows by id
+```
+
+A chain is one thing the code does, so that counts once. The method the chain
+ends with tells a read from a write, and the keywords along it become the
+selector. `fields` comes back empty, and a call on anything that is not a
+constant says nothing, since there is no class to ask about.
+
 ## Where it fits in suss
 
 Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (starting with `@suss/framework-graphql-ruby`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes or DSL calls are named beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.
