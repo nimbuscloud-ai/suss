@@ -672,9 +672,9 @@ describe("enumerateOrDegrade", () => {
       "T1",
     ]);
 
-    expect(result.degraded).toBe("path budget exceeded");
+    expect(result.degraded).toBe("path budget exceeded, more than 256 paths");
     expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
-      "positive:explicit:unmodeled control flow (path budget exceeded)",
+      "positive:explicit:unmodeled control flow (path budget exceeded, more than 256 paths)",
     ]);
     expect(pathSigs(result.byTerminal.get("T1"))).toHaveLength(1);
   });

@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 361,
-      "covered": 341,
+      "total": 363,
+      "covered": 342,
       "skipped": 0,
-      "pct": 94.45
+      "pct": 94.21
     },
     "branchesTrue": {
       "total": 0,
@@ -181,10 +181,10 @@
       "pct": 97.56
     },
     "branches": {
-      "total": 125,
-      "covered": 117,
+      "total": 127,
+      "covered": 118,
       "skipped": 0,
-      "pct": 93.6
+      "pct": 92.91
     }
   },
   "src/paths/gatingConditions.ts": {

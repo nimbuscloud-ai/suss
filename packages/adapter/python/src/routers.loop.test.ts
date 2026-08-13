@@ -170,4 +170,50 @@ describe("a loop over a call that registers routers", () => {
       }),
     ).toEqual([]);
   });
+
+  it("says which entry stopped the list, and what it resolved to", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-"));
+    const files: Record<string, string> = {
+      "endpoint/__init__.py": "",
+      "endpoint/orders.py": ordersModule,
+      "loader.py": [
+        "from endpoint.orders import ns as orders_ns",
+        "",
+        "",
+        "def all_namespaces():",
+        "    return [orders_ns, something_else]",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from flask import Blueprint",
+        "from flask_restx import Api",
+        "",
+        "from loader import all_namespaces",
+        "",
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "api = Api(bp)",
+        "",
+        "for namespace in all_namespaces():",
+        "    api.add_namespace(namespace)",
+        "",
+      ].join("\n"),
+    };
+    for (const [name, source] of Object.entries(files)) {
+      const full = path.join(dir, name);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, source);
+    }
+    const { summaries } = await extractPythonProject({
+      files: findPythonFiles(dir),
+      packs: [flaskRestxLike],
+      roots: [dir],
+    });
+
+    const gap = (summaries[0]?.gaps ?? [])
+      .map((entry) => entry.description)
+      .join(" ");
+    expect(gap).toContain("1 of 2 entries matched a router");
+    expect(gap).toContain("something_else");
+    expect(gap).toContain("declined rather than most of it mounted");
+  });
 });

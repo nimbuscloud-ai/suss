@@ -229,7 +229,9 @@ function chargeBudget(
 ): void {
   state.pathCount++;
   if (state.pathCount > MAX_PATHS) {
-    throw new PathBudgetExceeded();
+    throw new PathBudgetExceeded(
+      `path budget exceeded, more than ${MAX_PATHS} paths`,
+    );
   }
 }
 
@@ -562,7 +564,9 @@ function enumerate<Cond, Terminal>(
     }
     frontiers = mergeRejoined(nextFrontiers);
     if (frontiers.length > MAX_PATHS) {
-      throw new PathBudgetExceeded();
+      throw new PathBudgetExceeded(
+        `path budget exceeded, more than ${MAX_PATHS} paths`,
+      );
     }
     if (frontiers.length === 0) {
       break; // every path exited, the rest is unreachable
@@ -702,7 +706,7 @@ export function enumerateOrDegrade<Cond, Terminal>(
 /** What to say about an error the engine threw, or null when it is not one of its own. */
 function reasonToDegrade(error: unknown): string | null {
   if (error instanceof PathBudgetExceeded) {
-    return "path budget exceeded";
+    return error.message === "" ? "path budget exceeded" : error.message;
   }
   if (error instanceof UnmodeledFlow) {
     return error.message;
