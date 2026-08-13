@@ -135,6 +135,8 @@ const MODULE_SITE: MountSite = { kind: "module" };
 interface UnenumerableLoop {
   site: MountSite;
   location: string;
+  /** The one name that stopped a list from mounting, when the rules resolved the list and one element matched no construction. */
+  unmatched?: { name: string; resolvedTo: string; matched: number; of: number };
 }
 
 /** Whether anything about where a carrier is registered contradicts the prefix its own construction stated. */
@@ -291,6 +293,12 @@ function unmountedReason(index: PatternIndex): string {
   const loops = [...index.unenumerableLoops.values()];
   if (loops.length === 0) {
     return "is never mounted through a single variable binding in the files read";
+  }
+
+  const stopped = loops.find((loop) => loop.unmatched !== undefined);
+  if (stopped?.unmatched !== undefined) {
+    const { name, resolvedTo, matched, of } = stopped.unmatched;
+    return `is not mounted by name in the files read, and a loop at ${stopped.location} mounts a list this reading resolved, where ${matched} of ${of} entries matched a router and ${name} did not (it resolved to ${resolvedTo}), so the whole list is declined rather than most of it mounted`;
   }
 
   return `is not mounted by name in the files read, and ${loopsClause(loops, "mount")} routers read out of a call this reading does not follow`;
@@ -995,20 +1003,31 @@ function mountCallOf(
  * followed to the construction it is. Empty when any step does not settle,
  * and then the loop keeps its abstention.
  */
+type ReturnedConstructions =
+  | { kind: "settled"; found: Construction[] }
+  | {
+      kind: "unmatched";
+      name: string;
+      resolvedTo: string;
+      matched: number;
+      of: number;
+    }
+  | { kind: "unread" };
+
 function constructionsReturnedBy(
   target: Extract<LoopTarget, { kind: "call" }>,
   index: PatternIndex,
-): Construction[] {
+): ReturnedConstructions {
   const facts = index.facts;
   if (facts === undefined) {
-    return [];
+    return { kind: "unread" };
   }
 
   const callKey = nodeId(target.file, target.call);
   resolveCalls(facts, [callKey]);
   const returned = objectReturnedBy(facts, callKey);
   if (returned === null) {
-    return [];
+    return { kind: "unread" };
   }
 
   // What the object contains are names, and each has to be asked about in
@@ -1018,13 +1037,20 @@ function constructionsReturnedBy(
 
   const found: Construction[] = [];
   for (const value of contained) {
-    const construction = index.byValueKey.get(resolvedValueKey(facts, value));
+    const resolved = resolvedValueKey(facts, value);
+    const construction = index.byValueKey.get(resolved);
     if (construction === undefined) {
-      return [];
+      return {
+        kind: "unmatched",
+        name: value,
+        resolvedTo: resolved,
+        matched: found.length,
+        of: contained.length,
+      };
     }
     found.push(construction);
   }
-  return found;
+  return { kind: "settled", found };
 }
 
 /** A contained value is a name, and `isWrittenAs` gives the expression it was written as, which for a router is the constructor call. */
@@ -1065,10 +1091,16 @@ function mountedConstructions(
   }
 
   if (target.kind === "call") {
-    const settled = constructionsReturnedBy(target, scan.index);
-    if (settled.length > 0) {
-      return settled;
+    const returned = constructionsReturnedBy(target, scan.index);
+    if (returned.kind === "settled" && returned.found.length > 0) {
+      return returned.found;
     }
+    scan.index.unenumerableLoops.set(target.location, {
+      site: position.site,
+      location: target.location,
+      ...(returned.kind === "unmatched" ? { unmatched: returned } : {}),
+    });
+    return [];
   }
 
   scan.index.unenumerableLoops.set(target.location, {

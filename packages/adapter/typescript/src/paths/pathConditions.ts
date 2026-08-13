@@ -152,7 +152,11 @@ export function computePathConditions(
     return composeExpressionLevel(func, result, lowered.terminalHomeRaw);
   } catch (error) {
     if (error instanceof PathBudgetExceeded) {
-      return degradedResult(func, terminalNodes, "path budget exceeded");
+      return degradedResult(
+        func,
+        terminalNodes,
+        error.message === "" ? "path budget exceeded" : error.message,
+      );
     }
     if (error instanceof UnmodeledFlow) {
       return degradedResult(func, terminalNodes, error.message);
