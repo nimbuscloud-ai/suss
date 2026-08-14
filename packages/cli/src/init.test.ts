@@ -143,6 +143,17 @@ describe("inspectProject", () => {
     expect(suggestion?.configuration?.example).toEqual({ root: "app/graphql" });
   });
 
+  it("says which framework it knows and cannot read, rather than a bare no-match", () => {
+    fs.writeFileSync(path.join(dir, "requirements.txt"), "flask==3.0.0\n");
+    const report = inspectProject(dir);
+    expect(report.suggestions).toEqual([]);
+    expect(report.recognizedWithoutPack).toEqual(["flask"]);
+
+    const output = formatInitReport(report);
+    expect(output).toContain("depends on flask");
+    expect(output).toContain("no pack for");
+  });
+
   it("reports a manifest it could not read rather than saying nothing", () => {
     fs.writeFileSync(
       path.join(dir, "setup.py"),

@@ -76,6 +76,8 @@ export interface InitReport {
   /** Where suss looked and could not read, which is different from
    * having found no dependencies at all. */
   unread?: UnreadDependencies[];
+  /** Frameworks this project depends on that suss knows and has no pack for. */
+  recognizedWithoutPack?: string[];
 }
 
 type Ecosystem = "npm" | "pypi" | "rubygems";
@@ -278,6 +280,26 @@ const BY_DEPENDENCY: Array<{
   },
 ];
 
+/**
+ * Web frameworks a project can depend on that no pack reads yet. When
+ * nothing matched, telling a Flask project "your dependencies say
+ * nothing" is true and useless; telling it suss knows Flask and cannot
+ * read it yet is the answer the person was asking for (#229).
+ */
+const RECOGNIZED_WITHOUT_A_PACK: Array<{
+  ecosystem: Ecosystem;
+  dependency: string;
+}> = [
+  { ecosystem: "pypi", dependency: "flask" },
+  { ecosystem: "pypi", dependency: "quart" },
+  { ecosystem: "pypi", dependency: "django" },
+  { ecosystem: "pypi", dependency: "bottle" },
+  { ecosystem: "npm", dependency: "koa" },
+  { ecosystem: "npm", dependency: "@hapi/hapi" },
+  { ecosystem: "rubygems", dependency: "sinatra" },
+  { ecosystem: "rubygems", dependency: "rails" },
+];
+
 const BY_FILE: Array<{
   matches: (filename: string) => boolean;
   name: string;
@@ -378,12 +400,27 @@ export function inspectProject(root: string): InitReport {
     .map((name) => path.join(resolved, name))
     .find((candidate) => fs.existsSync(candidate));
 
+  const recognizedWithoutPack = [
+    ...new Set(
+      declared.named
+        .filter((library) =>
+          RECOGNIZED_WITHOUT_A_PACK.some(
+            (entry) =>
+              entry.ecosystem === library.ecosystem &&
+              entry.dependency === library.name,
+          ),
+        )
+        .map((library) => library.name),
+    ),
+  ];
+
   return {
     root: resolved,
     tsconfig: tsconfig ?? null,
     suggestions,
     languages: detectLanguages(resolved),
     unread: declared.unread,
+    recognizedWithoutPack,
   };
 }
 
@@ -581,6 +618,10 @@ export function formatInitReport(report: InitReport): string {
       dim("  recognizes, and this project's dependencies name none of them."),
     );
     lines.push(dim("  Run `suss --help` for the built-in list."));
+    for (const name of report.recognizedWithoutPack ?? []) {
+      lines.push("");
+      lines.push(`${yellow("!")} ${recognizedWithoutPackSentence(name)}`);
+    }
     lines.push(...unreadLines(report));
     lines.push(...unnamedLanguageLines(report));
     return `${lines.join("\n")}\n`;
@@ -784,6 +825,10 @@ export function unnamedLanguages(report: InitReport): Language[] {
       (languages.length === 1 ||
         projectFilesOf(report.root, language).length > 0),
   );
+}
+
+export function recognizedWithoutPackSentence(name: string): string {
+  return `This project depends on ${name}, which suss knows and has no pack for yet, so those routes are not read.`;
 }
 
 export function unnamedLanguageSentence(language: Language): string {
