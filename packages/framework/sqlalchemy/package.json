@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-sqlalchemy",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "Pattern pack that says which SQLAlchemy calls a Python body makes against the database.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.4.0"
+    "@suss/adapter-python": "0.5.0"
   },
   "devDependencies": {
     "@suss/checker": "*",

@@ -11,14 +11,23 @@ exactly as they read a TypeScript project's.
 The Python adapter reads HTTP routes, through two packs. flask-restx
 covers a `Resource` class decorated with `Namespace.route(path)`, and
 FastAPI covers a function decorated with a verb-named method on an app
-or a router. The Ruby adapter reads graphql-ruby's class-based `field`
-DSL, one resolver per field.
+or a router. A route mounted through a shared framework package is
+followed the whole way: through the app factory, through a loader class
+the entry file hands over, and through the loop that mounts what the
+loader returns. The Ruby adapter reads graphql-ruby's class-based
+`field` DSL, one resolver per field, and the resolver method behind it,
+found through the class ancestry whichever file declares it.
 
-Both are early. Neither adapter reads a method body, so every summary
-comes out with no branches and its confidence pinned low. What you get
-is which boundaries exist and what each one declares, which is enough
-to pair a Python route against the TypeScript client that calls it, or
-a graphql-ruby field against a query your frontend sends.
+Both adapters read bodies. Each return becomes a branch with its
+status and the conditions that reach it, and the calls a body makes
+become invocation effects with the conditions that gate each one. With
+a storage pack composed in, a database call is classified: read or
+write, which model, which rows it picks and which columns it asks for.
+Python matches a query by what the method behind the call says it
+returns, which reads through a project's own base class, and follows a
+handler into the service functions it calls, with `origin` on each
+effect saying where the work happens. Ruby matches by what the
+receiver's class inherits, which reads through `ApplicationRecord`.
 
 ## Let init find the project
 
@@ -322,20 +331,19 @@ has to avoid being wrong. It never has to be complete.
 
 ## What you do not get yet
 
-- **No behavior.** Both adapters read declarations. A route has no
-  transitions, or one transition stating what the route declares.
-  Every summary's confidence is pinned low to say so.
-- **No effects.** A Python or Ruby unit records no storage call, no
-  queue send, no config read.
-- **Python discovery is top-level only.** A definition or an import
-  nested inside `if`, `try` or `with` is not bound, and a route
-  registered inside an app-factory function is not discovered.
+- **Raw SQL stays unread.** A string handed to `session.execute` is
+  not parsed, so a unit doing its database work that way reports the
+  call and nothing about what the query says.
+- **Queue sends and config reads are not classified.** The calls are
+  recorded as invocation effects; nothing turns one into a channel or
+  a config key the way the TypeScript packs do.
 - **Plain Flask** (`@app.route`) has no pack yet.
-- **Ruby reads graphql-ruby only.** A `def resolve` body, a
-  `graphql_name` override, and interfaces, unions and enums are all
-  unread.
+- **Ruby reads graphql-ruby only.** A `graphql_name` override, and
+  interfaces, unions and enums, are unread, and Ruby's predicates are
+  plain source text rather than structured.
 - **`suss corroborate` is TypeScript only.**
 
 For what each package does in more detail, read the package READMEs:
-`packages/adapter/python`, `packages/adapter/ruby`, and the three packs
-under `packages/framework`.
+`packages/adapter/python`, `packages/adapter/ruby`, and the packs
+under `packages/framework`, `sqlalchemy` and `activerecord` among
+them.
