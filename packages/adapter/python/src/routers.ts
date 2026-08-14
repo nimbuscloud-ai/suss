@@ -144,6 +144,8 @@ const MODULE_SITE: MountSite = { kind: "module" };
 /** One loop whose routers this reading cannot name, and where a reader will find it. */
 interface UnenumerableLoop {
   site: MountSite;
+  /** The display path of the file the loop is written in, so its reach can be bounded. */
+  file: string;
   location: string;
   /** The one name that stopped a list from mounting, when the rules resolved the list and one element matched no construction. */
   unmatched?: { name: string; resolvedTo: string; matched: number; of: number };
@@ -209,8 +211,10 @@ export function buildRouterIndex(
   }
 
   const byFile = new Map<string, BoundPythonFile>();
+  const displayPaths = new Map<ModuleBinding, string>();
   for (const file of files) {
     byFile.set(file.file, file);
+    displayPaths.set(file.module, file.displayPath);
   }
 
   return {
@@ -256,16 +260,17 @@ export function buildRouterIndex(
         return ownPrefix;
       }
 
+      const routerPath = displayPaths.get(module);
       const mount = index.mounts.get(construction);
       if (mount === undefined) {
-        return { kind: "abstain", reason: unmountedReason(index) };
+        return { kind: "abstain", reason: unmountedReason(index, routerPath) };
       }
 
       if (mount.kind === "abstain") {
         return { kind: "abstain", reason: mount.reason };
       }
 
-      const rivalled = rivalRegistration(index, mount.site);
+      const rivalled = rivalRegistration(index, mount.site, routerPath);
       if (rivalled !== null) {
         return { kind: "abstain", reason: rivalled };
       }
@@ -319,33 +324,56 @@ function loopsClause(loops: UnenumerableLoop[], verb: string): string {
   return `loops at ${locations.join(", ")} ${verb}`;
 }
 
-/** Why a router nobody mounted by name still gives no path, pointing at the loop when there is one to read. */
-function unmountedReason(index: PatternIndex): string {
-  const loops = [...index.unenumerableLoops.values()];
-  if (loops.length === 0) {
-    return "is never mounted through a single variable binding in the files read";
+/**
+ * Whether a loop could plausibly have mounted a router declared in the
+ * file at routerPath. A loader reads its collection from somewhere near
+ * itself, most often its own package, so the loop's reach is bounded to
+ * the directory that contains it. A loop that pulls routers from a
+ * sibling package is missed, which trades a possible wrong path for not
+ * letting one dynamic loader disable every function-site mount in the
+ * run (#243).
+ */
+function couldReach(loop: UnenumerableLoop, routerPath?: string): boolean {
+  if (routerPath === undefined) {
+    return true;
   }
 
+  const directory = loop.file.slice(0, loop.file.lastIndexOf("/") + 1);
+  return routerPath.startsWith(directory);
+}
+
+/** Why a router nobody mounted by name still gives no path, pointing at the loop when there is one to read. */
+function unmountedReason(index: PatternIndex, routerPath?: string): string {
+  const loops = [...index.unenumerableLoops.values()];
+
+  // A declined list's entries are imports that can come from any
+  // package, so this points at the loop that resolved one wherever it is.
   const stopped = loops.find((loop) => loop.unmatched !== undefined);
   if (stopped?.unmatched !== undefined) {
     const { name, resolvedTo, matched, of } = stopped.unmatched;
     return `is not mounted by name in the files read, and a loop at ${stopped.location} mounts a list this reading resolved, where ${matched} of ${of} entries matched a router and ${name} did not (it resolved to ${resolvedTo}), so the whole list is declined rather than most of it mounted`;
   }
 
-  return `is not mounted by name in the files read, and ${loopsClause(loops, "mount")} routers read out of a call this reading does not follow`;
+  const reachable = loops.filter((loop) => couldReach(loop, routerPath));
+  if (reachable.length === 0) {
+    return "is never mounted through a single variable binding in the files read";
+  }
+
+  return `is not mounted by name in the files read, and ${loopsClause(reachable, "mount")} routers read out of a call this reading does not follow`;
 }
 
 /** Why a mount the reading followed still cannot be taken: it only runs if the app calls that function, and a loop elsewhere may register the router instead. */
 function rivalRegistration(
   index: PatternIndex,
   site: MountSite,
+  routerPath?: string,
 ): string | null {
   if (site.kind === "module") {
     return null;
   }
 
   const rivals = [...index.unenumerableLoops.values()].filter(
-    (loop) => !sameSite(loop.site, site),
+    (loop) => !sameSite(loop.site, site) && couldReach(loop, routerPath),
   );
   if (rivals.length === 0) {
     return null;
@@ -1128,6 +1156,7 @@ function mountedConstructions(
     }
     scan.index.unenumerableLoops.set(target.location, {
       site: position.site,
+      file: scan.bound.displayPath,
       location: target.location,
       ...(returned.kind === "unmatched" ? { unmatched: returned } : {}),
     });
@@ -1136,6 +1165,7 @@ function mountedConstructions(
 
   scan.index.unenumerableLoops.set(target.location, {
     site: position.site,
+    file: scan.bound.displayPath,
     location: target.location,
   });
   return [];
