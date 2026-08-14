@@ -102,10 +102,11 @@ export function checkRuntimeConfig(
   // full summary set. Code summaries are everything that ISN'T a
   // runtime-config provider; runtime-config providers don't read env
   // vars themselves (they declare the contract).
-  const codeReads = collectEnvVarReads(
+  const collected = collectEnvVarReads(
     summaries.filter((s) => !isRuntimeConfigProvider(s)),
     index,
   );
+  const codeReads = collected.reads;
 
   const placed: PlacedRuntime[] = [];
   for (const runtime of runtimes) {
@@ -167,7 +168,7 @@ export function checkRuntimeConfig(
     });
   }
 
-  findings.push(...unusedFindings(scoped));
+  findings.push(...unusedFindings(scoped, collected.sawConfigReadEffect));
   findings.push(...contestedFindings(codeReads, contested, placed, byFile));
 
   return findings;
@@ -218,7 +219,17 @@ function contestedFindings(
  * runtime the document declares and reported once, against the first
  * of them.
  */
-function unusedFindings(scoped: ScopedRuntime[]): Finding[] {
+function unusedFindings(
+  scoped: ScopedRuntime[],
+  sawConfigReadEffect: boolean,
+): Finding[] {
+  // No summary in this run has a config-read effect, so either nothing
+  // reads the environment or the run never included the recognizer that
+  // records reads. Claiming per variable that no code reads it would be
+  // wrong in the second case, so one finding says what is missing.
+  if (!sawConfigReadEffect) {
+    return recognizerAbsentFindings(scoped);
+  }
   const findings: Finding[] = [];
   const readPerDocument = readNamesPerDocument(scoped);
   const reported = new Set<string>();
@@ -319,7 +330,7 @@ function lookupConfigReads(
 function collectEnvVarReads(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
-): EnvVarRead[] {
+): { reads: EnvVarRead[]; sawConfigReadEffect: boolean } {
   const reads: EnvVarRead[] = [];
   let sawConfigReadEffect = false;
   // Fast path: when an index is available, query the config-read
@@ -366,7 +377,7 @@ function collectEnvVarReads(
   // and integration paths, this branch becomes dead and can be
   // removed.
   if (sawConfigReadEffect) {
-    return reads;
+    return { reads, sawConfigReadEffect };
   }
   for (const summary of summaries) {
     for (const transition of summary.transitions) {
@@ -378,7 +389,7 @@ function collectEnvVarReads(
       }
     }
   }
-  return reads;
+  return { reads, sawConfigReadEffect };
 }
 
 function collectFromInvocationLegacy(
@@ -439,6 +450,34 @@ function makeUnprovidedFinding(
     description: `process.env.${read.name} read by ${read.summary.identity.name} (${instanceLabel(semantics)} scope) but ${semantics.instanceName} declares no ${read.name} in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.`,
     severity: "error",
   };
+}
+
+/**
+ * One finding per document whose runtimes declare variables, saying the run
+ * recorded no environment read anywhere rather than judging each variable.
+ */
+function recognizerAbsentFindings(scoped: ScopedRuntime[]): Finding[] {
+  const findings: Finding[] = [];
+  const reported = new Set<string>();
+  for (const entry of scoped) {
+    const document = entry.runtime.location.file;
+    const declared = entry.provided.filter(
+      (name) => entry.sources[name] !== "platform",
+    );
+    if (declared.length === 0 || reported.has(document)) {
+      continue;
+    }
+    reported.add(document);
+    findings.push({
+      kind: "boundaryFieldUnused",
+      boundary: entry.binding,
+      provider: makeSide(entry.runtime),
+      consumer: makeSide(entry.runtime),
+      description: `${document} declares environment variables and these summaries record no environment read anywhere, so whether code reads them was not checked. If the code reads process.env, extract with the node pack in the framework list (-f node) so the reads are in the summaries.`,
+      severity: "info",
+    });
+  }
+  return findings;
 }
 
 function makeUnusedFinding(
