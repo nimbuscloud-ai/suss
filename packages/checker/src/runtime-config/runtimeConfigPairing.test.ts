@@ -64,13 +64,22 @@ function makeCodeSummary(opts: {
     conditions: [],
     output: { type: "return", value: null },
     effects: opts.envReads.map((varName) => ({
-      type: "invocation" as const,
-      callee: "fetch",
-      args: [
-        // EffectArg.identifier shape produced by Gap 5b
-        { kind: "identifier", name: `process.env.${varName}` },
-      ],
-      async: false,
+      type: "interaction" as const,
+      binding: {
+        transport: "os",
+        semantics: {
+          name: "runtime-config" as const,
+          deploymentTarget: "lambda" as const,
+          instanceName: "<unknown>",
+        },
+        recognition: "@suss/runtime-node",
+      },
+      callee: `process.env.${varName}`,
+      interaction: {
+        class: "config-read" as const,
+        name: varName,
+        defaulted: false,
+      },
     })),
     location: { start: 5, end: 10 },
     isDefault: true,
@@ -598,14 +607,16 @@ describe("checkRuntimeConfig", () => {
       expect(unused[0].description).toContain("template.yaml");
     });
 
-    it("says nothing when no runtime in the document matched any code", () => {
+    it("says the run recorded no reads rather than judging each variable, when it recorded none", () => {
       const findings = checkRuntimeConfig(documentRuntimes());
-      expect(findings.filter((f) => f.kind === "boundaryFieldUnused")).toEqual(
-        [],
-      );
+      const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
+      expect(unused).toHaveLength(1);
+      expect(unused[0].severity).toBe("info");
+      expect(unused[0].description).toContain("no environment read anywhere");
+      expect(unused[0].description).toContain("-f node");
     });
 
-    it("still reports a variable the resource declares for itself", () => {
+    it("abstains about a resource's own variable too, when the run recorded no reads", () => {
       const findings = checkRuntimeConfig([
         makeRuntimeProvider({
           instanceName: "IndexerFunction",
@@ -616,6 +627,32 @@ describe("checkRuntimeConfig", () => {
           },
           codeScope: { kind: "codeUri", path: "src/" },
           namesUnit: true,
+        }),
+      ]);
+      const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
+      expect(unused).toHaveLength(1);
+      // A run with no read anywhere cannot judge this variable either, so
+      // the one finding is the abstention.
+      expect(unused[0].description).toContain("no environment read anywhere");
+    });
+
+    it("reports a resource's own unread variable once some read exists in the run", () => {
+      const findings = checkRuntimeConfig([
+        makeRuntimeProvider({
+          instanceName: "IndexerFunction",
+          envVars: ["LOG_LEVEL", "INDEX_TABLE_NAME"],
+          envVarSources: {
+            LOG_LEVEL: "globals",
+            INDEX_TABLE_NAME: "template",
+          },
+          codeScope: { kind: "codeUri", path: "src/" },
+          namesUnit: true,
+        }),
+        makeCodeSummary({
+          name: "indexer",
+          file: "src/indexer.ts",
+          envReads: ["LOG_LEVEL"],
+          runsInUnit: "IndexerFunction",
         }),
       ]);
       const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
