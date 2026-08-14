@@ -10,6 +10,12 @@ on:
   schedule:
     - cron: "47 5 * * 6"
   workflow_dispatch:
+    inputs:
+      refresh-baseline:
+        description: Rewrite the baseline with this runner's numbers and push it, so future runs compare like machines
+        required: false
+        default: false
+        type: boolean
 
 # One run at a time. A manual dispatch during the scheduled run waits
 # for it instead of cancelling a measurement mid-flight.
@@ -18,12 +24,16 @@ concurrency:
 
 permissions:
   contents: read
+  # The refresh path pushes the new baseline to main through the deploy
+  # key, the same way the regenerate workflow pushes its baselines.
 
 jobs:
   perf:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.REGENERATE_DEPLOY_KEY }}
 
       - uses: actions/setup-node@v4
         with:
@@ -41,5 +51,20 @@ jobs:
       # whichever allowance is larger. The log carries what moved; if
       # the growth is intended, refresh the baseline locally with
       # `node scripts/checkPerfBaseline.mjs --update` and commit it.
+      # Wall time gates only when the baseline came from the same kind of
+      # machine; against any other it is reported and left alone. Peak RSS
+      # and tarball sizes gate either way. Refreshing the baseline here,
+      # on the runner, is what makes the wall gate meaningful again.
       - name: Measure against the committed baseline
+        if: ${{ !inputs.refresh-baseline }}
         run: npm run check:perf
+
+      - name: Refresh the baseline on this runner and push it
+        if: ${{ inputs.refresh-baseline }}
+        run: |
+          node scripts/checkPerfBaseline.mjs --update
+          git add scripts/perf-baseline.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: record the perf baseline on the runner [skip ci]"
+          git push origin HEAD:main

@@ -481,11 +481,18 @@ for (const [name, cur] of Object.entries(current.workloads)) {
 
   const wallRatio =
     cur.wallMs / current.calibrationMs / (base.wallMs / baseline.calibrationMs);
+  // A tight arithmetic loop cannot say how a compiler-heavy workload scales
+  // across machines, and dividing by it turned a faster run into a failure
+  // once. Wall time gates only when the baseline came from this kind of
+  // machine; against any other it is reported and left alone.
+  const comparableMachines = baseline.cpu === current.cpu;
   console.log(
     `  ${name} wall: ${seconds(base.wallMs)} → ${seconds(cur.wallMs)}, ` +
-      `normalized ratio ${wallRatio.toFixed(2)} (fails past ${WALL_RATIO_LIMIT.toFixed(2)})`,
+      (comparableMachines
+        ? `normalized ratio ${wallRatio.toFixed(2)} (fails past ${WALL_RATIO_LIMIT.toFixed(2)})`
+        : `normalized ratio ${wallRatio.toFixed(2)} (reported only: the baseline is from ${baseline.cpu ?? "?"})`),
   );
-  if (wallRatio > WALL_RATIO_LIMIT) {
+  if (comparableMachines && wallRatio > WALL_RATIO_LIMIT) {
     regressions.push({
       label: `${name} wall time`,
       detail:
