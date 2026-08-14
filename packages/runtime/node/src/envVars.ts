@@ -145,7 +145,27 @@ function bracketRead(access: ElementAccessExpression): EnvRead[] {
  * Each read is anchored at its call site, so the unit that passed the
  * literal is the unit that reads the variable.
  */
+/**
+ * One lookup per read site. The same helper is visited once per unit whose
+ * closure contains it, and findReferences is the expensive part, so the
+ * repeat visits read the first answer.
+ */
+const CALLER_LOOKUPS = new WeakMap<Node, EnvRead[]>();
+
 function readsThroughParameter(
+  access: ElementAccessExpression,
+  index: Identifier,
+): EnvRead[] {
+  const remembered = CALLER_LOOKUPS.get(access);
+  if (remembered !== undefined) {
+    return remembered;
+  }
+  const found = callerLiteralReads(access, index);
+  CALLER_LOOKUPS.set(access, found);
+  return found;
+}
+
+function callerLiteralReads(
   access: ElementAccessExpression,
   index: Identifier,
 ): EnvRead[] {
