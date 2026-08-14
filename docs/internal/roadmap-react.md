@@ -2,7 +2,7 @@
 
 Strategic plan for React as suss's first non-HTTP boundary. Writing the direction down means the context survives compaction and the implementation stays on-thesis. Phases we have shipped are marked ✅. Everything else is design until the phase before it has answered its forcing-function questions.
 
-Related: [`boundary-semantics.md`](boundary-semantics.md) (transport / semantics / recognition layering), [`contracts.md`](contracts.md) (the five-shape contract taxonomy).
+Related: [`boundary-semantics.md`](../boundary-semantics.md) (transport / semantics / recognition layering), [`contracts.md`](../contracts.md) (the five-shape contract taxonomy).
 
 ## Where this fits in the bigger picture
 

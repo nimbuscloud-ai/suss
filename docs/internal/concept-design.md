@@ -245,7 +245,7 @@ Maps fully:
   up to depth 8.
 - **Cross-boundary syncs**: HTTP, GraphQL, function-call, React
   render. Shipped (React is still being filled in; see
-  [`status.md`](status), Phase 9 and the React phases).
+  [`status.md`](status.md), Phase 9 and the React phases).
 
 Maps partially or not at all:
 

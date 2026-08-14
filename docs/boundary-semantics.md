@@ -60,7 +60,7 @@ checking actually cares about.
   The discriminator is the unit kind, and the payload is the tree or the
   effect it produces.
   Pairing key: `(component identity, unit kind, unit name?)`. See
-  [`roadmap-react.md`](roadmap-react.md) for the multi-unit framing.
+  [`roadmap-react.md`](internal/roadmap-react.md) for the multi-unit framing.
 - **gRPC unary call**: discriminated by gRPC status enum (its own code
   space, not HTTP status); payload is the response message. Pairing
   key: `(service, method)`.
@@ -357,7 +357,7 @@ Deferred:
 
 See also:
 
-- [`docs/status.md`](status.md), decisions #18 (pack-aware checker via
+- [`docs/internal/status.md`](internal/status.md), decisions #18 (pack-aware checker via
   summary metadata), #22 (`BOUNDARY_ROLE`), #24 (pack-driven status
   accessors), #25 (this doc).
 - [`docs/architecture.md`](architecture.md), the current package

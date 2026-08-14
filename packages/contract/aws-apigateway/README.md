@@ -27,7 +27,7 @@ These transitions are emitted with `confidence.source: "derived"` and an opaque 
 
 ## Coverage
 
-![coverage](../../../.github/badges/coverage-stub-aws-apigateway.svg)
+![coverage](../../../.github/badges/coverage-contract-aws-apigateway.svg)
 
 ## License
 
