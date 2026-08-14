@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-openapi",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "description": "Generate suss behavioral summaries from OpenAPI 3.x specifications.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.5.1",
+    "@suss/behavioral-ir": "0.5.2",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
