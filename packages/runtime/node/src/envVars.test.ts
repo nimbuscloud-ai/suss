@@ -326,4 +326,82 @@ describe("node runtime pack — env-var wiring", () => {
   it("declares a version stamp so the merge invalidates warm caches", () => {
     expect(nodeRuntimePack().version).toBe("0.1.0");
   });
+
+  it("follows a literal through a one-argument helper into a computed read", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        const value = process.env[name];
+        if (!value) throw new Error(name);
+        return value;
+      }
+      export const table = requireEnv("TABLE_NAME");
+      export const queue = requireEnv("QUEUE_URL");
+    `);
+    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    expect(reads.map((read) => read.interaction.name).sort()).toEqual([
+      "QUEUE_URL",
+      "TABLE_NAME",
+    ]);
+  });
+
+  it("anchors the read at the call that passed the literal", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      export const table = requireEnv("TABLE_NAME");
+    `);
+    const reads = findProcessEnvReads(sourceFile);
+    const callLine = sourceFile
+      .getFullText()
+      .split("\n")
+      .findIndex((text) => text.includes('requireEnv("TABLE_NAME")'));
+    expect(reads).toEqual([
+      { name: "TABLE_NAME", defaulted: true, line: callLine + 1 },
+    ]);
+  });
+
+  it("says nothing about a computed read of something other than the parameter", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        const other = pick();
+        return process.env[other] ?? "";
+      }
+      export const table = requireEnv("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("follows a helper written as an arrow on a const", () => {
+    const sourceFile = makeProject(`
+      const requireEnv = (name: string): string => process.env[name] ?? "";
+      export const table = requireEnv("TABLE_NAME");
+    `);
+    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("says nothing when the helper has no name to find callers by", () => {
+    const sourceFile = makeProject(`
+      export const table = ((name: string) => process.env[name] ?? "")("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("says nothing about a computed read of a non-name expression", () => {
+    const sourceFile = makeProject(`
+      export const value = process.env[compute()] ?? "";
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("says nothing about a computed read whose index no caller settles", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      export const table = requireEnv(pickName());
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
 });
