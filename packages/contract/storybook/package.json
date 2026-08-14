@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-storybook",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "Generate suss behavioral summaries from Storybook CSF story files.",
   "keywords": [
@@ -45,8 +45,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-typescript": "0.5.0",
-    "@suss/behavioral-ir": "0.5.0",
+    "@suss/adapter-typescript": "0.5.1",
+    "@suss/behavioral-ir": "0.5.1",
     "ts-morph": "*"
   },
   "devDependencies": {
