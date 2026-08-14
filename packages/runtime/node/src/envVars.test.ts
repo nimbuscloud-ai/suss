@@ -404,4 +404,84 @@ describe("node runtime pack — env-var wiring", () => {
     `);
     expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
   });
+
+  it("follows a literal across two helpers, each handing its parameter on", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      function getEnv(key: string): string {
+        return requireEnv(key);
+      }
+      export const table = getEnv("TABLE_NAME");
+    `);
+    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("stops rather than going round two helpers that call each other", () => {
+    const sourceFile = makeProject(`
+      function one(name: string): string {
+        return two(name);
+      }
+      function two(name: string): string {
+        return process.env[name] ?? one(name);
+      }
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("follows a literal into a method helper", () => {
+    const sourceFile = makeProject(`
+      class Config {
+        get(key: string): string {
+          return process.env[key] ?? "";
+        }
+      }
+      const config = new Config();
+      export const table = config.get("TABLE_NAME");
+    `);
+    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("reads a name a caller keeps in a const", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      const TABLE_KEY = "TABLE_NAME";
+      export const table = requireEnv(TABLE_KEY);
+    `);
+    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("says nothing about a name kept in a let, which a later write could change", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      let key = "TABLE_NAME";
+      export const table = requireEnv(key);
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("follows a literal from a caller in another file", () => {
+    const project = createTestProject();
+    const helper = project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    const reads = configReadEffectsOf(recognizeAll(helper));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
 });

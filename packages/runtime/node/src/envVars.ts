@@ -46,6 +46,7 @@ import {
   type PropertyAccessExpression,
   type SourceFile,
   type VariableDeclaration,
+  VariableDeclarationKind,
 } from "ts-morph";
 
 type FunctionLike =
@@ -145,17 +146,31 @@ function bracketRead(access: ElementAccessExpression): EnvRead[] {
  * Each read is anchored at its call site, so the unit that passed the
  * literal is the unit that reads the variable.
  */
+/**
+ * One lookup per read site. The same helper is visited once per unit whose
+ * closure contains it, and findReferences is the expensive part, so the
+ * repeat visits read the first answer.
+ */
+const CALLER_LOOKUPS = new WeakMap<Node, EnvRead[]>();
+
 function readsThroughParameter(
   access: ElementAccessExpression,
   index: Identifier,
 ): EnvRead[] {
-  const enclosing = access.getFirstAncestor(
-    (candidate): candidate is FunctionLike =>
-      N.isFunctionDeclaration(candidate) ||
-      N.isArrowFunction(candidate) ||
-      N.isFunctionExpression(candidate) ||
-      N.isMethodDeclaration(candidate),
-  );
+  const remembered = CALLER_LOOKUPS.get(access);
+  if (remembered !== undefined) {
+    return remembered;
+  }
+  const found = callerLiteralReads(access, index);
+  CALLER_LOOKUPS.set(access, found);
+  return found;
+}
+
+function callerLiteralReads(
+  access: ElementAccessExpression,
+  index: Identifier,
+): EnvRead[] {
+  const enclosing = enclosingFunction(access);
   if (enclosing === undefined) {
     return [];
   }
@@ -168,18 +183,93 @@ function readsThroughParameter(
 
   const defaulted = isDefaultedAt(access);
   const reads: EnvRead[] = [];
-  for (const call of callSitesOf(enclosing)) {
-    const passed = call.getArguments()[at];
-    if (
-      passed !== undefined &&
-      (N.isStringLiteral(passed) ||
-        N.isNoSubstitutionTemplateLiteral(passed)) &&
-      passed.getLiteralValue().length > 0
-    ) {
-      reads.push({ name: passed.getLiteralValue(), defaulted, node: call });
+  // A worklist over parameters, because the literal can be more than one
+  // call away: getEnv(name) handing to requireEnv(name) crosses two. A
+  // parameter already taken is skipped, so a pair of helpers calling each
+  // other ends instead of going round.
+  const pending: { fn: FunctionLike; at: number }[] = [{ fn: enclosing, at }];
+  const taken = new Set<string>();
+  while (pending.length > 0) {
+    const wanted = pending.pop() as { fn: FunctionLike; at: number };
+    const key = `${wanted.fn.getPos()}:${wanted.at}`;
+    if (taken.has(key)) {
+      continue;
+    }
+    taken.add(key);
+    for (const call of callSitesOf(wanted.fn)) {
+      const passed = call.getArguments()[wanted.at];
+      if (passed === undefined) {
+        continue;
+      }
+      const literal = literalBehind(passed);
+      if (literal !== null && literal.length > 0) {
+        reads.push({ name: literal, defaulted, node: call });
+        continue;
+      }
+      const forwarded = forwardedParameter(passed, call);
+      if (forwarded !== null) {
+        pending.push(forwarded);
+      }
     }
   }
   return reads;
+}
+
+function enclosingFunction(node: Node): FunctionLike | undefined {
+  return node.getFirstAncestor(
+    (candidate): candidate is FunctionLike =>
+      N.isFunctionDeclaration(candidate) ||
+      N.isArrowFunction(candidate) ||
+      N.isFunctionExpression(candidate) ||
+      N.isMethodDeclaration(candidate),
+  );
+}
+
+/**
+ * The string an argument comes down to: written in place, or one hop away
+ * in a const whose initializer is written in place.
+ */
+function literalBehind(passed: Node): string | null {
+  if (N.isStringLiteral(passed) || N.isNoSubstitutionTemplateLiteral(passed)) {
+    return passed.getLiteralValue();
+  }
+  if (!N.isIdentifier(passed)) {
+    return null;
+  }
+  for (const definition of passed.getDefinitionNodes()) {
+    if (!N.isVariableDeclaration(definition)) {
+      continue;
+    }
+    const initializer = definition.getInitializer();
+    if (
+      initializer !== undefined &&
+      definition.getVariableStatement()?.getDeclarationKind() ===
+        VariableDeclarationKind.Const &&
+      (N.isStringLiteral(initializer) ||
+        N.isNoSubstitutionTemplateLiteral(initializer))
+    ) {
+      return initializer.getLiteralValue();
+    }
+  }
+  return null;
+}
+
+/** The caller's own parameter an argument passes along, for the worklist. */
+function forwardedParameter(
+  passed: Node,
+  call: CallExpression,
+): { fn: FunctionLike; at: number } | null {
+  if (!N.isIdentifier(passed)) {
+    return null;
+  }
+  const caller = enclosingFunction(call);
+  if (caller === undefined) {
+    return null;
+  }
+  const at = caller
+    .getParameters()
+    .findIndex((parameter) => parameter.getName() === passed.getText());
+  return at === -1 ? null : { fn: caller, at };
 }
 
 /** Every call whose callee resolves to this function, found through its name. */
@@ -193,12 +283,27 @@ function callSitesOf(fn: FunctionLike): CallExpression[] {
   const calls: CallExpression[] = [];
   for (const reference of named.findReferencesAsNodes()) {
     const parent = reference.getParent();
-    if (
-      parent !== undefined &&
-      N.isCallExpression(parent) &&
-      parent.getExpression() === reference
-    ) {
+    if (parent === undefined) {
+      continue;
+    }
+    if (N.isCallExpression(parent) && parent.getExpression() === reference) {
       calls.push(parent);
+      continue;
+    }
+    // A method call's callee is the property access containing the name,
+    // so the call is one level further up.
+    if (
+      N.isPropertyAccessExpression(parent) &&
+      parent.getNameNode() === reference
+    ) {
+      const grandparent = parent.getParent();
+      if (
+        grandparent !== undefined &&
+        N.isCallExpression(grandparent) &&
+        grandparent.getExpression() === parent
+      ) {
+        calls.push(grandparent);
+      }
     }
   }
   return calls;
