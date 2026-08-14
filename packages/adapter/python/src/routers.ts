@@ -84,6 +84,16 @@ export interface RouterIndex {
     module: ModuleBinding,
     objectName: string,
   ): RoutePrefixResolution;
+  /**
+   * The module-level def a name in another module refers to, with that
+   * module's own bindings, so a decorator written through a project wrapper
+   * can be read where the wrapper is written.
+   */
+  moduleDef(
+    fromFile: string,
+    spec: { module: string; relativeLevel: number },
+    name: string,
+  ): { node: PyNode; module: ModuleBinding } | null;
 }
 
 /** An `x = <Constructor>(...)` from an accepted module, and what its call said about a prefix. */
@@ -198,7 +208,28 @@ export function buildRouterIndex(
     }
   }
 
+  const byFile = new Map<string, BoundPythonFile>();
+  for (const file of files) {
+    byFile.set(file.file, file);
+  }
+
   return {
+    moduleDef(fromFile, spec, name) {
+      const resolution = resolveModule(fromFile, spec, resolverOptions);
+      if (resolution.status !== "resolved") {
+        return null;
+      }
+      const bound = byFile.get(resolution.file);
+      if (bound === undefined) {
+        return null;
+      }
+      const binding = bound.module.moduleScope.bindings.get(name);
+      if (binding?.kind !== "functionDef") {
+        return null;
+      }
+      return { node: binding.node, module: bound.module };
+    },
+
     resolve(pattern, module, objectName) {
       const index = byPattern.get(pattern);
       if (index === undefined) {

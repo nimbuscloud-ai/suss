@@ -17,7 +17,7 @@ import { resolveName } from "./scope.js";
 
 import type { Range } from "./ast.js";
 import type { PyNode } from "./parser.js";
-import type { Scope } from "./scope.js";
+import type { ModuleBinding, Scope } from "./scope.js";
 
 export type DecoratorArg =
   | { kind: "string"; value: string }
@@ -41,6 +41,12 @@ export interface DecoratorClassification {
   keywordArgs: Record<string, DecoratorArg>;
   /** Where the decorator is written. Anything we read out of its arguments uses this as its provenance. */
   range: Range;
+  /**
+   * The module the decorator's object lives in, when the decorator was read
+   * through a project wrapper written in another file. The router prefix is
+   * resolved there, since that is where the namespace is constructed.
+   */
+  objectModule?: ModuleBinding;
 }
 
 function readArg(node: PyNode): DecoratorArg {
@@ -203,4 +209,128 @@ export function classifyDecorator(
   }
 
   return { ...resolveCallee(expr, scope), args: [], keywordArgs: {}, range };
+}
+
+/** The def a name refers to, in whichever module declares it. */
+export type ModuleDefLookup = (
+  spec: { module: string; relativeLevel: number },
+  name: string,
+) => { node: PyNode; module: ModuleBinding } | null;
+
+/**
+ * Read a decorator through a one-hop project wrapper:
+ *
+ *     def api_route(path):
+ *         return orders_namespace.route(path)
+ *
+ * The wrapper's body has to be a single return of an attribute call whose
+ * positional arguments are exactly the wrapper's parameters in order.
+ * Anything else, a second statement or a rearranged argument, gives null and
+ * the decorator stays what it was.
+ */
+export function unwrapDecorator(
+  decoratorNode: PyNode,
+  scope: Scope,
+  ownModule: ModuleBinding,
+  moduleDef: ModuleDefLookup,
+): DecoratorClassification | null {
+  const expr = decoratorNode.namedChild(0);
+  if (expr === null || expr.type !== "call") {
+    return null;
+  }
+  const callee = field(expr, "function");
+  if (callee === null || callee.type !== "identifier") {
+    return null;
+  }
+
+  const wrapper = wrapperBehind(callee.text, scope, ownModule, moduleDef);
+  if (wrapper === null) {
+    return null;
+  }
+
+  const inner = singleReturnedCall(wrapper.node);
+  if (inner === null) {
+    return null;
+  }
+  const innerCallee = field(inner, "function");
+  if (innerCallee === null || innerCallee.type !== "attribute") {
+    return null;
+  }
+  if (!passesParametersThrough(wrapper.node, inner)) {
+    return null;
+  }
+
+  const resolved = resolveCallee(innerCallee, wrapper.module.moduleScope);
+  if (resolved.importedName === null) {
+    return null;
+  }
+
+  const argumentList = field(expr, "arguments");
+  const { args, keywordArgs } =
+    argumentList?.type === "argument_list"
+      ? readCallArguments(argumentList)
+      : { args: [], keywordArgs: {} };
+  return {
+    ...resolved,
+    args,
+    keywordArgs,
+    range: rangeOf(decoratorNode),
+    objectModule: wrapper.module,
+  };
+}
+
+function wrapperBehind(
+  name: string,
+  scope: Scope,
+  ownModule: ModuleBinding,
+  moduleDef: ModuleDefLookup,
+): { node: PyNode; module: ModuleBinding } | null {
+  const binding = resolveName(scope, name);
+  if (binding?.kind === "functionDef") {
+    return { node: binding.node, module: ownModule };
+  }
+  if (binding?.kind === "importFrom") {
+    return moduleDef(
+      { module: binding.module, relativeLevel: binding.relativeLevel },
+      binding.importedName,
+    );
+  }
+  return null;
+}
+
+/** The call a body consists of returning, when a return is all the body does. */
+function singleReturnedCall(def: PyNode): PyNode | null {
+  const body = field(def, "body");
+  if (body === null) {
+    return null;
+  }
+  const statements = body.namedChildren.filter(
+    (child): child is PyNode => child !== null && child.type !== "comment",
+  );
+  if (statements.length !== 1 || statements[0]?.type !== "return_statement") {
+    return null;
+  }
+  const returned = statements[0].namedChildren[0];
+  return returned !== null && returned?.type === "call" ? returned : null;
+}
+
+/** Whether the inner call's positional arguments are the def's parameters, in order. */
+function passesParametersThrough(def: PyNode, inner: PyNode): boolean {
+  const params = field(def, "parameters");
+  const names = (params?.namedChildren ?? [])
+    .filter((child): child is PyNode => child?.type === "identifier")
+    .map((child) => child.text);
+
+  const argumentList = field(inner, "arguments");
+  const positional = (argumentList?.namedChildren ?? []).filter(
+    (child): child is PyNode =>
+      child !== null && child.type !== "keyword_argument",
+  );
+  return (
+    positional.length === names.length &&
+    positional.every(
+      (argument, at) =>
+        argument.type === "identifier" && argument.text === names[at],
+    )
+  );
 }

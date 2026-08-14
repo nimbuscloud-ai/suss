@@ -122,6 +122,7 @@ export async function extractPythonProject(
     const rawUnits = discoverUnits(root, moduleBinding, {
       packs: options.packs,
       filePath: displayPath,
+      absoluteFile: file,
       routerIndex,
       gapHandling,
       ...(storagePatterns.length > 0
