@@ -181,4 +181,15 @@ describe("ruby invocation effects", () => {
       ["send", ["b"]],
     ]);
   });
+
+  it("counts a method chain once, as the outermost call", async () => {
+    const effects = await effectsFor([
+      "def total",
+      "  Order.where(id: 1).limit(10).update(name: x)",
+      "end",
+    ]);
+    expect(effects.map((effect) => effect.callee)).toEqual([
+      "Order.where(id: 1).limit(10).update",
+    ]);
+  });
 });
