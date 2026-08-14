@@ -38,7 +38,7 @@ import {
   stringLiteralValue,
   stripDecorators,
 } from "./ast.js";
-import { classifyDecorator } from "./decorators.js";
+import { classifyDecorator, unwrapDecorator } from "./decorators.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
 import { predicateOf } from "./paths/predicates.js";
@@ -81,6 +81,8 @@ export interface DiscoveryOptions {
   gapHandling?: ExtractorOptions["gapHandling"];
   /** What a pack needs to say a call talks to the database. Absent when no pack does. */
   storage?: StorageLookup | undefined;
+  /** The file's absolute path, which module resolution wants; `filePath` may be shortened for display. */
+  absoluteFile?: string | undefined;
 }
 
 export function discoverUnits(
@@ -95,32 +97,63 @@ export function discoverUnits(
     }
     const { definition, decorators } = stripDecorators(stmt);
     for (const decoratorNode of decorators) {
-      const classification = classifyDecorator(
-        decoratorNode,
-        module.moduleScope,
-      );
-      if (classification.module === null) {
-        continue;
-      }
-      const decoratorModule = classification.module;
-      for (const pack of options.packs) {
-        for (const pattern of pack.discovery) {
-          units.push(
-            ...unitsFor(
-              pattern,
-              pack,
-              decoratorModule,
-              classification,
-              definition,
-              module,
-              options,
-            ),
-          );
+      const direct = classifyDecorator(decoratorNode, module.moduleScope);
+      // A decorator no pattern accepts as written may be a project wrapper
+      // around one a pattern does accept, so the wrapper is read where it is
+      // written and the decorator is classified again as what it returns.
+      const classifications =
+        direct.module !== null && acceptedByAnyPattern(direct.module, options)
+          ? [direct]
+          : [
+              unwrapDecorator(
+                decoratorNode,
+                module.moduleScope,
+                module,
+                (spec, name) =>
+                  options.routerIndex?.moduleDef(
+                    options.absoluteFile ?? options.filePath,
+                    spec,
+                    name,
+                  ) ?? null,
+              ),
+            ].filter(
+              (candidate): candidate is DecoratorClassification =>
+                candidate !== null,
+            );
+
+      for (const classification of classifications) {
+        if (classification.module === null) {
+          continue;
+        }
+        const decoratorModule = classification.module;
+        for (const pack of options.packs) {
+          for (const pattern of pack.discovery) {
+            units.push(
+              ...unitsFor(
+                pattern,
+                pack,
+                decoratorModule,
+                classification,
+                definition,
+                module,
+                options,
+              ),
+            );
+          }
         }
       }
     }
   }
   return units;
+}
+
+function acceptedByAnyPattern(
+  module: string,
+  options: DiscoveryOptions,
+): boolean {
+  return options.packs.some((pack) =>
+    pack.discovery.some((pattern) => pattern.importModule.includes(module)),
+  );
 }
 
 function unitsFor(
@@ -394,7 +427,7 @@ function readRouterPrefix(
 
   const resolution = options.routerIndex.resolve(
     pattern,
-    module,
+    classification.objectModule ?? module,
     classification.objectName,
   );
   if (resolution.kind === "abstain") {
