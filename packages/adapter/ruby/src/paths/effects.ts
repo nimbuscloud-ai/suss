@@ -56,6 +56,22 @@ function children(node: RbNode): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
+/**
+ * One invocation per chain. `Order.where(id: 1).limit(10).update(...)` is one
+ * thing the code does, and the outermost call's text spells out the whole
+ * chain, so emitting the inner links too counts the same work three times.
+ */
+function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
+  const isLink = new Set<number>();
+  for (const call of calls) {
+    const receiver = field(call, "receiver");
+    if (receiver !== null && receiver.type === "call") {
+      isLink.add(receiver.id);
+    }
+  }
+  return calls.filter((call) => !isLink.has(call.id));
+}
+
 /** A receiver call with no arguments reads a property rather than doing work. */
 function isPropertyRead(node: RbNode): boolean {
   return field(node, "receiver") !== null && field(node, "arguments") === null;
@@ -141,7 +157,7 @@ export function invocationEffects(definitionNode: RbNode): InvocationEffect[] {
     return [];
   }
 
-  const calls = bodyCalls(body);
+  const calls = withoutChainLinks(bodyCalls(body));
   if (calls.length === 0) {
     return [];
   }

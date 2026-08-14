@@ -90,6 +90,26 @@ function calleeText(call: PyNode): string {
  * it to run. A call nobody gated says so by carrying no preconditions, which
  * the IR reads as always firing.
  */
+/**
+ * One invocation per chain. `Model.query().filter_by(x).first()` is one thing
+ * the code does, and the outermost call's text spells out the whole chain, so
+ * emitting the inner links too counts the same work three times.
+ */
+function withoutChainLinks(calls: readonly PyNode[]): PyNode[] {
+  const isLink = new Set<number>();
+  for (const call of calls) {
+    const callee = field(call, "function");
+    if (callee === null || callee.type !== "attribute") {
+      continue;
+    }
+    const object = field(callee, "object");
+    if (object !== null && object.type === "call") {
+      isLink.add(object.id);
+    }
+  }
+  return calls.filter((call) => !isLink.has(call.id));
+}
+
 export function invocationEffects(
   definitionNode: PyNode,
 ): Extract<RawEffect, { type: "invocation" }>[] {
@@ -98,7 +118,7 @@ export function invocationEffects(
     return [];
   }
 
-  const calls = bodyCalls(body);
+  const calls = withoutChainLinks(bodyCalls(body));
   if (calls.length === 0) {
     return [];
   }

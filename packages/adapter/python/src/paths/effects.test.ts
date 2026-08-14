@@ -140,4 +140,25 @@ describe("python invocation effects", () => {
     const statement = tree.rootNode.namedChildren[0] as PyNode;
     expect(invocationEffects(statement)).toEqual([]);
   });
+
+  it("counts a method chain once, as the outermost call", async () => {
+    const effects = await effectsFor([
+      "def get(self):",
+      "    return Orders.query().filter_by(id=1).first()",
+    ]);
+    expect(effects.map((effect) => effect.callee)).toEqual([
+      "Orders.query().filter_by(id=1).first",
+    ]);
+  });
+
+  it("keeps a call written as an argument separate from the chain around it", async () => {
+    const effects = await effectsFor([
+      "def get(self):",
+      "    return Orders.query().filter_by(id=parse(raw)).first()",
+    ]);
+    expect(effects.map((effect) => effect.callee)).toEqual([
+      "Orders.query().filter_by(id=parse(raw)).first",
+      "parse",
+    ]);
+  });
 });
