@@ -49,8 +49,21 @@ export interface GraphqlRubyPackOptions {
   camelize?: boolean;
 }
 
-/** The class graphql-ruby's own Rails generator scaffolds for every object type to extend. */
-const DEFAULT_BASE_CLASS_NAMES = ["Types::BaseObject"];
+/**
+ * The type-level base classes `rails g graphql:install` scaffolds. A
+ * type extends one of these, or mixes one in for an interface, so all
+ * of them mark a definition as declaring GraphQL fields. The generator
+ * also writes BaseArgument and BaseField, which back single fields
+ * rather than types, so they are not in this list.
+ */
+const DEFAULT_BASE_CLASS_NAMES = [
+  "Types::BaseObject",
+  "Types::BaseInterface",
+  "Types::BaseInputObject",
+  "Types::BaseEnum",
+  "Types::BaseUnion",
+  "Types::BaseScalar",
+];
 
 /**
  * A `root` written in a config file is written relative to that file.
@@ -89,12 +102,17 @@ export function graphqlRubyFramework(
     argumentCallName: "argument",
     wiringKeywords: ["mutation", "resolver"],
     resolverMethodName: "resolve",
-    // The three classes graphql-ruby's own generated base classes
-    // extend. A project's chain ends at one of them.
+    // The classes graphql-ruby's own generated base classes extend or
+    // mix in. A project's chain ends at one of them.
     ancestryRootClassNames: [
       "GraphQL::Schema::Object",
       "GraphQL::Schema::Mutation",
       "GraphQL::Schema::Resolver",
+      "GraphQL::Schema::Interface",
+      "GraphQL::Schema::InputObject",
+      "GraphQL::Schema::Enum",
+      "GraphQL::Schema::Union",
+      "GraphQL::Schema::Scalar",
     ],
     requiredKeyword: "required",
     // graphql-ruby registers an argument as required unless the call

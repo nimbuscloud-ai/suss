@@ -26,12 +26,19 @@ import { graphqlRubyFramework } from "@suss/framework-graphql-ruby";
 
 const pack = graphqlRubyFramework({
   root: path.join(repoRoot, "app/graphql"),
-  // A project's own intermediate base class, alongside Types::BaseObject:
+  // A base class of your own that the generated ones do not lead to:
   baseClassNames: ["Types::AuthenticatedObject"],
   // A schema that turns off graphql-ruby's own camelCase default:
   camelize: false,
 });
 ```
+
+The defaults cover every type-level base class `rails g graphql:install`
+generates, the interface base included, and the adapter follows a
+class's whole ancestry, so a project base between a type and
+`Types::BaseObject` needs no configuration. `baseClassNames` is for a
+base the walk cannot reach a generated one from, such as one that
+extends the library directly under another name.
 
 ## Coverage
 

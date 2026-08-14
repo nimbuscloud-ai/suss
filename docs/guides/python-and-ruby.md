@@ -282,7 +282,7 @@ The pack takes three options:
 | Option | Default | What it does |
 |---|---|---|
 | `root` | required | The directory a `mutation:` or `resolver:` reference resolves against, through Rails' constant-to-path convention. `Mutations::CampaignUpdate` is read from `<root>/mutations/campaign_update.rb`. Your layout is your project's, so there is no default, and the pack reads nothing without one. Written as a relative path, it is read relative to the config file it was written in. |
-| `baseClassNames` | `["Types::BaseObject"]` | Gives the name of a project's own intermediate base class. What you pass is added to graphql-ruby's own generated base, not swapped for it. |
+| `baseClassNames` | the generated bases | Adds a base class of your own. The defaults cover every type-level base `rails g graphql:install` generates, the interface base included, and the adapter follows a class's whole ancestry, so an intermediate base of yours that leads to a generated one needs nothing here. What you pass is added to the defaults, not swapped for them. |
 | `camelize` | `true` | graphql-ruby's schema-wide default for exposing a snake_case symbol camelCased. Set it to `false` when your schema does. A `field` or `argument` call's own `camelize:` keyword still wins for that one name, the same as it does at runtime. |
 
 A class extending one of those base classes has each `field` call in

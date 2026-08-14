@@ -92,54 +92,83 @@ export function discoverUnits(
 ): RawCodeStructure[] {
   const units: RawCodeStructure[] = [];
   for (const stmt of bodyStatements(root)) {
-    if (stmt.type !== "decorated_definition") {
+    if (stmt.type === "decorated_definition") {
+      units.push(...decoratedUnits(stmt, module.moduleScope, module, options));
       continue;
     }
-    const { definition, decorators } = stripDecorators(stmt);
-    for (const decoratorNode of decorators) {
-      const direct = classifyDecorator(decoratorNode, module.moduleScope);
-      // A decorator no pattern accepts as written may be a project wrapper
-      // around one a pattern does accept, so the wrapper is read where it is
-      // written and the decorator is classified again as what it returns.
-      const classifications =
-        direct.module !== null && acceptedByAnyPattern(direct.module, options)
-          ? [direct]
-          : [
-              unwrapDecorator(
-                decoratorNode,
-                module.moduleScope,
-                module,
-                (spec, name) =>
-                  options.routerIndex?.moduleDef(
-                    options.absoluteFile ?? options.filePath,
-                    spec,
-                    name,
-                  ) ?? null,
-              ),
-            ].filter(
-              (candidate): candidate is DecoratorClassification =>
-                candidate !== null,
-            );
 
-      for (const classification of classifications) {
-        if (classification.module === null) {
-          continue;
-        }
-        const decoratorModule = classification.module;
-        for (const pack of options.packs) {
-          for (const pattern of pack.discovery) {
-            units.push(
-              ...unitsFor(
-                pattern,
-                pack,
-                decoratorModule,
-                classification,
-                definition,
-                module,
-                options,
-              ),
-            );
-          }
+    // A route declared inside an app factory, the way both Flask and
+    // FastAPI teach test setup, reads its decorator in the factory's
+    // own scope, where the app it hangs on is constructed (#247).
+    const { definition } = stripDecorators(stmt);
+    if (definition.type !== "function_definition") {
+      continue;
+    }
+    const body = field(definition, "body");
+    const scope = module.scopeFor.get(definition.id);
+    if (body === null || scope === undefined) {
+      continue;
+    }
+    for (const inner of bodyStatements(body)) {
+      if (inner.type === "decorated_definition") {
+        units.push(...decoratedUnits(inner, scope, module, options));
+      }
+    }
+  }
+  return units;
+}
+
+function decoratedUnits(
+  stmt: PyNode,
+  scope: Scope,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): RawCodeStructure[] {
+  const units: RawCodeStructure[] = [];
+  const { definition, decorators } = stripDecorators(stmt);
+  for (const decoratorNode of decorators) {
+    const direct = classifyDecorator(decoratorNode, scope);
+    // A decorator no pattern accepts as written may be a project wrapper
+    // around one a pattern does accept, so the wrapper is read where it is
+    // written and the decorator is classified again as what it returns.
+    const classifications =
+      direct.module !== null && acceptedByAnyPattern(direct.module, options)
+        ? [direct]
+        : [
+            unwrapDecorator(
+              decoratorNode,
+              scope,
+              module,
+              (spec, name) =>
+                options.routerIndex?.moduleDef(
+                  options.absoluteFile ?? options.filePath,
+                  spec,
+                  name,
+                ) ?? null,
+            ),
+          ].filter(
+            (candidate): candidate is DecoratorClassification =>
+              candidate !== null,
+          );
+
+    for (const classification of classifications) {
+      if (classification.module === null) {
+        continue;
+      }
+      const decoratorModule = classification.module;
+      for (const pack of options.packs) {
+        for (const pattern of pack.discovery) {
+          units.push(
+            ...unitsFor(
+              pattern,
+              pack,
+              decoratorModule,
+              classification,
+              definition,
+              module,
+              options,
+            ),
+          );
         }
       }
     }

@@ -45,6 +45,12 @@ export interface AncestorLookup {
    */
   ancestryRootClassNames: readonly string[];
   parsedFile(absPath: string): Promise<RbNode | null>;
+  /**
+   * The blocks the file being read defines under a name, consulted
+   * before the path convention, since a constant defined in the same
+   * file is visible without a file of its own.
+   */
+  localDefinition?(qualifiedName: string): ReachedBody[] | null;
 }
 
 /**
@@ -171,7 +177,9 @@ async function chainFor(
   lookup: AncestorLookup,
   active: ReadonlySet<string>,
 ): Promise<AncestorEntry[]> {
-  const blocks = await reachDefinition(qualifiedName, lookup);
+  const blocks =
+    lookup.localDefinition?.(qualifiedName) ??
+    (await reachDefinition(qualifiedName, lookup));
   if (blocks === null) {
     return [{ type: "unfollowed", name: qualifiedName }];
   }
