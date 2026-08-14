@@ -142,6 +142,11 @@ jobs:
       - name: Diagram geometry
         run: npm run check:diagrams
 
+      # Renames broke links quietly until a reader hit one (#252). Runs
+      # on docs-only diffs too; it needs nothing from the build.
+      - name: Markdown links
+        run: npm run check:doc-links
+
       # The style rules Biome has no rule for.
       - name: Style conventions
         if: steps.diff.outputs.docs_only != 'true'

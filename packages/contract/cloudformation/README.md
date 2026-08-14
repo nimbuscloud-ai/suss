@@ -72,7 +72,7 @@ Depends on `@suss/behavioral-ir` (for the IR types it produces), `@suss/contract
 
 ## Coverage
 
-![coverage](../../../.github/badges/coverage-stub-cloudformation.svg)
+![coverage](../../../.github/badges/coverage-contract-cloudformation.svg)
 
 ## License
 

@@ -33,7 +33,7 @@ Walking those edges is the opposite situation. You follow an edge to a node, the
 
 ## Status
 
-The checker runs six checks: provider coverage (with sub-case analysis), consumer satisfaction, contract consistency (status and body shapes), body compatibility (field presence), and semantic condition bridging (Level 5). It pairs boundaries automatically through `checkAll` / `pairSummaries`, normalizing paths as it goes (`:id` ↔ `{id}`). See [`docs/status.md`](../../docs/status.md).
+The checker runs six checks: provider coverage (with sub-case analysis), consumer satisfaction, contract consistency (status and body shapes), body compatibility (field presence), and semantic condition bridging (Level 5). It pairs boundaries automatically through `checkAll` / `pairSummaries`, normalizing paths as it goes (`:id` ↔ `{id}`). See [`docs/internal/status.md`](../../docs/internal/status.md).
 
 ## Coverage
 

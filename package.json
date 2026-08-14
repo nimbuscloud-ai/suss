@@ -66,6 +66,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "check:diagrams": "node scripts/checkDiagrams.mjs",
+    "check:doc-links": "node scripts/checkDocLinks.mjs",
     "check:style": "node scripts/checkStyle.mjs",
     "check:fuzz": "npm run -w @suss/differential check:fuzz",
     "check:fuzz-python": "npm run -w @suss/differential fuzz:python",

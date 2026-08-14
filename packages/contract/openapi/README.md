@@ -64,7 +64,7 @@ Depends only on `@suss/behavioral-ir` (for the IR types it produces) and `yaml` 
 
 ## Coverage
 
-![coverage](../../../.github/badges/coverage-stub-openapi.svg)
+![coverage](../../../.github/badges/coverage-contract-openapi.svg)
 
 ## License
 

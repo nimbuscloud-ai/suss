@@ -54,4 +54,4 @@ Licensed under Apache 2.0. See [LICENSE](../../../LICENSE).
 
 ---
 
-For how framework packs work, see [`docs/framework-packs.md`](../../../docs/framework-packs.md).
+For how framework packs work, see [`docs/packs.md`](../../../docs/packs.md).
