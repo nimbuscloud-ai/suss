@@ -21,6 +21,7 @@ import * as p from "@clack/prompts";
 import {
   formatInitReport,
   inspectProject,
+  recognizedWithoutPackSentence,
   unnamedLanguageSentence,
   unnamedLanguages,
 } from "./init.js";
@@ -69,6 +70,7 @@ export async function initInteractive(
       "suss reads code through a pack per framework, client, or schema it\nrecognizes, and nothing here names one. `suss --help` lists them.",
       "No packs to suggest",
     );
+    reportRecognizedWithoutPack(targets);
     reportUnread(targets);
     reportUnnamedLanguages(targets);
     p.outro("Nothing to set up.");
@@ -127,7 +129,17 @@ function findTargets(root: string): Target[] {
 const worthReporting = (report: InitReport): boolean =>
   report.suggestions.length > 0 ||
   (report.unread ?? []).length > 0 ||
+  (report.recognizedWithoutPack ?? []).length > 0 ||
   unnamedLanguages(report).length > 0;
+
+function reportRecognizedWithoutPack(targets: Target[]): void {
+  const names = new Set(
+    targets.flatMap((target) => target.report.recognizedWithoutPack ?? []),
+  );
+  for (const name of names) {
+    p.log.warn(recognizedWithoutPackSentence(name));
+  }
+}
 
 function reportUnread(targets: Target[]): void {
   for (const target of targets) {
