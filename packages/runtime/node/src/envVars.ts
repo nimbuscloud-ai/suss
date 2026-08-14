@@ -33,14 +33,26 @@
 // declarations, ECS env blocks, etc.).
 
 import {
+  type ArrowFunction,
   type BindingElement,
+  type CallExpression,
   type ElementAccessExpression,
+  type FunctionDeclaration,
+  type FunctionExpression,
+  type Identifier,
+  type MethodDeclaration,
   Node as N,
   type Node,
   type PropertyAccessExpression,
   type SourceFile,
   type VariableDeclaration,
 } from "ts-morph";
+
+type FunctionLike =
+  | FunctionDeclaration
+  | ArrowFunction
+  | FunctionExpression
+  | MethodDeclaration;
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
@@ -106,19 +118,90 @@ function dottedRead(node: PropertyAccessExpression): EnvRead[] {
  */
 function bracketRead(access: ElementAccessExpression): EnvRead[] {
   const argument = access.getArgumentExpression();
+  if (argument === undefined) {
+    return [];
+  }
   if (
-    argument === undefined ||
-    !(
-      N.isStringLiteral(argument) || N.isNoSubstitutionTemplateLiteral(argument)
-    )
+    N.isStringLiteral(argument) ||
+    N.isNoSubstitutionTemplateLiteral(argument)
   ) {
+    const name = argument.getLiteralValue();
+    if (name.length === 0) {
+      return [];
+    }
+    return [{ name, defaulted: isDefaultedAt(access), node: access }];
+  }
+  if (N.isIdentifier(argument)) {
+    return readsThroughParameter(access, argument);
+  }
+  return [];
+}
+
+/**
+ * `process.env[name]` where `name` is a parameter of the enclosing
+ * function: the reads are the literals the callers pass. A helper like
+ * `requireEnv("TABLE_NAME")` is how many services spell every env read,
+ * and reporting nothing here made each of those variables look unused.
+ * Each read is anchored at its call site, so the unit that passed the
+ * literal is the unit that reads the variable.
+ */
+function readsThroughParameter(
+  access: ElementAccessExpression,
+  index: Identifier,
+): EnvRead[] {
+  const enclosing = access.getFirstAncestor(
+    (candidate): candidate is FunctionLike =>
+      N.isFunctionDeclaration(candidate) ||
+      N.isArrowFunction(candidate) ||
+      N.isFunctionExpression(candidate) ||
+      N.isMethodDeclaration(candidate),
+  );
+  if (enclosing === undefined) {
     return [];
   }
-  const name = argument.getLiteralValue();
-  if (name.length === 0) {
+  const at = enclosing
+    .getParameters()
+    .findIndex((parameter) => parameter.getName() === index.getText());
+  if (at === -1) {
     return [];
   }
-  return [{ name, defaulted: isDefaultedAt(access), node: access }];
+
+  const defaulted = isDefaultedAt(access);
+  const reads: EnvRead[] = [];
+  for (const call of callSitesOf(enclosing)) {
+    const passed = call.getArguments()[at];
+    if (
+      passed !== undefined &&
+      (N.isStringLiteral(passed) ||
+        N.isNoSubstitutionTemplateLiteral(passed)) &&
+      passed.getLiteralValue().length > 0
+    ) {
+      reads.push({ name: passed.getLiteralValue(), defaulted, node: call });
+    }
+  }
+  return reads;
+}
+
+/** Every call whose callee resolves to this function, found through its name. */
+function callSitesOf(fn: FunctionLike): CallExpression[] {
+  const named = N.isVariableDeclaration(fn.getParent())
+    ? (fn.getParent() as VariableDeclaration).getNameNode()
+    : (fn as { getNameNode?: () => Node | undefined }).getNameNode?.();
+  if (named === undefined || !N.isIdentifier(named)) {
+    return [];
+  }
+  const calls: CallExpression[] = [];
+  for (const reference of named.findReferencesAsNodes()) {
+    const parent = reference.getParent();
+    if (
+      parent !== undefined &&
+      N.isCallExpression(parent) &&
+      parent.getExpression() === reference
+    ) {
+      calls.push(parent);
+    }
+  }
+  return calls;
 }
 
 /** The variable one element of `const { A, B: c } = process.env` names. */
