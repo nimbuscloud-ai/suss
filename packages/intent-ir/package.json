@@ -1,6 +1,6 @@
 {
   "name": "@suss/intent-ir",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "Intent IR for suss — the team-authored side of the loop. PRD (outcome) intent and system intent, in shapes that pair against derived behavioral summaries.",
   "keywords": [
@@ -47,7 +47,7 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/ir-core": "0.5.0"
+    "@suss/ir-core": "0.5.1"
   },
   "devDependencies": {
     "tsup": "*",
