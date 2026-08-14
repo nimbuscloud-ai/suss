@@ -828,6 +828,83 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
   });
 });
 
+describe("discoverUnits: a route declared inside an app factory", () => {
+  const factorySource = [
+    "from fastapi import FastAPI",
+    "",
+    "",
+    "def create_app():",
+    "    app = FastAPI()",
+    "",
+    '    @app.get("/health")',
+    "    def health():",
+    "        pass",
+    "",
+    "    return app",
+    "",
+  ].join("\n");
+
+  it("reads the decorator in the factory's scope, where the app is constructed", async () => {
+    const units = await unitsOf(factorySource, [fastapiLike]);
+    expect(units.map((u) => u.identity.name)).toEqual(["health"]);
+    expect(units[0]?.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/health" },
+      recognition: "fastapi-test",
+    });
+  });
+
+  it("finds a factory route and a module-level route in the same file", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        '@app.get("/live")',
+        "def live():",
+        "    pass",
+        "",
+        "",
+        "def create_app():",
+        "    inner = FastAPI()",
+        "",
+        '    @inner.get("/health")',
+        "    def health():",
+        "        pass",
+        "",
+        "    return inner",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units.map((u) => u.identity.name).sort()).toEqual([
+      "health",
+      "live",
+    ]);
+  });
+
+  it("leaves a decorated def alone when its decorator is nothing a pack accepts", async () => {
+    const units = await unitsOf(
+      [
+        "import functools",
+        "",
+        "",
+        "def create_app():",
+        "    @functools.cache",
+        "    def helper():",
+        "        pass",
+        "",
+        "    return helper",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units).toEqual([]);
+  });
+});
+
 describe("a route that declares no response but does something", () => {
   const source = [
     "from myapp.wrappers.restx import route",

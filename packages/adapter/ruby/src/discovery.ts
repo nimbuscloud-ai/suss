@@ -32,7 +32,7 @@ import { invocationEffects } from "./paths/effects.js";
 import {
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
-  walkClasses,
+  walkDefinitions,
 } from "./scope.js";
 import { type RbStorageOptions, storageEffects } from "./storage.js";
 import { typeShapeFromNode } from "./typeShape.js";
@@ -116,6 +116,7 @@ interface FieldReadContext {
 function fieldReadContext(
   pattern: GraphqlObjectFields,
   cache: FileCache,
+  fileBlocks: readonly ReachedBody[],
   storage?: RbStorageOptions,
 ): FieldReadContext {
   return {
@@ -127,8 +128,20 @@ function fieldReadContext(
       pathConvention: pattern.pathConvention,
       ancestryRootClassNames: pattern.ancestryRootClassNames,
       parsedFile: (absPath) => cache.get(absPath),
+      localDefinition: (name) => sameFileBlocks(name, fileBlocks),
     },
   };
+}
+
+/** The blocks the current file defines under `name`, or null so the walk falls back to the path convention. */
+function sameFileBlocks(
+  name: string,
+  fileBlocks: readonly ReachedBody[],
+): ReachedBody[] | null {
+  const matches = fileBlocks.filter(
+    (block) => block.info.qualifiedName === name,
+  );
+  return matches.length === 0 ? null : matches;
 }
 
 function typeContext(
@@ -149,20 +162,34 @@ export async function discoverUnits(
   options: DiscoveryOptions,
 ): Promise<RawCodeStructure[]> {
   const classes: ClassInfo[] = [];
-  walkClasses(root, (info) => classes.push(info));
+  // Modules are visited too: a graphql-ruby interface is a module that
+  // mixes in the interface base, and its fields are declared the same way.
+  walkDefinitions(root, (info) => classes.push(info));
   const knownClasses = new Set(classes.map((info) => info.qualifiedName));
+
+  const fileBlocks: ReachedBody[] = classes.map((info) => ({
+    info,
+    knownClasses,
+  }));
 
   const units: RawCodeStructure[] = [];
   for (const info of classes) {
     // A class reopened in one file is one class, so a method written in
     // a later block redeclares a field declared in an earlier one.
-    const ownBlocks: ReachedBody[] = classes
-      .filter((other) => other.qualifiedName === info.qualifiedName)
-      .map((other) => ({ info: other, knownClasses }));
+    const ownBlocks = fileBlocks.filter(
+      (block) => block.info.qualifiedName === info.qualifiedName,
+    );
     for (const pack of options.packs) {
       for (const pattern of pack.discovery) {
         units.push(
-          ...(await unitsFor(pattern, pack, info, ownBlocks, options)),
+          ...(await unitsFor(
+            pattern,
+            pack,
+            info,
+            ownBlocks,
+            fileBlocks,
+            options,
+          )),
         );
       }
     }
@@ -170,11 +197,29 @@ export async function discoverUnits(
   return units;
 }
 
+/**
+ * Whether a class or module inherits from, or mixes in, one of the
+ * pack's base classes, however many project bases are in between
+ * (#247). The ancestry keeps a base it could not open as an entry
+ * under its written name, so an unread base still matches.
+ */
+function reachesConfiguredBase(
+  ancestry: Ancestry,
+  self: string,
+  pattern: GraphqlObjectFields,
+): boolean {
+  return ancestry.some(
+    (entry) =>
+      entry.name !== self && pattern.baseClassNames.includes(entry.name),
+  );
+}
+
 function unitsFor(
   pattern: RubyDiscoveryPattern,
   pack: RubyPack,
   info: ClassInfo,
   ownBlocks: readonly ReachedBody[],
+  fileBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
 ): Promise<RawCodeStructure[]> {
   const table: DispatchTable<
@@ -182,7 +227,7 @@ function unitsFor(
     Promise<RawCodeStructure[]>
   > = {
     graphqlObjectFields: (p) =>
-      graphqlObjectFieldUnits(p, pack, info, ownBlocks, options),
+      graphqlObjectFieldUnits(p, pack, info, ownBlocks, fileBlocks, options),
   };
   return dispatchByType(table, pattern);
 }
@@ -192,23 +237,31 @@ async function graphqlObjectFieldUnits(
   pack: RubyPack,
   info: ClassInfo,
   ownBlocks: readonly ReachedBody[],
+  fileBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
 ): Promise<RawCodeStructure[]> {
   if (
-    info.superclassQualifiedName === null ||
-    !pattern.baseClassNames.includes(info.superclassQualifiedName) ||
-    info.bodyNode === null
+    info.bodyNode === null ||
+    pattern.baseClassNames.includes(info.qualifiedName)
   ) {
+    return [];
+  }
+  const ctx = fieldReadContext(
+    pattern,
+    options.cache,
+    fileBlocks,
+    options.storage,
+  );
+  const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
+  if (!reachesConfiguredBase(ancestry, info.qualifiedName, pattern)) {
     return [];
   }
   const typeName = graphqlTypeNameFromQualified(
     info.qualifiedName,
     pattern.typeNameConvention,
   );
-  const ctx = fieldReadContext(pattern, options.cache, options.storage);
   const knownClasses = ownBlocks[0]?.knownClasses ?? new Set<string>();
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
-  const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
 
   // The class DSL stores fields by name, so a field redefined later in the same
   // body replaces the earlier declaration. Keying this Map on the resolved field

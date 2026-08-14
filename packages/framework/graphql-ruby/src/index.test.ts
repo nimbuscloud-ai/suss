@@ -10,7 +10,14 @@ describe("graphqlRubyFramework", () => {
     expect(pack.discovery).toEqual([
       {
         type: "graphqlObjectFields",
-        baseClassNames: ["Types::BaseObject"],
+        baseClassNames: [
+          "Types::BaseObject",
+          "Types::BaseInterface",
+          "Types::BaseInputObject",
+          "Types::BaseEnum",
+          "Types::BaseUnion",
+          "Types::BaseScalar",
+        ],
         root: "/repo/app/graphql",
         pathConvention: "railsUnderscore",
         fieldCallName: "field",
@@ -22,6 +29,11 @@ describe("graphqlRubyFramework", () => {
           "GraphQL::Schema::Object",
           "GraphQL::Schema::Mutation",
           "GraphQL::Schema::Resolver",
+          "GraphQL::Schema::Interface",
+          "GraphQL::Schema::InputObject",
+          "GraphQL::Schema::Enum",
+          "GraphQL::Schema::Union",
+          "GraphQL::Schema::Scalar",
         ],
         requiredKeyword: "required",
         requiredDefault: true,
@@ -41,16 +53,18 @@ describe("graphqlRubyFramework", () => {
     ]);
   });
 
-  it("adds a project's own base class names alongside the default", () => {
+  it("adds a project's own base class names alongside the defaults", () => {
     const pack = graphqlRubyFramework({
       root: "/repo/app/graphql",
       baseClassNames: ["Types::AuthenticatedObject"],
     });
     const [pattern] = pack.discovery;
     expect(pattern?.type).toBe("graphqlObjectFields");
-    expect(
-      pattern?.type === "graphqlObjectFields" && pattern.baseClassNames,
-    ).toEqual(["Types::BaseObject", "Types::AuthenticatedObject"]);
+    const names =
+      pattern?.type === "graphqlObjectFields" ? pattern.baseClassNames : [];
+    expect(names).toContain("Types::BaseObject");
+    expect(names).toContain("Types::BaseInterface");
+    expect(names).toContain("Types::AuthenticatedObject");
   });
 
   it("carries a project's camelize: false schema-wide default through to the pattern", () => {

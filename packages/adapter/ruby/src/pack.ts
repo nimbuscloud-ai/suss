@@ -36,10 +36,10 @@ export interface RbStoragePattern {
 
 export type RubyDiscoveryPattern = GraphqlObjectFields;
 
-/** A class whose `< ...` superclass is one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
+/** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
 export interface GraphqlObjectFields {
   type: "graphqlObjectFields";
-  /** The base class the library itself generates. A project's own intermediate base class is added through pack config. */
+  /** The base classes the library itself generates. The walk crosses a project's own intermediate bases on its own, so config only has to add a base with another name. */
   baseClassNames: string[];
   /** The directory a wiring keyword's referenced class is looked up under. That is the project's own layout, not the library's. */
   root: string;

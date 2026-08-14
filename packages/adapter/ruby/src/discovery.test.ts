@@ -85,6 +85,46 @@ describe("discoverUnits: object type fields", () => {
     expect(units).toEqual([]);
   });
 
+  it("discovers fields on a class whose base is two hops away through a project base", async () => {
+    const units = await discover(
+      "class Types::AdminObject < Types::BaseObject\n" +
+        "end\n" +
+        "class Types::UserType < Types::AdminObject\n" +
+        "  field :id, ID, null: false\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["User.id"]);
+  });
+
+  it("discovers fields on an interface module that mixes in the interface base", async () => {
+    const units = await discover(
+      "module Types::UserInterface\n" +
+        "  include Types::BaseInterface\n" +
+        "  field :id, ID, null: false\n" +
+        "end\n",
+      graphqlRubyTestPack({
+        baseClassNames: ["Types::BaseObject", "Types::BaseInterface"],
+      }),
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["UserInterface.id"]);
+  });
+
+  it("does not discover a module that mixes in nothing configured", async () => {
+    const units = await discover(
+      "module Types::Helpers\n" + "  field :id, ID, null: false\n" + "end\n",
+    );
+    expect(units).toEqual([]);
+  });
+
+  it("does not discover a configured base class as a type of its own", async () => {
+    const units = await discover(
+      "class Types::BaseObject < GraphQL::Schema::Object\n" +
+        "  field :id, ID, null: false\n" +
+        "end\n",
+    );
+    expect(units).toEqual([]);
+  });
+
   it("is transitionless: no branches", async () => {
     const units = await discover(
       "class Types::CampaignType < Types::BaseObject\n" +
@@ -202,6 +242,24 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, content);
   }
+
+  it("crosses a project base defined in its own file", async () => {
+    write(
+      "types/admin_object.rb",
+      "class Types::AdminObject < Types::BaseObject\nend\n",
+    );
+    const tree = await parseRuby(
+      "class Types::UserType < Types::AdminObject\n" +
+        "  field :id, ID, null: false\n" +
+        "end\n",
+    );
+    const units = await discoverUnits(tree.rootNode, {
+      packs: [pack],
+      filePath: "types/user_type.rb",
+      cache: diskCache(),
+    });
+    expect(units.map((u) => u.identity.name)).toEqual(["User.id"]);
+  });
 
   it("reads the referenced mutation class's own fields as the payload record", async () => {
     write(
