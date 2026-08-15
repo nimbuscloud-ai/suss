@@ -20,7 +20,7 @@ import type {
   FunctionRoot,
   TsDiscoveryContext,
 } from "@suss/adapter-typescript";
-import type { DeployableUnit } from "@suss/behavioral-ir";
+import type { DeployableUnit, MessageBusSemantics } from "@suss/behavioral-ir";
 import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 
@@ -117,12 +117,12 @@ function graphqlResolverUnits(
 /**
  * A handler with no bindable HTTP route (a dedicated SQS/Schedule/SNS
  * consumer, or one whose only route is ANY) still gets one accounting
- * unit. It gets no `routeInfo`, so it falls back to a function-call binding and
- * pairs with nothing, but it does appear in the summary set marked
- * `recognized-not-http`, with the event types that reached it. When the
- * handler's factory config says which subject it consumes (`channel` is
- * non-null), the unit gets a message-bus binding on that subject instead of the
- * fallback.
+ * unit, marked `recognized-not-http` with the event types that reached
+ * it. Its binding says the wire the template routes to it: the
+ * factory-given subject when there is one, otherwise a message-bus
+ * binding with no channel, which pairs with nothing but stops the unit
+ * claiming http (#128). Only a unit whose event types map to no one
+ * technology keeps the function-call fallback.
  *
  * No HTTP envelope constrains what these return, so the unit uses the wider
  * terminal list and any returned object gets read. Route units keep the
@@ -135,14 +135,13 @@ function accountingUnit(
 ): DiscoveredCustomUnit {
   const eventTypes = accountedEventTypes(entry);
   const backs = typeFields(entry);
+  const wire = channel !== null ? ("sqs" as const) : messageBusWire(eventTypes);
   return {
     func,
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
     terminals: NON_HTTP_TERMINALS,
-    ...(channel !== null
-      ? { channelInfo: { messageBus: "sqs" as const, channel } }
-      : {}),
+    ...(wire !== null ? { channelInfo: { messageBus: wire, channel } } : {}),
     deployableUnit: deployableUnit(entry),
     metadata: {
       [METADATA_NAMESPACE]: {
@@ -210,6 +209,41 @@ function subjectChannel(
     }
   }
   return null;
+}
+
+/**
+ * The wire behind a SAM event type. A Schedule creates an EventBridge
+ * rule, so its wire is eventbridge. Event types this does not cover
+ * (Kinesis, DynamoDB streams) stay off the map rather than guessed.
+ */
+const EVENT_WIRES: Record<string, MessageBusSemantics["messageBus"]> = {
+  SQS: "sqs",
+  SNS: "sns",
+  S3: "s3",
+  Schedule: "eventbridge",
+  ScheduleV2: "eventbridge",
+  EventBridgeRule: "eventbridge",
+  CloudWatchEvent: "eventbridge",
+};
+
+/**
+ * The one bus technology every event type behind this unit maps to, or
+ * null when any type is unmapped or two types disagree. A mapped unit
+ * gets a message-bus binding whose transport says the wire instead of
+ * the pack's http (#128); null keeps the old fallback, so an unmapped
+ * stream event still claims http until the enum grows.
+ */
+function messageBusWire(
+  eventTypes: string[],
+): MessageBusSemantics["messageBus"] | null {
+  const wires = new Set<MessageBusSemantics["messageBus"] | null>(
+    eventTypes.map((type) => EVENT_WIRES[type] ?? null),
+  );
+  if (wires.size !== 1) {
+    return null;
+  }
+  const [wire] = wires;
+  return wire ?? null;
 }
 
 /** Events that reach a handler but do not bind to a route of their own. */

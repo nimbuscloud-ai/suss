@@ -172,3 +172,18 @@ Resources:
 
   OrderNotifierQueue:
     Type: AWS::SQS::Queue
+
+  # Fed by a queue and a timer at once, so no one wire covers it.
+  MixedTriggerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/mixedTrigger.handler
+      Events:
+        Drain:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt JobsQueue.Arn
+        Sweep:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
