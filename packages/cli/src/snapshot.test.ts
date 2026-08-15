@@ -11,7 +11,11 @@ import { describe, expect, it } from "vitest";
 
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
-import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Predicate,
+  Transition,
+} from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -807,6 +811,89 @@ describe("inspect output snapshots", () => {
     const marker = "   ↳ app/util/graph/component.ts (cont.)";
     const matches = output.split("\n").filter((l) => l === marker).length;
     expect(matches).toBeGreaterThanOrEqual(1);
+  });
+
+  it("keeps both outcomes when two transitions test one predicate at opposite polarities", () => {
+    // Three outcomes land in a two-sided branch, so the else slot has
+    // to keep every arrival, not whichever got there first (#133).
+    const cond: Predicate = {
+      type: "truthinessCheck",
+      subject: { type: "input", inputRef: "req", path: ["query", "force"] },
+      negated: false,
+    };
+    const collided: BehavioralSummary = {
+      kind: "handler",
+      location: {
+        file: "src/handlers/retry.ts",
+        range: { start: 5, end: 30 },
+        exportName: "retry",
+      },
+      identity: {
+        name: "retry",
+        exportPath: ["retry"],
+        boundaryBinding: {
+          transport: "http",
+          semantics: { name: "rest", method: "POST", path: "/retry" },
+          recognition: "express",
+        },
+      },
+      inputs: [
+        {
+          type: "parameter",
+          name: "req",
+          position: 0,
+          role: "request",
+          shape: null,
+        },
+      ],
+      transitions: [
+        {
+          id: "retry:throw:Conflict",
+          conditions: [cond],
+          output: {
+            type: "throw",
+            exceptionType: "ConflictError",
+            message: null,
+          },
+          effects: [],
+          location: { start: 8, end: 9 },
+          isDefault: false,
+        },
+        {
+          id: "retry:throw:NotReady",
+          conditions: [{ type: "negation", operand: cond }],
+          output: {
+            type: "throw",
+            exceptionType: "NotReadyError",
+            message: null,
+          },
+          effects: [],
+          location: { start: 12, end: 13 },
+          isDefault: false,
+        },
+        {
+          id: "retry:response:202",
+          conditions: [],
+          output: {
+            type: "response",
+            statusCode: { type: "literal", value: 202 },
+            body: null,
+            headers: {},
+          },
+          effects: [],
+          location: { start: 16, end: 17 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const filePath = writeTempJson([collided]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toContain("throw ConflictError");
+    expect(output).toContain("throw NotReadyError");
+    expect(output).toContain("202");
   });
 
   it("renders library + caller summaries with function-call identity", () => {
