@@ -3,9 +3,9 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 414,
-    "internal": 1649,
-    "consumers": 647,
-    "pairs": 639
+    "internal": 1652,
+    "consumers": 650,
+    "pairs": 642
   },
   "packages": {
     "packages/adapter/python": {
@@ -35,8 +35,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 134,
-      "consumers": 77
+      "internal": 137,
+      "consumers": 79
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -84,7 +84,7 @@
       "name": "@suss/contract-cloudformation",
       "exports": 8,
       "internal": 65,
-      "consumers": 108
+      "consumers": 109
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
