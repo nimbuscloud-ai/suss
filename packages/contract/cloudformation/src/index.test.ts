@@ -226,6 +226,51 @@ describe("cloudFormationToSummaries — AWS::ApiGateway::Method", () => {
     expect(codes).toEqual([200, 404]);
   });
 
+  it("skips a method whose path has a computed segment instead of writing [object Object]", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        StageResource: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: {
+            PathPart: { "Fn::Sub": "${Stage}" },
+            ParentId: { Ref: "Api" },
+          },
+        },
+        PetsResource: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: { PathPart: "pets", ParentId: { Ref: "StageResource" } },
+        },
+        GetPetsMethod: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: {
+            HttpMethod: "GET",
+            ResourceId: { Ref: "PetsResource" },
+          },
+        },
+      },
+    });
+    expect(summaries).toEqual([]);
+  });
+
+  it("skips a method whose HttpMethod the template computes", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        PingResource: {
+          Type: "AWS::ApiGateway::Resource",
+          Properties: { PathPart: "ping" },
+        },
+        PingMethod: {
+          Type: "AWS::ApiGateway::Method",
+          Properties: {
+            HttpMethod: { "Fn::Sub": "${Verb}" },
+            ResourceId: { Ref: "PingResource" },
+          },
+        },
+      },
+    });
+    expect(summaries).toEqual([]);
+  });
+
   it("falls back to a single default transition when MethodResponses is absent", () => {
     const summaries = cloudFormationToSummaries({
       Resources: {
