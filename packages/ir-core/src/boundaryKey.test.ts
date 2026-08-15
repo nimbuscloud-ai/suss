@@ -13,6 +13,7 @@ import {
   pairingKey,
   reportsUnpairedItself,
   restBinding,
+  semanticsAgree,
 } from "./index.js";
 
 describe("normalizePath", () => {
@@ -359,5 +360,63 @@ describe("what a protocol says about its own checking", () => {
   it("says the message-bus pass reports its own unpaired channels", () => {
     expect(reportsUnpairedItself(channel)).toBe(true);
     expect(reportsUnpairedItself(route)).toBe(false);
+  });
+});
+
+describe("semanticsAgree", () => {
+  const sqs = (channel: string) =>
+    messageBusBinding({ recognition: "t", messageBus: "sqs", channel })
+      .semantics;
+
+  it("differing variant names never agree", () => {
+    const rest = restBinding({
+      transport: "http",
+      method: "GET",
+      path: "/a",
+      recognition: "t",
+    }).semantics;
+    expect(semanticsAgree(rest, sqs("orders"))).toBe(false);
+  });
+
+  it("a variant without sidesAgree agrees on the name alone", () => {
+    const a = graphqlResolverBinding({
+      transport: "http",
+      recognition: "t",
+      typeName: "Query",
+      fieldName: "posts",
+    }).semantics;
+    const b = graphqlResolverBinding({
+      transport: "http",
+      recognition: "t",
+      typeName: "Mutation",
+      fieldName: "createPost",
+    }).semantics;
+    expect(semanticsAgree(a, b)).toBe(true);
+  });
+
+  it("a variant with sidesAgree gets the deciding call", () => {
+    expect(semanticsAgree(sqs("orders"), sqs("orders"))).toBe(true);
+    expect(semanticsAgree(sqs("orders"), sqs("invoices"))).toBe(false);
+  });
+});
+
+describe("boundaryLabel fallbacks", () => {
+  it("falls back to the identity key when a variant defines no display label", () => {
+    const resolver = graphqlResolverBinding({
+      transport: "http",
+      recognition: "t",
+      typeName: "Query",
+      fieldName: "posts",
+    });
+    expect(boundaryLabel(resolver)).toBe("gql:Query.posts");
+  });
+
+  it("uses the display label where a variant defines one", () => {
+    const bus = messageBusBinding({
+      recognition: "t",
+      messageBus: "sqs",
+      channel: null,
+    });
+    expect(boundaryLabel(bus)).toContain("bus:sqs");
   });
 });

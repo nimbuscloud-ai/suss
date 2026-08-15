@@ -104,8 +104,8 @@ async function main() {
     );
   }
 
-  // Non-gating: report findings, never fail the run. Point --sussignore
-  // straight at the committed self-check rules.
+  // A finding neither suppressed nor triaged fails the run. The
+  // committed self-check rules under --sussignore are the triage.
   const args = [
     "check",
     "--dir",
@@ -113,7 +113,7 @@ async function main() {
     "--intent",
     intentDir,
     "--fail-on",
-    "none",
+    "warning",
   ];
   if (fs.existsSync(suppressionsSrc)) {
     args.push("--sussignore", suppressionsSrc);
