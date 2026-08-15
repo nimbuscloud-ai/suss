@@ -2,7 +2,7 @@
   "totals": {
     "packages": 46,
     "packagesWithExports": 46,
-    "exports": 411,
+    "exports": 413,
     "internal": 1623,
     "consumers": 641,
     "pairs": 633
@@ -136,7 +136,7 @@
     },
     "packages/framework/activerecord": {
       "name": "@suss/framework-activerecord",
-      "exports": 3,
+      "exports": 4,
       "internal": 0,
       "consumers": 0
     },
@@ -244,7 +244,7 @@
     },
     "packages/framework/sqlalchemy": {
       "name": "@suss/framework-sqlalchemy",
-      "exports": 3,
+      "exports": 4,
       "internal": 0,
       "consumers": 0
     },
