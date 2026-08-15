@@ -33,8 +33,18 @@ import { fileURLToPath } from "node:url";
 
 export const ADAPTER_VERSION = "0.2.1";
 
-/** Packages whose behaviour affects what an extraction produces. */
-const ANALYSIS_PACKAGES = ["@suss/extractor", "@suss/resolution"];
+/**
+ * Packages whose behaviour affects what an extraction produces. The
+ * dist files import @suss/datalog and @suss/behavioral-ir rather than
+ * bundling them, so leaving either out of the hash serves stale
+ * summaries after a change to it (#236).
+ */
+const ANALYSIS_PACKAGES = [
+  "@suss/extractor",
+  "@suss/resolution",
+  "@suss/datalog",
+  "@suss/behavioral-ir",
+];
 
 /**
  * Whether this process can see the adapter's own code. `bundle` includes
