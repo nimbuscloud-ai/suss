@@ -13,10 +13,9 @@
 //   summary owns by name, and no generated intent classifies as a
 //   documented abstention. Observed behavior unaccounted for.
 //
-// Abstention is never a finding. A summary whose binding gives no
-// path (or a route discovery declines entirely, the flask-restx
-// non-literal-path shape) counts toward the abstention rate, the
-// cost metric the run reports rather than hides.
+// An abstention the generator expected is never a finding; one it
+// expected a claim for is a missingClaim (#239). Abstentions still
+// count toward the rate the run reports rather than hides.
 
 import type { BehavioralSummary, RestSemantics } from "@suss/behavioral-ir";
 import type { ObservedEndpoint } from "./pythonObserve.js";
@@ -32,7 +31,7 @@ export interface PyClaim {
 }
 
 export interface PyFinding {
-  verdict: "falseClaim" | "uncovered" | "harnessFailure";
+  verdict: "falseClaim" | "uncovered" | "missingClaim" | "harnessFailure";
   detail: string;
 }
 
@@ -179,6 +178,19 @@ export function judgePythonProgram(input: JudgePythonInput): PyJudgment {
     findings.push({
       verdict: "uncovered",
       detail: `the app serves ${endpoint.method} ${endpoint.path} through "${endpoint.unit}", but no summary claims it and none abstains over it`,
+    });
+  }
+
+  // A reading that gets quieter used to pass: fewer claims, zero false
+  // ones, and only the count moved (#239). The generator wrote down
+  // which routes it expects a claim for, so abstaining on one fails.
+  for (const intent of input.intents) {
+    if (intent.expectation !== "claim" || claimedNames.has(intent.name)) {
+      continue;
+    }
+    findings.push({
+      verdict: "missingClaim",
+      detail: `the generator expected a claim for "${intent.name}" (${intent.method}) and extraction abstained over it`,
     });
   }
 
