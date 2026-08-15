@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 
+import { gqlIdentityKey } from "../identityKeys.js";
 import { defineBoundarySemantics } from "./definition.js";
 
 export const GraphqlResolverSemanticsSchema = z.object({
@@ -38,7 +39,7 @@ export const graphqlResolverSemantics = defineBoundarySemantics({
       if (semantics.typeName === null || semantics.fieldName === "") {
         return null;
       }
-      return `gql:${semantics.typeName}.${semantics.fieldName}`;
+      return gqlIdentityKey(semantics.typeName, semantics.fieldName);
     },
   },
 });

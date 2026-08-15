@@ -28,7 +28,7 @@ import {
 } from "graphql";
 
 import { readGraphqlMetadata, summaryRef } from "@suss/behavioral-ir";
-import { boundaryKey } from "@suss/ir-core";
+import { boundaryKey, gqlIdentityKey } from "@suss/ir-core";
 
 import type {
   BehavioralSummary,
@@ -98,7 +98,7 @@ function pairOneOperation(
   findings: Finding[],
 ): void {
   for (const selection of doc.rootSelections) {
-    const key = `gql:${doc.rootTypeName}.${selection.name}`;
+    const key = gqlIdentityKey(doc.rootTypeName, selection.name);
     const matchingResolvers = resolverIndex.get(key) ?? [];
     if (matchingResolvers.length === 0) {
       findings.push(fieldNotImplementedFinding(operation, doc, selection.name));

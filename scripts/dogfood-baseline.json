@@ -2,10 +2,10 @@
   "totals": {
     "packages": 46,
     "packagesWithExports": 46,
-    "exports": 416,
-    "internal": 1658,
-    "consumers": 652,
-    "pairs": 644
+    "exports": 417,
+    "internal": 1657,
+    "consumers": 653,
+    "pairs": 645
   },
   "packages": {
     "packages/adapter/python": {
@@ -35,8 +35,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 138,
-      "consumers": 79
+      "internal": 137,
+      "consumers": 80
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -262,7 +262,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 37,
+      "exports": 38,
       "internal": 9,
       "consumers": 0
     },
