@@ -159,6 +159,48 @@ describe("createLazyProject", () => {
     ).toEqual(["consumer.ts", "wrapper.ts"]);
   });
 
+  it("follows a workspace package to the wrapper behind its node_modules symlink", async () => {
+    const dir = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "suss-lazy-")),
+    );
+    for (const [rel, contents] of Object.entries({
+      "packages/client/package.json": JSON.stringify({
+        name: "@mono/client",
+        main: "index.ts",
+        types: "index.ts",
+      }),
+      "packages/client/index.ts": `import { foo } from "@gated/lib"; export const call = () => foo;`,
+      "src/consumer.ts": `import { call } from "@mono/client"; export const loader = () => call();`,
+    })) {
+      const abs = path.join(dir, rel);
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      await fs.writeFile(abs, contents);
+    }
+    await fs.mkdir(path.join(dir, "node_modules", "@mono"), {
+      recursive: true,
+    });
+    await fs.symlink(
+      path.join(dir, "packages", "client"),
+      path.join(dir, "node_modules", "@mono", "client"),
+    );
+    const tsconfigPath = path.join(dir, "tsconfig.json");
+    await fs.writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: {
+          target: "ES2022",
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+        },
+        include: ["src/**/*.ts", "packages/**/*.ts"],
+      }),
+    );
+    const result = await createLazyProject(tsconfigPath, [gatedPack]);
+    expect(
+      result.loadedFiles.map((sf) => path.basename(sf.getFilePath())).sort(),
+    ).toEqual(["consumer.ts", "index.ts"]);
+  });
+
   it("loads every file when at least one pack is ungated", async () => {
     const { tsconfigPath } = await makeTempProject({
       "a.ts": "export const a = 1;",

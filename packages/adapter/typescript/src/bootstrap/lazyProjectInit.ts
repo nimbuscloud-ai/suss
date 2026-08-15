@@ -382,77 +382,39 @@ function addImportersOfMatches(
 }
 
 /**
- * Resolve a specifier to a file in the include set, or null. Relative
- * specifiers resolve against the importing file; bare ones only through
- * the tsconfig `paths` mapping. Probing tries the specifier as written,
- * with a TS extension added, with a JS extension swapped for one, and
- * as a directory with an index file, all against the set in memory.
+ * Resolve a specifier to a file in the include set, or null, with the
+ * compiler's own resolver, so every specifier resolves the way the
+ * program will resolve it later. An in-memory string probe measured
+ * the same wall time on a 12k-file tree and misses workspace packages.
  */
 function internalSpecifierResolver(
   files: ReadonlyArray<string>,
   options: ts.CompilerOptions,
 ): (fromFile: string, spec: string) => string | null {
   const fileSet = new Set(files);
-  const probe = (base: string): string | null => {
-    const stems = [base];
-    const swapped = base.replace(/\.(mjs|cjs|jsx|js)$/, "");
-    if (swapped !== base) {
-      stems.push(swapped);
-    }
-    for (const stem of stems) {
-      for (const candidate of [
-        stem,
-        `${stem}.ts`,
-        `${stem}.tsx`,
-        path.join(stem, "index.ts"),
-        path.join(stem, "index.tsx"),
-      ]) {
-        if (fileSet.has(candidate)) {
-          return candidate;
-        }
-      }
-    }
-    return null;
-  };
-
-  const pathsBase =
-    options.baseUrl ??
-    (typeof options.pathsBasePath === "string" ? options.pathsBasePath : "");
-  const aliasTargets = (spec: string): string[] => {
-    const out: string[] = [];
-    for (const [pattern, targets] of Object.entries(options.paths ?? {})) {
-      const star = pattern.indexOf("*");
-      if (star === -1) {
-        if (spec === pattern) {
-          out.push(...targets);
-        }
-        continue;
-      }
-      const prefix = pattern.slice(0, star);
-      const suffix = pattern.slice(star + 1);
-      if (
-        spec.length >= prefix.length + suffix.length &&
-        spec.startsWith(prefix) &&
-        spec.endsWith(suffix)
-      ) {
-        const filler = spec.slice(prefix.length, spec.length - suffix.length);
-        out.push(...targets.map((t) => t.replace("*", filler)));
-      }
-    }
-    return out.map((t) => path.resolve(pathsBase, t));
-  };
-
+  const cache = ts.createModuleResolutionCache(
+    ts.sys.getCurrentDirectory(),
+    (name) => name,
+    options,
+  );
   return (fromFile, spec) => {
-    if (spec.startsWith(".")) {
-      return probe(path.resolve(path.dirname(fromFile), spec));
+    const resolved = ts.resolveModuleName(
+      spec,
+      fromFile,
+      options,
+      ts.sys,
+      cache,
+    ).resolvedModule?.resolvedFileName;
+    if (resolved === undefined) {
+      return null;
     }
-    for (const target of aliasTargets(spec)) {
-      const hit = probe(target);
-      if (hit !== null) {
-        return hit;
-      }
+    if (fileSet.has(resolved)) {
+      return resolved;
     }
-    return null;
+    // A workspace symlink resolves through node_modules; the include
+    // set knows the file by its target path.
+    const real = ts.sys.realpath?.(resolved) ?? resolved;
+    return fileSet.has(real) ? real : null;
   };
 }
 
