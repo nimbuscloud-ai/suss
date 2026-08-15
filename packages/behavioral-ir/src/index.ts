@@ -185,8 +185,13 @@ export type Finding = z.infer<typeof FindingSchema>;
  * workspace, which changes the string for most projects. Code following
  * a link instead of printing one has `identity.id` and `effect.summary`.
  */
-export function summaryRef(summary: BehavioralSummary): string {
-  return `${summary.location.file}::${summary.identity.name}`;
+declare const SummaryRefBrand: unique symbol;
+
+/** The `file::name` reference, with `summaryRef` its only constructor. */
+export type SummaryRef = string & { readonly [SummaryRefBrand]: "summaryRef" };
+
+export function summaryRef(summary: BehavioralSummary): SummaryRef {
+  return `${summary.location.file}::${summary.identity.name}` as SummaryRef;
 }
 
 // ---------------------------------------------------------------------------

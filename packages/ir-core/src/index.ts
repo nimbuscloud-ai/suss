@@ -107,6 +107,7 @@ export {
 } from "./boundaryKey.js";
 export {
   busesAgree,
+  type Channel,
   channelsPair,
   formatChannel,
   type ParsedChannel,
