@@ -442,13 +442,33 @@ function qualifyGenericName(
 
 type TreeNode =
   | { kind: "empty" }
-  | { kind: "leaf"; leaf: Leaf }
+  | { kind: "leaf"; leaves: Leaf[] }
   | {
       kind: "branch";
       predicate: Predicate;
       thenBranch: TreeNode;
       elseBranch: TreeNode;
     };
+
+/**
+ * Two transitions can land on the same slot: a throw on `condA`, a
+ * throw on `!condA`, and an unconditional fallback fill three outcomes
+ * into two sides. The slot keeps every distinct arrival rather than
+ * whichever got there first, so no recorded outcome disappears (#133).
+ */
+function appendLeaf(
+  node: { kind: "leaf"; leaves: Leaf[] },
+  leaf: Leaf,
+): TreeNode {
+  const key = JSON.stringify({ output: leaf.output, effects: leaf.effects });
+  const seen = node.leaves.some(
+    (l) => JSON.stringify({ output: l.output, effects: l.effects }) === key,
+  );
+  if (seen) {
+    return node;
+  }
+  return { kind: "leaf", leaves: [...node.leaves, leaf] };
+}
 
 function predicateEqual(a: Predicate, b: Predicate): boolean {
   // Structural equality via JSON: predicates are plain zod-shaped data and
@@ -490,11 +510,10 @@ function insertIntoTree(
 ): TreeNode {
   if (i >= conditions.length) {
     if (node.kind === "empty") {
-      return { kind: "leaf", leaf };
+      return { kind: "leaf", leaves: [leaf] };
     }
     if (node.kind === "leaf") {
-      // Earlier transition already captured this slot; preserve precedence.
-      return node;
+      return appendLeaf(node, leaf);
     }
     // Arrived at a branch node when the transition's conditions end mid-way.
     // This happens when the assembler records a fall-through leaf whose
@@ -551,7 +570,10 @@ function attachToDeepestEmptyElse(node: TreeNode, leaf: Leaf): TreeNode {
     return node;
   }
   if (node.elseBranch.kind === "empty") {
-    return { ...node, elseBranch: { kind: "leaf", leaf } };
+    return { ...node, elseBranch: { kind: "leaf", leaves: [leaf] } };
+  }
+  if (node.elseBranch.kind === "leaf") {
+    return { ...node, elseBranch: appendLeaf(node.elseBranch, leaf) };
   }
   return {
     ...node,
@@ -570,6 +592,14 @@ function buildDecisionTree(transitions: Transition[]): TreeNode {
     });
   }
   return root;
+}
+
+function renderLeaves(
+  leaves: Leaf[],
+  indent: string,
+  ctx: PerSummaryRenderCtx,
+): string[] {
+  return leaves.flatMap((leaf) => renderLeaf(leaf, indent, ctx));
 }
 
 function renderLeaf(
@@ -776,7 +806,7 @@ function renderNode(
     return [];
   }
   if (node.kind === "leaf") {
-    return renderLeaf(node.leaf, indent, ctx);
+    return renderLeaves(node.leaves, indent, ctx);
   }
   const lines: string[] = [];
   lines.push(`${indent}${keyword}  ${formatCondition(node.predicate)}`);
@@ -793,7 +823,7 @@ function renderNode(
   }
   if (el.kind === "leaf") {
     lines.push(`${indent}else`);
-    lines.push(...renderLeaf(el.leaf, inner, ctx));
+    lines.push(...renderLeaves(el.leaves, inner, ctx));
   }
   return lines;
 }
@@ -807,7 +837,7 @@ function renderThenSide(
     return [];
   }
   if (node.kind === "leaf") {
-    return renderLeaf(node.leaf, indent, ctx);
+    return renderLeaves(node.leaves, indent, ctx);
   }
   return renderNode(node, indent, "if", ctx);
 }
@@ -824,7 +854,7 @@ function renderTransitions(
   stampDeclaredStatuses(tree, declaredStatuses);
   const baseIndent = "    ";
   if (tree.kind === "leaf") {
-    return renderLeaf(tree.leaf, baseIndent, ctx);
+    return renderLeaves(tree.leaves, baseIndent, ctx);
   }
   if (tree.kind === "branch") {
     return renderNode(tree, baseIndent, "if", ctx);
@@ -837,7 +867,9 @@ function stampDeclaredStatuses(
   declaredStatuses: Set<number> | null,
 ): void {
   if (node.kind === "leaf") {
-    node.leaf.declaredStatuses = declaredStatuses;
+    for (const leaf of node.leaves) {
+      leaf.declaredStatuses = declaredStatuses;
+    }
     return;
   }
   if (node.kind === "branch") {
