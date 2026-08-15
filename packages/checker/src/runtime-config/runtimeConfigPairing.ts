@@ -30,8 +30,10 @@
 // process actually receives, not just the template-declared subset.
 
 import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
+import { fileInCodeScope } from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
+import { buildModuleGraph, entryClosure } from "../scope/entryClosure.js";
 import {
   contestedFiles,
   readCodeScope,
@@ -79,6 +81,8 @@ interface EnvVarRead {
   summary: BehavioralSummary;
   /** ID of the transition the read appeared in (for finding location). */
   transitionId: string;
+  /** The code supplies a fallback, so an absent value is not a defect. */
+  defaulted: boolean;
 }
 
 /**
@@ -108,6 +112,7 @@ export function checkRuntimeConfig(
   );
   const codeReads = collected.reads;
 
+  const graph = buildModuleGraph(summaries);
   const placed: PlacedRuntime[] = [];
   for (const runtime of runtimes) {
     const codeScope = readCodeScope(runtime);
@@ -124,12 +129,17 @@ export function checkRuntimeConfig(
       continue;
     }
 
+    const closure =
+      codeScope.entry !== undefined
+        ? entryClosure(codeScope.entry, graph)
+        : null;
     placed.push({
       runtime,
       binding,
       scope: {
         unit: runtime.identity.deployableUnit,
         codeScope: codeScope.path,
+        ...(closure !== null ? { closure } : {}),
       },
     });
   }
@@ -146,11 +156,12 @@ export function checkRuntimeConfig(
     const provided = readProvidedEnvVars(runtime);
     const providedSet = new Set(provided);
 
-    // envVarUnprovided: one finding per (read site, var). Multiple
-    // reads of the same undeclared var across files emit multiple
-    // findings; the deduper later collapses identical ones.
+    // envVarUnprovided: one finding per (read site, var); the deduper
+    // collapses identical ones later. A read with a fallback is
+    // undeclared on purpose and accuses nothing.
     for (const read of inScope) {
       if (
+        read.defaulted ||
         providedSet.has(read.name) ||
         contested.has(read.summary.location.file)
       ) {
@@ -168,10 +179,56 @@ export function checkRuntimeConfig(
     });
   }
 
+  // Dynamic imports and require calls are not in the module graph, so
+  // a read outside every closure may still run. Counting the name as
+  // read everywhere keeps the unused accusation away from it.
+  for (const name of unclaimedReadNames(codeReads, placed, byFile)) {
+    for (const s of scoped) {
+      s.readNames.add(name);
+    }
+  }
+
   findings.push(...unusedFindings(scoped, collected.sawConfigReadEffect));
   findings.push(...contestedFindings(codeReads, contested, placed, byFile));
 
   return findings;
+}
+
+/**
+ * Names read in files that sit under a placed runtime's directory but
+ * inside none of their scopes, which can only happen once a closure
+ * narrows a scope below its directory.
+ */
+function unclaimedReadNames(
+  codeReads: EnvVarRead[],
+  placed: PlacedRuntime[],
+  byFile: UnitsByFile,
+): Set<string> {
+  const names = new Set<string>();
+  if (!placed.some((p) => p.scope.closure !== undefined)) {
+    return names;
+  }
+
+  for (const read of codeReads) {
+    const file = read.summary.location.file;
+    if (
+      read.summary.identity.deployableUnit !== undefined ||
+      byFile.has(file)
+    ) {
+      continue;
+    }
+
+    const underSomeDirectory = placed.some((p) =>
+      fileInCodeScope(file, p.scope.codeScope),
+    );
+    const inSomeScope = placed.some((p) =>
+      runsIn(read.summary, p.scope, byFile),
+    );
+    if (underSomeDirectory && !inSomeScope) {
+      names.add(read.name);
+    }
+  }
+  return names;
 }
 
 /**
@@ -350,6 +407,7 @@ function collectEnvVarReads(
         name: record.effect.interaction.name,
         summary: record.summary,
         transitionId: record.transitionId,
+        defaulted: record.effect.interaction.defaulted === true,
       });
     }
   } else {
@@ -365,6 +423,7 @@ function collectEnvVarReads(
               name: effect.interaction.name,
               summary,
               transitionId: transition.id,
+              defaulted: effect.interaction.defaulted === true,
             });
           }
         }
@@ -416,7 +475,7 @@ function collectFromArgLegacy(
   if (obj.kind === "identifier" && typeof obj.name === "string") {
     const match = obj.name.match(/^process\.env\.(\w+)$/);
     if (match !== null) {
-      out.push({ name: match[1], summary, transitionId });
+      out.push({ name: match[1], summary, transitionId, defaulted: false });
     }
     return;
   }

@@ -28,6 +28,13 @@ import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 export interface CodeScopeMetadata {
   kind: "codeUri" | "unknown";
   path?: string;
+  /**
+   * The file the runtime enters, from a template's `Handler`, relative
+   * to the same root as the summaries' files and written without an
+   * extension. Its import closure is the scope, where the directory
+   * alone cannot tell functions built from one root apart.
+   */
+  entry?: string;
 }
 
 /** The code scope on a declaring summary, or the unknown marker when it
@@ -50,6 +57,13 @@ export interface UnitScope {
   unit: DeployableUnit | undefined;
   /** The source directory to fall back on when neither side gives a unit. */
   codeScope: string;
+  /**
+   * The files the runtime's handler entry reaches through imports.
+   * When set, membership decides instead of the directory: a shared
+   * helper pairs with every runtime whose closure loads it, and a file
+   * outside every closure pairs with none.
+   */
+  closure?: ReadonlySet<string>;
 }
 
 /**
@@ -99,8 +113,19 @@ export function contestedFiles(
 
   const contested = new Set<string>();
   for (const file of unplaced) {
+    // A closure settles membership for its runtime, so a file in two
+    // closures is in both runtimes rather than in doubt, and only the
+    // scopes with no closure still tell files apart by directory.
+    if (scopes.some((s) => s.closure?.has(file) === true)) {
+      continue;
+    }
+
     let containing = 0;
     for (const scope of scopes) {
+      if (scope.closure !== undefined) {
+        continue;
+      }
+
       if (!fileInCodeScope(file, scope.codeScope)) {
         continue;
       }
@@ -125,6 +150,10 @@ export function runsIn(
   const declared = scope.unit;
   if (codeUnits !== undefined && declared !== undefined) {
     return codeUnits.some((unit) => sameUnit(unit, declared));
+  }
+
+  if (scope.closure !== undefined) {
+    return scope.closure.has(code.location.file);
   }
   return fileInCodeScope(code.location.file, scope.codeScope);
 }

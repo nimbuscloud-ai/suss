@@ -69,14 +69,14 @@ describe("runtime-config over two Lambdas on one CodeUri", () => {
     expect(retry[0].description).toContain("NotifierFunction");
   });
 
-  it("reports the module neither function can claim once, and blames nothing", async () => {
+  it("places the shared module in both functions through their entries and reports nothing", async () => {
+    // Both entries import the module, so it runs in both functions,
+    // and its one read has a fallback, so nothing is wrong.
     const findings = await runPipeline();
     const fromShared = findings.filter((f) =>
       f.consumer.location.file.includes("config/logging"),
     );
-    expect(fromShared.map((f) => f.kind)).toEqual(["runtimeScopeUnknown"]);
-    expect(fromShared[0].severity).toBe("info");
-    expect(fromShared[0].description).toContain("2 runtimes");
+    expect(fromShared).toEqual([]);
     expect(findings.filter((f) => f.description.includes("LOG_LEVEL"))).toEqual(
       [],
     );
@@ -102,6 +102,15 @@ async function runPipeline(): Promise<Finding[]> {
   // relative, so do the same here.
   for (const summary of codeSummaries) {
     summary.location.file = path.relative(fixtureRoot, summary.location.file);
+    const moduleImports = summary.metadata?.moduleImports;
+    if (Array.isArray(moduleImports)) {
+      summary.metadata = {
+        ...summary.metadata,
+        moduleImports: moduleImports.map((file) =>
+          typeof file === "string" ? path.relative(fixtureRoot, file) : file,
+        ),
+      };
+    }
   }
 
   const declared = cloudFormationFileToSummaries(
