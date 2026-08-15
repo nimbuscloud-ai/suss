@@ -1,0 +1,38 @@
+name: Soak
+
+# Dogfood segfaulted once on main and never since (#249). This runs the
+# same corpus in a loop, on demand, so an intermittent crash shows up at
+# some rate instead of during work that matters. The reading markers in
+# the dogfood log say which packages were in flight when a run dies.
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "How many dogfood runs to make"
+        required: false
+        default: "20"
+
+jobs:
+  soak:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx turbo build
+
+      - name: Run dogfood in a loop
+        run: |
+          for i in $(seq 1 "${{ inputs.iterations }}"); do
+            echo "════ dogfood run $i of ${{ inputs.iterations }} ════"
+            node scripts/dogfood.mjs || { echo "run $i died with exit $?"; exit 1; }
+          done

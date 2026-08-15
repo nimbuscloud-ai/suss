@@ -146,12 +146,27 @@ function runWorker(pkg) {
         sussImportTargets: sussImportTargetsList,
       },
     });
+    let settled = false;
+    const finish = (msg) => {
+      if (!settled) {
+        settled = true;
+        resolve(msg);
+      }
+    };
     worker.once("message", (msg) => {
-      resolve(msg);
+      finish(msg);
       worker.terminate();
     });
     worker.once("error", (err) => {
-      resolve({ kind: "error", message: err.message });
+      finish({ kind: "error", message: err.message });
+    });
+    // A worker that dies without a message or an error, which is what a
+    // native crash in the thread looks like when the process survives it.
+    worker.once("exit", (code) => {
+      finish({
+        kind: "error",
+        message: `worker exited with code ${code} before reporting anything`,
+      });
     });
   });
 }
@@ -163,6 +178,10 @@ async function extractOne(pkg) {
     return { kind: "skipped", name, reason: "no tsconfig.json" };
   }
 
+  // Printed before the work, not with the results: a segfault kills the
+  // whole process with nothing said (#249), and then these lines are
+  // the only record of which packages were being read.
+  process.stdout.write(`  reading ${name}…\n`);
   const result = await runWorker(pkg);
   if (result.kind === "error") {
     return { kind: "error", name, message: result.message };
