@@ -170,7 +170,8 @@ export function honoFramework(): PatternPack {
         extraction: { defaultStatusCode: 404 },
       },
       {
-        // throw new HTTPException(status, { message })
+        // throw new HTTPException(status, { message }); hono sends the
+        // exception's status as the wire response.
         kind: "throw",
         match: { type: "throwExpression" },
         extraction: {
@@ -179,6 +180,7 @@ export function honoFramework(): PatternPack {
             codes: HTTP_EXCEPTION_CODES,
           },
         },
+        producesResponse: true,
       },
     ],
 

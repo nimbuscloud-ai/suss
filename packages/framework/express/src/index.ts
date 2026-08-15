@@ -104,12 +104,14 @@ export function expressFramework(): PatternPack {
         },
       },
       {
-        // throw new SomeError(...)
+        // throw new SomeError(...); express error middleware sends the
+        // error's status as the wire response.
         kind: "throw",
         match: { type: "throwExpression" },
         extraction: {
           statusCode: { from: "property", name: "status" },
         },
+        producesResponse: true,
       },
     ],
 

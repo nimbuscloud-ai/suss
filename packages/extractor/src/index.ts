@@ -142,6 +142,8 @@ export interface RawTerminal {
   body: { typeText: string | null; shape: TypeShape | null } | null;
   exceptionType: string | null;
   message: string | null;
+  /** Set on a throw whose pack declared the thrown status is the wire response. */
+  producesResponse?: boolean;
   component: string | null;
   /** Null when the pack read only the root element name, not the tree under it. */
   renderTree: RenderNode | null;
@@ -809,9 +811,10 @@ const terminalConverters: Record<
     return { type: "response", statusCode, body, headers: {} };
   },
   throw: (t) => {
-    // A throw the pack got a status off becomes a response, because the client
-    // sees a status code and the checker should count it as produced.
-    if (t.statusCode) {
+    // A response only when the pack declared that the framework turns
+    // the thrown status into the wire response, never from the status
+    // being present alone (#149).
+    if (t.statusCode && t.producesResponse === true) {
       const statusCode: ValueRef =
         t.statusCode.type === "literal"
           ? { type: "literal", value: t.statusCode.value }

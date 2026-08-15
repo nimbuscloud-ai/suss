@@ -978,13 +978,14 @@ describe("terminalToOutput", () => {
     });
   });
 
-  it("converts throw-with-status to a response output", () => {
+  it("converts a declared throw-with-status to a response output", () => {
     const out = terminalToOutput(
       makeTerminal({
         kind: "throw",
         exceptionType: "HttpError",
         message: "Not found",
         statusCode: { type: "literal", value: 404 },
+        producesResponse: true,
       }),
     );
     expect(out).toEqual({
@@ -995,11 +996,12 @@ describe("terminalToOutput", () => {
     });
   });
 
-  it("converts throw-with-dynamic-status to response with unresolved statusCode", () => {
+  it("converts a declared throw-with-dynamic-status to response with unresolved statusCode", () => {
     const out = terminalToOutput(
       makeTerminal({
         kind: "throw",
         statusCode: { type: "dynamic", sourceText: "errorCode" },
+        producesResponse: true,
       }),
     );
     expect(out).toEqual({
@@ -1007,6 +1009,22 @@ describe("terminalToOutput", () => {
       statusCode: { type: "unresolved", sourceText: "errorCode" },
       body: null,
       headers: {},
+    });
+  });
+
+  it("keeps an undeclared throw-with-status a throw, whatever code space the status is from", () => {
+    const out = terminalToOutput(
+      makeTerminal({
+        kind: "throw",
+        exceptionType: "GrpcError",
+        message: "NOT_FOUND",
+        statusCode: { type: "literal", value: 5 },
+      }),
+    );
+    expect(out).toEqual({
+      type: "throw",
+      exceptionType: "GrpcError",
+      message: "NOT_FOUND",
     });
   });
 
