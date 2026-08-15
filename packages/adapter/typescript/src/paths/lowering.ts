@@ -116,7 +116,19 @@ function lowerList(
   stmts: readonly Statement[],
   rawToStructured: Map<Node, StructuredStatement<Expression>>,
 ): StructuredStatement<Expression>[] {
-  return stmts.map((s) => lowerStatement(s, rawToStructured));
+  return spliceBlocks(stmts).map((s) => lowerStatement(s, rawToStructured));
+}
+
+/**
+ * A bare block only scopes declarations, so its statements belong to
+ * the surrounding list. People brace a switch case to scope a const,
+ * and the branches inside used to stay hidden behind the block (#191).
+ * Recursion keeps a block inside a block flat too.
+ */
+function spliceBlocks(stmts: readonly Statement[]): Statement[] {
+  return stmts.flatMap((s) =>
+    Node.isBlock(s) ? spliceBlocks(s.getStatements()) : [s],
+  );
 }
 
 function buildStructured(
@@ -250,22 +262,22 @@ function lowerSwitchGroups(
 }
 
 /**
- * Every break in a clause body must be the clause's own literal last
- * statement, unbraced, or the whole switch degrades. This is a direct
- * port of the legacy scanner: a descendant walk that skips only a
- * nested function, switch, or loop (each owns its own break), so a
- * break hidden behind any depth of block, if, or try nesting still
- * counts. This is deliberately a raw-node scan, separate from what
- * gets lowered into the clause's structured body: legacy never looked
- * inside a block for control-flow structure, only for a break, and a
- * control-flow construct sitting behind a block has to stay opaque in
- * the lowered tree the same way, so this is the only place a break
- * behind one gets found at all.
+ * Every break in a clause body must be the clause's last statement, or
+ * the whole switch degrades. The caller splices bare blocks first, so
+ * this walk catches a break behind if or try nesting, which the
+ * lowered tree cannot express. A nested function, switch, or loop is
+ * skipped, since each owns its own break.
  */
 function validateClauseBreaks(stmts: readonly Statement[]): void {
   const last = stmts[stmts.length - 1];
   for (const stmt of stmts) {
     if (stmt === last && Node.isBreakStatement(stmt)) {
+      continue;
+    }
+
+    // The descendant walk skips these when it meets them below the
+    // root, and a spliced clause can have one AS the root.
+    if (Node.isSwitchStatement(stmt) || isLoop(stmt)) {
       continue;
     }
     stmt.forEachDescendant((node, traversal) => {
@@ -288,9 +300,12 @@ function validateClauseBreaks(stmts: readonly Statement[]): void {
 }
 
 function lowerGroupBody(
-  stmts: Statement[],
+  rawStmts: Statement[],
   rawToStructured: Map<Node, StructuredStatement<Expression>>,
 ): { hasTrailingBreak: boolean; body: StructuredStatement<Expression>[] } {
+  // Splice before the break rules run, so a break at the end of a
+  // braced case counts as the clause's own trailing break.
+  const stmts = spliceBlocks(rawStmts);
   validateClauseBreaks(stmts);
   const last = stmts[stmts.length - 1];
   const hasTrailingBreak = last !== undefined && Node.isBreakStatement(last);
