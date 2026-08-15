@@ -237,16 +237,33 @@ type ConsumerFieldTest =
  *   data.type === "error"             →  bodyPath: ["type"], value: "error"
  *     (if data resolves through body)
  */
-function collectConsumerFieldTests(
-  transitions: Transition[],
-): ConsumerFieldTest[] {
+function collectConsumerFieldTests(transitions: Transition[]): {
+  tests: ConsumerFieldTest[];
+  /** True when a condition could not be decomposed, so the collected tests are not the whole story (#126). */
+  sawOpaqueCondition: boolean;
+} {
   const tests: ConsumerFieldTest[] = [];
+  let sawOpaqueCondition = false;
   for (const ct of transitions) {
     for (const pred of ct.conditions) {
       collectFieldTestsFromPredicate(pred, ct.id, tests);
+      sawOpaqueCondition ||= containsOpaquePredicate(pred);
     }
   }
-  return tests;
+  return { tests, sawOpaqueCondition };
+}
+
+function containsOpaquePredicate(pred: Predicate): boolean {
+  if (pred.type === "opaque") {
+    return true;
+  }
+  if (pred.type === "compound") {
+    return pred.operands.some(containsOpaquePredicate);
+  }
+  if (pred.type === "negation") {
+    return containsOpaquePredicate(pred.operand);
+  }
+  return false;
 }
 
 function collectFieldTestsFromPredicate(
@@ -397,7 +414,8 @@ export function checkSemanticBridging(
     providerByStatus.get(status)?.push(pt);
   }
 
-  const consumerFieldTests = collectConsumerFieldTests(consumer.transitions);
+  const { tests: consumerFieldTests, sawOpaqueCondition } =
+    collectConsumerFieldTests(consumer.transitions);
 
   for (const [status, providerTransitions] of providerByStatus) {
     if (providerTransitions.length <= 1) {
@@ -446,14 +464,27 @@ export function checkSemanticBridging(
 
         if (!anyLiteralMatched) {
           const lit = distinguishing[0];
-          findings.push({
-            kind: "unhandledProviderCase",
-            boundary,
-            provider: makeSide(provider, pt.id),
-            consumer: makeSide(consumer),
-            description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, but no consumer branch tests for this value`,
-            severity: "warning",
-          });
+          // A condition the extractor could not decompose may test this
+          // value, so certainty is not available (#126).
+          findings.push(
+            sawOpaqueCondition
+              ? {
+                  kind: "lowConfidence",
+                  boundary,
+                  provider: makeSide(provider, pt.id),
+                  consumer: makeSide(consumer),
+                  description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, and no decomposed consumer branch tests for it, but a consumer condition could not be read, so it may`,
+                  severity: "info",
+                }
+              : {
+                  kind: "unhandledProviderCase",
+                  boundary,
+                  provider: makeSide(provider, pt.id),
+                  consumer: makeSide(consumer),
+                  description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, but no consumer branch tests for this value`,
+                  severity: "warning",
+                },
+          );
         }
         continue; // Literal discrimination takes priority
       }
@@ -473,14 +504,25 @@ export function checkSemanticBridging(
 
         if (!anyPresenceMatched) {
           const field = presenceFields[0];
-          findings.push({
-            kind: "unhandledProviderCase",
-            boundary,
-            provider: makeSide(provider, pt.id),
-            consumer: makeSide(consumer),
-            description: `Provider transition ${pt.id} for status ${status} has body field ${formatPath(field.path)} that other transitions lack, but no consumer branch tests for this field`,
-            severity: "warning",
-          });
+          findings.push(
+            sawOpaqueCondition
+              ? {
+                  kind: "lowConfidence",
+                  boundary,
+                  provider: makeSide(provider, pt.id),
+                  consumer: makeSide(consumer),
+                  description: `Provider transition ${pt.id} for status ${status} has body field ${formatPath(field.path)} that other transitions lack, and no decomposed consumer branch tests for it, but a consumer condition could not be read, so it may`,
+                  severity: "info",
+                }
+              : {
+                  kind: "unhandledProviderCase",
+                  boundary,
+                  provider: makeSide(provider, pt.id),
+                  consumer: makeSide(consumer),
+                  description: `Provider transition ${pt.id} for status ${status} has body field ${formatPath(field.path)} that other transitions lack, but no consumer branch tests for this field`,
+                  severity: "warning",
+                },
+          );
         }
       }
     }

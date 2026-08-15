@@ -118,6 +118,41 @@ describe("checkSemanticBridging", () => {
     expect(deletedFinding?.description).toContain("status");
   });
 
+  it("hedges instead of asserting when a consumer condition could not be read", () => {
+    const p = provider("getUser", [
+      transition("t-200-deleted", {
+        output: response(200, record({ status: literal("deleted") })),
+      }),
+      transition("t-200-active", {
+        output: response(200, record({ status: literal("active") })),
+        isDefault: true,
+      }),
+    ]);
+
+    // The consumer's branch condition is opaque: it may well test
+    // body.status, and the pass cannot say it does not.
+    const c = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [
+          statusEq(200),
+          {
+            type: "opaque",
+            sourceText: "isDeleted(payload)",
+            reason: "externalFunction",
+          },
+        ],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    const findings = checkSemanticBridging(p, c);
+    expect(findings.map((f) => f.kind)).toContain("lowConfidence");
+    expect(findings.map((f) => f.kind)).not.toContain("unhandledProviderCase");
+    const hedged = findings.find((f) => f.kind === "lowConfidence");
+    expect(hedged?.severity).toBe("info");
+    expect(hedged?.description).toContain("could not be read");
+  });
+
   it("emits no finding when consumer tests for the distinguishing literal", () => {
     const p = provider("getUser", [
       transition("t-200-deleted", {
