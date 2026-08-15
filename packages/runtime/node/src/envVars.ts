@@ -7,6 +7,8 @@
 //   process.env["FOO"]             → config-read for "FOO"
 //   const { FOO } = process.env     → config-read for "FOO"
 //   process.env.X ?? "default"     → config-read for "X" with defaulted=true
+//   process.env.X || other        → the same; any ||/?? chain with a
+//                                    later operand defaults the read
 //
 // The adapter hands access recognizers property accesses and nothing
 // else, so the three spellings are recognized from the one node they
@@ -502,25 +504,42 @@ function parameterReachesEnvRead(
   return found;
 }
 
+/**
+ * Whether something else supplies a value when this read comes back
+ * empty. `process.env.X ?? "default"` and `process.env.X || other`
+ * both do, and so does the middle of a chain: in
+ * `process.env.A || process.env.B || undefined`, B's fallback is the
+ * chain's tail. The climb stops when the read is the final operand
+ * (`getDefault() ?? process.env.X`), where the read IS the fallback
+ * and its absence propagates.
+ */
 function isDefaultedAt(node: Node): boolean {
-  const parent = node.getParent();
-  return parent !== undefined && isNullishCoalescingWith(parent, node);
-}
+  let child: Node = node;
+  let parent = child.getParent();
+  while (parent !== undefined) {
+    if (N.isParenthesizedExpression(parent)) {
+      child = parent;
+      parent = parent.getParent();
+      continue;
+    }
 
-function isNullishCoalescingWith(parent: Node, child: Node): boolean {
-  if (!N.isBinaryExpression(parent)) {
-    return false;
+    if (!N.isBinaryExpression(parent)) {
+      return false;
+    }
+    // String-equality on the token text rather than the SyntaxKind
+    // enum, which renumbers between TypeScript releases.
+    const op = parent.getOperatorToken().getText();
+    if (op !== "??" && op !== "||") {
+      return false;
+    }
+
+    if (parent.getLeft() === child) {
+      return true;
+    }
+    child = parent;
+    parent = parent.getParent();
   }
-  // String-equality on the token text rather than the SyntaxKind enum,
-  // which renumbers between TypeScript releases.
-  if (parent.getOperatorToken().getText() !== "??") {
-    return false;
-  }
-  // Make sure WE are on the left of the ?? (the env read), not the
-  // fallback on the right. `process.env.X ?? "default"` defaults X;
-  // `getDefault() ?? process.env.X` doesn't (env read is the fallback
-  // FOR something else, not the thing being defaulted).
-  return parent.getLeft() === child;
+  return false;
 }
 
 function configReadEffect(
