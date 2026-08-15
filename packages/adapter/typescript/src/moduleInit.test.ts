@@ -92,6 +92,46 @@ describe("what a module reads when it loads", () => {
     expect(varsRead(summary)).toEqual(["ALPHA", "BETA"]);
   });
 
+  it("hands a top-level call to the recognizers, which is how a config helper resolves", () => {
+    const callReadRecognizer: AccessRecognizer = (access) => {
+      const node = access as Node;
+      if (!Node.isCallExpression(node)) {
+        return null;
+      }
+      if (node.getExpression().getText() !== "readSetting") {
+        return null;
+      }
+      const argument = node.getArguments()[0];
+      if (argument === undefined || !Node.isStringLiteral(argument)) {
+        return null;
+      }
+      return [
+        {
+          type: "interaction",
+          binding: runtimeConfigBinding({
+            recognition: "test",
+            deploymentTarget: "lambda",
+            instanceName: "<unknown>",
+          }),
+          callee: node.getText(),
+          interaction: {
+            class: "config-read",
+            name: argument.getLiteralValue(),
+            defaulted: false,
+          },
+        },
+      ];
+    };
+    const file = moduleOf(`
+      declare function readSetting(name: string): string;
+      const url = readSetting("SERVICE_URL");
+    `);
+    const effects = runAccessRecognizersAtModuleScope(file, [
+      callReadRecognizer,
+    ]).map((recognized) => recognized.effect);
+    expect(varsRead(moduleInitSummary(file, effects))).toEqual(["SERVICE_URL"]);
+  });
+
   it("leaves a read inside a function to the unit that runs it", () => {
     expect(
       varsRead(summaryOf("const read = () => settings.SERVICE_URL;")),

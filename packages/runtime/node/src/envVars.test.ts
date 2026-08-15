@@ -1,4 +1,4 @@
-import { Node, type PropertyAccessExpression, type SourceFile } from "ts-morph";
+import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -23,14 +23,25 @@ function recognizeWith(
   sourceFile: SourceFile,
 ): Effect[] {
   const effects: Effect[] = [];
+  // The same node filter and dedupe the adapter's dispatch applies: a
+  // helper call and the bracket read behind it give one effect, once.
+  const seen = new Set<string>();
   sourceFile.forEachDescendant((node) => {
-    if (!Node.isPropertyAccessExpression(node)) {
+    if (
+      !Node.isPropertyAccessExpression(node) &&
+      !Node.isCallExpression(node)
+    ) {
       return;
     }
     const ctx = { access: node, sourceFile };
-    const emitted = recognizer(node as PropertyAccessExpression, ctx);
-    if (emitted !== null) {
-      effects.push(...emitted);
+    const emitted = recognizer(node, ctx);
+    for (const effect of emitted ?? []) {
+      const key = JSON.stringify(effect);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      effects.push(effect);
     }
   });
   return effects;
@@ -483,5 +494,65 @@ describe("node runtime pack — env-var wiring", () => {
     );
     const reads = configReadEffectsOf(recognizeAll(helper));
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+});
+
+describe("a helper call resolved from the caller's side", () => {
+  it("reads the variable from a file that only calls the helper", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    const reads = configReadEffectsOf(recognizeAll(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("follows the literal through a helper that hands its parameter on", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `function inner(key: string): string {
+        return process.env[key] ?? "";
+      }
+      export function getEnv(name: string): string {
+        return inner(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { getEnv } from "./env.js";
+      export const queue = getEnv("QUEUE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeAll(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
+  });
+
+  it("says nothing about a call whose callee nothing in the run defines", () => {
+    const sourceFile = makeProject(`
+      declare function requireEnv(name: string): string;
+      export const table = requireEnv("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("stops rather than going round two helpers that call each other", () => {
+    const sourceFile = makeProject(`
+      function first(name: string): string {
+        return second(name);
+      }
+      function second(name: string): string {
+        return first(name);
+      }
+      export const table = first("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
   });
 });
