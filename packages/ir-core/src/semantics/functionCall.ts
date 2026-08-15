@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 
+import { fnIdentityKey } from "../identityKeys.js";
 import { defineBoundarySemantics } from "./definition.js";
 
 export const FunctionCallSemanticsSchema = z.object({
@@ -63,7 +64,7 @@ export const functionCallSemantics = defineBoundarySemantics({
         semantics.exportPath !== undefined &&
         semantics.exportPath.length > 0
       ) {
-        return `fn:${semantics.package}::${semantics.exportPath.join(".")}`;
+        return fnIdentityKey(semantics.package, semantics.exportPath);
       }
       return null;
     },

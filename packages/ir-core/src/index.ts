@@ -21,6 +21,10 @@ import type {
 import type { MessageBusTechnology } from "./semantics/messageBus.js";
 
 export {
+  type BusIdentityKey,
+  busIdentityKey,
+  type FnIdentityKey,
+  fnIdentityKey,
   type GqlIdentityKey,
   gqlIdentityKey,
 } from "./identityKeys.js";
