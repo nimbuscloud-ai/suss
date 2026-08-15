@@ -387,9 +387,10 @@ function buildRestApiConfig(
   sourceFile: string,
 ): RestApiConfig {
   const endpoints: RestEndpointConfig[] = [];
-  const pathByLogicalId = new Map<string, string>();
+  // Null: a segment on the way is computed, so no path can be stated.
+  const pathByLogicalId = new Map<string, string | null>();
 
-  function pathFor(logicalId: string): string {
+  function pathFor(logicalId: string): string | null {
     const cached = pathByLogicalId.get(logicalId);
     if (cached !== undefined) {
       return cached;
@@ -399,14 +400,15 @@ function buildRestApiConfig(
       pathByLogicalId.set(logicalId, "");
       return "";
     }
-    const part = String(res.Properties?.PathPart ?? "");
+    const part = plainString(res.Properties?.PathPart);
     const parentRef = refTarget(res.Properties?.ParentId);
     const parentPath =
       parentRef !== null &&
       resources[parentRef]?.Type === "AWS::ApiGateway::Resource"
         ? pathFor(parentRef)
         : "";
-    const full = `${parentPath}/${part}`;
+    const full =
+      part === null || parentPath === null ? null : `${parentPath}/${part}`;
     pathByLogicalId.set(logicalId, full);
     return full;
   }
@@ -418,13 +420,17 @@ function buildRestApiConfig(
     }
     const props = resource.Properties ?? {};
     // ANY is API Gateway's spelling of the method wildcard.
-    const method = wildcardOrMethod(String(props.HttpMethod ?? ""));
+    const method = wildcardOrMethod(plainString(props.HttpMethod) ?? "");
     if (method === null) {
       continue;
     }
 
     const resourceRef = refTarget(props.ResourceId);
-    const path = resourceRef !== null ? pathFor(resourceRef) || "/" : "/";
+    const resolvedPath = resourceRef !== null ? pathFor(resourceRef) : "";
+    if (resolvedPath === null) {
+      continue;
+    }
+    const path = resolvedPath === "" ? "/" : resolvedPath;
 
     const integration = readRestIntegration(
       props.Integration,
@@ -686,7 +692,7 @@ function buildHttpApiConfig(
       continue;
     }
     const props = resource.Properties ?? {};
-    const routeKey = String(props.RouteKey ?? "").trim();
+    const routeKey = (plainString(props.RouteKey) ?? "").trim();
     if (routeKey === "" || routeKey === "$default") {
       continue;
     }
@@ -920,8 +926,8 @@ function readSamApiEvents(
       if (restApiRef === null && apiId !== "RestApi" && !resources[apiId]) {
         continue;
       }
-      const method = wildcardOrMethod(String(props.Method ?? ""));
-      const path = String(props.Path ?? "");
+      const method = wildcardOrMethod(plainString(props.Method) ?? "");
+      const path = plainString(props.Path) ?? "";
       if (method === null || path === "") {
         continue;
       }
@@ -985,8 +991,8 @@ function readSamHttpApiEvents(
       if (apiRef === null && apiId !== "HttpApi" && !resources[apiId]) {
         continue;
       }
-      const method = wildcardOrMethod(String(props.Method ?? ""));
-      const pathProp = String(props.Path ?? "");
+      const method = wildcardOrMethod(plainString(props.Method) ?? "");
+      const pathProp = plainString(props.Path) ?? "";
       if (method === null || pathProp === "") {
         continue;
       }
@@ -1097,6 +1103,17 @@ function readCors(
  * Gateway's spelling of the method wildcard, and a blank method is a
  * malformed template with nothing to bind.
  */
+/**
+ * The string a template property states, or null when the template
+ * computes it with an intrinsic. Stringifying an intrinsic fabricates
+ * the literal "[object Object]" inside a route's identity (#127), and
+ * a route with a made-up identity pairs with nothing correctly, so a
+ * computed value reads as unstated instead.
+ */
+function plainString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 function wildcardOrMethod(raw: string): string | null {
   const method = raw.toUpperCase();
   if (method === "") {
