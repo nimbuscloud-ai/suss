@@ -16,6 +16,7 @@ import {
 import { SUMMARY_SCHEMA_VERSION } from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
+import { renderDiagnosis } from "./diagnosis.js";
 import {
   filesOutsideNestedRepositories,
   formatMissingSubmodules,
@@ -35,6 +36,7 @@ import type {
 } from "@suss/adapter-typescript";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
+import type { Diagnosis } from "./diagnosis.js";
 import type { Submodule } from "./gitSubmodules.js";
 import type { Language } from "./language.js";
 
@@ -782,32 +784,45 @@ async function writeIncompleteness(args: {
 
 const EMPTY_STAGE_COPY: Record<
   EmptyStage,
-  (report: ExtractionReport) => { cause: string; next: string }
+  (report: ExtractionReport) => Diagnosis
 > = {
   tsconfig: () => ({
-    cause: "That tsconfig matched no source files.",
-    next: "Check its `include` and `files` patterns against where your source actually lives.",
+    problem: "That tsconfig matched no source files.",
+    fix: {
+      advice:
+        "Check its `include` and `files` patterns against where your source actually lives.",
+    },
   }),
   gateResolution: (report) => {
     const blocked = report.packs.filter((p) => p.unresolvedGates.length > 0);
     const missing = [...new Set(blocked.flatMap((p) => p.unresolvedGates))];
     const files = blocked.reduce((sum, p) => sum + p.candidateFiles, 0);
     return {
-      cause: `${files} ${files === 1 ? "file imports" : "files import"} ${listOf(missing)}, but ${missing.length === 1 ? "that package is" : "those packages are"} not installed here, so suss cannot see what those calls do.`,
-      next: "Install this project's dependencies, then run the command again.",
+      problem: `${files} ${files === 1 ? "file imports" : "files import"} ${listOf(missing)}, but ${missing.length === 1 ? "that package is" : "those packages are"} not installed here.`,
+      cause: "suss cannot see what a call does without the package behind it.",
+      fix: {
+        advice:
+          "Install this project's dependencies, then run the command again.",
+      },
     };
   },
   candidateFiles: (report) => ({
-    cause: `No file imports anything ${listOf(report.packs.map((p) => p.pack))} looks for.`,
-    next: "Either this project does not use it, or your code reaches it through a local wrapper module. suss only recognizes direct imports today.",
+    problem: `No file imports anything ${listOf(report.packs.map((p) => p.pack))} looks for.`,
+    cause:
+      "Either this project does not use it, or your code reaches it through a local wrapper module. suss only recognizes direct imports today.",
   }),
   discovery: (report) => ({
-    cause: `suss read ${report.filesWalked} ${report.filesWalked === 1 ? "file" : "files"} but recognized no boundaries in them.`,
-    next: "Your code probably declares its boundaries in a shape this pack does not describe yet. Worth opening an issue with an example.",
+    problem: `suss read ${report.filesWalked} ${report.filesWalked === 1 ? "file" : "files"} but recognized no boundaries in them.`,
+    cause:
+      "Your code probably declares its boundaries in a shape this pack does not describe yet.",
+    fix: { advice: "Worth opening an issue with an example." },
   }),
   assembly: (report) => ({
-    cause: `suss recognized ${totalUnits(report)} boundaries but built no summaries from them.`,
-    next: "That is a bug in suss. Please open an issue with the code shape that triggered it.",
+    problem: `suss recognized ${totalUnits(report)} boundaries but built no summaries from them.`,
+    cause: "That is a bug in suss.",
+    fix: {
+      advice: "Please open an issue with the code shape that triggered it.",
+    },
   }),
 };
 
@@ -818,15 +833,19 @@ const EMPTY_STAGE_COPY: Record<
  * pack has to find first. `packSpecs` come straight from the user's -f
  * flags, so the suggested command is theirs with one flag added.
  */
-function recognizersOnlyCopy(
+function recognizersOnlyDiagnosis(
   packSpecs: ReadonlyArray<string>,
   example: string,
-): { cause: string; next: string } {
+): Diagnosis {
   const kept = packSpecs.map((s) => `-f ${s}`).join(" ");
   const names = packSpecs.map((s) => s.split("=")[0]);
   return {
-    cause: `No discovery pack is loaded: ${listOf(names)} ${names.length === 1 ? "labels" : "label"} calls inside boundaries, and a discovery pack finds the boundaries.`,
-    next: `Try your framework's pack alongside: suss extract -f ${example} ${kept}  (\`suss extract --help\` lists the packs)`,
+    problem: "No discovery pack is loaded.",
+    cause: `${listOf(names)} ${names.length === 1 ? "labels" : "label"} calls inside boundaries, and a discovery pack finds the boundaries.`,
+    fix: {
+      command: `suss extract -f ${example} ${kept}`,
+      note: "`suss extract --help` lists the packs",
+    },
   };
 }
 
@@ -844,32 +863,48 @@ export function formatEmptyLanguageRun(
   recognizersOnly = false,
 ): string {
   const label = LANGUAGE_LABEL[language];
+  const diagnosis = emptyLanguageRunDiagnosis(
+    language,
+    label,
+    filesRead,
+    packs,
+    recognizersOnly,
+  );
+  return [...renderDiagnosis(diagnosis), ""].join("\n");
+}
+
+function emptyLanguageRunDiagnosis(
+  language: Language,
+  label: string,
+  filesRead: number,
+  packs: ReadonlyArray<string>,
+  recognizersOnly: boolean,
+): Diagnosis {
   if (filesRead === 0) {
-    return [
-      `  suss found no ${label} files to read.`,
-      "  Point it at the directory holding the source with --dir, or name the files with --files.",
-      "",
-    ].join("\n");
+    return {
+      problem: `suss found no ${label} files to read.`,
+      fix: {
+        advice:
+          "Point it at the directory holding the source with --dir, or name the files with --files.",
+      },
+    };
   }
 
   if (recognizersOnly) {
-    const { cause, next } = recognizersOnlyCopy(
+    const base = recognizersOnlyDiagnosis(
       packs,
       EXAMPLE_DISCOVERY_PACK[language],
     );
-    return [
-      `  suss read ${filesRead} ${label} ${filesRead === 1 ? "file" : "files"} and produced no summaries.`,
-      `  ${cause}`,
-      `  ${next}`,
-      "",
-    ].join("\n");
+    return {
+      ...base,
+      cause: `suss read ${filesRead} ${label} ${filesRead === 1 ? "file" : "files"}, and ${base.cause}`,
+    };
   }
 
-  return [
-    `  suss read ${filesRead} ${label} ${filesRead === 1 ? "file" : "files"} and recognized no boundaries in them.`,
-    `  Either this project declares its boundaries in a shape ${listOf([...packs])} does not describe yet, or the code that does declare them sits somewhere the run did not read.`,
-    "",
-  ].join("\n");
+  return {
+    problem: `suss read ${filesRead} ${label} ${filesRead === 1 ? "file" : "files"} and recognized no boundaries in them.`,
+    cause: `Either this project declares its boundaries in a shape ${listOf([...packs])} does not describe yet, or the code that does declare them sits somewhere the run did not read.`,
+  };
 }
 
 function totalUnits(report: ExtractionReport): number {
@@ -893,15 +928,14 @@ export function formatExtractionReport(
   const lines: string[] = [];
 
   if (report.emptyStage !== null) {
-    const { cause, next } =
+    const diagnosis =
       recognizerOnlyPacks !== undefined && report.emptyStage === "discovery"
-        ? recognizersOnlyCopy(
+        ? recognizersOnlyDiagnosis(
             recognizerOnlyPacks,
             EXAMPLE_DISCOVERY_PACK.typescript,
           )
         : EMPTY_STAGE_COPY[report.emptyStage](report);
-    lines.push(`  ${cause}`);
-    lines.push(`  ${next}`);
+    lines.push(...renderDiagnosis(diagnosis));
     lines.push("");
     lines.push("  Where it stopped:");
   } else {
