@@ -103,6 +103,19 @@ export function honoFramework(): PatternPack {
       },
     ],
 
+    // The createRoute object registered alongside the handler declares
+    // the endpoint's responses, so a handler returning a status the
+    // route never declares is a contract finding, not a style choice.
+    contractReading: {
+      discovery: {
+        importModule: "@hono/zod-openapi",
+        importName: "OpenAPIHono",
+        registrationChain: [".openapi"],
+      },
+      responseExtraction: { property: "responses" },
+      endpoint: { from: "registrationArgument", position: 0 },
+    },
+
     terminals: [
       {
         // c.json(body, status?)

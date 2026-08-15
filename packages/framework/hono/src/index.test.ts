@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readHttpMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { honoFramework } from "./index.js";
@@ -163,6 +164,31 @@ describe("honoFramework \u2014 zod-openapi registration", () => {
       )
       .sort();
     expect(statuses).toEqual([200, 409]);
+  });
+
+  it("reads the declared responses off the registered route object", () => {
+    const provision = summaries.find(
+      (s) =>
+        s.identity.boundaryBinding?.semantics.name === "rest" &&
+        s.identity.boundaryBinding.semantics.method === "POST",
+    );
+    const declared =
+      provision === undefined
+        ? undefined
+        : readHttpMetadata(provision)?.declaredContract;
+    expect(declared?.provenance).toBe("independent");
+    expect(declared?.responses.map((r) => r.statusCode)).toEqual([200]);
+  });
+
+  it("reads the declaration through the cast the read route arrives behind", () => {
+    const read = summaries.find(
+      (s) =>
+        s.identity.boundaryBinding?.semantics.name === "rest" &&
+        s.identity.boundaryBinding.semantics.method === "GET",
+    );
+    const declared =
+      read === undefined ? undefined : readHttpMetadata(read)?.declaredContract;
+    expect(declared?.responses.map((r) => r.statusCode)).toEqual([200]);
   });
 });
 

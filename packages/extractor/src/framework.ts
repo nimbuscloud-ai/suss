@@ -744,6 +744,16 @@ export interface ContractPattern {
   paramsExtraction?: {
     property: string;
   };
+  /**
+   * Where the reader finds one endpoint's contract object. Left out,
+   * the ts-rest shape applies: one contract object contains every
+   * endpoint keyed by handler name, and the reader walks up from the
+   * handler to the enclosing router call. With `registrationArgument`,
+   * the zod-openapi shape applies instead: `app.openapi(route, handler)`
+   * passes the endpoint's own contract as the handler's sibling
+   * argument.
+   */
+  endpoint?: { from: "registrationArgument"; position: number };
 }
 
 // =============================================================================
