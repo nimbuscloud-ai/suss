@@ -3,9 +3,9 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 413,
-    "internal": 1642,
-    "consumers": 643,
-    "pairs": 635
+    "internal": 1643,
+    "consumers": 645,
+    "pairs": 637
   },
   "packages": {
     "packages/adapter/python": {
@@ -23,7 +23,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 32,
-      "internal": 586,
+      "internal": 587,
       "consumers": 34
     },
     "packages/behavioral-ir": {
@@ -204,7 +204,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 9
+      "consumers": 11
     },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",
