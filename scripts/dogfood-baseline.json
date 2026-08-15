@@ -3,9 +3,9 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 413,
-    "internal": 1643,
-    "consumers": 645,
-    "pairs": 637
+    "internal": 1646,
+    "consumers": 647,
+    "pairs": 639
   },
   "packages": {
     "packages/adapter/python": {
@@ -35,8 +35,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 131,
-      "consumers": 75
+      "internal": 134,
+      "consumers": 77
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
