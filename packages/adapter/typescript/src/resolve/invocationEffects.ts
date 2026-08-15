@@ -427,13 +427,22 @@ function dispatchAccessRecognizers(
   }
   const out: RecognizedEffectLocation[] = [];
   const sourceFile = root.getSourceFile();
+  // A helper call and the bracket read behind it resolve to the same
+  // effect at the same line; stating it twice adds nothing.
+  const seenEffects = new Set<string>();
 
   root.forEachDescendant((node, traversal) => {
     if (isStop(node)) {
       traversal.skip();
       return;
     }
-    if (!Node.isPropertyAccessExpression(node)) {
+    // Calls too: `requireEnv("X")` contains no property access, and the
+    // env recognizer resolves it through the callee's body (#326).
+    // Every recognizer guards its shapes and returns null on the rest.
+    if (
+      !Node.isPropertyAccessExpression(node) &&
+      !Node.isCallExpression(node)
+    ) {
       return;
     }
     const ctx: TsAccessRecognizerContext = {
@@ -457,6 +466,11 @@ function dispatchAccessRecognizers(
         continue;
       }
       for (const eff of emitted) {
+        const key = `${line}:${JSON.stringify(eff)}`;
+        if (seenEffects.has(key)) {
+          continue;
+        }
+        seenEffects.add(key);
         out.push({ effect: eff, line });
       }
     }

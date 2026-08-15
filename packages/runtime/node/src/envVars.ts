@@ -367,10 +367,139 @@ function readsThroughEnvObject(envNode: PropertyAccessExpression): EnvRead[] {
  * once.
  */
 function envReadsAt(node: Node): EnvRead[] {
+  if (N.isCallExpression(node)) {
+    return readsThroughHelperCall(node);
+  }
   if (!N.isPropertyAccessExpression(node)) {
     return [];
   }
   return isProcessEnv(node) ? readsThroughEnvObject(node) : dottedRead(node);
+}
+
+/**
+ * `requireEnv("TABLE_NAME")` read from the call: the callee's body reads
+ * `process.env` through the parameter this literal lands in. The reverse
+ * walk in `readsThroughParameter` only fires where the helper's own body
+ * is walked, and a call at module scope is in no unit's body (#326), so
+ * the call resolves forward too. Anchoring at the call keeps the read in
+ * the caller's file whatever file defines the helper.
+ */
+function readsThroughHelperCall(call: CallExpression): EnvRead[] {
+  const reads: EnvRead[] = [];
+  const callee = functionBehindCallee(call.getExpression());
+  if (callee === null) {
+    return reads;
+  }
+  call.getArguments().forEach((passed, at) => {
+    const literal = literalBehind(passed);
+    if (literal === null || literal.length === 0) {
+      return;
+    }
+    const read = parameterReachesEnvRead(callee, at);
+    if (read !== null) {
+      reads.push({ name: literal, defaulted: read.defaulted, node: call });
+    }
+  });
+  return reads;
+}
+
+/** The function a callee expression is written against, or null when nothing this reader follows defines one. */
+function functionBehindCallee(callee: Node): FunctionLike | null {
+  const nameNode = N.isPropertyAccessExpression(callee)
+    ? callee.getNameNode()
+    : callee;
+  if (!N.isIdentifier(nameNode)) {
+    return null;
+  }
+  for (const definition of nameNode.getDefinitionNodes()) {
+    if (
+      N.isFunctionDeclaration(definition) ||
+      N.isMethodDeclaration(definition)
+    ) {
+      return definition;
+    }
+    if (N.isVariableDeclaration(definition)) {
+      const initializer = definition.getInitializer();
+      if (
+        initializer !== undefined &&
+        (N.isArrowFunction(initializer) || N.isFunctionExpression(initializer))
+      ) {
+        return initializer;
+      }
+    }
+  }
+  return null;
+}
+
+/** Keyed on the compiler node, which a re-parse replaces, so an edited file never reads a stale answer. */
+const PARAM_ENV_READS = new WeakMap<
+  object,
+  Map<number, { defaulted: boolean } | null>
+>();
+
+/**
+ * Whether a function's parameter reaches a `process.env[...]` read,
+ * through however many helpers forward it. The worklist mirrors
+ * `callerLiteralReads` in the other direction, and the taken set ends a
+ * pair of helpers calling each other.
+ */
+function parameterReachesEnvRead(
+  fn: FunctionLike,
+  at: number,
+): { defaulted: boolean } | null {
+  const byParameter =
+    PARAM_ENV_READS.get(fn.compilerNode) ??
+    new Map<number, { defaulted: boolean } | null>();
+  PARAM_ENV_READS.set(fn.compilerNode, byParameter);
+  const remembered = byParameter.get(at);
+  if (remembered !== undefined) {
+    return remembered;
+  }
+
+  let found: { defaulted: boolean } | null = null;
+  const pending: { fn: FunctionLike; at: number }[] = [{ fn, at }];
+  const taken = new Set<string>();
+  while (pending.length > 0 && found === null) {
+    const wanted = pending.pop() as { fn: FunctionLike; at: number };
+    const key = `${wanted.fn.getPos()}:${wanted.at}`;
+    if (taken.has(key)) {
+      continue;
+    }
+    taken.add(key);
+    const parameter = wanted.fn.getParameters()[wanted.at];
+    if (parameter === undefined) {
+      continue;
+    }
+    const name = parameter.getName();
+    wanted.fn.forEachDescendant((node) => {
+      if (found !== null) {
+        return;
+      }
+      if (
+        N.isElementAccessExpression(node) &&
+        isProcessEnv(node.getExpression())
+      ) {
+        const argument = node.getArgumentExpression();
+        if (argument !== undefined && argument.getText() === name) {
+          found = { defaulted: isDefaultedAt(node) };
+        }
+        return;
+      }
+      if (N.isCallExpression(node)) {
+        node.getArguments().forEach((argument, position) => {
+          if (!N.isIdentifier(argument) || argument.getText() !== name) {
+            return;
+          }
+          const next = functionBehindCallee(node.getExpression());
+          if (next !== null && next !== wanted.fn) {
+            pending.push({ fn: next, at: position });
+          }
+        });
+      }
+    });
+  }
+  byParameter.set(at, found);
+  return found;
 }
 
 function isDefaultedAt(node: Node): boolean {
@@ -439,8 +568,16 @@ export function findProcessEnvReads(
   sourceFile: SourceFile,
 ): Array<{ name: string; defaulted: boolean; line: number }> {
   const out: Array<{ name: string; defaulted: boolean; line: number }> = [];
+  // A helper call resolves from the call and from the bracket read in
+  // the callee, with the same anchor, so one of the pair is dropped.
+  const seen = new Set<string>();
   sourceFile.forEachDescendant((node) => {
     for (const read of envReadsAt(node)) {
+      const key = `${read.node.getPos()}:${read.name}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
       out.push({
         name: read.name,
         defaulted: read.defaulted,
