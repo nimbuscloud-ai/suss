@@ -2,8 +2,8 @@
   "apollo": "pack name, Apollo Server",
   "ApolloServer": "@apollo/server: the server constructor",
   "resolvers": "@apollo/server: ApolloServer config key holding the resolver map",
-  "parent": "graphql-js: first positional argument of a resolver",
-  "args": "graphql-js: second positional argument of a resolver",
-  "context": "graphql-js: third positional argument of a resolver",
-  "info": "graphql-js: fourth positional argument of a resolver"
+  "parent": "suss: input role for a resolver's first positional argument, the graphql-js convention",
+  "args": "suss: input role for a resolver's second positional argument, the graphql-js convention",
+  "context": "suss: input role for a resolver's third positional argument, the graphql-js convention",
+  "info": "suss: input role for a resolver's fourth positional argument, the graphql-js convention"
 }
