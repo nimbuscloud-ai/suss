@@ -19,6 +19,7 @@ import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
+import { printUpdateNoticeIfBehind } from "./updateNotice.js";
 import { UsageError } from "./usageError.js";
 
 import type { ContractSource } from "./contract.js";
@@ -125,12 +126,18 @@ Options (corroborate):
 Exit codes:
   check exits non-zero when it finds anything at error severity.
   corroborate exits non-zero when a claim is refuted by execution.
+
+An interactive run ends with one line on stderr when a newer suss is on
+the registry. Piped output and CI never see it, and setting
+SUSS_NO_UPDATE_NOTICE turns it off everywhere.
 `.trim();
 
 /** Returns the exit code rather than calling process.exit, so tests can run it. */
 export async function runCli(args: string[]): Promise<number> {
   try {
-    return await dispatch(args);
+    const code = await dispatch(args);
+    await printUpdateNoticeIfBehind();
+    return code;
   } catch (err) {
     const sentence = asSentence(err);
     if (sentence === null) {
