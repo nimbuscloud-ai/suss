@@ -122,6 +122,6 @@ export async function printUpdateNoticeIfBehind(): Promise<void> {
     return;
   }
   process.stderr.write(
-    `suss ${installed} is installed and ${latest} is out. \`npm install -D @suss/cli\` updates it.\n`,
+    `suss update available ${installed} → ${latest} · npm i -D @suss/cli\n`,
   );
 }
