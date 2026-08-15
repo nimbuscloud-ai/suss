@@ -160,11 +160,14 @@ const publishedCount = workspace.filter((pkg) => !pkg.isPrivate).length;
 for (const doc of COUNT_CLAIMS) {
   const text = fs.readFileSync(path.join(ROOT, doc), "utf8");
   for (const [index, line] of text.split("\n").entries()) {
-    if (MEASURED_IN_THE_PAST.some((record) => record.test(line))) {
-      continue;
-    }
+    const scannable = MEASURED_IN_THE_PAST.reduce(
+      (rest, record) => rest.replace(record, ""),
+      line,
+    );
 
-    for (const match of line.matchAll(/\b(\d+) (?:`@suss\/\*` )?packages\b/g)) {
+    for (const match of scannable.matchAll(
+      /\b(\d+) (?:`@suss\/\*` )?packages\b/g,
+    )) {
       if (Number(match[1]) === publishedCount) {
         continue;
       }
