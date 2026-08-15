@@ -58,3 +58,11 @@ describe("the SQLAlchemy pack", () => {
     expect(pack.storage).toHaveLength(2);
   });
 });
+
+describe("a config that says no database", () => {
+  it("refuses with a sentence instead of a TypeError", () => {
+    expect(() => sqlalchemyFramework(undefined as never)).toThrow(
+      /storageSystem/,
+    );
+  });
+});

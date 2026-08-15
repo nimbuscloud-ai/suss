@@ -54,3 +54,11 @@ describe("the ActiveRecord pack", () => {
     expect(pack.storage).toHaveLength(1);
   });
 });
+
+describe("a config that says no database", () => {
+  it("refuses with a sentence instead of a TypeError", () => {
+    expect(() => activeRecordFramework(undefined as never)).toThrow(
+      /storageSystem/,
+    );
+  });
+});
