@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { type GqlIdentityKey, gqlIdentityKey } from "./identityKeys.js";
+import {
+  type BusIdentityKey,
+  busIdentityKey,
+  fnIdentityKey,
+  type GqlIdentityKey,
+  gqlIdentityKey,
+} from "./identityKeys.js";
+
+describe("fnIdentityKey and busIdentityKey", () => {
+  it("mints the prefixed forms", () => {
+    expect(fnIdentityKey("@acme/util", ["parse", "config"])).toBe(
+      "fn:@acme/util::parse.config",
+    );
+    expect(busIdentityKey("sqs", "order.placed")).toBe("bus:sqs order.placed");
+  });
+
+  it("closes the bus segment over the schema's technologies", () => {
+    // @ts-expect-error a technology outside the enum refuses to compile
+    busIdentityKey("carrier-pigeon", "order.placed");
+    // @ts-expect-error a literal without the brand cannot claim the type
+    const wrong: BusIdentityKey = "bus:sqs order.placed";
+    expect(wrong).toBeDefined();
+  });
+});
 
 describe("gqlIdentityKey", () => {
   it("mints the prefixed dotted form", () => {

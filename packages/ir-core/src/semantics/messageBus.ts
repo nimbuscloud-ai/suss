@@ -15,6 +15,7 @@
 import { z } from "zod";
 
 import { channelsPair, parseChannel } from "../channel.js";
+import { busIdentityKey } from "../identityKeys.js";
 import { defineBoundarySemantics } from "./definition.js";
 
 export const MessageBusSemanticsSchema = z.object({
@@ -78,7 +79,7 @@ export const messageBusSemantics = defineBoundarySemantics({
       if (subject === "") {
         return null;
       }
-      return `bus:${semantics.messageBus} ${subject}`;
+      return busIdentityKey(semantics.messageBus, subject);
     },
     sidesAgree(a, b) {
       if (a.channel === null || b.channel === null) {

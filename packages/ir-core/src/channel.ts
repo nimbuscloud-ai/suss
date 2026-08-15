@@ -27,11 +27,21 @@ export function parseChannel(channel: string): ParsedChannel {
   return { bus: channel.slice(0, hash), subject: channel.slice(hash + 1) };
 }
 
-export function formatChannel(bus: string | null, subject: string): string {
+declare const ChannelBrand: unique symbol;
+
+/**
+ * `bus#subject`, or the bare subject when no source said the bus. The
+ * unqualified form is legal, so fields keep the type string and the
+ * mint is the whole win: a channel assembled by hand cannot claim the
+ * brand, and the format has one spelling (#167).
+ */
+export type Channel = string & { readonly [ChannelBrand]: "channel" };
+
+export function formatChannel(bus: string | null, subject: string): Channel {
   if (bus === null) {
-    return subject;
+    return subject as Channel;
   }
-  return `${bus}#${subject}`;
+  return `${bus}#${subject}` as Channel;
 }
 
 export function busesAgree(a: string | null, b: string | null): boolean {

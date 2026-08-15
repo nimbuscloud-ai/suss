@@ -104,3 +104,11 @@ describe("formatChannel", () => {
     expect(formatChannel(null, "OrdersQueue")).toBe("OrdersQueue");
   });
 });
+
+describe("the channel brand", () => {
+  it("refuses a hand-assembled channel at the type level", () => {
+    // @ts-expect-error only formatChannel mints the brand
+    const wrong: Channel = "orders#order.placed";
+    expect(wrong).toBeDefined();
+  });
+});
