@@ -666,6 +666,60 @@ describe("checkRuntimeConfig", () => {
     });
   });
 
+  describe("variables a pack-declared library reads", () => {
+    const marker: BehavioralSummary = {
+      kind: "library",
+      location: {
+        file: "src/handlers/indexer.ts",
+        range: { start: 0, end: 0 },
+        exportName: null,
+      },
+      identity: {
+        name: "@aws-lambda-powertools/ env reads",
+        exportPath: null,
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "aws-lambda",
+        },
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: { source: "declared", level: "high" },
+      metadata: {
+        libraryEnvReads: {
+          module: "@aws-lambda-powertools/",
+          prefixes: ["POWERTOOLS_"],
+        },
+      },
+    };
+    const runtime = makeRuntimeProvider({
+      instanceName: "indexer",
+      envVars: ["POWERTOOLS_SERVICE_NAME", "TABLE_NAME"],
+      codeScope: { kind: "codeUri", path: "src/" },
+    });
+    const code = makeCodeSummary({
+      name: "indexerHandler",
+      file: "src/handlers/indexer.ts",
+      envReads: ["TABLE_NAME"],
+    });
+
+    it("does not call a variable unused when a marker's library reads it", () => {
+      const findings = checkRuntimeConfig([runtime, code, marker]);
+      expect(findings.filter((f) => f.kind === "boundaryFieldUnused")).toEqual(
+        [],
+      );
+    });
+
+    it("still calls it unused when no marker covers it", () => {
+      const findings = checkRuntimeConfig([runtime, code]);
+      const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
+      expect(unused).toHaveLength(1);
+      expect(unused[0].description).toContain("POWERTOOLS_SERVICE_NAME");
+    });
+  });
+
   describe("runtimes scoped by their handler entry's import closure", () => {
     const runtimeA = makeRuntimeProvider({
       instanceName: "fnA",

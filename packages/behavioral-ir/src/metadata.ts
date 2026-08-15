@@ -593,6 +593,31 @@ export function readHttpMetadata(
   return readNamespace(HttpMetadataSchema, carrier.metadata?.http);
 }
 
+const LibraryEnvReadsSchema = z.object({
+  /** Module-specifier prefix of the library that does the reading. */
+  module: z.string(),
+  prefixes: z.array(z.string()).optional(),
+  names: z.array(z.string()).optional(),
+});
+
+export type LibraryEnvReads = z.infer<typeof LibraryEnvReadsSchema>;
+
+/**
+ * Env vars a library reads from inside node_modules, declared by the
+ * pack that covers the library and stamped on a marker summary at
+ * extract time. The runtime-config pairing consults these before
+ * calling a declared variable unused, since the reading code is never
+ * walked.
+ */
+export function readLibraryEnvReads(
+  summary: BehavioralSummary,
+): LibraryEnvReads | undefined {
+  return readNamespace(
+    LibraryEnvReadsSchema,
+    summary.metadata?.libraryEnvReads,
+  );
+}
+
 const ModuleImportsSchema = z.array(z.string());
 
 /**

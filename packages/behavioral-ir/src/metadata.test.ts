@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   readGraphqlMetadata,
   readHttpMetadata,
+  readLibraryEnvReads,
   readMessageBusMetadata,
   readModuleImports,
   readRoutingMetadata,
@@ -376,6 +377,24 @@ describe("readModuleImports", () => {
     expect(readModuleImports(summaryWith(undefined))).toBeUndefined();
     expect(
       readModuleImports(summaryWith({ moduleImports: "src/helper.ts" })),
+    ).toBeUndefined();
+  });
+});
+
+describe("readLibraryEnvReads", () => {
+  it("returns the declaration and refuses other shapes", () => {
+    expect(
+      readLibraryEnvReads(
+        summaryWith({
+          libraryEnvReads: {
+            module: "@aws-lambda-powertools/",
+            prefixes: ["POWERTOOLS_"],
+          },
+        }),
+      ),
+    ).toEqual({ module: "@aws-lambda-powertools/", prefixes: ["POWERTOOLS_"] });
+    expect(
+      readLibraryEnvReads(summaryWith({ libraryEnvReads: "POWERTOOLS_" })),
     ).toBeUndefined();
   });
 });

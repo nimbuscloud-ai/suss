@@ -29,7 +29,11 @@
 // `provided` set the pairing checks against here is the FULL set the
 // process actually receives, not just the template-declared subset.
 
-import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
+import {
+  type LibraryEnvReads,
+  readLibraryEnvReads,
+  readRuntimeContractMetadata,
+} from "@suss/behavioral-ir";
 import { fileInCodeScope } from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
@@ -188,10 +192,32 @@ export function checkRuntimeConfig(
     }
   }
 
+  // A pack-declared library reads its variables from inside
+  // node_modules, so a declared name a marker covers counts as read.
+  const markers = summaries
+    .map(readLibraryEnvReads)
+    .filter((m): m is LibraryEnvReads => m !== undefined);
+  if (markers.length > 0) {
+    for (const s of scoped) {
+      for (const name of s.provided) {
+        if (markers.some((m) => libraryReads(m, name))) {
+          s.readNames.add(name);
+        }
+      }
+    }
+  }
+
   findings.push(...unusedFindings(scoped, collected.sawConfigReadEffect));
   findings.push(...contestedFindings(codeReads, contested, placed, byFile));
 
   return findings;
+}
+
+function libraryReads(marker: LibraryEnvReads, name: string): boolean {
+  if (marker.names?.includes(name) === true) {
+    return true;
+  }
+  return marker.prefixes?.some((prefix) => name.startsWith(prefix)) === true;
 }
 
 /**

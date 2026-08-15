@@ -1061,6 +1061,24 @@ export interface PatternPack {
    */
   requiresImport?: string[];
   /**
+   * Environment variables the pack's library reads from inside
+   * node_modules, where no walk ever looks. Declaring them keeps the
+   * checker from telling a template that a variable is unused when the
+   * library reads it on every invocation. The adapter emits one marker
+   * summary per entry whose `module` some project file imports, and
+   * the runtime-config pairing consults the markers before it accuses.
+   * The module match is a specifier prefix, so one entry covers a
+   * scoped family like `@aws-lambda-powertools/`.
+   */
+  libraryEnvVars?: Array<{
+    /** Module-specifier prefix the library's imports start with. */
+    module: string;
+    /** Env-var name prefixes the library reads, e.g. "POWERTOOLS_". */
+    prefixes?: string[];
+    /** Exact env-var names the library reads. */
+    names?: string[];
+  }>;
+  /**
    * Library wrappers that return the function they wrapped. The adapter
    * works this out on its own for a factory inside the project by reading
    * its body. A library wrapper's body is not there to read, so the

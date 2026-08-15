@@ -11,5 +11,6 @@
   "context": "AWS Lambda: second parameter of the handler signature",
   "statusCode": "API Gateway: proxy response envelope field",
   "body": "API Gateway: proxy response envelope field",
-  "batchItemFailures": "AWS Lambda: partial batch response field"
+  "batchItemFailures": "AWS Lambda: partial batch response field",
+  "POWERTOOLS_": "@aws-lambda-powertools: env-var prefix the library's configuration reads"
 }
