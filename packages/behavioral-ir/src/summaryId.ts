@@ -9,6 +9,10 @@
  * call this rather than keeping a copy, so the two cannot drift apart.
  */
 
+import { boundaryKey } from "@suss/ir-core";
+
+import type { BehavioralSummary } from "./index.js";
+
 export interface SummaryIdParts {
   /** What the summary's project calls itself, when anything does. */
   workspace: string | undefined;
@@ -23,6 +27,45 @@ export interface SummaryIdParts {
  * itself part of, the file it is in, and its export path when it has
  * one, or its name when it does not.
  */
+/**
+ * Extend only the ids that more than one summary ended up with, and
+ * leave the rest alone. An id nothing collides with stays short, and
+ * stays the same when the code around it moves. The boundary tells
+ * same-named summaries apart first, and the line number settles what
+ * the boundary cannot. The adapter runs this after assigning ids, and
+ * the parse boundary runs it over a backfilled v1 artifact, whose
+ * per-summary backfill can mint one id for two summaries.
+ */
+export function disambiguateSummaryIds(summaries: BehavioralSummary[]): void {
+  settleWith(summaries, (summary) =>
+    summary.identity.boundaryBinding === null
+      ? null
+      : `#${boundaryKey(summary.identity.boundaryBinding)}`,
+  );
+  settleWith(summaries, (summary) => `@${summary.location.range.start}`);
+}
+
+function settleWith(
+  summaries: BehavioralSummary[],
+  discriminator: (summary: BehavioralSummary) => string | null,
+): void {
+  const claimed = new Map<string, number>();
+  for (const summary of summaries) {
+    const id = summary.identity.id ?? "";
+    claimed.set(id, (claimed.get(id) ?? 0) + 1);
+  }
+
+  for (const summary of summaries) {
+    if ((claimed.get(summary.identity.id ?? "") ?? 0) <= 1) {
+      continue;
+    }
+    const extra = discriminator(summary);
+    if (extra !== null) {
+      summary.identity.id = `${summary.identity.id}${extra}`;
+    }
+  }
+}
+
 export function summaryIdFromParts(parts: SummaryIdParts): string {
   const reached =
     parts.exportPath !== null && parts.exportPath.length > 0

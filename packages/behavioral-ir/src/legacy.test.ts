@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseSummaries,
   parseSummary,
   SUMMARY_SCHEMA_VERSION,
   safeParseSummary,
@@ -169,5 +170,64 @@ describe("backfilling identity.id", () => {
       v1Summary({ identity: { exportPath: null, boundaryBinding: null } }),
     );
     expect(result.success).toBe(false);
+  });
+
+  it("settles two backfilled summaries of one function onto distinct ids", () => {
+    // One function bound to two boundaries writes two v1 summaries with
+    // the same name and file; the per-summary backfill mints one id for
+    // both, and the schema says ids are unique across a run.
+    const parsed = parseSummaries([
+      v1Summary({
+        identity: {
+          name: "Producer.handler",
+          exportPath: null,
+          boundaryBinding: {
+            transport: "http",
+            semantics: { name: "rest", method: "GET", path: "/a" },
+            recognition: "express",
+          },
+        },
+      }),
+      v1Summary({
+        location: {
+          file: "src/producer.ts",
+          range: { start: 40, end: 60 },
+          exportName: "handler",
+        },
+        identity: {
+          name: "Producer.handler",
+          exportPath: null,
+          boundaryBinding: {
+            transport: "http",
+            semantics: { name: "rest", method: "POST", path: "/a" },
+            recognition: "express",
+          },
+        },
+      }),
+    ]);
+    expect(parsed[0].identity.id).not.toBe(parsed[1].identity.id);
+  });
+
+  it("keeps the ids an artifact wrote for itself, colliding or not", () => {
+    const withOwnIds = [
+      v1Summary({
+        identity: {
+          id: "suss::src/producer.ts::Producer.handler",
+          name: "Producer.handler",
+          exportPath: null,
+          boundaryBinding: null,
+        },
+      }),
+      v1Summary({
+        identity: {
+          id: "suss::src/producer.ts::Producer.handler",
+          name: "Producer.handler",
+          exportPath: null,
+          boundaryBinding: null,
+        },
+      }),
+    ];
+    const parsed = parseSummaries(withOwnIds);
+    expect(parsed[0].identity.id).toBe(parsed[1].identity.id);
   });
 });

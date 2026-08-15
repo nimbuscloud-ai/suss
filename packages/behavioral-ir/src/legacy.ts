@@ -62,10 +62,10 @@ function normalizeBindingInPlace(binding: unknown): void {
 }
 
 /** A summary missing the fields the formula needs fails validation next. */
-function backfillIdentityId(input: LooseRecord): void {
+function backfillIdentityId(input: LooseRecord): boolean {
   const identity = input.identity;
   if (!isRecord(identity) || typeof identity.id === "string") {
-    return;
+    return false;
   }
   const name = typeof identity.name === "string" ? identity.name : undefined;
   const location = input.location;
@@ -74,7 +74,7 @@ function backfillIdentityId(input: LooseRecord): void {
       ? location.file
       : undefined;
   if (name === undefined || file === undefined) {
-    return;
+    return false;
   }
   const exportPath = Array.isArray(identity.exportPath)
     ? identity.exportPath.filter((p): p is string => typeof p === "string")
@@ -84,20 +84,50 @@ function backfillIdentityId(input: LooseRecord): void {
       ? location.workspace
       : undefined;
   identity.id = summaryIdFromParts({ workspace, file, name, exportPath });
+  return true;
+}
+
+/**
+ * Normalize every element and say whether any id was backfilled. A
+ * per-summary backfill can mint one id for two summaries of the same
+ * function, so the parse boundary settles the collisions afterward,
+ * and only then: an artifact that wrote its own ids keeps them.
+ */
+export function normalizeLegacyArray(input: unknown): {
+  value: unknown;
+  anyIdBackfilled: boolean;
+} {
+  if (!Array.isArray(input)) {
+    return { value: input, anyIdBackfilled: false };
+  }
+  let anyIdBackfilled = false;
+  const value = input.map((element) => {
+    const { value: normalized, idBackfilled } = normalizeOne(element);
+    anyIdBackfilled = anyIdBackfilled || idBackfilled;
+    return normalized;
+  });
+  return { value, anyIdBackfilled };
 }
 
 /** Mutates and returns its input, which a parse boundary owns. */
 export function normalizeLegacySummary(input: unknown): unknown {
+  return normalizeOne(input).value;
+}
+
+function normalizeOne(input: unknown): {
+  value: unknown;
+  idBackfilled: boolean;
+} {
   if (!isRecord(input)) {
-    return input;
+    return { value: input, idBackfilled: false };
   }
   const version =
     typeof input.schemaVersion === "number" ? input.schemaVersion : 1;
   if (version >= NULL_IDENTITY_VERSION) {
-    return input;
+    return { value: input, idBackfilled: false };
   }
 
-  backfillIdentityId(input);
+  const idBackfilled = backfillIdentityId(input);
 
   const identity = input.identity;
   if (isRecord(identity)) {
@@ -117,5 +147,5 @@ export function normalizeLegacySummary(input: unknown): unknown {
     }
   }
 
-  return input;
+  return { value: input, idBackfilled };
 }
