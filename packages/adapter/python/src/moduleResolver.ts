@@ -50,19 +50,42 @@ function isInsideAnyRoot(dir: string, roots: readonly string[]): boolean {
 function candidatesUnderRoot(root: string, dotted: string): string[] {
   if (dotted === "") {
     const initFile = path.join(root, "__init__.py");
-    return fs.existsSync(initFile) ? [initFile] : [];
+    return existsWithExactCase(initFile, 1) ? [initFile] : [];
   }
-  const base = path.join(root, ...dotted.split("."));
+  const segments = dotted.split(".");
+  const base = path.join(root, ...segments);
   const found: string[] = [];
   const moduleFile = `${base}.py`;
-  if (fs.existsSync(moduleFile)) {
+  if (existsWithExactCase(moduleFile, segments.length)) {
     found.push(moduleFile);
   }
   const packageFile = path.join(base, "__init__.py");
-  if (fs.existsSync(packageFile)) {
+  if (existsWithExactCase(packageFile, segments.length + 1)) {
     found.push(packageFile);
   }
   return found;
+}
+
+/**
+ * Whether the file exists under exactly this casing. fs.existsSync is
+ * case-insensitive on macOS and Windows, so a wrongly-cased import
+ * resolved locally and abstained on Linux, and the two disagreed
+ * (#188). Only the trailing segments the dotted path chose are
+ * compared, so a symlinked root keeps resolving.
+ */
+function existsWithExactCase(file: string, trailingSegments: number): boolean {
+  if (!fs.existsSync(file)) {
+    return false;
+  }
+  let real: string;
+  try {
+    real = fs.realpathSync.native(file);
+  } catch {
+    return false;
+  }
+  const tail = (p: string): string =>
+    p.split(path.sep).slice(-trailingSegments).join(path.sep);
+  return tail(real) === tail(file);
 }
 
 export function resolveAbsoluteModule(

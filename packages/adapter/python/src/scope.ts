@@ -119,7 +119,29 @@ const STATEMENT_BINDERS: Record<
   expression_statement: bindExpressionStatement,
   global_statement: bindGlobalStatement,
   nonlocal_statement: bindNonlocalStatement,
+  delete_statement: bindDeleteStatement,
 };
+
+/** `del foo` unbinds the name, so a later read abstains instead of resolving to what the import bound (#188). */
+function bindDeleteStatement(stmt: PyNode, scope: Scope): void {
+  const unbind = (node: PyNode | null): void => {
+    if (node === null) {
+      return;
+    }
+    if (node.type === "identifier") {
+      scope.bindings.delete(node.text);
+      return;
+    }
+    if (node.type === "expression_list") {
+      for (const child of node.namedChildren) {
+        unbind(child);
+      }
+    }
+  };
+  for (const child of stmt.namedChildren) {
+    unbind(child);
+  }
+}
 
 function bindStatement(stmt: PyNode, scope: Scope, ctx: BinderContext): void {
   const binder = STATEMENT_BINDERS[stmt.type];

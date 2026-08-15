@@ -186,3 +186,21 @@ describe("resolveModule", () => {
     expect(result.status).toBe("resolved");
   });
 });
+
+describe("resolveAbsoluteModule: casing", () => {
+  it("abstains on a wrongly-cased import instead of resolving on a case-keeping filesystem", () => {
+    write("root/myapp/orders.py");
+    const result = resolveAbsoluteModule("myapp.Orders", {
+      roots: [path.join(tmpDir, "root")],
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "external" });
+  });
+
+  it("abstains when a directory segment's casing is wrong", () => {
+    write("root/myapp/wrappers/restx.py");
+    const result = resolveAbsoluteModule("Myapp.wrappers.restx", {
+      roots: [path.join(tmpDir, "root")],
+    });
+    expect(result).toEqual({ status: "unresolved", reason: "external" });
+  });
+});

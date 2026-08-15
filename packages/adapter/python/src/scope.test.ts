@@ -214,3 +214,21 @@ describe("resolveName", () => {
     expect(resolveName(innerScope as never, "missing")).toBeNull();
   });
 });
+
+describe("bindModule: del", () => {
+  it("unbinds a deleted import, so a later read abstains", async () => {
+    const { binding } = await bind("import foo\ndel foo\n");
+    expect(resolveName(binding.moduleScope, "foo")).toBeNull();
+  });
+
+  it("unbinds every name a del lists", async () => {
+    const { binding } = await bind("a = 1\nb = 2\ndel a, b\n");
+    expect(resolveName(binding.moduleScope, "a")).toBeNull();
+    expect(resolveName(binding.moduleScope, "b")).toBeNull();
+  });
+
+  it("keeps a name reassigned after the del", async () => {
+    const { binding } = await bind("import foo\ndel foo\nfoo = 1\n");
+    expect(resolveName(binding.moduleScope, "foo")?.kind).toBe("assignment");
+  });
+});
