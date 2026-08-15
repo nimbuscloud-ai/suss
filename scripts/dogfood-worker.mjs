@@ -59,6 +59,10 @@ try {
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: pkg.tsconfig,
     frameworks: [pack],
+    // The dogfood counts are a gate, and reading a cache warmed by a
+    // different tree can pass the wrong tree (#236). The run is rare
+    // enough that extracting from scratch costs little.
+    cacheDir: null,
     onExtractionReport: (r) => {
       report = r;
     },
