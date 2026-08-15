@@ -452,6 +452,73 @@ describe("computePathConditions: switch lowering", () => {
     ]);
   });
 
+  it("sees the branches inside a braced case", () => {
+    const fn = getFunction(`
+      export function handler(kind: string, flag: boolean) {
+        switch (kind) {
+          case "b": {
+            if (flag) {
+              return { status: 404 };
+            }
+            break;
+          }
+        }
+        return { status: 200 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    // The braces only scope the case; the if inside branches the paths.
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'positive:explicit:kind === "b" ∧ positive:explicit:flag',
+    ]);
+  });
+
+  it("keeps a trailing break written inside the case's braces", () => {
+    const fn = getFunction(`
+      export function handler(kind: string, log: (m: string) => void) {
+        switch (kind) {
+          case "a": {
+            const label = "a";
+            log(label);
+            break;
+          }
+          default:
+            return { status: 400 };
+        }
+        return { status: 200 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      'positive:explicit:kind === "a"',
+    ]);
+  });
+
+  it("sees the conditions of a switch nested in a braced case", () => {
+    const fn = getFunction(`
+      export function handler(kind: string, log: (m: string) => void) {
+        switch (kind) {
+          case "b": {
+            switch (kind) {
+              case "x":
+                return { status: 404 };
+              default:
+                log("other");
+            }
+          }
+        }
+        return { status: 200 };
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    const sigs = pathSigs(result?.byTerminal.get(terminals[0]));
+    expect(sigs?.[0]).toContain('kind === "b"');
+    expect(sigs?.[0]).toContain('kind === "x"');
+  });
+
   it("degrades on fallthrough into a non-empty clause", () => {
     const fn = getFunction(`
       export function handler(kind: string, log: (m: string) => void) {
@@ -728,8 +795,8 @@ describe("computePathConditions, no body to read", () => {
   });
 });
 
-describe("computePathConditions, a block-wrapped case body ending in break", () => {
-  it("degrades even when the block-wrapped clause is the only one (no default follows)", () => {
+describe("computePathConditions, a braced case body splices into the clause", () => {
+  it("models the only clause when its braces end in a break", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string } }, res: any) {
         switch (req.query.kind) {
@@ -743,13 +810,14 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
     `);
     const terminals = returnTerminals(fn);
     const result = computePathConditions(fn, terminals);
-    const [only] = result.byTerminal.get(terminals[0]) ?? [];
-    expect(only?.[only.length - 1]?.sourceText).toContain(
-      "unmodeled control flow (non-trailing break in switch clause)",
-    );
+    // The return is reached matched-and-broken or unmatched.
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'negative:explicit:req.query.kind === "a"',
+      'positive:explicit:req.query.kind === "a"',
+    ]);
   });
 
-  it("degrades the whole function, matching the legacy scanner exactly", () => {
+  it("models a braced break beside a returning default", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string } }, res: any) {
         switch (req.query.kind) {
@@ -764,17 +832,16 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
       }
     `);
     const terminals = returnTerminals(fn);
-    expect(terminals).toHaveLength(2);
     const result = computePathConditions(fn, terminals);
-    for (const terminal of terminals) {
-      const [only] = result.byTerminal.get(terminal) ?? [];
-      expect(only?.[only.length - 1]?.sourceText).toContain(
-        "unmodeled control flow (non-trailing break in switch clause)",
-      );
-    }
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'negative:explicit:req.query.kind === "a"',
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      'positive:explicit:req.query.kind === "a"',
+    ]);
   });
 
-  it("degrades when a sibling statement sits before the block", () => {
+  it("models a sibling statement ahead of the braces", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string } }, res: any) {
         switch (req.query.kind) {
@@ -794,17 +861,19 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
       }
     `);
     const terminals = returnTerminals(fn);
-    expect(terminals).toHaveLength(3);
     const result = computePathConditions(fn, terminals);
-    for (const terminal of terminals) {
-      const [only] = result.byTerminal.get(terminal) ?? [];
-      expect(only?.[only.length - 1]?.sourceText).toContain(
-        "unmodeled control flow (non-trailing break in switch clause)",
-      );
-    }
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'positive:explicit:req.query.kind === "a"',
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[1]))).toEqual([
+      'negative:earlyReturn:req.query.kind === "a" ∧ negative:explicit:req.query.kind === "b"',
+    ]);
+    expect(pathSigs(result?.byTerminal.get(terminals[2]))).toEqual([
+      'positive:explicit:req.query.kind === "b"',
+    ]);
   });
 
-  it("degrades when the block is nested two deep", () => {
+  it("models a block nested two deep the same way", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string } }, res: any) {
         switch (req.query.kind) {
@@ -824,17 +893,13 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
       }
     `);
     const terminals = returnTerminals(fn);
-    expect(terminals).toHaveLength(3);
     const result = computePathConditions(fn, terminals);
-    for (const terminal of terminals) {
-      const [only] = result.byTerminal.get(terminal) ?? [];
-      expect(only?.[only.length - 1]?.sourceText).toContain(
-        "unmodeled control flow (non-trailing break in switch clause)",
-      );
-    }
+    expect(pathSigs(result?.byTerminal.get(terminals[2]))).toEqual([
+      'positive:explicit:req.query.kind === "b"',
+    ]);
   });
 
-  it("degrades when the break sits inside an if inside a block", () => {
+  it("still degrades on a break behind an if inside the braces", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string }; x: boolean }, res: any) {
         switch (req.query.kind) {
@@ -862,7 +927,7 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
     }
   });
 
-  it("degrades on a break three blocks deep in the middle of the clause", () => {
+  it("still degrades on a mid-clause break, however many blocks wrap it", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string } }, res: any) {
         switch (req.query.kind) {
@@ -896,7 +961,7 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
     }
   });
 
-  it("degrades a block-wrapped continue inside a loop-wrapped switch, matching the legacy fallthrough reading", () => {
+  it("lets a braced continue end its clause inside a loop", () => {
     const fn = getFunction(`
       export function handler(items: string[], res: any) {
         for (const item of items) {
@@ -912,19 +977,11 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
       }
     `);
     const terminals = returnTerminals(fn);
-    expect(terminals).toHaveLength(2);
     const result = computePathConditions(fn, terminals);
-    for (const terminal of terminals) {
-      const [only] = result.byTerminal.get(terminal) ?? [];
-      // A block hiding a continue is never recognized as ending the
-      // clause's path (legacy's stepStatement dispatch never looks
-      // inside a block either), so it reads the same as any other
-      // non-empty clause with no trailing break: unsafe to fall
-      // through into whatever clause follows.
-      expect(only?.[only.length - 1]?.sourceText).toContain(
-        "unmodeled control flow (fallthrough into a non-empty switch clause)",
-      );
-    }
+    // The 400 needs a non-skip item; all-skip iterations reach the 200.
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      'positive:explicit:some iteration of: for (const item of items) ∧ negative:explicit:item === "skip"',
+    ]);
   });
 
   it("does not degrade on an empty block ahead of a genuine trailing break", () => {
@@ -942,15 +999,12 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
     `);
     const terminals = returnTerminals(fn);
     const result = computePathConditions(fn, terminals);
-    // The default's return is gated on kind !== "a"; the empty block
-    // ahead of the trailing break contributes nothing, so "a" reads
-    // exactly as a bare `case "a": break;` would.
     expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
       'negative:explicit:req.query.kind === "a"',
     ]);
   });
 
-  it("keeps legacy's single flat transition for a block-wrapped nested switch with no stray break and no direct terminal", () => {
+  it("models the branches of a switch nested in a braced case", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string } }, res: any) {
         switch (req.query.kind) {
@@ -969,21 +1023,10 @@ describe("computePathConditions, a block-wrapped case body ending in break", () 
     `);
     const terminals = returnTerminals(fn);
     const result = computePathConditions(fn, terminals);
-    const paths = pathSigs(result?.byTerminal.get(terminals[0]));
-    // Legacy never looked inside a block for control-flow structure,
-    // only for a break its descendant scan could find. The nested
-    // switch inside the block owns its own break (switches are
-    // skipped by that scan), so the clause comes out as one flat
-    // "kind === b" match, with no trace of the inner switch's own
-    // "x" / default distinction. The whole block is one pass-through,
-    // and since nothing inside it returns or throws, the negation
-    // comes out as an ordinary explicit non-match, not an early return.
-    expect(paths).toEqual([
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
       'negative:explicit:req.query.kind === "b"',
-      'positive:explicit:req.query.kind === "b"',
+      'positive:explicit:req.query.kind === "b" ∧ negative:explicit:req.query.kind === "x"',
+      'positive:explicit:req.query.kind === "b" ∧ positive:explicit:req.query.kind === "x"',
     ]);
-    for (const path of paths) {
-      expect(path).not.toContain('=== "x"');
-    }
   });
 });

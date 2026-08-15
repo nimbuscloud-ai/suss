@@ -3,7 +3,7 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 415,
-    "internal": 1654,
+    "internal": 1656,
     "consumers": 651,
     "pairs": 643
   },
@@ -23,7 +23,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 32,
-      "internal": 592,
+      "internal": 593,
       "consumers": 35
     },
     "packages/behavioral-ir": {
@@ -155,7 +155,7 @@
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
       "exports": 4,
-      "internal": 13,
+      "internal": 14,
       "consumers": 9
     },
     "packages/framework/aws-sqs": {
