@@ -40,10 +40,12 @@ function writeConfig(contents: string): string {
   return file;
 }
 
-// graphql-ruby is the only pack that refuses to run without per-project
-// config, since only the project can say what its directory layout is.
+// These packs refuse to run without per-project config, since only the
+// project can say what its layout is or which database it talks to.
 const CONFIG_FOR: Record<string, unknown> = {
   "graphql-ruby": { root: "app/graphql" },
+  sqlalchemy: { storageSystem: "postgres" },
+  activerecord: { storageSystem: "postgres" },
 };
 
 async function loadAnyPack(name: string): Promise<{ name: string }> {

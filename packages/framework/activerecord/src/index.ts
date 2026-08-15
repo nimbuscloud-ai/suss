@@ -66,6 +66,13 @@ export function withActiveRecord(
 export function activeRecordFramework(
   options: ActiveRecordPackOptions,
 ): RubyPack {
+  // The CLI passes on a config somebody wrote by hand, with nothing
+  // typed in front of it, so it can arrive here unset.
+  if (typeof options?.storageSystem !== "string") {
+    throw new Error(
+      "it needs `storageSystem`, which database is behind the connection: postgres, mysql, or sqlite. ActiveRecord talks to all of them and database.yml settles which, so the pack cannot.",
+    );
+  }
   return {
     name: "activerecord",
     protocol: options.storageSystem,
@@ -73,3 +80,5 @@ export function activeRecordFramework(
     storage: activeRecordStorage(options),
   };
 }
+
+export default activeRecordFramework;

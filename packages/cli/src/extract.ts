@@ -163,6 +163,8 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   fastapi: "@suss/framework-fastapi",
   "flask-restx": "@suss/framework-flask-restx",
   "graphql-ruby": "@suss/framework-graphql-ruby",
+  sqlalchemy: "@suss/framework-sqlalchemy",
+  activerecord: "@suss/framework-activerecord",
 };
 
 /** Packs that read something other than TypeScript. */
@@ -170,6 +172,8 @@ const PACK_LANGUAGE: Record<string, Language> = {
   fastapi: "python",
   "flask-restx": "python",
   "graphql-ruby": "ruby",
+  sqlalchemy: "python",
+  activerecord: "ruby",
 };
 
 /** Which language's adapter reads the code this pack describes. */
