@@ -22,7 +22,7 @@ import {
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 import { codeScopePath, ecsContainerInstanceName } from "@suss/ir-core";
-import { refTarget } from "@suss/manifest-aws";
+import { parseHandler, refTarget } from "@suss/manifest-aws";
 
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
 
@@ -354,13 +354,16 @@ function readEcsEnvironmentList(raw: unknown): string[] {
 function readCodeScope(resource: CloudFormationResource): {
   kind: "codeUri" | "unknown";
   path?: string;
+  entry?: string;
 } {
   // SAM authoring shape: Properties.CodeUri points at a directory
   // (or a single file). Only string values are useful, Ref / Fn:Sub
   // objects can't be statically resolved to a path.
   const codeUri = resource.Properties?.CodeUri;
   if (typeof codeUri === "string" && codeUri.length > 0) {
-    return { kind: "codeUri", path: codeScopePath(codeUri) };
+    const path = codeScopePath(codeUri);
+    const entry = handlerEntry(resource, path);
+    return { kind: "codeUri", path, ...(entry !== null ? { entry } : {}) };
   }
   // Escape hatch for raw CFN / authored projects without CodeUri:
   // a `Metadata.SussCodeScope` annotation lets the user tell the
@@ -370,4 +373,27 @@ function readCodeScope(resource: CloudFormationResource): {
     return { kind: "codeUri", path: codeScopePath(metaScope) };
   }
   return { kind: "unknown" };
+}
+
+/**
+ * The file this runtime enters, from the resource's `Handler`, joined
+ * under the CodeUri and written without an extension the way SAM
+ * writes it. Eleven functions built from one CodeUri stay apart only
+ * through this: each entry's import closure is that function's scope.
+ */
+function handlerEntry(
+  resource: CloudFormationResource,
+  scopePath: string,
+): string | null {
+  const handlerRaw = resource.Properties?.Handler;
+  if (typeof handlerRaw !== "string") {
+    return null;
+  }
+  const parsed = parseHandler(handlerRaw);
+  if (parsed === null) {
+    return null;
+  }
+  return scopePath === "" || scopePath === "."
+    ? parsed.modulePath
+    : `${scopePath.replace(/\/$/, "")}/${parsed.modulePath}`;
 }

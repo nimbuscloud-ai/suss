@@ -111,6 +111,29 @@ describe("buildRuntimeConfigSummaries — Lambda", () => {
     expect(codeScope.path).toBe("src/myFn");
   });
 
+  it("records the Handler entry under the CodeUri", () => {
+    const summaries = pickRuntimeConfig(
+      cloudFormationToSummaries({
+        Resources: {
+          MyFn: {
+            Type: "AWS::Serverless::Function",
+            Properties: {
+              CodeUri: "./src",
+              Handler: "handlers/confirm.handler",
+              Environment: { Variables: { OK: "yes" } },
+            },
+          },
+        },
+      }),
+    );
+    const codeScope = summaries[0].metadata?.codeScope as {
+      kind: string;
+      path?: string;
+      entry?: string;
+    };
+    expect(codeScope.entry).toBe("src/handlers/confirm");
+  });
+
   it("falls back to Metadata.SussCodeScope when no CodeUri is set", () => {
     const summaries = pickRuntimeConfig(
       cloudFormationToSummaries({

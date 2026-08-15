@@ -101,7 +101,11 @@ describe("the serverless fixture", () => {
   it("scopes a function's code to the service directory the framework packages", () => {
     expect(
       named(summariesFromFixture(), "createOrder").metadata?.codeScope,
-    ).toEqual({ kind: "codeUri", path: "." });
+    ).toEqual({
+      kind: "codeUri",
+      path: ".",
+      entry: "src/handlers/createOrder",
+    });
   });
 
   it("joins the sqs event to the queue the resources block declares", () => {

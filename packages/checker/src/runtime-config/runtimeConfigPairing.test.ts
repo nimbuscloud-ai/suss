@@ -9,7 +9,7 @@ import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 function makeRuntimeProvider(opts: {
   instanceName: string;
   envVars: string[];
-  codeScope: { kind: "codeUri" | "unknown"; path?: string };
+  codeScope: { kind: "codeUri" | "unknown"; path?: string; entry?: string };
   namesUnit?: boolean;
   envVarSources?: Record<string, "template" | "globals" | "platform">;
 }): BehavioralSummary {
@@ -58,6 +58,8 @@ function makeCodeSummary(opts: {
   file: string;
   envReads: string[];
   runsInUnit?: string;
+  moduleImports?: string[];
+  defaulted?: boolean;
 }): BehavioralSummary {
   const transition: Transition = {
     id: "t0",
@@ -78,7 +80,7 @@ function makeCodeSummary(opts: {
       interaction: {
         class: "config-read" as const,
         name: varName,
-        defaulted: false,
+        defaulted: opts.defaulted === true,
       },
     })),
     location: { start: 5, end: 10 },
@@ -108,6 +110,9 @@ function makeCodeSummary(opts: {
     transitions: [transition],
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
+    ...(opts.moduleImports !== undefined
+      ? { metadata: { moduleImports: opts.moduleImports } }
+      : {}),
   };
 }
 
@@ -658,6 +663,111 @@ describe("checkRuntimeConfig", () => {
       const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
       expect(unused).toHaveLength(1);
       expect(unused[0].description).toContain("INDEX_TABLE_NAME");
+    });
+  });
+
+  describe("runtimes scoped by their handler entry's import closure", () => {
+    const runtimeA = makeRuntimeProvider({
+      instanceName: "fnA",
+      envVars: ["A_TABLE"],
+      codeScope: { kind: "codeUri", path: "src/", entry: "src/a" },
+    });
+    const runtimeB = makeRuntimeProvider({
+      instanceName: "fnB",
+      envVars: ["B_TABLE", "SHARED_SECRET"],
+      codeScope: { kind: "codeUri", path: "src/", entry: "src/b" },
+    });
+    const entryA = makeCodeSummary({
+      name: "aHandler",
+      file: "src/a.ts",
+      envReads: [],
+      moduleImports: ["src/helperA.ts", "src/shared.ts"],
+    });
+    const entryB = makeCodeSummary({
+      name: "bHandler",
+      file: "src/b.ts",
+      envReads: [],
+      moduleImports: ["src/shared.ts"],
+    });
+
+    it("pairs a helper with the one runtime whose entry imports it", () => {
+      const helperA = makeCodeSummary({
+        name: "helperA",
+        file: "src/helperA.ts",
+        envReads: ["MISSING_VAR"],
+      });
+      const findings = checkRuntimeConfig([
+        runtimeA,
+        runtimeB,
+        entryA,
+        entryB,
+        helperA,
+      ]);
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown).toHaveLength(1);
+      expect(unknown[0].description).toContain("fnA");
+      const unplaced = findings.filter((f) => f.kind === "runtimeScopeUnknown");
+      expect(unplaced).toHaveLength(0);
+    });
+
+    it("pairs a file in both closures with both runtimes", () => {
+      const shared = makeCodeSummary({
+        name: "shared",
+        file: "src/shared.ts",
+        envReads: ["SHARED_SECRET"],
+      });
+      const findings = checkRuntimeConfig([
+        runtimeA,
+        runtimeB,
+        entryA,
+        entryB,
+        shared,
+      ]);
+      // fnB supplies it; fnA does not, and the shared module loads in
+      // both, so only fnA has the gap.
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown).toHaveLength(1);
+      expect(unknown[0].description).toContain("fnA");
+    });
+
+    it("stays quiet about an undeclared var the code reads with a fallback", () => {
+      const helperA = makeCodeSummary({
+        name: "helperA",
+        file: "src/helperA.ts",
+        envReads: ["MISSING_VAR"],
+        defaulted: true,
+      });
+      const findings = checkRuntimeConfig([
+        runtimeA,
+        runtimeB,
+        entryA,
+        entryB,
+        helperA,
+      ]);
+      expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+        [],
+      );
+    });
+
+    it("keeps the unused accusation away from a var read outside every closure", () => {
+      const orphan = makeCodeSummary({
+        name: "orphan",
+        file: "src/orphan.ts",
+        envReads: ["A_TABLE"],
+      });
+      const findings = checkRuntimeConfig([
+        runtimeA,
+        runtimeB,
+        entryA,
+        entryB,
+        orphan,
+      ]);
+      const unused = findings.filter((f) => f.kind === "boundaryFieldUnused");
+      expect(unused.map((f) => f.description)).not.toContainEqual(
+        expect.stringContaining("A_TABLE"),
+      );
+      const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+      expect(unknown).toHaveLength(0);
     });
   });
 });
