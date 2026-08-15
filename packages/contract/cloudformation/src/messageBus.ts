@@ -802,6 +802,7 @@ function buildEventBridgeSummaries(
       recognition,
       emitProvider,
       out: summaries,
+      ...ruleEnablement(resource.Properties?.State),
     });
   }
 
@@ -858,6 +859,7 @@ function buildEventBridgeSummaries(
         recognition,
         emitProvider,
         out: summaries,
+        ...ruleEnablement(eventDef.Properties?.State),
       });
     }
   }
@@ -872,6 +874,8 @@ interface EmitRuleOpts {
   targets: RuleTarget[];
   sourceFile: string;
   recognition: string;
+  /** What the rule's State said, when it said anything (#207). */
+  enabled?: boolean;
   emitProvider: (
     channel: string,
     eventBus: string,
@@ -895,6 +899,7 @@ function emitRuleSummaries(opts: EmitRuleOpts): void {
           sourceFile: opts.sourceFile,
           recognition: opts.recognition,
           unresolvableReason: opts.reduction.reason,
+          ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
         }),
       );
     }
@@ -915,6 +920,7 @@ function emitRuleSummaries(opts: EmitRuleOpts): void {
           detailType,
           sourceFile: opts.sourceFile,
           recognition: opts.recognition,
+          ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
         }),
       );
     }

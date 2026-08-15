@@ -635,6 +635,79 @@ describe("buildMessageBusSummaries — EventBridge", () => {
     expect(readMessageBusMetadata(consumer)?.enabled).toBe(false);
   });
 
+  it("says a pattern-routed rule deployed DISABLED, the same way a schedule says it", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderHandler: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/orders/" },
+        },
+        OrderPlacedRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            State: "DISABLED",
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["OrderHandler", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+
+    expect(resolutionOf(consumer)).toBe("exact");
+    expect(readMessageBusMetadata(consumer)?.enabled).toBe(false);
+  });
+
+  it("says a SAM EventBridgeRule event deployed DISABLED", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderHandler: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/orders/",
+            Events: {
+              OnOrderPlaced: {
+                Type: "EventBridgeRule",
+                Properties: {
+                  Pattern: { "detail-type": ["OrderPlaced"] },
+                  State: "DISABLED",
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+
+    expect(readMessageBusMetadata(consumer)?.enabled).toBe(false);
+  });
+
+  it("says nothing about a pattern-routed rule's enablement when the template says nothing", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderHandler: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/orders/" },
+        },
+        OrderPlacedRule: {
+          Type: "AWS::Events::Rule",
+          Properties: {
+            EventPattern: { "detail-type": ["OrderPlaced"] },
+            Targets: [
+              { Arn: { "Fn::GetAtt": ["OrderHandler", "Arn"] }, Id: "t1" },
+            ],
+          },
+        },
+      },
+    });
+    const consumer = eventBridgeConsumers(out)[0] ?? raise("no consumer");
+
+    expect(readMessageBusMetadata(consumer)?.enabled).toBeUndefined();
+  });
+
   it("says nothing about enablement when the template says nothing", () => {
     const out = cloudFormationToSummaries({
       Resources: {
