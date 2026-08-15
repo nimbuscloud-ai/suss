@@ -128,7 +128,24 @@ describe("judgePythonProgram", () => {
     expect(judgment.findings[0].detail).toContain("418");
   });
 
-  it("never penalizes a pathless summary over a served route", () => {
+  it("never penalizes a pathless summary over a route the generator expects abstention on", () => {
+    const judgment = judgePythonProgram({
+      intents: [
+        intentOf({
+          name: "get_a",
+          servedPaths: ["/m/a"],
+          expectation: "abstain",
+        }),
+      ],
+      summaries: [summaryOf({ name: "get_a", method: "GET", path: null })],
+      endpoints: [served("/m/a", "get_a")],
+      observationError: null,
+    });
+    expect(judgment.findings).toEqual([]);
+    expect(judgment.abstainedIntents).toBe(1);
+  });
+
+  it("flags an abstention where the generator expected a claim, so a quieter reading fails", () => {
     const judgment = judgePythonProgram({
       intents: [
         intentOf({
@@ -141,8 +158,8 @@ describe("judgePythonProgram", () => {
       endpoints: [served("/m/a", "get_a")],
       observationError: null,
     });
-    expect(judgment.findings).toEqual([]);
-    expect(judgment.abstainedIntents).toBe(1);
+    expect(judgment.findings.map((f) => f.verdict)).toEqual(["missingClaim"]);
+    expect(judgment.findings[0].detail).toContain("get_a");
   });
 
   it("accepts a silently dropped route only when the generated shape is a documented abstention", () => {
@@ -168,7 +185,10 @@ describe("judgePythonProgram", () => {
       endpoints: [served("/a", "A.get")],
       observationError: null,
     });
-    expect(missed.findings.map((f) => f.verdict)).toEqual(["uncovered"]);
+    expect(missed.findings.map((f) => f.verdict)).toEqual([
+      "uncovered",
+      "missingClaim",
+    ]);
   });
 
   it("reports a served route no intent names as harnessFailure, not a finding", () => {

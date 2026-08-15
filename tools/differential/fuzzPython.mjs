@@ -50,6 +50,7 @@ const totals = {
   abstained: 0,
   falseClaims: 0,
   uncovered: 0,
+  missingClaims: 0,
   harnessFailures: 0,
 };
 const perFramework = new Map();
@@ -66,6 +67,7 @@ for (let offset = 0; offset < specs.length; offset += BATCH_SIZE) {
       abstained: 0,
       falseClaims: 0,
       uncovered: 0,
+      missingClaims: 0,
       harnessFailures: 0,
     };
     bucket.programs += 1;
@@ -91,6 +93,10 @@ for (let offset = 0; offset < specs.length; offset += BATCH_SIZE) {
         totals.uncovered += 1;
         bucket.uncovered += 1;
       }
+      if (finding.verdict === "missingClaim") {
+        totals.missingClaims += 1;
+        bucket.missingClaims += 1;
+      }
       if (finding.verdict === "harnessFailure") {
         totals.harnessFailures += 1;
         bucket.harnessFailures += 1;
@@ -110,6 +116,7 @@ for (const [framework, bucket] of perFramework) {
     `${framework}: ${bucket.programs} programs, ${bucket.intents} routes, ` +
       `${bucket.claimed} claimed, ${bucket.abstained} abstained (${(rate * 100).toFixed(1)}%), ` +
       `falseClaims ${bucket.falseClaims}, uncovered ${bucket.uncovered}, ` +
+      `missingClaims ${bucket.missingClaims}, ` +
       `harness failures ${bucket.harnessFailures}`,
   );
 }
@@ -118,7 +125,8 @@ const abstentionRate =
 console.log(
   `total: ${totals.programs} programs in ${seconds.toFixed(1)}s, ` +
     `${totals.intents} routes, falseClaim count ${totals.falseClaims}, ` +
-    `uncovered ${totals.uncovered}, harness failures ${totals.harnessFailures}, ` +
+    `uncovered ${totals.uncovered}, missingClaims ${totals.missingClaims}, ` +
+    `harness failures ${totals.harnessFailures}, ` +
     `abstention rate ${totals.abstained}/${totals.intents} (${(abstentionRate * 100).toFixed(1)}%)`,
 );
 
@@ -128,4 +136,4 @@ if (failingPrograms > 0) {
   );
   process.exit(1);
 }
-console.log("no false claims, nothing uncovered");
+console.log("no false claims, nothing uncovered, no missing claims");
