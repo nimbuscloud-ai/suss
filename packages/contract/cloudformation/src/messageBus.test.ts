@@ -1379,6 +1379,93 @@ describe("buildMessageBusSummaries — SNS", () => {
     });
   });
 
+  it("says a SqsSubscription: true event consumes through a queue SAM manages", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrderEvents: {
+                Type: "SNS",
+                Properties: {
+                  Topic: { Ref: "OrderEvents" },
+                  SqsSubscription: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = snsConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "OrderEvents",
+    });
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      deliveredThrough: "sqs",
+      queue: "<sam-managed>",
+    });
+  });
+
+  it("says which declared queue a map-form SqsSubscription routes through", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        OrderQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrderEvents: {
+                Type: "SNS",
+                Properties: {
+                  Topic: { Ref: "OrderEvents" },
+                  SqsSubscription: {
+                    QueueArn: { "Fn::GetAtt": ["OrderQueue", "Arn"] },
+                    QueueUrl: { Ref: "OrderQueue" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = snsConsumers(out)[0] ?? raise("no consumer");
+    expect(consumer.metadata?.messageBus).toMatchObject({
+      deliveredThrough: "sqs",
+      queue: "OrderQueue",
+    });
+  });
+
+  it("adds no delivery keys to a direct SNS subscription", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrderEvents: { Type: "AWS::SNS::Topic", Properties: {} },
+        OrderProcessor: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/order-processor/",
+            Events: {
+              FromOrderEvents: {
+                Type: "SNS",
+                Properties: { Topic: { Ref: "OrderEvents" } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = snsConsumers(out)[0] ?? raise("no consumer");
+    const metadata = consumer.metadata?.messageBus as Record<string, unknown>;
+    expect(metadata.deliveredThrough).toBeUndefined();
+    expect(metadata.queue).toBeUndefined();
+  });
+
   it("does not resolve a malformed SNS ARN with an empty region segment", () => {
     // A dropped region segment must not fall through to the bare
     // topic name: that name can coincidentally collide with an

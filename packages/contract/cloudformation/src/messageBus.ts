@@ -194,6 +194,7 @@ export function buildMessageBusSummaries(
             label: eventName,
             topicId,
             filterPolicy: eventDef.Properties?.FilterPolicy,
+            sqsSubscription: eventDef.Properties?.SqsSubscription,
             sourceFile,
             recognition,
           }),
@@ -1164,8 +1165,31 @@ interface SnsLambdaConsumerOpts {
   /** CFN logical id of the topic, also the consumer's channel. */
   topicId: string;
   filterPolicy: unknown;
+  /** A SAM event's SqsSubscription value, which puts a queue on the wire between the topic and the function (#154). */
+  sqsSubscription?: unknown;
   sourceFile: string;
   recognition: string;
+}
+
+/**
+ * What SqsSubscription says about the delivery leg. `true` makes SAM
+ * create a queue that exists only in the deployed stack; the map form
+ * points at a queue the template declares. Either way the function
+ * consumes the queue, not the topic, so the summary says so rather
+ * than hiding a resource a reader of the stack will meet.
+ */
+function sqsDeliveryOf(
+  sqsSubscription: unknown,
+): { deliveredThrough: "sqs"; queue: string } | null {
+  if (sqsSubscription === undefined || sqsSubscription === false) {
+    return null;
+  }
+  if (sqsSubscription === true) {
+    return { deliveredThrough: "sqs", queue: "<sam-managed>" };
+  }
+  const record = sqsSubscription as Record<string, unknown>;
+  const queue = refTarget(record.QueueArn ?? record.QueueUrl);
+  return { deliveredThrough: "sqs", queue: queue ?? "<unresolved>" };
 }
 
 /**
@@ -1183,6 +1207,7 @@ function buildSnsLambdaConsumerSummary(
 ): BehavioralSummary {
   const codeScope = resolveCodeScope(opts.lambdaResource);
   const resolution = reduceFilterPolicy(opts.filterPolicy);
+  const delivery = sqsDeliveryOf(opts.sqsSubscription);
   return {
     kind: "consumer",
     location: {
@@ -1215,6 +1240,7 @@ function buildSnsLambdaConsumerSummary(
         ...(resolution.kind === "unresolvable"
           ? { unresolvableReason: resolution.reason }
           : {}),
+        ...(delivery ?? {}),
       },
     ),
   };

@@ -58,6 +58,13 @@ export const MessageBusMetadataSchema = z.object({
    * means the manifest did not say, and the platform default is on.
    */
   enabled: z.boolean().optional(),
+  /**
+   * "sqs" when an SNS subscription delivers through a queue rather
+   * than invoking the function directly, the SAM SqsSubscription
+   * shape. The `queue` field then says which queue, or
+   * "<sam-managed>" for the one SAM creates outside the template.
+   */
+  deliveredThrough: z.literal("sqs").optional(),
   /** Whether a declared queue is FIFO. */
   fifoQueue: z.boolean().optional(),
   /** Whether a declared SNS topic is FIFO. */
