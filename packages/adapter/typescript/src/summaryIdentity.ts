@@ -16,8 +16,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { summaryIdFromParts } from "@suss/behavioral-ir";
-import { boundaryKey } from "@suss/ir-core";
+import {
+  disambiguateSummaryIds,
+  summaryIdFromParts,
+} from "@suss/behavioral-ir";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -82,39 +84,9 @@ export function nameSummaries(
   // what decides which summaries pair with each other. An anonymous
   // function has no name to start from, so when the boundary does not
   // separate them either, the line number does.
-  settleWith(summaries, (summary) =>
-    summary.identity.boundaryBinding === null
-      ? null
-      : `#${boundaryKey(summary.identity.boundaryBinding)}`,
-  );
-  settleWith(summaries, (summary) => `@${summary.location.range.start}`);
+  disambiguateSummaryIds(summaries);
 
   nameWhatEachCallReaches(summaries);
-}
-
-/**
- * Extend only the ids that more than one summary ended up with, and
- * leave the rest alone. An id nothing collides with stays short, and
- * stays the same when the code around it moves.
- */
-function settleWith(
-  summaries: BehavioralSummary[],
-  discriminator: (summary: BehavioralSummary) => string | null,
-): void {
-  const claimed = new Map<string, number>();
-  for (const summary of summaries) {
-    const id = summary.identity.id ?? "";
-    claimed.set(id, (claimed.get(id) ?? 0) + 1);
-  }
-  for (const summary of summaries) {
-    if ((claimed.get(summary.identity.id ?? "") ?? 0) <= 1) {
-      continue;
-    }
-    const extra = discriminator(summary);
-    if (extra !== null) {
-      summary.identity.id = `${summary.identity.id}${extra}`;
-    }
-  }
 }
 
 /** Relative to the project, so the id survives moving the checkout. */

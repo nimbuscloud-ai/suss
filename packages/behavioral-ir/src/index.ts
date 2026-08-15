@@ -11,7 +11,7 @@
  * promises that path will keep working.
  */
 
-import { normalizeLegacySummary } from "./legacy.js";
+import { normalizeLegacyArray, normalizeLegacySummary } from "./legacy.js";
 import {
   BehavioralSummaryArraySchema,
   BehavioralSummarySchema,
@@ -36,6 +36,7 @@ import {
   type TransitionSchema,
   type ValueRefSchema,
 } from "./schemas.js";
+import { disambiguateSummaryIds } from "./summaryId.js";
 
 import type { z } from "zod";
 
@@ -103,7 +104,11 @@ export {
   type RoutingMatchRecord,
   rootDocumentLabel,
 } from "./routing.js";
-export { type SummaryIdParts, summaryIdFromParts } from "./summaryId.js";
+export {
+  disambiguateSummaryIds,
+  type SummaryIdParts,
+  summaryIdFromParts,
+} from "./summaryId.js";
 
 export type {
   BoundaryBinding,
@@ -237,17 +242,23 @@ export function safeParseSummary(
  * for non-throwing behavior.
  */
 export function parseSummaries(input: unknown): BehavioralSummary[] {
-  return BehavioralSummaryArraySchema.parse(normalizeLegacyArray(input));
+  const { value, anyIdBackfilled } = normalizeLegacyArray(input);
+  const parsed = BehavioralSummaryArraySchema.parse(value);
+  if (anyIdBackfilled) {
+    disambiguateSummaryIds(parsed);
+  }
+  return parsed;
 }
 
 export function safeParseSummaries(
   input: unknown,
 ): z.ZodSafeParseResult<BehavioralSummary[]> {
-  return BehavioralSummaryArraySchema.safeParse(normalizeLegacyArray(input));
-}
-
-function normalizeLegacyArray(input: unknown): unknown {
-  return Array.isArray(input) ? input.map(normalizeLegacySummary) : input;
+  const { value, anyIdBackfilled } = normalizeLegacyArray(input);
+  const result = BehavioralSummaryArraySchema.safeParse(value);
+  if (result.success && anyIdBackfilled) {
+    disambiguateSummaryIds(result.data);
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
