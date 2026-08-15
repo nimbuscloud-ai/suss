@@ -3,7 +3,7 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 413,
-    "internal": 1640,
+    "internal": 1642,
     "consumers": 643,
     "pairs": 635
   },
@@ -47,7 +47,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 236,
+      "internal": 238,
       "consumers": 153
     },
     "packages/client/apollo": {
