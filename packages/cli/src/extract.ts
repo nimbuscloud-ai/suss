@@ -664,7 +664,12 @@ export async function extract(
   if (extractionReport !== null) {
     const report = extractionReport as ExtractionReport;
     if (options.explain === true || report.summaries === 0) {
-      process.stderr.write(formatExtractionReport(report, run.recognizersOnly));
+      process.stderr.write(
+        formatExtractionReport(
+          report,
+          run.recognizersOnly ? options.frameworks : undefined,
+        ),
+      );
     }
 
     // What the person running this can act on always prints; what only
@@ -810,15 +815,18 @@ const EMPTY_STAGE_COPY: Record<
  * Replaces the discovery-stage copy when no pack in the run can discover
  * boundaries. The default copy blames the code, and the code is fine:
  * a recognizer-only pack reads what happens inside a boundary some other
- * pack has to find first.
+ * pack has to find first. `packSpecs` come straight from the user's -f
+ * flags, so the suggested command is theirs with one flag added.
  */
 function recognizersOnlyCopy(
-  packNames: ReadonlyArray<string>,
+  packSpecs: ReadonlyArray<string>,
   example: string,
 ): { cause: string; next: string } {
+  const kept = packSpecs.map((s) => `-f ${s}`).join(" ");
+  const names = packSpecs.map((s) => s.split("=")[0]);
   return {
-    cause: `${listOf([...packNames])} ${packNames.length === 1 ? "recognizes" : "recognize"} what happens inside a boundary, and no pack in this run finds boundaries.`,
-    next: `Add the pack for this project's framework alongside, for example \`-f ${example}\`. Run \`suss extract --help\` for the list.`,
+    cause: `No discovery pack is loaded: ${listOf(names)} ${names.length === 1 ? "labels" : "label"} calls inside boundaries, and a discovery pack finds the boundaries.`,
+    next: `Try your framework's pack alongside: suss extract -f ${example} ${kept}  (\`suss extract --help\` lists the packs)`,
   };
 }
 
@@ -880,15 +888,15 @@ function listOf(items: ReadonlyArray<string>): string {
 
 export function formatExtractionReport(
   report: ExtractionReport,
-  recognizersOnly = false,
+  recognizerOnlyPacks?: ReadonlyArray<string>,
 ): string {
   const lines: string[] = [];
 
   if (report.emptyStage !== null) {
     const { cause, next } =
-      recognizersOnly && report.emptyStage === "discovery"
+      recognizerOnlyPacks !== undefined && report.emptyStage === "discovery"
         ? recognizersOnlyCopy(
-            report.packs.map((p) => p.pack),
+            recognizerOnlyPacks,
             EXAMPLE_DISCOVERY_PACK.typescript,
           )
         : EMPTY_STAGE_COPY[report.emptyStage](report);

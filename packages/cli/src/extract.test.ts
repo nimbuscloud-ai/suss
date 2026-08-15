@@ -510,9 +510,8 @@ describe("formatEmptyLanguageRun", () => {
 
   it("points a recognizer-only run at a discovery pack", () => {
     const output = formatEmptyLanguageRun("python", 8, ["sqlalchemy"], true);
-    expect(output).toContain("no pack in this run finds boundaries");
-    expect(output).toContain("sqlalchemy");
-    expect(output).toContain("-f fastapi");
+    expect(output).toContain("No discovery pack is loaded");
+    expect(output).toContain("suss extract -f fastapi -f sqlalchemy");
   });
 });
 
