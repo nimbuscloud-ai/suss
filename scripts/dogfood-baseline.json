@@ -2,10 +2,10 @@
   "totals": {
     "packages": 46,
     "packagesWithExports": 46,
-    "exports": 415,
+    "exports": 416,
     "internal": 1655,
-    "consumers": 651,
-    "pairs": 643
+    "consumers": 652,
+    "pairs": 644
   },
   "packages": {
     "packages/adapter/python": {
@@ -23,14 +23,14 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 32,
-      "internal": 592,
+      "internal": 590,
       "consumers": 35
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 43,
-      "internal": 10,
-      "consumers": 3
+      "exports": 44,
+      "internal": 12,
+      "consumers": 4
     },
     "packages/checker": {
       "name": "@suss/checker",
