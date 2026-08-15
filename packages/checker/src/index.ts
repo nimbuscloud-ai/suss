@@ -8,6 +8,7 @@ import { checkBodyCompatibility } from "./body/bodyCompatibility.js";
 import { checkConsumerContract } from "./consumer/consumerContract.js";
 import { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 import { checkContractAgreement } from "./contract/contractAgreement.js";
+import { checkContractCompleteness } from "./contract/contractCompleteness.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
 import { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
@@ -212,6 +213,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // These compare each boundary's declared contracts against each other
   // and never look at consumers, so they run outside pairing.
   findings.push(...checkContractAgreement(summaries));
+  findings.push(...checkContractCompleteness(summaries));
   findings.push(...checkGraphqlContractAgreement(summaries));
   findings.push(...checkComponentStoryAgreement(summaries));
 

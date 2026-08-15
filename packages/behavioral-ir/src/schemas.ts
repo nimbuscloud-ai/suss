@@ -76,6 +76,8 @@ export const FindingKindSchema = z.enum([
   "lowConfidence",
   /** Two providers at one boundary declare contracts that disagree. */
   "contractDisagreement",
+  /** A contract declares an operation no extracted provider implements. */
+  "contractOperationUnimplemented",
   /** A REST consumer calls a method and path no provider exposes. */
   "restMethodOnUnknownPath",
   /** The provider requires authentication the consumer's call lacks. */
