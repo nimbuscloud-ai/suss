@@ -493,6 +493,59 @@ describe("appsyncToSummaries — template shape edge cases", () => {
     ]);
   });
 
+  it("resolves pipeline Functions written as string-form GetAtt and as Ref", () => {
+    // Hand-written templates still spell `!GetAtt X.FunctionId` as one
+    // string, and plain Ref appears too; this pins the pipeline walk to
+    // the shared resolver that reads both (#234).
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::AppSync::GraphQLApi",
+          Properties: { Name: "T" },
+        },
+        GetUser: {
+          Type: "AWS::AppSync::FunctionConfiguration",
+          Properties: {
+            ApiId: { Ref: "Api" },
+            Name: "GetUser",
+            DataSourceName: { Ref: "UsersDS" },
+          },
+        },
+        GetPosts: {
+          Type: "AWS::AppSync::FunctionConfiguration",
+          Properties: {
+            ApiId: { Ref: "Api" },
+            Name: "GetPosts",
+            DataSourceName: { Ref: "PostsDS" },
+          },
+        },
+        R: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            ApiId: { Ref: "Api" },
+            TypeName: "Query",
+            FieldName: "userWithPosts",
+            Kind: "PIPELINE",
+            PipelineConfig: {
+              Functions: [
+                { "Fn::GetAtt": "GetUser.FunctionId" },
+                { Ref: "GetPosts" },
+              ],
+            },
+          },
+        },
+      },
+    });
+    expect(summaries).toHaveLength(1);
+    const meta = summaries[0].metadata?.appsync as
+      | { pipelineFunctions?: Array<{ logicalId: string }> }
+      | undefined;
+    expect(meta?.pipelineFunctions?.map((f) => f.logicalId)).toEqual([
+      "GetUser",
+      "GetPosts",
+    ]);
+  });
+
   it("tolerates a PIPELINE resolver with unresolvable Functions (dynamic intrinsic)", () => {
     const summaries = appsyncToSummaries({
       Resources: {
