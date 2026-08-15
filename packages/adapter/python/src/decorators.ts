@@ -26,6 +26,8 @@ export type DecoratorArg =
   | { kind: "none" }
   /** A bare name. The caller resolves it, using the scope it already has. */
   | { kind: "identifier"; name: string }
+  /** One dotted hop, `routers.orders`. The caller decides what the object is. */
+  | { kind: "attribute"; objectName: string; attributeName: string }
   | { kind: "list"; items: DecoratorArg[] }
   | { kind: "other" };
 
@@ -69,6 +71,18 @@ function readArg(node: PyNode): DecoratorArg {
   }
   if (node.type === "identifier") {
     return { kind: "identifier", name: node.text };
+  }
+  if (node.type === "attribute") {
+    const object = field(node, "object");
+    const attribute = field(node, "attribute");
+    if (object?.type === "identifier" && attribute?.type === "identifier") {
+      return {
+        kind: "attribute",
+        objectName: object.text,
+        attributeName: attribute.text,
+      };
+    }
+    return { kind: "other" };
   }
   if (node.type === "list") {
     return {

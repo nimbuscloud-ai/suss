@@ -1131,6 +1131,11 @@ function mountedConstructions(
   position: WalkPosition,
   scan: Scan,
 ): Construction[] {
+  if (arg?.kind === "attribute") {
+    const construction = constructionThroughModule(arg, position.scope, scan);
+    return construction === null ? [] : [construction];
+  }
+
   if (arg?.kind !== "identifier") {
     return [];
   }
@@ -1169,6 +1174,62 @@ function mountedConstructions(
     location: target.location,
   });
   return [];
+}
+
+/**
+ * The construction one dotted hop reaches: `routers.orders` mounts the
+ * router the `routers` module constructs at its top level under the
+ * `orders` name. One hop, so `a.b.c` stays unread.
+ */
+function constructionThroughModule(
+  arg: { objectName: string; attributeName: string },
+  scope: Scope,
+  scan: Scan,
+): Construction | null {
+  const binding = resolveName(scope, arg.objectName);
+  if (binding === null) {
+    return null;
+  }
+
+  const spec = importedModuleSpec(binding);
+  if (spec === null) {
+    return null;
+  }
+
+  const resolution = resolveModule(scan.bound.file, spec, scan.resolverOptions);
+  if (resolution.status !== "resolved") {
+    return null;
+  }
+
+  const target = scan.byFile.get(resolution.file);
+  if (target === undefined) {
+    return null;
+  }
+
+  return (
+    scan.index.constructions.get(target.module)?.get(arg.attributeName) ?? null
+  );
+}
+
+/** The module a binding refers to, when it refers to one at all. `from pkg import routers` refers to `pkg.routers` whenever no name shadows it. */
+function importedModuleSpec(
+  binding: Binding,
+): { module: string; relativeLevel: number } | null {
+  if (binding.kind === "import") {
+    return { module: binding.module, relativeLevel: binding.relativeLevel };
+  }
+
+  if (binding.kind === "importFrom") {
+    return {
+      module:
+        binding.module === ""
+          ? binding.importedName
+          : `${binding.module}.${binding.importedName}`,
+      relativeLevel: binding.relativeLevel,
+    };
+  }
+
+  return null;
 }
 
 function recordMountStatement(
