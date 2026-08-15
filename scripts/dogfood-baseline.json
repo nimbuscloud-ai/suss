@@ -2,10 +2,10 @@
   "totals": {
     "packages": 46,
     "packagesWithExports": 46,
-    "exports": 414,
-    "internal": 1652,
-    "consumers": 650,
-    "pairs": 642
+    "exports": 415,
+    "internal": 1654,
+    "consumers": 651,
+    "pairs": 643
   },
   "packages": {
     "packages/adapter/python": {
@@ -23,19 +23,19 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 32,
-      "internal": 590,
-      "consumers": 34
+      "internal": 592,
+      "consumers": 35
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 42,
+      "exports": 43,
       "internal": 10,
       "consumers": 3
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 137,
+      "internal": 138,
       "consumers": 79
     },
     "packages/checker-intent": {
@@ -281,7 +281,7 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 10,
-      "internal": 26,
+      "internal": 25,
       "consumers": 5
     }
   }

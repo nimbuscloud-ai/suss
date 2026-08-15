@@ -119,6 +119,69 @@ describe("env-var recognizer — happy path", () => {
     expect(reads[0]?.interaction.defaulted).toBe(false);
   });
 
+  it("marks defaulted=true when used with || fallback", () => {
+    const file = makeProject(`
+      const port = process.env.PORT || "3000";
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads[0]?.interaction.defaulted).toBe(true);
+  });
+
+  it("marks every read before the tail of a || chain defaulted", () => {
+    const file = makeProject(`
+      const endpoint =
+        process.env.SERVICE_ENDPOINT || process.env.GLOBAL_ENDPOINT || undefined;
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(
+      reads.map((r) => [r.interaction.name, r.interaction.defaulted]),
+    ).toEqual([
+      ["SERVICE_ENDPOINT", true],
+      ["GLOBAL_ENDPOINT", true],
+    ]);
+  });
+
+  it("does NOT mark defaulted under an operator that supplies nothing", () => {
+    const file = makeProject(`
+      declare function warm(): void;
+      const gated = process.env.FEATURE_ON && warm();
+      const label = process.env.STAGE + "-suffix";
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads.map((r) => r.interaction.defaulted)).toEqual([false, false]);
+  });
+
+  it("looks a helper's callers up once and reuses the answer", () => {
+    const file = makeProject(`
+      function requireEnv(name: string): string | undefined {
+        return process.env[name];
+      }
+      const table = requireEnv("TABLE_NAME");
+    `);
+    const first = configReadEffectsOf(recognizeAll(file));
+    const second = configReadEffectsOf(recognizeAll(file));
+    expect(second.map((r) => r.interaction.name)).toEqual(
+      first.map((r) => r.interaction.name),
+    );
+  });
+
+  it("sees through parentheses around the read", () => {
+    const file = makeProject(`
+      const port = (process.env.PORT) || "3000";
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads[0]?.interaction.defaulted).toBe(true);
+  });
+
+  it("does NOT mark defaulted when env-var ends a || chain", () => {
+    const file = makeProject(`
+      function fromFlag(): string | undefined { return undefined; }
+      const port = fromFlag() || process.env.PORT;
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads[0]?.interaction.defaulted).toBe(false);
+  });
+
   it("recognizes a bracket read, which the pack has always documented", () => {
     const file = makeProject(`
       const url = process.env["SERVICE_URL"];
