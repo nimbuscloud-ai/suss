@@ -46,6 +46,45 @@ function restPathOf(
   return sem?.name === "rest" ? sem.path : null;
 }
 
+const zodOpenapiPack: PatternPack = {
+  name: "hono",
+  protocol: "http",
+  languages: ["typescript"],
+  discovery: [
+    {
+      kind: "handler",
+      match: {
+        type: "registrationCall",
+        importModule: "@hono/zod-openapi",
+        importName: "OpenAPIHono",
+        registrationChain: [".openapi"],
+      },
+      bindingExtraction: {
+        method: {
+          type: "fromArgumentProperty",
+          position: 0,
+          property: "method",
+        },
+        path: { type: "fromArgumentProperty", position: 0, property: "path" },
+      },
+    },
+  ],
+  terminals: [],
+  contractReading: {
+    discovery: {
+      importModule: "@hono/zod-openapi",
+      importName: "OpenAPIHono",
+      registrationChain: [".openapi"],
+    },
+    responseExtraction: { property: "responses" },
+    endpoint: { from: "registrationArgument", position: 0 },
+  },
+  inputMapping: {
+    type: "positionalParams",
+    params: [{ position: 0, role: "context" }],
+  },
+};
+
 const tsRestPack: PatternPack = {
   name: "ts-rest",
   protocol: "http",
@@ -549,6 +588,57 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+    );
+    expect(result).toBeNull();
+  });
+
+  it("reads the responses off a registration-argument route object", () => {
+    const project = createTestProject();
+    const source = `
+      import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+      const routes = {
+        provision: createRoute({
+          method: "post",
+          path: "/v1/tenants/{tenantId}/provision",
+          responses: { 200: { description: "ok" }, 409: { description: "conflict" } },
+        }),
+      } as const;
+      export function register(app: OpenAPIHono): void {
+        app.openapi(routes.provision as any, async (c) => c.json({}, 200));
+      }
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, zodOpenapiPack.discovery);
+    expect(units).toHaveLength(1);
+
+    const result = readContract(
+      units[0],
+      zodOpenapiPack.contractReading ??
+        raise("zod-openapi pack missing contractReading"),
+      zodOpenapiPack.name,
+    );
+    expect(result?.declaredContract.responses).toEqual([
+      { statusCode: 200 },
+      { statusCode: 409 },
+    ]);
+    expect(result?.declaredContract.provenance).toBe("independent");
+  });
+
+  it("returns null when a registration-argument handler stands alone", () => {
+    const project = createTestProject();
+    const source = `
+      export async function standalone() {
+        return null;
+      }
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const fn = file.getFunctions()[0];
+
+    const result = readContract(
+      { func: fn, kind: "handler", name: "standalone" },
+      zodOpenapiPack.contractReading ??
+        raise("zod-openapi pack missing contractReading"),
+      zodOpenapiPack.name,
     );
     expect(result).toBeNull();
   });

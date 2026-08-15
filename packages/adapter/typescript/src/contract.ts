@@ -217,17 +217,24 @@ function unwrapContractInit(init: Node | undefined): Node | null {
     return null;
   }
 
+  // `{ ... } as const` and `route as RouteConfig` both leave the object
+  // as written; the cast is only there for the type.
+  let node = init;
+  while (Node.isAsExpression(node)) {
+    node = node.getExpression();
+  }
+
   // c.router({ getUser: { ... }, createUser: { ... } })
-  if (Node.isCallExpression(init)) {
-    const args = init.getArguments();
+  if (Node.isCallExpression(node)) {
+    const args = node.getArguments();
     if (args.length > 0 && Node.isObjectLiteralExpression(args[0])) {
       return args[0];
     }
     return null;
   }
 
-  if (Node.isObjectLiteralExpression(init)) {
-    return init;
+  if (Node.isObjectLiteralExpression(node)) {
+    return node;
   }
 
   return null;
@@ -347,6 +354,17 @@ export function readContract(
   pattern: ContractPattern,
   framework: string,
 ): ContractReadResult | null {
+  if (pattern.endpoint?.from === "registrationArgument") {
+    const endpointNode = endpointFromRegistrationArgument(
+      unit,
+      pattern.endpoint.position,
+    );
+    if (endpointNode === null) {
+      return null;
+    }
+    return extractEndpointContract(endpointNode, pattern, framework);
+  }
+
   // Step 1: Find the .router() call enclosing this handler
   const routerInfo = findRouterCall(unit);
   if (routerInfo === null) {
@@ -378,6 +396,46 @@ export function readContract(
   }
 
   return null;
+}
+
+/**
+ * The zod-openapi shape: `app.openapi(route, handler)`. The endpoint's
+ * contract is the handler's sibling argument, usually a
+ * `createRoute({...})` call, a variable bound to one, or a property on
+ * a shared contract object, possibly behind a cast.
+ */
+function endpointFromRegistrationArgument(
+  unit: DiscoveredUnit,
+  position: number,
+): Node | null {
+  const func = unit.func;
+  if (func === null) {
+    return null;
+  }
+  const call = func.getParent();
+  if (call === undefined || !Node.isCallExpression(call)) {
+    return null;
+  }
+  const args = call.getArguments();
+  if (!args.includes(func)) {
+    return null;
+  }
+  const arg = args[position];
+  if (arg === undefined || arg === func) {
+    return null;
+  }
+
+  let node: Node = arg;
+  while (Node.isAsExpression(node)) {
+    node = node.getExpression();
+  }
+  if (Node.isObjectLiteralExpression(node)) {
+    return node;
+  }
+  if (Node.isCallExpression(node)) {
+    return unwrapContractInit(node);
+  }
+  return resolveContractObject(node);
 }
 
 // ---------------------------------------------------------------------------

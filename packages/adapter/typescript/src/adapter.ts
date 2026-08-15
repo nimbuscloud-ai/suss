@@ -1263,6 +1263,19 @@ function extractFromSourceFile(
         }
       }
 
+      // A route bound through routeInfo above can still declare its
+      // responses on the registration call (zod-openapi's createRoute),
+      // so only the declaration is read here; the binding stays.
+      if (
+        raw.declaredContract === null &&
+        pack.contractReading?.endpoint?.from === "registrationArgument"
+      ) {
+        const contract = readContract(unit, pack.contractReading, pack.name);
+        if (contract !== null) {
+          raw.declaredContract = contract.declaredContract;
+        }
+      }
+
       // Every unit ends up with a binding. A unit nothing else placed is
       // a TypeScript function with no transport of its own.
       if (raw.boundaryBinding === null) {
