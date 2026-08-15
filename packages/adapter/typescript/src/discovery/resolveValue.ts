@@ -150,6 +150,36 @@ export function writtenNodeOf(
   return resolution.resolveWrittenValue(written);
 }
 
+/**
+ * The string this value is, written out here or named. Null rather
+ * than the empty string when nothing resolves, so a caller can tell
+ * "stated as empty" from "could not read" (#123).
+ */
+export function stringValueOf(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): string | null {
+  const written = factKeyOf(value);
+  if (isStringNode(written)) {
+    return written.getLiteralValue();
+  }
+  if (resolution === undefined || !couldNameAValue(written)) {
+    return null;
+  }
+  const resolved = resolution.resolveWrittenValue(written);
+  return resolved !== null && isStringNode(resolved)
+    ? resolved.getLiteralValue()
+    : null;
+}
+
+function isStringNode(
+  node: Node,
+): node is Node & { getLiteralValue(): string } {
+  return (
+    Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)
+  );
+}
+
 /** The array literal this value is, written out here or named. */
 export function arrayLiteralOf(
   value: Node,

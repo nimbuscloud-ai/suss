@@ -99,6 +99,7 @@ describe("nestjsRestFramework — integration", () => {
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual([
       "HealthController.ping",
+      "ReportsController.summary",
       "UsersController.create",
       "UsersController.list",
       "UsersController.one",
@@ -131,6 +132,17 @@ describe("nestjsRestFramework — integration", () => {
     expect(one?.identity.boundaryBinding?.semantics).toMatchObject({
       method: "GET",
       path: "/users/:id",
+    });
+  });
+
+  it("keeps a prefix that arrives through an imported constant", () => {
+    const summary = summaries.find(
+      (s) => s.identity.name === "ReportsController.summary",
+    );
+    expect(summary?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "rest",
+      method: "GET",
+      path: "/reports/summary",
     });
   });
 

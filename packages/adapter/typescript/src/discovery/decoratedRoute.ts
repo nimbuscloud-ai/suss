@@ -7,6 +7,7 @@ import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 
 import { decoratedCallablesOf } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
+import { stringValueOf } from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -19,26 +20,30 @@ import type { DiscoveredUnit } from "./shared.js";
  * route options object, a path-array, etc.) yield the empty string
  * too: the caller falls back to whatever it can extract elsewhere.
  */
-function resolveRoutePathArg(decorator: Node): string {
+function resolveRoutePathArg(
+  decorator: Node,
+  resolution: ResolutionStore | undefined,
+): string {
   if (!Node.isDecorator(decorator)) {
     return "";
   }
-  return routePathOf(decorator.getArguments());
+  return routePathOf(decorator.getArguments(), resolution);
 }
 
-/** The path a decorator's argument list states, when it states one. */
-function routePathOf(args: Node[]): string {
+/**
+ * The path a decorator's argument list states, when it states one. A
+ * constant passed by name resolves to its written string, so
+ * `@Controller(BASE_PATH)` keeps its prefix instead of mounting at
+ * root and pairing with the wrong client (#123).
+ */
+function routePathOf(
+  args: Node[],
+  resolution: ResolutionStore | undefined,
+): string {
   if (args.length === 0) {
     return "";
   }
-  const first = args[0];
-  if (
-    Node.isStringLiteral(first) ||
-    Node.isNoSubstitutionTemplateLiteral(first)
-  ) {
-    return first.getLiteralValue();
-  }
-  return "";
+  return stringValueOf(args[0], resolution) ?? "";
 }
 
 /**
@@ -98,12 +103,12 @@ export function discoverDecoratedRoutes(
     if (marker === null) {
       continue;
     }
-    const pathPrefix = routePathOf(marker.args);
+    const pathPrefix = routePathOf(marker.args, resolution);
 
     const className = cls.getName() ?? "<anon-class>";
     for (const handler of decoratedCallablesOf(cls, routeDecoratorNames)) {
       const httpMethod = match.methodDecoratorRouteMap[handler.standsFor];
-      const pathSuffix = resolveRoutePathArg(handler.decorator);
+      const pathSuffix = resolveRoutePathArg(handler.decorator, resolution);
       const routePath = joinRoutePath(pathPrefix, pathSuffix);
 
       results.push({
