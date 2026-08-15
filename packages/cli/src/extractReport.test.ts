@@ -116,6 +116,33 @@ describe("formatExtractionReport", () => {
     expect(output).not.toContain("Install this project's dependencies");
   });
 
+  // Running with only recognizer packs can never produce a summary, so
+  // the empty run is a missing pack, not a code shape the pack lacks.
+  it("says a recognizer-only run needs a discovery pack, not an issue", () => {
+    const output = formatExtractionReport(
+      report({
+        summaries: 0,
+        filesWithUnreadableExports: [],
+        emptyStage: "discovery",
+        packs: [
+          pack({
+            pack: "aws-sqs",
+            discovers: false,
+            recognizes: true,
+            unitsDiscovered: 0,
+            summariesProduced: 0,
+          }),
+        ],
+      }),
+      true,
+    );
+
+    expect(output).toContain("no pack in this run finds boundaries");
+    expect(output).toContain("aws-sqs");
+    expect(output).toContain("-f express");
+    expect(output).not.toContain("Worth opening an issue");
+  });
+
   // A recogniser pack attaches effects to units other packs found, so its
   // discovery rows are all zero.
   it("shows what a recogniser pack contributed", () => {

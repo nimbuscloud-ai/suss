@@ -507,6 +507,13 @@ describe("formatEmptyLanguageRun", () => {
     expect(read).toContain("read 12 Ruby files");
     expect(read).toContain("graphql-ruby");
   });
+
+  it("points a recognizer-only run at a discovery pack", () => {
+    const output = formatEmptyLanguageRun("python", 8, ["sqlalchemy"], true);
+    expect(output).toContain("no pack in this run finds boundaries");
+    expect(output).toContain("sqlalchemy");
+    expect(output).toContain("-f fastapi");
+  });
 });
 
 describe("extract, on a project with no boundaries", () => {

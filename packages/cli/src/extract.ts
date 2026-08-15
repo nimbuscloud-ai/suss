@@ -409,6 +409,12 @@ interface LanguageRun {
   timingReport: TimingReport | null;
   cacheDiagnostic: CacheDiagnostic | null;
   extractionReport: ExtractionReport | null;
+  /**
+   * True when every pack in the run recognizes calls inside boundaries
+   * but none of them discovers boundaries, so the run cannot produce a
+   * summary no matter what the code says.
+   */
+  recognizersOnly: boolean;
 }
 
 interface LanguageRunOptions {
@@ -479,6 +485,11 @@ async function runTypeScript(
     timingReport,
     cacheDiagnostic,
     extractionReport,
+    recognizersOnly:
+      packs.length > 0 &&
+      packs.every(
+        (p) => p.discovery.length === 0 && p.discoverUnits === undefined,
+      ),
   };
 }
 
@@ -505,7 +516,12 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       ? { gapHandling: runOptions.options.gaps }
       : {}),
   });
-  return languageRun(summaries, runOptions.root, files.length);
+  return languageRun(
+    summaries,
+    runOptions.root,
+    files.length,
+    packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+  );
 }
 
 async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
@@ -517,7 +533,12 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // there.
   const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
   const { summaries } = await extractRubyProject({ files, packs });
-  return languageRun(summaries, runOptions.root, files.length);
+  return languageRun(
+    summaries,
+    runOptions.root,
+    files.length,
+    packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+  );
 }
 
 /** Null rather than zero, so a breakdown of nothing does not look instant. */
@@ -525,6 +546,7 @@ function languageRun(
   summaries: BehavioralSummary[],
   root: string,
   filesRead: number,
+  recognizersOnly: boolean,
 ): LanguageRun {
   return {
     summaries,
@@ -533,6 +555,7 @@ function languageRun(
     timingReport: null,
     cacheDiagnostic: null,
     extractionReport: null,
+    recognizersOnly,
   };
 }
 
@@ -641,7 +664,7 @@ export async function extract(
   if (extractionReport !== null) {
     const report = extractionReport as ExtractionReport;
     if (options.explain === true || report.summaries === 0) {
-      process.stderr.write(formatExtractionReport(report));
+      process.stderr.write(formatExtractionReport(report, run.recognizersOnly));
     }
 
     // What the person running this can act on always prints; what only
@@ -664,7 +687,12 @@ export async function extract(
 
   if (extractionReport === null && summaries.length === 0) {
     process.stderr.write(
-      formatEmptyLanguageRun(language, run.filesRead, options.frameworks),
+      formatEmptyLanguageRun(
+        language,
+        run.filesRead,
+        options.frameworks,
+        run.recognizersOnly,
+      ),
     );
   }
 
@@ -778,16 +806,53 @@ const EMPTY_STAGE_COPY: Record<
   }),
 };
 
+/**
+ * Replaces the discovery-stage copy when no pack in the run can discover
+ * boundaries. The default copy blames the code, and the code is fine:
+ * a recognizer-only pack reads what happens inside a boundary some other
+ * pack has to find first.
+ */
+function recognizersOnlyCopy(
+  packNames: ReadonlyArray<string>,
+  example: string,
+): { cause: string; next: string } {
+  return {
+    cause: `${listOf([...packNames])} ${packNames.length === 1 ? "recognizes" : "recognize"} what happens inside a boundary, and no pack in this run finds boundaries.`,
+    next: `Add the pack for this project's framework alongside, for example \`-f ${example}\`. Run \`suss extract --help\` for the list.`,
+  };
+}
+
+/** A discovery-capable pack of the same language, for the suggestion. */
+const EXAMPLE_DISCOVERY_PACK: Record<Language, string> = {
+  typescript: "express",
+  python: "fastapi",
+  ruby: "graphql-ruby",
+};
+
 export function formatEmptyLanguageRun(
   language: Language,
   filesRead: number,
   packs: ReadonlyArray<string>,
+  recognizersOnly = false,
 ): string {
   const label = LANGUAGE_LABEL[language];
   if (filesRead === 0) {
     return [
       `  suss found no ${label} files to read.`,
       "  Point it at the directory holding the source with --dir, or name the files with --files.",
+      "",
+    ].join("\n");
+  }
+
+  if (recognizersOnly) {
+    const { cause, next } = recognizersOnlyCopy(
+      packs,
+      EXAMPLE_DISCOVERY_PACK[language],
+    );
+    return [
+      `  suss read ${filesRead} ${label} ${filesRead === 1 ? "file" : "files"} and produced no summaries.`,
+      `  ${cause}`,
+      `  ${next}`,
       "",
     ].join("\n");
   }
@@ -813,11 +878,20 @@ function listOf(items: ReadonlyArray<string>): string {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
-export function formatExtractionReport(report: ExtractionReport): string {
+export function formatExtractionReport(
+  report: ExtractionReport,
+  recognizersOnly = false,
+): string {
   const lines: string[] = [];
 
   if (report.emptyStage !== null) {
-    const { cause, next } = EMPTY_STAGE_COPY[report.emptyStage](report);
+    const { cause, next } =
+      recognizersOnly && report.emptyStage === "discovery"
+        ? recognizersOnlyCopy(
+            report.packs.map((p) => p.pack),
+            EXAMPLE_DISCOVERY_PACK.typescript,
+          )
+        : EMPTY_STAGE_COPY[report.emptyStage](report);
     lines.push(`  ${cause}`);
     lines.push(`  ${next}`);
     lines.push("");
