@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-prisma",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "type": "module",
   "description": "Recognize Prisma client calls in TypeScript code and emit storage-access interaction effects.",
   "keywords": [
@@ -48,8 +48,8 @@
     "ts-morph": ">=20"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.5.5",
-    "@suss/extractor": "0.5.5"
+    "@suss/behavioral-ir": "0.5.6",
+    "@suss/extractor": "0.5.6"
   },
   "devDependencies": {
     "@suss/test-project": "*",

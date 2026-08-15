@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-react-router",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from React Router loaders and actions.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/extractor": "0.5.5"
+    "@suss/extractor": "0.5.6"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",

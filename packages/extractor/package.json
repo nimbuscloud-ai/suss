@@ -1,6 +1,6 @@
 {
   "name": "@suss/extractor",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "type": "module",
   "description": "Framework-agnostic extraction pipeline that turns raw extractions into suss behavioral summaries.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.5.5"
+    "@suss/behavioral-ir": "0.5.6"
   },
   "devDependencies": {
     "tsup": "*",
