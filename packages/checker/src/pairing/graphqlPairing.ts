@@ -28,6 +28,7 @@ import {
 } from "graphql";
 
 import { readGraphqlMetadata, summaryRef } from "@suss/behavioral-ir";
+import { boundaryKey } from "@suss/ir-core";
 
 import type {
   BehavioralSummary,
@@ -97,7 +98,7 @@ function pairOneOperation(
   findings: Finding[],
 ): void {
   for (const selection of doc.rootSelections) {
-    const key = `${doc.rootTypeName}.${selection.name}`;
+    const key = `gql:${doc.rootTypeName}.${selection.name}`;
     const matchingResolvers = resolverIndex.get(key) ?? [];
     if (matchingResolvers.length === 0) {
       findings.push(fieldNotImplementedFinding(operation, doc, selection.name));
@@ -107,7 +108,7 @@ function pairOneOperation(
       pairs.push({
         provider: resolver,
         consumer: operation,
-        key: `gql:${key}`,
+        key,
       });
       // When the provider has an SDL, walk nested selections
       // against the declared field set. The same SDL text cached
@@ -207,8 +208,13 @@ function indexResolvers(
     if (!isGraphqlResolver(summary)) {
       continue;
     }
-    const sem = summary.identity.boundaryBinding.semantics;
-    const key = `${sem.typeName}.${sem.fieldName}`;
+    // The semantics' own key guards the null typeName a `@Resolver()`
+    // class with no argument gets; the hand-built join indexed it
+    // under the literal "null.fieldName" (#162).
+    const key = boundaryKey(summary.identity.boundaryBinding);
+    if (key === null) {
+      continue;
+    }
     const bucket = index.get(key);
     if (bucket === undefined) {
       index.set(key, [summary]);

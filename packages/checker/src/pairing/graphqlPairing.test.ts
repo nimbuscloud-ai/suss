@@ -127,6 +127,33 @@ describe("pairGraphqlOperations", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("leaves a resolver with no type argument out of the index rather than keying it under null", () => {
+    const base = resolver("Query", "pet");
+    const orphan: BehavioralSummary = {
+      ...base,
+      identity: {
+        ...base.identity,
+        boundaryBinding: graphqlResolverBinding({
+          transport: "http",
+          recognition: "apollo",
+          typeName: null,
+          fieldName: "pet",
+        }),
+      },
+    };
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      "query GetPet { pet { id } }",
+    );
+    const result = pairGraphqlOperations([orphan, op]);
+    expect(result.pairs).toEqual([]);
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "boundaryFieldUnknown",
+    ]);
+  });
+
   it("keys mutations under Mutation.<field>, not Query", () => {
     const createPet = resolver("Mutation", "createPet");
     const op = operation(
