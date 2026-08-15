@@ -21,6 +21,10 @@ import type {
 import type { MessageBusTechnology } from "./semantics/messageBus.js";
 
 export {
+  type GqlIdentityKey,
+  gqlIdentityKey,
+} from "./identityKeys.js";
+export {
   BoundaryBindingSchema,
   ConfidenceInfoSchema,
   ConfidenceLevelSchema,
