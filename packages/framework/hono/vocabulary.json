@@ -13,5 +13,6 @@
   "route": "hono: app method mounting a sub-app under a prefix",
   "responses": "@hono/zod-openapi: createRoute config key with the declared responses",
   "registrationArgument": "suss: ContractPattern endpoint location, the contract as the handler's sibling argument",
-  "context": "suss: input role"
+  "context": "suss: input role",
+  "HTTPException": "hono/http-exception: the exception the framework sends as its status"
 }

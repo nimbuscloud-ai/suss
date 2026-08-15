@@ -123,16 +123,59 @@ function keysOfIdentifierMap(node) {
   if (key === null || !KEYED_BY_IDENTIFIER.has(key)) {
     return [];
   }
-  if (!ts.isObjectLiteralExpression(node.initializer)) {
+  const literal = mapLiteralBehind(node.initializer, node.getSourceFile());
+  if (literal === null) {
     return [];
   }
-  return node.initializer.properties
+  return literal.properties
     .map((property) => property.name)
     .filter((name) => name !== undefined)
     .map((name) =>
       ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : null,
     )
     .filter((name) => name !== null);
+}
+
+/**
+ * The object literal a map field's value comes from. Packs write the
+ * map inline or declare it as a const and pass the identifier, and the
+ * identifier form used to escape the scan entirely.
+ */
+function mapLiteralBehind(initializer, sourceFile) {
+  let value = initializer;
+  while (ts.isAsExpression(value) || ts.isSatisfiesExpression(value)) {
+    value = value.expression;
+  }
+  if (ts.isObjectLiteralExpression(value)) {
+    return value;
+  }
+  if (!ts.isIdentifier(value)) {
+    return null;
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) {
+      continue;
+    }
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        !ts.isIdentifier(declaration.name) ||
+        declaration.name.text !== value.text ||
+        declaration.initializer === undefined
+      ) {
+        continue;
+      }
+      let declared = declaration.initializer;
+      while (
+        ts.isAsExpression(declared) ||
+        ts.isSatisfiesExpression(declared)
+      ) {
+        declared = declared.expression;
+      }
+      return ts.isObjectLiteralExpression(declared) ? declared : null;
+    }
+  }
+  return null;
 }
 
 /**

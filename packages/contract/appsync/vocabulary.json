@@ -5,7 +5,7 @@
   "Subscription": "GraphQL spec: operation root type",
   "UNIT": "AppSync: resolver kind",
   "PIPELINE": "AppSync: resolver kind",
-  "UNKNOWN": "AppSync: fallback when a resolver kind is not stated",
+  "UNKNOWN": "suss: fallback resolver kind when the template does not say UNIT or PIPELINE",
   "lambda": "AppSync: data source type",
   "dynamodb": "AppSync: data source type",
   "elasticsearch": "AppSync: data source type",
