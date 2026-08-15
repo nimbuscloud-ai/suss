@@ -3,7 +3,7 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 415,
-    "internal": 1655,
+    "internal": 1654,
     "consumers": 651,
     "pairs": 643
   },
@@ -281,7 +281,7 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 10,
-      "internal": 26,
+      "internal": 25,
       "consumers": 5
     }
   }
