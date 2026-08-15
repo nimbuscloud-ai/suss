@@ -592,3 +592,19 @@ export function readHttpMetadata(
 ): HttpMetadata | undefined {
   return readNamespace(HttpMetadataSchema, carrier.metadata?.http);
 }
+
+const ModuleImportsSchema = z.array(z.string());
+
+/**
+ * The project files a summary's own file imports directly, or
+ * undefined when the extractor recorded none. Paths are relative to
+ * the same root as `location.file`. A checker working from summaries
+ * alone rebuilds the module graph from these, which is how a runtime's
+ * scope becomes its handler entry's import closure.
+ */
+export function readModuleImports(
+  summary: BehavioralSummary,
+): string[] | undefined {
+  const parsed = ModuleImportsSchema.safeParse(summary.metadata?.moduleImports);
+  return parsed.success ? parsed.data : undefined;
+}

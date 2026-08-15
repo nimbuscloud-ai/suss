@@ -632,6 +632,15 @@ export async function extract(
   const projectRoot = run.root;
   for (const summary of summaries) {
     summary.location.file = path.relative(projectRoot, summary.location.file);
+    const moduleImports = summary.metadata?.moduleImports;
+    if (Array.isArray(moduleImports)) {
+      summary.metadata = {
+        ...summary.metadata,
+        moduleImports: moduleImports.map((file) =>
+          typeof file === "string" ? path.relative(projectRoot, file) : file,
+        ),
+      };
+    }
     summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
 

@@ -48,7 +48,7 @@ import path from "node:path";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Project } from "ts-morph";
 
-const SCHEMA_VERSION = "4";
+const SCHEMA_VERSION = "5";
 
 /**
  * How many keys' worth of entries a cache directory keeps. Two lets a

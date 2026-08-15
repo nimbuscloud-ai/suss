@@ -1334,6 +1334,60 @@ function extractFromSourceFile(
   return summaries;
 }
 
+/**
+ * Record on each summary which project files its own file imports, so
+ * a checker working from summaries alone can rebuild the module graph
+ * (a runtime's scope is its handler entry's import closure). Absolute
+ * paths here; the CLI makes them relative beside `location.file`.
+ */
+function stampModuleImports(
+  summaries: BehavioralSummary[],
+  project: Project,
+): void {
+  const byFile = new Map<string, string[]>();
+  for (const summary of summaries) {
+    const file = summary.location.file;
+    let imports = byFile.get(file);
+    if (imports === undefined) {
+      imports = internalImportsOf(project, file);
+      byFile.set(file, imports);
+    }
+
+    if (imports.length === 0) {
+      continue;
+    }
+    summary.metadata = {
+      ...(summary.metadata ?? {}),
+      moduleImports: imports,
+    };
+  }
+}
+
+function internalImportsOf(project: Project, file: string): string[] {
+  const sourceFile = project.getSourceFile(file);
+  if (sourceFile === undefined) {
+    return [];
+  }
+  const targets = new Set<string>();
+  const record = (target: SourceFile | undefined): void => {
+    if (
+      target !== undefined &&
+      !target.isInNodeModules() &&
+      !target.isDeclarationFile()
+    ) {
+      targets.add(target.getFilePath());
+    }
+  };
+  for (const imp of sourceFile.getImportDeclarations()) {
+    record(imp.getModuleSpecifierSourceFile());
+  }
+
+  for (const exp of sourceFile.getExportDeclarations()) {
+    record(exp.getModuleSpecifierSourceFile());
+  }
+  return [...targets].sort();
+}
+
 // A wrapper is a client function whose path comes from one of its own
 // parameters, so the callers that pass a literal are what pin down a
 // boundary. A summary synthesized for one has no caller-local branches.
@@ -1907,6 +1961,10 @@ export function createTypeScriptAdapter(
           deriveBoundaryEffects(enriched, closureFacts),
         );
       }
+
+      timer.time("stampModuleImports", () =>
+        stampModuleImports(enriched, project),
+      );
 
       await timer.timeAsync("cache.write", async () => {
         // An empty result is never cached. Serving one would skip the
