@@ -80,6 +80,7 @@ export {
   readGraphqlMetadata,
   readHttpMetadata,
   readMessageBusMetadata,
+  readModuleImports,
   readRoutingMetadata,
   readRuntimeContractMetadata,
   withGraphqlMetadata,

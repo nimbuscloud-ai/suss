@@ -804,6 +804,48 @@ describe("readContract", () => {
   });
 });
 
+describe("module imports on summaries", () => {
+  it("records which project files a summary's own file imports", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/helper.ts",
+      "export const helper = (): number => 1;",
+    );
+    project.createSourceFile(
+      "/api.ts",
+      `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+      import { helper } from "./helper";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any },
+        },
+      });
+      const s = initServer();
+      export const router = s.router(contract, {
+        getUser: async () => {
+          return { status: 200, body: { n: helper() } };
+        },
+      });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.metadata?.moduleImports).toEqual(["/helper.ts"]);
+  });
+});
+
 describe("createTypeScriptAdapter: ts-rest fixtures", () => {
   it("extracts summaries from fixture handler file", async () => {
     const project = createFixtureProject();

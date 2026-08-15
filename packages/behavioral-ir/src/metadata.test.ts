@@ -4,6 +4,7 @@ import {
   readGraphqlMetadata,
   readHttpMetadata,
   readMessageBusMetadata,
+  readModuleImports,
   readRoutingMetadata,
   readRuntimeContractMetadata,
   withGraphqlMetadata,
@@ -364,5 +365,17 @@ describe("the http metadata namespace", () => {
         declaredResponses: [{ statusCode: 200 }],
       }),
     ).toThrow();
+  });
+});
+
+describe("readModuleImports", () => {
+  it("returns the recorded file list and refuses other shapes", () => {
+    expect(
+      readModuleImports(summaryWith({ moduleImports: ["src/helper.ts"] })),
+    ).toEqual(["src/helper.ts"]);
+    expect(readModuleImports(summaryWith(undefined))).toBeUndefined();
+    expect(
+      readModuleImports(summaryWith({ moduleImports: "src/helper.ts" })),
+    ).toBeUndefined();
   });
 });
