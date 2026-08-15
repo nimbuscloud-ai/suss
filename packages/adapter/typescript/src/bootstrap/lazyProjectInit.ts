@@ -37,8 +37,13 @@ export async function createLazyProject(
   tsConfigFilePath: string,
   packs: ReadonlyArray<PatternPack>,
 ): Promise<LazyProjectInit> {
-  const allFiles = parseTsconfigFileList(tsConfigFilePath);
-  const candidates = await selectCandidateFiles(allFiles, packs);
+  const parsed = parseTsconfig(tsConfigFilePath);
+  const allFiles = parsed.fileNames;
+  const candidates = await selectCandidateFiles(
+    allFiles,
+    packs,
+    parsed.options,
+  );
 
   const project = new Project({
     tsConfigFilePath,
@@ -59,7 +64,7 @@ export async function createLazyProject(
 
 /** Reads no source, so a cache hit never pays for the bootstrap. */
 export function readTsconfigFileList(tsConfigFilePath: string): string[] {
-  return parseTsconfigFileList(tsConfigFilePath);
+  return parseTsconfig(tsConfigFilePath).fileNames;
 }
 
 /**
@@ -278,10 +283,13 @@ function readFileText(project: Project, filePath: string): string | null {
   }
 }
 
-function parseTsconfigFileList(tsConfigFilePath: string): string[] {
+function parseTsconfig(tsConfigFilePath: string): {
+  fileNames: string[];
+  options: ts.CompilerOptions;
+} {
   const configFile = ts.readConfigFile(tsConfigFilePath, ts.sys.readFile);
   if (configFile.error !== undefined) {
-    return [];
+    return { fileNames: [], options: {} };
   }
   const parsed = ts.parseJsonConfigFileContent(
     configFile.config,
@@ -290,7 +298,7 @@ function parseTsconfigFileList(tsConfigFilePath: string): string[] {
     /*existingOptions*/ undefined,
     tsConfigFilePath,
   );
-  return parsed.fileNames;
+  return { fileNames: parsed.fileNames, options: parsed.options };
 }
 
 interface FileImports {
@@ -301,6 +309,7 @@ interface FileImports {
 async function selectCandidateFiles(
   allFiles: ReadonlyArray<string>,
   packs: ReadonlyArray<PatternPack>,
+  options: ts.CompilerOptions,
 ): Promise<string[]> {
   // One pack matching every file leaves nothing to pre-filter.
   const ungatedExists = packs.some(packIsUngated);
@@ -313,13 +322,138 @@ async function selectCandidateFiles(
   }
 
   const fileImports = await readImportsConcurrently(allFiles);
-  const matched: string[] = [];
+  const matched = new Set<string>();
   for (const { path: p, importedModules } of fileImports) {
     if (namesAnyPackage(importedModules, gates)) {
-      matched.push(p);
+      matched.add(p);
     }
   }
-  return matched;
+
+  addImportersOfMatches(fileImports, matched, options);
+  return allFiles.filter((p) => matched.has(p));
+}
+
+/**
+ * A consumer can reach a gated package through a project module of its
+ * own, a wrapper around an HTTP client say, and a file selected only by
+ * its direct imports skips that consumer before parsing (#181). So a
+ * file that imports a selected file is selected too, to a fixpoint.
+ * Only relative specifiers and tsconfig path aliases resolve here,
+ * against the include set alone, with no filesystem probing: a
+ * specifier this cannot resolve either leaves the project, where the
+ * direct gate already decided, or goes through a mapping the compiler
+ * would need, and then the file loads later the way it always has.
+ */
+function addImportersOfMatches(
+  fileImports: ReadonlyArray<FileImports>,
+  matched: Set<string>,
+  options: ts.CompilerOptions,
+): void {
+  const resolve = internalSpecifierResolver(
+    fileImports.map((fi) => fi.path),
+    options,
+  );
+  const importersOf = new Map<string, string[]>();
+  for (const { path: from, importedModules } of fileImports) {
+    for (const spec of importedModules) {
+      const target = resolve(from, spec);
+      if (target === null || target === from) {
+        continue;
+      }
+      const list = importersOf.get(target);
+      if (list === undefined) {
+        importersOf.set(target, [from]);
+      } else {
+        list.push(from);
+      }
+    }
+  }
+
+  const queue = [...matched];
+  while (queue.length > 0) {
+    const target = queue.pop() as string;
+    for (const importer of importersOf.get(target) ?? []) {
+      if (!matched.has(importer)) {
+        matched.add(importer);
+        queue.push(importer);
+      }
+    }
+  }
+}
+
+/**
+ * Resolve a specifier to a file in the include set, or null. Relative
+ * specifiers resolve against the importing file; bare ones only through
+ * the tsconfig `paths` mapping. Probing tries the specifier as written,
+ * with a TS extension added, with a JS extension swapped for one, and
+ * as a directory with an index file, all against the set in memory.
+ */
+function internalSpecifierResolver(
+  files: ReadonlyArray<string>,
+  options: ts.CompilerOptions,
+): (fromFile: string, spec: string) => string | null {
+  const fileSet = new Set(files);
+  const probe = (base: string): string | null => {
+    const stems = [base];
+    const swapped = base.replace(/\.(mjs|cjs|jsx|js)$/, "");
+    if (swapped !== base) {
+      stems.push(swapped);
+    }
+    for (const stem of stems) {
+      for (const candidate of [
+        stem,
+        `${stem}.ts`,
+        `${stem}.tsx`,
+        path.join(stem, "index.ts"),
+        path.join(stem, "index.tsx"),
+      ]) {
+        if (fileSet.has(candidate)) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  };
+
+  const pathsBase =
+    options.baseUrl ??
+    (typeof options.pathsBasePath === "string" ? options.pathsBasePath : "");
+  const aliasTargets = (spec: string): string[] => {
+    const out: string[] = [];
+    for (const [pattern, targets] of Object.entries(options.paths ?? {})) {
+      const star = pattern.indexOf("*");
+      if (star === -1) {
+        if (spec === pattern) {
+          out.push(...targets);
+        }
+        continue;
+      }
+      const prefix = pattern.slice(0, star);
+      const suffix = pattern.slice(star + 1);
+      if (
+        spec.length >= prefix.length + suffix.length &&
+        spec.startsWith(prefix) &&
+        spec.endsWith(suffix)
+      ) {
+        const filler = spec.slice(prefix.length, spec.length - suffix.length);
+        out.push(...targets.map((t) => t.replace("*", filler)));
+      }
+    }
+    return out.map((t) => path.resolve(pathsBase, t));
+  };
+
+  return (fromFile, spec) => {
+    if (spec.startsWith(".")) {
+      return probe(path.resolve(path.dirname(fromFile), spec));
+    }
+    for (const target of aliasTargets(spec)) {
+      const hit = probe(target);
+      if (hit !== null) {
+        return hit;
+      }
+    }
+    return null;
+  };
 }
 
 function collectAllGates(packs: ReadonlyArray<PatternPack>): string[] {
