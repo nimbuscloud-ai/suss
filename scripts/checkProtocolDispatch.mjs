@@ -25,6 +25,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import ts from "typescript";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 
 const PROTOCOLS = [
@@ -37,10 +39,56 @@ const PROTOCOLS = [
   "function-call",
 ];
 
-const BRANCH = new RegExp(
-  `(?:\\.name\\s*[!=]==?\\s*"(?:${PROTOCOLS.join("|")})")` +
-    `|(?:"(?:${PROTOCOLS.join("|")})"\\s*[!=]==?\\s*[\\w.]+\\.name)`,
-);
+const PROTOCOL_SET = new Set(PROTOCOLS);
+
+/**
+ * Protocol-name branches in one file, found by walking the AST rather
+ * than matching lines. A comparison split across lines, a switch over
+ * `semantics.name`, and a destructured alias all count; a matching
+ * substring in a comment never does (#164).
+ */
+function protocolBranchCount(abs) {
+  const source = ts.createSourceFile(
+    abs,
+    fs.readFileSync(abs, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let n = 0;
+
+  const isProtocolLiteral = (node) =>
+    ts.isStringLiteral(node) && PROTOCOL_SET.has(node.text);
+  const couldBeNameAccess = (node) =>
+    (ts.isPropertyAccessExpression(node) && node.name.text === "name") ||
+    ts.isIdentifier(node);
+
+  const visit = (node) => {
+    if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
+    ) {
+      const sides = [node.left, node.right];
+      if (
+        sides.some(isProtocolLiteral) &&
+        sides.some((side) => couldBeNameAccess(side))
+      ) {
+        n += 1;
+      }
+    }
+
+    if (ts.isSwitchStatement(node) && couldBeNameAccess(node.expression)) {
+      for (const clause of node.caseBlock.clauses) {
+        if (ts.isCaseClause(clause) && isProtocolLiteral(clause.expression)) {
+          n += 1;
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return n;
+}
 
 /** Directories whose files own the protocols they name. */
 const OWNING_DIRS = [
@@ -102,12 +150,7 @@ for (const abs of sourceFiles(path.join(ROOT, "packages"))) {
   if (OWNING_DIRS.some((d) => rel.startsWith(d))) {
     continue;
   }
-  let n = 0;
-  for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
-    if (BRANCH.test(line)) {
-      n += 1;
-    }
-  }
+  const n = protocolBranchCount(abs);
   if (n > 0) {
     counts.set(rel, n);
   }
