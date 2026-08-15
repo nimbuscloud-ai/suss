@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-aws-apigateway",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "type": "module",
   "description": "Generate suss behavioral summaries for AWS API Gateway resources (REST + HTTP API), independent of how they were deployed.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.5.7"
+    "@suss/behavioral-ir": "0.5.8"
   },
   "devDependencies": {
     "tsup": "*",
