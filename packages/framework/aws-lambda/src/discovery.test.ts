@@ -315,7 +315,7 @@ describe("awsLambdaDiscovery — a handler on two boundaries", () => {
     // The SQS event was reported before this handler also became a
     // resolver, and it has to keep being reported.
     expect(kinds).toContain("graphql-resolver");
-    expect(kinds).toContain("function-call");
+    expect(kinds).toContain("message-bus");
   });
 });
 
@@ -340,7 +340,7 @@ describe("awsLambdaDiscovery — fields on a non-root type", () => {
     const accounting = summaries.find(
       (s) =>
         s.identity.name.startsWith("QueueFn.") &&
-        s.identity.boundaryBinding?.semantics.name === "function-call",
+        s.identity.boundaryBinding?.semantics.name === "message-bus",
     );
     const meta = accounting?.metadata?.awsLambda as
       | { graphqlTypeFields?: Array<{ typeName: string; fieldName: string }> }
@@ -361,9 +361,9 @@ describe("awsLambdaDiscovery — events on a bound handler", () => {
     const kinds = both.map((s) => s.identity.boundaryBinding?.semantics.name);
 
     expect(kinds).toContain("rest");
-    expect(kinds).toContain("function-call");
+    expect(kinds).toContain("message-bus");
     const accounting = both.find(
-      (s) => s.identity.boundaryBinding?.semantics.name === "function-call",
+      (s) => s.identity.boundaryBinding?.semantics.name === "message-bus",
     );
     const meta = accounting?.metadata?.awsLambda as
       | { eventTypes?: string[] }

@@ -12,5 +12,8 @@
   "statusCode": "API Gateway: proxy response envelope field",
   "body": "API Gateway: proxy response envelope field",
   "batchItemFailures": "AWS Lambda: partial batch response field",
-  "POWERTOOLS_": "@aws-lambda-powertools: env-var prefix the library's configuration reads"
+  "POWERTOOLS_": "@aws-lambda-powertools: env-var prefix the library's configuration reads",
+  "sns": "AWS SNS: message-bus technology behind a SAM SNS event",
+  "s3": "AWS S3: message-bus technology behind a SAM S3 event",
+  "eventbridge": "AWS EventBridge: message-bus technology behind SAM Schedule and EventBridgeRule events"
 }

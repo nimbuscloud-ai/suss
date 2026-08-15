@@ -149,7 +149,8 @@ export interface DiscoveredUnit {
    */
   channelInfo?: {
     messageBus: MessageBusSemantics["messageBus"];
-    channel: string;
+    /** Null when the pack knows the wire but not the channel on it. */
+    channel: string | null;
   };
   /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit?: DeployableUnit;

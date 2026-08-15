@@ -225,8 +225,28 @@ describe("awsLambdaFramework: extraction", () => {
     expect(restBindingOf(sqs as BehavioralSummary)).toBeNull();
   });
 
+  it("keeps the function-call fallback when two wires feed one handler", () => {
+    const mixed = byFunction(summaries, "MixedTriggerFunction");
+    const binding = (mixed as BehavioralSummary).identity.boundaryBinding;
+    expect(binding?.semantics.name).toBe("function-call");
+  });
+
+  it("binds a scheduled job to the eventbridge wire, not http", () => {
+    const scheduled = byFunction(summaries, "ScheduledSyncFunction");
+    const binding = (scheduled as BehavioralSummary).identity.boundaryBinding;
+    // A Schedule event creates an EventBridge rule; http never touches
+    // this unit (#128).
+    expect(binding?.transport).toBe("eventbridge");
+  });
+
+  it("binds a queue worker to the sqs wire, not http", () => {
+    const sqs = byEventType(summaries, "SQS");
+    const binding = (sqs as BehavioralSummary).identity.boundaryBinding;
+    expect(binding?.transport).toBe("sqs");
+  });
+
   it("reads the summary object a scheduled job returns", () => {
-    const scheduled = byEventType(summaries, "Schedule");
+    const scheduled = byFunction(summaries, "ScheduledSyncFunction");
     expect(scheduled).toBeDefined();
     const returns = (scheduled as BehavioralSummary).transitions.filter(
       (t) => t.output.type === "return",
@@ -332,7 +352,14 @@ describe("awsLambdaFramework: extraction", () => {
     const computed = byFunction(summaries, "ComputedSubjectFunction");
     expect(computed).toBeDefined();
     const binding = (computed as BehavioralSummary).identity.boundaryBinding;
-    expect(binding?.semantics.name).not.toBe("message-bus");
+    // The wire is still SQS; only the channel stays unstated rather
+    // than fabricated from a computed subject.
+    expect(binding?.transport).toBe("sqs");
+    expect(
+      binding?.semantics.name === "message-bus"
+        ? binding.semantics.channel
+        : "not-message-bus",
+    ).toBeNull();
   });
 
   it("attaches no channel until the project names its factory", async () => {
@@ -340,6 +367,11 @@ describe("awsLambdaFramework: extraction", () => {
     const worker = byFunction(defaults, "SubjectWorkerFunction");
     expect(worker).toBeDefined();
     const binding = (worker as BehavioralSummary).identity.boundaryBinding;
-    expect(binding?.semantics.name).toBe("function-call");
+    expect(binding?.transport).toBe("sqs");
+    expect(
+      binding?.semantics.name === "message-bus"
+        ? binding.semantics.channel
+        : "not-message-bus",
+    ).toBeNull();
   });
 });
