@@ -134,12 +134,11 @@ describe("formatExtractionReport", () => {
           }),
         ],
       }),
-      true,
+      ["aws-sqs"],
     );
 
-    expect(output).toContain("no pack in this run finds boundaries");
-    expect(output).toContain("aws-sqs");
-    expect(output).toContain("-f express");
+    expect(output).toContain("No discovery pack is loaded");
+    expect(output).toContain("suss extract -f express -f aws-sqs");
     expect(output).not.toContain("Worth opening an issue");
   });
 
