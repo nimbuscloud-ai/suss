@@ -19,10 +19,10 @@
       "pct": 94.04
     },
     "branches": {
-      "total": 5359,
-      "covered": 4151,
+      "total": 5361,
+      "covered": 4152,
       "skipped": 0,
-      "pct": 77.45
+      "pct": 77.44
     },
     "branchesTrue": {
       "total": 0,
@@ -1975,10 +1975,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 28,
-      "covered": 26,
+      "total": 30,
+      "covered": 27,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 90
     }
   },
   "src/walk/descent.ts": {

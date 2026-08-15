@@ -235,6 +235,8 @@ export function reactRouterFramework(
           },
           body: { from: "argument" as const, position: 1 },
         },
+        // The router turns the thrown error's status into the wire response.
+        producesResponse: true,
       })),
     ],
 

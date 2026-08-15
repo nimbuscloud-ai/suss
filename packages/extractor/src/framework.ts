@@ -716,6 +716,13 @@ export interface TerminalPattern {
   kind: "response" | "throw" | "return" | "render";
   match: TerminalMatch;
   extraction: TerminalExtraction;
+  /**
+   * On a throw terminal: the framework turns the thrown status into
+   * the wire response, so a resolved status makes the output a
+   * response. HTTP packs state this; a pack reading a non-HTTP code
+   * space off throws leaves it off and the throw stays a throw (#149).
+   */
+  producesResponse?: boolean;
 }
 
 // =============================================================================

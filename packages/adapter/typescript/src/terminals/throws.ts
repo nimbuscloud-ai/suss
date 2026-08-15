@@ -46,6 +46,7 @@ export function tryMatchThrowExpression(
     body,
     exceptionType,
     message,
+    ...(pattern.producesResponse === true ? { producesResponse: true } : {}),
     component: null,
     delegateTarget: null,
     emitEvent: null,
