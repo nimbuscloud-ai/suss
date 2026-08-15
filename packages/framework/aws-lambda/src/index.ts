@@ -106,6 +106,15 @@ export function awsLambdaFramework(
         { position: 1, role: "context" },
       ],
     },
+
+    // The powertools read their configuration from inside node_modules,
+    // so a template that declares these has a reader no walk ever sees.
+    libraryEnvVars: [
+      {
+        module: "@aws-lambda-powertools/",
+        prefixes: ["POWERTOOLS_"],
+      },
+    ],
   };
 }
 

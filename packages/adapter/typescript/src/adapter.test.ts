@@ -846,6 +846,57 @@ describe("module imports on summaries", () => {
   });
 });
 
+describe("library env-read markers", () => {
+  const { contractReading: _dropped, ...zodOpenapiBase } = zodOpenapiPack;
+  const packWithLibraryVars: PatternPack = {
+    ...zodOpenapiBase,
+    name: "aws-lambda",
+    discovery: [],
+    libraryEnvVars: [
+      { module: "@aws-lambda-powertools/", prefixes: ["POWERTOOLS_"] },
+    ],
+  };
+
+  it("emits one marker when a project file imports the declared library", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/handler.ts",
+      `
+      import { Logger } from "@aws-lambda-powertools/logger";
+      export const logger = new Logger();
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [packWithLibraryVars],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+    const marker = summaries.find(
+      (s) => s.metadata?.libraryEnvReads !== undefined,
+    );
+    expect(marker?.metadata?.libraryEnvReads).toEqual({
+      module: "@aws-lambda-powertools/",
+      prefixes: ["POWERTOOLS_"],
+    });
+    expect(marker?.location.file).toBe("/handler.ts");
+  });
+
+  it("emits nothing when no file imports the library", async () => {
+    const project = createTestProject();
+    project.createSourceFile("/plain.ts", "export const x = 1;");
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [packWithLibraryVars],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+    expect(
+      summaries.find((s) => s.metadata?.libraryEnvReads !== undefined),
+    ).toBeUndefined();
+  });
+});
+
 describe("createTypeScriptAdapter: ts-rest fixtures", () => {
   it("extracts summaries from fixture handler file", async () => {
     const project = createFixtureProject();

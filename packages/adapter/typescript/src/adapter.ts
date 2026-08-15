@@ -1363,6 +1363,79 @@ function stampModuleImports(
   }
 }
 
+/**
+ * One marker summary per pack-declared library whose module some
+ * project file imports. The marker's metadata says which env vars the
+ * library reads from inside node_modules, where no walk looks, so the
+ * runtime-config pairing can consult it before calling a declared
+ * variable unused. Anchored at the first importing file found.
+ */
+function emitLibraryEnvReadMarkers(
+  summaries: BehavioralSummary[],
+  project: Project,
+  frameworks: PatternPack[],
+): void {
+  for (const pack of frameworks) {
+    for (const declared of pack.libraryEnvVars ?? []) {
+      const importer = fileImporting(project, declared.module);
+      if (importer === undefined) {
+        continue;
+      }
+      summaries.push(libraryEnvReadMarker(pack, declared, importer));
+    }
+  }
+}
+
+function fileImporting(
+  project: Project,
+  modulePrefix: string,
+): string | undefined {
+  for (const sourceFile of project.getSourceFiles()) {
+    if (sourceFile.isInNodeModules() || sourceFile.isDeclarationFile()) {
+      continue;
+    }
+
+    for (const imp of sourceFile.getImportDeclarations()) {
+      if (imp.getModuleSpecifierValue().startsWith(modulePrefix)) {
+        return sourceFile.getFilePath();
+      }
+    }
+  }
+  return undefined;
+}
+
+function libraryEnvReadMarker(
+  pack: PatternPack,
+  declared: { module: string; prefixes?: string[]; names?: string[] },
+  importer: string,
+): BehavioralSummary {
+  return {
+    kind: "library",
+    location: { file: importer, range: { start: 0, end: 0 }, exportName: null },
+    identity: {
+      name: `${declared.module} env reads`,
+      exportPath: null,
+      boundaryBinding: functionCallBinding({
+        transport: "in-process",
+        recognition: pack.name,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      libraryEnvReads: {
+        module: declared.module,
+        ...(declared.prefixes !== undefined
+          ? { prefixes: declared.prefixes }
+          : {}),
+        ...(declared.names !== undefined ? { names: declared.names } : {}),
+      },
+    },
+  };
+}
+
 function internalImportsOf(project: Project, file: string): string[] {
   const sourceFile = project.getSourceFile(file);
   if (sourceFile === undefined) {
@@ -1964,6 +2037,9 @@ export function createTypeScriptAdapter(
 
       timer.time("stampModuleImports", () =>
         stampModuleImports(enriched, project),
+      );
+      timer.time("emitLibraryEnvReadMarkers", () =>
+        emitLibraryEnvReadMarkers(enriched, project, config.frameworks),
       );
 
       await timer.timeAsync("cache.write", async () => {
