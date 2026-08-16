@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-intent",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "type": "module",
   "description": "Read team-authored intent specs (*.intent / *.prd, YAML or JSON) into IntentSummary[] for the intent checker to pair against derived code summaries.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/intent-ir": "0.5.10",
+    "@suss/intent-ir": "0.5.11",
     "yaml": "^2.4.0",
     "zod": "^4.0.0"
   },

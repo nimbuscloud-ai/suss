@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-graphql-ruby",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from graphql-ruby's class-based field DSL, including mutation:/resolver: one-hop wiring.",
   "keywords": [
@@ -47,8 +47,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.5.10",
-    "@suss/contract-graphql": "0.5.10"
+    "@suss/adapter-ruby": "0.5.11",
+    "@suss/contract-graphql": "0.5.11"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
