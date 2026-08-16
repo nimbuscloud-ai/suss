@@ -48,6 +48,9 @@ export function flaskRestxFramework(
   return {
     name: "flask-restx",
     protocol: "http",
+    ...(options.wrapperModules !== undefined
+      ? { projectModules: options.wrapperModules }
+      : {}),
     discovery: [
       {
         type: "decoratedClassRoute",

@@ -20,6 +20,7 @@ import { field } from "./ast.js";
 import { discoverUnits } from "./discovery.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
+import { resolveAbsoluteModule } from "./moduleResolver.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
@@ -47,6 +48,25 @@ export interface ExtractPythonResult {
   facts: Database;
 }
 
+/**
+ * A wrapper module a person configured that resolves to nothing finds
+ * no decorator, so the run reports no routes and gives no reason. Say
+ * which entry missed, once, before any of the work.
+ */
+function reportUnresolvedProjectModules(options: ExtractPythonOptions): void {
+  for (const pack of options.packs) {
+    for (const module of pack.projectModules ?? []) {
+      const resolved = resolveAbsoluteModule(module, { roots: options.roots });
+      if (resolved.status === "resolved") {
+        continue;
+      }
+      process.stderr.write(
+        `[suss] ${pack.name}: the configured module ${module} does not resolve under ${options.roots.join(", ")}, so nothing it wraps will be discovered.\n`,
+      );
+    }
+  }
+}
+
 export async function extractPythonProject(
   options: ExtractPythonOptions,
 ): Promise<ExtractPythonResult> {
@@ -64,6 +84,8 @@ export async function extractPythonProject(
     options.workspaceRoot !== undefined
       ? path.relative(options.workspaceRoot, file)
       : file;
+
+  reportUnresolvedProjectModules(options);
 
   const bound: BoundPythonFile[] = [];
   for (const file of options.files) {

@@ -16,6 +16,15 @@ export interface PythonPack {
   /** Wire protocol for the produced boundary bindings, e.g. "http". */
   protocol: string;
   discovery: PythonDiscoveryPattern[];
+  /**
+   * Modules the project itself supplies, the wrappers a person names
+   * when configuring the pack. The library's own module is not one of
+   * these: it lives outside the project and would never resolve. The
+   * adapter checks each of these against the project's roots, because
+   * a wrapper that resolves to nothing does not match any decorator
+   * and never says why (#188).
+   */
+  projectModules?: string[];
   /** What the library's own database queries look like. The README says how one is matched. */
   storage?: StoragePattern[];
 }
