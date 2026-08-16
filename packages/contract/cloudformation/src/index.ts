@@ -65,6 +65,7 @@ import {
 import { buildAlbFlowSummaries } from "./albFlow.js";
 import { buildDnsFlowSummaries } from "./dnsFlow.js";
 import { documentSourceLabel } from "./documentLabel.js";
+import { buildDynamoTableSummaries } from "./dynamoTables.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
@@ -203,6 +204,13 @@ export function cloudFormationToSummaries(
   //    matches today.
   summaries.push(...buildAlbFlowSummaries(resources, sourceFile));
   summaries.push(...buildDnsFlowSummaries(resources, sourceFile));
+
+  // 7. Storage walk: every AWS::DynamoDB::Table becomes a provider
+  //    summary, and so does each of its secondary indexes, since a
+  //    query through an index keys on that index's own fields.
+  summaries.push(
+    ...buildDynamoTableSummaries(resources, sourceFile, recognition),
+  );
 
   const stackPath = options.stackPath ?? [];
   return stackPath.length === 0

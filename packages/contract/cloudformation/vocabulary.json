@@ -85,5 +85,11 @@
   "A": "Route 53: record type, an IPv4 address",
   "AAAA": "Route 53: record type, an IPv6 address",
   "CNAME": "Route 53: record type, another name to look up",
-  "dns": "suss: match language for a hostname, so no ALB matcher evaluates one"
+  "dns": "suss: match language for a hostname, so no ALB matcher evaluates one",
+  "dynamodb": "AWS transport name, Amazon DynamoDB",
+  "GlobalSecondaryIndexes": "CloudFormation: AWS::DynamoDB::Table property listing the indexes that key differently from the table",
+  "LocalSecondaryIndexes": "CloudFormation: AWS::DynamoDB::Table property listing the indexes that share the table's partition key",
+  "RANGE": "CloudFormation: AWS::DynamoDB::Table KeyType, the sort key",
+  "partial": "suss: a storage contract that declares some of an item's fields",
+  "keyFields": "suss: a storage contract identified by the fields a caller supplies"
 }

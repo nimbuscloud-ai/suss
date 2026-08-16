@@ -183,9 +183,9 @@ files run inside the channel.
 Drizzle, TypeORM, or raw DDL, and a DynamoDB table, a bucket, or an index the
 same way. The container is the table, bucket, or collection, and `accessPath`
 is a secondary way in, a global secondary index or an alias, or null for the
-container's own primary key. Columns are fields on the container's contract,
-and field-level access checks compare what the code reads and writes against
-`metadata.storageContract.fields`. Pairing key: `(storageSystem, scope,
+container's own primary key. What a store declares an item has are fields on
+the container's contract, and field-level access checks compare what the code
+reads and writes against `metadata.storageContract.fields`. Pairing key: `(storageSystem, scope,
 container, accessPath)`.
 
 Whether a field the code touches can be called unknown is a property the
@@ -193,7 +193,9 @@ provider declares, not something the store's name implies:
 `metadata.storageContract.fieldSet` is `"exhaustive"` for a SQL schema that
 declares every column, `"partial"` for a store that declares its keys and lets
 the rest vary, and `"none"` for a blob. Only an exhaustive contract produces
-`boundaryFieldUnknown`.
+`boundaryFieldUnknown`. `metadata.storageContract.identifies` says what picks
+one item out of the container, either the key fields in the order the store
+keys on them or a convention the key follows.
 
 **`message-bus`** covers SQS, SNS, S3, EventBridge, BullMQ, Kafka, and NATS.
 Producer-side `interaction(class: "message-send")` effects pair against it, and
