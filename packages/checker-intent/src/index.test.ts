@@ -136,6 +136,44 @@ describe("checkIntentAgreement — REST", () => {
     expect(result.unchecked).toHaveLength(0);
   });
 
+  it("lets a wildcard-method route satisfy a method-named intent, as pairing would", () => {
+    const wildcardBinding = restBinding({
+      transport: "http",
+      method: "*",
+      path: "/users/:id",
+      recognition: "express",
+    });
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [codeSummary(wildcardBinding, [restResponse(200, userShape)])],
+    );
+    expect(
+      result.findings.filter((f) => f.kind === "unimplementedBoundary"),
+    ).toHaveLength(0);
+    expect(result.checked[0]?.kind).toBe("boundary");
+    if (result.checked[0]?.kind === "boundary") {
+      expect(result.checked[0].implementations).toEqual([
+        "src/handler.ts::getUser",
+      ]);
+    }
+  });
+
+  it("does not match a route on the same path with a different method", () => {
+    const postBinding = restBinding({
+      transport: "http",
+      method: "POST",
+      path: "/users/:id",
+      recognition: "express",
+    });
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [codeSummary(postBinding, [restResponse(200, userShape)])],
+    );
+    expect(result.findings.map((f) => f.kind)).toContain(
+      "unimplementedBoundary",
+    );
+  });
+
   it("flags a declared status the code never produces", () => {
     const result = checkIntentAgreement(
       [
