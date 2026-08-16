@@ -182,12 +182,11 @@ function buildInputs(
     });
   }
 
-  // requestBody → single input with role "requestBody". Pick the first
-  // content type's schema (typically application/json); the shape is what
-  // matters for cross-boundary checking, not the media type.
+  // requestBody becomes one input with role "requestBody", carrying
+  // the schema of the media type a caller is most likely to send.
   const body = op.requestBody;
   if (body !== undefined) {
-    const firstContent = Object.values(body.content ?? {})[0];
+    const firstContent = chosenContent(body.content);
     inputs.push({
       type: "parameter",
       name: "body",
@@ -289,6 +288,30 @@ function buildTransitions(
   return transitions;
 }
 
+/**
+ * The schema for the media type a client is most likely to send or
+ * read. An operation that offers several used to give whichever one
+ * the document happened to list first, so a spec writing
+ * application/xml above application/json handed back the XML schema
+ * and every JSON caller was compared against it. JSON wins when it is
+ * offered; otherwise the media types are taken in sorted order, so two
+ * runs over one document agree. Comparing the media type itself is
+ * #387.
+ */
+function chosenContent<T extends { schema?: unknown }>(
+  content: Record<string, T> | undefined,
+): T | undefined {
+  if (content === undefined) {
+    return undefined;
+  }
+  const mediaTypes = Object.keys(content);
+  const json = mediaTypes.find(
+    (type) => type === "application/json" || type.endsWith("+json"),
+  );
+  const chosen = json ?? [...mediaTypes].sort()[0];
+  return chosen === undefined ? undefined : content[chosen];
+}
+
 function bodyShape(
   response: NonNullable<OpenApiOperation["responses"]>[string],
   ctx: ReturnType<typeof newContext>,
@@ -296,7 +319,7 @@ function bodyShape(
   if (response === undefined || response.content === undefined) {
     return null;
   }
-  const firstContent = Object.values(response.content)[0];
+  const firstContent = chosenContent(response.content);
   if (firstContent?.schema === undefined) {
     return null;
   }
