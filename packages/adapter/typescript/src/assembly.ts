@@ -174,7 +174,12 @@ export function extractRawBranches(
       barriers,
       resolveWrittenValue,
     ),
-    ...runAccessRecognizers(func, accessRecognizers, barriers),
+    ...runAccessRecognizers(
+      func,
+      accessRecognizers,
+      barriers,
+      resolveWrittenValue,
+    ),
   ];
 
   // One condition list per path from entry to terminal. Anything the

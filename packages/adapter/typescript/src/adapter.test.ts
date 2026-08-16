@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { type CallExpression, Project } from "ts-morph";
+import { type CallExpression, Node, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { readHttpMetadata } from "@suss/behavioral-ir";
@@ -1940,6 +1940,84 @@ describe("createTypeScriptAdapter: rethrow enrichment", () => {
     );
     expect(throwTransition).toBeDefined();
     expect(throwTransition?.metadata?.rethrow).toBeUndefined();
+  });
+});
+
+describe("access recognizers", () => {
+  it("resolves a name through the context's fact lookup", async () => {
+    const { runtimeConfigBinding } = await import("@suss/behavioral-ir");
+    const seen: string[] = [];
+    const recognizingPack: PatternPack = {
+      name: "test-config",
+      protocol: "http",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "handler",
+          match: { type: "namedExport", names: ["handler"] },
+          requiresImport: [],
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+      accessRecognizers: [
+        (access, rawCtx) => {
+          const node = access as Node;
+          const ctx = rawCtx as {
+            resolveWrittenValue: (value: Node) => Node | null;
+          };
+          if (!Node.isCallExpression(node)) {
+            return null;
+          }
+          if (node.getExpression().getText() !== "track") {
+            return null;
+          }
+          const arg = node.getArguments()[0];
+          const resolved =
+            arg === undefined ? null : ctx.resolveWrittenValue(arg);
+          const name =
+            resolved !== null && Node.isStringLiteral(resolved)
+              ? resolved.getLiteralValue()
+              : null;
+          if (name === null) {
+            return null;
+          }
+          seen.push(name);
+          return [
+            {
+              type: "interaction",
+              binding: runtimeConfigBinding({
+                recognition: "test-config",
+                deploymentTarget: "lambda",
+                instanceName: "<runtime>",
+              }),
+              callee: node.getExpression().getText(),
+              interaction: { class: "config-read", name, defaulted: false },
+            },
+          ];
+        },
+      ],
+    };
+
+    const project = createTestProject();
+    project.createSourceFile(
+      "handler.ts",
+      `
+      const EVENT_NAME = "user.created";
+      function track(name: string) { return name; }
+      export function handler() {
+        track(EVENT_NAME);
+        return { ok: true };
+      }
+    `,
+    );
+    await createTypeScriptAdapter({
+      project,
+      frameworks: [recognizingPack],
+    }).extractAll();
+    expect(seen).toEqual(["user.created"]);
   });
 });
 

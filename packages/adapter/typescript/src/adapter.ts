@@ -1351,9 +1351,13 @@ function extractFromSourceFile(
   // whichever pack got there first.
   const moduleScope = moduleInitSummary(
     sourceFile,
-    runAccessRecognizersAtModuleScope(sourceFile, allAccessRecognizers).map(
-      (recognized) => recognized.effect,
-    ),
+    runAccessRecognizersAtModuleScope(
+      sourceFile,
+      allAccessRecognizers,
+      resolution === undefined
+        ? undefined
+        : (value) => resolution.resolveWrittenValue(value),
+    ).map((recognized) => recognized.effect),
     options,
   );
   if (moduleScope !== null) {
