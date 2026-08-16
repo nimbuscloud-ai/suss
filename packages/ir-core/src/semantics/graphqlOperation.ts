@@ -33,6 +33,8 @@ export const graphqlOperationSemantics = defineBoundarySemantics({
     exchangesHttpResponses: false,
     reportsUnpairedItself: false,
     identityKey: () => null,
+    /** Keyless by design; the dedicated pass pairs it by its document. */
+    canPair: () => true,
     /** "query GetUser". The contract checker pairs it, the key does not. */
     displayLabel(semantics) {
       return `${semantics.operationType} ${semantics.operationName ?? "<anonymous>"}`;

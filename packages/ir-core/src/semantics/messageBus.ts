@@ -58,6 +58,12 @@ export const messageBusSemantics = defineBoundarySemantics({
      */
     reportsUnpairedItself: true,
     /**
+     * A channel unnamed here can still pair: the dedicated pass
+     * collapses env chains before comparing, so a consumer whose
+     * channel arrives at runtime meets the template that declares it.
+     */
+    canPair: () => true,
+    /**
      * `"bus:<messageBus> <subject>"`, or null when the channel is null
      * or its subject is empty.
      *

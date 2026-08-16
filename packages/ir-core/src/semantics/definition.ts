@@ -74,6 +74,14 @@ export interface BoundaryBehavior<S extends { name: string }> {
    * paired with nothing, so the generic unmatched list can leave it out.
    */
   reportsUnpairedItself: boolean;
+
+  /**
+   * Whether a boundary with these semantics can pair with anything.
+   * Defaults to a non-null pairing key. A protocol whose dedicated
+   * pass pairs keyless boundaries overrides it, the way GraphQL
+   * operations pair by document rather than by key.
+   */
+  canPair?(semantics: S): boolean;
 }
 
 /**

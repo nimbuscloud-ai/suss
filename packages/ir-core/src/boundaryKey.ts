@@ -63,6 +63,18 @@ export function exchangesHttpResponses(binding: BoundaryBinding): boolean {
   return behaviorOf(binding.semantics).exchangesHttpResponses;
 }
 
+/**
+ * Whether anything can pair with this binding: it has a pairing key,
+ * or its protocol pairs keyless boundaries in a dedicated pass.
+ */
+export function canPair(binding: BoundaryBinding): boolean {
+  const behavior = behaviorOf(binding.semantics);
+  if (behavior.canPair !== undefined) {
+    return behavior.canPair(binding.semantics);
+  }
+  return pairingKey(binding) !== null;
+}
+
 export function reportsUnpairedItself(binding: BoundaryBinding): boolean {
   return behaviorOf(binding.semantics).reportsUnpairedItself;
 }

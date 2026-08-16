@@ -100,6 +100,7 @@ export type { StorageRelationalSemantics } from "./semantics/storageRelational.j
 export {
   boundaryKey,
   boundaryLabel,
+  canPair,
   displayLabel,
   exchangesHttpResponses,
   pairingKey,
