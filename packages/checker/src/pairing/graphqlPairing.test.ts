@@ -199,6 +199,70 @@ describe("pairGraphqlOperations", () => {
     expect(recognitions.sort()).toEqual(["apollo", "appsync"]);
   });
 
+  it("flags one key matching resolvers in two workspaces as an ambiguous provider", () => {
+    const railsPet = {
+      ...resolver("Query", "pet"),
+      location: {
+        file: "server/Query.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "rails-api",
+      },
+    };
+    const servicePet = {
+      ...resolver("Query", "pet"),
+      location: {
+        file: "service/Query.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "second-service",
+      },
+    };
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { id } }`,
+    );
+    const result = pairGraphqlOperations([railsPet, servicePet, op]);
+    expect(result.pairs).toHaveLength(2);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].kind).toBe("ambiguousProvider");
+    expect(result.findings[0].severity).toBe("warning");
+    expect(result.findings[0].description).toContain("rails-api");
+    expect(result.findings[0].description).toContain("second-service");
+  });
+
+  it("stays quiet when the matching resolvers share one workspace", () => {
+    const first = {
+      ...resolver("Query", "pet", "apollo"),
+      location: {
+        file: "server/a.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "api",
+      },
+    };
+    const second = {
+      ...resolver("Query", "pet", "appsync"),
+      location: {
+        file: "server/b.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "api",
+      },
+    };
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { id } }`,
+    );
+    const result = pairGraphqlOperations([first, second, op]);
+    expect(result.pairs).toHaveLength(2);
+    expect(result.findings).toEqual([]);
+  });
+
   it("handles anonymous queries — no operation name, still maps by root type", () => {
     const pingResolver = resolver("Query", "ping");
     const op = operation("usePing", undefined, "query", "query { ping }");

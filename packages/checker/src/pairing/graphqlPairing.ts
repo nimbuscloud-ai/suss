@@ -104,6 +104,22 @@ function pairOneOperation(
       findings.push(fieldNotImplementedFinding(operation, doc, selection.name));
       continue;
     }
+
+    // Two GraphQL services in one repo can declare the same root field,
+    // and the key has no endpoint identity to tell them apart (#224).
+    const workspaces = providerWorkspaces(matchingResolvers);
+    if (workspaces.length > 1) {
+      findings.push(
+        ambiguousProviderFinding(
+          operation,
+          doc,
+          selection.name,
+          matchingResolvers,
+          workspaces,
+        ),
+      );
+    }
+
     for (const resolver of matchingResolvers) {
       pairs.push({
         provider: resolver,
@@ -423,6 +439,47 @@ function fieldNotImplementedFinding(
       location: operation.location,
     },
     description: `GraphQL operation "${operation.identity.name}" selects root field "${doc.rootTypeName}.${fieldName}" but no provider summary implements it.`,
+    severity: "warning",
+  };
+}
+
+/**
+ * The distinct workspaces the matched resolvers came from. A resolver
+ * without a workspace (a single-project run) counts as one bucket, so
+ * two unlabeled services still collapse to one and stay quiet.
+ */
+function providerWorkspaces(resolvers: BehavioralSummary[]): string[] {
+  const seen = new Set<string>();
+  for (const resolver of resolvers) {
+    seen.add(resolver.location.workspace ?? "");
+  }
+  return [...seen].sort();
+}
+
+function ambiguousProviderFinding(
+  operation: BehavioralSummary,
+  doc: OperationDoc,
+  fieldName: string,
+  resolvers: BehavioralSummary[],
+  workspaces: string[],
+): Finding {
+  const binding = operation.identity.boundaryBinding;
+  if (binding === null) {
+    throw new Error("expected graphql-operation boundary binding");
+  }
+  const named = workspaces.map((w) => (w === "" ? "(unnamed)" : w));
+  return {
+    kind: "ambiguousProvider",
+    boundary: binding,
+    provider: {
+      summary: summaryRef(resolvers[0] as BehavioralSummary),
+      location: (resolvers[0] as BehavioralSummary).location,
+    },
+    consumer: {
+      summary: summaryRef(operation),
+      location: operation.location,
+    },
+    description: `GraphQL operation "${operation.identity.name}" selects "${doc.rootTypeName}.${fieldName}", which ${resolvers.length} resolvers implement across ${workspaces.length} services (${named.join(", ")}). The pairing key has no endpoint identity, so this operation pairs with all of them and some of those pairs are wrong.`,
     severity: "warning",
   };
 }

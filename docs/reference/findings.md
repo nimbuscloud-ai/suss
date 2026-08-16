@@ -294,6 +294,12 @@ A pack identifies a boundary it doesn't know how to summarise, a WebSocket subsc
 
 A pairing pass refused to emit substantive findings because too many predicates on the relevant transitions are opaque. This one is per-pair, in contrast to `lowConfidence`, which is per-summary.
 
+### `ambiguousProvider`
+
+**Severity:** warning
+
+One pairing key matched providers in more than one workspace. Two GraphQL services in one repo can each declare `Query.user`, and the key has no endpoint identity to tell them apart, so the consumer pairs with both and some of those pairs are wrong. The finding says which services collided so you can see where the extra pairs came from.
+
 ---
 
 ## What this catalog is *not*
