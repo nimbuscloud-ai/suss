@@ -3,7 +3,7 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 424,
-    "internal": 1678,
+    "internal": 1679,
     "consumers": 677,
     "pairs": 669
   },
@@ -35,7 +35,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 140,
+      "internal": 141,
       "consumers": 84
     },
     "packages/checker-intent": {

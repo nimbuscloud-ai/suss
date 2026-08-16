@@ -108,6 +108,69 @@ function makeAccessSummary(opts: {
 }
 
 describe("checkRelationalStorage", () => {
+  it("keeps two services' same-named tables apart", () => {
+    // Both services keep a users table under the scope "default", so
+    // the pairing key alone puts them together and each schema used to
+    // check the other service's queries.
+    const provider = {
+      ...makeProvider({ table: "users", columns: [{ name: "id" }] }),
+      location: {
+        file: "billing/schema.prisma",
+        range: { start: 1, end: 10 },
+        exportName: null,
+        workspace: "billing",
+      },
+    };
+    const access = {
+      ...makeAccessSummary({
+        name: "readProfile",
+        file: "identity/src/handler.ts",
+        accesses: [{ table: "users", kind: "read", fields: ["email"] }],
+      }),
+      location: {
+        file: "identity/src/handler.ts",
+        range: { start: 1, end: 20 },
+        exportName: "readProfile",
+        workspace: "identity",
+      },
+    };
+    expect(
+      checkRelationalStorage([provider, access]).filter(
+        (f) => f.kind === "boundaryFieldUnknown",
+      ),
+    ).toEqual([]);
+  });
+
+  it("still pairs a schema and a query inside one service", () => {
+    const provider = {
+      ...makeProvider({ table: "users", columns: [{ name: "id" }] }),
+      location: {
+        file: "billing/schema.prisma",
+        range: { start: 1, end: 10 },
+        exportName: null,
+        workspace: "billing",
+      },
+    };
+    const access = {
+      ...makeAccessSummary({
+        name: "readProfile",
+        file: "billing/src/handler.ts",
+        accesses: [{ table: "users", kind: "read", fields: ["email"] }],
+      }),
+      location: {
+        file: "billing/src/handler.ts",
+        range: { start: 1, end: 20 },
+        exportName: "readProfile",
+        workspace: "billing",
+      },
+    };
+    const findings = checkRelationalStorage([provider, access]).filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("email");
+  });
+
   it("pairs nothing when the access states no table", () => {
     // A drizzle query whose table declaration the reader could not
     // settle. Pairing it by source text would check it against a
