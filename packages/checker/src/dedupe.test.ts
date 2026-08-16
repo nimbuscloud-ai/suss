@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { restBinding } from "@suss/behavioral-ir";
+import { functionCallBinding, restBinding } from "@suss/behavioral-ir";
 
 import { dedupeFindings } from "./dedupe.js";
 
@@ -124,6 +124,55 @@ describe("dedupeFindings", () => {
     });
     const out = dedupeFindings([f1, f2]);
     expect(out).toHaveLength(2);
+  });
+
+  it("keeps two unkeyed boundaries apart instead of collapsing them", () => {
+    // A function-call boundary with no package or export path has no
+    // key, so nothing says these two findings are about one boundary.
+    const unkeyed = functionCallBinding({
+      transport: "in-process",
+      recognition: "react",
+    });
+    const first = finding({
+      boundary: unkeyed,
+      provider: {
+        summary: "src/a.tsx::Button",
+        location: {
+          file: "src/a.tsx",
+          range: { start: 1, end: 10 },
+          exportName: "Button",
+        },
+      },
+    });
+    const second = finding({
+      boundary: unkeyed,
+      provider: {
+        summary: "src/b.tsx::Button",
+        location: {
+          file: "src/b.tsx",
+          range: { start: 1, end: 10 },
+          exportName: "Button",
+        },
+      },
+    });
+    const out = dedupeFindings([first, second]);
+    expect(out).toHaveLength(2);
+    expect(out.map((f) => f.provider.summary)).toEqual([
+      "src/a.tsx::Button",
+      "src/b.tsx::Button",
+    ]);
+  });
+
+  it("still collapses one unkeyed boundary reported twice by one provider", () => {
+    const unkeyed = functionCallBinding({
+      transport: "in-process",
+      recognition: "react",
+    });
+    const out = dedupeFindings([
+      finding({ boundary: unkeyed }),
+      finding({ boundary: unkeyed }),
+    ]);
+    expect(out).toHaveLength(1);
   });
 
   it("normalizes trivial whitespace differences in descriptions before keying", () => {

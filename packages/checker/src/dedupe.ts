@@ -35,13 +35,17 @@ function moreSevere(a: FindingSeverity, b: FindingSeverity): FindingSeverity {
 }
 
 function keyFor(f: Finding): string {
-  const key = boundaryKey(f.boundary) ?? "_noboundary_";
+  const key = boundaryKey(f.boundary);
   // description is freeform text, if two checks ever produced
   // descriptions that differed only in trivial whitespace, that would
   // foil dedup. Normalize whitespace before keying.
   const desc = f.description.replace(/\s+/g, " ").trim();
   const consumerTxn = f.consumer.transitionId ?? "";
-  return `${f.kind}|${key}|${desc}|${f.consumer.summary}|${consumerTxn}`;
+  // Collapsing across providers needs the key to say the two findings
+  // are about one boundary. A boundary with no key cannot say that, so
+  // the provider stays in and two of them keep their own findings.
+  const boundaryPart = key ?? `_noboundary_|${f.provider.summary}`;
+  return `${f.kind}|${boundaryPart}|${desc}|${f.consumer.summary}|${consumerTxn}`;
 }
 
 /**
