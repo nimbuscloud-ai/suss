@@ -3,7 +3,11 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
-import { readGraphqlMetadata, withGraphqlMetadata } from "@suss/behavioral-ir";
+import {
+  isGraphqlOperationBinding,
+  readGraphqlMetadata,
+  withGraphqlMetadata,
+} from "@suss/behavioral-ir";
 
 import { stringValueOf } from "./resolveValue.js";
 
@@ -35,9 +39,9 @@ export function stampGraphqlClientRefs(
   if (sole === null) {
     return;
   }
+
   for (const summary of summaries) {
-    const semantics = summary.identity.boundaryBinding?.semantics;
-    if (semantics?.name !== "graphql-operation") {
+    if (!isGraphqlOperationBinding(summary.identity.boundaryBinding)) {
       continue;
     }
     const existing = readGraphqlMetadata(summary) ?? {};

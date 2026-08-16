@@ -54,6 +54,7 @@ export {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  isGraphqlOperationBinding,
   messageBusBinding,
   packageExportBinding,
   restBinding,
