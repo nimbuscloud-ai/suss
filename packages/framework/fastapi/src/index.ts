@@ -49,6 +49,9 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
   return {
     name: "fastapi",
     protocol: "http",
+    ...(options.wrapperModules !== undefined
+      ? { projectModules: options.wrapperModules }
+      : {}),
     discovery: [
       {
         type: "decoratedFunctionRoute",

@@ -48,6 +48,41 @@ describe("findPythonFiles", () => {
   });
 });
 
+describe("a configured wrapper module that resolves to nothing", () => {
+  it("says which entry missed, and stays quiet when it resolves", async () => {
+    write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    const file = write("myapp/routes/todos.py", "x = 1\n");
+    const said: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      said.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await extractPythonProject({
+        files: [file],
+        roots: [tmpDir],
+        packs: [
+          {
+            ...flaskRestxLike,
+            projectModules: ["myapp.wrappers.restx", "myapp.wrappers.typo"],
+          },
+        ],
+      });
+    } finally {
+      process.stderr.write = original;
+    }
+
+    const complaints = said.filter((line) => line.includes("does not resolve"));
+    expect(complaints).toHaveLength(1);
+    expect(complaints[0]).toContain("myapp.wrappers.typo");
+  });
+});
+
 describe("extractPythonProject", () => {
   it("extracts summaries across multiple files sharing one wrapper import", async () => {
     write(
