@@ -43,7 +43,7 @@ const summaries = openApiToSummaries(spec);
 
 - All standard HTTP methods on `paths.<path>.<method>`
 - Numeric status codes (`"200"`, `"404"`, etc.) and `default`
-- Response body schemas under `content.<media-type>.schema` (first content type wins)
+- Response body schemas under `content.<media-type>.schema` (the JSON one when the operation offers it, otherwise the media types in sorted order)
 - Path, query, header, and cookie parameters mapped to `Input.role`
 - Request body schemas mapped to a single `requestBody` input
 - `$ref` to `#/components/schemas/<Name>` with cycle protection (recursive schemas resolve to a `{ type: "ref", name }` placeholder)
@@ -54,7 +54,7 @@ const summaries = openApiToSummaries(spec);
 - **Range status codes** like `"2XX"` are skipped; checker pairing requires concrete status values.
 - **Headers, links, callbacks, webhooks** sections are not modeled.
 - **Security schemes** are not represented as transitions (no synthetic 401/403).
-- **Multiple content types** per response: only the first one is used for the body shape.
+- **Multiple content types** per response: one media type gives the body shape, and which one it was is not recorded, so a producer and a consumer are never compared on the media type itself. #387 tracks that.
 - **Polymorphism via `discriminator`** is not modeled (the union shape is correct, but the discriminator field isn't called out).
 - **Spec validation is not strict**; invalid specs may produce odd summaries rather than errors.
 
