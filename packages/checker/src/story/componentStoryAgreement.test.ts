@@ -112,6 +112,62 @@ function truthinessOnInput(name: string, negated = false): Predicate {
   };
 }
 
+/** The same summary, moved to another directory. */
+function inDirectory(
+  summary: BehavioralSummary,
+  dir: string,
+): BehavioralSummary {
+  const base = summary.location.file.slice(
+    summary.location.file.lastIndexOf("/") + 1,
+  );
+  return {
+    ...summary,
+    location: { ...summary.location, file: `${dir}/${base}` },
+  };
+}
+
+describe("two components sharing one name", () => {
+  it("checks a story against the component in its own directory", () => {
+    const wanted = inDirectory(
+      makeComponent("Button", [{ name: "label" }]),
+      "src/design",
+    );
+    const other = inDirectory(
+      makeComponent("Button", [{ name: "caption" }]),
+      "src/legacy",
+    );
+    const story = inDirectory(
+      makeStory("Primary", "Button", { label: "Hi" }),
+      "src/design",
+    );
+    expect(checkComponentStoryAgreement([wanted, other, story])).toEqual([]);
+  });
+
+  it("says nothing when the name stays ambiguous", () => {
+    const first = inDirectory(
+      makeComponent("Button", [{ name: "label" }]),
+      "src/design",
+    );
+    const second = inDirectory(
+      makeComponent("Button", [{ name: "caption" }]),
+      "src/legacy",
+    );
+    const story = inDirectory(
+      makeStory("Primary", "Button", { nonsense: "x" }),
+      "src/elsewhere",
+    );
+    expect(checkComponentStoryAgreement([first, second, story])).toEqual([]);
+  });
+
+  it("still flags an unknown arg against the one component of that name", () => {
+    const only = makeComponent("Card", [{ name: "title" }]);
+    const story = makeStory("Basic", "Card", { subtitle: "x" });
+    const findings = checkComponentStoryAgreement([only, story]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("subtitle");
+  });
+});
+
 describe("checkComponentStoryAgreement — unknown arg", () => {
   it("returns no findings when all story args exist on the component", () => {
     const component = makeComponent("Button", [

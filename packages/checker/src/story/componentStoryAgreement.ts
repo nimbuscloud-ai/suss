@@ -57,7 +57,7 @@ export function checkComponentStoryAgreement(
     return [];
   }
 
-  const componentsByName = new Map<string, BehavioralSummary>();
+  const componentsByName = new Map<string, BehavioralSummary[]>();
   for (const s of summaries) {
     if (s.kind !== "component") {
       continue;
@@ -65,20 +65,31 @@ export function checkComponentStoryAgreement(
     if (storyMeta(s) !== null) {
       continue;
     }
-    componentsByName.set(s.identity.name, s);
+    const bucket = componentsByName.get(s.identity.name) ?? [];
+    bucket.push(s);
+    componentsByName.set(s.identity.name, bucket);
   }
 
-  // Index stories by the component name they target, so the coverage
-  // pass can ask "all stories for component X" once per component.
-  const storiesByComponent = new Map<string, BehavioralSummary[]>();
+  // Resolve each story to one component summary once, so both passes
+  // agree about which component a story is for.
+  const componentOfStory = new Map<BehavioralSummary, BehavioralSummary>();
+  const storiesByComponent = new Map<BehavioralSummary, BehavioralSummary[]>();
   for (const story of stories) {
     const meta = storyMeta(story);
     if (meta?.component === undefined) {
       continue;
     }
-    const bucket = storiesByComponent.get(meta.component) ?? [];
+    const component = resolveComponent(
+      componentsByName.get(meta.component) ?? [],
+      story,
+    );
+    if (component === null) {
+      continue;
+    }
+    componentOfStory.set(story, component);
+    const bucket = storiesByComponent.get(component) ?? [];
     bucket.push(story);
-    storiesByComponent.set(meta.component, bucket);
+    storiesByComponent.set(component, bucket);
   }
 
   const findings: Finding[] = [];
@@ -89,7 +100,7 @@ export function checkComponentStoryAgreement(
     if (meta?.component === undefined) {
       continue;
     }
-    const component = componentsByName.get(meta.component);
+    const component = componentOfStory.get(story);
     if (component === undefined) {
       continue;
     }
@@ -109,11 +120,7 @@ export function checkComponentStoryAgreement(
   // a conditional transition, check whether any story supplies a
   // value for that prop. If not, the branches that depend on it go
   // untested.
-  for (const [componentName, componentStories] of storiesByComponent) {
-    const component = componentsByName.get(componentName);
-    if (component === undefined) {
-      continue;
-    }
+  for (const [component, componentStories] of storiesByComponent) {
     const gatingProps = collectGatingProps(component.transitions);
     if (gatingProps.size === 0) {
       continue;
@@ -140,6 +147,35 @@ export function checkComponentStoryAgreement(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The component a story is about. A story states an identifier name
+ * and never follows the import, so two components sharing a name are
+ * told apart by the story's own directory, which is where Storybook
+ * keeps them. An ambiguous name gets no answer, since checking
+ * against the wrong component invents findings (#121).
+ */
+function resolveComponent(
+  candidates: BehavioralSummary[],
+  story: BehavioralSummary,
+): BehavioralSummary | null {
+  if (candidates.length <= 1) {
+    return candidates[0] ?? null;
+  }
+
+  const storyDir = directoryOf(story.location.file);
+  const sameDirectory = candidates.filter(
+    (c) => directoryOf(c.location.file) === storyDir,
+  );
+  return sameDirectory.length === 1
+    ? (sameDirectory[0] as BehavioralSummary)
+    : null;
+}
+
+function directoryOf(file: string): string {
+  const at = file.lastIndexOf("/");
+  return at === -1 ? "" : file.slice(0, at);
+}
 
 function storyMeta(summary: BehavioralSummary): StorybookMeta | null {
   const component = summary.metadata?.component;
