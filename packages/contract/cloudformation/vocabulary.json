@@ -81,5 +81,9 @@
   "fronts": "suss: flow-reachability edge kind, what backs a target group",
   "belongsTo": "suss: flow-reachability edge kind, which load balancer a listener belongs to",
   "match": "suss: MatchResult value, a condition or match this selector settles as admitting",
-  "nomatch": "suss: MatchResult value, a condition or match this selector settles as refusing"
+  "nomatch": "suss: MatchResult value, a condition or match this selector settles as refusing",
+  "A": "Route 53: record type, an IPv4 address",
+  "AAAA": "Route 53: record type, an IPv6 address",
+  "CNAME": "Route 53: record type, another name to look up",
+  "dns": "suss: match language for a hostname, so no ALB matcher evaluates one"
 }

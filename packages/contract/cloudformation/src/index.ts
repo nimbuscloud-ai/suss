@@ -63,6 +63,7 @@ import {
 } from "@suss/manifest-aws";
 
 import { buildAlbFlowSummaries } from "./albFlow.js";
+import { buildDnsFlowSummaries } from "./dnsFlow.js";
 import { documentSourceLabel } from "./documentLabel.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
@@ -201,6 +202,7 @@ export function cloudFormationToSummaries(
   //    future reachability rule reads, not a pairing the checker
   //    matches today.
   summaries.push(...buildAlbFlowSummaries(resources, sourceFile));
+  summaries.push(...buildDnsFlowSummaries(resources, sourceFile));
 
   const stackPath = options.stackPath ?? [];
   return stackPath.length === 0
