@@ -1,0 +1,73 @@
+name: Corpus
+
+# Extraction counts over the pinned public corpora, compared against
+# scripts/corpus-baseline.json. The pins live in
+# scripts/corpusTargets.mjs, so any count movement on a scheduled run
+# is ours. Weekly rather than per pull request, because cloning and
+# extracting five targets costs minutes of runner time; Sunday early
+# morning UTC is a quiet slot, offset from the top of the hour.
+on:
+  schedule:
+    - cron: "23 5 * * 0"
+  workflow_dispatch:
+    inputs:
+      refresh-baseline:
+        description: Rewrite the baseline with this run's counts and push it
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: corpus-gate
+
+permissions:
+  contents: read
+
+jobs:
+  corpus:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.REGENERATE_DEPLOY_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Clone the corpora at their pins
+        run: |
+          mkdir -p dogfood-targets
+          node --input-type=module - << 'CLONE'
+          import { execSync } from "node:child_process";
+          const { CORPUS_REPOS } = await import("./scripts/corpusTargets.mjs");
+          for (const [name, repo] of Object.entries(CORPUS_REPOS)) {
+            const dir = `dogfood-targets/${name}`;
+            execSync(`git init -q ${dir}`);
+            execSync(`git -C ${dir} remote add origin ${repo.url}`);
+            execSync(`git -C ${dir} fetch -q --depth 1 origin ${repo.pin}`);
+            execSync(`git -C ${dir} checkout -q FETCH_HEAD`);
+            console.log(`${name} at ${repo.pin.slice(0, 12)}`);
+          }
+          CLONE
+
+      - name: Compare against the committed baseline
+        if: ${{ !inputs.refresh-baseline }}
+        run: node scripts/checkCorpusBaseline.mjs
+
+      - name: Refresh the baseline and push it
+        if: ${{ inputs.refresh-baseline }}
+        run: |
+          node scripts/checkCorpusBaseline.mjs --update
+          git add scripts/corpus-baseline.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: record the corpus baseline [skip ci]"
+          git push origin HEAD:main
