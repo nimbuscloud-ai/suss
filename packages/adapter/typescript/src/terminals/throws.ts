@@ -18,6 +18,7 @@ export function tryMatchThrowExpression(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "throwExpression" }>,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): FoundTerminal | null {
   if (!Node.isThrowStatement(node)) {
     return null;
@@ -35,6 +36,7 @@ export function tryMatchThrowExpression(
     extraction: pattern.extraction,
     ...(callArgs !== null ? { throwCallArgs: callArgs } : {}),
     ...(exceptionType !== null ? { exceptionType } : {}),
+    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);

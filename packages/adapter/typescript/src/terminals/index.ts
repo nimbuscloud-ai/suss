@@ -55,6 +55,7 @@ export function findTerminals(
   func: FunctionRoot,
   patterns: TerminalPattern[],
   barriers: DescentBarriers = NO_BARRIERS,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): FoundTerminal[] {
   const results: FoundTerminal[] = [];
 
@@ -76,7 +77,12 @@ export function findTerminals(
         // One return can produce several terminals. A handler returning
         // through a helper that branches gets one per branch that helper
         // can take at this call site.
-        const matches = tryMatchReturnShape(node, pattern, pattern.match);
+        const matches = tryMatchReturnShape(
+          node,
+          pattern,
+          pattern.match,
+          resolveWrittenValue,
+        );
         if (matches.length > 0) {
           results.push(...matches);
           break;
@@ -91,6 +97,7 @@ export function findTerminals(
           func,
           pattern,
           pattern.match,
+          resolveWrittenValue,
         );
         if (matches.length > 0) {
           results.push(...matches);
@@ -103,9 +110,19 @@ export function findTerminals(
       } else if (pattern.match.type === "jsxReturn") {
         found = tryMatchJsxReturn(node, pattern);
       } else if (pattern.match.type === "throwExpression") {
-        found = tryMatchThrowExpression(node, pattern, pattern.match);
+        found = tryMatchThrowExpression(
+          node,
+          pattern,
+          pattern.match,
+          resolveWrittenValue,
+        );
       } else if (pattern.match.type === "functionCall") {
-        found = tryMatchFunctionCall(node, pattern, pattern.match);
+        found = tryMatchFunctionCall(
+          node,
+          pattern,
+          pattern.match,
+          resolveWrittenValue,
+        );
       }
       // `functionFallthrough` is not matched per-node: the assembly
       // pass emits it as a branch-level fallback when no other

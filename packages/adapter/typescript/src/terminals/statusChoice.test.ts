@@ -76,6 +76,32 @@ async function outcomesOf(handlerBody: string): Promise<string[]> {
   );
 }
 
+/** Extraction over whole files, for statuses written outside the handler. */
+async function outcomesOfFiles(
+  files: Record<string, string>,
+): Promise<string[]> {
+  const project = createTestProject();
+  for (const [path, text] of Object.entries(files)) {
+    project.createSourceFile(path, text);
+  }
+
+  const summaries = await createTypeScriptAdapter({
+    project,
+    frameworks: [routePack],
+  }).extractAll();
+
+  return summaries.flatMap((summary: BehavioralSummary) =>
+    summary.transitions.map((transition) => {
+      const status =
+        transition.output.type === "response" &&
+        transition.output.statusCode?.type === "literal"
+          ? String(transition.output.statusCode.value)
+          : "unresolved";
+      return `${status} under ${transition.conditions.length}`;
+    }),
+  );
+}
+
 const INLINE = [
   "  const created = Boolean(req);",
   "  res.status(created ? 202 : 200).json({ ok: true });",
@@ -86,6 +112,37 @@ const THROUGH_A_BINDING = [
   "  const code = created ? 202 : 200;",
   "  res.status(code).json({ ok: true });",
 ].join("\n");
+
+describe("a status behind a named constant", () => {
+  it("resolves a module-scope constant to its number", async () => {
+    const outcomes = await outcomesOfFiles({
+      "src/routes.ts": [
+        'import express from "express";',
+        "const NOT_FOUND = 404;",
+        "const app = express();",
+        'app.get("/things", (req, res) => {',
+        "  res.status(NOT_FOUND).json({ error: true });",
+        "});",
+      ].join("\n"),
+    });
+    expect(outcomes).toEqual(["404 under 0"]);
+  });
+
+  it("resolves a constant imported from another module", async () => {
+    const outcomes = await outcomesOfFiles({
+      "src/statuses.ts": "export const CREATED = 201;\n",
+      "src/routes.ts": [
+        'import express from "express";',
+        'import { CREATED } from "./statuses.js";',
+        "const app = express();",
+        'app.post("/things", (req, res) => {',
+        "  res.status(CREATED).json({ ok: true });",
+        "});",
+      ].join("\n"),
+    });
+    expect(outcomes).toEqual(["201 under 0"]);
+  });
+});
 
 describe("a status written as a choice", () => {
   it("answers with an outcome per arm", async () => {

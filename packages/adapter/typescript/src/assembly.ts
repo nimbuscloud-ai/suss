@@ -160,7 +160,12 @@ export function extractRawBranches(
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
 ): RawBranchResult {
-  const terminals = findTerminals(func, terminalPatterns, barriers);
+  const terminals = findTerminals(
+    func,
+    terminalPatterns,
+    barriers,
+    resolveWrittenValue,
+  );
   const invocations = extractInvocationEffects(func, barriers);
   const recognized = [
     ...runInvocationRecognizers(
