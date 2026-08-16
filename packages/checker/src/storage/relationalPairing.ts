@@ -111,13 +111,19 @@ export function checkRelationalStorage(
     // exact, never a guess.
     const tableNames = new Set(
       [semantics.table, contract.physicalTable].filter(
-        (name): name is string => name !== undefined,
+        (name): name is string => name !== undefined && name !== null,
       ),
     );
+    // A provider whose table this reader could not settle claims no
+    // accesses, rather than every access that spells it the same way.
+    if (tableNames.size === 0) {
+      continue;
+    }
     const inScope = accesses.filter(
       (a) =>
         a.semantics.storageSystem === semantics.storageSystem &&
         a.semantics.scope === semantics.scope &&
+        a.semantics.table !== null &&
         tableNames.has(a.semantics.table),
     );
 
@@ -204,12 +210,13 @@ function readStorageContract(
 // ---------------------------------------------------------------------------
 
 function tableLabel(semantics: StorageRelationalSemantics): string {
+  const table = semantics.table ?? "<unnamed table>";
   // `(scope, table)` for default-scope users collapses to just the
   // table; non-default scopes keep the disambiguation visible.
   if (semantics.scope === "default") {
-    return semantics.table;
+    return table;
   }
-  return `${semantics.scope}/${semantics.table}`;
+  return `${semantics.scope}/${table}`;
 }
 
 function makeFieldUnknownFinding(

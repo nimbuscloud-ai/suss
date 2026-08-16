@@ -17,8 +17,13 @@ export const StorageRelationalSemanticsSchema = z.object({
    * and a monorepo with several schemas gives each one its own value.
    */
   scope: z.string(),
-  /** The table or model name, as declared in the schema. */
-  table: z.string(),
+  /**
+   * The table or model name as the schema declares it, or null when
+   * the source states one this reader could not settle. A null table
+   * pairs with nothing, rather than with whatever its source text
+   * happens to spell.
+   */
+  table: z.string().nullable(),
 });
 
 export type StorageRelationalSemantics = z.infer<

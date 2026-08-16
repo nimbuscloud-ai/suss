@@ -12,7 +12,7 @@ import type {
 } from "@suss/behavioral-ir";
 
 function makeProvider(opts: {
-  table: string;
+  table: string | null;
   storageSystem?: "postgres" | "mysql" | "sqlite";
   scope?: string;
   columns: Array<{ name: string; type?: string; nullable?: boolean }>;
@@ -26,7 +26,7 @@ function makeProvider(opts: {
       exportName: null,
     },
     identity: {
-      name: opts.table,
+      name: opts.table ?? "<unnamed>",
       exportPath: null,
       boundaryBinding: storageRelationalBinding({
         recognition: "prisma",
@@ -54,7 +54,7 @@ function makeAccessSummary(opts: {
   name: string;
   file: string;
   accesses: Array<{
-    table: string;
+    table: string | null;
     storageSystem?: "postgres" | "mysql" | "sqlite";
     scope?: string;
     kind: "read" | "write";
@@ -108,6 +108,38 @@ function makeAccessSummary(opts: {
 }
 
 describe("checkRelationalStorage", () => {
+  it("pairs nothing when the access states no table", () => {
+    // A drizzle query whose table declaration the reader could not
+    // settle. Pairing it by source text would check it against a
+    // schema table that merely spells the same way.
+    const provider = makeProvider({
+      table: "users",
+      columns: [{ name: "id" }, { name: "email" }],
+    });
+    const consumer = makeAccessSummary({
+      name: "readMystery",
+      file: "src/handler.ts",
+      accesses: [{ table: null, kind: "read", fields: ["nonsense"] }],
+    });
+    const findings = checkRelationalStorage([provider, consumer]);
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+  });
+
+  it("claims no access when the provider states no table", () => {
+    const provider = makeProvider({
+      table: null,
+      columns: [{ name: "id" }],
+    });
+    const consumer = makeAccessSummary({
+      name: "readUsers",
+      file: "src/handler.ts",
+      accesses: [{ table: "users", kind: "read", fields: ["nonsense"] }],
+    });
+    expect(checkRelationalStorage([provider, consumer])).toEqual([]);
+  });
+
   it("emits storageReadFieldUnknown when code reads an undeclared column", () => {
     const findings = checkRelationalStorage([
       makeProvider({
