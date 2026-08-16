@@ -101,7 +101,7 @@
     "packages/contract/openapi": {
       "name": "@suss/contract-openapi",
       "exports": 2,
-      "internal": 18,
+      "internal": 19,
       "consumers": 5
     },
     "packages/contract/prisma": {

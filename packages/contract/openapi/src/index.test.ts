@@ -165,6 +165,73 @@ describe("openApiToSummaries — basic mapping", () => {
     });
   });
 
+  it("takes the JSON schema when an operation offers several media types", () => {
+    // The document lists XML first. A caller sending JSON would have
+    // been compared against the XML schema and reported as agreeing.
+    const spec: OpenApiSpec = {
+      openapi: "3.0.3",
+      paths: {
+        "/items": {
+          post: {
+            operationId: "createItem",
+            requestBody: {
+              content: {
+                "application/xml": {
+                  schema: {
+                    type: "object",
+                    properties: { xmlOnly: { type: "string" } },
+                  },
+                },
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: { jsonOnly: { type: "string" } },
+                  },
+                },
+              },
+            },
+            responses: {
+              "200": {
+                content: {
+                  "application/xml": {
+                    schema: {
+                      type: "object",
+                      properties: { xmlOut: { type: "string" } },
+                    },
+                  },
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      properties: { jsonOut: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const [summary] = openApiToSummaries(spec);
+    const body = summary.inputs.find(
+      (i) => i.type === "parameter" && i.role === "requestBody",
+    );
+    const bodyShape = body?.type === "parameter" ? body.shape : null;
+    expect(
+      bodyShape?.type === "record" ? Object.keys(bodyShape.properties) : [],
+    ).toEqual(["jsonOnly"]);
+    const ok = summary.transitions.find(
+      (t) =>
+        t.output.type === "response" &&
+        t.output.statusCode?.type === "literal" &&
+        t.output.statusCode.value === 200,
+    );
+    const out = ok?.output.type === "response" ? ok.output.body : null;
+    expect(out?.type === "record" ? Object.keys(out.properties) : []).toEqual([
+      "jsonOut",
+    ]);
+  });
+
   it("maps every parameter location (path/query/header/cookie) and the requestBody", () => {
     const spec: OpenApiSpec = {
       openapi: "3.0.3",
