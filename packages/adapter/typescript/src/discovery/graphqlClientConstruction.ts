@@ -1,6 +1,7 @@
 // graphqlClientConstruction.ts: find the GraphQL client constructions
 // a pack describes and read the endpoint each one is built with.
 
+import picomatch from "picomatch";
 import { Node, type SourceFile } from "ts-morph";
 
 import {
@@ -23,9 +24,11 @@ export interface GraphqlClientRef {
 }
 
 /**
- * Read the project's client constructions and, when they agree on one
- * endpoint, record it on every graphql-operation summary as
- * `metadata.graphql.client`.
+ * Record which service each graphql-operation summary talks to, on
+ * `metadata.graphql.client`. A file-scope binding decides per
+ * operation; otherwise the project's sole client construction decides
+ * for all of them, and a project with two clients and no scopes
+ * records nothing.
  */
 export function stampGraphqlClientRefs(
   summaries: BehavioralSummary[],
@@ -33,25 +36,76 @@ export function stampGraphqlClientRefs(
   packs: ReadonlyArray<PatternPack>,
   resolution: ResolutionStore | undefined,
 ): void {
+  const scopes = compileOperationScopes(packs);
   const sole = soleGraphqlClientRef(
     collectGraphqlClientRefs(sourceFiles, packs, resolution),
   );
-  if (sole === null) {
+  if (sole === null && scopes.length === 0) {
     return;
   }
 
-  const workspace = boundWorkspaceFor(sole, packs);
-  const client = workspace !== null ? { ...sole, workspace } : sole;
+  const workspace = sole !== null ? boundWorkspaceFor(sole, packs) : null;
+  const soleClient =
+    sole !== null ? (workspace !== null ? { ...sole, workspace } : sole) : null;
   for (const summary of summaries) {
     if (!isGraphqlOperationBinding(summary.identity.boundaryBinding)) {
       continue;
     }
+
+    const scoped = scopedWorkspaceFor(summary.location.file, scopes);
+    const client =
+      scoped !== null
+        ? { uri: null, uriRef: null, workspace: scoped }
+        : soleClient;
+    if (client === null) {
+      continue;
+    }
+
     const existing = readGraphqlMetadata(summary) ?? {};
     summary.metadata = withGraphqlMetadata(summary.metadata, {
       ...existing,
       client,
     });
   }
+}
+
+interface CompiledScope {
+  matches: (file: string) => boolean;
+  workspace: string;
+}
+
+/**
+ * Globs match the file path as recorded on the summary. A written
+ * relative glob gets a `**` prefix so `app/frontend/admin/**` matches
+ * however deep the project root is in the absolute path.
+ */
+function compileOperationScopes(
+  packs: ReadonlyArray<PatternPack>,
+): CompiledScope[] {
+  return packs
+    .flatMap((pack) => pack.graphqlOperationScopes ?? [])
+    .map((scope) => {
+      const matchers = scope.files.map((glob) =>
+        picomatch(glob.startsWith("/") ? glob : `**/${glob}`, { dot: true }),
+      );
+      return {
+        matches: (file: string) => matchers.some((m) => m(file)),
+        workspace: scope.workspace,
+      };
+    });
+}
+
+/** The first matching scope's workspace, or null when none matches. */
+function scopedWorkspaceFor(
+  file: string,
+  scopes: ReadonlyArray<CompiledScope>,
+): string | null {
+  for (const scope of scopes) {
+    if (scope.matches(file)) {
+      return scope.workspace;
+    }
+  }
+  return null;
 }
 
 /** The provider workspace a pack's per-project config binds this endpoint to, or null when none does. */

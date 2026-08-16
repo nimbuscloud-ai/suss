@@ -63,6 +63,14 @@ export interface ApolloClientPackOptions {
    * that share root field names.
    */
   clients?: Record<string, string>;
+  /**
+   * Which service the operations in a set of files talk to, for a
+   * frontend that uses two clients. A hook call does not say which
+   * client it goes through, so these globs decide by file: an
+   * operation whose file matches gets the entry's workspace. First
+   * matching entry wins.
+   */
+  operationScopes?: Array<{ files: string[]; workspace: string }>;
 }
 
 export function apolloClientPack(
@@ -159,6 +167,9 @@ export function apolloClientPack(
     ],
     ...(options.clients !== undefined
       ? { graphqlClientBindings: options.clients }
+      : {}),
+    ...(options.operationScopes !== undefined
+      ? { graphqlOperationScopes: options.operationScopes }
       : {}),
 
     terminals: [
