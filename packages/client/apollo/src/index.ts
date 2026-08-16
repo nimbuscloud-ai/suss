@@ -124,6 +124,26 @@ export function apolloClientPack(): PatternPack {
       },
     ],
 
+    // The constructions an operation's calls go through. `uri` is
+    // Apollo's own option, on the client shorthand and on the links.
+    graphqlClients: [
+      {
+        importModule: "@apollo/client",
+        importName: "ApolloClient",
+        uriProperty: "uri",
+      },
+      {
+        importModule: "@apollo/client",
+        importName: "HttpLink",
+        uriProperty: "uri",
+      },
+      {
+        importModule: "@apollo/client",
+        importName: "createHttpLink",
+        uriProperty: "uri",
+      },
+    ],
+
     terminals: [
       {
         kind: "return",

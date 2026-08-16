@@ -1,0 +1,166 @@
+// graphqlClientConstruction.ts: find the GraphQL client constructions
+// a pack describes and read the endpoint each one is built with.
+
+import { Node, type SourceFile } from "ts-morph";
+
+import { readGraphqlMetadata, withGraphqlMetadata } from "@suss/behavioral-ir";
+
+import { stringValueOf } from "./resolveValue.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { PatternPack } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
+
+export interface GraphqlClientRef {
+  /** The endpoint string when the construction wrote a literal. */
+  uri: string | null;
+  /** The written expression when the value is computed, e.g. an env read. */
+  uriRef: string | null;
+}
+
+/**
+ * Read the project's client constructions and, when they agree on one
+ * endpoint, record it on every graphql-operation summary as
+ * `metadata.graphql.client`.
+ */
+export function stampGraphqlClientRefs(
+  summaries: BehavioralSummary[],
+  sourceFiles: ReadonlyArray<SourceFile>,
+  packs: ReadonlyArray<PatternPack>,
+  resolution: ResolutionStore | undefined,
+): void {
+  const sole = soleGraphqlClientRef(
+    collectGraphqlClientRefs(sourceFiles, packs, resolution),
+  );
+  if (sole === null) {
+    return;
+  }
+  for (const summary of summaries) {
+    const semantics = summary.identity.boundaryBinding?.semantics;
+    if (semantics?.name !== "graphql-operation") {
+      continue;
+    }
+    const existing = readGraphqlMetadata(summary) ?? {};
+    summary.metadata = withGraphqlMetadata(summary.metadata, {
+      ...existing,
+      client: sole,
+    });
+  }
+}
+
+/**
+ * Every client construction in the given files, one entry per
+ * construction that states the pack-declared uri property.
+ */
+export function collectGraphqlClientRefs(
+  sourceFiles: ReadonlyArray<SourceFile>,
+  packs: ReadonlyArray<PatternPack>,
+  resolution: ResolutionStore | undefined,
+): GraphqlClientRef[] {
+  const specs = packs.flatMap((pack) => pack.graphqlClients ?? []);
+  if (specs.length === 0) {
+    return [];
+  }
+
+  const refs: GraphqlClientRef[] = [];
+  for (const sourceFile of sourceFiles) {
+    const localNames = localNamesFor(sourceFile, specs);
+    if (localNames.size === 0) {
+      continue;
+    }
+    sourceFile.forEachDescendant((node) => {
+      const found = constructionRef(node, localNames, resolution);
+      if (found !== null) {
+        refs.push(found);
+      }
+    });
+  }
+  return refs;
+}
+
+/**
+ * The one client the whole project constructs, or null when there is
+ * none or more than one distinct endpoint.
+ *
+ * Attribution is project-level because a hook call does not say which
+ * client it goes through; the client is constructed once and reaches
+ * the hook through a provider. One distinct endpoint means every
+ * operation gets it; two or more abstain rather than guess.
+ */
+export function soleGraphqlClientRef(
+  refs: ReadonlyArray<GraphqlClientRef>,
+): GraphqlClientRef | null {
+  const distinct = new Map<string, GraphqlClientRef>();
+  for (const ref of refs) {
+    distinct.set(`${ref.uri ?? ""}|${ref.uriRef ?? ""}`, ref);
+  }
+  if (distinct.size !== 1) {
+    return null;
+  }
+  return [...distinct.values()][0] ?? null;
+}
+
+/** Local names the file binds to a declared constructor or factory, with the uri property each looks for. */
+function localNamesFor(
+  sourceFile: SourceFile,
+  specs: ReadonlyArray<{
+    importModule: string;
+    importName: string;
+    uriProperty: string;
+  }>,
+): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const importDecl of sourceFile.getImportDeclarations()) {
+    const module = importDecl.getModuleSpecifierValue();
+    for (const spec of specs) {
+      if (module !== spec.importModule) {
+        continue;
+      }
+      for (const named of importDecl.getNamedImports()) {
+        if (named.getName() !== spec.importName) {
+          continue;
+        }
+        const local = named.getAliasNode()?.getText() ?? named.getName();
+        names.set(local, spec.uriProperty);
+      }
+    }
+  }
+  return names;
+}
+
+function constructionRef(
+  node: Node,
+  localNames: ReadonlyMap<string, string>,
+  resolution: ResolutionStore | undefined,
+): GraphqlClientRef | null {
+  if (!Node.isNewExpression(node) && !Node.isCallExpression(node)) {
+    return null;
+  }
+  const callee = node.getExpression();
+  if (callee === undefined || !Node.isIdentifier(callee)) {
+    return null;
+  }
+  const uriProperty = localNames.get(callee.getText());
+  if (uriProperty === undefined) {
+    return null;
+  }
+
+  const optionsArg = node.getArguments()[0];
+  if (optionsArg === undefined || !Node.isObjectLiteralExpression(optionsArg)) {
+    return null;
+  }
+  const property = optionsArg.getProperty(uriProperty);
+  if (property === undefined || !Node.isPropertyAssignment(property)) {
+    return null;
+  }
+  const value = property.getInitializer();
+  if (value === undefined) {
+    return null;
+  }
+
+  const literal = stringValueOf(value, resolution);
+  if (literal !== null) {
+    return { uri: literal, uriRef: null };
+  }
+  return { uri: null, uriRef: value.getText() };
+}

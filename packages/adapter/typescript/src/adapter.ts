@@ -86,6 +86,7 @@ import {
   recordPackFailure,
 } from "./diagnostics.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
+import { stampGraphqlClientRefs } from "./discovery/graphqlClientConstruction.js";
 import {
   type DiscoveredUnit,
   discoverUnits,
@@ -2074,6 +2075,14 @@ export function createTypeScriptAdapter(
       );
       timer.time("emitLibraryEnvReadMarkers", () =>
         emitLibraryEnvReadMarkers(enriched, project, config.frameworks),
+      );
+      timer.time("stampGraphqlClientRefs", () =>
+        stampGraphqlClientRefs(
+          enriched,
+          sourceFiles,
+          config.frameworks,
+          resolution,
+        ),
       );
 
       await timer.timeAsync("cache.write", async () => {

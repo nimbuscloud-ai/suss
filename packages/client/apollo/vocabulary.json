@@ -11,5 +11,8 @@
   "mutate": "@apollo/client: client method running a mutation",
   "subscribe": "@apollo/client: client method running a subscription",
   "mutation": "@apollo/client: document key on the mutate options",
-  "subscription": "@apollo/client: document key on the subscribe options"
+  "subscription": "@apollo/client: document key on the subscribe options",
+  "uri": "@apollo/client: the endpoint option on ApolloClient and its HTTP links",
+  "HttpLink": "@apollo/client: the HTTP transport link class, constructed with a uri",
+  "createHttpLink": "@apollo/client: factory form of HttpLink, same options"
 }
