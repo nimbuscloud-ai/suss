@@ -19,6 +19,7 @@
 import {
   type DocumentNode,
   type FieldNode,
+  type FragmentDefinitionNode,
   Kind,
   type ObjectTypeDefinitionNode,
   type ObjectTypeExtensionNode,
@@ -43,8 +44,8 @@ interface OperationDoc {
   rootTypeName: string;
   /**
    * Root-level selections. Each entry captures the field name plus
-   * any nested sub-selections (recursively). Only FIELD selections
-   * count for v0: fragments pass through without interpretation.
+   * any nested sub-selections (recursively), with fragment spreads
+   * and inline fragments flattened into the fields they contribute.
    */
   rootSelections: FieldSelection[];
 }
@@ -52,6 +53,12 @@ interface OperationDoc {
 interface FieldSelection {
   name: string;
   nested: FieldSelection[];
+  /**
+   * The fragment type condition this selection came through, or null
+   * for a direct selection on its parent. `... on Dog { bark }` checks
+   * `bark` against Dog, not against the field's declared return type.
+   */
+  onType: string | null;
 }
 
 export interface GraphqlPairingResult {
@@ -98,6 +105,12 @@ function pairOneOperation(
   findings: Finding[],
 ): void {
   for (const selection of doc.rootSelections) {
+    // __typename / __schema / __type are served by the GraphQL runtime
+    // itself; no resolver implements them and none needs to (#225).
+    if (isMetaField(selection.name)) {
+      continue;
+    }
+
     const key = gqlIdentityKey(doc.rootTypeName, selection.name);
     const matchingResolvers = resolverIndex.get(key) ?? [];
     if (matchingResolvers.length === 0) {
@@ -171,29 +184,45 @@ function walkNestedSelections(
     return;
   }
   const returnTypeName = unwrapToNamedType(fieldType);
-  const returnType = schema.objectTypes.get(returnTypeName);
-  if (returnType === undefined) {
-    // Scalar / enum / union / interface, v0 doesn't descend.
-    return;
-  }
   for (const child of selection.nested) {
-    if (!returnType.fields.has(child.name)) {
+    // __typename exists on every composite type; the runtime serves
+    // it without a schema declaration (#225).
+    if (isMetaField(child.name)) {
+      continue;
+    }
+
+    // A child from a fragment checks against the fragment's type
+    // condition rather than the field's declared return type.
+    const childParentName = child.onType ?? returnTypeName;
+    const childParent = schema.objectTypes.get(childParentName);
+    if (childParent === undefined) {
+      // Scalar / enum / union / unknown type, v0 doesn't descend.
+      continue;
+    }
+
+    if (!childParent.fields.has(child.name)) {
       findings.push(
-        nestedFieldUnknownFinding(operation, doc, returnTypeName, child.name),
+        nestedFieldUnknownFinding(operation, doc, childParentName, child.name),
       );
       continue;
     }
+
     if (child.nested.length > 0) {
       walkNestedSelections(
         operation,
         doc,
         child,
-        returnTypeName,
+        childParentName,
         schema,
         findings,
       );
     }
   }
+}
+
+/** GraphQL introspection fields: __typename, __schema, __type. */
+function isMetaField(name: string): boolean {
+  return name.startsWith("__");
 }
 
 // ---------------------------------------------------------------------------
@@ -261,10 +290,11 @@ function parseOperationDoc(
   bindingOperationType: "query" | "mutation" | "subscription",
   documentText: string,
 ): OperationDoc | null {
-  const definition = parseFirstOperation(documentText);
-  if (definition === null) {
+  const parsed = parseFirstOperation(documentText);
+  if (parsed === null) {
     return null;
   }
+  const { definition, fragments } = parsed;
   const operationType =
     definition.operation === "query" ||
     definition.operation === "mutation" ||
@@ -274,24 +304,38 @@ function parseOperationDoc(
   return {
     operationType,
     rootTypeName: rootTypeNameFor(operationType),
-    rootSelections: rootFieldSelectionsOf(definition),
+    rootSelections: fieldSelectionsFrom(
+      definition.selectionSet.selections,
+      fragments,
+      null,
+      new Set(),
+    ),
   };
 }
 
-function parseFirstOperation(
-  documentText: string,
-): OperationDefinitionNode | null {
+interface ParsedOperation {
+  definition: OperationDefinitionNode;
+  /** Fragment definitions in the same document, by fragment name. */
+  fragments: Map<string, FragmentDefinitionNode>;
+}
+
+function parseFirstOperation(documentText: string): ParsedOperation | null {
   try {
     const doc = parse(documentText);
+    let definition: OperationDefinitionNode | null = null;
+    const fragments = new Map<string, FragmentDefinitionNode>();
     for (const def of doc.definitions) {
-      if (def.kind === Kind.OPERATION_DEFINITION) {
-        return def;
+      if (def.kind === Kind.OPERATION_DEFINITION && definition === null) {
+        definition = def;
+      }
+      if (def.kind === Kind.FRAGMENT_DEFINITION) {
+        fragments.set(def.name.value, def);
       }
     }
+    return definition === null ? null : { definition, fragments };
   } catch {
     return null;
   }
-  return null;
 }
 
 function rootTypeNameFor(
@@ -306,27 +350,64 @@ function rootTypeNameFor(
   return "Query";
 }
 
-function rootFieldSelectionsOf(op: OperationDefinitionNode): FieldSelection[] {
-  return fieldSelectionsFrom(op.selectionSet.selections);
-}
-
+/**
+ * Flatten a selection set to fields, following fragments. A spread
+ * pulls in its definition's fields, an inline fragment its own, and
+ * either kind stamps its type condition on the fields it contributes
+ * so the nested walk checks them against the right type (#225). The
+ * `expanding` set stops a spread cycle, which the spec forbids but a
+ * malformed document can contain.
+ */
 function fieldSelectionsFrom(
   selections: OperationDefinitionNode["selectionSet"]["selections"],
+  fragments: Map<string, FragmentDefinitionNode>,
+  onType: string | null,
+  expanding: ReadonlySet<string>,
 ): FieldSelection[] {
   const out: FieldSelection[] = [];
   for (const selection of selections) {
-    // Only direct Field selections count, fragments / inline
-    // fragments pass through without interpretation (handling them
-    // requires walking fragment definitions + type conditions,
-    // which lands when a concrete use case arrives).
-    if (selection.kind !== Kind.FIELD) {
+    if (selection.kind === Kind.FIELD) {
+      const field = selection as FieldNode;
+      const nested = field.selectionSet
+        ? fieldSelectionsFrom(
+            field.selectionSet.selections,
+            fragments,
+            null,
+            expanding,
+          )
+        : [];
+      out.push({ name: field.name.value, nested, onType });
       continue;
     }
-    const field = selection as FieldNode;
-    const nested = field.selectionSet
-      ? fieldSelectionsFrom(field.selectionSet.selections)
-      : [];
-    out.push({ name: field.name.value, nested });
+
+    if (selection.kind === Kind.INLINE_FRAGMENT) {
+      const condition = selection.typeCondition?.name.value ?? onType;
+      out.push(
+        ...fieldSelectionsFrom(
+          selection.selectionSet.selections,
+          fragments,
+          condition,
+          expanding,
+        ),
+      );
+      continue;
+    }
+
+    if (selection.kind === Kind.FRAGMENT_SPREAD) {
+      const name = selection.name.value;
+      const definition = fragments.get(name);
+      if (definition === undefined || expanding.has(name)) {
+        continue;
+      }
+      out.push(
+        ...fieldSelectionsFrom(
+          definition.selectionSet.selections,
+          fragments,
+          definition.typeCondition.name.value,
+          new Set([...expanding, name]),
+        ),
+      );
+    }
   }
   return out;
 }
