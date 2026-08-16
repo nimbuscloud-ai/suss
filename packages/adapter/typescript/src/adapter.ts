@@ -96,6 +96,7 @@ import {
   buildMountPrefixIndex,
   type MountPrefixIndex,
 } from "./discovery/mountPrefix.js";
+import { stringValueOf } from "./discovery/resolveValue.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
@@ -625,6 +626,7 @@ function extractConsumerBinding(
   unit: DiscoveredUnit,
   pattern: DiscoveryPattern,
   pack: PatternPack,
+  resolution?: ResolutionStore,
 ): BoundaryBinding | null {
   const callSite = unit.callSite;
   if (callSite === undefined) {
@@ -636,8 +638,8 @@ function extractConsumerBinding(
     return null;
   }
 
-  const method = extractBindingMethod(binding, callSite, pack);
-  const path = extractBindingPath(binding, callSite, pack);
+  const method = extractBindingMethod(binding, callSite, pack, resolution);
+  const path = extractBindingPath(binding, callSite, pack, resolution);
 
   // Wrapper expansion looks for a null `path` to spot a forwarding
   // wrapper, so return a partial binding rather than nothing.
@@ -691,6 +693,7 @@ function extractBindingMethod(
   binding: BindingExtraction,
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
   pack: PatternPack,
+  resolution?: ResolutionStore,
 ): string | undefined {
   const m = binding.method;
   if (m.type === "fromClientMethod") {
@@ -703,8 +706,11 @@ function extractBindingMethod(
       const prop = arg.getProperty(m.property);
       if (prop !== undefined && Node.isPropertyAssignment(prop)) {
         const init = prop.getInitializer();
-        if (init !== undefined && Node.isStringLiteral(init)) {
-          return init.getLiteralValue();
+        if (init !== undefined) {
+          const value = stringValueOf(init, resolution);
+          if (value !== null) {
+            return value;
+          }
         }
       }
     }
@@ -858,6 +864,7 @@ function extractBindingPath(
   binding: BindingExtraction,
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
   pack: PatternPack,
+  resolution?: ResolutionStore,
 ): string | undefined {
   const p = binding.path;
   if (p.type === "fromClientMethod") {
@@ -869,16 +876,30 @@ function extractBindingPath(
     if (arg === undefined) {
       return undefined;
     }
-    if (Node.isStringLiteral(arg)) {
-      return pathFromLiteralUrl(arg.getLiteralValue());
+
+    const written = pathFromUrlNode(arg);
+    if (written !== undefined) {
+      return written;
     }
-    if (Node.isNoSubstitutionTemplateLiteral(arg)) {
-      return pathFromLiteralUrl(arg.getLiteralValue());
-    }
-    if (Node.isTemplateExpression(arg)) {
-      return pathFromTemplateUrl(arg);
-    }
-    return undefined;
+
+    // A name bound to the URL resolves one hop through the fact layer
+    // (#123), so `fetch(USERS_URL)` reads the constant's own form.
+    const resolved = resolution?.resolveWrittenValue(arg) ?? null;
+    return resolved !== null ? pathFromUrlNode(resolved) : undefined;
+  }
+  return undefined;
+}
+
+/** The path a URL-shaped node states, in any of its three written forms. */
+function pathFromUrlNode(node: Node): string | undefined {
+  if (Node.isStringLiteral(node)) {
+    return pathFromLiteralUrl(node.getLiteralValue());
+  }
+  if (Node.isNoSubstitutionTemplateLiteral(node)) {
+    return pathFromLiteralUrl(node.getLiteralValue());
+  }
+  if (Node.isTemplateExpression(node)) {
+    return pathFromTemplateUrl(node);
   }
   return undefined;
 }
@@ -1227,7 +1248,12 @@ function extractFromSourceFile(
           raw.boundaryBinding = binding;
         }
       } else if (unit.callSite !== undefined && matchedPattern !== undefined) {
-        const binding = extractConsumerBinding(unit, matchedPattern, pack);
+        const binding = extractConsumerBinding(
+          unit,
+          matchedPattern,
+          pack,
+          resolution,
+        );
         if (binding !== null) {
           raw.boundaryBinding = binding;
           // The summary already records the crossing, so a call whose
