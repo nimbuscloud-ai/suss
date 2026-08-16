@@ -108,5 +108,7 @@
   "parameter": "expression kind the extractor records",
   "argument": "expression kind the extractor records",
   "property": "expression kind the extractor records",
-  "call": "expression kind the extractor records"
+  "call": "expression kind the extractor records",
+  "mutation": "GraphQL spec: operation type",
+  "subscription": "GraphQL spec: operation type"
 }
