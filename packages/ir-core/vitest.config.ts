@@ -13,6 +13,13 @@ export default defineConfig({
         functions: 80,
         branches: 75,
         statements: 80,
+        // The branches in these files are the tool's claims about
+        // boundary identity, so each file carries its own floor and
+        // cannot hide behind the package aggregate (#124).
+        "src/boundaryKey.ts": {
+          branches: 90,
+          lines: 95,
+        },
       },
     },
   },
