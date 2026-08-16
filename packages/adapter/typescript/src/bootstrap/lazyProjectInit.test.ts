@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createLazyProject, lazyAddSourceFile } from "./lazyProjectInit.js";
@@ -98,7 +99,7 @@ describe("createLazyProject", () => {
       "deep-import.ts": `import { y } from "@gated/lib/deep"; export const loader = () => y;`,
     });
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
-    const loadedPaths = result.loadedFiles.map((sf) => sf.getFilePath()).sort();
+    const loadedPaths = result.candidatePaths.slice().sort();
     expect(loadedPaths.map((p) => path.basename(p))).toEqual([
       "deep-import.ts",
       "matching.ts",
@@ -112,9 +113,10 @@ describe("createLazyProject", () => {
       "unrelated.ts": "export const x = 1;",
     });
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
-    expect(
-      result.loadedFiles.map((sf) => path.basename(sf.getFilePath())).sort(),
-    ).toEqual(["consumer.ts", "wrapper.ts"]);
+    expect(result.candidatePaths.map((p) => path.basename(p)).sort()).toEqual([
+      "consumer.ts",
+      "wrapper.ts",
+    ]);
   });
 
   it("follows the wrapper chain however many project hops it takes", async () => {
@@ -124,9 +126,11 @@ describe("createLazyProject", () => {
       "consumer.ts": `import { call } from "./client"; export const loader = () => call();`,
     });
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
-    expect(
-      result.loadedFiles.map((sf) => path.basename(sf.getFilePath())).sort(),
-    ).toEqual(["consumer.ts", "index.ts", "wrapper.ts"]);
+    expect(result.candidatePaths.map((p) => path.basename(p)).sort()).toEqual([
+      "consumer.ts",
+      "index.ts",
+      "wrapper.ts",
+    ]);
   });
 
   it("follows a tsconfig path alias to the wrapper it maps to", async () => {
@@ -154,9 +158,10 @@ describe("createLazyProject", () => {
       }),
     );
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
-    expect(
-      result.loadedFiles.map((sf) => path.basename(sf.getFilePath())).sort(),
-    ).toEqual(["consumer.ts", "wrapper.ts"]);
+    expect(result.candidatePaths.map((p) => path.basename(p)).sort()).toEqual([
+      "consumer.ts",
+      "wrapper.ts",
+    ]);
   });
 
   it("follows a workspace package to the wrapper behind its node_modules symlink", async () => {
@@ -196,9 +201,10 @@ describe("createLazyProject", () => {
       }),
     );
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
-    expect(
-      result.loadedFiles.map((sf) => path.basename(sf.getFilePath())).sort(),
-    ).toEqual(["consumer.ts", "index.ts"]);
+    expect(result.candidatePaths.map((p) => path.basename(p)).sort()).toEqual([
+      "consumer.ts",
+      "index.ts",
+    ]);
   });
 
   it("loads every file when at least one pack is ungated", async () => {
@@ -207,7 +213,7 @@ describe("createLazyProject", () => {
       "b.ts": "export const b = 2;",
     });
     const result = await createLazyProject(tsconfigPath, [ungatedPack]);
-    expect(result.loadedFiles).toHaveLength(2);
+    expect(result.candidatePaths).toHaveLength(2);
   });
 
   it("gates a discoverUnits-only pack on its pack-level requiresImport", async () => {
@@ -216,9 +222,9 @@ describe("createLazyProject", () => {
       "unrelated.ts": "export const x = 1;",
     });
     const result = await createLazyProject(tsconfigPath, [callbackPack]);
-    expect(
-      result.loadedFiles.map((sf) => path.basename(sf.getFilePath())),
-    ).toEqual(["handler.ts"]);
+    expect(result.candidatePaths.map((p) => path.basename(p))).toEqual([
+      "handler.ts",
+    ]);
   });
 
   it("loads every file for a discoverUnits-only pack with no pack-level gate", async () => {
@@ -227,7 +233,7 @@ describe("createLazyProject", () => {
       "b.ts": "export const b = 2;",
     });
     const result = await createLazyProject(tsconfigPath, [recognizerOnlyPack]);
-    expect(result.loadedFiles).toHaveLength(2);
+    expect(result.candidatePaths).toHaveLength(2);
   });
 
   it("populates projectFileSet with every tsconfig include file", async () => {
@@ -246,8 +252,12 @@ describe("lazyAddSourceFile", () => {
       "a.ts": `import "@gated/lib";`,
     });
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
+    const project = new Project({
+      tsConfigFilePath: tsconfigPath,
+      skipAddingFilesFromTsConfig: true,
+    });
     const added = lazyAddSourceFile(
-      result.project,
+      project,
       result.projectFileSet,
       "/some/other/path.ts",
     );
@@ -260,13 +270,13 @@ describe("lazyAddSourceFile", () => {
       "helper.ts": "export const helper = () => 1;",
     });
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
-    expect(result.loadedFiles).toHaveLength(1);
+    expect(result.candidatePaths).toHaveLength(1);
+    const project = new Project({
+      tsConfigFilePath: tsconfigPath,
+      skipAddingFilesFromTsConfig: true,
+    });
     const helperPath = path.join(dir, "helper.ts");
-    const added = lazyAddSourceFile(
-      result.project,
-      result.projectFileSet,
-      helperPath,
-    );
+    const added = lazyAddSourceFile(project, result.projectFileSet, helperPath);
     expect(added).not.toBeNull();
     expect(added?.getFilePath()).toBe(helperPath);
   });

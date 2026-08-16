@@ -1,11 +1,12 @@
 /**
- * Builds the ts-morph Project a run works from, and gets the compiler
- * ahead of the import graph before anything asks it a question.
+ * Picks the files a run walks, and gets the compiler ahead of the
+ * import graph before anything asks it a question.
  *
- * `createLazyProject` reads the tsconfig's file list, keeps the files
- * whose imports match some active pack's `requiresImport` gate, and adds
- * only those. Everything else is loaded later, one file at a time, by
- * `lazyAddSourceFile` when symbol resolution points at it.
+ * `createLazyProject` reads the tsconfig's file list and keeps the
+ * files whose imports match some active pack's `requiresImport` gate.
+ * Those candidates are what the run walks; everything else is loaded
+ * later, one file at a time, by `lazyAddSourceFile` when symbol
+ * resolution points at it.
  *
  * The rest of the module is about load order. TypeScript follows a
  * re-export chain by recursing, so a barrel chain a few hundred files
@@ -16,7 +17,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { Project, type SourceFile, ts } from "ts-morph";
+import { type Project, type SourceFile, ts } from "ts-morph";
 
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 import { collectPackGates, packIsUngated } from "./preFilter.js";
@@ -26,9 +27,8 @@ import type { PatternPack } from "@suss/extractor";
 export type { Project } from "ts-morph";
 
 export interface LazyProjectInit {
-  project: Project;
-  /** Candidates added at startup. */
-  loadedFiles: SourceFile[];
+  /** Files matching a pack's gate. The run walks these and only these. */
+  candidatePaths: string[];
   /** Every file in the tsconfig include set, loaded or not. */
   projectFileSet: ReadonlySet<string>;
 }
@@ -45,19 +45,8 @@ export async function createLazyProject(
     parsed.options,
   );
 
-  const project = new Project({
-    tsConfigFilePath,
-    skipAddingFilesFromTsConfig: true,
-  });
-  const loadedFiles: SourceFile[] = [];
-  for (const p of candidates) {
-    const sf = project.addSourceFileAtPath(p);
-    loadedFiles.push(sf);
-  }
-
   return {
-    project,
-    loadedFiles,
+    candidatePaths: candidates,
     projectFileSet: new Set(allFiles),
   };
 }
@@ -109,7 +98,27 @@ export function loadImportGraphsDepthFirst(
     return { deepRoots: [] };
   }
 
-  const project = first.getProject();
+  return loadImportGraphsDepthFirstFromPaths(
+    first.getProject(),
+    roots.map((root) => root.getFilePath()),
+  );
+}
+
+/**
+ * The same walk from bare paths, for roots not yet in the project. The
+ * walk's postorder puts each root after everything it imports, so the
+ * roots themselves land in the project last. The compiler then takes
+ * its program files in that order, and every file it processes finds
+ * its imports already done instead of descending the whole chain.
+ */
+export function loadImportGraphsDepthFirstFromPaths(
+  project: Project,
+  rootPaths: ReadonlyArray<string>,
+): DeepImportGraphs {
+  if (rootPaths.length === 0) {
+    return { deepRoots: [] };
+  }
+
   const host = project.getModuleResolutionHost();
   const options = project.getCompilerOptions();
 
@@ -129,8 +138,7 @@ export function loadImportGraphsDepthFirst(
   const chainDepth = settledDepthsFor(project);
   const visited = new Set<string>();
   const loadOrder: string[] = [];
-  for (const root of roots) {
-    const rootPath = root.getFilePath();
+  for (const rootPath of rootPaths) {
     if (visited.has(rootPath) || chainDepth.has(rootPath)) {
       continue;
     }
@@ -182,9 +190,17 @@ export function loadImportGraphsDepthFirst(
     return { deepRoots: [] };
   }
 
-  const deepRoots = roots.filter(
-    (root) => (chainDepth.get(root.getFilePath()) ?? 0) >= WARM_DEPTH,
-  );
+  const deepRoots: SourceFile[] = [];
+  for (const rootPath of rootPaths) {
+    if ((chainDepth.get(rootPath) ?? 0) < WARM_DEPTH) {
+      continue;
+    }
+
+    const loaded = project.getSourceFile(rootPath);
+    if (loaded !== undefined) {
+      deepRoots.push(loaded);
+    }
+  }
   return { deepRoots };
 }
 
