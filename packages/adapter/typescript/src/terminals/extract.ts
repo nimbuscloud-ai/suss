@@ -76,6 +76,12 @@ export interface ExtractionContext {
    * same property extraction reads the caller's values.
    */
   substitutions?: ReadonlyMap<string, Expression>;
+  /**
+   * One-hop lookup from a written name to the value it was bound to,
+   * from the fact layer. Status extraction uses it so a named constant
+   * resolves to its number instead of falling out as dynamic (#123).
+   */
+  resolveWrittenValue?: (value: Node) => Node | null;
 }
 
 /**
@@ -144,13 +150,33 @@ function matchConstructorCode(
 }
 
 /**
- * The status under a named property of an object literal. A number
- * written out is the status; anything else is reported as source text,
- * so a reader can see where the value comes from.
+ * The status a written value comes to. A number written out is the
+ * status, a named constant resolves one hop through the fact layer,
+ * and anything else is reported as source text, so a reader can see
+ * where the value comes from.
  */
+function statusOf(
+  value: Expression,
+  ctx: ExtractionContext,
+): RawTerminal["statusCode"] {
+  const unwrapped = unwrapAs(value);
+  if (Node.isNumericLiteral(unwrapped)) {
+    return { type: "literal", value: Number(unwrapped.getText()) };
+  }
+
+  const resolved = ctx.resolveWrittenValue?.(unwrapped) ?? null;
+  if (resolved !== null && Node.isNumericLiteral(resolved)) {
+    return { type: "literal", value: Number(resolved.getText()) };
+  }
+
+  return { type: "dynamic", sourceText: unwrapped.getText() };
+}
+
+/** The status under a named property of an object literal. */
 function statusFromProperty(
   obj: ObjectLiteralExpression,
   name: string,
+  ctx: ExtractionContext,
 ): RawTerminal["statusCode"] {
   const prop = obj.getProperty(name);
   if (prop === undefined) {
@@ -169,10 +195,7 @@ function statusFromProperty(
   if (value === undefined) {
     return null;
   }
-  const unwrapped = unwrapAs(value);
-  return Node.isNumericLiteral(unwrapped)
-    ? { type: "literal", value: Number(unwrapped.getText()) }
-    : { type: "dynamic", sourceText: unwrapped.getText() };
+  return statusOf(value, ctx);
 }
 
 function extractStatusCodeFromRule(
@@ -231,7 +254,7 @@ function extractStatusCodeFromRule(
     if (arg === undefined || !Node.isObjectLiteralExpression(arg)) {
       return null;
     }
-    return statusFromProperty(arg, sc.name);
+    return statusFromProperty(arg, sc.name, ctx);
   }
 
   if (sc.from === "property") {
@@ -247,10 +270,7 @@ function extractStatusCodeFromRule(
             // parameters, so the caller's argument is the status.
             const resolved = ctx.substitutions?.get(prop.getName());
             if (resolved !== undefined) {
-              const val = unwrapAs(resolved);
-              return Node.isNumericLiteral(val)
-                ? { type: "literal", value: Number(val.getText()) }
-                : { type: "dynamic", sourceText: val.getText() };
+              return statusOf(resolved, ctx);
             }
             return { type: "dynamic", sourceText: prop.getName() };
           }
@@ -267,12 +287,7 @@ function extractStatusCodeFromRule(
         return null;
       }
 
-      const val = unwrapAs(substituted(raw, ctx));
-      if (Node.isNumericLiteral(val)) {
-        return { type: "literal", value: Number(val.getText()) };
-      }
-
-      return { type: "dynamic", sourceText: val.getText() };
+      return statusOf(substituted(raw, ctx), ctx);
     }
 
     return null;
@@ -296,12 +311,7 @@ function extractStatusCodeFromRule(
       return null;
     }
 
-    const arg = unwrapAs(rawArg);
-    if (Node.isNumericLiteral(arg)) {
-      return { type: "literal", value: Number(arg.getText()) };
-    }
-
-    return { type: "dynamic", sourceText: arg.getText() };
+    return statusOf(rawArg, ctx);
   }
 
   if (ctx.throwCallArgs !== undefined) {
@@ -314,12 +324,7 @@ function extractStatusCodeFromRule(
       return null;
     }
 
-    const arg = unwrapAs(rawArg);
-    if (Node.isNumericLiteral(arg)) {
-      return { type: "literal", value: Number(arg.getText()) };
-    }
-
-    return { type: "dynamic", sourceText: arg.getText() };
+    return statusOf(rawArg, ctx);
   }
 
   return null;

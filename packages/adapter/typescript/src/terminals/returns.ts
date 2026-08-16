@@ -125,6 +125,7 @@ export function tryMatchReturnShape(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): FoundTerminal[] {
   if (Node.isObjectLiteralExpression(node)) {
     const source = returnPositionOf(node);
@@ -141,7 +142,14 @@ export function tryMatchReturnShape(
     if (Node.isReturnStatement(source) && returnedValueOf(source) === node) {
       return [];
     }
-    const terminal = terminalFromReturnedObject(node, node, pattern, match);
+    const terminal = terminalFromReturnedObject(
+      node,
+      node,
+      pattern,
+      match,
+      undefined,
+      resolveWrittenValue,
+    );
     return terminal === null ? [] : [{ ...terminal, source }];
   }
 
@@ -155,7 +163,14 @@ export function tryMatchReturnShape(
   }
 
   if (Node.isObjectLiteralExpression(returned)) {
-    const terminal = terminalFromReturnedObject(returned, node, pattern, match);
+    const terminal = terminalFromReturnedObject(
+      returned,
+      node,
+      pattern,
+      match,
+      undefined,
+      resolveWrittenValue,
+    );
     return terminal === null ? [] : [terminal];
   }
 
@@ -188,6 +203,7 @@ export function tryMatchReturnShape(
       pattern,
       match,
       resolved.substitutions,
+      resolveWrittenValue,
     );
     if (terminal !== null) {
       terminals.push(terminal);
@@ -210,6 +226,7 @@ function terminalFromReturnedObject(
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
   substitutions?: ReadonlyMap<string, Expression>,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): FoundTerminal | null {
   const required = match.requiredProperties;
   if (required !== undefined && required.length > 0) {
@@ -233,6 +250,7 @@ function terminalFromReturnedObject(
     extraction: pattern.extraction,
     returnedObj: obj,
     ...(substitutions !== undefined ? { substitutions } : {}),
+    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   // For a returnShape terminal, the returned object IS the body. `extractBody`
@@ -276,6 +294,7 @@ export function tryMatchParameterMethodCall(
   func: FunctionRoot,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "parameterMethodCall" }>,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): FoundTerminal[] {
   if (!Node.isCallExpression(node)) {
     return [];
@@ -301,6 +320,7 @@ export function tryMatchParameterMethodCall(
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     calls,
+    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);
@@ -574,6 +594,7 @@ export function tryMatchFunctionCall(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "functionCall" }>,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): FoundTerminal | null {
   // `new Response(body, init)` builds a response the same way
   // `Response.json(body, init)` does, so a pack that declares `Response`
@@ -615,6 +636,7 @@ export function tryMatchFunctionCall(
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     throwCallArgs: callArgs,
+    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);
