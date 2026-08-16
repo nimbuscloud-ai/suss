@@ -88,7 +88,7 @@ const regressions = [];
  * stopped working, which the gate has to fail on for the same reason it
  * fails on a drop.
  */
-function compareFloor(label, before, after) {
+function compareFloor(label, before, after, allowance = 0) {
   if (typeof before !== "number") {
     return;
   }
@@ -101,20 +101,49 @@ function compareFloor(label, before, after) {
     return;
   }
   printDelta(label, before, after);
-  if (after < before) {
-    regressions.push({ label, detail: `${before} → ${after}` });
+  if (after < before - allowance) {
+    regressions.push({
+      label,
+      detail:
+        allowance > 0
+          ? `${before} → ${after}, and only ${allowance} of that became a consumer`
+          : `${before} → ${after}`,
+    });
   }
 }
 
+/**
+ * How many units moved from the internal column to the consumer one.
+ *
+ * A function that starts calling into another package stops being only
+ * an internal helper and becomes a consumer too, so one count falls as
+ * the other rises and neither is a regression. Only the part of the
+ * drop the rise accounts for is a move: a drop of three against a rise
+ * of two leaves one unit that really did stop being seen (#324).
+ */
+function movedToConsumers(before, after) {
+  if (
+    typeof before?.internal !== "number" ||
+    typeof after?.internal !== "number" ||
+    typeof before?.consumers !== "number" ||
+    typeof after?.consumers !== "number"
+  ) {
+    return 0;
+  }
+  const drop = Math.max(0, before.internal - after.internal);
+  const rise = Math.max(0, after.consumers - before.consumers);
+  return Math.min(drop, rise);
+}
+
 /** Compare one count, saying so when the baseline has never seen it. */
-function compareField(label, before, after) {
+function compareField(label, before, after, allowance = 0) {
   if (before === undefined && typeof after === "number") {
     console.log(
       `  ${label}: ${after}, new since ${BASELINE_REF}, no baseline to compare`,
     );
     return;
   }
-  compareFloor(label, before, after);
+  compareFloor(label, before, after, allowance);
 }
 
 /** The counts this file knows about, in the order they read best. */
@@ -148,8 +177,19 @@ function countedFields(before, after) {
 }
 
 console.log(`Totals against ${BASELINE_REF}:`);
+const totalsMoved = movedToConsumers(baseline.totals, current.totals);
+if (totalsMoved > 0) {
+  console.log(
+    `  ${totalsMoved} unit${totalsMoved === 1 ? "" : "s"} moved from internal to consumers`,
+  );
+}
 for (const field of countedFields(baseline.totals, current.totals)) {
-  compareField(field, baseline.totals[field], current.totals[field]);
+  compareField(
+    field,
+    baseline.totals[field],
+    current.totals[field],
+    field === "internal" ? totalsMoved : 0,
+  );
 }
 
 console.log("\nPer package:");
@@ -165,8 +205,19 @@ for (const [dir, before] of Object.entries(baseline.packages)) {
     after.name === before.name
       ? after.name
       : `${dir} (${before.name} → ${after.name})`;
+  const moved = movedToConsumers(before, after);
+  if (moved > 0) {
+    console.log(
+      `  ${label}: ${moved} unit${moved === 1 ? "" : "s"} moved from internal to consumers`,
+    );
+  }
   for (const field of countedFields(before, after)) {
-    compareField(`${label} ${field}`, before[field], after[field]);
+    compareField(
+      `${label} ${field}`,
+      before[field],
+      after[field],
+      field === "internal" ? moved : 0,
+    );
   }
 }
 
