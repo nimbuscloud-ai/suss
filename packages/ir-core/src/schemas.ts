@@ -28,7 +28,7 @@ export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
 export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
 export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
-export { StorageRelationalSemanticsSchema } from "./semantics/storageRelational.js";
+export { StorageSemanticsSchema } from "./semantics/storage.js";
 
 // ---------------------------------------------------------------------------
 // Confidence: how a claim was produced, and how much to trust it.

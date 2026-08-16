@@ -90,9 +90,7 @@ function makeProject(): Project {
 function storageInteractions(summary: BehavioralSummary): Effect[] {
   return summary.transitions.flatMap((t) =>
     t.effects.filter(
-      (e) =>
-        e.type === "interaction" &&
-        e.binding.semantics.name === "storage-relational",
+      (e) => e.type === "interaction" && e.binding.semantics.name === "storage",
     ),
   );
 }
@@ -122,8 +120,8 @@ describe("drizzle integration", () => {
     expect(insert).toBeDefined();
     if (insert?.type === "interaction") {
       expect(
-        insert.binding.semantics.name === "storage-relational" &&
-          insert.binding.semantics.table,
+        insert.binding.semantics.name === "storage" &&
+          insert.binding.semantics.container,
       ).toBe("accounts");
       const interaction = insert.interaction as {
         kind: string;

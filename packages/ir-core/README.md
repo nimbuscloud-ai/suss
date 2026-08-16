@@ -7,7 +7,7 @@ Primitives shared across suss's intermediate representations: the pieces every I
 The types that any suss IR is built from:
 
 - `TypeShape`: the structure of a value, for body / payload / field comparison.
-- `BoundaryBinding` + the `Semantics` variants (rest, function-call, graphql-resolver, graphql-operation, runtime-config, storage-relational, message-bus), plus the eight blessed binding constructors (`restBinding`, `functionCallBinding`, …).
+- `BoundaryBinding` + the `Semantics` variants (rest, function-call, graphql-resolver, graphql-operation, runtime-config, storage, message-bus), plus the eight blessed binding constructors (`restBinding`, `functionCallBinding`, …).
 - `SourceLocation` and `Confidence` (`source` + `level`).
 
 ```ts

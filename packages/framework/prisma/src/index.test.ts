@@ -179,10 +179,10 @@ describe("prisma recognizer: happy path", () => {
       new Set(["id", "email", "name"]),
     );
     expect(access.binding.semantics).toMatchObject({
-      name: "storage-relational",
+      name: "storage",
       storageSystem: "postgres",
       scope: "default",
-      table: "User",
+      container: "User",
     });
   });
 
@@ -196,7 +196,7 @@ describe("prisma recognizer: happy path", () => {
     `);
     const access =
       storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
-    expect(access.binding.semantics).toMatchObject({ table: "Post" });
+    expect(access.binding.semantics).toMatchObject({ container: "Post" });
   });
 
   it("records default-shape (fields=['*']) when no select/include given", () => {
@@ -284,7 +284,7 @@ describe("prisma recognizer: happy path", () => {
     `);
     const access =
       storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
-    expect(access.binding.semantics).toMatchObject({ table: "User" });
+    expect(access.binding.semantics).toMatchObject({ container: "User" });
     expect(access.interaction.operation).toBe("findMany");
   });
 

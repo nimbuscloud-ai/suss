@@ -141,8 +141,8 @@ describe("binding constructors", () => {
     });
     expect(b.transport).toBe("postgres");
     expect(b.semantics).toMatchObject({
-      name: "storage-relational",
-      table: "User",
+      name: "storage",
+      container: "User",
     });
   });
 

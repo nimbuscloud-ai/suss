@@ -262,7 +262,7 @@ The IR types are mostly protocol-agnostic, every `Output` is a typed structure, 
 - **`graphql-resolver`**: the parent type name + field as the identity (`Query.user`, but also `User.posts`), with contract derivation from inline SDL. Metadata under `metadata.graphql.*`. **`graphql-operation`** describes the client side; the contract checker pairs it rather than the key engine.
 - **`message-bus`**: the key is built from the channel's subject, so a template that writes `default#order.placed` and a handler that writes `order.placed` land in one bucket, and the buses have to agree inside it.
 - **`function-call`**: keyed by package + export path when both are known.
-- **`runtime-config`** and **`storage-relational`**: no identity key; their checkers pair by deployable unit and by relation.
+- **`runtime-config`** and **`storage`**: no identity key; their checkers pair by deployable unit and by container.
 
 Each variant declares its identity key, its pairing key, and how two sides agree; the pairing engine in `@suss/checker` dispatches through the registry rather than assuming any one protocol. A new boundary type adds a variant instead of stretching an existing one. [`boundary-semantics.md`](boundary-semantics.md) covers what a variant looks like and what adding one involves.
 

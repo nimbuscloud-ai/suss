@@ -59,6 +59,7 @@ export {
   packageExportBinding,
   restBinding,
   runtimeConfigBinding,
+  storageBinding,
   storageRelationalBinding,
 } from "@suss/ir-core";
 
@@ -134,7 +135,7 @@ export type {
   RuntimeConfigSemantics,
   Semantics,
   SourceLocation,
-  StorageRelationalSemantics,
+  StorageSemantics,
   TypeShape,
 } from "@suss/ir-core";
 

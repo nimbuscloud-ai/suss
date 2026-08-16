@@ -2,7 +2,7 @@
 // passes (storage, message-bus, runtime-config, future RPC).
 //
 // The actual PAIRING rules differ per class:
-//   - storage-relational: binding equality on (storageSystem, scope, table)
+//   - storage: binding equality on (storageSystem, scope, container, accessPath)
 //   - message-bus:        binding equality after env-var → CFN-resource collapse
 //   - runtime-config:     env-var-name equality + codeScope file-prefix match
 //, so this file doesn't try to unify the pairing. It only shares the
@@ -43,7 +43,7 @@ export interface InteractionRecord<TClass extends string> {
 /**
  * Pre-built indexes over a summary set:
  *   - `providersBySemantics`: provider summaries grouped by their
- *     identity binding's semantics name (e.g. all storage-relational
+ *     identity binding's semantics name (e.g. all storage
  *     providers, all message-bus providers, etc.). Includes every
  *     summary with a binding regardless of `kind`, per-class
  *     checkers further filter by kind when needed (message-bus
@@ -52,7 +52,7 @@ export interface InteractionRecord<TClass extends string> {
  *   - `interactionsByClass`: every interaction effect found in the
  *     summary set, grouped first by `interaction.class`, then by
  *     `binding.semantics.name`. Lets per-class checkers query
- *     `interactionsByClass.get("storage-access")?.get("storage-relational")`
+ *     `interactionsByClass.get("storage-access")?.get("storage")`
  *     to get the slice they care about without re-walking.
  *
  * Built in one pass over the summary set; reused by every per-class
@@ -144,7 +144,7 @@ export function providersOf(
  *
  * The two-key lookup (class + semantics) is intentional: in v0 the
  * pairing is 1:1 between class and semantics name (e.g. "storage-access"
- * always uses "storage-relational" semantics), but the IR allows future
+ * always uses "storage" semantics), but the IR allows future
  * classes to be paired with multiple semantics types, the second key
  * keeps that option open without locking the dispatcher to today's 1:1
  * convention.

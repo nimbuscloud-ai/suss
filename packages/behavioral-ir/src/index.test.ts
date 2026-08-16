@@ -609,10 +609,11 @@ describe("binding constructors", () => {
     expect(b).toEqual({
       transport: "postgres",
       semantics: {
-        name: "storage-relational",
+        name: "storage",
         storageSystem: "postgres",
         scope: "default",
-        table: "User",
+        container: "User",
+        accessPath: null,
       },
       recognition: "prisma",
     });

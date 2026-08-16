@@ -24,11 +24,15 @@ import { summaryIdFromParts } from "./summaryId.js";
  * 3: a parameter input's `role` is null where nobody could read it.
  *    Older artifacts all name one, so nothing is rewritten on the way
  *    in and the bump only marks that null as allowed.
+ * 4: one `storage` variant replaces `storage-relational`.
  */
-export const SUMMARY_SCHEMA_VERSION = 3;
+export const SUMMARY_SCHEMA_VERSION = 4;
 
 /** An empty identity field at or above this version is invalid, not legacy. */
 const NULL_IDENTITY_VERSION = 2;
+
+/** A storage binding at or above this version is already layered. */
+const STORAGE_LAYERS_VERSION = 4;
 
 type LooseRecord = Record<string, unknown>;
 
@@ -58,6 +62,40 @@ function normalizeBindingInPlace(binding: unknown): void {
     if (semantics[field] === "") {
       semantics[field] = null;
     }
+  }
+}
+
+/**
+ * A storage-relational binding becomes a storage one. The table is the
+ * container, and there is no secondary way in to record, since the
+ * variant that wrote this could not express one.
+ */
+function relayerStorageBindingInPlace(binding: unknown): void {
+  if (!isRecord(binding) || !isRecord(binding.semantics)) {
+    return;
+  }
+  const semantics = binding.semantics;
+  if (semantics.name !== "storage-relational") {
+    return;
+  }
+  semantics.name = "storage";
+  semantics.container = semantics.table ?? null;
+  semantics.accessPath = null;
+  delete semantics.table;
+}
+
+/**
+ * Every relational reader that shipped before the layered variant
+ * declared each column a table has, so its contract is exhaustive.
+ */
+function stampFieldSetInPlace(input: LooseRecord): void {
+  const metadata = input.metadata;
+  if (!isRecord(metadata) || !isRecord(metadata.storageContract)) {
+    return;
+  }
+  const contract = metadata.storageContract;
+  if (contract.fieldSet === undefined && Array.isArray(contract.columns)) {
+    contract.fieldSet = "exhaustive";
   }
 }
 
@@ -123,29 +161,49 @@ function normalizeOne(input: unknown): {
   }
   const version =
     typeof input.schemaVersion === "number" ? input.schemaVersion : 1;
-  if (version >= NULL_IDENTITY_VERSION) {
+  if (version >= SUMMARY_SCHEMA_VERSION) {
     return { value: input, idBackfilled: false };
   }
 
-  const idBackfilled = backfillIdentityId(input);
+  const idBackfilled =
+    version < NULL_IDENTITY_VERSION ? backfillIdentityId(input) : false;
 
-  const identity = input.identity;
-  if (isRecord(identity)) {
-    normalizeBindingInPlace(identity.boundaryBinding);
-  }
-
-  if (Array.isArray(input.transitions)) {
-    for (const transition of input.transitions) {
-      if (!isRecord(transition) || !Array.isArray(transition.effects)) {
-        continue;
-      }
-      for (const effect of transition.effects) {
-        if (isRecord(effect)) {
-          normalizeBindingInPlace(effect.binding);
-        }
-      }
+  forEachBinding(input, (binding) => {
+    if (version < NULL_IDENTITY_VERSION) {
+      normalizeBindingInPlace(binding);
     }
+    if (version < STORAGE_LAYERS_VERSION) {
+      relayerStorageBindingInPlace(binding);
+    }
+  });
+
+  if (version < STORAGE_LAYERS_VERSION) {
+    stampFieldSetInPlace(input);
   }
 
   return { value: input, idBackfilled };
+}
+
+/** The summary's own binding, then the binding on every effect. */
+function forEachBinding(
+  input: LooseRecord,
+  visit: (binding: unknown) => void,
+): void {
+  const identity = input.identity;
+  if (isRecord(identity)) {
+    visit(identity.boundaryBinding);
+  }
+  if (!Array.isArray(input.transitions)) {
+    return;
+  }
+  for (const transition of input.transitions) {
+    if (!isRecord(transition) || !Array.isArray(transition.effects)) {
+      continue;
+    }
+    for (const effect of transition.effects) {
+      if (isRecord(effect)) {
+        visit(effect.binding);
+      }
+    }
+  }
 }

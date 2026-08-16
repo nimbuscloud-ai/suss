@@ -20,7 +20,7 @@ Every finding follows the same JSON shape:
 | `sources` | `string[]?` | Present only when two or more identical findings from different providers were collapsed by the dedupe pass. Each entry is a `${file}::${name}` matching `FindingSide.summary`. |
 | `suppressed` | `FindingSuppression?` | Present only when a `.sussignore` rule matched. It contains `{ reason, effect, originalSeverity? }`, see [Suppressions](/suppressions). |
 
-Three of the kinds below, `boundaryFieldUnknown`, `boundaryFieldUnused`, and `boundaryShapeMismatch`, are **generic** and emitted by every per-domain checker. The boundary's `binding.semantics.name` gives you the domain context (storage-relational, runtime-config, graphql-resolver, message-bus, etc.), and the `aspect` field says which direction the failure runs in. The remaining kinds are domain-specific or meta.
+Three of the kinds below, `boundaryFieldUnknown`, `boundaryFieldUnused`, and `boundaryShapeMismatch`, are **generic** and emitted by every per-domain checker. The boundary's `binding.semantics.name` gives you the domain context (storage, runtime-config, graphql-resolver, message-bus, etc.), and the `aspect` field says which direction the failure runs in. The remaining kinds are domain-specific or meta.
 
 The catalog is organised: **shipped generic kinds**, then **shipped domain-specific kinds** grouped by domain, then **reserved kinds** (in the IR enum, awaiting an emitter), then **meta kinds**.
 
@@ -36,7 +36,7 @@ These three kinds replace the per-domain field-mismatch enums earlier versions u
 
 The consumer references a field the provider's contract doesn't declare. Per-domain instances:
 
-- **Storage** (`binding.semantics.name = "storage-relational"`, aspect `read` or `write`)
+- **Storage** (`binding.semantics.name = "storage"`, aspect `read` or `write`)
   ```
   [ERROR] boundaryFieldUnknown (aspect: read)
     loadUser selects "deltedAt" on User (postgres) but the schema declares

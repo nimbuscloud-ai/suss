@@ -1,7 +1,6 @@
-// relationalPairing.ts: pair storage-relational provider summaries
-// (Prisma model declarations, Drizzle pgTable() declarations, raw
-// SQL DDL) against `interaction(class: "storage-access")` effects
-// on code summaries.
+// storagePairing.ts: pair storage provider summaries (Prisma model
+// declarations, Drizzle pgTable() declarations, raw SQL DDL) against
+// `interaction(class: "storage-access")` effects on code summaries.
 //
 // Four field-existence findings ship in v0, all on the generic
 // boundaryField* enum so cross-domain tooling sees one vocabulary:
@@ -15,8 +14,8 @@
 // and boundarySelectorMismatch with appropriate aspects when emitters
 // land.
 //
-// Pairing key: (storageSystem, scope, table), pulled from the
-// effect's `binding.semantics` (StorageRelationalSemantics), same as
+// Pairing key: (storageSystem, scope, container, accessPath), pulled
+// from the effect's `binding.semantics` (StorageSemantics), same as
 // the provider's. Multi-attribution is intentional, a shared util
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
@@ -37,43 +36,42 @@ import type {
   BoundaryBinding,
   Finding,
   StorageContractMetadata,
-  StorageRelationalSemantics,
+  StorageSemantics,
 } from "@suss/behavioral-ir";
 
 type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   /**
-   * Cached storage-relational semantics from the effect's binding,
-   * has the (storageSystem, scope, table) pairing key. Pulled
-   * out so the inner-loop in-scope filter doesn't repeat the type
-   * narrow.
+   * Cached storage semantics from the effect's binding, which has the
+   * pairing key on it. Pulled out so the inner-loop in-scope filter
+   * doesn't repeat the type narrow.
    */
-  semantics: StorageRelationalSemantics;
+  semantics: StorageSemantics;
 };
 
 /** Wildcard convention for default-shape reads (no explicit `select`). */
 const ALL_FIELDS = "*";
 
 /**
- * Run the relational-storage pairing pass over every summary in the
- * set. Provider summaries (schema-derived) pair against in-scope
+ * Run the storage pairing pass over every summary in the set.
+ * Provider summaries (schema-derived) pair against in-scope
  * code accesses; findings record the boundary the provider exposes
  * and the consumer summary the access lives in.
  */
-export function checkRelationalStorage(
+export function checkStorage(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
 ): Finding[] {
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
 
-  const providers = providersOf(idx, "storage-relational");
+  const providers = providersOf(idx, "storage");
   const accesses: StorageAccessRecord[] = interactionsOf(
     idx,
     "storage-access",
-    "storage-relational",
+    "storage",
   ).map((record) => ({
     ...record,
-    semantics: record.effect.binding.semantics as StorageRelationalSemantics,
+    semantics: record.effect.binding.semantics as StorageSemantics,
   }));
 
   for (const provider of providers) {
@@ -82,33 +80,35 @@ export function checkRelationalStorage(
       // Defensive: filter above guarantees one. Skip rather than crash.
       continue;
     }
-    const semantics = binding.semantics as StorageRelationalSemantics;
+    const semantics = binding.semantics as StorageSemantics;
     const contract = readStorageContract(provider);
     const declaredColumns = new Set(
       (contract.columns ?? []).map((c) => c.name),
     );
+    // Only a contract that declares every field an item has can call
+    // a field it does not declare unknown.
+    const fieldSetIsComplete = contract.fieldSet === "exhaustive";
 
-    // In-scope accesses: same storageSystem + scope, and a table
-    // matching either of the provider's names, the binding's own
-    // channel (Prisma model name) or the physical SQL name from the
-    // schema's @@map. Both are declared facts, so matching either is
-    // exact, never a guess.
-    const tableNames = new Set(
-      [semantics.table, contract.physicalTable].filter(
+    // In-scope accesses: same store, scope, and access path, with a
+    // container matching either declared name, the binding's own
+    // (a Prisma model) or the physical SQL name from @@map.
+    const containerNames = new Set(
+      [semantics.container, contract.physicalTable].filter(
         (name): name is string => name !== undefined && name !== null,
       ),
     );
-    // A provider whose table this reader could not settle claims no
+    // A provider whose container this reader could not settle claims no
     // accesses, rather than every access that spells it the same way.
-    if (tableNames.size === 0) {
+    if (containerNames.size === 0) {
       continue;
     }
     const inScope = accesses.filter(
       (a) =>
         a.semantics.storageSystem === semantics.storageSystem &&
         a.semantics.scope === semantics.scope &&
-        a.semantics.table !== null &&
-        tableNames.has(a.semantics.table) &&
+        a.semantics.accessPath === semantics.accessPath &&
+        a.semantics.container !== null &&
+        containerNames.has(a.semantics.container) &&
         sameService(provider, a.summary),
     );
 
@@ -127,7 +127,7 @@ export function checkRelationalStorage(
       // Field-existence checks per access. Wildcards skip per-field
       // matching (the access reads "everything the schema declares,"
       // so by definition no field can be unknown).
-      if (!wildcards) {
+      if (!wildcards && fieldSetIsComplete) {
         for (const field of fields) {
           if (declaredColumns.has(field)) {
             continue;
@@ -213,14 +213,20 @@ function readStorageContract(
 // Finding builders
 // ---------------------------------------------------------------------------
 
-function tableLabel(semantics: StorageRelationalSemantics): string {
-  const table = semantics.table ?? "<unnamed table>";
-  // `(scope, table)` for default-scope users collapses to just the
-  // table; non-default scopes keep the disambiguation visible.
+function containerLabel(semantics: StorageSemantics): string {
+  const container = semantics.container ?? "<unnamed table>";
+  // A secondary way in gets written after the container it belongs to,
+  // since a query through an index is a different access.
+  const addressed =
+    semantics.accessPath === null
+      ? container
+      : `${container}#${semantics.accessPath}`;
+  // `(scope, container)` for default-scope users collapses to the bare
+  // container; non-default scopes keep the disambiguation visible.
   if (semantics.scope === "default") {
-    return table;
+    return addressed;
   }
-  return `${semantics.scope}/${table}`;
+  return `${semantics.scope}/${addressed}`;
 }
 
 function makeFieldUnknownFinding(
@@ -229,7 +235,7 @@ function makeFieldUnknownFinding(
   access: StorageAccessRecord,
   field: string,
 ): Finding {
-  const semantics = binding.semantics as StorageRelationalSemantics;
+  const semantics = binding.semantics as StorageSemantics;
   const accessKind = access.effect.interaction.kind;
   const verb = accessKind === "read" ? "selects" : "writes";
   return {
@@ -238,7 +244,7 @@ function makeFieldUnknownFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} ${verb} "${field}" on ${tableLabel(semantics)} (${semantics.storageSystem}) but the schema declares no ${field} column.`,
+    description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${semantics.storageSystem}) but the schema declares no ${field} column.`,
     severity: "error",
   };
 }
@@ -248,13 +254,13 @@ function makeFieldUnusedFinding(
   binding: BoundaryBinding,
   column: string,
 ): Finding {
-  const semantics = binding.semantics as StorageRelationalSemantics;
+  const semantics = binding.semantics as StorageSemantics;
   return {
     kind: "boundaryFieldUnused",
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${tableLabel(semantics)} declares column "${column}" but no code in the project reads or writes it. Likely dead config left over from a removed feature, or a renamed column the schema still references.`,
+    description: `${containerLabel(semantics)} declares column "${column}" but no code in the project reads or writes it. Likely dead config left over from a removed feature, or a renamed column the schema still references.`,
     severity: "warning",
   };
 }
@@ -264,14 +270,14 @@ function makeWriteOnlyFinding(
   binding: BoundaryBinding,
   column: string,
 ): Finding {
-  const semantics = binding.semantics as StorageRelationalSemantics;
+  const semantics = binding.semantics as StorageSemantics;
   return {
     kind: "boundaryFieldUnused",
     aspect: "read",
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${tableLabel(semantics)} declares column "${column}" and code writes it, but no code in the project reads it. Likely useless data. The application stores values nothing downstream consumes.`,
+    description: `${containerLabel(semantics)} declares column "${column}" and code writes it, but no code in the project reads it. Likely useless data. The application stores values nothing downstream consumes.`,
     severity: "warning",
   };
 }

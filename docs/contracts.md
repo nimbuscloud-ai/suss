@@ -89,13 +89,13 @@ Design-source-of-truth artifacts upstream of code: Figma / Sketch files, design 
 
 ## How suss absorbs contracts today
 
-Two of the five shapes, **schema** and **spec**, ship today across HTTP, GraphQL, AppSync, message-bus, storage-relational, and component domains. `suss contract --from <source>` takes seven values, from six reader packages:
+Two of the five shapes, **schema** and **spec**, ship today across HTTP, GraphQL, AppSync, message-bus, storage, and component domains. `suss contract --from <source>` takes seven values, from six reader packages:
 
 - `@suss/contract-openapi`, OpenAPI 3.x (schema, HTTP)
 - `@suss/contract-cloudformation`, CFN / SAM templates with API Gateway resources (schema, HTTP), built on the internal `@suss/contract-aws-apigateway` shared library
 - `@suss/contract-appsync`, CFN templates with `AWS::AppSync::*` resources and the SAM `AWS::Serverless::GraphQLApi` shorthand (schema, GraphQL)
 - `@suss/contract-graphql`: plain GraphQL SDL files (schema, GraphQL), plus committed `.graphql`/`.gql` operation documents via `--from graphql-documents` (spec, GraphQL): each query/mutation/subscription becomes a client-kind summary that pairs against resolver summaries without any call-site tracing
-- `@suss/contract-prisma`, `schema.prisma` files (schema, storage-relational)
+- `@suss/contract-prisma`, `schema.prisma` files (schema, storage)
 - `@suss/contract-storybook`, CSF3 `.stories.tsx` files (spec, component domain)
 
 Framework packs also derive contract declarations directly from source: ts-rest's `responses`, Apollo / NestJS GraphQL `typeDefs`, and ts-rest-zod schemas all populate per-protocol contract metadata at extraction time.

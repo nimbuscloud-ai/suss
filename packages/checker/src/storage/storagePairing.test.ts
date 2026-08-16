@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { storageRelationalBinding } from "@suss/behavioral-ir";
+import { storageBinding } from "@suss/behavioral-ir";
 
-import { checkRelationalStorage } from "./relationalPairing.js";
+import { checkStorage } from "./storagePairing.js";
 
 import type {
   BehavioralSummary,
@@ -12,11 +12,14 @@ import type {
 } from "@suss/behavioral-ir";
 
 function makeProvider(opts: {
-  table: string | null;
-  storageSystem?: "postgres" | "mysql" | "sqlite";
+  container: string | null;
+  storageSystem?: string;
   scope?: string;
+  accessPath?: string | null;
   columns: Array<{ name: string; type?: string; nullable?: boolean }>;
   physicalTable?: string;
+  /** A SQL schema declares every column, so that is the default here. */
+  fieldSet?: "exhaustive" | "partial" | "none";
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -26,13 +29,14 @@ function makeProvider(opts: {
       exportName: null,
     },
     identity: {
-      name: opts.table ?? "<unnamed>",
+      name: opts.container ?? "<unnamed>",
       exportPath: null,
-      boundaryBinding: storageRelationalBinding({
+      boundaryBinding: storageBinding({
         recognition: "prisma",
         storageSystem: opts.storageSystem ?? "postgres",
         scope: opts.scope ?? "default",
-        table: opts.table,
+        container: opts.container,
+        accessPath: opts.accessPath ?? null,
       }),
     },
     inputs: [],
@@ -41,6 +45,7 @@ function makeProvider(opts: {
     confidence: { source: "declared", level: "high" },
     metadata: {
       storageContract: {
+        fieldSet: opts.fieldSet ?? "exhaustive",
         columns: opts.columns,
         ...(opts.physicalTable !== undefined
           ? { physicalTable: opts.physicalTable }
@@ -54,9 +59,10 @@ function makeAccessSummary(opts: {
   name: string;
   file: string;
   accesses: Array<{
-    table: string | null;
-    storageSystem?: "postgres" | "mysql" | "sqlite";
+    container: string | null;
+    storageSystem?: string;
     scope?: string;
+    accessPath?: string | null;
     kind: "read" | "write";
     fields: string[];
     selector?: string[];
@@ -70,11 +76,12 @@ function makeAccessSummary(opts: {
     effects: opts.accesses.map(
       (a): Effect => ({
         type: "interaction",
-        binding: storageRelationalBinding({
+        binding: storageBinding({
           recognition: "test",
           storageSystem: a.storageSystem ?? "postgres",
           scope: a.scope ?? "default",
-          table: a.table,
+          container: a.container,
+          accessPath: a.accessPath ?? null,
         }) satisfies BoundaryBinding,
         interaction: {
           class: "storage-access",
@@ -107,13 +114,13 @@ function makeAccessSummary(opts: {
   };
 }
 
-describe("checkRelationalStorage", () => {
+describe("checkStorage", () => {
   it("keeps two services' same-named tables apart", () => {
     // Both services keep a users table under the scope "default", so
     // the pairing key alone puts them together and each schema used to
     // check the other service's queries.
     const provider = {
-      ...makeProvider({ table: "users", columns: [{ name: "id" }] }),
+      ...makeProvider({ container: "users", columns: [{ name: "id" }] }),
       location: {
         file: "billing/schema.prisma",
         range: { start: 1, end: 10 },
@@ -125,7 +132,7 @@ describe("checkRelationalStorage", () => {
       ...makeAccessSummary({
         name: "readProfile",
         file: "identity/src/handler.ts",
-        accesses: [{ table: "users", kind: "read", fields: ["email"] }],
+        accesses: [{ container: "users", kind: "read", fields: ["email"] }],
       }),
       location: {
         file: "identity/src/handler.ts",
@@ -135,7 +142,7 @@ describe("checkRelationalStorage", () => {
       },
     };
     expect(
-      checkRelationalStorage([provider, access]).filter(
+      checkStorage([provider, access]).filter(
         (f) => f.kind === "boundaryFieldUnknown",
       ),
     ).toEqual([]);
@@ -143,7 +150,7 @@ describe("checkRelationalStorage", () => {
 
   it("still pairs a schema and a query inside one service", () => {
     const provider = {
-      ...makeProvider({ table: "users", columns: [{ name: "id" }] }),
+      ...makeProvider({ container: "users", columns: [{ name: "id" }] }),
       location: {
         file: "billing/schema.prisma",
         range: { start: 1, end: 10 },
@@ -155,7 +162,7 @@ describe("checkRelationalStorage", () => {
       ...makeAccessSummary({
         name: "readProfile",
         file: "billing/src/handler.ts",
-        accesses: [{ table: "users", kind: "read", fields: ["email"] }],
+        accesses: [{ container: "users", kind: "read", fields: ["email"] }],
       }),
       location: {
         file: "billing/src/handler.ts",
@@ -164,7 +171,7 @@ describe("checkRelationalStorage", () => {
         workspace: "billing",
       },
     };
-    const findings = checkRelationalStorage([provider, access]).filter(
+    const findings = checkStorage([provider, access]).filter(
       (f) => f.kind === "boundaryFieldUnknown",
     );
     expect(findings).toHaveLength(1);
@@ -176,15 +183,15 @@ describe("checkRelationalStorage", () => {
     // settle. Pairing it by source text would check it against a
     // schema table that merely spells the same way.
     const provider = makeProvider({
-      table: "users",
+      container: "users",
       columns: [{ name: "id" }, { name: "email" }],
     });
     const consumer = makeAccessSummary({
       name: "readMystery",
       file: "src/handler.ts",
-      accesses: [{ table: null, kind: "read", fields: ["nonsense"] }],
+      accesses: [{ container: null, kind: "read", fields: ["nonsense"] }],
     });
-    const findings = checkRelationalStorage([provider, consumer]);
+    const findings = checkStorage([provider, consumer]);
     expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
       [],
     );
@@ -192,28 +199,28 @@ describe("checkRelationalStorage", () => {
 
   it("claims no access when the provider states no table", () => {
     const provider = makeProvider({
-      table: null,
+      container: null,
       columns: [{ name: "id" }],
     });
     const consumer = makeAccessSummary({
       name: "readUsers",
       file: "src/handler.ts",
-      accesses: [{ table: "users", kind: "read", fields: ["nonsense"] }],
+      accesses: [{ container: "users", kind: "read", fields: ["nonsense"] }],
     });
-    expect(checkRelationalStorage([provider, consumer])).toEqual([]);
+    expect(checkStorage([provider, consumer])).toEqual([]);
   });
 
   it("emits storageReadFieldUnknown when code reads an undeclared column", () => {
-    const findings = checkRelationalStorage([
+    const findings = checkStorage([
       makeProvider({
-        table: "User",
+        container: "User",
         columns: [{ name: "id" }, { name: "email" }],
       }),
       makeAccessSummary({
         name: "getUser",
         file: "src/getUser.ts",
         accesses: [
-          { table: "User", kind: "read", fields: ["email", "deltedAt"] },
+          { container: "User", kind: "read", fields: ["email", "deltedAt"] },
         ],
       }),
     ]);
@@ -226,16 +233,98 @@ describe("checkRelationalStorage", () => {
     expect(unknown[0].description).toContain("User");
   });
 
-  it("emits storageWriteFieldUnknown when code writes an undeclared column", () => {
-    const findings = checkRelationalStorage([
+  it("says nothing about an undeclared field when the contract declares only some of them", () => {
+    const findings = checkStorage([
       makeProvider({
-        table: "User",
+        container: "Orders",
+        storageSystem: "dynamodb",
+        fieldSet: "partial",
+        columns: [{ name: "pk" }, { name: "sk" }],
+      }),
+      makeAccessSummary({
+        name: "getOrder",
+        file: "src/getOrder.ts",
+        accesses: [
+          {
+            container: "Orders",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["pk", "shippedAt"],
+          },
+        ],
+      }),
+    ]);
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+  });
+
+  it("leaves a query against the table alone when only an index declares the field", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "Orders",
+        storageSystem: "dynamodb",
+        accessPath: "byCustomer",
+        columns: [{ name: "customerId" }],
+      }),
+      makeAccessSummary({
+        name: "listOrders",
+        file: "src/listOrders.ts",
+        accesses: [
+          {
+            container: "Orders",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["customerId", "orderId"],
+          },
+        ],
+      }),
+    ]);
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+  });
+
+  it("checks a query through an index against that index's own fields", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "Orders",
+        storageSystem: "dynamodb",
+        accessPath: "byCustomer",
+        columns: [{ name: "customerId" }],
+      }),
+      makeAccessSummary({
+        name: "listByCustomer",
+        file: "src/listByCustomer.ts",
+        accesses: [
+          {
+            container: "Orders",
+            storageSystem: "dynamodb",
+            accessPath: "byCustomer",
+            kind: "read",
+            fields: ["customerId", "orderId"],
+          },
+        ],
+      }),
+    ]);
+    const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0].description).toContain("orderId");
+    expect(unknown[0].description).toContain("Orders#byCustomer");
+  });
+
+  it("emits storageWriteFieldUnknown when code writes an undeclared column", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "User",
         columns: [{ name: "id" }, { name: "email" }],
       }),
       makeAccessSummary({
         name: "createUser",
         file: "src/createUser.ts",
-        accesses: [{ table: "User", kind: "write", fields: ["email", "role"] }],
+        accesses: [
+          { container: "User", kind: "write", fields: ["email", "role"] },
+        ],
       }),
     ]);
     const unknown = findings.filter(
@@ -246,15 +335,17 @@ describe("checkRelationalStorage", () => {
   });
 
   it("emits storageFieldUnused for columns no caller touches", () => {
-    const findings = checkRelationalStorage([
+    const findings = checkStorage([
       makeProvider({
-        table: "User",
+        container: "User",
         columns: [{ name: "id" }, { name: "email" }, { name: "deletedAt" }],
       }),
       makeAccessSummary({
         name: "h",
         file: "src/h.ts",
-        accesses: [{ table: "User", kind: "read", fields: ["id", "email"] }],
+        accesses: [
+          { container: "User", kind: "read", fields: ["id", "email"] },
+        ],
       }),
     ]);
     const unused = findings.filter(
@@ -266,20 +357,22 @@ describe("checkRelationalStorage", () => {
   });
 
   it("emits storageWriteOnlyField when a column is written but never read", () => {
-    const findings = checkRelationalStorage([
+    const findings = checkStorage([
       makeProvider({
-        table: "User",
+        container: "User",
         columns: [{ name: "id" }, { name: "lastLoginAt" }],
       }),
       makeAccessSummary({
         name: "recordLogin",
         file: "src/recordLogin.ts",
-        accesses: [{ table: "User", kind: "write", fields: ["lastLoginAt"] }],
+        accesses: [
+          { container: "User", kind: "write", fields: ["lastLoginAt"] },
+        ],
       }),
       makeAccessSummary({
         name: "getUser",
         file: "src/getUser.ts",
-        accesses: [{ table: "User", kind: "read", fields: ["id"] }],
+        accesses: [{ container: "User", kind: "read", fields: ["id"] }],
       }),
     ]);
     const writeOnly = findings.filter(
@@ -290,16 +383,16 @@ describe("checkRelationalStorage", () => {
   });
 
   it("suppresses unused-column checks when ANY caller uses default-shape reads", () => {
-    const findings = checkRelationalStorage([
+    const findings = checkStorage([
       makeProvider({
-        table: "User",
+        container: "User",
         columns: [{ name: "id" }, { name: "email" }, { name: "deletedAt" }],
       }),
       makeAccessSummary({
         name: "getUserAll",
         file: "src/getUserAll.ts",
         // findUnique({ where: { id } }): no select → reads ALL fields
-        accesses: [{ table: "User", kind: "read", fields: ["*"] }],
+        accesses: [{ container: "User", kind: "read", fields: ["*"] }],
       }),
     ]);
     expect(
@@ -310,12 +403,12 @@ describe("checkRelationalStorage", () => {
   });
 
   it("default-shape reads do NOT fire field-unknown findings", () => {
-    const findings = checkRelationalStorage([
-      makeProvider({ table: "User", columns: [{ name: "id" }] }),
+    const findings = checkStorage([
+      makeProvider({ container: "User", columns: [{ name: "id" }] }),
       makeAccessSummary({
         name: "h",
         file: "src/h.ts",
-        accesses: [{ table: "User", kind: "read", fields: ["*"] }],
+        accesses: [{ container: "User", kind: "read", fields: ["*"] }],
       }),
     ]);
     expect(
@@ -330,9 +423,9 @@ describe("checkRelationalStorage", () => {
     // (@@map). A Drizzle-style consumer speaks the SQL name. The
     // alias makes them the same boundary: the undeclared-column
     // read fires, and `email` counts as read (not unused).
-    const findings = checkRelationalStorage([
+    const findings = checkStorage([
       makeProvider({
-        table: "User",
+        container: "User",
         physicalTable: "users",
         columns: [{ name: "id" }, { name: "email" }],
       }),
@@ -340,8 +433,12 @@ describe("checkRelationalStorage", () => {
         name: "listUsers",
         file: "src/list.ts",
         accesses: [
-          { table: "users", kind: "read", fields: ["email", "nonExistent"] },
-          { table: "User", kind: "read", fields: ["id"] },
+          {
+            container: "users",
+            kind: "read",
+            fields: ["email", "nonExistent"],
+          },
+          { container: "User", kind: "read", fields: ["id"] },
         ],
       }),
     ]);
@@ -357,8 +454,12 @@ describe("checkRelationalStorage", () => {
   });
 
   it("scopes accesses by (storageSystem, scope, table)", () => {
-    const findings = checkRelationalStorage([
-      makeProvider({ table: "User", scope: "auth", columns: [{ name: "id" }] }),
+    const findings = checkStorage([
+      makeProvider({
+        container: "User",
+        scope: "auth",
+        columns: [{ name: "id" }],
+      }),
       // Same table name, different scope, should NOT pair as a
       // read-field-unknown finding even though "nonExistent" isn't
       // declared on the auth-scope provider.
@@ -367,7 +468,7 @@ describe("checkRelationalStorage", () => {
         file: "src/h.ts",
         accesses: [
           {
-            table: "User",
+            container: "User",
             scope: "billing",
             kind: "read",
             fields: ["nonExistent"],
@@ -387,15 +488,15 @@ describe("checkRelationalStorage", () => {
   });
 
   it("multi-table accesses (joins) emit per-table findings", () => {
-    const findings = checkRelationalStorage([
-      makeProvider({ table: "User", columns: [{ name: "email" }] }),
-      makeProvider({ table: "Order", columns: [{ name: "id" }] }),
+    const findings = checkStorage([
+      makeProvider({ container: "User", columns: [{ name: "email" }] }),
+      makeProvider({ container: "Order", columns: [{ name: "id" }] }),
       makeAccessSummary({
         name: "h",
         file: "src/h.ts",
         accesses: [
-          { table: "User", kind: "read", fields: ["email", "deltedAt"] },
-          { table: "Order", kind: "read", fields: ["id", "total"] },
+          { container: "User", kind: "read", fields: ["email", "deltedAt"] },
+          { container: "Order", kind: "read", fields: ["id", "total"] },
         ],
       }),
     ]);
@@ -409,20 +510,24 @@ describe("checkRelationalStorage", () => {
   });
 
   it("emits no findings when reads + writes match the schema exactly", () => {
-    const findings = checkRelationalStorage([
+    const findings = checkStorage([
       makeProvider({
-        table: "User",
+        container: "User",
         columns: [{ name: "id" }, { name: "email" }],
       }),
       makeAccessSummary({
         name: "create",
         file: "src/create.ts",
-        accesses: [{ table: "User", kind: "write", fields: ["id", "email"] }],
+        accesses: [
+          { container: "User", kind: "write", fields: ["id", "email"] },
+        ],
       }),
       makeAccessSummary({
         name: "read",
         file: "src/read.ts",
-        accesses: [{ table: "User", kind: "read", fields: ["id", "email"] }],
+        accesses: [
+          { container: "User", kind: "read", fields: ["id", "email"] },
+        ],
       }),
     ]);
     expect(findings).toEqual([]);

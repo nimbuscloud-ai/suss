@@ -179,7 +179,7 @@ async function runPipeline(): Promise<
 
 interface StorageAccess {
   type: "interaction";
-  binding: { semantics: { name: string; table?: string } };
+  binding: { semantics: { name: string; container?: string } };
   interaction: { class: string };
 }
 
@@ -203,5 +203,5 @@ function collectStorageAccesses(
 }
 
 function readTable(a: StorageAccess): string | null {
-  return a.binding.semantics.table ?? null;
+  return a.binding.semantics.container ?? null;
 }
