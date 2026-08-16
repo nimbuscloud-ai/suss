@@ -661,8 +661,8 @@ const StorageContractMetadataSchema = z.object({
    * `"exhaustive"` is a SQL schema, `"partial"` a store that declares
    * its keys and lets the rest vary, `"none"` a blob or a string. Only
    * an exhaustive contract can call a field it does not declare
-   * unknown. Absent reads as exhaustive, since every reader that
-   * shipped before this field was a SQL one.
+   * unknown, so a contract that says nothing here makes no such claim.
+   * Summaries written before this field get `"exhaustive"` on the way in.
    */
   fieldSet: z.enum(["exhaustive", "partial", "none"]).optional(),
   columns: z
