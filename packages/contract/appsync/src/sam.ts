@@ -92,6 +92,11 @@ function readSchemaSource(props: Record<string, unknown>): RawSchemaSource {
   if (location !== null) {
     return { kind: "location", location };
   }
+
+  if (props.SchemaInline !== undefined || props.SchemaUri !== undefined) {
+    return { kind: "computed" };
+  }
+
   return { kind: "absent" };
 }
 

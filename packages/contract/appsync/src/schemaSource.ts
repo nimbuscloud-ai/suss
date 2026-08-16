@@ -18,8 +18,8 @@ export type ResolvedSchema =
   | { status: "external-file"; sdl: string; location: string }
   | {
       status: "unresolved";
-      location: string;
-      reason: "remote" | "not-found" | "no-base-dir";
+      location: string | null;
+      reason: "remote" | "not-found" | "no-base-dir" | "computed";
     }
   | { status: "absent" };
 
@@ -40,6 +40,13 @@ export function resolveSchemaSource(
   if (raw.kind === "absent") {
     return { status: "absent" };
   }
+
+  // The template computes the location (an intrinsic), so there is no
+  // string to dereference. The schema still exists on the deployed API.
+  if (raw.kind === "computed") {
+    return { status: "unresolved", location: null, reason: "computed" };
+  }
+
   return resolveLocation(raw.location, baseDir);
 }
 

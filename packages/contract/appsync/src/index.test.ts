@@ -275,6 +275,42 @@ describe("appsyncToSummaries — template shape edge cases", () => {
     });
   });
 
+  it("records an intrinsic DefinitionS3Location as unresolved (computed), not absent", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::AppSync::GraphQLApi",
+          Properties: { Name: "T" },
+        },
+        Schema: {
+          Type: "AWS::AppSync::GraphQLSchema",
+          Properties: {
+            ApiId: { Ref: "Api" },
+            DefinitionS3Location: {
+              "Fn::Sub": "s3://${Bucket}/schema.graphql",
+            },
+          },
+        },
+        R: {
+          Type: "AWS::AppSync::Resolver",
+          Properties: {
+            ApiId: { Ref: "Api" },
+            TypeName: "Query",
+            FieldName: "ping",
+          },
+        },
+      },
+    });
+    const meta = summaries[0].metadata?.appsync as
+      | { schemaSource?: unknown }
+      | undefined;
+    expect(meta?.schemaSource).toEqual({
+      status: "unresolved",
+      location: null,
+      reason: "computed",
+    });
+  });
+
   it("records a relative schema path with no base dir as unresolved (no-base-dir)", () => {
     const summaries = appsyncToSummaries({
       Resources: {
@@ -838,6 +874,32 @@ describe("appsyncToSummaries — SAM shape edge cases", () => {
       status: "unresolved",
       location: "s3://bucket/schema.graphql",
       reason: "remote",
+    });
+  });
+
+  it("records an intrinsic SchemaUri as unresolved (computed), not absent", () => {
+    const summaries = appsyncToSummaries({
+      Resources: {
+        Api: {
+          Type: "AWS::Serverless::GraphQLApi",
+          Properties: {
+            Name: "Computed",
+            SchemaUri: { "Fn::Sub": "s3://${Bucket}/schema.graphql" },
+            Resolvers: {
+              Query: {
+                ping: { DataSource: "PingDS" },
+              },
+            },
+          },
+        },
+      },
+    });
+    const meta = appsyncMeta(summaries[0]);
+    expect(meta.schemaMatched).toBe(false);
+    expect(meta.schemaSource).toEqual({
+      status: "unresolved",
+      location: null,
+      reason: "computed",
     });
   });
 

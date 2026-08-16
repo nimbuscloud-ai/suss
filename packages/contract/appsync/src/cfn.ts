@@ -41,6 +41,7 @@ export interface CfnResource {
 export type RawSchemaSource =
   | { kind: "inline"; sdl: string }
   | { kind: "location"; location: string }
+  | { kind: "computed" }
   | { kind: "absent" };
 
 export interface AppSyncApi {
@@ -180,6 +181,17 @@ function indexSchemasByApi(
     const location = stringField(props.DefinitionS3Location);
     if (location !== null) {
       out.set(apiRef, { kind: "location", location });
+      continue;
+    }
+
+    // A schema declared through an intrinsic (`!Sub` on the S3 URI,
+    // say) exists, but its value comes from the template's computation.
+    // Recording it as computed keeps it apart from "no schema declared".
+    if (
+      props.Definition !== undefined ||
+      props.DefinitionS3Location !== undefined
+    ) {
+      out.set(apiRef, { kind: "computed" });
     }
   }
   return out;
