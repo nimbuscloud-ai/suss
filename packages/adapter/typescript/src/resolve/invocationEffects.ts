@@ -86,6 +86,12 @@ export interface TsAccessRecognizerContext {
   access: Node;
   /** Source file the access lives in. */
   sourceFile: SourceFile;
+  /**
+   * One-hop lookup from a written name to the value it was bound to,
+   * from the run's facts (#300). Gives null when the run has no store,
+   * and the recognizer's own pattern match runs on the raw node.
+   */
+  resolveWrittenValue: (value: Node) => Node | null;
 }
 
 /**
@@ -398,9 +404,13 @@ export function runAccessRecognizers(
   func: FunctionRoot,
   recognizers: AccessRecognizer[],
   barriers: DescentBarriers = NO_BARRIERS,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): RecognizedEffectLocation[] {
-  return dispatchAccessRecognizers(func, recognizers, (node) =>
-    isDescentStop(node, func, barriers),
+  return dispatchAccessRecognizers(
+    func,
+    recognizers,
+    (node) => isDescentStop(node, func, barriers),
+    resolveWrittenValue,
   );
 }
 
@@ -413,14 +423,21 @@ export function runAccessRecognizers(
 export function runAccessRecognizersAtModuleScope(
   sourceFile: SourceFile,
   recognizers: AccessRecognizer[],
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): RecognizedEffectLocation[] {
-  return dispatchAccessRecognizers(sourceFile, recognizers, isModuleScopeStop);
+  return dispatchAccessRecognizers(
+    sourceFile,
+    recognizers,
+    isModuleScopeStop,
+    resolveWrittenValue,
+  );
 }
 
 function dispatchAccessRecognizers(
   root: Node,
   recognizers: AccessRecognizer[],
   isStop: (node: Node) => boolean,
+  resolveWrittenValue?: (value: Node) => Node | null,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -448,6 +465,7 @@ function dispatchAccessRecognizers(
     const ctx: TsAccessRecognizerContext = {
       access: node,
       sourceFile,
+      resolveWrittenValue: resolveWrittenValue ?? (() => null),
     };
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
