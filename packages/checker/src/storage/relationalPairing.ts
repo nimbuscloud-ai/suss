@@ -124,7 +124,8 @@ export function checkRelationalStorage(
         a.semantics.storageSystem === semantics.storageSystem &&
         a.semantics.scope === semantics.scope &&
         a.semantics.table !== null &&
-        tableNames.has(a.semantics.table),
+        tableNames.has(a.semantics.table) &&
+        sameService(provider, a.summary),
     );
 
     // Track field usage across all in-scope accesses for the
@@ -197,6 +198,25 @@ export function checkRelationalStorage(
   }
 
   return findings;
+}
+
+/**
+ * Whether a schema and an access belong to one service. Two services
+ * both keep a users table under the scope "default", so the key alone
+ * puts them together and each gets checked against the other's schema
+ * at error severity (#121). A summary that states no workspace is a
+ * single-project run, where every summary belongs to the one service.
+ */
+function sameService(
+  provider: BehavioralSummary,
+  access: BehavioralSummary,
+): boolean {
+  const providerService = provider.location.workspace;
+  const accessService = access.location.workspace;
+  if (providerService === undefined || accessService === undefined) {
+    return true;
+  }
+  return providerService === accessService;
 }
 
 function readStorageContract(
