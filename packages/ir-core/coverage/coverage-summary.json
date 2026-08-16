@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 315,
-      "covered": 282,
+      "total": 316,
+      "covered": 283,
       "skipped": 0,
-      "pct": 89.52
+      "pct": 89.55
     },
     "statements": {
-      "total": 319,
-      "covered": 286,
+      "total": 320,
+      "covered": 287,
       "skipped": 0,
-      "pct": 89.65
+      "pct": 89.68
     },
     "functions": {
-      "total": 79,
-      "covered": 71,
+      "total": 80,
+      "covered": 72,
       "skipped": 0,
-      "pct": 89.87
+      "pct": 90
     },
     "branches": {
-      "total": 290,
-      "covered": 253,
+      "total": 294,
+      "covered": 257,
       "skipped": 0,
-      "pct": 87.24
+      "pct": 87.41
     },
     "branchesTrue": {
       "total": 0,
@@ -189,28 +189,28 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 13,
-      "covered": 12,
+      "total": 14,
+      "covered": 13,
       "skipped": 0,
-      "pct": 92.3
+      "pct": 92.85
     },
     "functions": {
-      "total": 10,
-      "covered": 9,
+      "total": 11,
+      "covered": 10,
       "skipped": 0,
-      "pct": 90
+      "pct": 90.9
     },
     "statements": {
-      "total": 13,
-      "covered": 12,
+      "total": 14,
+      "covered": 13,
       "skipped": 0,
-      "pct": 92.3
+      "pct": 92.85
     },
     "branches": {
-      "total": 20,
-      "covered": 18,
+      "total": 24,
+      "covered": 22,
       "skipped": 0,
-      "pct": 90
+      "pct": 91.66
     }
   },
   "src/schemas.ts": {
@@ -499,7 +499,7 @@
       "pct": 100
     }
   },
-  "src/semantics/storageRelational.ts": {
+  "src/semantics/storage.ts": {
     "lines": {
       "total": 3,
       "covered": 2,
