@@ -1,10 +1,10 @@
 {
   "total": {
     "lines": {
-      "total": 2018,
-      "covered": 1854,
+      "total": 2017,
+      "covered": 1853,
       "skipped": 0,
-      "pct": 91.87
+      "pct": 91.86
     },
     "statements": {
       "total": 2051,
@@ -813,10 +813,10 @@
   },
   "src/storage/storagePairing.ts": {
     "lines": {
-      "total": 71,
-      "covered": 68,
+      "total": 70,
+      "covered": 67,
       "skipped": 0,
-      "pct": 95.77
+      "pct": 95.71
     },
     "functions": {
       "total": 11,
