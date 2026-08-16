@@ -325,7 +325,8 @@ export function storageRelationalBinding(opts: {
   recognition: string;
   storageSystem: "postgres" | "mysql" | "sqlite";
   scope: string;
-  table: string;
+  /** Null when the source names a table this reader could not settle. */
+  table: string | null;
 }): BoundaryBinding {
   return {
     transport: opts.storageSystem,
@@ -333,7 +334,7 @@ export function storageRelationalBinding(opts: {
       name: "storage-relational",
       storageSystem: opts.storageSystem,
       scope: opts.scope,
-      table: opts.table,
+      table: namedOrNull(opts.table, "storage table"),
     },
     recognition: opts.recognition,
   };

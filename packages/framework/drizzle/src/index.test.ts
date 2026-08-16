@@ -115,7 +115,7 @@ function interactionOf(effect: Effect): Record<string, unknown> {
   return effect.interaction as unknown as Record<string, unknown>;
 }
 
-function tableOf(effect: Effect): string {
+function tableOf(effect: Effect): string | null {
   if (effect.type !== "interaction") {
     throw new Error(`expected interaction, got ${effect.type}`);
   }
@@ -292,7 +292,10 @@ describe("drizzle recognizer — negatives", () => {
     expect(recognizeAll(sf)).toHaveLength(0);
   });
 
-  it("falls back to the identifier name when the table declaration is opaque", () => {
+  it("does not name a table when the declaration is opaque", () => {
+    // The identifier's own text is not the table name. Reporting it
+    // would pair this query against a schema table that spells the
+    // same way, so the query keeps its effect without a table.
     const sf = makeProject(`
       import { drizzle } from "drizzle-orm";
       const db = drizzle({});
@@ -303,6 +306,6 @@ describe("drizzle recognizer — negatives", () => {
     `);
     const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
-    expect(tableOf(effects[0])).toBe("mystery");
+    expect(tableOf(effects[0])).toBeNull();
   });
 });

@@ -68,7 +68,8 @@ export interface DrizzleRecognizerOptions {
 interface RecognizedQuery {
   kind: "read" | "write";
   operation: string;
-  table: string;
+  /** Null when this reader could not settle which table the query names. */
+  table: string | null;
   /** Source text of the table expression, for column-ref matching. */
   tableExprText: string | null;
   fields: string[];
@@ -332,16 +333,17 @@ function isDrizzleReceiver(node: Node): boolean {
  * the expression's trailing identifier name when the declaration cannot be
  * resolved, which is what the source says rather than something invented.
  */
-function resolveTableName(tableExpr: Node): string {
-  const fallback = N.isPropertyAccessExpression(tableExpr)
-    ? tableExpr.getName()
-    : tableExpr.getText();
-
+/**
+ * The table name a declaration states, or null when this reader could
+ * not settle it. Returning the written source text instead would pair
+ * against a schema table that merely spells the same way (#121).
+ */
+function resolveTableName(tableExpr: Node): string | null {
   const symbol = N.isPropertyAccessExpression(tableExpr)
     ? tableExpr.getNameNode().getSymbol()
     : tableExpr.getSymbol();
   if (symbol === undefined) {
-    return fallback;
+    return null;
   }
   for (const decl of symbol.getDeclarations()) {
     const declared = tableNameFromDeclaration(decl);
@@ -349,7 +351,7 @@ function resolveTableName(tableExpr: Node): string {
       return declared;
     }
   }
-  return fallback;
+  return null;
 }
 
 function tableNameFromDeclaration(decl: Node): string | null {
