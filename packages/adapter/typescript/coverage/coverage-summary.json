@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 7218,
+      "total": 7222,
       "covered": 6250,
       "skipped": 0,
-      "pct": 86.58
+      "pct": 86.54
     },
     "statements": {
-      "total": 7288,
+      "total": 7292,
       "covered": 6318,
       "skipped": 0,
-      "pct": 86.69
+      "pct": 86.64
     },
     "functions": {
-      "total": 942,
+      "total": 943,
       "covered": 888,
       "skipped": 0,
-      "pct": 94.26
+      "pct": 94.16
     },
     "branches": {
-      "total": 5518,
+      "total": 5520,
       "covered": 4315,
       "skipped": 0,
-      "pct": 78.19
+      "pct": 78.17
     },
     "branchesTrue": {
       "total": 0,
@@ -137,28 +137,28 @@
   },
   "src/configuredCall.ts": {
     "lines": {
-      "total": 28,
+      "total": 32,
       "covered": 27,
       "skipped": 0,
-      "pct": 96.42
+      "pct": 84.37
     },
     "functions": {
-      "total": 4,
+      "total": 5,
       "covered": 4,
       "skipped": 0,
-      "pct": 100
+      "pct": 80
     },
     "statements": {
-      "total": 28,
+      "total": 32,
       "covered": 27,
       "skipped": 0,
-      "pct": 96.42
+      "pct": 84.37
     },
     "branches": {
-      "total": 29,
+      "total": 31,
       "covered": 26,
       "skipped": 0,
-      "pct": 89.65
+      "pct": 83.87
     }
   },
   "src/contract.ts": {

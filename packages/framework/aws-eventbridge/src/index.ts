@@ -78,8 +78,9 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import { readConfiguredCall } from "@suss/adapter-typescript";
+import { readConfiguredCall, rootIdentifier } from "@suss/adapter-typescript";
 import { formatChannel, messageBusBinding } from "@suss/behavioral-ir";
+import { unwrapJsonStringify } from "@suss/extractor";
 
 import type {
   ConfiguredCallContext,
@@ -411,40 +412,6 @@ function isEffectArgOfKind(arg: EffectArg | undefined, kind: string): boolean {
     typeof arg === "object" &&
     (arg as { kind?: string }).kind === kind
   );
-}
-
-/**
- * Unwrap a `JSON.stringify(<inner>)` EffectArg. When the body is a call
- * to JSON.stringify, return the first arg's EffectArg; otherwise return
- * the body unchanged. Returns null when the input is null.
- */
-function unwrapJsonStringify(body: EffectArg | null): EffectArg | null {
-  if (body === null || typeof body !== "object") {
-    return body;
-  }
-  const candidate = body as {
-    kind?: string;
-    callee?: string;
-    args?: EffectArg[];
-  };
-  if (candidate.kind !== "call" || candidate.callee !== "JSON.stringify") {
-    return body;
-  }
-  const inner = candidate.args?.[0];
-  return inner ?? body;
-}
-
-/**
- * Walk a property-access chain back to its root Identifier. For
- * `eb.commands.PutEventsCommand`, returns the `eb` identifier. Returns
- * null if the root isn't an Identifier.
- */
-function rootIdentifier(node: Node): Node | null {
-  let current: Node = node;
-  while (N.isPropertyAccessExpression(current)) {
-    current = current.getExpression();
-  }
-  return N.isIdentifier(current) ? current : null;
 }
 
 /**

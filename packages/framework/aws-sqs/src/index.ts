@@ -46,8 +46,9 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import { readConfiguredCall } from "@suss/adapter-typescript";
+import { readConfiguredCall, rootIdentifier } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
+import { unwrapJsonStringify } from "@suss/extractor";
 
 import type {
   ConfiguredCallContext,
@@ -191,20 +192,6 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
 }
 
 /**
- * Walk a property-access chain back to its root Identifier. For
- * `sqs.commands.SendMessageCommand`, returns the `sqs` identifier.
- * Returns null if the root isn't an Identifier (e.g. a function
- * call or `this`-expression).
- */
-function rootIdentifier(node: Node): Node | null {
-  let current: Node = node;
-  while (N.isPropertyAccessExpression(current)) {
-    current = current.getExpression();
-  }
-  return N.isIdentifier(current) ? current : null;
-}
-
-/**
  * Read the QueueUrl property of the SendMessageCommand input object
  * and return the channel identifier as a string. Two forms give us a channel:
  *   - `QueueUrl: process.env.ORDERS_QUEUE_URL` gives "ORDERS_QUEUE_URL"
@@ -307,31 +294,6 @@ function readPropertyArg(
   void input;
   void callNode;
   return fields[propName] ?? null;
-}
-
-/**
- * Unwrap a `JSON.stringify(<inner>)` EffectArg. When the body is a
- * call to JSON.stringify, return the first arg's EffectArg; otherwise
- * return the body unchanged. Works for the common case where
- * `MessageBody: JSON.stringify({ id, total })` should pair against
- * the consumer's destructured `{ id, total }` after JSON.parse.
- *
- * Returns null when the input is null (preserve nullability).
- */
-function unwrapJsonStringify(body: EffectArg | null): EffectArg | null {
-  if (body === null || typeof body !== "object") {
-    return body;
-  }
-  const candidate = body as {
-    kind?: string;
-    callee?: string;
-    args?: EffectArg[];
-  };
-  if (candidate.kind !== "call" || candidate.callee !== "JSON.stringify") {
-    return body;
-  }
-  const inner = candidate.args?.[0];
-  return inner ?? body;
 }
 
 /**

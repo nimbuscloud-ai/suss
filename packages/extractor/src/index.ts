@@ -42,7 +42,7 @@ import type {
 import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
-export { httpRouteDiscovery } from "./packHelpers.js";
+export { httpRouteDiscovery, unwrapJsonStringify } from "./packHelpers.js";
 export {
   enumerateOrDegrade,
   enumerateStructuredPaths,

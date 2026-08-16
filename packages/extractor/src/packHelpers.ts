@@ -8,6 +8,7 @@
  */
 
 import type { DiscoveryPattern } from "./framework.js";
+import type { EffectArg } from "./index.js";
 
 /**
  * Build the `discovery` entries for an HTTP-server framework whose handlers
@@ -67,4 +68,26 @@ export function httpRouteDiscovery(opts: {
     ...(opts.mount !== undefined ? { mount: opts.mount } : {}),
     requiresImport: [opts.importModule],
   }));
+}
+
+/**
+ * The payload behind a `JSON.stringify(...)` call, or the argument
+ * unchanged when it is anything else. A producer serializes its message
+ * before sending it, and the shape worth comparing across the boundary
+ * is what went in, not the string that came out.
+ */
+export function unwrapJsonStringify(body: EffectArg | null): EffectArg | null {
+  if (body === null || typeof body !== "object") {
+    return body;
+  }
+  const candidate = body as {
+    kind?: string;
+    callee?: string;
+    args?: EffectArg[];
+  };
+  if (candidate.kind !== "call" || candidate.callee !== "JSON.stringify") {
+    return body;
+  }
+  const inner = candidate.args?.[0];
+  return inner ?? body;
 }
