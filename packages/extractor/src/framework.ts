@@ -1090,6 +1090,21 @@ export interface PatternPack {
    */
   transparentWrappers?: TransparentWrapper[];
   /**
+   * How this library's client object is constructed, so an operation
+   * summary can say which endpoint its calls go to. Each entry is a
+   * constructor or factory imported from `importModule`, with
+   * `uriProperty` the option key whose value is the endpoint. The
+   * adapter reads every construction in the project and stamps the
+   * client on each operation summary when exactly one distinct client
+   * exists; two or more distinct clients abstain, since a hook call
+   * does not say which one it goes through.
+   */
+  graphqlClients?: Array<{
+    importModule: string;
+    importName: string;
+    uriProperty: string;
+  }>;
+  /**
    * Per-property-access recognizers, the counterpart to
    * `invocationRecognizers`, firing on `PropertyAccessExpression`
    * nodes rather than `CallExpression` nodes. Use these for patterns

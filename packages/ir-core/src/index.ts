@@ -9,6 +9,8 @@
  * tests) can build a binding without depending on a specific IR.
  */
 
+import { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
+
 import type { z } from "zod";
 import type {
   BoundaryBindingSchema,
@@ -274,6 +276,20 @@ export function graphqlOperationBinding(opts: {
     },
     recognition: opts.recognition,
   };
+}
+
+/**
+ * Whether a binding is the consumer side of a GraphQL boundary,
+ * settled by the protocol's own schema so callers do not compare the
+ * semantics tag themselves.
+ */
+export function isGraphqlOperationBinding(
+  binding: BoundaryBinding | null | undefined,
+): boolean {
+  return (
+    binding != null &&
+    GraphqlOperationSemanticsSchema.safeParse(binding.semantics).success
+  );
 }
 
 /**

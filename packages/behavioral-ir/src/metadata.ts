@@ -437,6 +437,18 @@ export const GraphqlMetadataSchema = z.object({
   unresolvedDocument: z
     .object({ reference: z.string(), reason: z.string() })
     .optional(),
+  /**
+   * The client a consumer operation goes through, read from the
+   * project's client construction. `uri` when the construction wrote
+   * a string literal; `uriRef` is the written expression (an env var
+   * read, a config access) when the value is computed, a symbolic
+   * reference a config binding can ground later. Absent when the
+   * project constructs no client the packs describe, or more than one
+   * distinct client and the operation cannot be attributed to one.
+   */
+  client: z
+    .object({ uri: z.string().nullable(), uriRef: z.string().nullable() })
+    .optional(),
 });
 
 export type GraphqlMetadata = z.infer<typeof GraphqlMetadataSchema>;
