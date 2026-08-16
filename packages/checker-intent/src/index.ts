@@ -33,7 +33,9 @@ import {
   applySuppressionsToFindings,
   bodyShapesMatch,
   boundaryKey,
+  pairingKey,
   ruleBoundaryMatchesKey,
+  semanticsAgree,
 } from "@suss/ir-core";
 
 import type {
@@ -168,7 +170,7 @@ function checkBoundaryIntent(
   intent: BoundaryIntentSummary,
   codeByBoundary: Map<string, BehavioralSummary[]>,
 ): IntentPassResult {
-  const key = boundaryKey(intent.boundary);
+  const key = pairingKey(intent.boundary);
   if (key === null) {
     // The intent is well-formed but its boundary can't be keyed for
     // pairing (e.g. function-call without package + exportPath). The
@@ -194,16 +196,26 @@ function checkBoundaryIntent(
       ],
     };
   }
-  const impls = codeByBoundary.get(key) ?? [];
+  // Bucket on the pairing key, settle the rest with semanticsAgree:
+  // the same two steps pairSummaries takes, so a "*" route satisfies a
+  // method-named intent here exactly when the two would pair (#122).
+  const label = boundaryKey(intent.boundary) ?? key;
+  const impls = (codeByBoundary.get(key) ?? []).filter((impl) => {
+    const binding = impl.identity.boundaryBinding;
+    return (
+      binding !== null &&
+      semanticsAgree(binding.semantics, intent.boundary.semantics)
+    );
+  });
   if (impls.length === 0) {
     return {
       findings: [
         {
           kind: "unimplementedBoundary",
           severity: "error",
-          boundary: key,
+          boundary: label,
           intent: { name: intent.name },
-          message: `Intent "${intent.name}" declares boundary ${key} with ${intent.outcomes.length} outcome(s); no code produces this boundary.`,
+          message: `Intent "${intent.name}" declares boundary ${label} with ${intent.outcomes.length} outcome(s); no code produces this boundary.`,
         },
       ],
       // The comparison ran: finding no implementation IS the result.
@@ -211,7 +223,7 @@ function checkBoundaryIntent(
         {
           kind: "boundary",
           intent: intent.name,
-          boundary: key,
+          boundary: label,
           implementations: [],
         },
       ],
@@ -220,7 +232,7 @@ function checkBoundaryIntent(
   }
   const findings: IntentFinding[] = [];
   for (const impl of impls) {
-    findings.push(...compareIntentToImpl(intent, impl, key));
+    findings.push(...compareIntentToImpl(intent, impl, label));
   }
   return {
     findings,
@@ -228,7 +240,7 @@ function checkBoundaryIntent(
       {
         kind: "boundary",
         intent: intent.name,
-        boundary: key,
+        boundary: label,
         implementations: impls.map(codeRef),
       },
     ],
@@ -479,7 +491,7 @@ function indexCodeByBoundary(
     if (binding === null) {
       continue;
     }
-    const key = boundaryKey(binding);
+    const key = pairingKey(binding);
     if (key === null) {
       continue;
     }
