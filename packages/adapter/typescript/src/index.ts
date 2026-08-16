@@ -10,7 +10,7 @@ export {
   findNearestTsconfig,
 } from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches } from "./conditions.js";
-export { readConfiguredCall } from "./configuredCall.js";
+export { readConfiguredCall, rootIdentifier } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
