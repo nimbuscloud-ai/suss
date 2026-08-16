@@ -1105,6 +1105,14 @@ export interface PatternPack {
     uriProperty: string;
   }>;
   /**
+   * Which service a client talks to, keyed by the endpoint the
+   * construction was read with: the uri literal, or the written
+   * expression when the value is computed. The value is the provider
+   * workspace name. This is deployment knowledge, so it comes from the
+   * pack's own per-project config rather than from the library.
+   */
+  graphqlClientBindings?: Record<string, string>;
+  /**
    * Per-property-access recognizers, the counterpart to
    * `invocationRecognizers`, firing on `PropertyAccessExpression`
    * nodes rather than `CallExpression` nodes. Use these for patterns

@@ -447,7 +447,16 @@ export const GraphqlMetadataSchema = z.object({
    * distinct client and the operation cannot be attributed to one.
    */
   client: z
-    .object({ uri: z.string().nullable(), uriRef: z.string().nullable() })
+    .object({
+      uri: z.string().nullable(),
+      uriRef: z.string().nullable(),
+      /**
+       * The provider workspace this client is bound to, from the
+       * pack's per-project config. The pairing pass keeps only the
+       * matched resolvers from this workspace when it is set.
+       */
+      workspace: z.string().optional(),
+    })
     .optional(),
 });
 

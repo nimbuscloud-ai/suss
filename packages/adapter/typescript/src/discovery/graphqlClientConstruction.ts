@@ -40,6 +40,8 @@ export function stampGraphqlClientRefs(
     return;
   }
 
+  const workspace = boundWorkspaceFor(sole, packs);
+  const client = workspace !== null ? { ...sole, workspace } : sole;
   for (const summary of summaries) {
     if (!isGraphqlOperationBinding(summary.identity.boundaryBinding)) {
       continue;
@@ -47,9 +49,27 @@ export function stampGraphqlClientRefs(
     const existing = readGraphqlMetadata(summary) ?? {};
     summary.metadata = withGraphqlMetadata(summary.metadata, {
       ...existing,
-      client: sole,
+      client,
     });
   }
+}
+
+/** The provider workspace a pack's per-project config binds this endpoint to, or null when none does. */
+function boundWorkspaceFor(
+  ref: GraphqlClientRef,
+  packs: ReadonlyArray<PatternPack>,
+): string | null {
+  const key = ref.uri ?? ref.uriRef;
+  if (key === null) {
+    return null;
+  }
+  for (const pack of packs) {
+    const bound = pack.graphqlClientBindings?.[key];
+    if (bound !== undefined) {
+      return bound;
+    }
+  }
+  return null;
 }
 
 /**

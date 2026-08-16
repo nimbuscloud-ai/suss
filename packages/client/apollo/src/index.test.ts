@@ -86,6 +86,21 @@ describe("apolloClientPack — pack shape", () => {
 // Fixture integration
 // ---------------------------------------------------------------------------
 
+describe("apolloClientPack — client bindings", () => {
+  it("passes the per-project client bindings through to the pack", () => {
+    const pack = apolloClientPack({
+      clients: { "import.meta.env.VITE_GRAPHQL_URL": "appsync-stack" },
+    });
+    expect(pack.graphqlClientBindings).toEqual({
+      "import.meta.env.VITE_GRAPHQL_URL": "appsync-stack",
+    });
+  });
+
+  it("leaves the bindings off when the options do not set them", () => {
+    expect(apolloClientPack().graphqlClientBindings).toBeUndefined();
+  });
+});
+
 describe("apolloClientPack — integration", () => {
   let summaries: BehavioralSummary[];
   beforeAll(async () => {
