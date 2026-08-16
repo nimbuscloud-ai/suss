@@ -14,6 +14,7 @@ import {
   dispatchByType,
   displayLabel,
   readHttpMetadata,
+  readReactMetadata,
   safeParseSummaries,
 } from "@suss/behavioral-ir";
 import { pairSummaries, summaryWithDefinitionsInlined } from "@suss/checker";
@@ -1072,9 +1073,7 @@ function summaryMetadata(summary: BehavioralSummary): string {
 }
 
 function unitKindLabel(summary: BehavioralSummary): string {
-  const react = summary.metadata?.react as
-    | { kind?: string; deps?: string[] | null }
-    | undefined;
+  const react = readReactMetadata(summary);
   if (react?.kind === "effect") {
     return `useEffect${formatEffectDeps(react.deps)}`;
   }
@@ -1315,9 +1314,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   }
   const gather: Map<string, Map<string, SpawnEntry[]>> = new Map();
   for (const s of summaries) {
-    const react = s.metadata?.react as
-      | { kind?: string; component?: string; index?: number }
-      | undefined;
+    const react = readReactMetadata(s);
     if (
       react?.kind !== "effect" ||
       typeof react.component !== "string" ||

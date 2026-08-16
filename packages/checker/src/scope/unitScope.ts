@@ -21,31 +21,21 @@
  * Where several directories contain the file, none of them decides.
  */
 
+import { readCodeScopeMetadata } from "@suss/behavioral-ir";
 import { fileInCodeScope } from "@suss/ir-core";
 
-import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  CodeScopeMetadata,
+  DeployableUnit,
+} from "@suss/behavioral-ir";
 
-export interface CodeScopeMetadata {
-  kind: "codeUri" | "unknown";
-  path?: string;
-  /**
-   * The file the runtime enters, from a template's `Handler`, relative
-   * to the same root as the summaries' files and written without an
-   * extension. Its import closure is the scope, where the directory
-   * alone cannot tell functions built from one root apart.
-   */
-  entry?: string;
-}
+export type { CodeScopeMetadata } from "@suss/behavioral-ir";
 
 /** The code scope on a declaring summary, or the unknown marker when it
  * has none. */
 export function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
-  const raw = (summary.metadata?.codeScope ?? null) as CodeScopeMetadata | null;
-  if (raw === null) {
-    return { kind: "unknown" };
-  }
-
-  return raw;
+  return readCodeScopeMetadata(summary) ?? { kind: "unknown" };
 }
 
 /** The units each file's code is deployed as, according to its own
