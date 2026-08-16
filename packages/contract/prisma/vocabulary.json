@@ -22,5 +22,6 @@
   "name": "Prisma schema: attribute argument naming the target",
   "field": "suss: shape element kind",
   "attribute": "suss: shape element kind",
-  "library": "suss: marker for a value a library states"
+  "library": "suss: marker for a value a library states",
+  "exhaustive": "suss: a storage contract that declares every field"
 }

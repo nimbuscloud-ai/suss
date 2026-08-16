@@ -106,6 +106,108 @@ describe("reading version-1 artifacts", () => {
   });
 });
 
+describe("reading storage written before the layered variant", () => {
+  function v3StorageSummary(
+    semantics: Record<string, unknown>,
+    metadata?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return v1Summary({
+      schemaVersion: 3,
+      identity: {
+        name: "User",
+        exportPath: null,
+        id: "schema.prisma::User",
+        boundaryBinding: {
+          transport: "postgres",
+          semantics,
+          recognition: "prisma",
+        },
+      },
+      ...(metadata === undefined ? {} : { metadata }),
+    });
+  }
+
+  it("reads a storage-relational table as a storage container", () => {
+    const parsed = parseSummary(
+      v3StorageSummary({
+        name: "storage-relational",
+        storageSystem: "postgres",
+        scope: "default",
+        table: "User",
+      }),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toEqual({
+      name: "storage",
+      storageSystem: "postgres",
+      scope: "default",
+      container: "User",
+      accessPath: null,
+    });
+  });
+
+  it("reads a table nobody could settle as a null container", () => {
+    const parsed = parseSummary(
+      v3StorageSummary({
+        name: "storage-relational",
+        storageSystem: "postgres",
+        scope: "default",
+        table: null,
+      }),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toMatchObject({
+      container: null,
+    });
+  });
+
+  it("takes an older schema reader's column list as the complete set", () => {
+    const parsed = parseSummary(
+      v3StorageSummary(
+        {
+          name: "storage-relational",
+          storageSystem: "postgres",
+          scope: "default",
+          table: "User",
+        },
+        { storageContract: { columns: [{ name: "id" }] } },
+      ),
+    );
+    expect(parsed.metadata?.storageContract).toMatchObject({
+      fieldSet: "exhaustive",
+    });
+  });
+
+  it("leaves a summary written at the current version alone", () => {
+    const parsed = parseSummary(
+      v1Summary({
+        schemaVersion: SUMMARY_SCHEMA_VERSION,
+        identity: {
+          name: "User",
+          exportPath: null,
+          id: "schema.prisma::User",
+          boundaryBinding: {
+            transport: "dynamodb",
+            semantics: {
+              name: "storage",
+              storageSystem: "dynamodb",
+              scope: "default",
+              container: "Orders",
+              accessPath: "byCustomer",
+            },
+            recognition: "cloudformation",
+          },
+        },
+        metadata: { storageContract: { fieldSet: "partial", columns: [] } },
+      }),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toMatchObject({
+      accessPath: "byCustomer",
+    });
+    expect(parsed.metadata?.storageContract).toMatchObject({
+      fieldSet: "partial",
+    });
+  });
+});
+
 describe("backfilling identity.id", () => {
   it("stamps a v1 summary's id from its file and name", () => {
     const parsed = parseSummary(v1Summary({}));

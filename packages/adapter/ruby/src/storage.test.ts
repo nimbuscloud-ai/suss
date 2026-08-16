@@ -90,9 +90,9 @@ describe("the database work a Ruby body does", () => {
     const [effect] = effects;
     const semantics =
       effect?.type === "interaction" ? effect.binding.semantics : null;
-    expect(
-      semantics?.name === "storage-relational" ? semantics.table : null,
-    ).toBe("Order");
+    expect(semantics?.name === "storage" ? semantics.container : null).toBe(
+      "Order",
+    );
   });
 
   it("counts a chain once rather than once per call in it", async () => {

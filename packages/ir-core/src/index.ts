@@ -49,7 +49,7 @@ export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
 export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
 export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
-export { StorageRelationalSemanticsSchema } from "./semantics/storageRelational.js";
+export { StorageSemanticsSchema } from "./semantics/storage.js";
 
 export type {
   BoundaryBehavior,
@@ -84,7 +84,7 @@ export type {
 export type { Semantics } from "./semantics/registry.js";
 export type { RestSemantics } from "./semantics/rest.js";
 export type { RuntimeConfigSemantics } from "./semantics/runtimeConfig.js";
-export type { StorageRelationalSemantics } from "./semantics/storageRelational.js";
+export type { StorageSemantics } from "./semantics/storage.js";
 
 // ---------------------------------------------------------------------------
 // Shared comparison primitives
@@ -316,28 +316,53 @@ export function runtimeConfigBinding(opts: {
 }
 
 /**
- * Build a storage-relational binding, the provider side of a relational
- * storage table. Transport stores the `storageSystem` value, which keeps
- * the layering informative without needing a separate wire-protocol
- * taxonomy.
+ * Build a storage binding, the side of a store that both a schema
+ * reader and a call site can spell. `transport` defaults to the store's
+ * own name, which is right for a database whose product and wire
+ * protocol are the same word, and a store reached over an SDK passes
+ * its wire instead.
+ */
+export function storageBinding(opts: {
+  recognition: string;
+  storageSystem: string;
+  transport?: string;
+  scope: string;
+  /** Null when the source gives a container this reader could not settle. */
+  container: string | null;
+  /** A secondary index or alias, or null for the container's own primary key. */
+  accessPath?: string | null;
+}): BoundaryBinding {
+  return {
+    transport: opts.transport ?? opts.storageSystem,
+    semantics: {
+      name: "storage",
+      storageSystem: opts.storageSystem,
+      scope: opts.scope,
+      container: namedOrNull(opts.container, "storage container"),
+      accessPath: opts.accessPath ?? null,
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * The relational spelling of `storageBinding`, kept while the four
+ * relational packs still pass a table. Each one moves to stating its
+ * own properties, and then this goes.
  */
 export function storageRelationalBinding(opts: {
   recognition: string;
   storageSystem: "postgres" | "mysql" | "sqlite";
   scope: string;
-  /** Null when the source names a table this reader could not settle. */
+  /** Null when the source gives a table this reader could not settle. */
   table: string | null;
 }): BoundaryBinding {
-  return {
-    transport: opts.storageSystem,
-    semantics: {
-      name: "storage-relational",
-      storageSystem: opts.storageSystem,
-      scope: opts.scope,
-      table: namedOrNull(opts.table, "storage table"),
-    },
+  return storageBinding({
     recognition: opts.recognition,
-  };
+    storageSystem: opts.storageSystem,
+    scope: opts.scope,
+    container: opts.table,
+  });
 }
 
 /**

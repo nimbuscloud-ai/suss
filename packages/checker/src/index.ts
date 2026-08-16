@@ -19,7 +19,7 @@ import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
-import { checkRelationalStorage } from "./storage/relationalPairing.js";
+import { checkStorage } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 
 import type {
@@ -117,7 +117,7 @@ export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { summaryWithDefinitionsInlined } from "./spelledOut.js";
 
 export { summaryWithDefinitionsInlined } from "./spelledOut.js";
-export { checkRelationalStorage } from "./storage/relationalPairing.js";
+export { checkStorage } from "./storage/storagePairing.js";
 export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 export {
   applySuppressions,
@@ -222,7 +222,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const interactionIndex = buildInteractionIndex(summaries);
 
   findings.push(...checkRuntimeConfig(summaries, interactionIndex));
-  findings.push(...checkRelationalStorage(summaries, interactionIndex));
+  findings.push(...checkStorage(summaries, interactionIndex));
   findings.push(...checkMessageBus(summaries, interactionIndex));
 
   return {

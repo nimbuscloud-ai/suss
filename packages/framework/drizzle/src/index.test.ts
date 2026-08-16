@@ -120,10 +120,10 @@ function tableOf(effect: Effect): string | null {
     throw new Error(`expected interaction, got ${effect.type}`);
   }
   const semantics = effect.binding.semantics;
-  if (semantics.name !== "storage-relational") {
-    throw new Error(`expected storage-relational, got ${semantics.name}`);
+  if (semantics.name !== "storage") {
+    throw new Error(`expected storage, got ${semantics.name}`);
   }
-  return semantics.table;
+  return semantics.container;
 }
 
 describe("drizzle recognizer — select chains", () => {

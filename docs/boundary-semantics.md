@@ -122,7 +122,7 @@ type Semantics =
   | { name: "graphql-resolver"; typeName: string | null; fieldName: string }
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
-  | { name: "storage-relational"; storageSystem: "postgres" | "mysql" | "sqlite"; scope: string; table: string }
+  | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
   | { name: "message-bus"; messageBus: "sqs" | "sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null };
 ```
 
@@ -179,11 +179,21 @@ response body fields are fields on a REST endpoint's contract. Pairing key:
 `metadata.runtimeContract.envVars`, and `metadata.codeScope` says which source
 files run inside the channel.
 
-**`storage-relational`** covers Postgres, MySQL, and SQLite tables declared
-through Prisma, Drizzle, TypeORM, or raw DDL. Columns are fields on the table's
-contract, and field-level access checks compare what the code reads and writes
-against `metadata.storageContract.columns`. Pairing key: `(storageSystem,
-scope, table)`.
+**`storage`** covers every store: a Postgres table declared through Prisma,
+Drizzle, TypeORM, or raw DDL, and a DynamoDB table, a bucket, or an index the
+same way. The container is the table, bucket, or collection, and `accessPath`
+is a secondary way in, a global secondary index or an alias, or null for the
+container's own primary key. Columns are fields on the container's contract,
+and field-level access checks compare what the code reads and writes against
+`metadata.storageContract.columns`. Pairing key: `(storageSystem, scope,
+container, accessPath)`.
+
+Whether a field the code touches can be called unknown is a property the
+provider declares, not something the store's name implies:
+`metadata.storageContract.fieldSet` is `"exhaustive"` for a SQL schema that
+declares every column, `"partial"` for a store that declares its keys and lets
+the rest vary, and `"none"` for a blob. Only an exhaustive contract produces
+`boundaryFieldUnknown`.
 
 **`message-bus`** covers SQS, SNS, S3, EventBridge, BullMQ, Kafka, and NATS.
 Producer-side `interaction(class: "message-send")` effects pair against it, and
@@ -245,7 +255,7 @@ The passes that pair through their own machinery still do so:
 `pairGraphqlOperations` walks selection sets, and the per-domain checker
 modules (`message-bus/`, `runtime-config/`, `storage/`) filter by
 `semantics.name`. `identityKey` returns null for the `runtime-config`
-and `storage-relational` variants, and `message-bus` keys and pairs
+and `storage` variants, and `message-bus` keys and pairs
 through the generic pass as well.
 
 ### Metadata namespaced by semantics
@@ -258,7 +268,8 @@ naming convention applies across all semantics:
 - `metadata.http.*`, REST-scoped
 - `metadata.graphql.*`, GraphQL-scoped
 - `metadata.runtimeContract.*`: runtime-config env var lists
-- `metadata.storageContract.*`: column declarations for storage-relational
+- `metadata.storageContract.*`: column declarations for storage, and whether
+  they are the complete set
 
 Keys outside those namespaces are semantics-neutral (e.g.
 `metadata.derivedFromWrapper` from the wrapper-expansion post-pass).
@@ -328,7 +339,7 @@ Shipped:
    helpers; packs and contract sources use them rather than hand-rolling
    the structure themselves.
 2. Seven `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
-   `graphql-operation`, `runtime-config`, `storage-relational`, `message-bus`.
+   `graphql-operation`, `runtime-config`, `storage`, `message-bus`.
 3. Metadata namespaced under `metadata.http.*` and `metadata.graphql.*`,
    with `metadata.runtimeContract.*` and `metadata.storageContract.*` for the
    newer semantics.

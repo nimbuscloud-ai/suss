@@ -17,7 +17,7 @@ import { graphqlResolverSemantics } from "./graphqlResolver.js";
 import { messageBusSemantics } from "./messageBus.js";
 import { restSemantics } from "./rest.js";
 import { runtimeConfigSemantics } from "./runtimeConfig.js";
-import { storageRelationalSemantics } from "./storageRelational.js";
+import { storageSemantics } from "./storage.js";
 
 import type { BoundaryBehavior } from "./definition.js";
 
@@ -31,7 +31,7 @@ export const SemanticsSchema = z.discriminatedUnion("name", [
   graphqlResolverSemantics.schema,
   graphqlOperationSemantics.schema,
   runtimeConfigSemantics.schema,
-  storageRelationalSemantics.schema,
+  storageSemantics.schema,
   messageBusSemantics.schema,
 ]);
 
@@ -43,7 +43,7 @@ const DEFINITIONS = [
   graphqlResolverSemantics,
   graphqlOperationSemantics,
   runtimeConfigSemantics,
-  storageRelationalSemantics,
+  storageSemantics,
   messageBusSemantics,
 ] as const;
 

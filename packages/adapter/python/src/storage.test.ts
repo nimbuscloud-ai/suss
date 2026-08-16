@@ -145,9 +145,9 @@ describe("the database work a Python body does", () => {
     const [effect] = effects;
     const semantics =
       effect?.type === "interaction" ? effect.binding.semantics : null;
-    expect(
-      semantics?.name === "storage-relational" ? semantics.table : null,
-    ).toBe("Orders");
+    expect(semantics?.name === "storage" ? semantics.container : null).toBe(
+      "Orders",
+    );
   });
 
   it("says nothing about a wrapper that returns something else", async () => {
@@ -208,7 +208,7 @@ describe("the database work a Python body does", () => {
     expect(effects).toHaveLength(1);
     expect(
       effects[0]?.type === "interaction" ? effects[0].binding.semantics : null,
-    ).toMatchObject({ table: "Orders" });
+    ).toMatchObject({ container: "Orders" });
     expect(
       effects[0]?.type === "interaction" ? effects[0].origin : null,
     ).toMatchObject({ function: "load_orders", line: 3 });

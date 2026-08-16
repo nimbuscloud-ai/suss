@@ -102,7 +102,7 @@ type Semantics =
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "function-call"; module?: string; exportName?: string; package?: string; exportPath?: string[] }
   | { name: "runtime-config"; deploymentTarget: string; instanceName: string }
-  | { name: "storage-relational"; storageSystem: string; scope: string; table: string }
+  | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
   | { name: "message-bus"; messageBus: string; channel: string | null };
 ```
 
@@ -314,12 +314,12 @@ Side effects observed within a transition. Two layers of detail today:
 
 **`interaction` effects** are the typed boundary-crossing effects. Each one contains the `BoundaryBinding` of the thing it talks to, plus a discriminated `interaction.class` payload describing the operation. The four classes today are:
 
-- **`storage-access`**, Prisma client calls, Drizzle queries, raw SQL. Pairs against storage-relational provider summaries (Prisma schema, etc.) by `(storageSystem, scope, table)`.
+- **`storage-access`**, Prisma client calls, Drizzle queries, raw SQL. Pairs against storage provider summaries (Prisma schema, etc.) by `(storageSystem, scope, container, accessPath)`.
 - **`service-call`**: fetch / axios / ts-rest client / Apollo client. Pairs against REST or GraphQL providers.
 - **`message-send`**, SQS / Kafka / BullMQ producers. Pairs against message-bus consumer summaries by `(messageBus, channel)`.
 - **`config-read`**, `process.env.X` accesses. Pairs against runtime-config provider summaries by env-var name + codeScope.
 
-Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage-relational`, `rest`, `message-bus`, `runtime-config`) by convention; the IR does not enforce that, but every shipped recognizer follows it. See [`reference/pack-patterns.md`](reference/pack-patterns.md#recognizers) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
+Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage`, `rest`, `message-bus`, `runtime-config`) by convention; the IR does not enforce that, but every shipped recognizer follows it. See [`reference/pack-patterns.md`](reference/pack-patterns.md#recognizers) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
 
 `preconditions` on `invocation` and `interaction` contain the ancestor conditions that gate reaching the effect within its enclosing transition. The extractor populates them for calls nested inside conditional blocks or loop bodies.
 

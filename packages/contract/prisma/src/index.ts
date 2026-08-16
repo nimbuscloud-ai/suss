@@ -1,9 +1,9 @@
 // @suss/contract-prisma: turn a Prisma schema into one
-// `BehavioralSummary` per model with `storage-relational` semantics.
+// `BehavioralSummary` per model with `storage` semantics.
 //
 // Parses `schema.prisma` via `@mrleebo/prisma-ast` (a stable parser
 // that doesn't pull in Prisma's runtime). Emits one provider summary
-// per model that the checker's `checkRelationalStorage` pass pairs
+// per model that the checker's `checkStorage` pass pairs
 // against `interaction(class: "storage-access")` effects in code summaries.
 //
 // Out of scope for v0:
@@ -241,6 +241,9 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
     confidence: { source: "declared", level: "high" },
     metadata: {
       storageContract: {
+        // A Prisma model declares every column its table has, so a
+        // column the code touches and this list leaves out is unknown.
+        fieldSet: "exhaustive",
         columns,
         indexes,
         ...(physicalTable !== null && physicalTable !== opts.model.name

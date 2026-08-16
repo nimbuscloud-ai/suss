@@ -17,17 +17,17 @@ const raise = (msg: string): never => {
 
 function tableOf(summary: BehavioralSummary): string | null {
   const s = summary.identity.boundaryBinding?.semantics;
-  return s?.name === "storage-relational" ? s.table : null;
+  return s?.name === "storage" ? s.container : null;
 }
 
 function storageSystemOf(summary: BehavioralSummary): string | null {
   const s = summary.identity.boundaryBinding?.semantics;
-  return s?.name === "storage-relational" ? s.storageSystem : null;
+  return s?.name === "storage" ? s.storageSystem : null;
 }
 
 function scopeOf(summary: BehavioralSummary): string | null {
   const s = summary.identity.boundaryBinding?.semantics;
-  return s?.name === "storage-relational" ? s.scope : null;
+  return s?.name === "storage" ? s.scope : null;
 }
 
 function columnsOf(summary: BehavioralSummary): Array<{
