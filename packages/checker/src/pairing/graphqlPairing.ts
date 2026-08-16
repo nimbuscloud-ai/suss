@@ -112,7 +112,10 @@ function pairOneOperation(
     }
 
     const key = gqlIdentityKey(doc.rootTypeName, selection.name);
-    const matchingResolvers = resolverIndex.get(key) ?? [];
+    const matchingResolvers = scopeToBoundService(
+      operation,
+      resolverIndex.get(key) ?? [],
+    );
     if (matchingResolvers.length === 0) {
       findings.push(fieldNotImplementedFinding(operation, doc, selection.name));
       continue;
@@ -522,6 +525,29 @@ function fieldNotImplementedFinding(
     description: `GraphQL operation "${operation.identity.name}" selects root field "${doc.rootTypeName}.${fieldName}" but no provider summary implements it.`,
     severity: "warning",
   };
+}
+
+/**
+ * Keep only the resolvers from the service the operation's client is
+ * bound to, when a per-project config bound one. An unbound consumer
+ * keeps every match, ambiguity warning included. A binding that
+ * matches no resolver also keeps every match, since dropping them all
+ * would report "not implemented" for a field somebody does implement,
+ * and the ambiguity warning surfaces the collision either way.
+ */
+function scopeToBoundService(
+  operation: BehavioralSummary,
+  resolvers: BehavioralSummary[],
+): BehavioralSummary[] {
+  const workspace = readGraphqlMetadata(operation)?.client?.workspace;
+  if (workspace === undefined) {
+    return resolvers;
+  }
+
+  const scoped = resolvers.filter(
+    (resolver) => resolver.location.workspace === workspace,
+  );
+  return scoped.length > 0 ? scoped : resolvers;
 }
 
 /**

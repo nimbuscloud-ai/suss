@@ -165,6 +165,53 @@ describe("stampGraphqlClientRefs", () => {
     expect(readGraphqlMetadata(summary)?.document).toContain("GetPet");
   });
 
+  it("adds the bound workspace when pack config grounds the endpoint", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      export const client = new ApolloClient({
+        uri: import.meta.env.VITE_GRAPHQL_URL,
+      });
+    `,
+    );
+    const boundPack: PatternPack = {
+      ...clientPack,
+      graphqlClientBindings: {
+        "import.meta.env.VITE_GRAPHQL_URL": "appsync-stack",
+      },
+    };
+    const summary = operationSummary();
+    stampGraphqlClientRefs([summary], [file], [boundPack], undefined);
+    expect(readGraphqlMetadata(summary)?.client).toEqual({
+      uri: null,
+      uriRef: "import.meta.env.VITE_GRAPHQL_URL",
+      workspace: "appsync-stack",
+    });
+  });
+
+  it("leaves the workspace off when no binding matches the endpoint", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      export const client = new ApolloClient({ uri: "https://api.example.com" });
+    `,
+    );
+    const boundPack: PatternPack = {
+      ...clientPack,
+      graphqlClientBindings: { "https://elsewhere.example.com": "other" },
+    };
+    const summary = operationSummary();
+    stampGraphqlClientRefs([summary], [file], [boundPack], undefined);
+    expect(readGraphqlMetadata(summary)?.client).toEqual({
+      uri: "https://api.example.com",
+      uriRef: null,
+    });
+  });
+
   it("leaves summaries alone when two clients exist", () => {
     const project = createTestProject();
     const file = project.createSourceFile(

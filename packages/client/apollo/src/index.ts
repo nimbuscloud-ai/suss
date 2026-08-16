@@ -53,7 +53,21 @@ const DOCUMENT_HOOKS = [
   { hookName: "useSubscription", operationType: "subscription" },
 ] as const;
 
-export function apolloClientPack(): PatternPack {
+export interface ApolloClientPackOptions {
+  /**
+   * Which service each client talks to, keyed by the endpoint the
+   * client is constructed with: the uri string itself, or the written
+   * expression when the value is computed (an env read like
+   * `import.meta.env.VITE_GRAPHQL_URL`). The value is the provider
+   * workspace name. One line per client separates two GraphQL services
+   * that share root field names.
+   */
+  clients?: Record<string, string>;
+}
+
+export function apolloClientPack(
+  options: ApolloClientPackOptions = {},
+): PatternPack {
   return {
     name: "apollo-client",
     languages: ["typescript", "javascript"],
@@ -143,6 +157,9 @@ export function apolloClientPack(): PatternPack {
         uriProperty: "uri",
       },
     ],
+    ...(options.clients !== undefined
+      ? { graphqlClientBindings: options.clients }
+      : {}),
 
     terminals: [
       {

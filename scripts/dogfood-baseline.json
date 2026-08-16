@@ -3,9 +3,9 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 421,
-    "internal": 1669,
-    "consumers": 664,
-    "pairs": 656
+    "internal": 1670,
+    "consumers": 667,
+    "pairs": 659
   },
   "packages": {
     "packages/adapter/python": {
@@ -23,8 +23,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 32,
-      "internal": 599,
-      "consumers": 41
+      "internal": 600,
+      "consumers": 43
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -36,7 +36,7 @@
       "name": "@suss/checker",
       "exports": 33,
       "internal": 138,
-      "consumers": 81
+      "consumers": 82
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",

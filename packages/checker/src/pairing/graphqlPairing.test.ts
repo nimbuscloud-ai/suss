@@ -233,6 +233,80 @@ describe("pairGraphqlOperations", () => {
     expect(result.findings[0].description).toContain("second-service");
   });
 
+  it("keeps only the bound service's resolvers when the client is grounded", () => {
+    const railsPet = {
+      ...resolver("Query", "pet"),
+      location: {
+        file: "server/Query.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "rails-api",
+      },
+    };
+    const appsyncPet = {
+      ...resolver("Query", "pet"),
+      location: {
+        file: "stack/Query.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "appsync-stack",
+      },
+    };
+    const base = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { id } }`,
+    );
+    const op = {
+      ...base,
+      metadata: {
+        graphql: {
+          ...(base.metadata?.graphql as Record<string, unknown>),
+          client: {
+            uri: null,
+            uriRef: "import.meta.env.VITE_GRAPHQL_URL",
+            workspace: "appsync-stack",
+          },
+        },
+      },
+    };
+    const result = pairGraphqlOperations([railsPet, appsyncPet, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].provider).toBe(appsyncPet);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("keeps every match when the bound service implements nothing at the key", () => {
+    const railsPet = {
+      ...resolver("Query", "pet"),
+      location: {
+        file: "server/Query.ts",
+        range: { start: 1, end: 5 },
+        exportName: null,
+        workspace: "rails-api",
+      },
+    };
+    const base = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { id } }`,
+    );
+    const op = {
+      ...base,
+      metadata: {
+        graphql: {
+          ...(base.metadata?.graphql as Record<string, unknown>),
+          client: { uri: null, uriRef: "X", workspace: "appsync-stack" },
+        },
+      },
+    };
+    const result = pairGraphqlOperations([railsPet, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0].provider).toBe(railsPet);
+  });
+
   it("stays quiet when the matching resolvers share one workspace", () => {
     const first = {
       ...resolver("Query", "pet", "apollo"),
