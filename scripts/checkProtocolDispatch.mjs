@@ -35,7 +35,7 @@ const PROTOCOLS = [
   "graphql-resolver",
   "graphql-operation",
   "runtime-config",
-  "storage-relational",
+  "storage",
   "function-call",
 ];
 
