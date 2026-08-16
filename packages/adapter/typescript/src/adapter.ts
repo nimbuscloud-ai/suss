@@ -61,7 +61,9 @@ import {
 } from "./assembly.js";
 import {
   createLazyProject,
+  type DeepImportGraphs,
   loadImportGraphsDepthFirst,
+  loadImportGraphsDepthFirstFromPaths,
   readTsconfigFileList,
 } from "./bootstrap/lazyProjectInit.js";
 import { computePackApplicability } from "./bootstrap/preFilter.js";
@@ -118,7 +120,7 @@ import {
   type TsSubUnitContext,
 } from "./subUnitContext.js";
 import { nameSummaries, workspaceNameFor } from "./summaryIdentity.js";
-import { createTimer, type TimingReport } from "./timing.js";
+import { createTimer, type Timer, type TimingReport } from "./timing.js";
 import { adapterCodeStamp, computeAdapterPacksDigest } from "./version.js";
 import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
 
@@ -1786,6 +1788,45 @@ function declineWhenRunFromSource(cacheDir: string | null): string | null {
   return null;
 }
 
+/**
+ * Fix the walked-file list, then load the import graph under it. On a
+ * gated run the candidates are not in the project yet, and the load
+ * pass inserts each file after everything it imports with the
+ * candidates last, so the compiler's program build never descends a
+ * whole re-export chain from its top (#211). The walked list is the
+ * candidates either way; the files loaded under them are reachable,
+ * never walked for units.
+ */
+function loadRunFiles(
+  project: Project,
+  candidatePaths: string[] | null,
+  timer: Timer,
+): { sourceFiles: SourceFile[]; deep: DeepImportGraphs } {
+  if (candidatePaths !== null) {
+    const deep = timer.time("loadImportGraphs", () =>
+      loadImportGraphsDepthFirstFromPaths(project, candidatePaths),
+    );
+    const sourceFiles = timer.time("project.getSourceFiles", () =>
+      candidatePaths.flatMap((p) => {
+        const sf = project.getSourceFile(p);
+        return sf !== undefined && !sf.isDeclarationFile() ? [sf] : [];
+      }),
+    );
+    return { sourceFiles, deep };
+  }
+
+  // One enumeration, reused by every phase, since per-phase calls
+  // dominate on a large monorepo. The load pass runs after the list is
+  // taken, so the run walks the same files it would have without it.
+  const sourceFiles = timer.time("project.getSourceFiles", () =>
+    project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
+  );
+  const deep = timer.time("loadImportGraphs", () =>
+    loadImportGraphsDepthFirst(sourceFiles),
+  );
+  return { sourceFiles, deep };
+}
+
 export function createTypeScriptAdapter(
   config: TypeScriptAdapterConfig,
 ): TypeScriptAdapter {
@@ -1913,6 +1954,7 @@ export function createTypeScriptAdapter(
         return named(lookup.summaries, config.workspace);
       }
 
+      let candidatePaths: string[] | null = null;
       if (lazyEligible) {
         const lazy = await timer.timeAsync("lazyProjectInit", () =>
           createLazyProject(
@@ -1921,25 +1963,17 @@ export function createTypeScriptAdapter(
             config.frameworks,
           ),
         );
-        for (const sf of lazy.loadedFiles) {
-          project.addSourceFileAtPath(sf.getFilePath());
-        }
+        candidatePaths = lazy.candidatePaths;
         projectFileSet = lazy.projectFileSet;
         lazyBootstrapped = true;
       }
 
       const summaries: BehavioralSummary[] = [];
 
-      // One enumeration, reused below: `getSourceFiles` walks the
-      // directory tree and per-phase calls dominate on a large monorepo.
-      const sourceFiles = timer.time("project.getSourceFiles", () =>
-        project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
-      );
-
-      // Both passes run after the list above, so the run walks the same
-      // files it would have walked without them.
-      const deep = timer.time("loadImportGraphs", () =>
-        loadImportGraphsDepthFirst(sourceFiles),
+      const { sourceFiles, deep } = loadRunFiles(
+        project,
+        candidatePaths,
+        timer,
       );
       timer.time("warmExportChains", () => warmExportChains(deep.deepRoots));
 
