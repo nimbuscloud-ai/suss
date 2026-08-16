@@ -154,7 +154,7 @@ function providerBodyMismatch(findings: Finding[]): Finding | undefined {
   return findings.find(
     (f) =>
       f.kind === "unhandledProviderCase" &&
-      f.description.includes("the provider never sends"),
+      f.description.includes("the provider can send does not include"),
   );
 }
 
