@@ -83,6 +83,45 @@ describe("a configured wrapper module that resolves to nothing", () => {
   });
 });
 
+describe("module imports on a summary", () => {
+  it("records the project files a summary's own file imports", async () => {
+    write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    const todos = write(
+      "myapp/routes/todos.py",
+      'from myapp.wrappers.restx import route\n\n\n@route("/todos")\nclass TodoList:\n    def get(self):\n        return []\n',
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [path.join(tmpDir, "myapp/wrappers/restx.py"), todos],
+      roots: [tmpDir],
+      packs: [flaskRestxLike],
+      workspaceRoot: tmpDir,
+    });
+
+    const route = summaries.find((s) =>
+      s.location.file.endsWith("routes/todos.py"),
+    );
+    expect(route?.metadata?.moduleImports).toEqual(["myapp/wrappers/restx.py"]);
+  });
+
+  it("leaves the field off a file that imports nothing in the project", async () => {
+    const only = write(
+      "myapp/routes/solo.py",
+      'from flask_restx import Namespace\n\napi = Namespace("solo")\n\n\n@api.route("/solo")\nclass Solo:\n    def get(self):\n        return []\n',
+    );
+    const { summaries } = await extractPythonProject({
+      files: [only],
+      roots: [tmpDir],
+      packs: [flaskRestxLike],
+      workspaceRoot: tmpDir,
+    });
+    expect(summaries[0]?.metadata?.moduleImports).toBeUndefined();
+  });
+});
+
 describe("extractPythonProject", () => {
   it("extracts summaries across multiple files sharing one wrapper import", async () => {
     write(

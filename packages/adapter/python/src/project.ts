@@ -171,7 +171,46 @@ export async function extractPythonProject(
     }
   }
 
+  stampModuleImports(summaries, db, displayPathOf);
+
   return { summaries, facts: db };
+}
+
+/**
+ * Record the project files each summary's own file imports, the same
+ * field the TypeScript adapter writes. A checker rebuilds the module
+ * graph from these, which is how a runtime's scope becomes its handler
+ * entry's import closure rather than whatever shares a directory (#353).
+ *
+ * The paths are the ones a summary's location.file uses, so both sides
+ * of the graph are spelled the same way.
+ */
+function stampModuleImports(
+  summaries: BehavioralSummary[],
+  db: Database,
+  displayPathOf: (file: string) => string,
+): void {
+  const importsByFile = new Map<string, Set<string>>();
+  for (const [from, , to] of db.facts("pyImportResolved")) {
+    if (typeof from !== "string" || typeof to !== "string") {
+      continue;
+    }
+    const key = displayPathOf(from);
+    const seen = importsByFile.get(key) ?? new Set<string>();
+    seen.add(displayPathOf(to));
+    importsByFile.set(key, seen);
+  }
+
+  for (const summary of summaries) {
+    const imports = importsByFile.get(summary.location.file);
+    if (imports === undefined || imports.size === 0) {
+      continue;
+    }
+    summary.metadata = {
+      ...(summary.metadata ?? {}),
+      moduleImports: [...imports].sort(),
+    };
+  }
 }
 
 const SKIPPED_DIRECTORIES = new Set([
