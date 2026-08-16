@@ -741,6 +741,14 @@ export interface ContractPattern {
     /** The property on the contract object with the responses map on it */
     property: string;
   };
+  /**
+   * The properties an endpoint states its HTTP method and path under.
+   * Both ts-rest and zod-openapi happen to spell them `method` and
+   * `path`, but they are the library's words, so the pack says them
+   * and the adapter reads whatever it is told.
+   */
+  methodProperty: string;
+  pathProperty: string;
   paramsExtraction?: {
     property: string;
   };

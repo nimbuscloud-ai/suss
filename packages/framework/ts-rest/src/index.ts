@@ -64,6 +64,8 @@ export function tsRestFramework(): PatternPack {
         registrationChain: [".router"],
       },
       responseExtraction: { property: "responses" },
+      methodProperty: "method",
+      pathProperty: "path",
       paramsExtraction: { property: "pathParams" },
     },
 
