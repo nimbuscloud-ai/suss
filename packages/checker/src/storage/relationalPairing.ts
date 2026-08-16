@@ -227,7 +227,7 @@ function makeFieldUnknownFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} ${verb} "${field}" on ${tableLabel(semantics)} (${semantics.storageSystem}) but the schema declares no ${field} column. At runtime this resolves to undefined on ${accessKind === "read" ? "reads" : "writes silently dropped"}, changing which execution paths the function takes downstream.`,
+    description: `${access.summary.identity.name} ${verb} "${field}" on ${tableLabel(semantics)} (${semantics.storageSystem}) but the schema declares no ${field} column.`,
     severity: "error",
   };
 }

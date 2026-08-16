@@ -95,8 +95,10 @@ describe("checkBodyCompatibility", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].kind).toBe("unhandledProviderCase");
     expect(findings[0].severity).toBe("error");
-    expect(findings[0].description).toContain("status 200");
-    expect(findings[0].description).toContain("the provider never sends");
+    expect(findings[0].description).toContain("a 200 body");
+    expect(findings[0].description).toContain(
+      "the provider can send does not include",
+    );
   });
 
   it("emits lowConfidence when provider body has unknown/ref shapes", () => {
@@ -163,7 +165,7 @@ describe("checkBodyCompatibility", () => {
     // Status 200: consumer reads "result" but provider has "data" → error
     // Status 404: consumer reads "error" and provider has "error" → ok
     expect(findings).toHaveLength(1);
-    expect(findings[0].description).toContain("status 200");
+    expect(findings[0].description).toContain("a 200 body");
   });
 
   it("handles consumer expectedInput without body wrapper", () => {
@@ -351,7 +353,7 @@ describe("checkBodyCompatibility", () => {
       expect(findings[0].kind).toBe("unhandledProviderCase");
       expect(findings[0].severity).toBe("error");
       expect(findings[0].description).toContain("default branch");
-      expect(findings[0].description).toContain("status 201");
+      expect(findings[0].description).toContain("a 201 body");
     });
 
     it("emits a default-branch optional finding when the 2xx body declares the field optional", () => {

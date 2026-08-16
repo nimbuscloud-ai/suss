@@ -211,7 +211,7 @@ export function checkBodyCompatibility(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer, ct.id),
-            description: `Consumer reads fields on status ${status} that the provider never sends`,
+            description: `Consumer reads fields that a ${status} body the provider can send does not include`,
             severity: "error",
           });
         } else if (result === "unknown") {
@@ -261,7 +261,7 @@ export function checkBodyCompatibility(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer, ct.id),
-            description: `Consumer's default branch reads fields on status ${providerStatus} that the provider never sends`,
+            description: `Consumer's default branch reads fields that a ${providerStatus} body the provider can send does not include`,
             severity: "error",
           });
         }
