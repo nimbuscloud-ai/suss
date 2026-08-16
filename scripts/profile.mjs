@@ -23,35 +23,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
+import { CORPUS_TARGETS } from "./corpusTargets.mjs";
+
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 
-// Same targets and pack choices as the benchmark, so a profile and a
-// timing describe the same run.
-const TARGETS = {
-  "twenty-server": {
-    tsconfig: "twenty/packages/twenty-server/tsconfig.json",
-    packs: ["nestjs-rest", "nestjs-graphql", "node"],
-  },
-  "twenty-front": {
-    tsconfig: "twenty/packages/twenty-front/tsconfig.json",
-    packs: ["react", "apollo-client", "fetch"],
-  },
-  "saleor-dashboard": {
-    tsconfig: "saleor-dashboard/tsconfig.json",
-    packs: ["react", "apollo-client", "fetch"],
-  },
-  "saleor-storefront": {
-    tsconfig: "saleor-storefront/tsconfig.json",
-    packs: ["react", "nextjs", "fetch"],
-  },
-  "directus-api": {
-    tsconfig: "directus/api/tsconfig.json",
-    packs: ["express", "fetch"],
-  },
-};
+// Same targets and pack choices as the corpus gate, so a profile and
+// a gated count describe the same run.
+const TARGETS = CORPUS_TARGETS;
 
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
