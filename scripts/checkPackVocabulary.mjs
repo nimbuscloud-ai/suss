@@ -345,16 +345,11 @@ function adaptersByPackageName() {
  */
 function libraryNamesByAdapter(adapters) {
   const byAdapter = new Map();
-  const frameworkDir = path.join(ROOT, "packages", "framework");
-  for (const entry of fs.readdirSync(frameworkDir, { withFileTypes: true })) {
-    const packDir = path.join(frameworkDir, entry.name);
+  for (const pack of packDirectories()) {
+    const packDir = pack.dir;
     const vocabularyFile = path.join(packDir, VOCABULARY_BASENAME);
     const packageFile = path.join(packDir, "package.json");
-    if (
-      !entry.isDirectory() ||
-      !fs.existsSync(vocabularyFile) ||
-      !fs.existsSync(packageFile)
-    ) {
+    if (!fs.existsSync(vocabularyFile) || !fs.existsSync(packageFile)) {
       continue;
     }
 
@@ -385,7 +380,7 @@ function libraryNamesByAdapter(adapters) {
       for (const adapterPackage of driven) {
         const names = byAdapter.get(adapterPackage) ?? new Map();
         byAdapter.set(adapterPackage, names);
-        names.set(name, `framework/${entry.name}`);
+        names.set(name, pack.name);
       }
     }
   }
