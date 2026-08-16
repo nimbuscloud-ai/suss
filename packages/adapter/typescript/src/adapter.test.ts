@@ -77,6 +77,8 @@ const zodOpenapiPack: PatternPack = {
       registrationChain: [".openapi"],
     },
     responseExtraction: { property: "responses" },
+    methodProperty: "method",
+    pathProperty: "path",
     endpoint: { from: "registrationArgument", position: 0 },
   },
   inputMapping: {
@@ -124,6 +126,8 @@ const tsRestPack: PatternPack = {
       registrationChain: [".router"],
     },
     responseExtraction: { property: "responses" },
+    methodProperty: "method",
+    pathProperty: "path",
     paramsExtraction: { property: "pathParams" },
   },
   inputMapping: {
@@ -2930,6 +2934,8 @@ describe("client-side contract resolution via fromClientMethod", () => {
         registrationChain: [".router"],
       },
       responseExtraction: { property: "responses" },
+      methodProperty: "method",
+      pathProperty: "path",
       paramsExtraction: { property: "pathParams" },
     },
     inputMapping: { type: "positionalParams", params: [] },

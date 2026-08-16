@@ -113,6 +113,8 @@ export function honoFramework(): PatternPack {
         registrationChain: [".openapi"],
       },
       responseExtraction: { property: "responses" },
+      methodProperty: "method",
+      pathProperty: "path",
       endpoint: { from: "registrationArgument", position: 0 },
     },
 

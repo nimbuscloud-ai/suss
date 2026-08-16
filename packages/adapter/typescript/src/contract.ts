@@ -275,14 +275,14 @@ function extractEndpointContract(
 
     const propName = prop.getName();
 
-    if (propName === "method") {
+    if (propName === pattern.methodProperty) {
       const val = prop.getInitializer();
       if (val !== undefined && Node.isStringLiteral(val)) {
         method = val.getLiteralValue();
       }
     }
 
-    if (propName === "path") {
+    if (propName === pattern.pathProperty) {
       const val = prop.getInitializer();
       if (val !== undefined && Node.isStringLiteral(val)) {
         path = val.getLiteralValue();
