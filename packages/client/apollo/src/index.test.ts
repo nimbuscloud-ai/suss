@@ -98,6 +98,16 @@ describe("apolloClientPack — client bindings", () => {
 
   it("leaves the bindings off when the options do not set them", () => {
     expect(apolloClientPack().graphqlClientBindings).toBeUndefined();
+    expect(apolloClientPack().graphqlOperationScopes).toBeUndefined();
+  });
+
+  it("passes the operation scopes through to the pack", () => {
+    const pack = apolloClientPack({
+      operationScopes: [{ files: ["src/admin/**"], workspace: "nextgen" }],
+    });
+    expect(pack.graphqlOperationScopes).toEqual([
+      { files: ["src/admin/**"], workspace: "nextgen" },
+    ]);
   });
 });
 

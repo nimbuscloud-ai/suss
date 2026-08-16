@@ -212,6 +212,84 @@ describe("stampGraphqlClientRefs", () => {
     });
   });
 
+  it("routes operations by file scope when the project uses two clients", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      export const a = new ApolloClient({ uri: "https://one.example.com" });
+      export const b = new ApolloClient({ uri: "https://two.example.com" });
+    `,
+    );
+    const scopedPack: PatternPack = {
+      ...clientPack,
+      graphqlOperationScopes: [
+        { files: ["src/admin/**"], workspace: "nextgen" },
+        { files: ["src/**"], workspace: "rails-app" },
+      ],
+    };
+    const adminOp = {
+      ...operationSummary(),
+      location: {
+        file: "/repo/src/admin/useDeleteUser.ts",
+        range: { start: 1, end: 10 },
+        exportName: "useDeleteUser",
+      },
+    };
+    const memberOp = {
+      ...operationSummary(),
+      location: {
+        file: "/repo/src/feed/usePosts.ts",
+        range: { start: 1, end: 10 },
+        exportName: "usePosts",
+      },
+    };
+    stampGraphqlClientRefs(
+      [adminOp, memberOp],
+      [file],
+      [scopedPack],
+      undefined,
+    );
+    expect(readGraphqlMetadata(adminOp)?.client?.workspace).toBe("nextgen");
+    expect(readGraphqlMetadata(memberOp)?.client?.workspace).toBe("rails-app");
+  });
+
+  it("lets a file scope override the sole client's binding", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      export const client = new ApolloClient({ uri: "https://one.example.com" });
+    `,
+    );
+    const scopedPack: PatternPack = {
+      ...clientPack,
+      graphqlClientBindings: { "https://one.example.com": "rails-app" },
+      graphqlOperationScopes: [
+        { files: ["src/admin/**"], workspace: "nextgen" },
+      ],
+    };
+    const adminOp = {
+      ...operationSummary(),
+      location: {
+        file: "/repo/src/admin/useDeleteUser.ts",
+        range: { start: 1, end: 10 },
+        exportName: "useDeleteUser",
+      },
+    };
+    const memberOp = operationSummary();
+    stampGraphqlClientRefs(
+      [adminOp, memberOp],
+      [file],
+      [scopedPack],
+      undefined,
+    );
+    expect(readGraphqlMetadata(adminOp)?.client?.workspace).toBe("nextgen");
+    expect(readGraphqlMetadata(memberOp)?.client?.workspace).toBe("rails-app");
+  });
+
   it("leaves summaries alone when two clients exist", () => {
     const project = createTestProject();
     const file = project.createSourceFile(

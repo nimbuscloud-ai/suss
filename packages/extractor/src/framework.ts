@@ -1113,6 +1113,14 @@ export interface PatternPack {
    */
   graphqlClientBindings?: Record<string, string>;
   /**
+   * Which service the operations in a set of files talk to, for a
+   * project whose one frontend uses two clients. A hook call does not
+   * say which client it goes through, so when the sole-client rule
+   * cannot decide, these globs do: an operation whose file matches
+   * gets the entry's workspace. First matching entry wins.
+   */
+  graphqlOperationScopes?: Array<{ files: string[]; workspace: string }>;
+  /**
    * Per-property-access recognizers, the counterpart to
    * `invocationRecognizers`, firing on `PropertyAccessExpression`
    * nodes rather than `CallExpression` nodes. Use these for patterns
