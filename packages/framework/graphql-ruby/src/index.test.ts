@@ -49,6 +49,13 @@ describe("graphqlRubyFramework", () => {
         },
         scalarNamePrefixes: ["GraphQL::Types::"],
         typeNameConvention: "stripTypeSuffix",
+        argumentWrapping: {
+          ancestorClassName: "GraphQL::Schema::RelayClassicMutation",
+          argumentName: "input",
+          extraFields: {
+            clientMutationId: { type: { type: "text" }, required: false },
+          },
+        },
       },
     ]);
   });

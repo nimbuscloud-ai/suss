@@ -130,6 +130,15 @@ export function graphqlRubyFramework(
     },
     scalarNamePrefixes: ["GraphQL::Types::"],
     typeNameConvention: "stripTypeSuffix",
+    // RelayClassicMutation wraps every declared argument into one
+    // `input` argument on the wire and adds clientMutationId to it.
+    argumentWrapping: {
+      ancestorClassName: "GraphQL::Schema::RelayClassicMutation",
+      argumentName: "input",
+      extraFields: {
+        clientMutationId: { type: { type: "text" }, required: false },
+      },
+    },
   };
   return {
     name: "graphql-ruby",

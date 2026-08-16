@@ -287,7 +287,14 @@ interface ArgDeclaration {
 
 interface FieldContract {
   returnType: TypeShape;
+  /** The arguments the schema exposes on the wire. */
   args: ArgDeclaration[];
+  /**
+   * When argument wrapping applies, the declared arguments as written.
+   * The library unwraps the input object before calling the resolver
+   * method, so the method's parameters follow these, not `args`.
+   */
+  methodArgs?: ArgDeclaration[];
 }
 
 interface FieldDeclaration {
@@ -663,9 +670,60 @@ function readClassContract(
     (Object.keys(out.fieldProperties).length > 0
       ? { type: "record" as const, properties: out.fieldProperties }
       : null);
-  return returnType === null
-    ? null
-    : { returnType, args: [...out.args.values()] };
+  if (returnType === null) {
+    return null;
+  }
+
+  const args = [...out.args.values()];
+  const wrapping = pattern.argumentWrapping;
+  if (wrapping !== undefined && ancestryReaches(ancestry, wrapping)) {
+    return {
+      returnType,
+      args: [wrapInputArgument(args, wrapping)],
+      methodArgs: args,
+    };
+  }
+
+  return { returnType, args };
+}
+
+type ArgumentWrapping = NonNullable<GraphqlObjectFields["argumentWrapping"]>;
+
+/** Followed or not, the wrapping ancestor's name is in the chain. */
+function ancestryReaches(
+  ancestry: Ancestry,
+  wrapping: ArgumentWrapping,
+): boolean {
+  return ancestry.some((entry) => entry.name === wrapping.ancestorClassName);
+}
+
+/**
+ * The wire shape the wrapping base class gives a mutation: one
+ * required input-object argument whose fields are the declared
+ * arguments, optional ones unioned with undefined, plus the fields
+ * the library adds on its own.
+ */
+function wrapInputArgument(
+  args: readonly ArgDeclaration[],
+  wrapping: ArgumentWrapping,
+): ArgDeclaration {
+  const properties: Record<string, TypeShape> = {};
+  for (const arg of args) {
+    properties[arg.name] = arg.required ? arg.type : optionalShape(arg.type);
+  }
+  for (const [name, extra] of Object.entries(wrapping.extraFields)) {
+    properties[name] = extra.required ? extra.type : optionalShape(extra.type);
+  }
+  return {
+    name: wrapping.argumentName,
+    type: { type: "record", properties },
+    required: true,
+    typeText: null,
+  };
+}
+
+function optionalShape(shape: TypeShape): TypeShape {
+  return { type: "union", variants: [shape, { type: "undefined" }] };
 }
 
 /** The name the schema exposes a field or argument symbol under. */
@@ -696,14 +754,16 @@ function buildFieldUnit(
   decl: FieldDeclaration,
   filePath: string,
 ): RawCodeStructure {
-  const parameters: RawParameter[] = (decl.contract?.args ?? []).map(
-    (arg, position) => ({
-      name: arg.name,
-      position,
-      role: "args",
-      typeText: arg.typeText,
-    }),
-  );
+  const parameters: RawParameter[] = (
+    decl.contract?.methodArgs ??
+    decl.contract?.args ??
+    []
+  ).map((arg, position) => ({
+    name: arg.name,
+    position,
+    role: "args",
+    typeText: arg.typeText,
+  }));
 
   const graphqlDeclaredContract:
     | (GraphqlDeclaredContract & { provenance: "derived" })
