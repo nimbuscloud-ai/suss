@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   boundaryKey,
   boundaryLabel,
+  canPair,
   displayLabel,
   exchangesHttpResponses,
   functionCallBinding,
+  graphqlOperationBinding,
   graphqlResolverBinding,
   messageBusBinding,
   methodsAgree,
@@ -360,6 +362,64 @@ describe("what a protocol says about its own checking", () => {
   it("says the message-bus pass reports its own unpaired channels", () => {
     expect(reportsUnpairedItself(channel)).toBe(true);
     expect(reportsUnpairedItself(route)).toBe(false);
+  });
+});
+
+describe("canPair", () => {
+  it("says a keyed boundary can pair", () => {
+    const route = restBinding({
+      transport: "http",
+      method: "*",
+      path: "/users",
+      recognition: "express",
+    });
+    expect(canPair(route)).toBe(true);
+  });
+
+  it("says a route missing its path pairs with nothing", () => {
+    const route = restBinding({
+      transport: "http",
+      method: "GET",
+      path: null,
+      recognition: "express",
+    });
+    expect(canPair(route)).toBe(false);
+  });
+
+  it("says a resolver with no type pairs with nothing", () => {
+    const resolver = graphqlResolverBinding({
+      transport: "http",
+      recognition: "apollo",
+      typeName: null,
+      fieldName: "pet",
+    });
+    expect(canPair(resolver)).toBe(false);
+  });
+
+  it("says a keyless GraphQL operation still pairs, through its own pass", () => {
+    const operation = graphqlOperationBinding({
+      transport: "http",
+      recognition: "apollo-client",
+      operationType: "query",
+    });
+    expect(canPair(operation)).toBe(true);
+  });
+
+  it("says a runtime-named channel still pairs, through env-chain collapsing", () => {
+    const channel = messageBusBinding({
+      messageBus: "sqs",
+      channel: null,
+      recognition: "aws-sqs",
+    });
+    expect(canPair(channel)).toBe(true);
+  });
+
+  it("says an in-repo function-call unit pairs through call edges, not a key", () => {
+    const component = functionCallBinding({
+      transport: "in-process",
+      recognition: "react",
+    });
+    expect(canPair(component)).toBe(true);
   });
 });
 

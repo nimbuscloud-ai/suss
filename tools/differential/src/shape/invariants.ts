@@ -8,6 +8,8 @@
 // are wrong against the output alone, so they are checked here and the
 // program never enters into it.
 
+import { canPair, displayLabel } from "@suss/ir-core";
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ExpectedConfigRead } from "./envShape.js";
 
@@ -146,30 +148,26 @@ const everyBoundaryCanPair: Invariant = (summaries, expectation) =>
         `${summary.identity.name} is a ${summary.kind} with no boundary binding, so nothing can pair with it`,
       );
     }
-    if (binding.semantics.name === "rest") {
-      const { method, path } = binding.semantics;
-      return method === null || path === null
-        ? violation(
-            "everyBoundaryCanPair",
-            `${summary.identity.name} binds to rest with method ${JSON.stringify(method)} and path ${JSON.stringify(path)}, which pairs with nothing`,
-          )
-        : [];
+
+    // The registry covers every protocol, so a keyless boundary in a
+    // protocol added later fails here instead of passing unseen.
+    if (canPair(binding)) {
+      return [];
     }
-    if (binding.semantics.name === "graphql-resolver") {
-      const { typeName, fieldName } = binding.semantics;
-      // A program that gives no type has none to bind, so a binding
-      // with no type is what the summary should have. Every other empty
-      // half is an address a client cannot reach.
-      const typeIsAccountedFor =
-        typeName !== null || expectation.resolver?.typeName === null;
-      return typeIsAccountedFor && fieldName !== ""
-        ? []
-        : violation(
-            "everyBoundaryCanPair",
-            `${summary.identity.name} binds to graphql-resolver with type ${JSON.stringify(typeName)} and field ${JSON.stringify(fieldName)}, which pairs with nothing`,
-          );
+
+    // A program that gives no type has none to bind, so a resolver
+    // binding with no type is what the summary should have.
+    if (
+      binding.semantics.name === "graphql-resolver" &&
+      expectation.resolver?.typeName === null
+    ) {
+      return [];
     }
-    return [];
+
+    return violation(
+      "everyBoundaryCanPair",
+      `${summary.identity.name} binds to ${displayLabel(binding)}, which pairs with nothing`,
+    );
   });
 
 const saysWhatItCouldNotRead = (summary: BehavioralSummary): boolean =>

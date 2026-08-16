@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 308,
-      "covered": 274,
+      "total": 315,
+      "covered": 282,
       "skipped": 0,
-      "pct": 88.96
+      "pct": 89.52
     },
     "statements": {
-      "total": 312,
-      "covered": 278,
+      "total": 319,
+      "covered": 286,
       "skipped": 0,
-      "pct": 89.1
+      "pct": 89.65
     },
     "functions": {
-      "total": 75,
-      "covered": 67,
+      "total": 79,
+      "covered": 71,
       "skipped": 0,
-      "pct": 89.33
+      "pct": 89.87
     },
     "branches": {
-      "total": 288,
-      "covered": 250,
+      "total": 290,
+      "covered": 253,
       "skipped": 0,
-      "pct": 86.8
+      "pct": 87.24
     },
     "branchesTrue": {
       "total": 0,
@@ -33,26 +33,26 @@
   },
   "src/boundaryKey.ts": {
     "lines": {
-      "total": 21,
-      "covered": 21,
+      "total": 25,
+      "covered": 25,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 9,
-      "covered": 9,
+      "total": 10,
+      "covered": 10,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 21,
-      "covered": 21,
+      "total": 25,
+      "covered": 25,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 14,
-      "covered": 14,
+      "total": 16,
+      "covered": 16,
       "skipped": 0,
       "pct": 100
     }
@@ -319,20 +319,20 @@
   },
   "src/semantics/functionCall.ts": {
     "lines": {
-      "total": 5,
-      "covered": 5,
+      "total": 6,
+      "covered": 6,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 1,
-      "covered": 1,
+      "total": 2,
+      "covered": 2,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 5,
-      "covered": 5,
+      "total": 6,
+      "covered": 6,
       "skipped": 0,
       "pct": 100
     },
@@ -345,22 +345,22 @@
   },
   "src/semantics/graphqlOperation.ts": {
     "lines": {
-      "total": 4,
-      "covered": 2,
+      "total": 5,
+      "covered": 3,
       "skipped": 0,
-      "pct": 50
+      "pct": 60
     },
     "functions": {
-      "total": 2,
-      "covered": 0,
+      "total": 3,
+      "covered": 1,
       "skipped": 0,
-      "pct": 0
+      "pct": 33.33
     },
     "statements": {
-      "total": 4,
-      "covered": 2,
+      "total": 5,
+      "covered": 3,
       "skipped": 0,
-      "pct": 50
+      "pct": 60
     },
     "branches": {
       "total": 2,
@@ -397,22 +397,22 @@
   },
   "src/semantics/messageBus.ts": {
     "lines": {
-      "total": 14,
-      "covered": 13,
+      "total": 15,
+      "covered": 14,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 93.33
     },
     "functions": {
-      "total": 3,
-      "covered": 3,
+      "total": 4,
+      "covered": 4,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 14,
-      "covered": 13,
+      "total": 15,
+      "covered": 14,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 93.33
     },
     "branches": {
       "total": 10,
@@ -450,9 +450,9 @@
   "src/semantics/rest.ts": {
     "lines": {
       "total": 41,
-      "covered": 39,
+      "covered": 40,
       "skipped": 0,
-      "pct": 95.12
+      "pct": 97.56
     },
     "functions": {
       "total": 13,
@@ -462,15 +462,15 @@
     },
     "statements": {
       "total": 41,
-      "covered": 39,
+      "covered": 40,
       "skipped": 0,
-      "pct": 95.12
+      "pct": 97.56
     },
     "branches": {
       "total": 43,
-      "covered": 41,
+      "covered": 42,
       "skipped": 0,
-      "pct": 95.34
+      "pct": 97.67
     }
   },
   "src/semantics/runtimeConfig.ts": {

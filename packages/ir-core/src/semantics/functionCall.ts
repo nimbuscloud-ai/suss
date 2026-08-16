@@ -54,6 +54,12 @@ export const functionCallSemantics = defineBoundarySemantics({
     exchangesHttpResponses: false,
     reportsUnpairedItself: false,
     /**
+     * In-repo units (components, bare handlers) are keyless by design
+     * and pair through call edges rather than the keyed pass, so a
+     * missing key is not a boundary nothing can reach.
+     */
+    canPair: () => true,
+    /**
      * `"fn:<package>::<exportPath>"` when both are set. Other in-process
      * function-call units, such as components and bare handlers inside
      * one repo, have no key at all.
