@@ -1985,6 +1985,40 @@ describe("consumer extraction", () => {
     },
   };
 
+  it("resolves a URL bound to a constant, same-module or imported", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "urls.ts",
+      'export const ORDERS_URL = "/api/orders";\n',
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { ORDERS_URL } from "./urls.js";
+      const USERS_URL = "/api/users";
+      export async function loadUsers() {
+        return fetch(USERS_URL);
+      }
+      export async function loadOrders() {
+        return fetch(ORDERS_URL, { method: "POST" });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? `${sem.method} ${sem.path}` : null;
+      })
+      .sort();
+    expect(paths).toEqual(["GET /api/users", "POST /api/orders"]);
+  });
+
   it("extracts a consumer summary from a function with fetch()", async () => {
     const project = createTestProject();
     project.createSourceFile(
