@@ -333,6 +333,112 @@ describe("pairGraphqlOperations", () => {
 // Nested selection walking against the resolver's SDL
 // ---------------------------------------------------------------------------
 
+describe("pairGraphqlOperations — meta-fields and fragments", () => {
+  it("does not report __typename at the root as unimplemented", () => {
+    const petsResolver = resolver("Query", "pets");
+    const op = operation(
+      "usePets",
+      "GetPets",
+      "query",
+      "query GetPets { __typename pets { id } }",
+    );
+    const result = pairGraphqlOperations([petsResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("accepts __typename on a nested selection the schema never declares", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { __typename id } }`,
+    );
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("follows a fragment spread and accepts its declared fields", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields } }
+       fragment PetFields on Pet { id name __typename }`,
+    );
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("flags an undeclared field inside a fragment spread against the fragment's type", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields } }
+       fragment PetFields on Pet { id deletedAt }`,
+    );
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].description).toContain("Pet.deletedAt");
+  });
+
+  it("checks an inline fragment's fields against its type condition", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ... on Pet { species missing } } }`,
+    );
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].description).toContain("Pet.missing");
+  });
+
+  it("pairs root fields a fragment on the root type contributes", () => {
+    const petsResolver = resolver("Query", "pets");
+    const op = operation(
+      "usePets",
+      "GetPets",
+      "query",
+      `query GetPets { ...RootStuff }
+       fragment RootStuff on Query { pets { id } }`,
+    );
+    const result = pairGraphqlOperations([petsResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+  });
+
+  it("survives a fragment cycle without recursing forever", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...A } }
+       fragment A on Pet { id ...B }
+       fragment B on Pet { name ...A }`,
+    );
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.findings).toEqual([]);
+  });
+});
+
 describe("pairGraphqlOperations — nested selections", () => {
   it("skips nested walks when no SDL is attached to the resolver", () => {
     const petResolver = resolver("Query", "pet"); // no schemaSdl
