@@ -21,6 +21,8 @@
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
 
+import { readStorageContractMetadata } from "@suss/behavioral-ir";
+
 import { makeSide } from "../coverage/responseMatch.js";
 import {
   buildInteractionIndex,
@@ -34,27 +36,9 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   Finding,
+  StorageContractMetadata,
   StorageRelationalSemantics,
 } from "@suss/behavioral-ir";
-
-interface StorageContractMetadata {
-  columns?: Array<{
-    name: string;
-    type?: string;
-    nullable?: boolean;
-    primary?: boolean;
-    unique?: boolean;
-  }>;
-  indexes?: Array<{ fields: string[]; unique: boolean }>;
-  /**
-   * The physical SQL table name when it differs from the binding's
-   * `table` channel: e.g. a Prisma model `User` with
-   * `@@map("users")`. Consumers that speak SQL names directly
-   * (Drizzle, raw SQL) match through this alias, so both ORMs'
-   * accesses land on the same schema provider.
-   */
-  physicalTable?: string;
-}
 
 type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   /**
@@ -222,7 +206,7 @@ function sameService(
 function readStorageContract(
   summary: BehavioralSummary,
 ): StorageContractMetadata {
-  return (summary.metadata?.storageContract ?? {}) as StorageContractMetadata;
+  return readStorageContractMetadata(summary) ?? {};
 }
 
 // ---------------------------------------------------------------------------

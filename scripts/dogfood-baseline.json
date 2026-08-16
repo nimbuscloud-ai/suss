@@ -2,10 +2,10 @@
   "totals": {
     "packages": 46,
     "packagesWithExports": 46,
-    "exports": 424,
-    "internal": 1680,
-    "consumers": 677,
-    "pairs": 669
+    "exports": 428,
+    "internal": 1675,
+    "consumers": 682,
+    "pairs": 674
   },
   "packages": {
     "packages/adapter/python": {
@@ -28,15 +28,15 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 45,
+      "exports": 49,
       "internal": 12,
       "consumers": 4
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 141,
-      "consumers": 84
+      "internal": 138,
+      "consumers": 87
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -47,8 +47,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 239,
-      "consumers": 153
+      "internal": 237,
+      "consumers": 155
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",

@@ -654,3 +654,93 @@ export function readModuleImports(
   const parsed = ModuleImportsSchema.safeParse(summary.metadata?.moduleImports);
   return parsed.success ? parsed.data : undefined;
 }
+
+const StorageContractMetadataSchema = z.object({
+  columns: z
+    .array(
+      z.object({
+        name: z.string(),
+        type: z.string().optional(),
+        nullable: z.boolean().optional(),
+        primary: z.boolean().optional(),
+        unique: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  indexes: z
+    .array(z.object({ fields: z.array(z.string()), unique: z.boolean() }))
+    .optional(),
+  /** The physical SQL name when a model maps to a table spelled differently. */
+  physicalTable: z.string().optional(),
+});
+
+export type StorageContractMetadata = z.infer<
+  typeof StorageContractMetadataSchema
+>;
+
+/** The columns and indexes a schema declares for one table. */
+export function readStorageContractMetadata(
+  summary: BehavioralSummary,
+): StorageContractMetadata | undefined {
+  return readNamespace(
+    StorageContractMetadataSchema,
+    summary.metadata?.storageContract,
+  );
+}
+
+const CodeScopeMetadataSchema = z.object({
+  kind: z.enum(["codeUri", "unknown"]),
+  path: z.string().optional(),
+  /** The file the runtime enters, without an extension. */
+  entry: z.string().optional(),
+});
+
+export type CodeScopeMetadata = z.infer<typeof CodeScopeMetadataSchema>;
+
+/** Which code a deployable unit runs, or the unknown marker when nothing said. */
+export function readCodeScopeMetadata(
+  summary: BehavioralSummary,
+): CodeScopeMetadata | undefined {
+  return readNamespace(CodeScopeMetadataSchema, summary.metadata?.codeScope);
+}
+
+const ReactMetadataSchema = z.object({
+  kind: z.string().optional(),
+  deps: z.array(z.string()).nullable().optional(),
+  /** The component whose body spawned this sub-unit. */
+  component: z.string().optional(),
+  /** Which spawn it was in that body, counting from zero. */
+  index: z.number().optional(),
+});
+
+export type ReactMetadata = z.infer<typeof ReactMetadataSchema>;
+
+/** What the React pack recorded about a sub-unit, an effect and its deps. */
+export function readReactMetadata(
+  summary: BehavioralSummary,
+): ReactMetadata | undefined {
+  return readNamespace(ReactMetadataSchema, summary.metadata?.react);
+}
+
+const StorybookMetadataSchema = z.object({
+  story: z.string().optional(),
+  component: z.string().optional(),
+  args: z.record(z.string(), z.string()).optional(),
+  provenance: z.string().optional(),
+});
+
+export type StorybookMetadata = z.infer<typeof StorybookMetadataSchema>;
+
+/** The story a summary describes, and the component it is written for. */
+export function readStorybookMetadata(
+  summary: BehavioralSummary,
+): StorybookMetadata | undefined {
+  const component = summary.metadata?.component;
+  if (typeof component !== "object" || component === null) {
+    return undefined;
+  }
+  return readNamespace(
+    StorybookMetadataSchema,
+    (component as { storybook?: unknown }).storybook,
+  );
+}

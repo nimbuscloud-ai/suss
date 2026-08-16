@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  readCodeScopeMetadata,
   readGraphqlMetadata,
   readHttpMetadata,
   readLibraryEnvReads,
   readMessageBusMetadata,
   readModuleImports,
+  readReactMetadata,
   readRoutingMetadata,
   readRuntimeContractMetadata,
+  readStorageContractMetadata,
+  readStorybookMetadata,
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,
@@ -396,5 +400,56 @@ describe("readLibraryEnvReads", () => {
     expect(
       readLibraryEnvReads(summaryWith({ libraryEnvReads: "POWERTOOLS_" })),
     ).toBeUndefined();
+  });
+});
+
+describe("typed metadata namespaces", () => {
+  const carrier = (metadata: Record<string, unknown>): BehavioralSummary =>
+    ({
+      kind: "library",
+      location: { file: "a.ts", range: { start: 1, end: 2 }, exportName: null },
+      identity: { name: "x", exportPath: null, boundaryBinding: null },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: { source: "declared", level: "high" },
+      metadata,
+    }) as BehavioralSummary;
+
+  it("reads a storage contract and refuses a misspelled key", () => {
+    expect(
+      readStorageContractMetadata(
+        carrier({ storageContract: { columns: [{ name: "id" }] } }),
+      ),
+    ).toEqual({ columns: [{ name: "id" }] });
+    // A writer that renames the namespace stops being read, rather
+    // than handing back a cast that quietly says nothing.
+    expect(
+      readStorageContractMetadata(
+        carrier({ storage_contract: { columns: [{ name: "id" }] } }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("reads a code scope and a react sub-unit", () => {
+    expect(
+      readCodeScopeMetadata(
+        carrier({ codeScope: { kind: "codeUri", path: "src" } }),
+      ),
+    ).toEqual({ kind: "codeUri", path: "src" });
+    expect(
+      readReactMetadata(carrier({ react: { kind: "effect", deps: ["id"] } })),
+    ).toEqual({ kind: "effect", deps: ["id"] });
+  });
+
+  it("reads a story off the component namespace", () => {
+    expect(
+      readStorybookMetadata(
+        carrier({
+          component: { storybook: { story: "Primary", component: "Button" } },
+        }),
+      ),
+    ).toEqual({ story: "Primary", component: "Button" });
+    expect(readStorybookMetadata(carrier({ component: {} }))).toBeUndefined();
   });
 });

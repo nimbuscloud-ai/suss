@@ -24,13 +24,18 @@
 // (snapshot reader, play parsing). They're the direction this file
 // grows.
 
-import { functionCallBinding, summaryRef } from "@suss/behavioral-ir";
+import {
+  functionCallBinding,
+  readStorybookMetadata,
+  summaryRef,
+} from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
   BoundaryBinding,
   Finding,
   Predicate,
+  StorybookMetadata,
   Transition,
   ValueRef,
 } from "@suss/behavioral-ir";
@@ -40,13 +45,6 @@ function fallbackReactBinding(): BoundaryBinding {
     transport: "in-process",
     recognition: "react",
   });
-}
-
-interface StorybookMeta {
-  story?: string;
-  component?: string;
-  args?: Record<string, string>;
-  provenance?: string;
 }
 
 export function checkComponentStoryAgreement(
@@ -177,16 +175,8 @@ function directoryOf(file: string): string {
   return at === -1 ? "" : file.slice(0, at);
 }
 
-function storyMeta(summary: BehavioralSummary): StorybookMeta | null {
-  const component = summary.metadata?.component;
-  if (typeof component !== "object" || component === null) {
-    return null;
-  }
-  const storybook = (component as { storybook?: unknown }).storybook;
-  if (typeof storybook !== "object" || storybook === null) {
-    return null;
-  }
-  return storybook as StorybookMeta;
+function storyMeta(summary: BehavioralSummary): StorybookMetadata | null {
+  return readStorybookMetadata(summary) ?? null;
 }
 
 /**
@@ -310,7 +300,7 @@ function makeUnknownArgFinding(
   story: BehavioralSummary,
   component: BehavioralSummary,
   argName: string,
-  meta: StorybookMeta,
+  meta: StorybookMetadata,
 ): Finding {
   return {
     kind: "boundaryFieldUnknown",
