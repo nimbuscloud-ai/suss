@@ -2,7 +2,7 @@
 // says which base class the library gives a model, and a call on a class that
 // reaches that base is a database call. The README says why ancestry.
 
-import { storageRelationalBinding } from "@suss/ir-core";
+import { storageBinding } from "@suss/ir-core";
 
 import { field } from "./ast.js";
 
@@ -162,11 +162,11 @@ export function storageEffects(
     const picked = selectorOf(call);
     effects.push({
       type: "interaction",
-      binding: storageRelationalBinding({
+      binding: storageBinding({
         recognition: "ruby-storage",
         storageSystem: pattern.storageSystem,
         scope: pattern.baseClasses[0] ?? "",
-        table: constant.text,
+        container: constant.text,
       }),
       callee: call.text,
       interaction: {

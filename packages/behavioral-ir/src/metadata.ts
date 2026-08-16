@@ -657,7 +657,7 @@ export function readModuleImports(
 
 const StorageContractMetadataSchema = z.object({
   /**
-   * Whether the columns below are every field an item has.
+   * Whether the fields below are every field an item has.
    * `"exhaustive"` is a SQL schema, `"partial"` a store that declares
    * its keys and lets the rest vary, `"none"` a blob or a string. Only
    * an exhaustive contract can call a field it does not declare
@@ -665,7 +665,8 @@ const StorageContractMetadataSchema = z.object({
    * Summaries written before this field get `"exhaustive"` on the way in.
    */
   fieldSet: z.enum(["exhaustive", "partial", "none"]).optional(),
-  columns: z
+  /** What the store declares an item has, whatever it calls them. */
+  fields: z
     .array(
       z.object({
         name: z.string(),
@@ -687,7 +688,7 @@ export type StorageContractMetadata = z.infer<
   typeof StorageContractMetadataSchema
 >;
 
-/** The columns and indexes a schema declares for one table. */
+/** The fields and indexes a schema declares for one container. */
 export function readStorageContractMetadata(
   summary: BehavioralSummary,
 ): StorageContractMetadata | undefined {

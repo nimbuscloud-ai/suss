@@ -2,7 +2,7 @@
 // A pack says which query types its library defines, and a call matches when
 // the method behind it says it returns one. The README says why.
 
-import { storageRelationalBinding } from "@suss/ir-core";
+import { storageBinding } from "@suss/ir-core";
 
 import { field } from "./ast.js";
 import { resolveCalls } from "./facts/resolve.js";
@@ -178,11 +178,11 @@ function effectFor(
   ];
   return {
     type: "interaction",
-    binding: storageRelationalBinding({
+    binding: storageBinding({
       recognition: "python-storage",
       storageSystem: pattern.storageSystem,
       scope: pattern.module,
-      table: chain.subject,
+      container: chain.subject,
     }),
     callee: chain.last.text,
     interaction: {

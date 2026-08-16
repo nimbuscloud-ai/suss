@@ -44,7 +44,7 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import { storageRelationalBinding } from "@suss/behavioral-ir";
+import { storageBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -158,11 +158,11 @@ function recognizePrismaCall(
   return [
     {
       type: "interaction",
-      binding: storageRelationalBinding({
+      binding: storageBinding({
         recognition: "@suss/framework-prisma",
         storageSystem,
         scope,
-        table: tableName,
+        container: tableName,
       }),
       callee: callNode.getExpression().getText(),
       interaction: {

@@ -60,7 +60,6 @@ export {
   restBinding,
   runtimeConfigBinding,
   storageBinding,
-  storageRelationalBinding,
 } from "@suss/ir-core";
 
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";

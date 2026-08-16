@@ -19,7 +19,7 @@ import path from "node:path";
 
 import { getSchema } from "@mrleebo/prisma-ast";
 
-import { storageRelationalBinding } from "@suss/behavioral-ir";
+import { storageBinding } from "@suss/behavioral-ir";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -228,11 +228,11 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
     identity: {
       name: opts.model.name,
       exportPath: null,
-      boundaryBinding: storageRelationalBinding({
+      boundaryBinding: storageBinding({
         recognition: "prisma",
         storageSystem: opts.storageSystem,
         scope: opts.scope,
-        table: opts.model.name,
+        container: opts.model.name,
       }),
     },
     inputs: [],
@@ -244,7 +244,7 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
         // A Prisma model declares every column its table has, so a
         // column the code touches and this list leaves out is unknown.
         fieldSet: "exhaustive",
-        columns,
+        fields: columns,
         indexes,
         ...(physicalTable !== null && physicalTable !== opts.model.name
           ? { physicalTable }

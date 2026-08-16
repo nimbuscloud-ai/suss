@@ -43,7 +43,7 @@
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "@suss/adapter-typescript";
-import { storageRelationalBinding } from "@suss/behavioral-ir";
+import { storageBinding } from "@suss/behavioral-ir";
 
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 
@@ -88,11 +88,11 @@ function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
     return [
       {
         type: "interaction",
-        binding: storageRelationalBinding({
+        binding: storageBinding({
           recognition: "@suss/framework-drizzle",
           storageSystem,
           scope,
-          table: query.table,
+          container: query.table,
         }),
         callee: query.calleeText,
         interaction: {

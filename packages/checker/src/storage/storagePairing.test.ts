@@ -16,9 +16,9 @@ function makeProvider(opts: {
   storageSystem?: string;
   scope?: string;
   accessPath?: string | null;
-  columns: Array<{ name: string; type?: string; nullable?: boolean }>;
+  fields: Array<{ name: string; type?: string; nullable?: boolean }>;
   physicalTable?: string;
-  /** A SQL schema declares every column, so that is the default here. */
+  /** A SQL schema declares every field, so that is the default here. */
   fieldSet?: "exhaustive" | "partial" | "none";
 }): BehavioralSummary {
   return {
@@ -46,7 +46,7 @@ function makeProvider(opts: {
     metadata: {
       storageContract: {
         fieldSet: opts.fieldSet ?? "exhaustive",
-        columns: opts.columns,
+        fields: opts.fields,
         ...(opts.physicalTable !== undefined
           ? { physicalTable: opts.physicalTable }
           : {}),
@@ -120,7 +120,7 @@ describe("checkStorage", () => {
     // the pairing key alone puts them together and each schema used to
     // check the other service's queries.
     const provider = {
-      ...makeProvider({ container: "users", columns: [{ name: "id" }] }),
+      ...makeProvider({ container: "users", fields: [{ name: "id" }] }),
       location: {
         file: "billing/schema.prisma",
         range: { start: 1, end: 10 },
@@ -150,7 +150,7 @@ describe("checkStorage", () => {
 
   it("still pairs a schema and a query inside one service", () => {
     const provider = {
-      ...makeProvider({ container: "users", columns: [{ name: "id" }] }),
+      ...makeProvider({ container: "users", fields: [{ name: "id" }] }),
       location: {
         file: "billing/schema.prisma",
         range: { start: 1, end: 10 },
@@ -184,7 +184,7 @@ describe("checkStorage", () => {
     // schema table that merely spells the same way.
     const provider = makeProvider({
       container: "users",
-      columns: [{ name: "id" }, { name: "email" }],
+      fields: [{ name: "id" }, { name: "email" }],
     });
     const consumer = makeAccessSummary({
       name: "readMystery",
@@ -200,7 +200,7 @@ describe("checkStorage", () => {
   it("claims no access when the provider states no table", () => {
     const provider = makeProvider({
       container: null,
-      columns: [{ name: "id" }],
+      fields: [{ name: "id" }],
     });
     const consumer = makeAccessSummary({
       name: "readUsers",
@@ -210,11 +210,11 @@ describe("checkStorage", () => {
     expect(checkStorage([provider, consumer])).toEqual([]);
   });
 
-  it("emits storageReadFieldUnknown when code reads an undeclared column", () => {
+  it("emits storageReadFieldUnknown when code reads an undeclared field", () => {
     const findings = checkStorage([
       makeProvider({
         container: "User",
-        columns: [{ name: "id" }, { name: "email" }],
+        fields: [{ name: "id" }, { name: "email" }],
       }),
       makeAccessSummary({
         name: "getUser",
@@ -239,7 +239,7 @@ describe("checkStorage", () => {
         container: "Orders",
         storageSystem: "dynamodb",
         fieldSet: "partial",
-        columns: [{ name: "pk" }, { name: "sk" }],
+        fields: [{ name: "pk" }, { name: "sk" }],
       }),
       makeAccessSummary({
         name: "getOrder",
@@ -265,7 +265,7 @@ describe("checkStorage", () => {
         container: "Orders",
         storageSystem: "dynamodb",
         accessPath: "byCustomer",
-        columns: [{ name: "customerId" }],
+        fields: [{ name: "customerId" }],
       }),
       makeAccessSummary({
         name: "listOrders",
@@ -291,7 +291,7 @@ describe("checkStorage", () => {
         container: "Orders",
         storageSystem: "dynamodb",
         accessPath: "byCustomer",
-        columns: [{ name: "customerId" }],
+        fields: [{ name: "customerId" }],
       }),
       makeAccessSummary({
         name: "listByCustomer",
@@ -313,11 +313,11 @@ describe("checkStorage", () => {
     expect(unknown[0].description).toContain("Orders#byCustomer");
   });
 
-  it("emits storageWriteFieldUnknown when code writes an undeclared column", () => {
+  it("emits storageWriteFieldUnknown when code writes an undeclared field", () => {
     const findings = checkStorage([
       makeProvider({
         container: "User",
-        columns: [{ name: "id" }, { name: "email" }],
+        fields: [{ name: "id" }, { name: "email" }],
       }),
       makeAccessSummary({
         name: "createUser",
@@ -334,11 +334,11 @@ describe("checkStorage", () => {
     expect(unknown[0].description).toContain("role");
   });
 
-  it("emits storageFieldUnused for columns no caller touches", () => {
+  it("emits storageFieldUnused for fields no caller touches", () => {
     const findings = checkStorage([
       makeProvider({
         container: "User",
-        columns: [{ name: "id" }, { name: "email" }, { name: "deletedAt" }],
+        fields: [{ name: "id" }, { name: "email" }, { name: "deletedAt" }],
       }),
       makeAccessSummary({
         name: "h",
@@ -356,11 +356,11 @@ describe("checkStorage", () => {
     expect(unused[0].severity).toBe("warning");
   });
 
-  it("emits storageWriteOnlyField when a column is written but never read", () => {
+  it("emits storageWriteOnlyField when a field is written but never read", () => {
     const findings = checkStorage([
       makeProvider({
         container: "User",
-        columns: [{ name: "id" }, { name: "lastLoginAt" }],
+        fields: [{ name: "id" }, { name: "lastLoginAt" }],
       }),
       makeAccessSummary({
         name: "recordLogin",
@@ -386,7 +386,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "User",
-        columns: [{ name: "id" }, { name: "email" }, { name: "deletedAt" }],
+        fields: [{ name: "id" }, { name: "email" }, { name: "deletedAt" }],
       }),
       makeAccessSummary({
         name: "getUserAll",
@@ -404,7 +404,7 @@ describe("checkStorage", () => {
 
   it("default-shape reads do NOT fire field-unknown findings", () => {
     const findings = checkStorage([
-      makeProvider({ container: "User", columns: [{ name: "id" }] }),
+      makeProvider({ container: "User", fields: [{ name: "id" }] }),
       makeAccessSummary({
         name: "h",
         file: "src/h.ts",
@@ -427,7 +427,7 @@ describe("checkStorage", () => {
       makeProvider({
         container: "User",
         physicalTable: "users",
-        columns: [{ name: "id" }, { name: "email" }],
+        fields: [{ name: "id" }, { name: "email" }],
       }),
       makeAccessSummary({
         name: "listUsers",
@@ -458,7 +458,7 @@ describe("checkStorage", () => {
       makeProvider({
         container: "User",
         scope: "auth",
-        columns: [{ name: "id" }],
+        fields: [{ name: "id" }],
       }),
       // Same table name, different scope, should NOT pair as a
       // read-field-unknown finding even though "nonExistent" isn't
@@ -489,8 +489,8 @@ describe("checkStorage", () => {
 
   it("multi-table accesses (joins) emit per-table findings", () => {
     const findings = checkStorage([
-      makeProvider({ container: "User", columns: [{ name: "email" }] }),
-      makeProvider({ container: "Order", columns: [{ name: "id" }] }),
+      makeProvider({ container: "User", fields: [{ name: "email" }] }),
+      makeProvider({ container: "Order", fields: [{ name: "id" }] }),
       makeAccessSummary({
         name: "h",
         file: "src/h.ts",
@@ -513,7 +513,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "User",
-        columns: [{ name: "id" }, { name: "email" }],
+        fields: [{ name: "id" }, { name: "email" }],
       }),
       makeAccessSummary({
         name: "create",

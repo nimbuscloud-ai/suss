@@ -185,7 +185,7 @@ same way. The container is the table, bucket, or collection, and `accessPath`
 is a secondary way in, a global secondary index or an alias, or null for the
 container's own primary key. Columns are fields on the container's contract,
 and field-level access checks compare what the code reads and writes against
-`metadata.storageContract.columns`. Pairing key: `(storageSystem, scope,
+`metadata.storageContract.fields`. Pairing key: `(storageSystem, scope,
 container, accessPath)`.
 
 Whether a field the code touches can be called unknown is a property the
@@ -268,8 +268,8 @@ naming convention applies across all semantics:
 - `metadata.http.*`, REST-scoped
 - `metadata.graphql.*`, GraphQL-scoped
 - `metadata.runtimeContract.*`: runtime-config env var lists
-- `metadata.storageContract.*`: column declarations for storage, and whether
-  they are the complete set
+- `metadata.storageContract.*`: the field declarations for a storage
+  container, and whether they are the complete set
 
 Keys outside those namespaces are semantics-neutral (e.g.
 `metadata.derivedFromWrapper` from the wrapper-expansion post-pass).
