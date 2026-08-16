@@ -818,17 +818,33 @@ describe("inspect", () => {
   // Inspect used to resolve every call that way, so whichever summary
   // loaded first for a name won, regardless of which one a call
   // actually reached.
-  it("without an id, links a call by name across the whole set, which can name the wrong summary", () => {
+  it("without an id, says nothing when a name several files answer to", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byname-"));
     const file = path.join(dir, "summaries.json");
     fs.writeFileSync(
       file,
       JSON.stringify([
-        // Form's onChange loads first, so a name-only match claims
-        // "onChange" for Form.tsx before Counter's own same-file
-        // handler is ever seen.
+        // Two files define onChange, so a name-only match cannot pick
+        // one, and pointing at either would invent a call-graph edge.
         onChangeHandlerSummary("src/Form.tsx"),
         onChangeHandlerSummary("src/Counter.tsx"),
+        counterSummary({}),
+      ]),
+    );
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).not.toContain("src/Form.onChange");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("without an id, still links a name only one file answers to", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byname-one-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        onChangeHandlerSummary("src/Form.tsx"),
         counterSummary({}),
       ]),
     );
