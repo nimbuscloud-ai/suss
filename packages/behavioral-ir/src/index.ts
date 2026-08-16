@@ -60,6 +60,7 @@ export {
   restBinding,
   runtimeConfigBinding,
   storageRelationalBinding,
+  storageTableBinding,
 } from "@suss/ir-core";
 
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
@@ -135,6 +136,7 @@ export type {
   Semantics,
   SourceLocation,
   StorageRelationalSemantics,
+  StorageTableSemantics,
   TypeShape,
 } from "@suss/ir-core";
 

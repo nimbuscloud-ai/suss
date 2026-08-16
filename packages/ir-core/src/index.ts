@@ -50,6 +50,7 @@ export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
 export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
 export { StorageRelationalSemanticsSchema } from "./semantics/storageRelational.js";
+export { StorageTableSemanticsSchema } from "./semantics/storageTable.js";
 
 export type {
   BoundaryBehavior,
@@ -85,6 +86,7 @@ export type { Semantics } from "./semantics/registry.js";
 export type { RestSemantics } from "./semantics/rest.js";
 export type { RuntimeConfigSemantics } from "./semantics/runtimeConfig.js";
 export type { StorageRelationalSemantics } from "./semantics/storageRelational.js";
+export type { StorageTableSemantics } from "./semantics/storageTable.js";
 
 // ---------------------------------------------------------------------------
 // Shared comparison primitives
@@ -334,6 +336,28 @@ export function storageRelationalBinding(opts: {
       name: "storage-relational",
       storageSystem: opts.storageSystem,
       scope: opts.scope,
+      table: namedOrNull(opts.table, "storage table"),
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a storage-table binding, the boundary a key-value or document
+ * table exposes. Transport stores the `storageSystem` value, the way
+ * the relational binding does.
+ */
+export function storageTableBinding(opts: {
+  recognition: string;
+  storageSystem: "dynamodb";
+  /** Null when the source names a table this reader could not settle. */
+  table: string | null;
+}): BoundaryBinding {
+  return {
+    transport: opts.storageSystem,
+    semantics: {
+      name: "storage-table",
+      storageSystem: opts.storageSystem,
       table: namedOrNull(opts.table, "storage table"),
     },
     recognition: opts.recognition,

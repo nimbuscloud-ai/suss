@@ -269,6 +269,31 @@
                         "properties": {
                           "name": {
                             "type": "string",
+                            "const": "storage-table"
+                          },
+                          "storageSystem": {
+                            "type": "string",
+                            "const": "dynamodb"
+                          },
+                          "table": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["name", "storageSystem", "table"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
                             "const": "message-bus"
                           },
                           "messageBus": {
@@ -900,6 +925,31 @@
                                   "scope",
                                   "table"
                                 ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "storage-table"
+                                  },
+                                  "storageSystem": {
+                                    "type": "string",
+                                    "const": "dynamodb"
+                                  },
+                                  "table": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": ["name", "storageSystem", "table"],
                                 "additionalProperties": false
                               },
                               {

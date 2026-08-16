@@ -64,6 +64,7 @@ import {
 
 import { buildAlbFlowSummaries } from "./albFlow.js";
 import { buildDnsFlowSummaries } from "./dnsFlow.js";
+import { buildDynamoTableSummaries } from "./dynamoTables.js";
 import { documentSourceLabel } from "./documentLabel.js";
 import { buildMessageBusSummaries } from "./messageBus.js";
 import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
@@ -203,6 +204,7 @@ export function cloudFormationToSummaries(
   //    matches today.
   summaries.push(...buildAlbFlowSummaries(resources, sourceFile));
   summaries.push(...buildDnsFlowSummaries(resources, sourceFile));
+  summaries.push(...buildDynamoTableSummaries(resources, sourceFile));
 
   const stackPath = options.stackPath ?? [];
   return stackPath.length === 0
