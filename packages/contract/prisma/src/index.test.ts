@@ -30,7 +30,7 @@ function scopeOf(summary: BehavioralSummary): string | null {
   return s?.name === "storage" ? s.scope : null;
 }
 
-function columnsOf(summary: BehavioralSummary): Array<{
+function fieldsOf(summary: BehavioralSummary): Array<{
   name: string;
   type: string;
   nullable: boolean;
@@ -38,9 +38,9 @@ function columnsOf(summary: BehavioralSummary): Array<{
   unique?: boolean;
 }> {
   const meta = summary.metadata as
-    | { storageContract?: { columns: unknown[] } }
+    | { storageContract?: { fields: unknown[] } }
     | undefined;
-  return (meta?.storageContract?.columns ?? []) as Array<{
+  return (meta?.storageContract?.fields ?? []) as Array<{
     name: string;
     type: string;
     nullable: boolean;
@@ -164,7 +164,7 @@ model Post {
     const user =
       summaries.find((s) => s.identity.name === "User") ??
       raise("User summary not found");
-    const cols = columnsOf(user);
+    const cols = fieldsOf(user);
 
     const id = cols.find((c) => c.name === "id") ?? raise("id col missing");
     expect(id).toMatchObject({ type: "Int", nullable: false, primary: true });
@@ -189,7 +189,7 @@ model Post {
     const user =
       summaries.find((s) => s.identity.name === "User") ??
       raise("User summary not found");
-    const role = columnsOf(user).find((c) => c.name === "role");
+    const role = fieldsOf(user).find((c) => c.name === "role");
     expect(role).toBeDefined();
     expect(role?.type).toBe("Role");
   });
@@ -202,10 +202,10 @@ model Post {
     const post =
       summaries.find((s) => s.identity.name === "Post") ??
       raise("Post summary not found");
-    expect(columnsOf(user).find((c) => c.name === "posts")).toBeUndefined();
-    expect(columnsOf(post).find((c) => c.name === "author")).toBeUndefined();
+    expect(fieldsOf(user).find((c) => c.name === "posts")).toBeUndefined();
+    expect(fieldsOf(post).find((c) => c.name === "author")).toBeUndefined();
     // FK columns ARE captured.
-    expect(columnsOf(post).find((c) => c.name === "authorId")).toBeDefined();
+    expect(fieldsOf(post).find((c) => c.name === "authorId")).toBeDefined();
   });
 
   it("captures @@index and @@unique block attributes", () => {

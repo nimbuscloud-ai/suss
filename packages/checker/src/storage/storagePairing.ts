@@ -82,9 +82,7 @@ export function checkStorage(
     }
     const semantics = binding.semantics as StorageSemantics;
     const contract = readStorageContract(provider);
-    const declaredColumns = new Set(
-      (contract.columns ?? []).map((c) => c.name),
-    );
+    const declaredFields = new Set((contract.fields ?? []).map((f) => f.name));
     // Only a contract that declares every field an item has can call
     // a field it does not declare unknown.
     const fieldSetIsComplete = contract.fieldSet === "exhaustive";
@@ -114,7 +112,7 @@ export function checkStorage(
 
     // Track field usage across all in-scope accesses for the
     // unused / write-only checks below. Two flags per declared
-    // column: was it read by any access; was it written.
+    // field: was it read by any access; was it written.
     const readNames = new Set<string>();
     const writtenNames = new Set<string>();
     let anyDefaultShapeRead = false;
@@ -129,7 +127,7 @@ export function checkStorage(
       // so by definition no field can be unknown).
       if (!wildcards && fieldSetIsComplete) {
         for (const field of fields) {
-          if (declaredColumns.has(field)) {
+          if (declaredFields.has(field)) {
             continue;
           }
           findings.push(
@@ -153,7 +151,7 @@ export function checkStorage(
           // pattern (you can't `create` without naming columns), but
           // future packs might emit it. Treat as "wrote everything"
           //, symmetric with default-shape reads.
-          for (const col of declaredColumns) {
+          for (const col of declaredFields) {
             writtenNames.add(col);
           }
         } else {
@@ -164,18 +162,17 @@ export function checkStorage(
       }
     }
 
-    // Unused / write-only checks per declared column. Skip the
-    // unused check entirely when ANY caller used a default-shape
-    // read on this table. We can't tell whether the unused-looking
-    // column is actually consumed by a default-shape caller.
+    // Unused / write-only checks per declared field. Skip the unused
+    // check entirely when ANY caller used a default-shape read here: we
+    // can't tell whether that caller consumes the unused-looking field.
     if (!anyDefaultShapeRead) {
-      for (const column of contract.columns ?? []) {
-        const isRead = readNames.has(column.name);
-        const isWritten = writtenNames.has(column.name);
+      for (const field of contract.fields ?? []) {
+        const isRead = readNames.has(field.name);
+        const isWritten = writtenNames.has(field.name);
         if (!isRead && !isWritten) {
-          findings.push(makeFieldUnusedFinding(provider, binding, column.name));
+          findings.push(makeFieldUnusedFinding(provider, binding, field.name));
         } else if (isWritten && !isRead) {
-          findings.push(makeWriteOnlyFinding(provider, binding, column.name));
+          findings.push(makeWriteOnlyFinding(provider, binding, field.name));
         }
       }
     }
@@ -214,7 +211,7 @@ function readStorageContract(
 // ---------------------------------------------------------------------------
 
 function containerLabel(semantics: StorageSemantics): string {
-  const container = semantics.container ?? "<unnamed table>";
+  const container = semantics.container ?? "<unnamed container>";
   // A secondary way in gets written after the container it belongs to,
   // since a query through an index is a different access.
   const addressed =
@@ -244,7 +241,7 @@ function makeFieldUnknownFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${semantics.storageSystem}) but the schema declares no ${field} column.`,
+    description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${semantics.storageSystem}) but the contract declares no ${field} field.`,
     severity: "error",
   };
 }
@@ -252,7 +249,7 @@ function makeFieldUnknownFinding(
 function makeFieldUnusedFinding(
   provider: BehavioralSummary,
   binding: BoundaryBinding,
-  column: string,
+  field: string,
 ): Finding {
   const semantics = binding.semantics as StorageSemantics;
   return {
@@ -260,7 +257,7 @@ function makeFieldUnusedFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares column "${column}" but no code in the project reads or writes it. Likely dead config left over from a removed feature, or a renamed column the schema still references.`,
+    description: `${containerLabel(semantics)} declares "${field}" but no code in the project reads or writes it. Likely dead config left over from a removed feature, or a field the contract still declares under its old name.`,
     severity: "warning",
   };
 }
@@ -268,7 +265,7 @@ function makeFieldUnusedFinding(
 function makeWriteOnlyFinding(
   provider: BehavioralSummary,
   binding: BoundaryBinding,
-  column: string,
+  field: string,
 ): Finding {
   const semantics = binding.semantics as StorageSemantics;
   return {
@@ -277,7 +274,7 @@ function makeWriteOnlyFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares column "${column}" and code writes it, but no code in the project reads it. Likely useless data. The application stores values nothing downstream consumes.`,
+    description: `${containerLabel(semantics)} declares "${field}" and code writes it, but no code in the project reads it. Likely useless data. The application stores values nothing downstream consumes.`,
     severity: "warning",
   };
 }

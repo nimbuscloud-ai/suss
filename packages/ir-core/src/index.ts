@@ -346,26 +346,6 @@ export function storageBinding(opts: {
 }
 
 /**
- * The relational spelling of `storageBinding`, kept while the four
- * relational packs still pass a table. Each one moves to stating its
- * own properties, and then this goes.
- */
-export function storageRelationalBinding(opts: {
-  recognition: string;
-  storageSystem: "postgres" | "mysql" | "sqlite";
-  scope: string;
-  /** Null when the source gives a table this reader could not settle. */
-  table: string | null;
-}): BoundaryBinding {
-  return storageBinding({
-    recognition: opts.recognition,
-    storageSystem: opts.storageSystem,
-    scope: opts.scope,
-    container: opts.table,
-  });
-}
-
-/**
  * Build a message-bus binding, the boundary between a producer that
  * sends discrete messages and the consumer(s) that receive them.
  */

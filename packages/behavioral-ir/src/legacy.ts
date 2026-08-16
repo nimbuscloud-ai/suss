@@ -85,18 +85,22 @@ function relayerStorageBindingInPlace(binding: unknown): void {
 }
 
 /**
- * Every relational reader that shipped before the layered variant
- * declared each column a table has, so its contract is exhaustive.
+ * A storage contract written as SQL columns. Every relational reader
+ * that shipped before the layered variant declared each column a table
+ * has, so its contract is exhaustive.
  */
-function stampFieldSetInPlace(input: LooseRecord): void {
+function relayerStorageContractInPlace(input: LooseRecord): void {
   const metadata = input.metadata;
   if (!isRecord(metadata) || !isRecord(metadata.storageContract)) {
     return;
   }
   const contract = metadata.storageContract;
-  if (contract.fieldSet === undefined && Array.isArray(contract.columns)) {
-    contract.fieldSet = "exhaustive";
+  if (!Array.isArray(contract.columns)) {
+    return;
   }
+  contract.fields = contract.columns;
+  delete contract.columns;
+  contract.fieldSet = "exhaustive";
 }
 
 /** A summary missing the fields the formula needs fails validation next. */
@@ -178,7 +182,7 @@ function normalizeOne(input: unknown): {
   });
 
   if (version < STORAGE_LAYERS_VERSION) {
-    stampFieldSetInPlace(input);
+    relayerStorageContractInPlace(input);
   }
 
   return { value: input, idBackfilled };

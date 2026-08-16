@@ -419,14 +419,14 @@ describe("typed metadata namespaces", () => {
   it("reads a storage contract and refuses a misspelled key", () => {
     expect(
       readStorageContractMetadata(
-        carrier({ storageContract: { columns: [{ name: "id" }] } }),
+        carrier({ storageContract: { fields: [{ name: "id" }] } }),
       ),
-    ).toEqual({ columns: [{ name: "id" }] });
+    ).toEqual({ fields: [{ name: "id" }] });
     // A writer that renames the namespace stops being read, rather
     // than handing back a cast that quietly says nothing.
     expect(
       readStorageContractMetadata(
-        carrier({ storage_contract: { columns: [{ name: "id" }] } }),
+        carrier({ storage_contract: { fields: [{ name: "id" }] } }),
       ),
     ).toBeUndefined();
   });

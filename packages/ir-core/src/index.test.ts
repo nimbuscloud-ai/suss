@@ -9,7 +9,7 @@ import {
   packageExportBinding,
   restBinding,
   runtimeConfigBinding,
-  storageRelationalBinding,
+  storageBinding,
   TypeShapeSchema,
 } from "./index.js";
 
@@ -132,12 +132,12 @@ describe("binding constructors", () => {
     });
   });
 
-  it("storageRelationalBinding uses the storage system as transport", () => {
-    const b = storageRelationalBinding({
+  it("storageBinding uses the storage system as transport", () => {
+    const b = storageBinding({
       recognition: "prisma",
       storageSystem: "postgres",
       scope: "default",
-      table: "User",
+      container: "User",
     });
     expect(b.transport).toBe("postgres");
     expect(b.semantics).toMatchObject({

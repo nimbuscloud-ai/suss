@@ -19,7 +19,7 @@ import {
   runtimeConfigBinding,
   safeParseSummaries,
   safeParseSummary,
-  storageRelationalBinding,
+  storageBinding,
   summaryRef,
   type Transition,
 } from "./index.js";
@@ -599,12 +599,12 @@ describe("binding constructors", () => {
     });
   });
 
-  it("storageRelationalBinding uses storageSystem as transport", () => {
-    const b = storageRelationalBinding({
+  it("storageBinding uses storageSystem as transport", () => {
+    const b = storageBinding({
       recognition: "prisma",
       storageSystem: "postgres",
       scope: "default",
-      table: "User",
+      container: "User",
     });
     expect(b).toEqual({
       transport: "postgres",

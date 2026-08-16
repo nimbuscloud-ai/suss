@@ -159,7 +159,7 @@ describe("reading storage written before the layered variant", () => {
     });
   });
 
-  it("takes an older schema reader's column list as the complete set", () => {
+  it("reads an older schema reader's columns as fields, and as the complete set", () => {
     const parsed = parseSummary(
       v3StorageSummary(
         {
@@ -168,12 +168,78 @@ describe("reading storage written before the layered variant", () => {
           scope: "default",
           table: "User",
         },
-        { storageContract: { columns: [{ name: "id" }] } },
+        { storageContract: { columns: [{ name: "id" }], indexes: [] } },
       ),
     );
-    expect(parsed.metadata?.storageContract).toMatchObject({
+    expect(parsed.metadata?.storageContract).toEqual({
       fieldSet: "exhaustive",
+      fields: [{ name: "id" }],
+      indexes: [],
     });
+  });
+
+  it("leaves a contract that declares no columns as it was", () => {
+    const parsed = parseSummary(
+      v3StorageSummary(
+        {
+          name: "storage-relational",
+          storageSystem: "postgres",
+          scope: "default",
+          table: "User",
+        },
+        { storageContract: { physicalTable: "users" } },
+      ),
+    );
+    expect(parsed.metadata?.storageContract).toEqual({
+      physicalTable: "users",
+    });
+  });
+
+  it("relayers a storage binding an effect states, not only the summary's own", () => {
+    const parsed = parseSummary(
+      v1Summary({
+        schemaVersion: 3,
+        identity: {
+          name: "getUser",
+          exportPath: null,
+          id: "src/getUser.ts::getUser",
+          boundaryBinding: null,
+        },
+        transitions: [
+          {
+            id: "t-0",
+            conditions: [],
+            output: { type: "void" },
+            effects: [
+              {
+                type: "interaction",
+                binding: {
+                  transport: "postgres",
+                  semantics: {
+                    name: "storage-relational",
+                    storageSystem: "postgres",
+                    scope: "default",
+                    table: "User",
+                  },
+                  recognition: "@suss/framework-prisma",
+                },
+                interaction: {
+                  class: "storage-access",
+                  kind: "read",
+                  fields: ["email"],
+                },
+              },
+            ],
+            location: { start: 0, end: 0 },
+            isDefault: true,
+          },
+        ],
+      }),
+    );
+    const effect = parsed.transitions[0]?.effects[0];
+    expect(
+      effect?.type === "interaction" ? effect.binding.semantics : null,
+    ).toMatchObject({ name: "storage", container: "User" });
   });
 
   it("leaves a summary written at the current version alone", () => {
