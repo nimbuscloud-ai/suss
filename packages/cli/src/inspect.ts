@@ -359,6 +359,8 @@ interface RenderCtx {
    * the extractor already worked out, not a name a reader hopes is
    * unique.
    */
+  /** Follow names several files answer to, which resolve to none of them. */
+  ambiguousFollowNames: ReadonlySet<string>;
   summaryById: Map<string, { name: string; file: string }>;
   /**
    * For each parent summary (keyed by `identity.name`), the sub-units
@@ -776,6 +778,7 @@ function resolveFollowTargetByName(
   // since otherwise a cross-file `utils.formatPayload` resolves
   // against a `formatPayload` summary and renders nonsense like
   // `src/helpers.utils.formatPayload`.
+  const ambiguous = ctx.base.ambiguousFollowNames;
   let resolved: string | null = null;
   if (byName.has(callee)) {
     resolved = callee;
@@ -785,7 +788,7 @@ function resolveFollowTargetByName(
       resolved = last;
     }
   }
-  if (resolved === null) {
+  if (resolved === null || ambiguous.has(resolved)) {
     return null;
   }
   const targetFile = byName.get(resolved) ?? ctx.parentFile;
@@ -1232,6 +1235,14 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   // records where each name lives so cross-file refs can be path-
   // qualified in the effect render.
   const fileByName = new Map<string, string>();
+  // A name that several files answer to cannot pick one of them, and
+  // an invented call-graph edge reads exactly like a found one (#121).
+  const filesPerFollowName = new Map<string, Set<string>>();
+  const noteFollowName = (name: string, file: string): void => {
+    const seen = filesPerFollowName.get(name) ?? new Set<string>();
+    seen.add(file);
+    filesPerFollowName.set(name, seen);
+  };
   for (const s of summaries) {
     // A label is there for the reader; nothing calls it, so a
     // callee matching one is a coincidence and gets no follow marker.
@@ -1246,9 +1257,20 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     if (!fileByName.has(s.identity.name)) {
       fileByName.set(s.identity.name, s.location.file);
     }
+    noteFollowName(s.identity.name, s.location.file);
     const last = s.identity.name.split(".").pop();
-    if (last !== undefined && !fileByName.has(last)) {
-      fileByName.set(last, s.location.file);
+    if (last !== undefined) {
+      if (!fileByName.has(last)) {
+        fileByName.set(last, s.location.file);
+      }
+      noteFollowName(last, s.location.file);
+    }
+  }
+
+  const ambiguousFollowNames = new Set<string>();
+  for (const [name, files] of filesPerFollowName) {
+    if (files.size > 1) {
+      ambiguousFollowNames.add(name);
     }
   }
 
@@ -1327,7 +1349,13 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     spawnerIndex.set(parent, ordered);
   }
 
-  return { fileByName, summaryById, spawnerIndex, ambiguousNames };
+  return {
+    fileByName,
+    ambiguousFollowNames,
+    summaryById,
+    spawnerIndex,
+    ambiguousNames,
+  };
 }
 
 // ---------------------------------------------------------------------------
