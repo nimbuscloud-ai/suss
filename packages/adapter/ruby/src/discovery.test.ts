@@ -299,6 +299,86 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
     ]);
   });
 
+  it("wraps a RelayClassicMutation's arguments into one input argument on the wire", async () => {
+    write(
+      "mutations/base_mutation.rb",
+      "class Mutations::BaseMutation < GraphQL::Schema::RelayClassicMutation\nend\n",
+    );
+    write(
+      "mutations/campaign_update.rb",
+      "class Mutations::CampaignUpdate < Mutations::BaseMutation\n" +
+        "  argument :campaign_id, ID, required: true\n" +
+        "  argument :name, String, required: false\n" +
+        "  field :campaign, Types::CampaignType, null: true\n" +
+        "end\n",
+    );
+    const tree = await parseRuby(
+      "class Types::MutationType < Types::BaseObject\n" +
+        "  field :campaign_update, mutation: Mutations::CampaignUpdate\n" +
+        "end\n",
+    );
+    const units = await discoverUnits(tree.rootNode, {
+      packs: [pack],
+      filePath: "types/mutation_type.rb",
+      cache: diskCache(),
+    });
+
+    expect(units[0]?.graphqlDeclaredContract?.args).toEqual([
+      {
+        name: "input",
+        required: true,
+        type: {
+          type: "record",
+          properties: {
+            campaignId: { type: "text" },
+            name: {
+              type: "union",
+              variants: [{ type: "text" }, { type: "undefined" }],
+            },
+            clientMutationId: {
+              type: "union",
+              variants: [{ type: "text" }, { type: "undefined" }],
+            },
+          },
+        },
+      },
+    ]);
+    // The library unwraps input before calling resolve, so the
+    // method's parameters follow the declared arguments.
+    expect(units[0]?.parameters).toEqual([
+      { name: "campaignId", position: 0, role: "args", typeText: "ID" },
+      { name: "name", position: 1, role: "args", typeText: "String" },
+    ]);
+  });
+
+  it("keeps a plain Mutation's arguments flat on the wire", async () => {
+    write(
+      "mutations/base_mutation.rb",
+      "class Mutations::BaseMutation < GraphQL::Schema::Mutation\nend\n",
+    );
+    write(
+      "mutations/campaign_update.rb",
+      "class Mutations::CampaignUpdate < Mutations::BaseMutation\n" +
+        "  argument :campaign_id, ID, required: true\n" +
+        "  field :campaign, Types::CampaignType, null: true\n" +
+        "end\n",
+    );
+    const tree = await parseRuby(
+      "class Types::MutationType < Types::BaseObject\n" +
+        "  field :campaign_update, mutation: Mutations::CampaignUpdate\n" +
+        "end\n",
+    );
+    const units = await discoverUnits(tree.rootNode, {
+      packs: [pack],
+      filePath: "types/mutation_type.rb",
+      cache: diskCache(),
+    });
+
+    expect(units[0]?.graphqlDeclaredContract?.args).toEqual([
+      { name: "campaignId", type: { type: "text" }, required: true },
+    ]);
+  });
+
   it("reads the referenced resolver class's own type call as the return shape", async () => {
     write(
       "queries/campaign_query.rb",

@@ -68,4 +68,18 @@ export interface GraphqlObjectFields {
   /** Module prefixes the same scalars can also be written under when someone spells out the full path. */
   scalarNamePrefixes: string[];
   typeNameConvention: GraphqlTypeNameConvention;
+  /**
+   * A base class that changes a mutation's wire contract. When a wired
+   * class's ancestry reaches `ancestorClassName`, the library wraps
+   * every declared argument into one input-object argument called
+   * `argumentName` and adds `extraFields` to it. graphql-ruby's
+   * RelayClassicMutation is the class this describes: on the wire the
+   * mutation takes a single required `input`, whose fields are the
+   * declared arguments plus an optional `clientMutationId`.
+   */
+  argumentWrapping?: {
+    ancestorClassName: string;
+    argumentName: string;
+    extraFields: Record<string, { type: TypeShape; required: boolean }>;
+  };
 }
