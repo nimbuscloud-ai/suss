@@ -678,3 +678,116 @@ describe("checkStorage", () => {
     expect(findings).toEqual([]);
   });
 });
+
+describe("an access whose unit was told which store to reach", () => {
+  /** A wrapper that takes the table as an argument and reads from it. */
+  function wrapper(): BehavioralSummary {
+    const summary = makeAccessSummary({
+      name: "readRow",
+      file: "src/storage.ts",
+      accesses: [
+        { container: "{location.table}", kind: "read", fields: ["email"] },
+      ],
+    });
+    return {
+      ...summary,
+      identity: { ...summary.identity, id: "repo::src/storage.ts::readRow" },
+      inputs: [
+        {
+          type: "parameter",
+          name: "location",
+          position: 0,
+          role: null,
+          shape: null,
+        },
+      ],
+    };
+  }
+
+  /** A unit that calls the wrapper and says which table. */
+  function caller(table: unknown): BehavioralSummary {
+    const summary = makeAccessSummary({
+      name: "listUsers",
+      file: "src/handler.ts",
+      accesses: [],
+    });
+    return {
+      ...summary,
+      transitions: [
+        {
+          id: "t0",
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [
+            {
+              type: "invocation",
+              callee: "readRow",
+              summary: "repo::src/storage.ts::readRow",
+              args: [{ kind: "object", fields: { table } }],
+              async: true,
+            },
+          ],
+          location: { start: 5, end: 10 },
+          isDefault: true,
+        },
+      ],
+    };
+  }
+
+  it("pairs the wrapper against the table its caller passed", () => {
+    const provider = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }],
+    });
+    const findings = checkStorage([
+      provider,
+      wrapper(),
+      caller({ kind: "string", value: "users" }),
+    ]).filter((f) => f.kind === "boundaryFieldUnknown");
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.description).toContain("email");
+  });
+
+  it("reads a table a caller builds at deploy time as the same pattern", () => {
+    const provider = makeProvider({
+      container: "{stage}-users",
+      fields: [{ name: "id" }],
+    });
+    const findings = checkStorage([
+      provider,
+      wrapper(),
+      caller({ kind: "template", sourceText: "`${stage}-users`" }),
+    ]).filter((f) => f.kind === "boundaryFieldUnknown");
+
+    expect(findings).toHaveLength(1);
+  });
+
+  it("pairs with nothing when the caller passes a table nobody can settle", () => {
+    const provider = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }],
+    });
+
+    expect(
+      checkStorage([
+        provider,
+        wrapper(),
+        caller({ kind: "identifier", name: "whicheverTable" }),
+      ]).filter((f) => f.kind === "boundaryFieldUnknown"),
+    ).toEqual([]);
+  });
+
+  it("pairs with nothing when nobody calls the wrapper", () => {
+    const provider = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }],
+    });
+
+    expect(
+      checkStorage([provider, wrapper()]).filter(
+        (f) => f.kind === "boundaryFieldUnknown",
+      ),
+    ).toEqual([]);
+  });
+});
