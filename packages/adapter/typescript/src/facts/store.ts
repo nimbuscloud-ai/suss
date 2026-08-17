@@ -110,9 +110,21 @@ export class ResolutionStore {
     }
   }
 
-  resolveCallable(value: Node): Node | null {
+  /**
+   * `alsoFrom` is a second file to walk out from, for a caller that
+   * knows where the value it is asking about was set up. The walk
+   * follows imports outward from the value's own file, so a file that
+   * imports it, and passed something to the constructor, is somewhere
+   * the walk never reaches on its own.
+   */
+  resolveCallable(value: Node, alsoFrom?: SourceFile): Node | null {
     const target = factKeyOf(value);
-    return this.resolveByWaves(target, "wanted", () => this.lookup(target));
+    return this.resolveByWaves(
+      target,
+      "wanted",
+      () => this.lookup(target),
+      alsoFrom,
+    );
   }
 
   resolveObject(value: Node): Node | null {
@@ -189,9 +201,10 @@ export class ResolutionStore {
     value: Node,
     question: Question,
     ask: () => T | null,
+    alsoFrom?: SourceFile,
   ): T | null {
     try {
-      return this.walkForAnswer(value, question, ask);
+      return this.walkForAnswer(value, question, ask, alsoFrom);
     } finally {
       this.forgetQuery();
     }
@@ -201,6 +214,7 @@ export class ResolutionStore {
     value: Node,
     question: Question,
     ask: () => T | null,
+    alsoFrom?: SourceFile,
   ): T | null {
     this.wantValue(question, value);
     this.seedValue(value);
@@ -209,7 +223,10 @@ export class ResolutionStore {
     // still has to be walked through, or the frontier collapses and this
     // query comes back null.
     const walked = new Set<string>();
-    let frontier = [value.getSourceFile()];
+    let frontier =
+      alsoFrom === undefined
+        ? [value.getSourceFile()]
+        : [value.getSourceFile(), alsoFrom];
 
     for (let hop = 0; hop <= MAX_MODULE_HOPS; hop++) {
       const next: SourceFile[] = [];

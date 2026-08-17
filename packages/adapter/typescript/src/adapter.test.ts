@@ -3,7 +3,7 @@ import path from "node:path";
 import { type CallExpression, Node, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { readHttpMetadata } from "@suss/behavioral-ir";
+import { readHttpMetadata, storageBinding } from "@suss/behavioral-ir";
 import { assembleSummary } from "@suss/extractor";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
@@ -1327,6 +1327,62 @@ describe("createTypeScriptAdapter: cross-pack dedup", () => {
   });
 });
 
+/**
+ * A stand-in for a storage pack: it fires on `query({ TableName, IndexName })`
+ * and reads the table and the index straight off the literal.
+ */
+const storagePack: PatternPack = {
+  name: "storage",
+  protocol: "in-process",
+  languages: ["typescript"],
+  discovery: [],
+  terminals: [],
+  inputMapping: { type: "allPositional" },
+  accessRecognizers: [
+    (access) => {
+      const node = access as Node;
+      if (
+        !Node.isCallExpression(node) ||
+        node.getExpression().getText() !== "query"
+      ) {
+        return null;
+      }
+      const input = node.getArguments()[0];
+      if (input === undefined || !Node.isObjectLiteralExpression(input)) {
+        return null;
+      }
+      const literal = (name: string): string | null => {
+        const property = input.getProperty(name);
+        const value = Node.isPropertyAssignment(property)
+          ? property.getInitializer()
+          : undefined;
+        return value !== undefined && Node.isStringLiteral(value)
+          ? value.getLiteralValue()
+          : null;
+      };
+      return [
+        {
+          type: "interaction",
+          binding: storageBinding({
+            recognition: "storage",
+            storageSystem: "dynamodb",
+            scope: "default",
+            container: literal("TableName"),
+            accessPath: literal("IndexName"),
+          }),
+          callee: "query",
+          interaction: {
+            class: "storage-access",
+            kind: "read",
+            fields: ["*"],
+            operation: "Query",
+          },
+        },
+      ];
+    },
+  ],
+};
+
 describe("createTypeScriptAdapter: reachable closure", () => {
   it("discovers internal helpers transitively called from a handler", async () => {
     const project = createTestProject();
@@ -1654,6 +1710,76 @@ describe("createTypeScriptAdapter: reachable closure", () => {
       .sort();
     expect(names.filter((n) => n === "shared")).toHaveLength(1);
     expect(names).toEqual(["a", "b", "shared"]);
+  });
+
+  it("walks into the class a handler constructed its service with", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "dao.ts",
+      `
+      export interface OrdersReader {
+        findByCustomer(id: string): Promise<string>;
+      }
+      export class OrdersDao implements OrdersReader {
+        async findByCustomer(id: string): Promise<string> {
+          return query({ TableName: "orders-v1", IndexName: "byCustomer" });
+        }
+      }
+      export function query(input: { TableName: string; IndexName: string }) {
+        return JSON.stringify(input);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "service.ts",
+      `
+      import type { OrdersReader } from "./dao";
+      export class EditionService {
+        constructor(private readonly dao: OrdersReader) {}
+        async listForCustomer(id: string) {
+          return this.dao.findByCustomer(id);
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { OrdersDao } from "./dao";
+      import { EditionService } from "./service";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        list: async ({ params }: { params: { id: string } }) => {
+          const service = new EditionService(new OrdersDao());
+          return { status: 200 as const, body: await service.listForCustomer(params.id) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack, storagePack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const dao = summaries.find(
+      (summary) => summary.identity.name === "findByCustomer",
+    );
+    expect(dao).toBeDefined();
+    const accesses = (dao?.transitions ?? []).flatMap((transition) =>
+      transition.effects.flatMap((effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "storage-access"
+          ? [effect.binding.semantics]
+          : [],
+      ),
+    );
+    expect(accesses).toHaveLength(1);
+    expect(accesses[0]).toMatchObject({
+      container: "orders-v1",
+      accessPath: "byCustomer",
+    });
   });
 });
 
