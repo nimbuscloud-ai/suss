@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-aws-lambda",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from AWS Lambda HTTP handlers, paired to SAM/CloudFormation-declared routes.",
   "keywords": [
@@ -51,9 +51,9 @@
     "ts-morph": ">=20"
   },
   "dependencies": {
-    "@suss/adapter-typescript": "0.7.1",
-    "@suss/manifest-aws": "0.7.1",
-    "@suss/extractor": "0.7.1"
+    "@suss/adapter-typescript": "0.7.2",
+    "@suss/manifest-aws": "0.7.2",
+    "@suss/extractor": "0.7.2"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
