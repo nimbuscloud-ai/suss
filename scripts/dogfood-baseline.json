@@ -4,8 +4,8 @@
     "packagesWithExports": 46,
     "exports": 428,
     "internal": 1686,
-    "consumers": 690,
-    "pairs": 682
+    "consumers": 691,
+    "pairs": 683
   },
   "packages": {
     "packages/adapter/python": {
@@ -84,7 +84,7 @@
       "name": "@suss/contract-cloudformation",
       "exports": 8,
       "internal": 73,
-      "consumers": 119
+      "consumers": 120
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
