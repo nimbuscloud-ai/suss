@@ -163,6 +163,14 @@ export const RuntimeContractMetadataSchema = z.object({
     )
     .optional(),
   /**
+   * What an env var is set to, for the vars the manifest writes out as
+   * plain text. A storage access whose container is the variable rather
+   * than the name (`TableName: env.EDITION_TABLE`) reaches the table
+   * through this, so it pairs with whatever declares that table. Absent
+   * for a value the manifest does not state, a secret above all.
+   */
+  envVarValues: z.record(z.string(), z.string()).optional(),
+  /**
    * Language runtime the manifest declares for the unit, verbatim:
    * a SAM `Runtime` or a serverless.yml `runtime`, e.g. "nodejs20.x"
    * or "python3.12". Absent when the manifest does not say.

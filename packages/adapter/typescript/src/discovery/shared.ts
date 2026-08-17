@@ -137,8 +137,8 @@ export interface DiscoveredUnit {
    * shape for decorator-driven controllers).
    */
   routeInfo?: {
-    method: string;
-    path: string;
+    method: string | null;
+    path: string | null;
   };
   /**
    * Populated by a pack's `discoverUnits` callback for a message-bus

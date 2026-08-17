@@ -1221,13 +1221,15 @@ export interface DiscoveredCustomUnit {
    * When set, the adapter builds a `rest` binding from `(method, path)`,
    * the same binding a NestJS controller gets from decorator-derived
    * `routeInfo`, and the discoverUnits callback never has to reach into
-   * the adapter's binding machinery.
+   * the adapter's binding machinery. Either half is null when the
+   * source does not state it, and a binding missing one pairs with
+   * nothing.
    *
    * One function bound to several routes emits one DiscoveredCustomUnit
    * per route. The adapter's per-file claim dedup keys on
    * `(func, kind, method, path)`, so all of those variants survive.
    */
-  routeInfo?: { method: string; path: string };
+  routeInfo?: { method: string | null; path: string | null };
   /**
    * GraphQL field identity for units a callback discovers against an
    * external manifest rather than an in-code resolver map. AppSync
