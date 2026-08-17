@@ -108,8 +108,9 @@ Options (check):
 
 Options (contract):
   --from           What kind of file to read: openapi, cloudformation,
-                   serverless, storybook, appsync, prisma, graphql,
-                   graphql-documents
+                   terraform, serverless, storybook, appsync, prisma,
+                   graphql, graphql-documents. A terraform path may be
+                   one .tf file or the directory a module lives in
   -o, --output     Write JSON to a file instead of stdout
 
 Options (corroborate):
@@ -534,6 +535,7 @@ async function runContract(args: string[]): Promise<number> {
   const SUPPORTED_FROM: ContractSource[] = [
     "openapi",
     "cloudformation",
+    "terraform",
     "serverless",
     "storybook",
     "appsync",

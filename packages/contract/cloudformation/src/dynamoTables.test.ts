@@ -156,6 +156,27 @@ describe("a DynamoDB table", () => {
     );
   });
 
+  it("reads the YAML tag the same way, since it resolves to the string it was written with", () => {
+    const [table] = storageSummaries(
+      cloudFormationToSummaries({
+        Resources: {
+          Orders: {
+            Type: "AWS::DynamoDB::Table",
+            Properties: {
+              // What `TableName: !Sub '${StageName}-orders-v1'` loads as.
+              TableName: "${StageName}-orders-v1",
+              KeySchema: [{ AttributeName: "orderId", KeyType: "HASH" }],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(readStorageContractMetadata(table.summary)?.physicalTable).toBe(
+      "{StageName}-orders-v1",
+    );
+  });
+
   it("does not record a physical name when the table name comes from a Ref", () => {
     const [table] = storageSummaries(
       cloudFormationToSummaries({

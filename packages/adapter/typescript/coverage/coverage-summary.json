@@ -1,26 +1,26 @@
 {
   "total": {
     "lines": {
-      "total": 7261,
-      "covered": 6290,
+      "total": 7270,
+      "covered": 6295,
       "skipped": 0,
-      "pct": 86.62
+      "pct": 86.58
     },
     "statements": {
-      "total": 7331,
-      "covered": 6358,
+      "total": 7340,
+      "covered": 6363,
       "skipped": 0,
-      "pct": 86.72
+      "pct": 86.68
     },
     "functions": {
-      "total": 948,
-      "covered": 893,
+      "total": 952,
+      "covered": 895,
       "skipped": 0,
-      "pct": 94.19
+      "pct": 94.01
     },
     "branches": {
-      "total": 5558,
-      "covered": 4351,
+      "total": 5564,
+      "covered": 4356,
       "skipped": 0,
       "pct": 78.28
     },
@@ -33,22 +33,22 @@
   },
   "src/adapter.ts": {
     "lines": {
-      "total": 724,
-      "covered": 615,
+      "total": 725,
+      "covered": 616,
       "skipped": 0,
-      "pct": 84.94
+      "pct": 84.96
     },
     "functions": {
-      "total": 104,
-      "covered": 98,
+      "total": 105,
+      "covered": 99,
       "skipped": 0,
-      "pct": 94.23
+      "pct": 94.28
     },
     "statements": {
-      "total": 737,
-      "covered": 626,
+      "total": 738,
+      "covered": 627,
       "skipped": 0,
-      "pct": 84.93
+      "pct": 84.95
     },
     "branches": {
       "total": 565,
@@ -1203,28 +1203,28 @@
   },
   "src/discovery/packageImport.ts": {
     "lines": {
-      "total": 94,
-      "covered": 70,
+      "total": 102,
+      "covered": 74,
       "skipped": 0,
-      "pct": 74.46
+      "pct": 72.54
     },
     "functions": {
-      "total": 7,
-      "covered": 7,
+      "total": 10,
+      "covered": 8,
       "skipped": 0,
-      "pct": 100
+      "pct": 80
     },
     "statements": {
-      "total": 94,
-      "covered": 70,
+      "total": 102,
+      "covered": 74,
       "skipped": 0,
-      "pct": 74.46
+      "pct": 72.54
     },
     "branches": {
-      "total": 76,
-      "covered": 47,
+      "total": 82,
+      "covered": 50,
       "skipped": 0,
-      "pct": 61.84
+      "pct": 60.97
     }
   },
   "src/discovery/registrationCall.ts": {
@@ -1664,9 +1664,9 @@
     },
     "branches": {
       "total": 81,
-      "covered": 52,
+      "covered": 54,
       "skipped": 0,
-      "pct": 64.19
+      "pct": 66.66
     }
   },
   "src/resolve/rethrowEnrichment.ts": {

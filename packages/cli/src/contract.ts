@@ -17,6 +17,7 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 export type ContractSource =
   | "openapi"
   | "cloudformation"
+  | "terraform"
   | "serverless"
   | "storybook"
   | "appsync"
@@ -51,6 +52,18 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     const mod = await import("@suss/contract-cloudformation");
     return mod.cloudFormationFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
+    });
+  },
+  terraform: async (specPath) => {
+    // A path may be one `.tf` file or the directory a module lives in,
+    // since a module states its resources across several files. The AWS
+    // pack ships loaded; another provider's pack goes here beside it.
+    const [reader, aws] = await Promise.all([
+      import("@suss/contract-terraform"),
+      import("@suss/terraform-aws"),
+    ]);
+    return reader.terraformFileToSummaries(specPath, {
+      packs: [aws.awsTerraform()],
     });
   },
   serverless: async (specPath, source) => {

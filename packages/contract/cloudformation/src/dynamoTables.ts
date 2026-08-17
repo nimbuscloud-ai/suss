@@ -112,10 +112,14 @@ function tableSummary(opts: {
   };
 }
 
-/** A stated name, or the pattern one an `Fn::Sub` builds. */
+/**
+ * A stated name, as a pattern when the template builds one. YAML's
+ * `!Sub` tag resolves to the string it was written with, and the JSON
+ * form arrives as an object, so both go through the same reading.
+ */
 function readPhysicalName(declared: unknown): string | null {
   if (typeof declared === "string") {
-    return declared;
+    return namePatternFromSub(declared);
   }
   if (typeof declared !== "object" || declared === null) {
     return null;

@@ -269,6 +269,8 @@ function extractReachableSummary(
     reachablePack,
     recognizers.invocation,
     recognizers.access,
+    undefined,
+    recognizers.resolveWrittenValue,
   );
   raw.boundaryBinding = functionCallBinding({
     transport: "in-process",
@@ -319,6 +321,13 @@ const REACHABLE_RULES = [
  * the code under analysis wherever it happens to be.
  */
 export interface ClosureRecognizers {
+  /**
+   * What a name in a reached body was written as. A recognizer in a
+   * unit's own body gets this, and one in a body the walk stepped into
+   * needs the same, or a data access class keeping its table name in a
+   * field reads as a class that states no table.
+   */
+  resolveWrittenValue?: (value: Node) => Node | null;
   invocation: InvocationRecognizer[];
   access: AccessRecognizer[];
 }

@@ -74,6 +74,7 @@
     "@suss/contract-prisma": "0.5.11",
     "@suss/contract-serverless": "0.5.11",
     "@suss/contract-storybook": "0.5.11",
+    "@suss/contract-terraform": "0.5.11",
     "@suss/datalog": "0.5.11",
     "@suss/extractor": "0.5.11",
     "@suss/framework-activerecord": "0.5.11",
@@ -99,6 +100,7 @@
     "@suss/framework-ts-rest": "0.5.11",
     "@suss/intent-ir": "0.5.11",
     "@suss/runtime-node": "0.5.11",
+    "@suss/terraform-aws": "0.5.11",
     "pip-requirements-js": "^1.0.3",
     "ts-morph": "^23.0.0",
     "yaml": "^2.4.0"
