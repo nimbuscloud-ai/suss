@@ -206,7 +206,12 @@ export function checkStorage(
     // Unused / write-only checks per declared field. Skip the unused
     // check entirely when ANY caller used a default-shape read here: we
     // can't tell whether that caller consumes the unused-looking field.
-    if (!anyDefaultShapeRead) {
+    //
+    // A store no code in this run reaches says nothing about any of
+    // its fields. Reading a template on its own would otherwise give
+    // one warning per field every table declares, and none of them
+    // would mean what the words say.
+    if (!anyDefaultShapeRead && inScope.length > 0) {
       for (const field of contract.fields ?? []) {
         const isRead = readNames.has(field.name);
         const isWritten = writtenNames.has(field.name);

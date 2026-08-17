@@ -369,7 +369,10 @@ describe("checkStorage", () => {
       }),
     ]);
 
-    expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnused"]);
+    // The point is that the access is not attributed to this table.
+    // Nothing reaches the table in this run, so it says nothing about
+    // its fields either.
+    expect(findings).toEqual([]);
   });
 
   it("reports a query that picks items by something the container does not key on", () => {
@@ -935,5 +938,56 @@ describe("a read of whole items through an index that copies part of one", () =>
         (f) => f.kind === "boundaryFieldUnknown",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("a run with a contract and no code against it", () => {
+  it("says nothing about which fields go unused, since it saw no code", () => {
+    const table = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }, { name: "email" }],
+    });
+
+    expect(checkStorage([table])).toEqual([]);
+  });
+
+  it("says nothing about a store this run has no code for", () => {
+    const untouched = makeProvider({
+      container: "audit_log",
+      fields: [{ name: "id" }],
+    });
+    const users = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }],
+    });
+    const reader = makeAccessSummary({
+      name: "readUser",
+      file: "src/users.ts",
+      accesses: [{ container: "users", kind: "read", fields: ["id"] }],
+    });
+
+    expect(
+      checkStorage([untouched, users, reader]).filter((f) =>
+        f.description.includes("audit_log"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("still says a field goes unused when code reaches the store", () => {
+    const table = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }, { name: "email" }],
+    });
+    const reader = makeAccessSummary({
+      name: "readUser",
+      file: "src/users.ts",
+      accesses: [{ container: "users", kind: "read", fields: ["id"] }],
+    });
+    const unused = checkStorage([table, reader]).filter(
+      (f) => f.kind === "boundaryFieldUnused",
+    );
+
+    expect(unused).toHaveLength(1);
+    expect(unused[0]?.description).toContain("email");
   });
 });
