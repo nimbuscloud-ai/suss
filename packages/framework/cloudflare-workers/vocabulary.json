@@ -1,0 +1,18 @@
+{
+  "addEventListener": "Cloudflare Workers: the service-worker form of trigger registration",
+  "Response": "WHATWG Fetch: the class a Worker returns to serve a request",
+  "status": "WHATWG Fetch: the ResponseInit property with the status code",
+  "cloudflareWorkers": "suss: the metadata namespace this pack writes under",
+  "worker": "suss: deployment target, an edge worker",
+  "handler": "suss: code-unit kind",
+  "consumer": "suss: code-unit kind",
+  "response": "suss: terminal kind",
+  "return": "suss: terminal kind",
+  "throw": "suss: terminal kind",
+  "config": "suss: input role for the argument a runtime's configuration arrives in",
+  "event": "suss: input role for the argument a trigger's event arrives in",
+  "context": "suss: input role for the argument a runtime's execution context arrives in",
+  "typescript": "suss: language name",
+  "javascript": "suss: language name",
+  "http": "suss: transport name"
+}
