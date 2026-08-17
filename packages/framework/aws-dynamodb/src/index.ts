@@ -12,14 +12,9 @@
  * own `Fn::Sub`. Its README says what each command contributes.
  */
 
-import {
-  type CallExpression,
-  Node as N,
-  type Node,
-  SyntaxKind,
-} from "ts-morph";
+import { type CallExpression, Node as N, type Node } from "ts-morph";
 
-import { rootIdentifier } from "@suss/adapter-typescript";
+import { readName, rootIdentifier } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -121,8 +116,8 @@ export function dynamoRecognizer(call: unknown, ctx: unknown): Effect[] | null {
         storageSystem: "dynamodb",
         transport: "aws-sdk",
         scope: "default",
-        container: nameOf(property(input, "TableName"), resolve),
-        accessPath: nameOf(property(input, "IndexName"), resolve),
+        container: nameOfProperty(input, "TableName", resolve),
+        accessPath: nameOfProperty(input, "IndexName", resolve),
       }),
       callee: calleeText,
       interaction: {
@@ -192,7 +187,7 @@ function entryName(
   // `{ [this.tableName]: [...] }` puts the table behind an expression,
   // which is the same question the TableName property asks.
   if (N.isComputedPropertyName(nameNode)) {
-    return nameOf(nameNode.getExpression(), resolve);
+    return readName(nameNode.getExpression(), { resolve });
   }
   if (N.isStringLiteral(nameNode) || N.isIdentifier(nameNode)) {
     return nameNode.getText().replace(/^["']|["']$/g, "");
@@ -257,79 +252,14 @@ function property(input: Node, name: string): Node | null {
   return null;
 }
 
-/**
- * The name an expression states, with a deploy-time part written as a
- * hole. A field is followed to what the constructor set it to first,
- * which is where a table name usually is.
- */
-function nameOf(
-  expr: Node | null,
+/** What one input of a command is called, when it says. */
+function nameOfProperty(
+  input: Node,
+  name: string,
   resolve: (value: Node) => Node | null,
 ): string | null {
-  if (expr === null) {
-    return null;
-  }
-  const settled = defaultOf(
-    N.isStringLiteral(expr) || N.isTemplateExpression(expr)
-      ? expr
-      : (resolve(expr) ?? expr),
-  );
-
-  if (
-    N.isStringLiteral(settled) ||
-    N.isNoSubstitutionTemplateLiteral(settled)
-  ) {
-    return settled.getLiteralValue();
-  }
-  if (N.isTemplateExpression(settled)) {
-    return patternOf(settled);
-  }
-  return null;
-}
-
-/**
- * What a value falls back to when nothing was passed in.
- * `tableName || \`${stage}-orders-v1\`` is how a class takes an
- * override and ships a default, and the default is the table the
- * service reads unless a caller says otherwise. A caller that does pass
- * one is out of view here, which is the same limit as any argument.
- */
-function defaultOf(expr: Node): Node {
-  if (!N.isBinaryExpression(expr)) {
-    return expr;
-  }
-  const operator = expr.getOperatorToken().getKind();
-  if (
-    operator !== SyntaxKind.BarBarToken &&
-    operator !== SyntaxKind.QuestionQuestionToken
-  ) {
-    return expr;
-  }
-  return defaultOf(expr.getRight());
-}
-
-/** `` `${stage}-orders-v1` `` reads as `{stage}-orders-v1`. */
-function patternOf(template: Node): string | null {
-  if (!N.isTemplateExpression(template)) {
-    return null;
-  }
-  let name = template.getHead().getLiteralText();
-  for (const span of template.getTemplateSpans()) {
-    name += `{${holeName(span.getExpression())}}`;
-    name += span.getLiteral().getLiteralText();
-  }
-  return name;
-}
-
-/** What the source calls the part it left for deploy time to fill. */
-function holeName(expr: Node): string {
-  if (N.isIdentifier(expr)) {
-    return expr.getText();
-  }
-  if (N.isPropertyAccessExpression(expr)) {
-    return expr.getName();
-  }
-  return "param";
+  const written = property(input, name);
+  return written === null ? null : readName(written, { resolve });
 }
 
 /**

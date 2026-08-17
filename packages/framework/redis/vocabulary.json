@@ -3,7 +3,6 @@
   "first": "suss: the command takes one key, its first argument",
   "ioredis": "npm package: a Redis client",
   "iovalkey": "npm package: a Valkey client, forked from ioredis",
-  "param": "suss: what an unnamed part of a name is called",
   "read": "suss: access kind",
   "redis": "the store, and the protocol Valkey speaks too",
   "write": "suss: access kind"
