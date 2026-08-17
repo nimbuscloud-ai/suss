@@ -3,7 +3,7 @@
     "packages": 47,
     "packagesWithExports": 47,
     "exports": 439,
-    "internal": 1705,
+    "internal": 1706,
     "consumers": 699,
     "pairs": 691
   },
@@ -149,7 +149,7 @@
     "packages/framework/aws-dynamodb": {
       "name": "@suss/framework-aws-dynamodb",
       "exports": 3,
-      "internal": 12,
+      "internal": 13,
       "consumers": 4
     },
     "packages/framework/aws-eventbridge": {
