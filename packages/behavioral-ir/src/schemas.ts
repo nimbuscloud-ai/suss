@@ -98,6 +98,8 @@ export const FindingKindSchema = z.enum([
   "boundaryFieldRequired",
   /** The value has the declared type and breaks an enum or length rule. */
   "boundaryConstraintViolation",
+  /** The consumer picks items by something the provider does not key on. */
+  "boundarySelectorMismatch",
   /** Code sends to a queue or topic no provider in scope declares. */
   "messageBusProducerOrphan",
   /** A consumer receives from a channel nothing in the project sends to. */

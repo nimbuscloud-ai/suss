@@ -139,6 +139,24 @@ The value supplied for a field violates a value-level constraint the provider de
 
 No emitter ships today. This kind subsumes earlier per-domain reserved kinds: `storageLengthConstraintViolation`, `storageEnumConstraintViolation`, `graphqlEnumValueUnknown`.
 
+### `boundarySelectorMismatch` *(shipped)*
+
+**Severity:** error • **Emitted by:** `checkStorage`
+
+The consumer picks items by something the provider does not key on. A store that only accepts its key attributes in a query refuses the request, so the call fails when it runs rather than returning nothing.
+
+```
+[ERROR] boundarySelectorMismatch (aspect: read)
+  listByCustomer picks items on Orders by "customerId", which is not one
+  of its key attributes (orderId). dynamodb refuses a request keyed on
+  anything else, so this fails when it runs.
+  provider: template.yaml::Orders
+  consumer: src/listByCustomer.ts::listByCustomer
+  boundary: cloudformation (aws-sdk) storage:dynamodb:default:Orders
+```
+
+A contract that does not state `metadata.storageContract.identifies` claims nothing here, and neither does an access that states no selector. A query through a secondary index pairs against that index's own summary, so it is checked against the index's key rather than the table's.
+
 ---
 
 ## REST findings

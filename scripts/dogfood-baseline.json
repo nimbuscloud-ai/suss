@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 46,
-    "packagesWithExports": 46,
-    "exports": 436,
-    "internal": 1691,
-    "consumers": 695,
-    "pairs": 687
+    "packages": 47,
+    "packagesWithExports": 47,
+    "exports": 439,
+    "internal": 1705,
+    "consumers": 699,
+    "pairs": 691
   },
   "packages": {
     "packages/adapter/python": {
@@ -35,7 +35,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 138,
+      "internal": 140,
       "consumers": 88
     },
     "packages/checker-intent": {
@@ -145,6 +145,12 @@
       "exports": 2,
       "internal": 0,
       "consumers": 6
+    },
+    "packages/framework/aws-dynamodb": {
+      "name": "@suss/framework-aws-dynamodb",
+      "exports": 3,
+      "internal": 12,
+      "consumers": 4
     },
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",

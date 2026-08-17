@@ -158,6 +158,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   drizzle: "@suss/framework-drizzle",
   "aws-sqs": "@suss/framework-aws-sqs",
   "aws-eventbridge": "@suss/framework-aws-eventbridge",
+  "aws-dynamodb": "@suss/framework-aws-dynamodb",
   fetch: "@suss/client-web",
   axios: "@suss/client-axios",
   "apollo-client": "@suss/client-apollo",

@@ -136,6 +136,14 @@ export function checkStorage(
         }
       }
 
+      // A query that picks items by something the container does not key
+      // on fails at the store, so it is worth saying before it runs.
+      for (const field of selectorBeyondKey(contract, access)) {
+        findings.push(
+          makeSelectorMismatchFinding(provider, binding, access, field),
+        );
+      }
+
       // Aggregate usage for the unused / write-only checks.
       if (kind === "read") {
         if (wildcards) {
@@ -200,6 +208,23 @@ function sameService(
   return providerService === accessService;
 }
 
+/**
+ * The attributes an access picks items by that the container does not
+ * key on. A contract that does not say what identifies an item claims
+ * nothing here, and neither does an access that states no selector.
+ */
+function selectorBeyondKey(
+  contract: StorageContractMetadata,
+  access: StorageAccessRecord,
+): string[] {
+  const identifies = contract.identifies;
+  if (identifies === undefined || identifies.kind !== "keyFields") {
+    return [];
+  }
+  const selector = access.effect.interaction.selector ?? [];
+  return selector.filter((field) => !identifies.fields.includes(field));
+}
+
 function readStorageContract(
   summary: BehavioralSummary,
 ): StorageContractMetadata {
@@ -242,6 +267,29 @@ function makeFieldUnknownFinding(
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
     description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${semantics.storageSystem}) but the contract declares no ${field} field.`,
+    severity: "error",
+  };
+}
+
+function makeSelectorMismatchFinding(
+  provider: BehavioralSummary,
+  binding: BoundaryBinding,
+  access: StorageAccessRecord,
+  field: string,
+): Finding {
+  const semantics = binding.semantics as StorageSemantics;
+  const contract = readStorageContract(provider);
+  const keys =
+    contract.identifies?.kind === "keyFields"
+      ? contract.identifies.fields.join(", ")
+      : "";
+  return {
+    kind: "boundarySelectorMismatch",
+    aspect: access.effect.interaction.kind,
+    boundary: binding,
+    provider: makeSide(provider),
+    consumer: makeSide(access.summary, access.transitionId),
+    description: `${access.summary.identity.name} picks items on ${containerLabel(semantics)} by "${field}", which is not one of its key attributes (${keys}). ${semantics.storageSystem} refuses a request keyed on anything else, so this fails when it runs.`,
     severity: "error",
   };
 }
