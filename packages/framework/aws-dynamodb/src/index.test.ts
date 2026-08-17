@@ -171,6 +171,110 @@ describe("a DynamoDB command", () => {
     expect(storageOf(effects[0]).interaction).toMatchObject({ fields: ["*"] });
   });
 
+  it("reads the attributes a query keys on out of its key condition", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export async function recent(customerId: string, since: string) {
+        return client.send(new QueryCommand({
+          TableName: "orders-v1",
+          IndexName: "byCustomer",
+          KeyConditionExpression: "customerId = :c AND placedAt > :since",
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      selector: ["customerId", "placedAt"],
+    });
+  });
+
+  it("looks an aliased attribute up, since a reserved word has to be written as one", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export async function byStatus(status: string) {
+        return client.send(new QueryCommand({
+          TableName: "orders-v1",
+          KeyConditionExpression: "#s = :status",
+          ExpressionAttributeNames: { "#s": "status" },
+          ExpressionAttributeValues: { ":status": status },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      selector: ["status"],
+    });
+  });
+
+  it("reads the attributes a begins_with condition keys on", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export async function underPrefix(pk: string, prefix: string) {
+        return client.send(new QueryCommand({
+          TableName: "orders-v1",
+          KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      selector: ["pk", "sk"],
+    });
+  });
+
+  it("gives a batch write one effect per table in its request map", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, BatchWriteCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function writeBoth(orderId: string) {
+        return client.send(new BatchWriteCommand({
+          RequestItems: {
+            "orders-v1": [{ PutRequest: { Item: { orderId, total: 1 } } }],
+            "audit-v1": [{ PutRequest: { Item: { orderId, at: "now" } } }],
+          },
+        }));
+      }
+    `);
+
+    expect(effects).toHaveLength(2);
+    expect(effects.map((e) => storageOf(e).semantics.container)).toEqual([
+      "orders-v1",
+      "audit-v1",
+    ]);
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: ["orderId", "total"],
+    });
+  });
+
+  it("follows a computed table name in a request map the same way", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, BatchGetCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export class OrdersDao {
+        private readonly tableName: string;
+        constructor(stage: string) {
+          this.tableName = \`\${stage}-orders-v1\`;
+        }
+        async readMany(ids: string[]) {
+          return client.send(new BatchGetCommand({
+            RequestItems: {
+              [this.tableName]: { Keys: [{ orderId: "a" }] },
+            },
+          }));
+        }
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    const { semantics, interaction } = storageOf(effects[0]);
+    expect(semantics.container).toBe("{stage}-orders-v1");
+    expect(interaction).toMatchObject({ kind: "read", fields: ["orderId"] });
+  });
+
   it("states no container for a table name it cannot settle", () => {
     const effects = effectsIn(`
       ${IMPORTS}

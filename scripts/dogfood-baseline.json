@@ -3,9 +3,9 @@
     "packages": 47,
     "packagesWithExports": 47,
     "exports": 439,
-    "internal": 1699,
-    "consumers": 698,
-    "pairs": 690
+    "internal": 1705,
+    "consumers": 699,
+    "pairs": 691
   },
   "packages": {
     "packages/adapter/python": {
@@ -35,7 +35,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 138,
+      "internal": 140,
       "consumers": 88
     },
     "packages/checker-intent": {
@@ -149,8 +149,8 @@
     "packages/framework/aws-dynamodb": {
       "name": "@suss/framework-aws-dynamodb",
       "exports": 3,
-      "internal": 8,
-      "consumers": 3
+      "internal": 12,
+      "consumers": 4
     },
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",

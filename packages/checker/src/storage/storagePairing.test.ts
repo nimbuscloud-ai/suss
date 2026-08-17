@@ -20,6 +20,7 @@ function makeProvider(opts: {
   physicalTable?: string;
   /** A SQL schema declares every field, so that is the default here. */
   fieldSet?: "exhaustive" | "partial" | "none";
+  keyFields?: string[];
 }): BehavioralSummary {
   return {
     kind: "library",
@@ -46,6 +47,9 @@ function makeProvider(opts: {
     metadata: {
       storageContract: {
         fieldSet: opts.fieldSet ?? "exhaustive",
+        ...(opts.keyFields !== undefined
+          ? { identifies: { kind: "keyFields", fields: opts.keyFields } }
+          : {}),
         fields: opts.fields,
         ...(opts.physicalTable !== undefined
           ? { physicalTable: opts.physicalTable }
@@ -366,6 +370,92 @@ describe("checkStorage", () => {
     ]);
 
     expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnused"]);
+  });
+
+  it("reports a query that picks items by something the container does not key on", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "Orders",
+        storageSystem: "dynamodb",
+        fieldSet: "partial",
+        keyFields: ["orderId"],
+        fields: [{ name: "orderId" }],
+      }),
+      makeAccessSummary({
+        name: "byCustomer",
+        file: "src/byCustomer.ts",
+        accesses: [
+          {
+            container: "Orders",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["*"],
+            selector: ["customerId"],
+          },
+        ],
+      }),
+    ]);
+
+    const mismatch = findings.filter(
+      (f) => f.kind === "boundarySelectorMismatch",
+    );
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0].severity).toBe("error");
+    expect(mismatch[0].description).toContain("customerId");
+  });
+
+  it("says nothing about a query that keys on what the container keys on", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "Orders",
+        storageSystem: "dynamodb",
+        fieldSet: "partial",
+        keyFields: ["orderId", "placedAt"],
+        fields: [{ name: "orderId" }, { name: "placedAt" }],
+      }),
+      makeAccessSummary({
+        name: "recent",
+        file: "src/recent.ts",
+        accesses: [
+          {
+            container: "Orders",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["*"],
+            selector: ["orderId", "placedAt"],
+          },
+        ],
+      }),
+    ]);
+
+    expect(
+      findings.filter((f) => f.kind === "boundarySelectorMismatch"),
+    ).toEqual([]);
+  });
+
+  it("claims nothing about a selector when the contract does not say what identifies an item", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "users",
+        fields: [{ name: "id" }, { name: "email" }],
+      }),
+      makeAccessSummary({
+        name: "readUser",
+        file: "src/readUser.ts",
+        accesses: [
+          {
+            container: "users",
+            kind: "read",
+            fields: ["email"],
+            selector: ["email"],
+          },
+        ],
+      }),
+    ]);
+
+    expect(
+      findings.filter((f) => f.kind === "boundarySelectorMismatch"),
+    ).toEqual([]);
   });
 
   it("emits storageWriteFieldUnknown when code writes an undeclared field", () => {
