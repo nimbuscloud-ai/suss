@@ -144,7 +144,7 @@ something about your project, which you pass through
 | `flask-restx` | `@suss/framework-flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. `wrapperModules` is optional. |
 | `graphql-ruby` | `@suss/framework-graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. It needs `root`, and reads nothing without it. |
 
-Four more names are built in the same way, and discover no units of
+Five more names are built in the same way, and discover no units of
 their own. They attach typed effects to calls inside whatever units
 another pack found:
 
@@ -152,6 +152,7 @@ another pack found:
 |---|---|---|
 | `prisma` | `@suss/framework-prisma` | Prisma client calls, as storage-access interactions |
 | `drizzle` | `@suss/framework-drizzle` | Drizzle query-builder and relational-query calls, with SQL table names |
+| `aws-dynamodb` | `@suss/framework-aws-dynamodb` | AWS SDK v3 DynamoDB commands, as storage-access interactions. `requestFunctions` is optional. |
 | `aws-sqs` | `@suss/framework-aws-sqs` | AWS SDK v3 SQS producer calls, as message-send interactions |
 | `aws-eventbridge` | `@suss/framework-aws-eventbridge` | EventBridge `PutEvents` calls, as message-bus interactions |
 
@@ -193,6 +194,50 @@ The subject becomes the channel the producer sends on, so it pairs with
 the handler that uses the same subject. If the source does not write the
 subject as a string, suss records no effect at all: pairing on a guessed
 channel would point at the wrong consumer.
+
+The DynamoDB pack takes a project's own request helper the same way. A
+service that signs and posts the request itself writes no command
+class, and the body it posts is the same object the command takes:
+
+```ts
+await sendRequest(env, signer, "Query", {
+  TableName: env.ORDERS_TABLE,
+  IndexName: "byCustomer",
+  KeyConditionExpression: "customerId = :c",
+  ProjectionExpression: "orderId, total",
+});
+```
+
+```json
+{
+  "requestFunctions": [
+    {
+      "name": "sendRequest",
+      "operationArg": 2,
+      "requestArg": 3,
+      "operations": {
+        "Query": "read",
+        "GetItem": "read",
+        "PutItem": "write"
+      }
+    }
+  ],
+  "requiresImport": ["aws4fetch"]
+}
+```
+
+`name` is the function, `operationArg` and `requestArg` are the
+positions of the two arguments that matter, and `operations` says what
+each operation the helper accepts does to the table. An operation left
+out is one the pack reads nothing from.
+
+Add `module` to an entry when every call site imports the helper by the
+same specifier, and the pack then leaves a function of that name from
+anywhere else alone. Relative imports spell the same module differently
+at different depths, so leave `module` out there and use
+`requiresImport` instead: it lists the modules whose presence, directly
+or through a file the project imports, makes a file worth reading.
+Above, that is the signing library the helper itself imports.
 
 Several other packs take a project's own wrappers the same way. A pack
 ships only what its own library defines, and these options are what a
