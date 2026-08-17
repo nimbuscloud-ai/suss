@@ -20,7 +20,11 @@
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
 
-import { namesAgree, readStorageContractMetadata } from "@suss/behavioral-ir";
+import {
+  namesAgree,
+  namesNothing,
+  readStorageContractMetadata,
+} from "@suss/behavioral-ir";
 
 import { makeSide } from "../coverage/responseMatch.js";
 import {
@@ -30,6 +34,7 @@ import {
   interactionsOf,
   providersOf,
 } from "../interactions/dispatcher.js";
+import { groundReferences } from "./grounding.js";
 
 import type {
   BehavioralSummary,
@@ -63,6 +68,22 @@ export function checkStorage(
 ): Finding[] {
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
+  const grounding = groundReferences(summaries);
+
+  /**
+   * The names one access reaches. A container that says only where to
+   * look is asked about the callers, and an access nobody calls reaches
+   * nothing rather than everything.
+   */
+  const namesReached = (access: StorageAccessRecord): string[] => {
+    const container = access.semantics.container;
+    if (container === null) {
+      return [];
+    }
+    return namesNothing(container)
+      ? grounding.namesFor(access.summary, container)
+      : [container];
+  };
 
   const providers = providersOf(idx, "storage");
   const accesses: StorageAccessRecord[] = interactionsOf(
@@ -103,9 +124,8 @@ export function checkStorage(
         a.semantics.storageSystem === semantics.storageSystem &&
         a.semantics.scope === semantics.scope &&
         a.semantics.accessPath === semantics.accessPath &&
-        a.semantics.container !== null &&
-        containerNames.some((name) =>
-          namesAgree(name, a.semantics.container as string),
+        namesReached(a).some((reached) =>
+          containerNames.some((name) => namesAgree(name, reached)),
         ) &&
         sameService(provider, a.summary),
     );
