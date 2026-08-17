@@ -665,6 +665,17 @@ const StorageContractMetadataSchema = z.object({
    * Summaries written before this field get `"exhaustive"` on the way in.
    */
   fieldSet: z.enum(["exhaustive", "partial", "none"]).optional(),
+  /**
+   * What picks one item out of the container: the fields a caller has
+   * to supply, in the order the store keys on them, or a convention
+   * the key itself follows (an S3 prefix, a Redis key pattern).
+   */
+  identifies: z
+    .union([
+      z.object({ kind: z.literal("keyFields"), fields: z.array(z.string()) }),
+      z.object({ kind: z.literal("keyConvention"), pattern: z.string() }),
+    ])
+    .optional(),
   /** What the store declares an item has, whatever it calls them. */
   fields: z
     .array(

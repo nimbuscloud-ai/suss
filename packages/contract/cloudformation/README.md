@@ -32,6 +32,8 @@ Recognised resource types:
 | `AWS::ApiGateway::Method`  | n/a | walked via `ResourceId` chain |
 | `AWS::ApiGatewayV2::Route` | n/a | parsed from `RouteKey` |
 
+A template's `AWS::DynamoDB::Table` resources become storage boundaries as well. The table gets one summary and each of its secondary indexes gets another, because a query through an index keys on that index's own fields. The contract records the key attributes and states that they are only part of what an item has, so code that reads an ordinary attribute does not produce a finding.
+
 ## Minimal usage
 
 ```ts
