@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
 
-import { wranglerFileToSummaries } from "./index.js";
+import { isConfigurationFile, wranglerFileToSummaries } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -188,7 +188,13 @@ describe("wranglerFileToSummaries", () => {
     });
   });
 
-  it("says so when the path holds no configuration", () => {
+  it("recognizes each name Wrangler reads a configuration from", () => {
+    expect(isConfigurationFile("wrangler.toml")).toBe(true);
+    expect(isConfigurationFile("wrangler.jsonc")).toBe(true);
+    expect(isConfigurationFile("package.json")).toBe(false);
+  });
+
+  it("says so when the path contains no configuration", () => {
     expect(() => read("nowhere")).toThrow(/not found/);
   });
 });
