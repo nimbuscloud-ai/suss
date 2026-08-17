@@ -20,7 +20,7 @@
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
 
-import { readStorageContractMetadata } from "@suss/behavioral-ir";
+import { namesAgree, readStorageContractMetadata } from "@suss/behavioral-ir";
 
 import { makeSide } from "../coverage/responseMatch.js";
 import {
@@ -88,16 +88,14 @@ export function checkStorage(
     const fieldSetIsComplete = contract.fieldSet === "exhaustive";
 
     // In-scope accesses: same store, scope, and access path, with a
-    // container matching either declared name, the binding's own
-    // (a Prisma model) or the physical SQL name from @@map.
-    const containerNames = new Set(
-      [semantics.container, contract.physicalTable].filter(
-        (name): name is string => name !== undefined && name !== null,
-      ),
+    // container agreeing with either declared name, the binding's own
+    // (a Prisma model) or the physical name a template states.
+    const containerNames = [semantics.container, contract.physicalTable].filter(
+      (name): name is string => name !== undefined && name !== null,
     );
     // A provider whose container this reader could not settle claims no
     // accesses, rather than every access that spells it the same way.
-    if (containerNames.size === 0) {
+    if (containerNames.length === 0) {
       continue;
     }
     const inScope = accesses.filter(
@@ -106,7 +104,9 @@ export function checkStorage(
         a.semantics.scope === semantics.scope &&
         a.semantics.accessPath === semantics.accessPath &&
         a.semantics.container !== null &&
-        containerNames.has(a.semantics.container) &&
+        containerNames.some((name) =>
+          namesAgree(name, a.semantics.container as string),
+        ) &&
         sameService(provider, a.summary),
     );
 

@@ -2,10 +2,10 @@
   "totals": {
     "packages": 46,
     "packagesWithExports": 46,
-    "exports": 428,
-    "internal": 1686,
-    "consumers": 691,
-    "pairs": 683
+    "exports": 436,
+    "internal": 1687,
+    "consumers": 695,
+    "pairs": 687
   },
   "packages": {
     "packages/adapter/python": {
@@ -28,7 +28,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 49,
+      "exports": 53,
       "internal": 15,
       "consumers": 4
     },
@@ -36,7 +36,7 @@
       "name": "@suss/checker",
       "exports": 33,
       "internal": 138,
-      "consumers": 87
+      "consumers": 88
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -84,7 +84,7 @@
       "name": "@suss/contract-cloudformation",
       "exports": 8,
       "internal": 73,
-      "consumers": 120
+      "consumers": 123
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -262,8 +262,8 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 42,
-      "internal": 9,
+      "exports": 46,
+      "internal": 10,
       "consumers": 0
     },
     "packages/manifest/aws": {
