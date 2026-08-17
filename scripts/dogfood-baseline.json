@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 51,
-    "packagesWithExports": 51,
-    "exports": 449,
-    "internal": 1745,
-    "consumers": 723,
-    "pairs": 716
+    "packages": 52,
+    "packagesWithExports": 52,
+    "exports": 453,
+    "internal": 1750,
+    "consumers": 726,
+    "pairs": 719
   },
   "packages": {
     "packages/adapter/python": {
@@ -22,7 +22,7 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 33,
+      "exports": 34,
       "internal": 610,
       "consumers": 45
     },
@@ -259,6 +259,12 @@
       "exports": 2,
       "internal": 0,
       "consumers": 8
+    },
+    "packages/framework/redis": {
+      "name": "@suss/framework-redis",
+      "exports": 3,
+      "internal": 5,
+      "consumers": 3
     },
     "packages/framework/sqlalchemy": {
       "name": "@suss/framework-sqlalchemy",

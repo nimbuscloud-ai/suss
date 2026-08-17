@@ -27,7 +27,10 @@ export {
 } from "./moduleExports.js";
 export { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
 export { parseConditionExpression } from "./predicates.js";
-export { isImportedFrom } from "./resolve/invocationEffects.js";
+export {
+  isImportedFrom,
+  methodDeclaredIn,
+} from "./resolve/invocationEffects.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";

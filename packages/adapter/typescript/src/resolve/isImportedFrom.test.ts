@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
-import { isImportedFrom } from "./invocationEffects.js";
+import { isImportedFrom, methodDeclaredIn } from "./invocationEffects.js";
 
 import type { Node } from "ts-morph";
 
@@ -121,5 +121,65 @@ describe("isImportedFrom", () => {
     );
 
     expect(isImportedFrom(identifier, "@aws-sdk/client-sqs")).toBe(false);
+  });
+});
+
+// A client a service builds somewhere else says nothing at the call
+// site about which library it came from. What the method resolves to
+// does.
+const IOREDIS_TYPES = `
+  export default class Redis {
+    get(key: string): Promise<string | null>;
+  }
+`;
+
+function calleeOf(source: string) {
+  const project = createTestProject();
+  project.createSourceFile(
+    "/node_modules/ioredis/package.json",
+    JSON.stringify({ name: "ioredis", types: "built/index.d.ts" }),
+  );
+  project.createSourceFile(
+    "/node_modules/ioredis/built/index.d.ts",
+    IOREDIS_TYPES,
+  );
+  const use = project.createSourceFile("/use.ts", source);
+  const call = use
+    .getDescendants()
+    .find((node: Node) => node.getKindName() === "CallExpression");
+  if (call === undefined) {
+    throw new Error("No call in /use.ts");
+  }
+  return (call as unknown as { getExpression(): Node }).getExpression();
+}
+
+describe("methodDeclaredIn", () => {
+  it("matches a method the library declares, whatever the receiver was called", () => {
+    const callee = calleeOf(`
+      import Redis from "ioredis";
+      declare const anything: Redis;
+      export const read = () => anything.get("k");
+    `);
+
+    expect(methodDeclaredIn(callee, "ioredis")).toBe(true);
+    expect(methodDeclaredIn(callee, "redis")).toBe(false);
+  });
+
+  it("leaves a same-named method on something else alone", () => {
+    const callee = calleeOf(`
+      declare const cache: { get(key: string): Promise<string> };
+      export const read = () => cache.get("k");
+    `);
+
+    expect(methodDeclaredIn(callee, "ioredis")).toBe(false);
+  });
+
+  it("says no for a call that goes to a plain name", () => {
+    const callee = calleeOf(`
+      declare function get(key: string): string;
+      export const read = () => get("k");
+    `);
+
+    expect(methodDeclaredIn(callee, "ioredis")).toBe(false);
   });
 });

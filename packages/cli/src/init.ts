@@ -238,6 +238,14 @@ const BY_DEPENDENCY: Array<{
   },
   {
     ecosystem: "npm",
+    dependency: "ioredis",
+    name: "redis",
+    packageName: "@suss/framework-redis",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
     dependency: "@apollo/client",
     name: "apollo-client",
     packageName: "@suss/client-apollo",
