@@ -136,6 +136,46 @@ describe("a DynamoDB table", () => {
     ).toEqual({ kind: "keyFields", fields: ["orderId", "status"] });
   });
 
+  it("records a name the template builds at deploy time, with the parameter as a hole", () => {
+    const [table] = storageSummaries(
+      cloudFormationToSummaries({
+        Resources: {
+          Orders: {
+            Type: "AWS::DynamoDB::Table",
+            Properties: {
+              TableName: { "Fn::Sub": "${StageName}-orders-v1" },
+              KeySchema: [{ AttributeName: "orderId", KeyType: "HASH" }],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(readStorageContractMetadata(table.summary)?.physicalTable).toBe(
+      "{StageName}-orders-v1",
+    );
+  });
+
+  it("does not record a physical name when the table name comes from a Ref", () => {
+    const [table] = storageSummaries(
+      cloudFormationToSummaries({
+        Resources: {
+          Orders: {
+            Type: "AWS::DynamoDB::Table",
+            Properties: {
+              TableName: { Ref: "OrdersTableName" },
+              KeySchema: [{ AttributeName: "orderId", KeyType: "HASH" }],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(
+      readStorageContractMetadata(table.summary)?.physicalTable,
+    ).toBeUndefined();
+  });
+
   it("takes the logical id as the container when the template states no TableName", () => {
     const [table] = storageSummaries(
       cloudFormationToSummaries({

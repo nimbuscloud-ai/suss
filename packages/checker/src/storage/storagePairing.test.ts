@@ -313,6 +313,61 @@ describe("checkStorage", () => {
     expect(unknown[0].description).toContain("Orders#byCustomer");
   });
 
+  it("pairs an access that spells a name the template builds at deploy time", () => {
+    // Nothing reports the read field, since a table's contract is
+    // partial. The two sides meeting shows in the declared key being
+    // read rather than sitting unused.
+    const findings = checkStorage([
+      makeProvider({
+        container: "OrdersTable",
+        storageSystem: "dynamodb",
+        fieldSet: "partial",
+        physicalTable: "{StageName}-orders-v1",
+        fields: [{ name: "orderId" }],
+      }),
+      makeAccessSummary({
+        name: "getOrder",
+        file: "src/getOrder.ts",
+        accesses: [
+          {
+            container: "prod-orders-v1",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["orderId", "shippedAt"],
+          },
+        ],
+      }),
+    ]);
+
+    expect(findings).toEqual([]);
+  });
+
+  it("leaves an access alone whose name the template's pattern does not fit", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "OrdersTable",
+        storageSystem: "dynamodb",
+        fieldSet: "partial",
+        physicalTable: "{StageName}-orders-v1",
+        fields: [{ name: "orderId" }],
+      }),
+      makeAccessSummary({
+        name: "getInvoice",
+        file: "src/getInvoice.ts",
+        accesses: [
+          {
+            container: "prod-invoices-v1",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["invoiceId"],
+          },
+        ],
+      }),
+    ]);
+
+    expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnused"]);
+  });
+
   it("emits storageWriteFieldUnknown when code writes an undeclared field", () => {
     const findings = checkStorage([
       makeProvider({

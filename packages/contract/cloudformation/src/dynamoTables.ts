@@ -12,7 +12,7 @@
  * through an index keys on that index's fields rather than the table's.
  */
 
-import { storageBinding } from "@suss/behavioral-ir";
+import { namePatternFromSub, storageBinding } from "@suss/behavioral-ir";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CloudFormationResource } from "@suss/manifest-aws";
@@ -66,7 +66,9 @@ function tableSummary(opts: {
   // The rest of the template refers to a table by its logical id, so
   // that is the container, and a stated TableName is the other name
   // code can spell. The storage pass matches an access against either.
-  const physicalTable = props.TableName;
+  // A TableName built at deploy time is recorded with its parameter as
+  // a hole, since code that builds the same name pairs on the rest.
+  const physicalTable = readPhysicalName(props.TableName);
   const name =
     shape.accessPath === null ? logicalId : `${logicalId}#${shape.accessPath}`;
 
@@ -104,10 +106,21 @@ function tableSummary(opts: {
           ...(types.has(field) ? { type: types.get(field) } : {}),
           primary: true,
         })),
-        ...(typeof physicalTable === "string" ? { physicalTable } : {}),
+        ...(physicalTable !== null ? { physicalTable } : {}),
       },
     },
   };
+}
+
+/** A stated name, or the pattern one an `Fn::Sub` builds. */
+function readPhysicalName(declared: unknown): string | null {
+  if (typeof declared === "string") {
+    return declared;
+  }
+  if (typeof declared !== "object" || declared === null) {
+    return null;
+  }
+  return namePatternFromSub((declared as { "Fn::Sub"?: unknown })["Fn::Sub"]);
 }
 
 /**
