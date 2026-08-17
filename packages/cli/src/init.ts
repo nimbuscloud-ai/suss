@@ -230,6 +230,14 @@ const BY_DEPENDENCY: Array<{
   },
   {
     ecosystem: "npm",
+    dependency: "@aws-sdk/client-s3",
+    name: "aws-s3",
+    packageName: "@suss/framework-aws-s3",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
     dependency: "@apollo/client",
     name: "apollo-client",
     packageName: "@suss/client-apollo",

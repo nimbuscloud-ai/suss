@@ -1,0 +1,65 @@
+{
+  "name": "@suss/framework-aws-s3",
+  "version": "0.6.0",
+  "type": "module",
+  "description": "Recognize AWS S3 object calls in TypeScript code and emit storage-access effects.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "s3",
+    "aws",
+    "storage"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/aws-s3#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/framework/aws-s3"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "ts-morph": ">=20"
+  },
+  "dependencies": {
+    "@suss/adapter-typescript": "0.6.0",
+    "@suss/behavioral-ir": "0.6.0",
+    "@suss/extractor": "0.6.0"
+  },
+  "devDependencies": {
+    "@suss/test-project": "*",
+    "ts-morph": "*",
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

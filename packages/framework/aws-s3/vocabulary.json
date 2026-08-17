@@ -1,0 +1,9 @@
+{
+  "s3": "AWS transport name, Amazon S3",
+  "Bucket": "S3 command input: which bucket",
+  "Key": "S3 command input: which object",
+  "Prefix": "S3 command input: which objects a listing asks for",
+  "read": "suss: access kind",
+  "write": "suss: access kind",
+  "param": "suss: what an unnamed part of a name is called"
+}

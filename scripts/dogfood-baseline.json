@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 50,
-    "packagesWithExports": 50,
-    "exports": 446,
-    "internal": 1739,
-    "consumers": 720,
-    "pairs": 713
+    "packages": 51,
+    "packagesWithExports": 51,
+    "exports": 449,
+    "internal": 1745,
+    "consumers": 723,
+    "pairs": 716
   },
   "packages": {
     "packages/adapter/python": {
@@ -169,6 +169,12 @@
       "exports": 4,
       "internal": 14,
       "consumers": 9
+    },
+    "packages/framework/aws-s3": {
+      "name": "@suss/framework-aws-s3",
+      "exports": 3,
+      "internal": 6,
+      "consumers": 3
     },
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",

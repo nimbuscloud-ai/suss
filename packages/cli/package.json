@@ -82,6 +82,7 @@
     "@suss/framework-aws-dynamodb": "0.6.0",
     "@suss/framework-aws-eventbridge": "0.6.0",
     "@suss/framework-aws-lambda": "0.6.0",
+    "@suss/framework-aws-s3": "0.6.0",
     "@suss/framework-aws-sqs": "0.6.0",
     "@suss/framework-drizzle": "0.6.0",
     "@suss/framework-express": "0.6.0",
