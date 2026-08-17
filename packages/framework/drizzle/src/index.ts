@@ -144,12 +144,18 @@ function sqlTextOf(argument: Node | undefined): string | null {
     if (N.isNoSubstitutionTemplateLiteral(template)) {
       return template.getLiteralValue();
     }
-    return sqlFromParts([
-      template.getHead().getLiteralText(),
-      ...template
-        .getTemplateSpans()
-        .map((span) => span.getLiteral().getLiteralText()),
-    ]);
+    const spans = template.getTemplateSpans();
+    return sqlFromParts(
+      [
+        template.getHead().getLiteralText(),
+        ...spans.map((span) => span.getLiteral().getLiteralText()),
+      ],
+      // A statement that interpolates a table interpolates the schema
+      // object, so the name it declares is what belongs in the text.
+      // Everything else is a value, and a parameter is what a value
+      // would have been.
+      spans.map((span) => resolveTableName(span.getExpression())),
+    );
   }
   if (N.isStringLiteral(argument)) {
     return argument.getLiteralValue();

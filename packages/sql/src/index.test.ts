@@ -83,6 +83,45 @@ describe("what a statement touches", () => {
     ).toEqual(["users", "sessions"]);
   });
 
+  it("reads the tables inside a WITH clause, not the names it gives them", () => {
+    expect(
+      readSqlAccess(
+        "WITH recent AS (SELECT id, tenant_id FROM searchable WHERE tenant_id = $1) SELECT r.id FROM recent r",
+      ),
+    ).toEqual([
+      {
+        table: "searchable",
+        kind: "read",
+        fields: ["id", "tenant_id"],
+        selector: ["tenant_id"],
+      },
+    ]);
+  });
+
+  it("reads every table a WITH clause of several queries touches", () => {
+    expect(
+      readSqlAccess(
+        "WITH terms AS (SELECT q FROM queries), rows AS (SELECT id FROM searchable) SELECT r.id FROM rows r, terms t",
+      ).map((access) => access.table),
+    ).toEqual(["queries", "searchable"]);
+  });
+
+  it("reads a WITH clause beside a table the outer query reads itself", () => {
+    expect(
+      readSqlAccess(
+        "WITH recent AS (SELECT id FROM searchable) SELECT r.id, u.email FROM recent r JOIN users u ON u.id = r.id",
+      ).map((access) => access.table),
+    ).toEqual(["users", "searchable"]);
+  });
+
+  it("reads a WITH clause that feeds another one", () => {
+    expect(
+      readSqlAccess(
+        "WITH a AS (SELECT id FROM searchable), b AS (SELECT id FROM a) SELECT id FROM b",
+      ).map((access) => access.table),
+    ).toEqual(["searchable"]);
+  });
+
   it("does not report a select that reads from nothing", () => {
     expect(readSqlAccess("SELECT 1")).toEqual([]);
     expect(readSqlAccess("SELECT NOW()")).toEqual([]);

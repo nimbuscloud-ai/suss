@@ -74,20 +74,33 @@ export function readSqlAccess(
     return [];
   }
   const statements = Array.isArray(parsed) ? parsed : [parsed];
-  return statements.flatMap((statement) => accessesIn(statement));
+  return statements.flatMap((statement) => accessesIn(statement, new Set()));
 }
 
 /**
  * The SQL a tagged template states, with each interpolation written as
  * a parameter. What a query interpolates is a value nearly every time,
  * and a parameter is how the statement would carry one anyway, so the
- * text parses as what it means. An interpolation that is a table or a
- * whole clause makes the statement unreadable, which is the right
- * answer for a query nobody can settle without running it.
+ * text parses as what it means.
+ *
+ * A caller that knows what an interpolation is passes it in
+ * `substitutions`, which is how a table interpolated as an object
+ * reaches the statement as its own name. An interpolation nobody can
+ * settle stays a parameter, and a statement that needed one somewhere a
+ * parameter cannot go reads as nothing.
  */
-export function sqlFromParts(parts: readonly string[]): string {
+export function sqlFromParts(
+  parts: readonly string[],
+  substitutions: ReadonlyArray<string | null> = [],
+): string {
   return parts
-    .map((part, index) => (index === 0 ? part : `$${index}${part}`))
+    .map((part, index) => {
+      if (index === 0) {
+        return part;
+      }
+      const settled = substitutions[index - 1];
+      return `${settled ?? `$${index}`}${part}`;
+    })
     .join("");
 }
 
@@ -96,13 +109,18 @@ interface Node {
   [key: string]: unknown;
 }
 
-function accessesIn(statement: unknown): SqlAccess[] {
+/**
+ * `defined` is every name a `WITH` clause above this one states, since
+ * a query inside one can read from a sibling and that is a name rather
+ * than a table.
+ */
+function accessesIn(statement: unknown, defined: Set<string>): SqlAccess[] {
   const node = asNode(statement);
   if (node === null) {
     return [];
   }
   if (node.type === "select") {
-    return selectAccesses(node);
+    return selectAccesses(node, defined);
   }
   if (node.type === "insert") {
     return oneAccess(firstTable(node.table), {
@@ -143,10 +161,31 @@ function oneAccess(
  * settle which table an unqualified column comes from, so it is left
  * out rather than attributed to all of them.
  */
-function selectAccesses(statement: Node): SqlAccess[] {
+function selectAccesses(statement: Node, outer: Set<string>): SqlAccess[] {
+  // A `WITH` clause states its own queries and gives each a name the
+  // rest of the statement reads from. Those names are the query's own,
+  // so the tables are inside the clause and the names themselves are
+  // not tables at all.
+  const names = new Set(outer);
+  const inside: SqlAccess[] = [];
+  for (const entry of Array.isArray(statement.with) ? statement.with : []) {
+    const cte = asNode(entry);
+    if (cte === null) {
+      continue;
+    }
+    const name = columnName(cte.name);
+    if (name === null) {
+      continue;
+    }
+    // A query in a `WITH` can read a sibling stated before it, so the
+    // names go in as each one is read.
+    inside.push(...accessesIn(cte.stmt, names));
+    names.add(name);
+  }
+
   const tables = tablesIn(statement.from);
   if (tables.size === 0) {
-    return [];
+    return inside;
   }
   const named = [...new Set(tables.values())];
   const only = named.length === 1 ? (named[0] ?? null) : null;
@@ -174,12 +213,15 @@ function selectAccesses(statement: Node): SqlAccess[] {
     record(selectors, ref.table, ref.field);
   }
 
-  return named.map((table) => ({
-    table,
-    kind: "read" as const,
-    fields: [...(fields.get(table) ?? [])],
-    selector: [...(selectors.get(table) ?? [])],
-  }));
+  const own = named
+    .filter((table) => !names.has(table))
+    .map((table) => ({
+      table,
+      kind: "read" as const,
+      fields: [...(fields.get(table) ?? [])],
+      selector: [...(selectors.get(table) ?? [])],
+    }));
+  return [...own, ...inside];
 }
 
 /**

@@ -397,6 +397,29 @@ describe("drizzle raw SQL", () => {
     });
   });
 
+  it("reads a statement that interpolates the table object, which is how a schema is written", () => {
+    const effects = rawEffects(`
+      import { drizzle, sql } from "drizzle-orm";
+      import { users } from "./schema";
+      const db = drizzle({} as never);
+      export async function touch(id: string) {
+        return db.execute(sql\`UPDATE \${users} SET name = \${id} WHERE id = \${id}\`);
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    const effect = effects[0];
+    if (effect?.type !== "interaction") {
+      throw new Error("expected an interaction");
+    }
+    expect(effect.binding.semantics).toMatchObject({ container: "users" });
+    expect(effect.interaction).toMatchObject({
+      kind: "write",
+      fields: ["name"],
+      selector: ["id"],
+    });
+  });
+
   it("says nothing about a statement it cannot read", () => {
     expect(
       rawEffects(`
