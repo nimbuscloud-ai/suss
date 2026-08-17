@@ -50,6 +50,7 @@ export type {
   PrefixTrailingSlash,
   PythonDiscoveryPattern,
   PythonPack,
+  RawSqlPattern,
   RouteConventions,
   RouterComposition,
   StoragePattern,

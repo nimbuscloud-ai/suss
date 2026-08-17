@@ -106,6 +106,7 @@ export async function extractPythonProject(
     pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
+  const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
   const needsValues = mountsRouters || storagePatterns.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns.
@@ -147,7 +148,7 @@ export async function extractPythonProject(
       absoluteFile: file,
       routerIndex,
       gapHandling,
-      ...(storagePatterns.length > 0
+      ...(storagePatterns.length > 0 || rawSqlPatterns.length > 0
         ? {
             storage: {
               facts: db,
@@ -156,6 +157,7 @@ export async function extractPythonProject(
               definitionAt: (key: string) => definitions.get(key),
               couldMatch,
               leadsToStorage,
+              rawSql: rawSqlPatterns,
             },
           }
         : {}),

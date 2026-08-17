@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 10 consumers unpaired, plus the
+The run leaves 134 providers and 11 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -196,20 +196,23 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 10 unmatched consumers are member calls on a returned or
+**The 11 unmatched consumers are member calls on a returned or
 parsed value**, like `checkAll(...).findings.filter(...)`,
-`SuppressionFileSchema.safeParse(...)`, and the drizzle and prisma
-packs' `readSqlAccess(...).map(...)`. The consumer records the
+`SuppressionFileSchema.safeParse(...)`, and the packs that read SQL
+calling `readSqlAccess(...).map(...)`. The consumer records the
 whole member chain as its export path, so it asks for
 `@suss/sql::readSqlAccess.map`, and nothing publishes a provider
-under that key. Every one is an array or object method on a value
-an import returned, which is not a boundary anyone declares.
+under that key.
 
-This number now grows with every pack that reads SQL, which is the
-sign it should be fixed rather than raised again. An export path
-may run through a property access on the imported binding, the way
-`z.object` does, and it should stop at a property access on a call
-*result*. Issue #408 has the change. This is the number
+The number grows with every pack that reads SQL, so it wants a fix
+rather than another raise, and the shape of that fix is not what it
+first looks like. Stopping the export path at a call breaks factory
+tracking, which exists so that `const c = factory(); c.method()`
+records `pkg::factory.method`: an SDK client's method is a boundary
+even though the client is a returned value. Telling the two apart
+means asking whether the method is declared on a type the package
+itself exports, which is a type question rather than a syntax one.
+Issue #408 has the measurement. This is the number
 `dogfoodInvariants.mjs` puts a ceiling on, because what bounds
 it is how well suss resolves rather than how large this repo is.
 
