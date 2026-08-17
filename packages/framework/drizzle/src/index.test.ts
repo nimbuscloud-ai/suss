@@ -52,10 +52,12 @@ function makeProject(userSource: string): SourceFile {
         delete(table: unknown): DeleteChain;
         transaction<T>(fn: (tx: DrizzleDatabase) => Promise<T>): Promise<T>;
         query: Record<string, QueryTable>;
+        execute(statement: unknown): Promise<unknown>;
       }
       export declare function drizzle(client: unknown, config?: unknown): DrizzleDatabase;
       export declare function eq(a: unknown, b: unknown): unknown;
       export declare function and(...conditions: unknown[]): unknown;
+      export declare function sql(strings: TemplateStringsArray, ...values: unknown[]): unknown;
     `,
   );
   project.createSourceFile(
@@ -307,5 +309,103 @@ describe("drizzle recognizer — negatives", () => {
     const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     expect(tableOf(effects[0])).toBeNull();
+  });
+});
+
+describe("drizzle raw SQL", () => {
+  function rawEffects(source: string): Effect[] {
+    const sourceFile = makeProject(source);
+    const recognizers = drizzleFramework().invocationRecognizers ?? [];
+    const effects: Effect[] = [];
+    sourceFile.forEachDescendant((node) => {
+      if (!Node.isCallExpression(node)) {
+        return;
+      }
+      const ctx = {
+        call: node as CallExpression,
+        sourceFile,
+        extractArgs: () => [],
+      };
+      for (const recognizer of recognizers) {
+        const emitted = recognizer(node, ctx);
+        if (emitted !== null) {
+          effects.push(...emitted);
+        }
+      }
+    });
+    return effects;
+  }
+
+  it("reads the tables a statement touches, and what it picks rows by", () => {
+    const effects = rawEffects(`
+      import { drizzle, sql } from "drizzle-orm";
+      const db = drizzle({} as never);
+      export async function activeUsers(tenant: string) {
+        return db.execute(sql\`SELECT id, email FROM users WHERE tenant_id = \${tenant}\`);
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    const effect = effects[0];
+    if (effect?.type !== "interaction") {
+      throw new Error("expected an interaction");
+    }
+    expect(effect.binding.semantics).toMatchObject({ container: "users" });
+    expect(effect.interaction).toMatchObject({
+      kind: "read",
+      fields: ["id", "email"],
+      selector: ["tenant_id"],
+    });
+  });
+
+  it("gives a join one effect per table, which the query builder path never did", () => {
+    const effects = rawEffects(`
+      import { drizzle, sql } from "drizzle-orm";
+      const db = drizzle({} as never);
+      export async function ordersFor(id: string) {
+        return db.execute(sql\`SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id = \${id}\`);
+      }
+    `);
+
+    expect(
+      effects.map((effect) =>
+        effect.type === "interaction" &&
+        effect.binding.semantics.name === "storage"
+          ? effect.binding.semantics.container
+          : null,
+      ),
+    ).toEqual(["users", "orders"]);
+  });
+
+  it("reads a write as a write", () => {
+    const effects = rawEffects(`
+      import { drizzle, sql } from "drizzle-orm";
+      const db = drizzle({} as never);
+      export async function touch(id: string) {
+        return db.execute(sql\`UPDATE users SET last_seen = NOW() WHERE id = \${id}\`);
+      }
+    `);
+
+    const effect = effects[0];
+    if (effect?.type !== "interaction") {
+      throw new Error("expected an interaction");
+    }
+    expect(effect.interaction).toMatchObject({
+      kind: "write",
+      fields: ["last_seen"],
+      selector: ["id"],
+    });
+  });
+
+  it("says nothing about a statement it cannot read", () => {
+    expect(
+      rawEffects(`
+        import { drizzle, sql } from "drizzle-orm";
+        const db = drizzle({} as never);
+        export async function mystery(table: string) {
+          return db.execute(sql\`SELECT * FROM \${table}\`);
+        }
+      `),
+    ).toEqual([]);
   });
 });

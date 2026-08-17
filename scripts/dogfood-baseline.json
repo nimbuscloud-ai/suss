@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 47,
-    "packagesWithExports": 47,
-    "exports": 439,
-    "internal": 1706,
-    "consumers": 699,
-    "pairs": 691
+    "packages": 48,
+    "packagesWithExports": 48,
+    "exports": 441,
+    "internal": 1720,
+    "consumers": 703,
+    "pairs": 694
   },
   "packages": {
     "packages/adapter/python": {
@@ -173,8 +173,8 @@
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
       "exports": 2,
-      "internal": 14,
-      "consumers": 2
+      "internal": 15,
+      "consumers": 6
     },
     "packages/framework/express": {
       "name": "@suss/framework-express",
@@ -289,6 +289,12 @@
       "exports": 10,
       "internal": 25,
       "consumers": 5
+    },
+    "packages/sql": {
+      "name": "@suss/sql",
+      "exports": 2,
+      "internal": 13,
+      "consumers": 0
     }
   }
 }

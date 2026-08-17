@@ -1,22 +1,21 @@
 {
-  "name": "@suss/framework-drizzle",
+  "name": "@suss/sql",
   "version": "0.5.11",
   "type": "module",
-  "description": "Recognize Drizzle ORM query-builder calls in TypeScript code and emit storage-access interaction effects.",
+  "description": "Read what a SQL statement touches: the tables, the fields, and what it picks rows by.",
   "keywords": [
     "suss",
     "behavioral-summary",
-    "drizzle",
-    "orm",
-    "storage"
+    "sql",
+    "postgres"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/drizzle#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/sql#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/framework/drizzle"
+    "directory": "packages/sql"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -34,7 +33,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "scripts": {
     "build": "tsup",
@@ -44,18 +44,8 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
-  "peerDependencies": {
-    "ts-morph": ">=20"
-  },
-  "dependencies": {
-    "@suss/adapter-typescript": "0.5.11",
-    "@suss/behavioral-ir": "0.5.11",
-    "@suss/extractor": "0.5.11",
-    "@suss/sql": "0.5.11"
-  },
   "devDependencies": {
-    "@suss/test-project": "*",
-    "ts-morph": "*",
+    "node-sql-parser": "^5.4.0",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

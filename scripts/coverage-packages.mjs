@@ -38,6 +38,7 @@ export const coveragePackages = [
   ["packages/framework/nestjs-graphql", "nestjs-graphql"],
   ["packages/framework/prisma", "prisma"],
   ["packages/framework/drizzle", "drizzle"],
+  ["packages/sql", "sql"],
   ["packages/framework/aws-dynamodb", "aws-dynamodb"],
   ["packages/framework/aws-sqs", "aws-sqs"],
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],

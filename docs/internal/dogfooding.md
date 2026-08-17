@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 8 consumers unpaired, plus the
+The run leaves 134 providers and 9 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -196,11 +196,14 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 8 unmatched consumers are member calls on a returned or
-parsed value**, like `checkAll(...).findings.filter(...)` and
-`SuppressionFileSchema.safeParse(...)`. The consumer records the
-whole member chain as its export path, and nothing publishes a
-provider under that key. This is the number
+**The 9 unmatched consumers are member calls on a returned or
+parsed value**, like `checkAll(...).findings.filter(...)`,
+`SuppressionFileSchema.safeParse(...)`, and the drizzle pack's
+`readSqlAccess(...).map(...)`. The consumer records the whole
+member chain as its export path, so it asks for
+`@suss/sql::readSqlAccess.map`, and nothing publishes a provider
+under that key. Every one is an array or object method on a value
+an import returned, which is not a boundary anyone declares. This is the number
 `dogfoodInvariants.mjs` puts a ceiling on, because what bounds
 it is how well suss resolves rather than how large this repo is.
 
@@ -223,7 +226,7 @@ no git ref involved:
    export path we build a pairing key from. The transitive closure
    is the exception, since a helper we reached is not on a
    boundary.
-3. No more than eight consumers go unpaired while their provider
+3. No more than nine consumers go unpaired while their provider
    is in the same run.
 
 These stay true whatever the source looks like. Move an export
@@ -283,7 +286,7 @@ public exports of the two checker packages and runs the CLI's
 `check` against the intent specs under `intent/`, asking whether
 those exports still behave the way the specs say. It reports and
 never fails. The dogfood run asks how much of its own source suss
-can see at all, across all 47 packages, and it does fail. Neither
+can see at all, across all 48 packages, and it does fail. Neither
 one replaces the other. `check:self` covers two packages in depth
 against intent someone wrote by hand, and the dogfood run covers
 the whole workspace by breadth.
