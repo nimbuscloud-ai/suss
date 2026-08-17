@@ -1,6 +1,9 @@
 /**
- * A message bus (SQS, SNS, S3, EventBridge, BullMQ, Kafka, NATS) as a
- * boundary.
+ * A message bus (SQS, SNS, S3, EventBridge, BullMQ, Kafka, NATS,
+ * Cloudflare Queues) as a boundary. A trigger that delivers events
+ * nobody published is here too: a Cloudflare cron trigger and a tail
+ * Worker each receive on a wire with no producer, the same way an
+ * EventBridge schedule does.
  *
  * Producers send to a channel and consumers receive from it. What goes
  * in the channel string depends on the bus. SQS keys it on the one
@@ -28,6 +31,9 @@ export const MessageBusSemanticsSchema = z.object({
     "bullmq",
     "kafka",
     "nats",
+    "cloudflare-queues",
+    "cloudflare-cron",
+    "cloudflare-tail",
   ]),
   /**
    * Stable channel identifier: a CFN logical id, a queue or topic name,

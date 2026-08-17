@@ -1,6 +1,7 @@
 /**
  * One thing that gets deployed and runs on its own: a Lambda function,
- * an ECS task's container, a plain container, or a k8s deployment.
+ * an ECS task's container, a plain container, a k8s deployment, or an
+ * edge worker.
  */
 
 import { z } from "zod";
@@ -8,7 +9,8 @@ import { z } from "zod";
 /**
  * `instanceName` is the stable identifier the deployment medium uses:
  * the CFN logical resource id for Lambda and ECS, the deployment name
- * for k8s, the container name for a plain container.
+ * for k8s, the container name for a plain container, and the script
+ * name for an edge worker.
  */
 export const DeployableUnitSchema = z.object({
   deploymentTarget: z.enum([
@@ -16,6 +18,7 @@ export const DeployableUnitSchema = z.object({
     "ecs-task",
     "container",
     "k8s-deployment",
+    "worker",
   ]),
   // An empty name would agree with every other empty name, so a unit
   // with no name has to leave the field off instead.

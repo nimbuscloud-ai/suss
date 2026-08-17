@@ -364,3 +364,40 @@ describe("contract CLI command", () => {
     });
   });
 });
+
+describe("contract --from wrangler", () => {
+  let workerDir: string;
+
+  beforeEach(() => {
+    workerDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-wrangler-cli-"));
+    fs.writeFileSync(
+      path.join(workerDir, "wrangler.toml"),
+      `name = "greeting-router"
+main = "src/index.ts"
+
+[vars]
+GREETING_TABLE = "prod-greetings-v2"
+
+[[queues.consumers]]
+queue = "greeting-events"
+`,
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(workerDir, { recursive: true });
+  });
+
+  it("reads a Worker's configuration from the directory it is in", async () => {
+    const out = path.join(workerDir, "summaries.json");
+    const summaries = await contract({
+      from: "wrangler",
+      spec: workerDir,
+      output: out,
+    });
+    expect(
+      summaries.map((s) => s.identity.boundaryBinding?.semantics.name).sort(),
+    ).toEqual(["message-bus", "runtime-config"]);
+    expect(JSON.parse(fs.readFileSync(out, "utf8"))).toHaveLength(2);
+  });
+});

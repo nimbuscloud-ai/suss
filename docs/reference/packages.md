@@ -22,6 +22,7 @@ Common combinations:
 | Next.js route handlers | `@suss/framework-nextjs` |
 | React + GraphQL | `@suss/framework-react @suss/client-apollo` |
 | Lambda + SQS | `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/runtime-node` |
+| Cloudflare Worker | `@suss/framework-cloudflare-workers @suss/contract-wrangler` |
 | App backed by Postgres (Prisma) | add `@suss/framework-prisma @suss/contract-prisma` to any of the above |
 | App backed by Postgres (Drizzle) | add `@suss/framework-drizzle` to any of the above |
 
@@ -72,6 +73,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
 | [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
 | [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`@suss/framework-cloudflare-workers`](../../packages/framework/cloudflare-workers) | A Cloudflare Workers entrypoint: one unit per trigger the default export defines, and the bindings its code reads off the argument they arrive in. | ![](../../.github/badges/coverage-cloudflare-workers.svg) |
 | [`@suss/framework-flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module that re-exports the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
 | [`@suss/framework-fastapi`](../../packages/framework/fastapi) | FastAPI routes (Python): the verb comes from the decorator's own attribute name, `APIRouter` prefixes are composed one `include_router` hop deep, and `response_model` / `status_code` are taken as the declared contract. | ![](../../.github/badges/coverage-fastapi.svg) |
 | [`@suss/framework-sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
@@ -101,6 +103,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/contract-aws-apigateway`](../../packages/contract/aws-apigateway) | API Gateway resource semantics, REST / HTTP API configs → summaries with platform-injected transitions. | ![](../../.github/badges/coverage-contract-aws-apigateway.svg) |
 | [`@suss/contract-cloudformation`](../../packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). | ![](../../.github/badges/coverage-contract-cloudformation.svg) |
 | [`@suss/contract-serverless`](../../packages/contract/serverless) | Serverless Framework service files → summaries. The reader restates the functions block in SAM's forms and hands it to contract-cloudformation, so a route, a queue consumer or an environment contract comes out the same whichever manifest language declared it. `${self:}` resolves against the document; a deploy-time reference keeps its token. | ![](../../.github/badges/coverage-contract-serverless.svg) |
+| [`@suss/contract-wrangler`](../../packages/contract/wrangler) | A Cloudflare Worker's `wrangler.toml` or `wrangler.jsonc` → the Worker as a deployable with the configuration it is given (values included, so a store addressed through a variable resolves), plus a summary per KV namespace, R2 bucket, D1 database and Queues channel it is bound to. | ![](../../.github/badges/coverage-contract-wrangler.svg) |
 | [`@suss/contract-appsync`](../../packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. | ![](../../.github/badges/coverage-contract-appsync.svg) |
 | [`@suss/contract-storybook`](../../packages/contract/storybook) | Storybook CSF3 stories → component contract summaries. | ![](../../.github/badges/coverage-contract-storybook.svg) |
 | [`@suss/contract-prisma`](../../packages/contract/prisma) | Prisma schema → storage provider summaries. | ![](../../.github/badges/coverage-contract-prisma.svg) |

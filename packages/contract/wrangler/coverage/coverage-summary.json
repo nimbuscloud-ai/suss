@@ -1,0 +1,138 @@
+{
+  "total": {
+    "lines": {
+      "total": 103,
+      "covered": 96,
+      "skipped": 0,
+      "pct": 93.2
+    },
+    "statements": {
+      "total": 103,
+      "covered": 96,
+      "skipped": 0,
+      "pct": 93.2
+    },
+    "functions": {
+      "total": 19,
+      "covered": 19,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 88,
+      "covered": 75,
+      "skipped": 0,
+      "pct": 85.22
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": "Unknown"
+    }
+  },
+  "src/bindings.ts": {
+    "lines": {
+      "total": 31,
+      "covered": 29,
+      "skipped": 0,
+      "pct": 93.54
+    },
+    "functions": {
+      "total": 7,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 31,
+      "covered": 29,
+      "skipped": 0,
+      "pct": 93.54
+    },
+    "branches": {
+      "total": 29,
+      "covered": 23,
+      "skipped": 0,
+      "pct": 79.31
+    }
+  },
+  "src/document.ts": {
+    "lines": {
+      "total": 17,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 82.35
+    },
+    "functions": {
+      "total": 3,
+      "covered": 3,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 17,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 82.35
+    },
+    "branches": {
+      "total": 13,
+      "covered": 11,
+      "skipped": 0,
+      "pct": 84.61
+    }
+  },
+  "src/index.ts": {
+    "lines": {
+      "total": 25,
+      "covered": 24,
+      "skipped": 0,
+      "pct": 96
+    },
+    "functions": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 25,
+      "covered": 24,
+      "skipped": 0,
+      "pct": 96
+    },
+    "branches": {
+      "total": 17,
+      "covered": 16,
+      "skipped": 0,
+      "pct": 94.11
+    }
+  },
+  "src/runtimeConfig.ts": {
+    "lines": {
+      "total": 30,
+      "covered": 29,
+      "skipped": 0,
+      "pct": 96.66
+    },
+    "functions": {
+      "total": 5,
+      "covered": 5,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 30,
+      "covered": 29,
+      "skipped": 0,
+      "pct": 96.66
+    },
+    "branches": {
+      "total": 29,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 86.2
+    }
+  }
+}

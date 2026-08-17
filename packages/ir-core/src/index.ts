@@ -69,6 +69,8 @@ export type BoundaryBinding = z.infer<typeof BoundaryBindingSchema>;
 
 export { ecsContainerInstanceName } from "./deployableUnit.js";
 
+import type { DeployableUnit } from "./deployableUnit.js";
+
 export type { DeployableUnit } from "./deployableUnit.js";
 // TypeShape is a hand-written named recursive type in ./schemas (re-exported
 // here) rather than a `z.infer`, so cross-package declarations reference it
@@ -317,7 +319,7 @@ export function isGraphqlOperationBinding(
  */
 export function runtimeConfigBinding(opts: {
   recognition: string;
-  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment";
+  deploymentTarget: DeployableUnit["deploymentTarget"];
   instanceName: string;
 }): BoundaryBinding {
   return {

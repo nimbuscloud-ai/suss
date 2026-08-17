@@ -1,7 +1,8 @@
 // runtimeConfigPairing.ts: pair runtime-config provider summaries
 // (CFN/SAM Lambda env-var declarations, ECS task definitions, etc.)
-// against code reads of `process.env.X` from source files within the
-// runtime's declared codeScope.
+// against config reads in source files within the runtime's declared
+// codeScope: `process.env.X` in a Node process, `env.X` on an edge
+// worker, whichever pack recognized them.
 //
 // Three findings:
 //   - envVarUnprovided   (error)  : code reads X, runtime doesn't supply
@@ -37,13 +38,8 @@ import {
 import { fileInCodeScope } from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
-import { buildModuleGraph, entryClosure } from "../scope/entryClosure.js";
-import {
-  contestedFiles,
-  readCodeScope,
-  runsIn,
-  unitsByFile,
-} from "../scope/unitScope.js";
+import { contestedFiles, runsIn, unitsByFile } from "../scope/unitScope.js";
+import { isRuntimeConfigProvider, placeRuntimes } from "./placement.js";
 
 import type {
   BehavioralSummary,
@@ -57,7 +53,8 @@ import type {
   InteractionIndex,
   InteractionRecord,
 } from "../interactions/dispatcher.js";
-import type { UnitScope, UnitsByFile } from "../scope/unitScope.js";
+import type { UnitsByFile } from "../scope/unitScope.js";
+import type { PlacedRuntime } from "./placement.js";
 
 interface ScopedRuntime {
   runtime: BehavioralSummary;
@@ -70,13 +67,6 @@ interface ScopedRuntime {
    * reads is not a variable nothing reads.
    */
   readNames: Set<string>;
-}
-
-/** A runtime and the answer to "which code runs in it". */
-interface PlacedRuntime {
-  runtime: BehavioralSummary;
-  binding: BoundaryBinding;
-  scope: UnitScope;
 }
 
 interface EnvVarRead {
@@ -104,7 +94,6 @@ export function checkRuntimeConfig(
 ): Finding[] {
   const findings: Finding[] = [];
 
-  const runtimes = summaries.filter(isRuntimeConfigProvider);
   const byFile = unitsByFile(summaries);
   // Index the read sites once so each provider doesn't re-scan the
   // full summary set. Code summaries are everything that ISN'T a
@@ -116,37 +105,11 @@ export function checkRuntimeConfig(
   );
   const codeReads = collected.reads;
 
-  const graph = buildModuleGraph(summaries);
-  const placed: PlacedRuntime[] = [];
-  for (const runtime of runtimes) {
-    const codeScope = readCodeScope(runtime);
-    const binding = runtime.identity.boundaryBinding;
-    if (binding === null) {
-      // Defensive: a runtime-config provider without a boundaryBinding
-      // shouldn't exist (the type-narrow above guarantees one). Skip
-      // rather than crash.
-      continue;
-    }
-
-    if (codeScope.kind === "unknown" || codeScope.path === undefined) {
-      findings.push(makeScopeUnknownFinding(runtime, binding));
-      continue;
-    }
-
-    const closure =
-      codeScope.entry !== undefined
-        ? entryClosure(codeScope.entry, graph)
-        : null;
-    placed.push({
-      runtime,
-      binding,
-      scope: {
-        unit: runtime.identity.deployableUnit,
-        codeScope: codeScope.path,
-        ...(closure !== null ? { closure } : {}),
-      },
-    });
+  const placement = placeRuntimes(summaries);
+  for (const { runtime, binding } of placement.unplaced) {
+    findings.push(makeScopeUnknownFinding(runtime, binding));
   }
+  const placed = placement.placed;
 
   const contested = contestedFiles(
     codeReads.map((r) => r.summary),
@@ -362,10 +325,6 @@ function readNamesPerDocument(
   return perDocument;
 }
 
-function isRuntimeConfigProvider(summary: BehavioralSummary): boolean {
-  return summary.identity.boundaryBinding?.semantics.name === "runtime-config";
-}
-
 function readProvidedEnvVars(summary: BehavioralSummary): string[] {
   return readRuntimeContractMetadata(summary)?.envVars ?? [];
 }
@@ -520,6 +479,27 @@ function instanceLabel(semantics: RuntimeConfigSemantics): string {
   return `${semantics.deploymentTarget}/${semantics.instanceName}`;
 }
 
+/**
+ * How code on each deployment medium spells a read. A Node process
+ * reaches for `process.env`; an edge worker is handed its configuration
+ * as an argument, and a finding that told its author to look at
+ * `process.env` would send them somewhere that does not exist.
+ */
+const CONFIG_READ_PREFIX: Record<
+  RuntimeConfigSemantics["deploymentTarget"],
+  string
+> = {
+  lambda: "process.env.",
+  "ecs-task": "process.env.",
+  container: "process.env.",
+  "k8s-deployment": "process.env.",
+  worker: "env.",
+};
+
+function readSpelling(semantics: RuntimeConfigSemantics, name: string): string {
+  return `${CONFIG_READ_PREFIX[semantics.deploymentTarget]}${name}`;
+}
+
 function makeUnprovidedFinding(
   runtime: BehavioralSummary,
   binding: BoundaryBinding,
@@ -532,7 +512,7 @@ function makeUnprovidedFinding(
     boundary: binding,
     provider: makeSide(runtime),
     consumer: makeSide(read.summary, read.transitionId),
-    description: `process.env.${read.name} read by ${read.summary.identity.name} (${instanceLabel(semantics)} scope) but ${semantics.instanceName} declares no ${read.name} in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.`,
+    description: `${readSpelling(semantics, read.name)} read by ${read.summary.identity.name} (${instanceLabel(semantics)} scope) but ${semantics.instanceName} declares no ${read.name} in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.`,
     severity: "error",
   };
 }
@@ -579,7 +559,7 @@ function makeUnusedFinding(
     // schema's required `consumer` field is satisfied without
     // inventing a phantom location.
     consumer: makeSide(runtime),
-    description: `${semantics.instanceName} declares environment variable ${varName} but no code in its codeScope reads process.env.${varName}.`,
+    description: `${semantics.instanceName} declares environment variable ${varName} but no code in its codeScope reads ${readSpelling(semantics, varName)}.`,
     severity: "warning",
   };
 }

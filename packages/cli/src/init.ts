@@ -16,6 +16,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { isConfigurationFile } from "@suss/contract-wrangler";
+
 import {
   readPythonDependencies,
   readRubyDependencies,
@@ -177,6 +179,22 @@ const BY_DEPENDENCY: Array<{
     dependency: "react",
     name: "react",
     packageName: "@suss/framework-react",
+    kind: "framework",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
+    dependency: "wrangler",
+    name: "cloudflare-workers",
+    packageName: "@suss/framework-cloudflare-workers",
+    kind: "framework",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
+    dependency: "@cloudflare/workers-types",
+    name: "cloudflare-workers",
+    packageName: "@suss/framework-cloudflare-workers",
     kind: "framework",
     language: "typescript",
   },
@@ -349,6 +367,12 @@ const BY_FILE: Array<{
     name: "serverless",
     packageName: "@suss/contract-serverless",
     describe: (p) => `a Serverless Framework service at ${p}`,
+  },
+  {
+    matches: (f) => isConfigurationFile(f),
+    name: "wrangler",
+    packageName: "@suss/contract-wrangler",
+    describe: (p) => `a Cloudflare Worker at ${p}`,
   },
   {
     matches: (f) => f === "schema.prisma",

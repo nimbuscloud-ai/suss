@@ -217,7 +217,8 @@
                               "lambda",
                               "ecs-task",
                               "container",
-                              "k8s-deployment"
+                              "k8s-deployment",
+                              "worker"
                             ]
                           },
                           "instanceName": {
@@ -295,7 +296,10 @@
                               "eventbridge",
                               "bullmq",
                               "kafka",
-                              "nats"
+                              "nats",
+                              "cloudflare-queues",
+                              "cloudflare-cron",
+                              "cloudflare-tail"
                             ]
                           },
                           "channel": {
@@ -332,7 +336,13 @@
             "properties": {
               "deploymentTarget": {
                 "type": "string",
-                "enum": ["lambda", "ecs-task", "container", "k8s-deployment"]
+                "enum": [
+                  "lambda",
+                  "ecs-task",
+                  "container",
+                  "k8s-deployment",
+                  "worker"
+                ]
               },
               "instanceName": {
                 "type": "string",
@@ -865,7 +875,8 @@
                                       "lambda",
                                       "ecs-task",
                                       "container",
-                                      "k8s-deployment"
+                                      "k8s-deployment",
+                                      "worker"
                                     ]
                                   },
                                   "instanceName": {
@@ -943,7 +954,10 @@
                                       "eventbridge",
                                       "bullmq",
                                       "kafka",
-                                      "nats"
+                                      "nats",
+                                      "cloudflare-queues",
+                                      "cloudflare-cron",
+                                      "cloudflare-tail"
                                     ]
                                   },
                                   "channel": {

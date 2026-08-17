@@ -154,6 +154,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "nestjs-graphql": "@suss/framework-nestjs-graphql",
   "nestjs-rest": "@suss/framework-nestjs-rest",
   "aws-lambda": "@suss/framework-aws-lambda",
+  "cloudflare-workers": "@suss/framework-cloudflare-workers",
   prisma: "@suss/framework-prisma",
   drizzle: "@suss/framework-drizzle",
   "aws-sqs": "@suss/framework-aws-sqs",
