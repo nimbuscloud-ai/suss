@@ -1,0 +1,9 @@
+{
+  "gcs": "Google Cloud Storage, the store this reads",
+  "bucket": "@google-cloud/storage: the call that says which bucket",
+  "file": "@google-cloud/storage: the call that says which object",
+  "getSignedUrl": "@google-cloud/storage: hands back a URL that reaches the object later",
+  "action": "@google-cloud/storage: what a signed URL is signed for",
+  "read": "suss: access kind",
+  "write": "suss: access kind"
+}

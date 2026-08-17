@@ -179,7 +179,7 @@ function threwWhileReading(
       const rest = funnel.failures.length - 1;
       const alsoIn =
         rest > 0
-          ? ` and on ${rest} other ${rest === 1 ? "file" : "files"}`
+          ? ` and on ${rest} ${rest === 1 ? "other file" : "other files"}`
           : "";
       return {
         label: funnel.pack,

@@ -160,6 +160,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "aws-eventbridge": "@suss/framework-aws-eventbridge",
   "aws-dynamodb": "@suss/framework-aws-dynamodb",
   "aws-s3": "@suss/framework-aws-s3",
+  gcs: "@suss/framework-gcs",
   redis: "@suss/framework-redis",
   fetch: "@suss/client-web",
   axios: "@suss/client-axios",

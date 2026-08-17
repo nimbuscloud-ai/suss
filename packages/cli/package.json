@@ -89,6 +89,7 @@
     "@suss/framework-fastapi": "0.6.0",
     "@suss/framework-fastify": "0.6.0",
     "@suss/framework-flask-restx": "0.6.0",
+    "@suss/framework-gcs": "0.6.0",
     "@suss/framework-graphql-ruby": "0.6.0",
     "@suss/framework-hono": "0.6.0",
     "@suss/framework-nestjs-graphql": "0.6.0",

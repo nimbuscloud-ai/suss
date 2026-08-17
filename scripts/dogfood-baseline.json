@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 52,
-    "packagesWithExports": 52,
-    "exports": 454,
-    "internal": 1753,
-    "consumers": 731,
-    "pairs": 724
+    "packages": 53,
+    "packagesWithExports": 53,
+    "exports": 457,
+    "internal": 1754,
+    "consumers": 736,
+    "pairs": 729
   },
   "packages": {
     "packages/adapter/python": {
@@ -211,6 +211,12 @@
       "exports": 2,
       "internal": 0,
       "consumers": 8
+    },
+    "packages/framework/gcs": {
+      "name": "@suss/framework-gcs",
+      "exports": 3,
+      "internal": 1,
+      "consumers": 5
     },
     "packages/framework/graphql-ruby": {
       "name": "@suss/framework-graphql-ruby",
