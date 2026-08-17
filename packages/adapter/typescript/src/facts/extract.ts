@@ -28,10 +28,18 @@ import {
   exportedDeclarationsOf,
   resolveAliasedSymbol,
 } from "../moduleExports.js";
-import { isWrittenAgain, writesToBinding } from "./assignments.js";
+import {
+  isWrittenAgain,
+  writesToBinding,
+  writesToField,
+} from "./assignments.js";
 
 import type { Database } from "@suss/datalog";
-import type { ClassDeclaration, VariableDeclaration } from "ts-morph";
+import type {
+  ClassDeclaration,
+  PropertyDeclaration,
+  VariableDeclaration,
+} from "ts-morph";
 
 /** Arity sugar over `Database.add`, which takes a tuple array. */
 function fact(db: Database, relation: string, ...tuple: string[]): void {
@@ -454,6 +462,25 @@ function emitBindingValues(
 }
 
 /**
+ * What a class field comes down to. `writesToField` says whether the
+ * field takes one value every reader sees, which is the case a
+ * constructor assignment makes, and a field it cannot settle is
+ * written down as nothing rather than as its first value.
+ */
+function emitFieldValues(
+  db: Database,
+  table: NodeTable,
+  declaration: PropertyDeclaration,
+): void {
+  const { values, inOrder } = writesToField(declaration);
+  const last = values[values.length - 1];
+  if (!inOrder || last === undefined) {
+    return;
+  }
+  fact(db, "binds", nodeId(declaration), emitValue(db, table, last));
+}
+
+/**
  * What a name taken off a container by destructuring comes down to.
  *
  * `const { handler } = holder` reads a property off a container, which
@@ -589,6 +616,12 @@ function emitReferenceFacts(
     if (Node.isVariableDeclaration(declaration)) {
       fact(db, "binds", referenceId, declarationId);
       emitBindingValues(db, table, declaration);
+      continue;
+    }
+
+    if (Node.isPropertyDeclaration(declaration)) {
+      fact(db, "binds", referenceId, declarationId);
+      emitFieldValues(db, table, declaration);
       continue;
     }
 

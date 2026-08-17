@@ -3,7 +3,7 @@
     "packages": 46,
     "packagesWithExports": 46,
     "exports": 436,
-    "internal": 1687,
+    "internal": 1691,
     "consumers": 695,
     "pairs": 687
   },
@@ -23,7 +23,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 33,
-      "internal": 604,
+      "internal": 608,
       "consumers": 45
     },
     "packages/behavioral-ir": {
