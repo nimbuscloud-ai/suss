@@ -65,6 +65,12 @@ const ALL_FIELDS = "*";
 export function checkStorage(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
+  /**
+   * Where to record what this pass compared. A report that counts only
+   * the boundaries pairing matched says nothing was compared on a run
+   * whose whole point was the stores.
+   */
+  compared?: Array<{ key: string; provider: string; consumer: string }>,
 ): Finding[] {
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
@@ -129,6 +135,14 @@ export function checkStorage(
         ) &&
         sameService(provider, a.summary),
     );
+
+    for (const access of inScope) {
+      compared?.push({
+        key: `${semantics.storageSystem}:${containerLabel(semantics)}`,
+        provider: provider.identity.name,
+        consumer: access.summary.identity.name,
+      });
+    }
 
     // Track field usage across all in-scope accesses for the
     // unused / write-only checks below. Two flags per declared

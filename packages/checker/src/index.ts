@@ -222,7 +222,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const interactionIndex = buildInteractionIndex(summaries);
 
   findings.push(...checkRuntimeConfig(summaries, interactionIndex));
-  findings.push(...checkStorage(summaries, interactionIndex));
+  findings.push(...checkStorage(summaries, interactionIndex, pairInfo));
   findings.push(...checkMessageBus(summaries, interactionIndex));
 
   return {
