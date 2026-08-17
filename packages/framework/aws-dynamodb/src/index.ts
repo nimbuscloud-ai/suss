@@ -259,7 +259,9 @@ function nameOfProperty(
   resolve: (value: Node) => Node | null,
 ): string | null {
   const written = property(input, name);
-  return written === null ? null : readName(written, { resolve });
+  return written === null
+    ? null
+    : readName(written, { resolve, unsettled: "reference" });
 }
 
 /**

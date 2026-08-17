@@ -4,6 +4,7 @@ import {
   namePatternFromSub,
   namePatternKey,
   namesAgree,
+  namesNothing,
 } from "./namePattern.js";
 
 describe("reading a name a template builds", () => {
@@ -72,5 +73,23 @@ describe("comparing two names", () => {
       namePatternKey("{StageName}-orders-v1"),
     );
     expect(namePatternKey("orders-v1")).toBe("orders-v1");
+  });
+});
+
+describe("a name that says only where to look", () => {
+  it("agrees with nothing, since it would otherwise agree with everything", () => {
+    expect(namesAgree("{location.bucket}", "reports-prod")).toBe(false);
+    expect(namesAgree("reports-prod", "{location.bucket}")).toBe(false);
+    expect(namesAgree("{location.bucket}", "{stage}-reports")).toBe(false);
+  });
+
+  it("is one hole and nothing else", () => {
+    expect(namesNothing("{bucket}")).toBe(true);
+    expect(namesNothing("{stage}-orders")).toBe(false);
+    expect(namesNothing("orders")).toBe(false);
+  });
+
+  it("still agrees when both sides state the same fixed text", () => {
+    expect(namesAgree("{stage}-orders", "staging-orders")).toBe(true);
   });
 });

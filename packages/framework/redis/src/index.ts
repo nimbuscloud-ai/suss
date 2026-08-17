@@ -123,14 +123,14 @@ export function redisRecognizer(call: unknown, ctx: unknown): Effect[] | null {
 
   const args = callNode.getArguments();
   const keys = (command.keys === "all" ? args : args.slice(0, 1))
-    .map((arg) => readName(arg, { resolve }))
+    .map((arg) => readName(arg, { resolve, unsettled: "reference" }))
     .filter((key): key is string => key !== null);
   const fields =
     command.fieldArg === undefined
       ? []
       : args
           .slice(command.fieldArg, command.fieldArg + 1)
-          .map((arg) => readName(arg, { resolve }))
+          .map((arg) => readName(arg, { resolve, unsettled: "reference" }))
           .filter((field): field is string => field !== null);
 
   return [

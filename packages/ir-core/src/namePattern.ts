@@ -42,6 +42,17 @@ export function namePatternFromSub(value: unknown): string | null {
   return value.replace(SUB_TOKEN, (_whole, inner: string) => `{${inner}}`);
 }
 
+/**
+ * Whether a name says only that somebody else knows it. A wrapper that
+ * takes its bucket as an argument states `{location.bucket}` and
+ * nothing more, which says which parameter to ask rather than which
+ * bucket. A name like that agrees with nothing until something grounds
+ * it, since otherwise it would agree with every name there is.
+ */
+export function namesNothing(name: string): boolean {
+  return /^\{[^}]*\}$/.test(name);
+}
+
 /** Whether a name has anything a source left for deploy time to fill. */
 export function hasNameHole(name: string): boolean {
   HOLE.lastIndex = 0;
@@ -77,6 +88,9 @@ function admits(pattern: string, name: string): boolean {
  * hardcoded what the other parameterized.
  */
 export function namesAgree(a: string, b: string): boolean {
+  if (namesNothing(a) || namesNothing(b)) {
+    return false;
+  }
   if (a === b) {
     return true;
   }

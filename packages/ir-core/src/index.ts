@@ -132,6 +132,7 @@ export {
   namePatternFromSub,
   namePatternKey,
   namesAgree,
+  namesNothing,
 } from "./namePattern.js";
 export {
   methodsAgree,

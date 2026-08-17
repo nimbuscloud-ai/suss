@@ -156,11 +156,15 @@ function walkChain(
     const argument = step.getArguments()[0];
     if (named === FILE_STEP && found.object === null) {
       found.object =
-        argument === undefined ? null : readName(argument, { resolve });
+        argument === undefined
+          ? null
+          : readName(argument, { resolve, unsettled: "reference" });
     }
     if (named === BUCKET_STEP && found.bucket === null) {
       found.bucket =
-        argument === undefined ? null : readName(argument, { resolve });
+        argument === undefined
+          ? null
+          : readName(argument, { resolve, unsettled: "reference" });
       return found;
     }
     step = callee.getExpression();

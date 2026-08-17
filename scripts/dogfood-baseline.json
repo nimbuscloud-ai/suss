@@ -2,7 +2,7 @@
   "totals": {
     "packages": 53,
     "packagesWithExports": 53,
-    "exports": 457,
+    "exports": 459,
     "internal": 1754,
     "consumers": 736,
     "pairs": 729
@@ -28,7 +28,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 53,
+      "exports": 54,
       "internal": 15,
       "consumers": 4
     },
@@ -292,7 +292,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 46,
+      "exports": 47,
       "internal": 10,
       "consumers": 0
     },

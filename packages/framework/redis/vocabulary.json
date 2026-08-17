@@ -5,5 +5,6 @@
   "iovalkey": "npm package: a Valkey client, forked from ioredis",
   "read": "suss: access kind",
   "redis": "the store, and the protocol Valkey speaks too",
+  "reference": "suss: what a reader says instead of a name when the name is somewhere else",
   "write": "suss: access kind"
 }

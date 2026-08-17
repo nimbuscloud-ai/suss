@@ -201,7 +201,7 @@ describe("a call down a bucket and file chain", () => {
     expect(interaction).not.toHaveProperty("selector");
   });
 
-  it("states no bucket when the chain never says which one", () => {
+  it("says which arguments a wrapper takes its bucket and object from", () => {
     const effects = effectsIn(`
       ${CLIENT}
       export async function read(name: string, path: string) {
@@ -210,8 +210,8 @@ describe("a call down a bucket and file chain", () => {
     `);
 
     const { semantics, interaction } = storageOf(effects[0]);
-    expect(semantics.container).toBeNull();
-    expect(interaction).not.toHaveProperty("selector");
+    expect(semantics.container).toBe("{name}");
+    expect(interaction).toMatchObject({ selector: ["{path}"] });
   });
 
   it("leaves a same-named method on something else alone", () => {

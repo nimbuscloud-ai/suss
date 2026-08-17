@@ -145,7 +145,7 @@ describe("a DynamoDB command", () => {
     expect(storageOf(effects[0]).semantics.container).toBe("mappings-v2");
   });
 
-  it("states no container when the table name only ever comes from the caller", () => {
+  it("says which constructor argument the table name comes from", () => {
     const effects = effectsIn(`
       ${IMPORTS}
       declare const client: DynamoDBDocumentClient;
@@ -160,7 +160,7 @@ describe("a DynamoDB command", () => {
       }
     `);
 
-    expect(storageOf(effects[0]).semantics.container).toBeNull();
+    expect(storageOf(effects[0]).semantics.container).toBe("{tableName}");
   });
 
   it("reads a table name joined with a plus the same way as a template", () => {
@@ -361,7 +361,7 @@ describe("a DynamoDB command", () => {
     expect(interaction).toMatchObject({ kind: "read", fields: ["orderId"] });
   });
 
-  it("states no container for a table name it cannot settle", () => {
+  it("says which value a table name it cannot settle comes from", () => {
     const effects = effectsIn(`
       ${IMPORTS}
       declare const client: DynamoDBDocumentClient;
@@ -373,7 +373,7 @@ describe("a DynamoDB command", () => {
       }
     `);
 
-    expect(storageOf(effects[0]).semantics.container).toBeNull();
+    expect(storageOf(effects[0]).semantics.container).toBe("{table}");
   });
 
   it("leaves a command class of the same name from somewhere else alone", () => {

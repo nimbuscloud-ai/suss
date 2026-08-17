@@ -60,6 +60,7 @@ export {
   namePatternFromSub,
   namePatternKey,
   namesAgree,
+  namesNothing,
   packageExportBinding,
   restBinding,
   runtimeConfigBinding,
