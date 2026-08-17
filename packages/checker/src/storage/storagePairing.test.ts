@@ -799,33 +799,33 @@ describe("an index that copies part of an item", () => {
   /** What terraform says an INCLUDE index can serve. */
   function narrowIndex(): BehavioralSummary {
     return makeProvider({
-      container: "editions-v2",
+      container: "ledger-v2",
       storageSystem: "dynamodb",
-      accessPath: "by-publication-v2",
+      accessPath: "by-tenant-v2",
       fieldSet: "exhaustive",
-      keyFields: ["publication_id", "created_at"],
+      keyFields: ["tenant_id", "created_at"],
       fields: [
-        { name: "publication_id" },
+        { name: "tenant_id" },
         { name: "created_at" },
-        { name: "edition_id" },
+        { name: "entry_id" },
         { name: "status" },
-        { name: "web_content_title" },
+        { name: "headline" },
       ],
     });
   }
 
   it("reports a query that reads a field the index does not copy", () => {
     const feed = makeAccessSummary({
-      name: "readerFeed",
+      name: "recentForTenant",
       file: "src/feed.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
-          accessPath: "by-publication-v2",
+          accessPath: "by-tenant-v2",
           kind: "read",
-          fields: ["status", "web_content_title", "published_article_id"],
-          selector: ["publication_id"],
+          fields: ["status", "headline", "receipt_id"],
+          selector: ["tenant_id"],
         },
       ],
     });
@@ -834,21 +834,21 @@ describe("an index that copies part of an item", () => {
     );
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]?.description).toContain("published_article_id");
+    expect(findings[0]?.description).toContain("receipt_id");
   });
 
   it("says nothing when the query reads only what the index copies", () => {
     const feed = makeAccessSummary({
-      name: "readerFeed",
+      name: "recentForTenant",
       file: "src/feed.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
-          accessPath: "by-publication-v2",
+          accessPath: "by-tenant-v2",
           kind: "read",
-          fields: ["status", "web_content_title"],
-          selector: ["publication_id"],
+          fields: ["status", "headline"],
+          selector: ["tenant_id"],
         },
       ],
     });
@@ -862,22 +862,22 @@ describe("an index that copies part of an item", () => {
 
   it("leaves a read of the table itself alone, since any attribute may be there", () => {
     const table = makeProvider({
-      container: "editions-v2",
+      container: "ledger-v2",
       storageSystem: "dynamodb",
       fieldSet: "partial",
-      keyFields: ["edition_id", "created_at"],
-      fields: [{ name: "edition_id" }, { name: "created_at" }],
+      keyFields: ["entry_id", "created_at"],
+      fields: [{ name: "entry_id" }, { name: "created_at" }],
     });
     const byId = makeAccessSummary({
       name: "readEdition",
       file: "src/edition.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
           kind: "read",
-          fields: ["published_article_id"],
-          selector: ["edition_id"],
+          fields: ["receipt_id"],
+          selector: ["entry_id"],
         },
       ],
     });
@@ -893,24 +893,24 @@ describe("an index that copies part of an item", () => {
 describe("a read of whole items through an index that copies part of one", () => {
   it("reports it, since the store sends what it has and says nothing", () => {
     const index = makeProvider({
-      container: "editions-v2",
+      container: "ledger-v2",
       storageSystem: "dynamodb",
-      accessPath: "by-publication-v2",
+      accessPath: "by-tenant-v2",
       fieldSet: "exhaustive",
-      keyFields: ["publication_id"],
-      fields: [{ name: "publication_id" }, { name: "status" }],
+      keyFields: ["tenant_id"],
+      fields: [{ name: "tenant_id" }, { name: "status" }],
     });
     const feed = makeAccessSummary({
-      name: "readerFeed",
+      name: "recentForTenant",
       file: "src/feed.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
-          accessPath: "by-publication-v2",
+          accessPath: "by-tenant-v2",
           kind: "read",
           fields: ["*"],
-          selector: ["publication_id"],
+          selector: ["tenant_id"],
         },
       ],
     });
