@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-serverless",
-  "version": "0.6.0",
+  "version": "0.7.1",
   "type": "module",
   "description": "Generate suss behavioral summaries from Serverless Framework serverless.yml service files.",
   "keywords": [
@@ -46,11 +46,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.6.0",
-    "@suss/contract-aws-apigateway": "0.6.0",
-    "@suss/contract-cloudformation": "0.6.0",
-    "@suss/ir-core": "0.6.0",
-    "@suss/manifest-aws": "0.6.0",
+    "@suss/behavioral-ir": "0.7.1",
+    "@suss/contract-aws-apigateway": "0.7.1",
+    "@suss/contract-cloudformation": "0.7.1",
+    "@suss/ir-core": "0.7.1",
+    "@suss/manifest-aws": "0.7.1",
     "yaml": "^2.4.0"
   },
   "devDependencies": {

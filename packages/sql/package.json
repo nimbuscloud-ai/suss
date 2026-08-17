@@ -1,6 +1,6 @@
 {
   "name": "@suss/sql",
-  "version": "0.6.0",
+  "version": "0.7.1",
   "type": "module",
   "description": "Read what a SQL statement touches: the tables, the fields, and what it picks rows by.",
   "keywords": [

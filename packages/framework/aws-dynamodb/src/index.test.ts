@@ -733,29 +733,29 @@ describe("a query that hides its attributes behind aliases", () => {
     const effects = effectsIn(`
       ${IMPORTS}
       declare const client: DynamoDBDocumentClient;
-      export async function feed(publicationId: string) {
+      export async function feed(tenantId: string) {
         return client.send(new QueryCommand({
-          TableName: "editions-v2",
-          IndexName: "by-publication-v2",
+          TableName: "ledger-v2",
+          IndexName: "by-tenant-v2",
           KeyConditionExpression: "#pub = :pub",
-          ProjectionExpression: "#pid, #status, web_content_title",
+          ProjectionExpression: "#pid, #status, headline",
           ExpressionAttributeNames: {
-            "#pub": "publication_id",
-            "#pid": "published_article_id",
+            "#pub": "tenant_id",
+            "#pid": "receipt_id",
             "#status": "status",
           },
-          ExpressionAttributeValues: { ":pub": publicationId },
+          ExpressionAttributeValues: { ":pub": tenantId },
         }));
       }
     `);
 
     expect(storageOf(effects[0]).interaction).toMatchObject({
       kind: "read",
-      fields: ["published_article_id", "status", "web_content_title"],
+      fields: ["receipt_id", "status", "headline"],
     });
     expect(storageOf(effects[0]).semantics).toMatchObject({
-      container: "editions-v2",
-      accessPath: "by-publication-v2",
+      container: "ledger-v2",
+      accessPath: "by-tenant-v2",
     });
   });
 });

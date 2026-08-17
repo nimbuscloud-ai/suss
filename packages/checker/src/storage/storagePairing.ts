@@ -65,6 +65,12 @@ const ALL_FIELDS = "*";
 export function checkStorage(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
+  /**
+   * Where to record what this pass compared. A report that counts only
+   * the boundaries pairing matched says nothing was compared on a run
+   * whose whole point was the stores.
+   */
+  compared?: Array<{ key: string; provider: string; consumer: string }>,
 ): Finding[] {
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
@@ -129,6 +135,14 @@ export function checkStorage(
         ) &&
         sameService(provider, a.summary),
     );
+
+    for (const access of inScope) {
+      compared?.push({
+        key: `${semantics.storageSystem}:${containerLabel(semantics)}`,
+        provider: provider.identity.name,
+        consumer: access.summary.identity.name,
+      });
+    }
 
     // Track field usage across all in-scope accesses for the
     // unused / write-only checks below. Two flags per declared
@@ -206,7 +220,12 @@ export function checkStorage(
     // Unused / write-only checks per declared field. Skip the unused
     // check entirely when ANY caller used a default-shape read here: we
     // can't tell whether that caller consumes the unused-looking field.
-    if (!anyDefaultShapeRead) {
+    //
+    // A store no code in this run reaches says nothing about any of
+    // its fields. Reading a template on its own would otherwise give
+    // one warning per field every table declares, and none of them
+    // would mean what the words say.
+    if (!anyDefaultShapeRead && inScope.length > 0) {
       for (const field of contract.fields ?? []) {
         const isRead = readNames.has(field.name);
         const isWritten = writtenNames.has(field.name);

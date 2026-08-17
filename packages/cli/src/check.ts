@@ -604,6 +604,28 @@ function renderDirHuman(
   const noBoundary = unpairable.filter((u) => u.reason === "noBoundary");
   const unnamed = unpairable.filter((u) => u.reason === "unnamedBoundary");
 
+  /**
+   * At most a screenful, then a count. A run over a monorepo has
+   * thousands of these, and printing them all buries whatever the run
+   * found. `--json` still includes every one.
+   */
+  const listed = (grouped: Map<string, string[]>): string[] => {
+    const out: string[] = [];
+    let shown = 0;
+    for (const [key, names] of grouped) {
+      if (shown === DIAGNOSTIC_LIMIT) {
+        out.push(`  ... and ${grouped.size - shown} more`);
+        break;
+      }
+      out.push(`  ${key}`);
+      if (names.length > 0) {
+        out.push(`    ${names.join(", ")}`);
+      }
+      shown++;
+    }
+    return out;
+  };
+
   // Lead with how much was actually compared. "No findings" on its own
   // looks like a pass, and a run where nothing paired has checked
   // nothing at all, which is the opposite of a pass.
@@ -637,19 +659,13 @@ function renderDirHuman(
   if (providers.length > 0) {
     lines.push("");
     lines.push("Providers with no client to compare against:");
-    for (const [key, names] of groupByKey(providers)) {
-      lines.push(`  ${key}`);
-      lines.push(`    ${names.join(", ")}`);
-    }
+    lines.push(...listed(groupByKey(providers)));
   }
 
   if (consumers.length > 0) {
     lines.push("");
     lines.push("Clients with no provider to compare against:");
-    for (const [key, names] of groupByKey(consumers)) {
-      lines.push(`  ${key}`);
-      lines.push(`    ${names.join(", ")}`);
-    }
+    lines.push(...listed(groupByKey(consumers)));
   }
 
   /**
@@ -664,9 +680,7 @@ function renderDirHuman(
     lines.push(
       `${unnamed.length} boundar${unnamed.length === 1 ? "y has" : "ies have"} no name to pair on, so nothing can be checked against ${unnamed.length === 1 ? "it" : "them"}:`,
     );
-    for (const u of unnamed) {
-      lines.push(`  ${u.name}`);
-    }
+    lines.push(...listed(new Map(unnamed.map((u) => [u.name, []]))));
   }
 
   const unknownKinds = unpairable.filter((u) => u.reason === "unknownKind");
@@ -716,6 +730,9 @@ function groupByKey(
 }
 
 /** Why a run compared nothing, in terms of what the user has and lacks. */
+/** How many unpaired boundaries a report lists before it counts them. */
+const DIAGNOSTIC_LIMIT = 10;
+
 function nothingComparedReason(
   providerCount: number,
   consumerCount: number,

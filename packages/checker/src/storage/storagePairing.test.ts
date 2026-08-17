@@ -369,7 +369,10 @@ describe("checkStorage", () => {
       }),
     ]);
 
-    expect(findings.map((f) => f.kind)).toEqual(["boundaryFieldUnused"]);
+    // The point is that the access is not attributed to this table.
+    // Nothing reaches the table in this run, so it says nothing about
+    // its fields either.
+    expect(findings).toEqual([]);
   });
 
   it("reports a query that picks items by something the container does not key on", () => {
@@ -796,33 +799,33 @@ describe("an index that copies part of an item", () => {
   /** What terraform says an INCLUDE index can serve. */
   function narrowIndex(): BehavioralSummary {
     return makeProvider({
-      container: "editions-v2",
+      container: "ledger-v2",
       storageSystem: "dynamodb",
-      accessPath: "by-publication-v2",
+      accessPath: "by-tenant-v2",
       fieldSet: "exhaustive",
-      keyFields: ["publication_id", "created_at"],
+      keyFields: ["tenant_id", "created_at"],
       fields: [
-        { name: "publication_id" },
+        { name: "tenant_id" },
         { name: "created_at" },
-        { name: "edition_id" },
+        { name: "entry_id" },
         { name: "status" },
-        { name: "web_content_title" },
+        { name: "headline" },
       ],
     });
   }
 
   it("reports a query that reads a field the index does not copy", () => {
     const feed = makeAccessSummary({
-      name: "readerFeed",
+      name: "recentForTenant",
       file: "src/feed.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
-          accessPath: "by-publication-v2",
+          accessPath: "by-tenant-v2",
           kind: "read",
-          fields: ["status", "web_content_title", "published_article_id"],
-          selector: ["publication_id"],
+          fields: ["status", "headline", "receipt_id"],
+          selector: ["tenant_id"],
         },
       ],
     });
@@ -831,21 +834,21 @@ describe("an index that copies part of an item", () => {
     );
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]?.description).toContain("published_article_id");
+    expect(findings[0]?.description).toContain("receipt_id");
   });
 
   it("says nothing when the query reads only what the index copies", () => {
     const feed = makeAccessSummary({
-      name: "readerFeed",
+      name: "recentForTenant",
       file: "src/feed.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
-          accessPath: "by-publication-v2",
+          accessPath: "by-tenant-v2",
           kind: "read",
-          fields: ["status", "web_content_title"],
-          selector: ["publication_id"],
+          fields: ["status", "headline"],
+          selector: ["tenant_id"],
         },
       ],
     });
@@ -859,22 +862,22 @@ describe("an index that copies part of an item", () => {
 
   it("leaves a read of the table itself alone, since any attribute may be there", () => {
     const table = makeProvider({
-      container: "editions-v2",
+      container: "ledger-v2",
       storageSystem: "dynamodb",
       fieldSet: "partial",
-      keyFields: ["edition_id", "created_at"],
-      fields: [{ name: "edition_id" }, { name: "created_at" }],
+      keyFields: ["entry_id", "created_at"],
+      fields: [{ name: "entry_id" }, { name: "created_at" }],
     });
     const byId = makeAccessSummary({
       name: "readEdition",
       file: "src/edition.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
           kind: "read",
-          fields: ["published_article_id"],
-          selector: ["edition_id"],
+          fields: ["receipt_id"],
+          selector: ["entry_id"],
         },
       ],
     });
@@ -890,24 +893,24 @@ describe("an index that copies part of an item", () => {
 describe("a read of whole items through an index that copies part of one", () => {
   it("reports it, since the store sends what it has and says nothing", () => {
     const index = makeProvider({
-      container: "editions-v2",
+      container: "ledger-v2",
       storageSystem: "dynamodb",
-      accessPath: "by-publication-v2",
+      accessPath: "by-tenant-v2",
       fieldSet: "exhaustive",
-      keyFields: ["publication_id"],
-      fields: [{ name: "publication_id" }, { name: "status" }],
+      keyFields: ["tenant_id"],
+      fields: [{ name: "tenant_id" }, { name: "status" }],
     });
     const feed = makeAccessSummary({
-      name: "readerFeed",
+      name: "recentForTenant",
       file: "src/feed.ts",
       accesses: [
         {
-          container: "editions-v2",
+          container: "ledger-v2",
           storageSystem: "dynamodb",
-          accessPath: "by-publication-v2",
+          accessPath: "by-tenant-v2",
           kind: "read",
           fields: ["*"],
-          selector: ["publication_id"],
+          selector: ["tenant_id"],
         },
       ],
     });
@@ -935,5 +938,56 @@ describe("a read of whole items through an index that copies part of one", () =>
         (f) => f.kind === "boundaryFieldUnknown",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("a run with a contract and no code against it", () => {
+  it("says nothing about which fields go unused, since it saw no code", () => {
+    const table = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }, { name: "email" }],
+    });
+
+    expect(checkStorage([table])).toEqual([]);
+  });
+
+  it("says nothing about a store this run has no code for", () => {
+    const untouched = makeProvider({
+      container: "audit_log",
+      fields: [{ name: "id" }],
+    });
+    const users = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }],
+    });
+    const reader = makeAccessSummary({
+      name: "readUser",
+      file: "src/users.ts",
+      accesses: [{ container: "users", kind: "read", fields: ["id"] }],
+    });
+
+    expect(
+      checkStorage([untouched, users, reader]).filter((f) =>
+        f.description.includes("audit_log"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("still says a field goes unused when code reaches the store", () => {
+    const table = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }, { name: "email" }],
+    });
+    const reader = makeAccessSummary({
+      name: "readUser",
+      file: "src/users.ts",
+      accesses: [{ container: "users", kind: "read", fields: ["id"] }],
+    });
+    const unused = checkStorage([table, reader]).filter(
+      (f) => f.kind === "boundaryFieldUnused",
+    );
+
+    expect(unused).toHaveLength(1);
+    expect(unused[0]?.description).toContain("email");
   });
 });

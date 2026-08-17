@@ -423,25 +423,25 @@ describe("shapes a configuration writes that the reader has to take as they come
 // others. A reader asking for anything else gets nothing back and no
 // error from the store, which is why the declaration matters.
 const NARROW_INDEX = `
-resource "aws_dynamodb_table" "editions" {
-  name      = "editions-v2"
-  hash_key  = "edition_id"
+resource "aws_dynamodb_table" "ledger" {
+  name      = "ledger-v2"
+  hash_key  = "entry_id"
   range_key = "created_at"
 
   global_secondary_index {
-    name            = "by-publication-v2"
-    hash_key        = "publication_id"
+    name            = "by-tenant-v2"
+    hash_key        = "tenant_id"
     range_key       = "created_at"
     projection_type = "INCLUDE"
     non_key_attributes = [
       "status",
-      "web_content_title",
+      "headline",
     ]
   }
 
   global_secondary_index {
     name            = "by-edition-v1"
-    hash_key        = "edition_id"
+    hash_key        = "entry_id"
     projection_type = "ALL"
   }
 
@@ -463,15 +463,15 @@ describe("an index that copies part of an item", () => {
     );
 
   it("says every field it can serve, its own keys and the table's included", () => {
-    const contract = byAccessPath("by-publication-v2");
+    const contract = byAccessPath("by-tenant-v2");
 
     expect(contract?.fieldSet).toBe("exhaustive");
     expect(contract?.fields?.map((field) => field.name).sort()).toEqual([
       "created_at",
-      "edition_id",
-      "publication_id",
+      "entry_id",
+      "headline",
       "status",
-      "web_content_title",
+      "tenant_id",
     ]);
   });
 
@@ -479,9 +479,7 @@ describe("an index that copies part of an item", () => {
     const contract = byAccessPath("by-edition-v1");
 
     expect(contract?.fieldSet).toBe("partial");
-    expect(contract?.fields?.map((field) => field.name)).toEqual([
-      "edition_id",
-    ]);
+    expect(contract?.fields?.map((field) => field.name)).toEqual(["entry_id"]);
   });
 
   it("serves only keys when that is all it copies", () => {
@@ -490,7 +488,7 @@ describe("an index that copies part of an item", () => {
     expect(contract?.fieldSet).toBe("exhaustive");
     expect(contract?.fields?.map((field) => field.name).sort()).toEqual([
       "created_at",
-      "edition_id",
+      "entry_id",
       "status",
     ]);
   });
