@@ -23,10 +23,14 @@ import { createPerFileCache } from "../perFileCache.js";
 
 import type {
   Expression,
+  PropertyDeclaration,
   SourceFile,
   Statement,
   VariableDeclaration,
 } from "ts-morph";
+
+/** A name a write can land on: a local binding or a class field. */
+type Written = VariableDeclaration | PropertyDeclaration;
 
 /** One write to a binding: the value it takes, and where it happens. */
 interface Write {
@@ -50,8 +54,8 @@ export interface BindingWrites {
   inOrder: boolean;
 }
 
-const byFile = createPerFileCache<Map<VariableDeclaration, Write[]>>();
-const byDeclaration = new WeakMap<VariableDeclaration, BindingWrites>();
+const byFile = createPerFileCache<Map<Written, Write[]>>();
+const byDeclaration = new WeakMap<Written, BindingWrites>();
 
 /**
  * Every value a binding takes, the declaration's initializer first.
@@ -106,12 +110,93 @@ function writesToBindingUncached(
   return { values, inOrder: writesRunInOrder(declaration, writes) };
 }
 
+/**
+ * What a class field comes down to. The constructor runs once before
+ * any method can read a field, so a field the constructor sets and
+ * nothing else touches has one value every reader sees. A write in a
+ * method, a branch, or a callback runs when something reaches it, and
+ * how many times is not a question this reads, so the field comes down
+ * to nothing.
+ */
+export function writesToField(declaration: PropertyDeclaration): BindingWrites {
+  const remembered = byDeclaration.get(declaration);
+  if (remembered !== undefined) {
+    return remembered;
+  }
+  const answer = writesToFieldUncached(declaration);
+  byDeclaration.set(declaration, answer);
+  return answer;
+}
+
+function writesToFieldUncached(
+  declaration: PropertyDeclaration,
+): BindingWrites {
+  const initializer = declaration.getInitializer();
+  const assignments = assignmentsTo(declaration);
+
+  if (assignments.length === 0) {
+    return {
+      values: initializer === undefined ? [] : [initializer],
+      inOrder: true,
+    };
+  }
+
+  const values: Expression[] = [];
+  for (const write of assignments) {
+    if (write.value === null) {
+      return { values: [], inOrder: false };
+    }
+    values.push(write.value);
+  }
+  const withInitializer =
+    initializer === undefined ? values : [initializer, ...values];
+
+  return {
+    values: withInitializer,
+    inOrder: assignments.every((write) =>
+      writeRunsInConstructor(declaration, write),
+    ),
+  };
+}
+
+/**
+ * Whether a write is a statement of the class's own constructor. A
+ * write anywhere else runs at a time the reader cannot know, and a
+ * write in another class's constructor is about another field of the
+ * same name.
+ */
+function writeRunsInConstructor(
+  declaration: PropertyDeclaration,
+  write: Write,
+): boolean {
+  const statement = statementOf(write.node);
+  if (statement === null) {
+    return false;
+  }
+  const body = statement.getParent();
+  if (body === undefined || !Node.isBlock(body)) {
+    return false;
+  }
+  const owner = body.getParent();
+  return (
+    owner !== undefined &&
+    Node.isConstructorDeclaration(owner) &&
+    owner.getParent() === declaration.getParent()
+  );
+}
+
 /** Whether a binding takes a second value somewhere after its declaration. */
 export function isWrittenAgain(declaration: VariableDeclaration): boolean {
   return assignmentsTo(declaration).length > 0;
 }
 
-function assignmentsTo(declaration: VariableDeclaration): Write[] {
+function assignmentsTo(declaration: Written): Write[] {
+  if (Node.isPropertyDeclaration(declaration)) {
+    const sourceFile = declaration.getSourceFile();
+    return sourceFile.isDeclarationFile()
+      ? []
+      : (assignmentsInFile(sourceFile).get(declaration) ?? []);
+  }
   // A `const` cannot be written again, and nearly every binding a pack
   // asks about is one, so answering from the declaration keyword keeps
   // the file walk off the common path entirely.
@@ -137,15 +222,13 @@ function assignmentsTo(declaration: VariableDeclaration): Write[] {
  * already makes costs, and a file where nothing is reassigned ends up
  * with an empty map.
  */
-function assignmentsInFile(
-  sourceFile: SourceFile,
-): Map<VariableDeclaration, Write[]> {
+function assignmentsInFile(sourceFile: SourceFile): Map<Written, Write[]> {
   const cached = byFile.get(sourceFile);
   if (cached !== undefined) {
     return cached;
   }
 
-  const found = new Map<VariableDeclaration, Write[]>();
+  const found = new Map<Written, Write[]>();
   byFile.set(sourceFile, found);
 
   sourceFile.forEachDescendant((node) => {
@@ -177,7 +260,10 @@ function writeAt(node: Node): { target: Node; write: Write } | null {
   if (Node.isBinaryExpression(node)) {
     const operator = node.getOperatorToken().getKind();
     const target = node.getLeft();
-    if (!isAssignmentOperator(operator) || !Node.isIdentifier(target)) {
+    if (
+      !isAssignmentOperator(operator) ||
+      !(Node.isIdentifier(target) || Node.isPropertyAccessExpression(target))
+    ) {
       return null;
     }
     const value = operator === SyntaxKind.EqualsToken ? node.getRight() : null;
@@ -204,14 +290,22 @@ function writeAt(node: Node): { target: Node; write: Write } | null {
   return null;
 }
 
-function declarationsOf(name: Node): VariableDeclaration[] {
-  const symbol = name.getSymbol();
+function declarationsOf(name: Node): Written[] {
+  // `this.tableName = x` writes to the field the name refers to, and
+  // the name is where the symbol is.
+  const nameNode = Node.isPropertyAccessExpression(name)
+    ? name.getNameNode()
+    : name;
+  const symbol = nameNode.getSymbol();
   if (symbol === undefined) {
     return [];
   }
-  const declarations: VariableDeclaration[] = [];
+  const declarations: Written[] = [];
   for (const declaration of symbol.getDeclarations()) {
-    if (Node.isVariableDeclaration(declaration)) {
+    if (
+      Node.isVariableDeclaration(declaration) ||
+      Node.isPropertyDeclaration(declaration)
+    ) {
       declarations.push(declaration);
     }
   }

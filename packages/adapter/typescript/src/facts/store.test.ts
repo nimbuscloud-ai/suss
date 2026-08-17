@@ -1202,3 +1202,201 @@ describe("importedNamesOf", () => {
     ).toEqual([]);
   });
 });
+
+describe("a class field", () => {
+  function fieldValue(project: Project, file: string, property: string): Node {
+    const sourceFile = project.getSourceFileOrThrow(file);
+    for (const access of sourceFile.getDescendantsOfKind(
+      SyntaxKind.PropertyAccessExpression,
+    )) {
+      if (
+        access.getName() === property &&
+        access.getExpression().getKind() === SyntaxKind.ThisKeyword &&
+        access.getParent()?.getKind() !== SyntaxKind.BinaryExpression
+      ) {
+        return access;
+      }
+    }
+    throw new Error(`No read of this.${property} in ${file}`);
+  }
+
+  function written(store: ResolutionStore, value: Node): string | null {
+    const resolved = store.resolveWrittenValue(value);
+    return resolved === null ? null : resolved.getText();
+  }
+
+  it("reads a field the constructor sets", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private readonly tableName: string;
+          constructor(stage: string) {
+            this.tableName = stage + "-orders-v1";
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(written(store, fieldValue(project, "/dao.ts", "tableName"))).toBe(
+      'stage + "-orders-v1"',
+    );
+  });
+
+  it("reads a field its own declaration sets", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private readonly tableName = "orders-v1";
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(written(store, fieldValue(project, "/dao.ts", "tableName"))).toBe(
+      '"orders-v1"',
+    );
+  });
+
+  it("takes the constructor's value over the declaration's, since it runs after", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private tableName = "unset";
+          constructor(stage: string) {
+            this.tableName = stage + "-orders-v1";
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(written(store, fieldValue(project, "/dao.ts", "tableName"))).toBe(
+      'stage + "-orders-v1"',
+    );
+  });
+
+  it("reads a template literal the constructor builds, which is what a name with a stage prefix is", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private readonly tableName: string;
+          constructor(stage: string) {
+            this.tableName = \`\${stage}-orders-v1\`;
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(written(store, fieldValue(project, "/dao.ts", "tableName"))).toBe(
+      "`${stage}-orders-v1`",
+    );
+  });
+
+  it("reads nothing from a field the constructor takes straight from a parameter, which says nothing about its value", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private readonly tableName: string;
+          constructor(tableName: string) {
+            this.tableName = tableName;
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      written(store, fieldValue(project, "/dao.ts", "tableName")),
+    ).toBeNull();
+  });
+
+  it("reads nothing from a field a method writes, which runs whenever it is called", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private tableName = "orders-v1";
+          rename(next: string) {
+            this.tableName = next;
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      written(store, fieldValue(project, "/dao.ts", "tableName")),
+    ).toBeNull();
+  });
+
+  it("reads nothing from a field the constructor sets inside a branch", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private tableName: string;
+          constructor(stage: string) {
+            if (stage === "prod") {
+              this.tableName = "orders-prod";
+            } else {
+              this.tableName = "orders-dev";
+            }
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      written(store, fieldValue(project, "/dao.ts", "tableName")),
+    ).toBeNull();
+  });
+
+  it("keeps two classes' same-named fields apart", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private readonly tableName: string;
+          constructor() {
+            this.tableName = "orders-v1";
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+        export class InvoicesDao {
+          private readonly tableName: string;
+          constructor() {
+            this.tableName = "invoices-v1";
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(written(store, fieldValue(project, "/dao.ts", "tableName"))).toBe(
+      '"orders-v1"',
+    );
+  });
+});
