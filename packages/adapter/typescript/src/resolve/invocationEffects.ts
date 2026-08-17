@@ -454,11 +454,14 @@ function dispatchAccessRecognizers(
       return;
     }
     // Calls too: `requireEnv("X")` contains no property access, and the
-    // env recognizer resolves it through the callee's body (#326).
+    // env recognizer resolves it through the callee's body (#326). A
+    // tagged template as well, since a library can take its whole
+    // argument as one: `prisma.$queryRaw` and `gql` both do.
     // Every recognizer guards its shapes and returns null on the rest.
     if (
       !Node.isPropertyAccessExpression(node) &&
-      !Node.isCallExpression(node)
+      !Node.isCallExpression(node) &&
+      !Node.isTaggedTemplateExpression(node)
     ) {
       return;
     }

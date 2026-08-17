@@ -1130,17 +1130,20 @@ export interface PatternPack {
   graphqlOperationScopes?: Array<{ files: string[]; workspace: string }>;
   /**
    * Per-property-access recognizers, the counterpart to
-   * `invocationRecognizers`, firing on `PropertyAccessExpression`
-   * nodes rather than `CallExpression` nodes. Use these for patterns
-   * that read a value through property access without invoking it:
-   * `process.env.X` env-var reads, `Date.now()`-style time reads
-   * (which is actually a call, see invocationRecognizers), bare
-   * `module.constant` reads, etc.
+   * `invocationRecognizers`. Use these for patterns that read a value
+   * through property access without invoking it: `process.env.X`
+   * env-var reads, `Date.now()`-style time reads (which is actually a
+   * call, see invocationRecognizers), bare `module.constant` reads.
+   *
+   * A recognizer here is handed a property access, a call, or a tagged
+   * template, and guards its own shapes. The tagged template is there
+   * for a library that takes its whole argument as one, the way
+   * `prisma.$queryRaw` and `gql` do.
    *
    * The scope rules are the same as for invocationRecognizers: it fires
-   * on every PropertyAccessExpression in the function body and skips
-   * nested function bodies. The emission contract is the same, so effects
-   * on the enclosing default-branch transition.
+   * on every such node in the function body and skips nested function
+   * bodies. The emission contract is the same, so effects land on the
+   * enclosing default-branch transition.
    *
    * The arguments are opaque here and narrowed by the adapter, for the
    * same reason as in invocationRecognizers.

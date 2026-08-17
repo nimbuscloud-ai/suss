@@ -16,5 +16,9 @@
   "data": "@prisma/client: write argument key holding the row values",
   "postgres": "storage system the pack reports for a Postgres datasource",
   "read": "suss: access kind",
-  "write": "suss: access kind"
+  "write": "suss: access kind",
+  "$queryRaw": "@prisma/client: method taking a query as a tagged template",
+  "$executeRaw": "@prisma/client: method taking a statement as a tagged template",
+  "$queryRawUnsafe": "@prisma/client: method taking a query as a string",
+  "$executeRawUnsafe": "@prisma/client: method taking a statement as a string"
 }

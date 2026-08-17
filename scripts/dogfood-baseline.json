@@ -3,9 +3,9 @@
     "packages": 48,
     "packagesWithExports": 48,
     "exports": 441,
-    "internal": 1720,
-    "consumers": 703,
-    "pairs": 694
+    "internal": 1723,
+    "consumers": 707,
+    "pairs": 697
   },
   "packages": {
     "packages/adapter/python": {
@@ -233,8 +233,8 @@
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
       "exports": 2,
-      "internal": 6,
-      "consumers": 1
+      "internal": 9,
+      "consumers": 5
     },
     "packages/framework/react": {
       "name": "@suss/framework-react",

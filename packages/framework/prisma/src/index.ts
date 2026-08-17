@@ -33,8 +33,6 @@
 // Out of scope for v0:
 //   - Nested select walking (a User select that includes Order should
 //     emit a second effect for Order; deferred to keep the MVP focused).
-//   - $queryRaw / $executeRaw: these bypass the typed client and
-//     need a raw-SQL recognizer.
 //   - findUniqueOrThrow and findFirstOrThrow, which would be easy to add.
 
 import {
@@ -45,13 +43,23 @@ import {
 } from "ts-morph";
 
 import { storageBinding } from "@suss/behavioral-ir";
+import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
+  AccessRecognizer,
   EffectArg,
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
+
+/** The client methods that take a statement written as SQL. */
+const RAW_METHODS = new Set([
+  "$queryRaw",
+  "$executeRaw",
+  "$queryRawUnsafe",
+  "$executeRawUnsafe",
+]);
 
 const PRISMA_READ_METHODS = new Set([
   "findUnique",
@@ -298,6 +306,103 @@ function extractSelector(optionsArg: ObjectArg | null): string[] | null {
  * patterns or terminals (Prisma calls aren't boundaries themselves
  *: they're effects on already-discovered handlers / services).
  */
+/**
+ * `prisma.$queryRaw\`...\`` states its query as SQL and bypasses the
+ * typed client, so the text is what says which tables it touches. The
+ * tagged template is where the query is, and the access hook is what
+ * gets handed one.
+ */
+function makeRawRecognizer(opts: PrismaRecognizerOptions): AccessRecognizer {
+  const storageSystem = opts.storageSystem ?? "postgres";
+  const scope = opts.scope ?? "default";
+  return ((node: unknown) => {
+    const statement = rawStatementAt(node as Node);
+    if (statement === null) {
+      return null;
+    }
+    const accesses = readSqlAccess(statement.sql, { dialect: storageSystem });
+    if (accesses.length === 0) {
+      return null;
+    }
+    return accesses.map((access) => ({
+      type: "interaction" as const,
+      binding: storageBinding({
+        recognition: "@suss/framework-prisma",
+        storageSystem,
+        scope,
+        container: access.table,
+      }),
+      callee: statement.callee,
+      interaction: {
+        class: "storage-access" as const,
+        kind: access.kind,
+        fields: access.fields,
+        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
+        operation: statement.method,
+      },
+    }));
+  }) as AccessRecognizer;
+}
+
+/**
+ * The SQL a raw call states, whichever way it was written. The tagged
+ * form takes the query as a template and the unsafe form takes it as a
+ * string, and both go through a client the receiver has to be.
+ */
+function rawStatementAt(
+  node: Node,
+): { sql: string; method: string; callee: string } | null {
+  const tag = N.isTaggedTemplateExpression(node)
+    ? node.getTag()
+    : N.isCallExpression(node)
+      ? node.getExpression()
+      : null;
+  if (tag === null || !N.isPropertyAccessExpression(tag)) {
+    return null;
+  }
+  const method = tag.getName();
+  if (!RAW_METHODS.has(method)) {
+    return null;
+  }
+  if (!isPrismaClientReceiver(tag.getExpression())) {
+    return null;
+  }
+  const sql = N.isTaggedTemplateExpression(node)
+    ? templateSql(node.getTemplate())
+    : N.isCallExpression(node)
+      ? literalSql(node.getArguments()[0])
+      : null;
+  return sql === null ? null : { sql, method, callee: tag.getText() };
+}
+
+function templateSql(template: Node): string | null {
+  if (N.isNoSubstitutionTemplateLiteral(template)) {
+    return template.getLiteralValue();
+  }
+  if (!N.isTemplateExpression(template)) {
+    return null;
+  }
+  return sqlFromParts([
+    template.getHead().getLiteralText(),
+    ...template
+      .getTemplateSpans()
+      .map((span) => span.getLiteral().getLiteralText()),
+  ]);
+}
+
+function literalSql(argument: Node | undefined): string | null {
+  if (argument === undefined) {
+    return null;
+  }
+  if (
+    N.isStringLiteral(argument) ||
+    N.isNoSubstitutionTemplateLiteral(argument)
+  ) {
+    return argument.getLiteralValue();
+  }
+  return N.isTemplateExpression(argument) ? templateSql(argument) : null;
+}
+
 export function prismaFramework(
   options: PrismaRecognizerOptions = {},
 ): PatternPack {
@@ -312,6 +417,7 @@ export function prismaFramework(
     // recognizer's type-resolution check would reject them anyway.
     requiresImport: ["@prisma/client"],
     invocationRecognizers: [makeRecognizer(options)],
+    accessRecognizers: [makeRawRecognizer(options)],
   };
 }
 
