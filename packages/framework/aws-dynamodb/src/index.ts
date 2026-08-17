@@ -1,15 +1,16 @@
 /**
  * Recognize DynamoDB calls and emit `storage-access` effects.
  *
- * The anchor is `client.send(command)`, and the command says everything
- * else: which table, which index, whether the call reads or writes, and
- * which attributes it touches. A command built into a variable first is
- * resolved back to where it was built, since that is how a data access
- * class usually writes one.
+ * The anchor is `client.send(command)`, and the command says which
+ * table, which index, whether the call reads or writes, and which
+ * attributes it touches. A command built into a variable is resolved
+ * back to where it was built. A project that signs and posts the
+ * request itself writes no command class, so a second anchor reads a
+ * function the project declares in pack config, and the request object
+ * is read the same way from there on.
  *
- * A table name is often built at deploy time, so the container becomes
- * a name pattern (`{stage}-orders-v1`) that pairs against the template's
- * own `Fn::Sub`. Its README says what each command contributes.
+ * The README says what each input contributes, and why a table name
+ * often comes out as a pattern like `{stage}-orders-v1`.
  */
 
 import { type CallExpression, Node as N, type Node } from "ts-morph";
@@ -17,7 +18,7 @@ import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { readName, rootIdentifier } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 
-import type { Effect } from "@suss/behavioral-ir";
+import type { BoundaryBinding, Effect } from "@suss/behavioral-ir";
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 
 /** The modules a command class can come from. */
@@ -93,42 +94,76 @@ export function dynamoRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   if (input === undefined || !N.isObjectLiteralExpression(input)) {
     return null;
   }
-  const calleeText = callNode.getExpression().getText();
+
+  return requestEffects({
+    input,
+    kind,
+    operation: commandName,
+    callee: callee.getText(),
+    transport: "aws-sdk",
+    resolve,
+  });
+}
+
+/** What both anchors have once they have the request object. */
+interface RequestRead {
+  /** The object literal the request states. */
+  input: Node;
+  kind: "read" | "write";
+  /** What the source calls the operation, reported as it is written. */
+  operation: string;
+  callee: string;
+  /** How the call reaches DynamoDB, left out when it skips the SDK. */
+  transport?: string;
+  resolve: (value: Node) => Node | null;
+}
+
+/**
+ * The effects one request produces: one, or one per table when the
+ * request is a batch or a transaction.
+ */
+function requestEffects(read: RequestRead): Effect[] {
+  const { input, kind, operation, callee, resolve } = read;
 
   // A batch or transaction command states its tables inside the request
   // map, one entry per table, so it becomes one effect per table.
   const requestItems = property(input, "RequestItems");
   if (requestItems !== null) {
-    return batchEffects({
-      requestItems,
-      kind,
-      commandName,
-      callee: calleeText,
-      resolve,
-    });
+    return batchEffects(requestItems, read);
   }
 
+  const picked = selector(input);
   return [
     {
       type: "interaction",
-      binding: storageBinding({
-        recognition: RECOGNITION,
-        storageSystem: "dynamodb",
-        transport: "aws-sdk",
-        scope: "default",
+      binding: dynamoBinding(read, {
         container: nameOfProperty(input, "TableName", resolve),
         accessPath: nameOfProperty(input, "IndexName", resolve),
       }),
-      callee: calleeText,
+      callee,
       interaction: {
         class: "storage-access",
         kind,
         fields: fieldsOf(input, kind),
-        operation: commandName,
-        ...(selector(input).length > 0 ? { selector: selector(input) } : {}),
+        operation,
+        ...(picked.length > 0 ? { selector: picked } : {}),
       },
     },
   ];
+}
+
+function dynamoBinding(
+  read: RequestRead,
+  addressed: { container: string | null; accessPath: string | null },
+): BoundaryBinding {
+  return storageBinding({
+    recognition: RECOGNITION,
+    storageSystem: "dynamodb",
+    ...(read.transport === undefined ? {} : { transport: read.transport }),
+    scope: "default",
+    container: addressed.container,
+    accessPath: addressed.accessPath,
+  });
 }
 
 /**
@@ -136,14 +171,8 @@ export function dynamoRecognizer(call: unknown, ctx: unknown): Effect[] | null {
  * requests against it, so the table is the entry's own key, which a
  * project often writes as a computed name.
  */
-function batchEffects(opts: {
-  requestItems: Node;
-  kind: "read" | "write";
-  commandName: string;
-  callee: string;
-  resolve: (value: Node) => Node | null;
-}): Effect[] {
-  const { requestItems, kind, commandName, callee, resolve } = opts;
+function batchEffects(requestItems: Node, read: RequestRead): Effect[] {
+  const { kind, operation, callee, resolve } = read;
   if (!N.isObjectLiteralExpression(requestItems)) {
     return [];
   }
@@ -155,11 +184,7 @@ function batchEffects(opts: {
     const requests = entry.getInitializer();
     effects.push({
       type: "interaction",
-      binding: storageBinding({
-        recognition: RECOGNITION,
-        storageSystem: "dynamodb",
-        transport: "aws-sdk",
-        scope: "default",
+      binding: dynamoBinding(read, {
         container: entryName(entry, resolve),
         accessPath: null,
       }),
@@ -168,7 +193,7 @@ function batchEffects(opts: {
         class: "storage-access",
         kind,
         fields: requests === undefined ? [] : requestedFields(requests, kind),
-        operation: commandName,
+        operation,
       },
     });
   }
@@ -272,11 +297,7 @@ function nameOfProperty(
 function fieldsOf(input: Node, kind: "read" | "write"): string[] {
   const projection = property(input, "ProjectionExpression");
   if (projection !== null) {
-    const text =
-      N.isStringLiteral(projection) ||
-      N.isNoSubstitutionTemplateLiteral(projection)
-        ? projection.getLiteralValue()
-        : null;
+    const text = literalText(projection);
     if (text !== null) {
       const aliases = expressionNames(input);
       return text
@@ -305,12 +326,7 @@ function selector(input: Node): string[] {
     return objectKeys(key);
   }
   const condition = property(input, "KeyConditionExpression");
-  const text =
-    condition !== null &&
-    (N.isStringLiteral(condition) ||
-      N.isNoSubstitutionTemplateLiteral(condition))
-      ? condition.getLiteralValue()
-      : null;
+  const text = condition === null ? null : literalText(condition);
   if (text === null) {
     return [];
   }
@@ -332,18 +348,20 @@ function expressionNames(input: Node): Map<string, string> {
       continue;
     }
     const value = prop.getInitializer();
-    if (
-      value === undefined ||
-      !(N.isStringLiteral(value) || N.isNoSubstitutionTemplateLiteral(value))
-    ) {
+    const written = value === undefined ? null : literalText(value);
+    if (written === null) {
       continue;
     }
-    names.set(
-      prop.getName().replace(/^["']|["']$/g, ""),
-      value.getLiteralValue(),
-    );
+    names.set(prop.getName().replace(/^["']|["']$/g, ""), written);
   }
   return names;
+}
+
+/** The text of a string the source writes out, or null for anything else. */
+function literalText(value: Node): string | null {
+  return N.isStringLiteral(value) || N.isNoSubstitutionTemplateLiteral(value)
+    ? value.getLiteralValue()
+    : null;
 }
 
 /**
@@ -398,10 +416,181 @@ function objectKeys(literal: Node): string[] {
 }
 
 /**
- * Pack export. One recognizer, gated on a file importing a DynamoDB
- * client module, which is where a command class can come from.
+ * A function of the project's own that sends a DynamoDB request. The
+ * pack recognizes the SDK's command classes, and a service that signs
+ * and posts the request itself writes none of them, so the project says
+ * which of its own functions does that. The README gives an example.
  */
-export function dynamoFramework(): PatternPack {
+export interface DynamoRequestFunction {
+  /** What the function is called where it is called. */
+  name: string;
+  /**
+   * The module specifier a call site imports it from. Leave it out when
+   * call sites reach it by different relative paths; then the name
+   * alone picks it out among the files the import gate admits.
+   */
+  module?: string;
+  /** Which argument says which operation the request performs. */
+  operationArg: number;
+  /** Which argument is the request itself. */
+  requestArg: number;
+  /** What each operation the function accepts does to the table. */
+  operations: Record<string, "read" | "write">;
+}
+
+export interface DynamoPackOptions {
+  requestFunctions?: DynamoRequestFunction[];
+  /**
+   * Further modules whose presence makes a file worth reading. A helper
+   * imported by a relative path gives the gate nothing to match on; the
+   * signing library that helper imports gives it something.
+   */
+  requiresImport?: string[];
+}
+
+/**
+ * Read a call to a configured request function. The operation argument
+ * decides whether the call reads or writes, and the request argument is
+ * the same object a command class takes.
+ */
+function requestFunctionRecognizer(
+  spec: DynamoRequestFunction,
+): InvocationRecognizer {
+  return ((call: unknown, ctx: unknown): Effect[] | null => {
+    const callNode = call as CallExpression;
+    const recognizerCtx = ctx as RecognizerContext;
+    const resolve = recognizerCtx.resolveWrittenValue ?? (() => null);
+
+    const callee = callNode.getExpression();
+    if (calledName(callee) !== spec.name) {
+      return null;
+    }
+    if (
+      spec.module !== undefined &&
+      !declaredIn(callee, spec.module, recognizerCtx)
+    ) {
+      return null;
+    }
+
+    const args = callNode.getArguments();
+    const operation = argumentText(args[spec.operationArg], resolve);
+    if (operation === null) {
+      return null;
+    }
+
+    const kind = spec.operations[operation];
+    if (kind === undefined) {
+      return null;
+    }
+
+    const input = objectArgument(args[spec.requestArg], resolve);
+    if (input === null) {
+      return null;
+    }
+
+    return requestEffects({
+      input,
+      kind,
+      operation,
+      callee: callee.getText(),
+      resolve,
+    });
+  }) as InvocationRecognizer;
+}
+
+/** The name a call goes to, whether it is written bare or on an object. */
+function calledName(callee: Node): string | null {
+  if (N.isPropertyAccessExpression(callee)) {
+    return callee.getName();
+  }
+  return N.isIdentifier(callee) ? callee.getText() : null;
+}
+
+/** Whether the function is the configured one and not a same-named other. */
+function declaredIn(
+  callee: Node,
+  module: string,
+  ctx: RecognizerContext,
+): boolean {
+  const target = N.isPropertyAccessExpression(callee)
+    ? rootIdentifier(callee)
+    : callee;
+  return target !== null && ctx.isImportedFrom(target, module);
+}
+
+/** A string an argument is written as, following the const it came from. */
+function argumentText(
+  arg: Node | undefined,
+  resolve: (value: Node) => Node | null,
+): string | null {
+  if (arg === undefined) {
+    return null;
+  }
+  const direct = literalText(arg);
+  if (direct !== null) {
+    return direct;
+  }
+  const written = resolve(arg);
+  return written === null ? null : literalText(written);
+}
+
+/** The object literal an argument is written as, or null. */
+function objectArgument(
+  arg: Node | undefined,
+  resolve: (value: Node) => Node | null,
+): Node | null {
+  if (arg === undefined) {
+    return null;
+  }
+  if (N.isObjectLiteralExpression(arg)) {
+    return arg;
+  }
+  const written = resolve(arg);
+  return written !== null && N.isObjectLiteralExpression(written)
+    ? written
+    : null;
+}
+
+const isArgumentPosition = (index: unknown): boolean =>
+  Number.isInteger(index) && (index as number) >= 0;
+
+/**
+ * Rejecting a half-written entry here rather than reading nothing later
+ * turns a typo into a message from the CLI that says which file to fix.
+ */
+function checkRequestFunction(spec: DynamoRequestFunction, at: number): void {
+  const complain = (problem: string): never => {
+    throw new Error(`requestFunctions[${at}] ${problem}`);
+  };
+  if (typeof spec.name !== "string" || spec.name === "") {
+    complain("needs the name of a function to read.");
+  }
+  if (!isArgumentPosition(spec.operationArg)) {
+    complain("needs operationArg: which argument says the operation, from 0.");
+  }
+  if (!isArgumentPosition(spec.requestArg)) {
+    complain("needs requestArg: which argument is the request, from 0.");
+  }
+  const operations = Object.entries(spec.operations ?? {});
+  if (operations.length === 0) {
+    complain("needs operations, saying what each one does to the table.");
+  }
+  for (const [operation, kind] of operations) {
+    if (kind !== "read" && kind !== "write") {
+      complain(`gives ${operation} as ${String(kind)}, not read or write.`);
+    }
+  }
+}
+
+/**
+ * Pack export. One recognizer per anchor, gated on a file importing a
+ * DynamoDB client module, which is where a command class comes from,
+ * or any further module the project configured.
+ */
+export function dynamoFramework(options: DynamoPackOptions = {}): PatternPack {
+  const requestFunctions = options.requestFunctions ?? [];
+  requestFunctions.forEach(checkRequestFunction);
+
   return {
     name: "aws-dynamodb",
     protocol: "dynamodb",
@@ -409,8 +598,19 @@ export function dynamoFramework(): PatternPack {
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
-    requiresImport: [...COMMAND_MODULES],
-    invocationRecognizers: [dynamoRecognizer as InvocationRecognizer],
+    requiresImport: [
+      ...new Set([
+        ...COMMAND_MODULES,
+        ...(options.requiresImport ?? []),
+        ...requestFunctions
+          .map((spec) => spec.module)
+          .filter((module) => module !== undefined),
+      ]),
+    ],
+    invocationRecognizers: [
+      dynamoRecognizer as InvocationRecognizer,
+      ...requestFunctions.map(requestFunctionRecognizer),
+    ],
   };
 }
 
