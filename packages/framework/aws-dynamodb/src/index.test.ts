@@ -100,6 +100,90 @@ describe("a DynamoDB command", () => {
     expect(storageOf(effects[0]).semantics.container).toBe("{stage}-orders-v1");
   });
 
+  it("reads the default a class ships when the caller passes no table", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export class MappingsDao {
+        private readonly tableName: string;
+        constructor(tableName?: string) {
+          const stage = process.env.STAGE || "staging";
+          this.tableName = tableName || \`\${stage}-mappings-v2\`;
+        }
+        async get(id: string) {
+          return client.send(new GetCommand({
+            TableName: this.tableName,
+            Key: { id },
+          }));
+        }
+      }
+    `);
+
+    expect(storageOf(effects[0]).semantics.container).toBe(
+      "{stage}-mappings-v2",
+    );
+  });
+
+  it("reads a default written with the nullish operator the same way", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export class MappingsDao {
+        private readonly tableName: string;
+        constructor(tableName?: string) {
+          this.tableName = tableName ?? "mappings-v2";
+        }
+        async get(id: string) {
+          return client.send(new GetCommand({
+            TableName: this.tableName,
+            Key: { id },
+          }));
+        }
+      }
+    `);
+
+    expect(storageOf(effects[0]).semantics.container).toBe("mappings-v2");
+  });
+
+  it("states no container when the table name only ever comes from the caller", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export class SubscribersRepository {
+        constructor(private readonly tableName: string) {}
+        async get(id: string) {
+          return client.send(new GetCommand({
+            TableName: this.tableName,
+            Key: { id },
+          }));
+        }
+      }
+    `);
+
+    expect(storageOf(effects[0]).semantics.container).toBeNull();
+  });
+
+  it("leaves a table name built by any other operator alone", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export class MappingsDao {
+        private readonly tableName: string;
+        constructor(prefix: string) {
+          this.tableName = prefix + "-mappings-v2";
+        }
+        async get(id: string) {
+          return client.send(new GetCommand({
+            TableName: this.tableName,
+            Key: { id },
+          }));
+        }
+      }
+    `);
+
+    expect(storageOf(effects[0]).semantics.container).toBeNull();
+  });
+
   it("takes the index a query goes through as its own way in", () => {
     const effects = effectsIn(`
       ${IMPORTS}
