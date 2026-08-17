@@ -47,7 +47,7 @@
     "@suss/contract-terraform": "0.5.11"
   },
   "devDependencies": {
-    "@suss/behavioral-ir": "0.5.11",
+    "@suss/behavioral-ir": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
