@@ -1734,9 +1734,9 @@ describe("createTypeScriptAdapter: reachable closure", () => {
       "service.ts",
       `
       import type { OrdersReader } from "./dao";
-      export class EditionService {
+      export class OrdersService {
         constructor(private readonly dao: OrdersReader) {}
-        async listForCustomer(id: string) {
+        async forCustomer(id: string) {
           return this.dao.findByCustomer(id);
         }
       }
@@ -1747,12 +1747,12 @@ describe("createTypeScriptAdapter: reachable closure", () => {
       `
       import { initServer } from "@ts-rest/express";
       import { OrdersDao } from "./dao";
-      import { EditionService } from "./service";
+      import { OrdersService } from "./service";
       const s = initServer();
       export const router = s.router({} as any, {
         list: async ({ params }: { params: { id: string } }) => {
-          const service = new EditionService(new OrdersDao());
-          return { status: 200 as const, body: await service.listForCustomer(params.id) };
+          const service = new OrdersService(new OrdersDao());
+          return { status: 200 as const, body: await service.forCustomer(params.id) };
         },
       });
     `,

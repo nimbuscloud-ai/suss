@@ -1440,10 +1440,10 @@ describe("a dependency the constructor was handed", () => {
       "/service.ts": service,
       "/entry.ts": `
         import { OrdersDao, InvoicesDao } from "./dao";
-        import { EditionService } from "./service";
+        import { OrdersService } from "./service";
         export const handler = async (id: string) => {
-          const service = new EditionService(${construction});
-          return service.listForCustomer(id);
+          const service = new OrdersService(${construction});
+          return service.forCustomer(id);
         };
       `,
     });
@@ -1463,9 +1463,9 @@ describe("a dependency the constructor was handed", () => {
     const project = serviceProject(
       `
         import type { OrdersReader } from "./dao";
-        export class EditionService {
+        export class OrdersService {
           constructor(private readonly dao: OrdersReader) {}
-          async listForCustomer(id: string) {
+          async forCustomer(id: string) {
             return this.dao.findByCustomer(id);
           }
         }
@@ -1476,7 +1476,7 @@ describe("a dependency the constructor was handed", () => {
     expect(
       resolvedBody(
         storeThatRead(project),
-        calleeIn(project, "/service.ts", "listForCustomer"),
+        calleeIn(project, "/service.ts", "forCustomer"),
       ),
     ).toContain('"orders:"');
   });
@@ -1485,12 +1485,12 @@ describe("a dependency the constructor was handed", () => {
     const project = serviceProject(
       `
         import type { OrdersReader } from "./dao";
-        export class EditionService {
+        export class OrdersService {
           private readonly dao: OrdersReader;
           constructor(dao: OrdersReader) {
             this.dao = dao;
           }
-          async listForCustomer(id: string) {
+          async forCustomer(id: string) {
             return this.dao.findByCustomer(id);
           }
         }
@@ -1501,7 +1501,7 @@ describe("a dependency the constructor was handed", () => {
     expect(
       resolvedBody(
         storeThatRead(project),
-        calleeIn(project, "/service.ts", "listForCustomer"),
+        calleeIn(project, "/service.ts", "forCustomer"),
       ),
     ).toContain('"orders:"');
   });
@@ -1510,9 +1510,9 @@ describe("a dependency the constructor was handed", () => {
     const project = serviceProject(
       `
         import { OrdersDao, type OrdersReader } from "./dao";
-        export class EditionService {
+        export class OrdersService {
           private readonly dao: OrdersReader = new OrdersDao();
-          async listForCustomer(id: string) {
+          async forCustomer(id: string) {
             return this.dao.findByCustomer(id);
           }
         }
@@ -1523,7 +1523,7 @@ describe("a dependency the constructor was handed", () => {
     expect(
       resolvedBody(
         storeThatRead(project),
-        calleeIn(project, "/service.ts", "listForCustomer"),
+        calleeIn(project, "/service.ts", "forCustomer"),
       ),
     ).toContain('"orders:"');
   });
@@ -1532,12 +1532,12 @@ describe("a dependency the constructor was handed", () => {
     const project = serviceProject(
       `
         import type { OrdersReader } from "./dao";
-        export class EditionService {
+        export class OrdersService {
           constructor(private dao: OrdersReader) {}
           swap(other: OrdersReader) {
             this.dao = other;
           }
-          async listForCustomer(id: string) {
+          async forCustomer(id: string) {
             return this.dao.findByCustomer(id);
           }
         }
@@ -1548,7 +1548,7 @@ describe("a dependency the constructor was handed", () => {
     expect(
       resolvedBody(
         storeThatRead(project),
-        calleeIn(project, "/service.ts", "listForCustomer"),
+        calleeIn(project, "/service.ts", "forCustomer"),
       ),
     ).toBeNull();
   });
@@ -1558,20 +1558,20 @@ describe("a dependency the constructor was handed", () => {
       "/dao.ts": READER,
       "/service.ts": `
         import type { OrdersReader } from "./dao";
-        export class EditionService {
+        export class OrdersService {
           constructor(private readonly dao: OrdersReader) {}
-          async listForCustomer(id: string) {
+          async forCustomer(id: string) {
             return this.dao.findByCustomer(id);
           }
         }
       `,
       "/entry.ts": `
         import { OrdersDao, InvoicesDao } from "./dao";
-        import { EditionService } from "./service";
+        import { OrdersService } from "./service";
         export const handler = async (id: string) => {
-          const orders = new EditionService(new OrdersDao());
-          const invoices = new EditionService(new InvoicesDao());
-          return [orders.listForCustomer(id), invoices.listForCustomer(id)];
+          const orders = new OrdersService(new OrdersDao());
+          const invoices = new OrdersService(new InvoicesDao());
+          return [orders.forCustomer(id), invoices.forCustomer(id)];
         };
       `,
     });
@@ -1579,7 +1579,7 @@ describe("a dependency the constructor was handed", () => {
     expect(
       resolvedBody(
         storeThatRead(project),
-        calleeIn(project, "/service.ts", "listForCustomer"),
+        calleeIn(project, "/service.ts", "forCustomer"),
       ),
     ).toBeNull();
   });
@@ -1588,9 +1588,9 @@ describe("a dependency the constructor was handed", () => {
     const project = serviceProject(
       `
         import type { OrdersReader } from "./dao";
-        export class EditionService {
+        export class OrdersService {
           constructor(private readonly dao: OrdersReader) {}
-          async listForCustomer(id: string) {
+          async forCustomer(id: string) {
             return this.dao.findByCustomer(id);
           }
         }
@@ -1601,7 +1601,7 @@ describe("a dependency the constructor was handed", () => {
     expect(
       resolvedBody(
         storeThatRead(project),
-        calleeIn(project, "/service.ts", "listForCustomer"),
+        calleeIn(project, "/service.ts", "forCustomer"),
       ),
     ).toBeNull();
   });
