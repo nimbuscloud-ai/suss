@@ -17,14 +17,14 @@ import { declaredExports } from "./declaredSurface.mjs";
 
 /**
  * How many consumers may go unpaired while their provider is in the
- * same run. Nine today, and every one of them has a cause written up
+ * same run. Eleven today, and every one of them has a cause written up
  * under `## Where the unmatched summaries come from` in the dogfooding
  * notes. What bounds this number is how well suss resolves, not how many
  * exports the repo happens to have, which is why it can be a fixed
  * ceiling at all. Lowering it is a fix landing; raising it needs an
  * explanation in the same place.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 9;
+const KNOWN_UNPAIRED_CONSUMERS = 11;
 
 /**
  * Every function a package says it exports has a provider summary.

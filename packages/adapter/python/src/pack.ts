@@ -27,6 +27,8 @@ export interface PythonPack {
   projectModules?: string[];
   /** What the library's own database queries look like. The README says how one is matched. */
   storage?: StoragePattern[];
+  /** How the library lets a project hand the database SQL it wrote itself. */
+  rawSql?: RawSqlPattern[];
 }
 
 /**
@@ -48,6 +50,21 @@ export interface StoragePattern {
    * project class. `select(...)` in SQLAlchemy 2.0 is one.
    */
   queryFunctions?: string[];
+  /** Which database the library is talking to, for the boundary binding. */
+  storageSystem: "postgres" | "mysql" | "sqlite";
+}
+
+/**
+ * The function a library gives a project for handing the database a
+ * statement written as SQL, and where it comes from. SQLAlchemy exports
+ * `text` from `sqlalchemy`. A local function of the same name is
+ * somebody else's, so the import is what settles a match.
+ */
+export interface RawSqlPattern {
+  /** The module the function is imported from. */
+  module: string;
+  /** The functions that take a statement written as SQL. */
+  functions: string[];
   /** Which database the library is talking to, for the boundary binding. */
   storageSystem: "postgres" | "mysql" | "sqlite";
 }

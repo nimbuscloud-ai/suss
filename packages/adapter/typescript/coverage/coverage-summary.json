@@ -19,10 +19,10 @@
       "pct": 94.19
     },
     "branches": {
-      "total": 5557,
-      "covered": 4350,
+      "total": 5558,
+      "covered": 4351,
       "skipped": 0,
-      "pct": 78.27
+      "pct": 78.28
     },
     "branchesTrue": {
       "total": 0,
@@ -1637,10 +1637,10 @@
       "pct": 86.54
     },
     "branches": {
-      "total": 177,
-      "covered": 147,
+      "total": 178,
+      "covered": 148,
       "skipped": 0,
-      "pct": 83.05
+      "pct": 83.14
     }
   },
   "src/resolve/reachableClosure.ts": {

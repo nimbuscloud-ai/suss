@@ -2,7 +2,11 @@
 // database, for a project using SQLAlchemy. The adapter matches a call chain
 // on what the method behind it says it returns, and the README says why.
 
-import type { PythonPack, StoragePattern } from "@suss/adapter-python";
+import type {
+  PythonPack,
+  RawSqlPattern,
+  StoragePattern,
+} from "@suss/adapter-python";
 
 export interface SqlalchemyPackOptions {
   /**
@@ -43,6 +47,23 @@ export function sqlalchemyStorage(
 }
 
 /**
+ * The function SQLAlchemy gives a project for handing the database a
+ * statement it wrote itself. `text` is the one, and it comes from the
+ * package root.
+ */
+export function sqlalchemyRawSql(
+  options: SqlalchemyPackOptions,
+): RawSqlPattern[] {
+  return [
+    {
+      module: "sqlalchemy",
+      functions: ["text"],
+      storageSystem: options.storageSystem,
+    },
+  ];
+}
+
+/**
  * Add the storage patterns to the route pack a run already uses. A web
  * framework and a database library are separate libraries and a project picks
  * both, so this composes rather than replacing anything.
@@ -54,6 +75,7 @@ export function withSqlalchemy(
   return {
     ...pack,
     storage: [...(pack.storage ?? []), ...sqlalchemyStorage(options)],
+    rawSql: [...(pack.rawSql ?? []), ...sqlalchemyRawSql(options)],
   };
 }
 
@@ -72,6 +94,7 @@ export function sqlalchemyFramework(
     protocol: options.storageSystem,
     discovery: [],
     storage: sqlalchemyStorage(options),
+    rawSql: sqlalchemyRawSql(options),
   };
 }
 

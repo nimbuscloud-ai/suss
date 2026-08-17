@@ -43,6 +43,7 @@ import { bodyCalls, invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
 import { predicateOf } from "./paths/predicates.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
+import { rawSqlEffects } from "./rawSql.js";
 import { type StorageLookup, storageEffects } from "./storage.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
@@ -981,10 +982,17 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   const storage =
     storageLookup === undefined
       ? []
-      : storageEffects(bodyCalls(definitionNode), {
-          ...storageLookup,
-          filePath: storageLookup.factsPath,
-        });
+      : [
+          ...storageEffects(bodyCalls(definitionNode), {
+            ...storageLookup,
+            filePath: storageLookup.factsPath,
+          }),
+          ...rawSqlEffects(bodyCalls(definitionNode), {
+            facts: storageLookup.facts,
+            filePath: storageLookup.factsPath,
+            patterns: storageLookup.rawSql ?? [],
+          }),
+        ];
   const perReturn = branchesFromReturns(
     readsReturnedStatus,
     definitionNode,

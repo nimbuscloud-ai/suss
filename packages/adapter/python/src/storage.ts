@@ -10,7 +10,7 @@ import { nodeId } from "./facts/values.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { StoragePattern } from "./pack.js";
+import type { RawSqlPattern, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 
 /** One call chain, from the call that starts it to the call that ends it. */
@@ -343,6 +343,8 @@ export interface StorageLookup {
   readonly definitionAt: (key: string) => PyNode | undefined;
   readonly couldMatch: ReadonlySet<string>;
   readonly leadsToStorage: ReadonlySet<string>;
+  /** What a pack says about statements a project writes as SQL itself. */
+  readonly rawSql?: readonly RawSqlPattern[];
 }
 
 /**

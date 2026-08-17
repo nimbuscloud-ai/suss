@@ -50,6 +50,9 @@ function makeProject(userSource: string): SourceFile {
       export class PrismaClient {
         readonly user: UserDelegate;
         readonly post: PostDelegate;
+        $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
+        $executeRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
+        $queryRawUnsafe(sql: string, ...values: unknown[]): Promise<unknown>;
       }
     `,
   );
@@ -373,5 +376,100 @@ describe("prisma pack metadata", () => {
     expect(pack.discovery).toEqual([]);
     expect(pack.terminals).toEqual([]);
     expect(pack.invocationRecognizers).toHaveLength(1);
+  });
+});
+
+describe("prisma raw SQL", () => {
+  function rawEffects(source: string): Effect[] {
+    const sourceFile = makeProject(source);
+    const recognizers = prismaFramework().accessRecognizers ?? [];
+    const effects: Effect[] = [];
+    sourceFile.forEachDescendant((node) => {
+      for (const recognizer of recognizers) {
+        const emitted = recognizer(node, {
+          access: node,
+          sourceFile,
+          resolveWrittenValue: () => null,
+        });
+        if (emitted !== null) {
+          effects.push(...emitted);
+        }
+      }
+    });
+    return effects;
+  }
+
+  function storageOf(effect: Effect) {
+    if (effect.type !== "interaction") {
+      throw new Error(`expected an interaction, got ${effect.type}`);
+    }
+    const semantics = effect.binding.semantics;
+    if (semantics.name !== "storage") {
+      throw new Error(`expected storage, got ${semantics.name}`);
+    }
+    return { semantics, interaction: effect.interaction };
+  }
+
+  it("reads a query the client takes as a tagged template", () => {
+    const effects = rawEffects(`
+      import { PrismaClient } from "@prisma/client";
+      const prisma = new PrismaClient();
+      export async function activeUsers(tenant: string) {
+        return prisma.$queryRaw\`SELECT id, email FROM users WHERE tenant_id = \${tenant}\`;
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    const { semantics, interaction } = storageOf(effects[0]);
+    expect(semantics).toMatchObject({ container: "users" });
+    expect(interaction).toMatchObject({
+      kind: "read",
+      fields: ["id", "email"],
+      selector: ["tenant_id"],
+      operation: "$queryRaw",
+    });
+  });
+
+  it("reads a write the client takes as a tagged template", () => {
+    const effects = rawEffects(`
+      import { PrismaClient } from "@prisma/client";
+      const prisma = new PrismaClient();
+      export async function touch(id: number) {
+        return prisma.$executeRaw\`UPDATE users SET last_seen = NOW() WHERE id = \${id}\`;
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: ["last_seen"],
+      selector: ["id"],
+    });
+  });
+
+  it("reads the unsafe form, which takes the query as a string", () => {
+    const effects = rawEffects(`
+      import { PrismaClient } from "@prisma/client";
+      const prisma = new PrismaClient();
+      export async function all() {
+        return prisma.$queryRawUnsafe("SELECT id FROM users");
+      }
+    `);
+
+    expect(storageOf(effects[0]).semantics).toMatchObject({
+      container: "users",
+    });
+  });
+
+  it("leaves a tagged template that is not the client's alone", () => {
+    expect(
+      rawEffects(`
+        import { PrismaClient } from "@prisma/client";
+        const prisma = new PrismaClient();
+        const other = { $queryRaw: (s: TemplateStringsArray) => s };
+        export function get() {
+          return other.$queryRaw\`SELECT id FROM users\`;
+        }
+      `),
+    ).toEqual([]);
   });
 });
