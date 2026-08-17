@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 11 consumers unpaired, plus the
+The run leaves 134 providers and 7 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -196,25 +196,24 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 11 unmatched consumers are member calls on a returned or
-parsed value**, like `checkAll(...).findings.filter(...)`,
-`SuppressionFileSchema.safeParse(...)`, and the packs that read SQL
-calling `readSqlAccess(...).map(...)`. The consumer records the
-whole member chain as its export path, so it asks for
-`@suss/sql::readSqlAccess.map`, and nothing publishes a provider
-under that key.
+**The 7 unmatched consumers ask for a method or a property on a
+value a package returned.** They are `checkAll(...).findings`,
+`SuppressionFileSchema.safeParse(...)`, `IntentDocSchema.parse(...)`,
+and `evaluate(...).facts`. The consumer records the member as part of
+its export path, so it asks for `@suss/checker::checkAll.findings`,
+and a package publishes providers for what it exports rather than for
+the members of what those exports return. Closing this means
+publishing a provider for a class method, which is a larger piece of
+work than the pairing pass.
 
-The number grows with every pack that reads SQL, so it wants a fix
-rather than another raise, and the shape of that fix is not what it
-first looks like. Stopping the export path at a call breaks factory
-tracking, which exists so that `const c = factory(); c.method()`
-records `pkg::factory.method`: an SDK client's method is a boundary
-even though the client is a returned value. Telling the two apart
-means asking whether the method is declared on a type the package
-itself exports, which is a type question rather than a syntax one.
-Issue #408 has the measurement. This is the number
-`dogfoodInvariants.mjs` puts a ceiling on, because what bounds
-it is how well suss resolves rather than how large this repo is.
+A method the language declares on every value used to land here too,
+and that was noise: `readSqlAccess(...).map(...)` asked for
+`@suss/sql::readSqlAccess.map`, and the count climbed by one for every
+pack that called a shared reader. The export path now stops at the
+call when the method is declared in TypeScript's own lib files, and
+runs through it when somebody declared the method, which is what keeps
+`client.send(...)` on an SDK client working. That took the count from
+eleven to seven and paired one more consumer.
 
 ## What CI enforces
 

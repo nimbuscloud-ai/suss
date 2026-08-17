@@ -17,13 +17,21 @@
 // parameter passthrough, namespace imports, re-exports. See
 // project_packageimport_gaps.md.
 
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type PropertyAccessExpression, type SourceFile } from "ts-morph";
 
 import {
   type FactoryProvenance,
   trackFactoryBindings,
 } from "./factoryTracking.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
+
+/**
+ * Whether a file is one of TypeScript's own lib files, which declare
+ * what every value can do: `Array.map`, `Promise.then`, `String.trim`.
+ */
+function isLanguageLib(file: SourceFile): boolean {
+  return /[\\/]typescript[\\/]lib[\\/]lib\..*\.d\.ts$/.test(file.getFilePath());
+}
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -188,12 +196,37 @@ export function discoverPackageImports(
       if (subjectProvenance === null) {
         return null;
       }
+      // `client.send(...)` calls a method the SDK declares, and the
+      // export path runs through it. `readSqlAccess(sql).map(...)` calls
+      // a method the language declares on an array, and that says
+      // nothing about the package, so the path stops at what was called.
+      if (!methodComesFromSource(callee)) {
+        return subjectProvenance;
+      }
       return {
         packageName: subjectProvenance.packageName,
         exportPath: [...subjectProvenance.exportPath, callee.getName()],
       };
     }
     return null;
+  }
+
+  /**
+   * Whether a method is one somebody wrote, rather than one the language
+   * gives every value. `map`, `then`, and `trim` are declared in
+   * TypeScript's own lib files, and a method a package declares is
+   * declared in that package.
+   */
+  function methodComesFromSource(callee: PropertyAccessExpression): boolean {
+    const declarations = callee.getNameNode().getSymbol()?.getDeclarations();
+    if (declarations === undefined || declarations.length === 0) {
+      // Nothing says where it came from, so the path keeps what the
+      // source wrote, which is what it did before this check.
+      return true;
+    }
+    return declarations.some(
+      (declaration) => !isLanguageLib(declaration.getSourceFile()),
+    );
   }
 
   const results: DiscoveredUnit[] = [];

@@ -3,16 +3,16 @@
     "packages": 48,
     "packagesWithExports": 48,
     "exports": 442,
-    "internal": 1724,
-    "consumers": 711,
-    "pairs": 700
+    "internal": 1726,
+    "consumers": 708,
+    "pairs": 701
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 50,
       "internal": 161,
-      "consumers": 53
+      "consumers": 52
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
@@ -23,7 +23,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 33,
-      "internal": 608,
+      "internal": 610,
       "consumers": 45
     },
     "packages/behavioral-ir": {
@@ -48,7 +48,7 @@
       "name": "@suss/cli",
       "exports": 10,
       "internal": 237,
-      "consumers": 155
+      "consumers": 154
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -84,7 +84,7 @@
       "name": "@suss/contract-cloudformation",
       "exports": 8,
       "internal": 73,
-      "consumers": 123
+      "consumers": 124
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
@@ -174,7 +174,7 @@
       "name": "@suss/framework-drizzle",
       "exports": 2,
       "internal": 15,
-      "consumers": 6
+      "consumers": 5
     },
     "packages/framework/express": {
       "name": "@suss/framework-express",
@@ -234,7 +234,7 @@
       "name": "@suss/framework-prisma",
       "exports": 2,
       "internal": 9,
-      "consumers": 5
+      "consumers": 4
     },
     "packages/framework/react": {
       "name": "@suss/framework-react",
