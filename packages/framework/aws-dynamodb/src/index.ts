@@ -12,7 +12,12 @@
  * own `Fn::Sub`. Its README says what each command contributes.
  */
 
-import { type CallExpression, Node as N, type Node } from "ts-morph";
+import {
+  type CallExpression,
+  Node as N,
+  type Node,
+  SyntaxKind,
+} from "ts-morph";
 
 import { rootIdentifier } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
@@ -264,10 +269,11 @@ function nameOf(
   if (expr === null) {
     return null;
   }
-  const settled =
+  const settled = defaultOf(
     N.isStringLiteral(expr) || N.isTemplateExpression(expr)
       ? expr
-      : (resolve(expr) ?? expr);
+      : (resolve(expr) ?? expr),
+  );
 
   if (
     N.isStringLiteral(settled) ||
@@ -279,6 +285,27 @@ function nameOf(
     return patternOf(settled);
   }
   return null;
+}
+
+/**
+ * What a value falls back to when nothing was passed in.
+ * `tableName || \`${stage}-orders-v1\`` is how a class takes an
+ * override and ships a default, and the default is the table the
+ * service reads unless a caller says otherwise. A caller that does pass
+ * one is out of view here, which is the same limit as any argument.
+ */
+function defaultOf(expr: Node): Node {
+  if (!N.isBinaryExpression(expr)) {
+    return expr;
+  }
+  const operator = expr.getOperatorToken().getKind();
+  if (
+    operator !== SyntaxKind.BarBarToken &&
+    operator !== SyntaxKind.QuestionQuestionToken
+  ) {
+    return expr;
+  }
+  return defaultOf(expr.getRight());
 }
 
 /** `` `${stage}-orders-v1` `` reads as `{stage}-orders-v1`. */
