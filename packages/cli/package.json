@@ -97,6 +97,7 @@
     "@suss/framework-prisma": "0.6.0",
     "@suss/framework-react": "0.6.0",
     "@suss/framework-react-router": "0.6.0",
+    "@suss/framework-redis": "0.6.0",
     "@suss/framework-sqlalchemy": "0.6.0",
     "@suss/framework-ts-rest": "0.6.0",
     "@suss/intent-ir": "0.6.0",

@@ -37,6 +37,7 @@ export const coveragePackages = [
   ["packages/framework/nestjs-rest", "nestjs-rest"],
   ["packages/framework/nestjs-graphql", "nestjs-graphql"],
   ["packages/framework/prisma", "prisma"],
+  ["packages/framework/redis", "redis"],
   ["packages/framework/drizzle", "drizzle"],
   ["packages/sql", "sql"],
   ["packages/contract/terraform", "contract-terraform"],

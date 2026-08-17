@@ -170,6 +170,31 @@ export function isImportedFrom(
     );
 }
 
+/**
+ * Whether `expectedModule` declares the method a call goes to. A pack
+ * asks this when the receiver came from somewhere the source does not
+ * spell out: `const redis = await this.getClient()` says nothing about
+ * ioredis, and the type of `redis.get` says everything.
+ */
+export function methodDeclaredIn(
+  callee: Node,
+  expectedModule: string,
+): boolean {
+  if (!Node.isPropertyAccessExpression(callee)) {
+    return false;
+  }
+  const declarations = callee.getNameNode().getSymbol()?.getDeclarations();
+  return (
+    declarations !== undefined &&
+    declarations.some((declaration) =>
+      declaration
+        .getSourceFile()
+        .getFilePath()
+        .includes(`/node_modules/${expectedModule}/`),
+    )
+  );
+}
+
 /** Whether an import-shaped declaration imports from `expectedModule`. */
 function importSpecifierMatches(decl: Node, expectedModule: string): boolean {
   if (Node.isImportSpecifier(decl)) {
