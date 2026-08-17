@@ -77,6 +77,37 @@ describe("contract CLI command", () => {
     });
   });
 
+  it("reads a Terraform module via --from terraform, with the AWS pack loaded", async () => {
+    const moduleDir = path.join(tmpDir, "infra");
+    fs.mkdirSync(moduleDir);
+    fs.writeFileSync(
+      path.join(moduleDir, "main.tf"),
+      [
+        'resource "aws_dynamodb_table" "orders" {',
+        '  name     = "${local.environment}-orders-v1"',
+        '  hash_key = "order_id"',
+        "}",
+      ].join("\n"),
+    );
+
+    const writeFn = process.stdout.write;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    let summaries: BehavioralSummary[];
+    try {
+      summaries = await contract({ from: "terraform", spec: moduleDir });
+    } finally {
+      process.stdout.write = writeFn;
+    }
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].identity.name).toBe("aws_dynamodb_table.orders");
+    expect(summaries[0].identity.boundaryBinding?.semantics).toMatchObject({
+      name: "storage",
+      storageSystem: "dynamodb",
+      container: "orders",
+    });
+  });
+
   it("writes summaries to the output file when -o is given", async () => {
     const outFile = path.join(tmpDir, "out.json");
     const writeErr = process.stderr.write;

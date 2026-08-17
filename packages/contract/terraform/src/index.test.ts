@@ -287,3 +287,129 @@ describe("what a pack says, and which provider version it says it for", () => {
     ).toEqual([]);
   });
 });
+
+describe("shapes a configuration writes that the reader has to take as they come", () => {
+  it("marks a queue the provider is told to make FIFO", () => {
+    const [queue] = terraformToSummaries(
+      [
+        'resource "aws_sqs_queue" "jobs" {',
+        '  name       = "jobs.fifo"',
+        "  fifo_queue = true",
+        "}",
+      ].join("\n"),
+      "main.tf",
+      PACKS,
+    );
+
+    expect(queue.metadata?.messageBus).toEqual({
+      physicalName: "jobs.fifo",
+      fifoQueue: true,
+    });
+  });
+
+  it("does not record a deployed name when the resource states none", () => {
+    const [queue] = terraformToSummaries(
+      ['resource "aws_sqs_queue" "jobs" {', "  delay_seconds = 90", "}"].join(
+        "\n",
+      ),
+      "main.tf",
+      PACKS,
+    );
+
+    expect(queue.identity.boundaryBinding?.semantics).toMatchObject({
+      channel: "jobs",
+    });
+    expect(queue.metadata?.messageBus).toEqual({});
+  });
+
+  it("reads two resources of one type, which HCL writes as a list", () => {
+    const summaries = terraformToSummaries(
+      [
+        'resource "aws_sqs_queue" "first" {',
+        '  name = "first"',
+        "}",
+        'resource "aws_sqs_queue" "second" {',
+        '  name = "second"',
+        "}",
+      ].join("\n"),
+      "main.tf",
+      PACKS,
+    );
+
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "aws_sqs_queue.first",
+      "aws_sqs_queue.second",
+    ]);
+  });
+
+  it("skips an index block without a name, since nothing addresses it", () => {
+    const summaries = terraformToSummaries(
+      [
+        'resource "aws_dynamodb_table" "orders" {',
+        '  name     = "orders"',
+        '  hash_key = "order_id"',
+        "  global_secondary_index {",
+        '    hash_key = "customer_id"',
+        "  }",
+        "}",
+      ].join("\n"),
+      "main.tf",
+      PACKS,
+    );
+
+    expect(summaries).toHaveLength(1);
+  });
+
+  it("leaves a resource alone when the pack that states it is for another provider", () => {
+    const google = {
+      name: "test-google",
+      provider: "google",
+      resources: [
+        {
+          resource: "aws_sqs_queue",
+          providerVersions: ">=1",
+          boundary: {
+            kind: "message-bus" as const,
+            messageBus: "sqs" as const,
+            nameAttribute: "name",
+          },
+        },
+      ],
+    };
+    const source = [
+      "terraform {",
+      "  required_providers {",
+      "    aws = {",
+      '      version = "~> 5.0"',
+      "    }",
+      "  }",
+      "}",
+      'resource "aws_sqs_queue" "jobs" {',
+      '  name = "jobs"',
+      "}",
+    ].join("\n");
+
+    // The pin is on `aws`, and this pack speaks for `google`, so its
+    // entry is read whatever the aws pin says.
+    expect(
+      terraformToSummaries(source, "main.tf", { packs: [google] }),
+    ).toHaveLength(1);
+  });
+
+  it("reads an entry when the pin is text semver cannot settle", () => {
+    const source = [
+      "terraform {",
+      "  required_providers {",
+      "    aws = {",
+      '      version = "whatever hashicorp ships"',
+      "    }",
+      "  }",
+      "}",
+      'resource "aws_sqs_queue" "jobs" {',
+      '  name = "jobs"',
+      "}",
+    ].join("\n");
+
+    expect(terraformToSummaries(source, "main.tf", PACKS)).toHaveLength(1);
+  });
+});
