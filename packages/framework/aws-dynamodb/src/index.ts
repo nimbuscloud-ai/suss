@@ -278,10 +278,12 @@ function fieldsOf(input: Node, kind: "read" | "write"): string[] {
         ? projection.getLiteralValue()
         : null;
     if (text !== null) {
+      const aliases = expressionNames(input);
       return text
         .split(",")
         .map((field) => field.trim())
-        .filter((field) => field !== "");
+        .filter((field) => field !== "")
+        .map((field) => aliases.get(field) ?? field);
     }
   }
   if (kind === "write") {

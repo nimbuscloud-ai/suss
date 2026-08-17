@@ -3,9 +3,9 @@
     "packages": 53,
     "packagesWithExports": 53,
     "exports": 459,
-    "internal": 1758,
-    "consumers": 739,
-    "pairs": 732
+    "internal": 1760,
+    "consumers": 743,
+    "pairs": 736
   },
   "packages": {
     "packages/adapter/python": {
@@ -35,7 +35,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 144,
+      "internal": 145,
       "consumers": 91
     },
     "packages/checker-intent": {
@@ -125,8 +125,8 @@
     "packages/contract/terraform": {
       "name": "@suss/contract-terraform",
       "exports": 2,
-      "internal": 11,
-      "consumers": 8
+      "internal": 12,
+      "consumers": 10
     },
     "packages/datalog": {
       "name": "@suss/datalog",
@@ -324,7 +324,7 @@
       "name": "@suss/terraform-aws",
       "exports": 2,
       "internal": 1,
-      "consumers": 4
+      "consumers": 6
     }
   }
 }

@@ -43,7 +43,7 @@ A name the pack cannot settle comes out null, and null pairs with nothing rather
 | `IndexName` | the access path, since a query through an index keys on that index's fields |
 | `Key` | the selector, the attributes that pick one item |
 | `Item` | the fields a write touches |
-| `ProjectionExpression` | the fields a read asks for |
+| `ProjectionExpression` | the fields a read asks for, with `#alias` names resolved through `ExpressionAttributeNames` |
 
 A read that states no projection reads whatever the item has, which is recorded as `*`, the same wildcard a Prisma call with no `select` uses. A DynamoDB table's contract declares its key attributes and nothing else, so the checker never calls an attribute unknown here. What it can say is which declared key nothing reads.
 

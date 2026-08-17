@@ -142,6 +142,19 @@ export function checkStorage(
       const kind = access.effect.interaction.kind;
       const wildcards = fields.includes(ALL_FIELDS);
 
+      // A read that states no fields asks for the whole item. A way in
+      // that copies part of one cannot serve that, and the store sends
+      // what it has and reports no error, so the caller gets an item
+      // with fields missing and nothing says so.
+      if (
+        wildcards &&
+        kind === "read" &&
+        fieldSetIsComplete &&
+        semantics.accessPath !== null
+      ) {
+        findings.push(makeWholeItemFinding(provider, binding, access));
+      }
+
       // Field-existence checks per access. Wildcards skip per-field
       // matching (the access reads "everything the schema declares,"
       // so by definition no field can be unknown).
@@ -287,6 +300,24 @@ function makeFieldUnknownFinding(
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
     description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${semantics.storageSystem}) but the contract declares no ${field} field.`,
+    severity: "error",
+  };
+}
+
+/** A read of a whole item through a way in that copies part of one. */
+function makeWholeItemFinding(
+  provider: BehavioralSummary,
+  binding: BoundaryBinding,
+  access: StorageAccessRecord,
+): Finding {
+  const semantics = binding.semantics as StorageSemantics;
+  return {
+    kind: "boundaryFieldUnknown",
+    aspect: "read",
+    boundary: binding,
+    provider: makeSide(provider),
+    consumer: makeSide(access.summary, access.transitionId),
+    description: `${access.summary.identity.name} reads whole items through ${containerLabel(semantics)} (${semantics.storageSystem}), which copies only the fields it declares, so anything else comes back absent and no error says so.`,
     severity: "error",
   };
 }
