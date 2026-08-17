@@ -109,8 +109,10 @@ Options (check):
 Options (contract):
   --from           What kind of file to read: openapi, cloudformation,
                    terraform, serverless, storybook, appsync, prisma,
-                   graphql, graphql-documents. A terraform path may be
-                   one .tf file or the directory a module lives in
+                   graphql, graphql-documents, wrangler. A terraform path
+                   may be one .tf file or the directory a module lives
+                   in, and a wrangler path may be the directory a Worker
+                   lives in
   -o, --output     Write JSON to a file instead of stdout
 
 Options (corroborate):
@@ -542,6 +544,7 @@ async function runContract(args: string[]): Promise<number> {
     "prisma",
     "graphql",
     "graphql-documents",
+    "wrangler",
   ];
   if (!SUPPORTED_FROM.includes(from)) {
     process.stderr.write(

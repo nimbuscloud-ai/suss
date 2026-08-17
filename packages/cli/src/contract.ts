@@ -23,7 +23,8 @@ export type ContractSource =
   | "appsync"
   | "prisma"
   | "graphql"
-  | "graphql-documents";
+  | "graphql-documents"
+  | "wrangler";
 
 export interface ContractOptions {
   from: ContractSource;
@@ -106,6 +107,16 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     // resolvers extracted by framework-apollo / framework-nestjs-graphql.
     const mod = await import("@suss/contract-graphql");
     return mod.graphqlSdlFileToSummaries(specPath);
+  },
+  wrangler: async (specPath, source) => {
+    // `--from wrangler` reads a Cloudflare Worker's configuration. The
+    // path may be the file or the directory the Worker is in, and what
+    // comes out is the Worker as a deployable with the configuration it
+    // is given, plus a summary per store and queue it is bound to.
+    const mod = await import("@suss/contract-wrangler");
+    return mod.wranglerFileToSummaries(specPath, {
+      ...(source !== undefined ? { source } : {}),
+    });
   },
   "graphql-documents": async (specPath) => {
     // `--from graphql-documents` reads committed `.graphql` / `.gql`
