@@ -37,6 +37,7 @@ import {
 import type { Database } from "@suss/datalog";
 import type {
   ClassDeclaration,
+  ParameterDeclaration,
   PropertyDeclaration,
   VariableDeclaration,
 } from "ts-morph";
@@ -54,6 +55,8 @@ export interface NodeTable {
   seenBindings: Set<Node>;
   /** Expressions whose facts are already emitted, per store. */
   seenValues: Set<Node>;
+  /** Classes whose facts are already emitted, per store. */
+  seenClasses: Set<Node>;
 }
 
 export function createNodeTable(): NodeTable {
@@ -62,6 +65,7 @@ export function createNodeTable(): NodeTable {
     seenFunctions: new Set(),
     seenBindings: new Set(),
     seenValues: new Set(),
+    seenClasses: new Set(),
   };
 }
 
@@ -413,16 +417,19 @@ export function emitValue(
     return id;
   }
 
-  if (Node.isCallExpression(expression)) {
+  // Making one of a class is calling it: the rules read `Foo()` as
+  // arriving at an instance, and `new Foo(dao)` puts its argument in
+  // the constructor's parameter the way any call does.
+  if (Node.isCallExpression(expression) || Node.isNewExpression(expression)) {
     emitCallFacts(db, table, expression);
     fact(db, "writtenValue", id);
     return id;
   }
 
   // Everything left is written out here and refers to nothing further:
-  // a template literal, a tag call's result, a ternary, a `new`. A name
-  // for one of these ends its chain here, and the caller decides
-  // whether what it found is the thing it was looking for.
+  // a template literal, a tag call's result, a ternary. A name for one
+  // of these ends its chain here, and the caller decides whether what
+  // it found is the thing it was looking for.
   fact(db, "writtenValue", id);
   return id;
 }
@@ -474,10 +481,35 @@ function emitFieldValues(
 ): void {
   const { values, inOrder } = writesToField(declaration);
   const last = values[values.length - 1];
-  if (!inOrder || last === undefined) {
+  if (!inOrder || last === undefined || !Node.isExpression(last)) {
     return;
   }
   fact(db, "binds", nodeId(declaration), emitValue(db, table, last));
+}
+
+/**
+ * What reading `this.dao` off a parameter property comes down to. The
+ * field and the parameter are one declaration, so the read binds to
+ * what the field ends up holding, which is the parameter itself unless
+ * the constructor writes over it.
+ */
+function emitParameterPropertyRead(
+  db: Database,
+  table: NodeTable,
+  referenceId: string,
+  declaration: ParameterDeclaration,
+): void {
+  const { values, inOrder } = writesToField(declaration);
+  const last = values[values.length - 1];
+  if (!inOrder || last === undefined) {
+    return;
+  }
+  if (!Node.isExpression(last)) {
+    table.byId.set(nodeId(last), last);
+    fact(db, "binds", referenceId, nodeId(last));
+    return;
+  }
+  fact(db, "binds", referenceId, emitValue(db, table, last));
 }
 
 /**
@@ -626,7 +658,23 @@ function emitReferenceFacts(
     }
 
     if (Node.isParameterDeclaration(declaration)) {
+      // `this.dao` where dao is a parameter property reads the field,
+      // which the constructor can write again; a bare `dao` reads the
+      // parameter, which nothing else can.
+      if (
+        declaration.isParameterProperty() &&
+        Node.isPropertyAccessExpression(reference)
+      ) {
+        emitParameterPropertyRead(db, table, referenceId, declaration);
+      } else {
+        fact(db, "binds", referenceId, declarationId);
+      }
+      continue;
+    }
+
+    if (Node.isClassDeclaration(declaration)) {
       fact(db, "binds", referenceId, declarationId);
+      emitClassFacts(db, table, declaration);
       continue;
     }
 
@@ -691,15 +739,26 @@ function emitCallFacts(
  * A class is an object containing its methods, which is the treatment an
  * object literal already gets. That is what lets a method read off an
  * instance resolve to the method the class declares.
+ *
+ * Its parameters are its constructor's, so `new Service(dao)` puts the
+ * argument in the parameter the same way a call puts one in a
+ * function's, and a field the constructor was handed reaches it.
  */
 function emitClassFacts(
   db: Database,
   table: NodeTable,
   declaration: ClassDeclaration,
 ): void {
+  if (table.seenClasses.has(declaration)) {
+    return;
+  }
+  table.seenClasses.add(declaration);
+
   const id = nodeId(declaration);
   table.byId.set(id, declaration);
   fact(db, "objectValue", id);
+
+  emitConstructorParameters(db, table, declaration, id);
 
   for (const method of declaration.getMethods()) {
     const methodId = nodeId(method);
@@ -724,6 +783,45 @@ function emitClassFacts(
 }
 
 /**
+ * The parameters a construction fills in. A class written with no
+ * constructor has none, and an overload signature has no body, so the
+ * parameters the arguments land in are the implementation's.
+ */
+function emitConstructorParameters(
+  db: Database,
+  table: NodeTable,
+  declaration: ClassDeclaration,
+  classId: string,
+): void {
+  const implementation = declaration
+    .getConstructors()
+    .find((candidate) => candidate.getBody() !== undefined);
+  if (implementation === undefined) {
+    return;
+  }
+  emitParameters(db, table, classId, implementation.getParameters());
+}
+
+/** paramOf and paramNamed for everything a call fills in. */
+function emitParameters(
+  db: Database,
+  table: NodeTable,
+  ownerId: string,
+  parameters: ParameterDeclaration[],
+): void {
+  for (let position = 0; position < parameters.length; position++) {
+    const parameter = parameters[position];
+    if (parameter === undefined) {
+      continue;
+    }
+    const parameterId = nodeId(parameter);
+    table.byId.set(parameterId, parameter);
+    fact(db, "paramOf", ownerId, String(position), parameterId);
+    fact(db, "paramNamed", ownerId, parameter.getName(), parameterId);
+  }
+}
+
+/**
  * Parameters, returned values, and body calls of a function. Body
  * calls are what the unwraps rule needs: an inner function that calls
  * a parameter of its enclosing factory.
@@ -743,17 +841,7 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
     Node.isArrowFunction(fn) ||
     Node.isMethodDeclaration(fn)
   ) {
-    const parameters = fn.getParameters();
-    for (let position = 0; position < parameters.length; position++) {
-      const parameter = parameters[position];
-      if (parameter === undefined) {
-        continue;
-      }
-      const parameterId = nodeId(parameter);
-      table.byId.set(parameterId, parameter);
-      fact(db, "paramOf", fnId, String(position), parameterId);
-      fact(db, "paramNamed", fnId, parameter.getName(), parameterId);
-    }
+    emitParameters(db, table, fnId, fn.getParameters());
 
     const body = fn.getBody?.();
     if (body !== undefined) {

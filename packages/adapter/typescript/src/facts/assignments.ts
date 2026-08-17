@@ -23,14 +23,22 @@ import { createPerFileCache } from "../perFileCache.js";
 
 import type {
   Expression,
+  ParameterDeclaration,
   PropertyDeclaration,
   SourceFile,
   Statement,
   VariableDeclaration,
 } from "ts-morph";
 
+/**
+ * A class field, however it is declared. `constructor(private dao: X)`
+ * declares one and sets it to the argument, with no field declaration
+ * and no assignment written anywhere.
+ */
+export type FieldDeclaration = PropertyDeclaration | ParameterDeclaration;
+
 /** A name a write can land on: a local binding or a class field. */
-type Written = VariableDeclaration | PropertyDeclaration;
+type Written = VariableDeclaration | FieldDeclaration;
 
 /** One write to a binding: the value it takes, and where it happens. */
 interface Write {
@@ -54,8 +62,20 @@ export interface BindingWrites {
   inOrder: boolean;
 }
 
+export interface FieldWrites {
+  /**
+   * The values the field takes, in the order they run. A parameter
+   * property's first value is the parameter itself, which is the only
+   * place the value it starts out with is written.
+   */
+  values: Node[];
+  /** As `BindingWrites.inOrder`. */
+  inOrder: boolean;
+}
+
 const byFile = createPerFileCache<Map<Written, Write[]>>();
-const byDeclaration = new WeakMap<Written, BindingWrites>();
+const byDeclaration = new WeakMap<VariableDeclaration, BindingWrites>();
+const byField = new WeakMap<FieldDeclaration, FieldWrites>();
 
 /**
  * Every value a binding takes, the declaration's initializer first.
@@ -117,46 +137,53 @@ function writesToBindingUncached(
  * method, a branch, or a callback runs when something reaches it, and
  * how many times is not a question this reads, so the field comes down
  * to nothing.
+ *
+ * A field written in two places could be either value, and this
+ * reports neither rather than picking one.
  */
-export function writesToField(declaration: PropertyDeclaration): BindingWrites {
-  const remembered = byDeclaration.get(declaration);
+export function writesToField(declaration: FieldDeclaration): FieldWrites {
+  const remembered = byField.get(declaration);
   if (remembered !== undefined) {
     return remembered;
   }
   const answer = writesToFieldUncached(declaration);
-  byDeclaration.set(declaration, answer);
+  byField.set(declaration, answer);
   return answer;
 }
 
-function writesToFieldUncached(
-  declaration: PropertyDeclaration,
-): BindingWrites {
-  const initializer = declaration.getInitializer();
+function writesToFieldUncached(declaration: FieldDeclaration): FieldWrites {
+  const first = startingValueOf(declaration);
   const assignments = assignmentsTo(declaration);
 
   if (assignments.length === 0) {
-    return {
-      values: initializer === undefined ? [] : [initializer],
-      inOrder: true,
-    };
+    return { values: first === undefined ? [] : [first], inOrder: true };
   }
 
-  const values: Expression[] = [];
+  const values: Node[] = [];
   for (const write of assignments) {
     if (write.value === null) {
       return { values: [], inOrder: false };
     }
     values.push(write.value);
   }
-  const withInitializer =
-    initializer === undefined ? values : [initializer, ...values];
 
   return {
-    values: withInitializer,
+    values: first === undefined ? values : [first, ...values],
     inOrder: assignments.every((write) =>
       writeRunsInConstructor(declaration, write),
     ),
   };
+}
+
+/**
+ * The value a field has before anything assigns to it. A parameter
+ * property's is the parameter, which the language sets the field to
+ * before the constructor's first statement runs.
+ */
+function startingValueOf(declaration: FieldDeclaration): Node | undefined {
+  return Node.isParameterDeclaration(declaration)
+    ? declaration
+    : declaration.getInitializer();
 }
 
 /**
@@ -166,7 +193,7 @@ function writesToFieldUncached(
  * same name.
  */
 function writeRunsInConstructor(
-  declaration: PropertyDeclaration,
+  declaration: FieldDeclaration,
   write: Write,
 ): boolean {
   const statement = statementOf(write.node);
@@ -181,8 +208,15 @@ function writeRunsInConstructor(
   return (
     owner !== undefined &&
     Node.isConstructorDeclaration(owner) &&
-    owner.getParent() === declaration.getParent()
+    owner.getParent() === classHolding(declaration)
   );
+}
+
+/** The class a field belongs to. */
+function classHolding(declaration: FieldDeclaration): Node | undefined {
+  return Node.isParameterDeclaration(declaration)
+    ? declaration.getParent().getParent()
+    : declaration.getParent();
 }
 
 /** Whether a binding takes a second value somewhere after its declaration. */
@@ -191,7 +225,10 @@ export function isWrittenAgain(declaration: VariableDeclaration): boolean {
 }
 
 function assignmentsTo(declaration: Written): Write[] {
-  if (Node.isPropertyDeclaration(declaration)) {
+  if (
+    Node.isPropertyDeclaration(declaration) ||
+    Node.isParameterDeclaration(declaration)
+  ) {
     const sourceFile = declaration.getSourceFile();
     return sourceFile.isDeclarationFile()
       ? []
@@ -304,7 +341,11 @@ function declarationsOf(name: Node): Written[] {
   for (const declaration of symbol.getDeclarations()) {
     if (
       Node.isVariableDeclaration(declaration) ||
-      Node.isPropertyDeclaration(declaration)
+      Node.isPropertyDeclaration(declaration) ||
+      // A parameter property is the field's only declaration, so
+      // `this.dao = other` in the constructor writes to it.
+      (Node.isParameterDeclaration(declaration) &&
+        declaration.isParameterProperty())
     ) {
       declarations.push(declaration);
     }
