@@ -5,11 +5,22 @@
  * `{location.bucket}`, which says which value to go and ask about. The
  * callers are in the same run, and each call already records which
  * summary it reaches and what it passed, so the answer is a join rather
- * than another walk over source. The README beside this file says what
- * a grounded access pairs as.
+ * than another walk over source.
+ *
+ * The other half is `{SOME_TABLE}`, a variable the deployment sets
+ * rather than an argument anybody passes. What it is set to is on the
+ * runtime that runs the code, so that is where the answer comes from.
+ * The README beside this file says what a grounded access pairs as.
  */
 
-import { namePatternFromSub, namesNothing } from "@suss/behavioral-ir";
+import {
+  namePatternFromSub,
+  namesNothing,
+  readRuntimeContractMetadata,
+} from "@suss/behavioral-ir";
+
+import { placeRuntimes } from "../runtime-config/placement.js";
+import { runsIn, unitsByFile } from "../scope/unitScope.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 
@@ -30,8 +41,12 @@ export interface Grounding {
   namesFor(summary: BehavioralSummary, container: string): string[];
 }
 
-/** Ground every reference in this set of summaries against its callers. */
+/**
+ * Ground every reference in this set of summaries, against its callers
+ * and against the configuration of the runtime that runs it.
+ */
 export function groundReferences(summaries: BehavioralSummary[]): Grounding {
+  const configured = configuredNames(summaries);
   const callsInto = new Map<string, Argument[][]>();
   for (const summary of summaries) {
     for (const transition of summary.transitions) {
@@ -50,24 +65,78 @@ export function groundReferences(summaries: BehavioralSummary[]): Grounding {
   return {
     namesFor(summary, container) {
       const path = referencePath(container);
-      const id = summary.identity.id;
-      if (path === null || id === undefined) {
+      if (path === null) {
         return [];
       }
-      const position = inputPosition(summary, path[0] as string);
-      if (position === null) {
-        return [];
-      }
-      const names = new Set<string>();
-      for (const args of callsInto.get(id) ?? []) {
-        const passed = valueAt(args[position] ?? null, path.slice(1));
-        const name = passed === null ? null : nameOf(passed);
-        if (name !== null) {
-          names.add(name);
-        }
+      const names = new Set(configured(summary, path));
+      for (const name of callerNames(summary, path, callsInto)) {
+        names.add(name);
       }
       return [...names];
     },
+  };
+}
+
+/** The names a reference reaches through whoever called the unit. */
+function callerNames(
+  summary: BehavioralSummary,
+  path: string[],
+  callsInto: ReadonlyMap<string, Argument[][]>,
+): string[] {
+  const id = summary.identity.id;
+  if (id === undefined) {
+    return [];
+  }
+  const position = inputPosition(summary, path[0] as string);
+  if (position === null) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const args of callsInto.get(id) ?? []) {
+    const passed = valueAt(args[position] ?? null, path.slice(1));
+    const name = passed === null ? null : nameOf(passed);
+    if (name !== null) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * What a variable is set to, for the runtimes that run a given summary.
+ * A reference is a variable only when it is one bare name: `{location.
+ * bucket}` asks about a field of an argument, and nothing sets that.
+ *
+ * The same code deployed twice reads two values, and both count, so a
+ * Worker sharing a module between staging and production pairs against
+ * each store it addresses.
+ */
+function configuredNames(
+  summaries: BehavioralSummary[],
+): (summary: BehavioralSummary, path: string[]) => string[] {
+  const { placed } = placeRuntimes(summaries);
+  if (placed.length === 0) {
+    return () => [];
+  }
+  const byFile = unitsByFile(summaries);
+  const values = placed.map((runtime) => ({
+    scope: runtime.scope,
+    set: readRuntimeContractMetadata(runtime.runtime)?.envVarValues ?? {},
+  }));
+
+  return (summary, path) => {
+    if (path.length !== 1) {
+      return [];
+    }
+    const variable = path[0] as string;
+    const names: string[] = [];
+    for (const { scope, set } of values) {
+      const value = set[variable];
+      if (value !== undefined && runsIn(summary, scope, byFile)) {
+        names.push(value);
+      }
+    }
+    return names;
   };
 }
 

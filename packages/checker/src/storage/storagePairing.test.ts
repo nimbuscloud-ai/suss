@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { storageBinding } from "@suss/behavioral-ir";
+import {
+  runtimeConfigBinding,
+  storageBinding,
+  withRuntimeContractMetadata,
+} from "@suss/behavioral-ir";
 
 import { checkStorage } from "./storagePairing.js";
 
@@ -989,5 +993,193 @@ describe("a run with a contract and no code against it", () => {
 
     expect(unused).toHaveLength(1);
     expect(unused[0]?.description).toContain("email");
+  });
+});
+
+describe("an access whose store the deployment sets a variable to", () => {
+  /** A Worker's runtime, with the variable its code addresses a store through. */
+  function runtime(opts: {
+    instanceName: string;
+    codeScope: string;
+    values: Record<string, string>;
+  }): BehavioralSummary {
+    const deployableUnit = {
+      deploymentTarget: "worker" as const,
+      instanceName: opts.instanceName,
+    };
+    return {
+      kind: "library",
+      location: {
+        file: "wrangler.toml",
+        range: { start: 1, end: 1 },
+        exportName: null,
+      },
+      identity: {
+        name: opts.instanceName,
+        exportPath: null,
+        boundaryBinding: runtimeConfigBinding({
+          recognition: "wrangler",
+          ...deployableUnit,
+        }),
+        deployableUnit,
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: { source: "declared", level: "high" },
+      metadata: withRuntimeContractMetadata(
+        { codeScope: { kind: "codeUri", path: opts.codeScope } },
+        {
+          envVars: Object.keys(opts.values).sort(),
+          envVarValues: opts.values,
+        },
+      ),
+    };
+  }
+
+  it("pairs an access against the store its variable is set to", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "prod-orders-v2",
+        storageSystem: "dynamodb",
+        fields: [{ name: "id" }],
+        fieldSet: "partial",
+        keyFields: ["id"],
+      }),
+      runtime({
+        instanceName: "order-router",
+        codeScope: "services/orders",
+        values: { ORDER_TABLE: "prod-orders-v2" },
+      }),
+      makeAccessSummary({
+        name: "listOrders",
+        file: "services/orders/src/dao.ts",
+        accesses: [
+          {
+            container: "{ORDER_TABLE}",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["id", "total"],
+            selector: ["customerId"],
+          },
+        ],
+      }),
+    ]);
+
+    const mismatch = findings.filter(
+      (f) => f.kind === "boundarySelectorMismatch",
+    );
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0]?.description).toContain("customerId");
+  });
+
+  it("leaves an access outside the runtime's code alone", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "prod-orders-v2",
+        storageSystem: "dynamodb",
+        fields: [{ name: "id" }],
+        fieldSet: "partial",
+        keyFields: ["id"],
+      }),
+      runtime({
+        instanceName: "order-router",
+        codeScope: "services/orders",
+        values: { ORDER_TABLE: "prod-orders-v2" },
+      }),
+      makeAccessSummary({
+        name: "listOrders",
+        file: "services/billing/src/dao.ts",
+        accesses: [
+          {
+            container: "{ORDER_TABLE}",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["id"],
+            selector: ["customerId"],
+          },
+        ],
+      }),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("reaches both stores when the same code is deployed twice", () => {
+    const summaries = [
+      makeProvider({
+        container: "prod-orders-v2",
+        storageSystem: "dynamodb",
+        fields: [{ name: "id" }],
+        fieldSet: "partial",
+        keyFields: ["id"],
+      }),
+      makeProvider({
+        container: "staging-orders-v2",
+        storageSystem: "dynamodb",
+        fields: [{ name: "id" }],
+        fieldSet: "partial",
+        keyFields: ["id"],
+      }),
+      runtime({
+        instanceName: "order-router",
+        codeScope: "services/orders",
+        values: { ORDER_TABLE: "prod-orders-v2" },
+      }),
+      runtime({
+        instanceName: "order-router-staging",
+        codeScope: "services/orders",
+        values: { ORDER_TABLE: "staging-orders-v2" },
+      }),
+      makeAccessSummary({
+        name: "listOrders",
+        file: "services/orders/src/dao.ts",
+        accesses: [
+          {
+            container: "{ORDER_TABLE}",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["id"],
+            selector: ["customerId"],
+          },
+        ],
+      }),
+    ];
+
+    const containers = checkStorage(summaries)
+      .filter((f) => f.kind === "boundarySelectorMismatch")
+      .map((f) => f.description);
+    expect(containers.join("\n")).toContain("prod-orders-v2");
+    expect(containers.join("\n")).toContain("staging-orders-v2");
+  });
+
+  it("says nothing about a variable no deployment sets", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "prod-orders-v2",
+        storageSystem: "dynamodb",
+        fields: [{ name: "id" }],
+        fieldSet: "partial",
+        keyFields: ["id"],
+      }),
+      runtime({
+        instanceName: "order-router",
+        codeScope: "services/orders",
+        values: { SOMETHING_ELSE: "prod-orders-v2" },
+      }),
+      makeAccessSummary({
+        name: "listOrders",
+        file: "services/orders/src/dao.ts",
+        accesses: [
+          {
+            container: "{ORDER_TABLE}",
+            storageSystem: "dynamodb",
+            kind: "read",
+            fields: ["id"],
+            selector: ["customerId"],
+          },
+        ],
+      }),
+    ]);
+    expect(findings).toEqual([]);
   });
 });

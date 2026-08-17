@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
+import {
+  runtimeConfigBinding,
+  withRuntimeContractMetadata,
+} from "@suss/behavioral-ir";
 
 import { checkRuntimeConfig } from "./runtimeConfigPairing.js";
 
@@ -823,5 +826,55 @@ describe("checkRuntimeConfig", () => {
       const unknown = findings.filter((f) => f.kind === "boundaryFieldUnknown");
       expect(unknown).toHaveLength(0);
     });
+  });
+});
+
+describe("a runtime whose code reads its configuration off an argument", () => {
+  it("tells the author to look where the code actually reads", () => {
+    const deployableUnit = {
+      deploymentTarget: "worker" as const,
+      instanceName: "greeting-router",
+    };
+    const runtime: BehavioralSummary = {
+      kind: "library",
+      location: {
+        file: "wrangler.toml",
+        range: { start: 1, end: 1 },
+        exportName: null,
+      },
+      identity: {
+        name: "greeting-router",
+        exportPath: null,
+        boundaryBinding: runtimeConfigBinding({
+          recognition: "wrangler",
+          ...deployableUnit,
+        }),
+        deployableUnit,
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: { source: "declared", level: "high" },
+      metadata: withRuntimeContractMetadata(
+        { codeScope: { kind: "codeUri", path: "src" } },
+        { envVars: ["GREETING_TABLE"] },
+      ),
+    };
+
+    const findings = checkRuntimeConfig([
+      runtime,
+      makeCodeSummary({
+        name: "fetch",
+        file: "src/index.ts",
+        envReads: ["MISSING_ORIGIN"],
+      }),
+    ]);
+
+    const unprovided = findings.find((f) => f.kind === "boundaryFieldUnknown");
+    expect(unprovided?.description).toContain("env.MISSING_ORIGIN read by");
+    expect(unprovided?.description).not.toContain("process.env");
+
+    const unused = findings.find((f) => f.kind === "boundaryFieldUnused");
+    expect(unused?.description).toContain("reads env.GREETING_TABLE");
   });
 });
