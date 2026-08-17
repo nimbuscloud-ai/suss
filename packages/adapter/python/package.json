@@ -1,8 +1,8 @@
 {
   "name": "@suss/adapter-python",
-  "version": "0.5.11",
+  "version": "0.6.0",
   "type": "module",
-  "description": "Python language adapter for suss \u2014 parses source with tree-sitter (WASM), resolves names with a lexical binder, and emits raw extractions for the suss pipeline.",
+  "description": "Python language adapter for suss — parses source with tree-sitter (WASM), resolves names with a lexical binder, and emits raw extractions for the suss pipeline.",
   "keywords": [
     "suss",
     "behavioral-summary",
@@ -47,10 +47,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.5.11",
-    "@suss/datalog": "0.5.11",
-    "@suss/extractor": "0.5.11",
-    "@suss/sql": "0.5.11",
+    "@suss/behavioral-ir": "0.6.0",
+    "@suss/datalog": "0.6.0",
+    "@suss/extractor": "0.6.0",
+    "@suss/sql": "0.6.0",
     "web-tree-sitter": "^0.26.11"
   },
   "devDependencies": {
