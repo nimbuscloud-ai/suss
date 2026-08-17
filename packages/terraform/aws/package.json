@@ -1,6 +1,6 @@
 {
   "name": "@suss/terraform-aws",
-  "version": "0.5.11",
+  "version": "0.6.0",
   "type": "module",
   "description": "What AWS's Terraform provider declares, for the Terraform contract reader.",
   "keywords": [
@@ -44,7 +44,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/contract-terraform": "0.5.11"
+    "@suss/contract-terraform": "0.6.0"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",

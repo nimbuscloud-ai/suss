@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-react",
-  "version": "0.5.11",
+  "version": "0.6.0",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from React function components.",
   "keywords": [
@@ -46,8 +46,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-typescript": "0.5.11",
-    "@suss/extractor": "0.5.11"
+    "@suss/adapter-typescript": "0.6.0",
+    "@suss/extractor": "0.6.0"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",

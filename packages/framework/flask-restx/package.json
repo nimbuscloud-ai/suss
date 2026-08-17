@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-flask-restx",
-  "version": "0.5.11",
+  "version": "0.6.0",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from flask-restx Resource routes, including a project's own wrapper module re-exporting the route decorator.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.5.11"
+    "@suss/adapter-python": "0.6.0"
   },
   "devDependencies": {
     "@suss/checker": "*",

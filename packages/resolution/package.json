@@ -1,6 +1,6 @@
 {
   "name": "@suss/resolution",
-  "version": "0.5.11",
+  "version": "0.6.0",
   "type": "module",
   "description": "Language-neutral rules for following a value to the function it comes down to.",
   "keywords": [
@@ -53,6 +53,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@suss/datalog": "0.5.11"
+    "@suss/datalog": "0.6.0"
   }
 }
