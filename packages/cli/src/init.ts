@@ -238,6 +238,14 @@ const BY_DEPENDENCY: Array<{
   },
   {
     ecosystem: "npm",
+    dependency: "@google-cloud/storage",
+    name: "gcs",
+    packageName: "@suss/framework-gcs",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
     dependency: "ioredis",
     name: "redis",
     packageName: "@suss/framework-redis",

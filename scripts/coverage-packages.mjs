@@ -30,6 +30,7 @@ export const coveragePackages = [
   ["packages/framework/react-router", "react-router"],
   ["packages/framework/react", "react"],
   ["packages/framework/express", "express"],
+  ["packages/framework/gcs", "gcs"],
   ["packages/framework/fastify", "fastify"],
   ["packages/framework/hono", "hono"],
   ["packages/framework/nextjs", "nextjs"],
