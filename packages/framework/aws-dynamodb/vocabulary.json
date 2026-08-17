@@ -1,0 +1,12 @@
+{
+  "dynamodb": "AWS transport name, Amazon DynamoDB",
+  "TableName": "DynamoDB command input: which table",
+  "IndexName": "DynamoDB command input: which secondary index",
+  "ProjectionExpression": "DynamoDB command input: which attributes to read",
+  "Item": "DynamoDB command input: the attributes to write",
+  "Key": "DynamoDB command input: the key attributes that pick an item",
+  "send": "@aws-sdk/lib-dynamodb: the client method a command goes to",
+  "read": "suss: access kind",
+  "write": "suss: access kind",
+  "param": "suss: what an unnamed deploy-time part of a name is called"
+}

@@ -222,6 +222,14 @@ const BY_DEPENDENCY: Array<{
   },
   {
     ecosystem: "npm",
+    dependency: "@aws-sdk/lib-dynamodb",
+    name: "aws-dynamodb",
+    packageName: "@suss/framework-aws-dynamodb",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
     dependency: "@apollo/client",
     name: "apollo-client",
     packageName: "@suss/client-apollo",
