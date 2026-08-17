@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 48,
-    "packagesWithExports": 48,
-    "exports": 442,
-    "internal": 1726,
-    "consumers": 708,
-    "pairs": 701
+    "packages": 50,
+    "packagesWithExports": 50,
+    "exports": 446,
+    "internal": 1738,
+    "consumers": 720,
+    "pairs": 713
   },
   "packages": {
     "packages/adapter/python": {
@@ -121,6 +121,12 @@
       "exports": 1,
       "internal": 3,
       "consumers": 2
+    },
+    "packages/contract/terraform": {
+      "name": "@suss/contract-terraform",
+      "exports": 2,
+      "internal": 11,
+      "consumers": 8
     },
     "packages/datalog": {
       "name": "@suss/datalog",
@@ -295,6 +301,12 @@
       "exports": 2,
       "internal": 13,
       "consumers": 0
+    },
+    "packages/terraform/aws": {
+      "name": "@suss/terraform-aws",
+      "exports": 2,
+      "internal": 1,
+      "consumers": 4
     }
   }
 }

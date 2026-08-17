@@ -2083,6 +2083,8 @@ export function createTypeScriptAdapter(
                     tallies,
                   ),
                   access: collectAccessRecognizers(config.frameworks, tallies),
+                  resolveWrittenValue: (value) =>
+                    resolution.resolveWrittenValue(value),
                 },
               ),
             )

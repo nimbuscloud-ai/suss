@@ -134,6 +134,7 @@ export type {
   GraphqlOperationSemantics,
   GraphqlResolverSemantics,
   MessageBusSemantics,
+  MessageBusTechnology,
   RestSemantics,
   RuntimeConfigSemantics,
   Semantics,

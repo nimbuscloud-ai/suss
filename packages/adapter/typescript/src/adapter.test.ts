@@ -1457,6 +1457,80 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     expect(sends).toHaveLength(1);
   });
 
+  it("lets a recognizer in a reached body ask what a value was written as", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "dao.ts",
+      `
+      export class Dao {
+        private readonly tableName: string;
+        constructor() {
+          const stage = "prod";
+          this.tableName = \`\${stage}-orders-v1\`;
+        }
+        read() {
+          return query(this.tableName);
+        }
+      }
+      export function query(table: string) {
+        return table;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { Dao } from "./dao";
+      const s = initServer();
+      const dao = new Dao();
+      export const router = s.router({} as any, {
+        go: async () => {
+          return { status: 200 as const, body: dao.read() };
+        },
+      });
+    `,
+    );
+
+    // A storage pack in miniature: the value it wants is behind a
+    // field, so it has to ask what that field was written as.
+    let resolvedText: string | null = null;
+    const readerPack: PatternPack = {
+      name: "reader",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [],
+      terminals: [],
+      inputMapping: { type: "positionalParams", params: [] },
+      invocationRecognizers: [
+        (call, ctx) => {
+          const node = call as CallExpression;
+          if (node.getExpression().getText() !== "query") {
+            return null;
+          }
+          const argument = node.getArguments()[0];
+          const resolve = (
+            ctx as { resolveWrittenValue?: (v: Node) => Node | null }
+          ).resolveWrittenValue;
+          const written =
+            argument === undefined || resolve === undefined
+              ? null
+              : resolve(argument);
+          resolvedText = written === null ? null : written.getText();
+          return null;
+        },
+      ],
+    };
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack, readerPack],
+    });
+    await adapter.extractAll();
+
+    expect(resolvedText).toBe("`${stage}-orders-v1`");
+  });
+
   it("transitively reaches helpers called by other helpers", async () => {
     const project = createTestProject();
     project.createSourceFile(

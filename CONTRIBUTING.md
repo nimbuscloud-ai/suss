@@ -20,10 +20,10 @@ npm test
 npm run lint
 npm run typecheck
 npm test
-npm run dogfood    # run suss over its own 48 packages
+npm run dogfood    # run suss over its own 50 packages
 ```
 
-`npm run dogfood` is the widest check here. It runs discovery, extraction, resolution and the checker over all 48 packages rather than over a fixture, and it fails when a package declares an export that produces no summary. It writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed, and CI runs `npm run check:dogfood` to fail when a count comes out below the committed one. Each package gets three counts: `exports` for the summaries that describe its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
+`npm run dogfood` is the widest check here. It runs discovery, extraction, resolution and the checker over all 50 packages rather than over a fixture, and it fails when a package declares an export that produces no summary. It writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed, and CI runs `npm run check:dogfood` to fail when a count comes out below the committed one. Each package gets three counts: `exports` for the summaries that describe its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
 
 So if your change deletes exports, moves them between packages, inlines a private helper, or narrows a recognizer that was firing too often, run `npm run dogfood` and commit the refreshed baseline. The drop then appears in your pull request diff, where a reviewer can see it and agree you meant it. Counts going up need no refresh. `docs/internal/dogfooding.md` has the full table of what fails and what to do about it.
 

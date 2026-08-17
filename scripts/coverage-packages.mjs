@@ -39,6 +39,8 @@ export const coveragePackages = [
   ["packages/framework/prisma", "prisma"],
   ["packages/framework/drizzle", "drizzle"],
   ["packages/sql", "sql"],
+  ["packages/contract/terraform", "contract-terraform"],
+  ["packages/terraform/aws", "terraform-aws"],
   ["packages/framework/aws-dynamodb", "aws-dynamodb"],
   ["packages/framework/aws-sqs", "aws-sqs"],
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],
