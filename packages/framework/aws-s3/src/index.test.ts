@@ -8,8 +8,47 @@ import { s3Framework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 
+// The recognizer asks the type of an argument before asking where it
+// was written, so a fixture needs the SDK on disk to resolve against.
+const SDK_TYPES = `
+  export declare class S3Client { send(command: unknown): Promise<unknown>; }
+  export declare class GetObjectCommand { constructor(input: unknown); }
+  export declare class HeadObjectCommand { constructor(input: unknown); }
+  export declare class PutObjectCommand { constructor(input: unknown); }
+  export declare class DeleteObjectCommand { constructor(input: unknown); }
+  export declare class ListObjectsV2Command { constructor(input: unknown); }
+  export declare class GetBucketPolicyCommand { constructor(input: unknown); }
+`;
+
+const PRESIGNER_TYPES = `
+  export declare function getSignedUrl(
+    client: unknown,
+    command: unknown,
+    options?: unknown,
+  ): Promise<string>;
+`;
+
 function effectsIn(source: string): Effect[] {
   const project = createTestProject();
+  project.createSourceFile(
+    "/node_modules/@aws-sdk/client-s3/package.json",
+    JSON.stringify({ name: "@aws-sdk/client-s3", types: "index.d.ts" }),
+  );
+  project.createSourceFile(
+    "/node_modules/@aws-sdk/client-s3/index.d.ts",
+    SDK_TYPES,
+  );
+  project.createSourceFile(
+    "/node_modules/@aws-sdk/s3-request-presigner/package.json",
+    JSON.stringify({
+      name: "@aws-sdk/s3-request-presigner",
+      types: "index.d.ts",
+    }),
+  );
+  project.createSourceFile(
+    "/node_modules/@aws-sdk/s3-request-presigner/index.d.ts",
+    PRESIGNER_TYPES,
+  );
   const sourceFile: SourceFile = project.createSourceFile("/repo.ts", source);
   const store = new ResolutionStore();
   const recognizers = s3Framework().invocationRecognizers ?? [];

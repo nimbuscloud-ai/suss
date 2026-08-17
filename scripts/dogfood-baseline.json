@@ -2,10 +2,10 @@
   "totals": {
     "packages": 52,
     "packagesWithExports": 52,
-    "exports": 453,
-    "internal": 1750,
-    "consumers": 726,
-    "pairs": 719
+    "exports": 454,
+    "internal": 1753,
+    "consumers": 731,
+    "pairs": 724
   },
   "packages": {
     "packages/adapter/python": {
@@ -22,8 +22,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 34,
-      "internal": 610,
+      "exports": 35,
+      "internal": 624,
       "consumers": 45
     },
     "packages/behavioral-ir": {
@@ -155,8 +155,8 @@
     "packages/framework/aws-dynamodb": {
       "name": "@suss/framework-aws-dynamodb",
       "exports": 3,
-      "internal": 14,
-      "consumers": 4
+      "internal": 9,
+      "consumers": 6
     },
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",
@@ -173,8 +173,8 @@
     "packages/framework/aws-s3": {
       "name": "@suss/framework-aws-s3",
       "exports": 3,
-      "internal": 6,
-      "consumers": 3
+      "internal": 3,
+      "consumers": 4
     },
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
@@ -263,8 +263,8 @@
     "packages/framework/redis": {
       "name": "@suss/framework-redis",
       "exports": 3,
-      "internal": 5,
-      "consumers": 3
+      "internal": 2,
+      "consumers": 5
     },
     "packages/framework/sqlalchemy": {
       "name": "@suss/framework-sqlalchemy",

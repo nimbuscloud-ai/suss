@@ -12,12 +12,31 @@ This layer runs after discovery and during summary assembly. It has three roles:
 
 ## Key files
 
+- `readName.ts:readName`, what a name-valued expression says, as fixed text with a hole for each part built at run time. Every storage pack calls it for a table, a bucket or a cache key. The table below says what it reads.
 - `astResolve.ts:resolveNodeFromAst` — public entry; walks identifiers, property accesses, calls, and `await` expressions to resolve a node to a `TypeShape`. Caps at `MAX_HOPS` and uses a per-walk seen set.
 - `astResolve.ts:resolveCall` — single-return-only call resolver. Multi-return functions, overloads, and method calls fall through to the type checker.
 - `invocationEffects.ts:extractInvocationEffects` — captures bare expression-statement calls + container-building calls (array/object-literal-returning fns). Skips nested function bodies.
 - `invocationEffects.ts:runInvocationRecognizers` — dispatches recognizers from every loaded pack against every CallExpression in the unit's body.
 - `reachableClosure.ts:discoverReachableFunctions` — transitive-closure walk; emits library summaries with `recognition: "reachable"`.
 - `rethrowEnrichment.ts:enrichRethrows` — adds `rethrow.possibleSources` to throw transitions whose enclosing try-block calls into other summarized functions.
+
+## What readName reads
+
+| Written as | Reads as |
+| --- | --- |
+| `"orders"` | `orders` |
+| `` `${stage}-orders` `` | `{stage}-orders` |
+| `stage + "-orders"` | `{stage}-orders` |
+| `process.env.TABLE ?? "orders-prod"` | `orders-prod` |
+| `tableName(stage)`, one return of a template | `{stage}-orders` |
+| `buildKey("users", id)`, one return of `parts.join(":")` | `users:{id}` |
+| a parameter, a call result, a helper with branches | null |
+
+A hole is named after what the caller passed rather than after the parameter it landed on, so `keyFor(userId)` reading `` `session:${id}` `` gives `session:{userId}`. That is the name somebody reading the call site knows.
+
+A fallback is read differently depending on where it sits. At the top of a name, `process.env.TABLE ?? "orders-prod"` reads as the default, because a whole name that is one hole would pair with every table there is. Inside a longer name, `` `${process.env.STAGE || "staging"}-orders` `` keeps the hole, because a deployment sets that variable and the default is what runs when nobody did.
+
+Following a helper stops after two hops, and it stops at a body that does more than return one expression. A name that depends on a branch is not a name.
 
 ## Non-obvious things
 

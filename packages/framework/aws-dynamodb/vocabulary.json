@@ -8,7 +8,6 @@
   "send": "@aws-sdk/lib-dynamodb: the client method a command goes to",
   "read": "suss: access kind",
   "write": "suss: access kind",
-  "param": "suss: what an unnamed deploy-time part of a name is called",
   "RequestItems": "DynamoDB command input: the tables a batch or transaction touches",
   "Keys": "DynamoDB batch input: the keys a batch read asks for",
   "KeyConditionExpression": "DynamoDB query input: which key attributes the query filters on",

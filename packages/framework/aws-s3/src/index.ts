@@ -11,14 +11,9 @@
  * bucket's key convention would be compared against.
  */
 
-import {
-  type CallExpression,
-  Node as N,
-  type Node,
-  SyntaxKind,
-} from "ts-morph";
+import { type CallExpression, Node as N, type Node } from "ts-morph";
 
-import { rootIdentifier } from "@suss/adapter-typescript";
+import { readName, rootIdentifier } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -76,8 +71,8 @@ export function s3Recognizer(call: unknown, ctx: unknown): Effect[] | null {
     return null;
   }
 
-  const key = nameOf(property(input, "Key"), resolve);
-  const prefix = nameOf(property(input, "Prefix"), resolve);
+  const key = nameOfProperty(input, "Key", resolve);
+  const prefix = nameOfProperty(input, "Prefix", resolve);
   const addressed = key ?? prefix;
   return [
     {
@@ -87,7 +82,7 @@ export function s3Recognizer(call: unknown, ctx: unknown): Effect[] | null {
         storageSystem: "s3",
         transport: "aws-sdk",
         scope: "default",
-        container: nameOf(property(input, "Bucket"), resolve),
+        container: nameOfProperty(input, "Bucket", resolve),
         accessPath: null,
       }),
       callee: callNode.getExpression().getText(),
@@ -121,7 +116,10 @@ function commandArgument(
     if (N.isNewExpression(arg)) {
       return arg;
     }
-    if (!N.isIdentifier(arg)) {
+    // Asking where a value was written costs a pass over the run's
+    // facts, and nearly every call in a codebase takes an argument that
+    // is not a command. The type says which ones are worth asking about.
+    if (!N.isIdentifier(arg) || !typedAsCommand(arg)) {
       continue;
     }
     const written = resolve(arg);
@@ -132,12 +130,34 @@ function commandArgument(
   return null;
 }
 
+/** Whether a value is one of the command classes this reads. */
+function typedAsCommand(value: Node): boolean {
+  const declared = (
+    value as Node & {
+      getType(): { getSymbol(): { getName(): string } | undefined };
+    }
+  )
+    .getType()
+    .getSymbol();
+  return declared !== undefined && COMMANDS[declared.getName()] !== undefined;
+}
+
 /** Whether the command class is the SDK's rather than a same-named local one. */
 function fromS3Module(ctorExpr: Node, ctx: RecognizerContext): boolean {
   const target = N.isPropertyAccessExpression(ctorExpr)
     ? rootIdentifier(ctorExpr)
     : ctorExpr;
   return target !== null && ctx.isImportedFrom(target, COMMAND_MODULE);
+}
+
+/** What one input of a command is called, when it says. */
+function nameOfProperty(
+  input: Node,
+  name: string,
+  resolve: (value: Node) => Node | null,
+): string | null {
+  const written = property(input, name);
+  return written === null ? null : readName(written, { resolve });
 }
 
 function property(input: Node, name: string): Node | null {
@@ -150,80 +170,6 @@ function property(input: Node, name: string): Node | null {
     }
   }
   return null;
-}
-
-/**
- * The name an expression states, with a part built at deploy time or at
- * request time written as a hole. A field is followed to what the
- * constructor set it to, and a value that falls back to a default reads
- * as the default.
- */
-function nameOf(
-  expr: Node | null,
-  resolve: (value: Node) => Node | null,
-): string | null {
-  if (expr === null) {
-    return null;
-  }
-  const settled = defaultOf(
-    N.isStringLiteral(expr) || N.isTemplateExpression(expr)
-      ? expr
-      : (resolve(expr) ?? expr),
-  );
-
-  if (
-    N.isStringLiteral(settled) ||
-    N.isNoSubstitutionTemplateLiteral(settled)
-  ) {
-    return settled.getLiteralValue();
-  }
-  if (N.isTemplateExpression(settled)) {
-    return patternOf(settled);
-  }
-  return null;
-}
-
-/**
- * What a value falls back to when nothing was passed in. A repository
- * class takes an override and ships a default, and the default is the
- * bucket the service reads unless a caller says otherwise.
- */
-function defaultOf(expr: Node): Node {
-  if (!N.isBinaryExpression(expr)) {
-    return expr;
-  }
-  const operator = expr.getOperatorToken().getKind();
-  if (
-    operator !== SyntaxKind.BarBarToken &&
-    operator !== SyntaxKind.QuestionQuestionToken
-  ) {
-    return expr;
-  }
-  return defaultOf(expr.getRight());
-}
-
-/** `` `uploads/${tenant}/${id}` `` reads as `uploads/{tenant}/{id}`. */
-function patternOf(template: Node): string | null {
-  if (!N.isTemplateExpression(template)) {
-    return null;
-  }
-  let name = template.getHead().getLiteralText();
-  for (const span of template.getTemplateSpans()) {
-    name += `{${holeName(span.getExpression())}}`;
-    name += span.getLiteral().getLiteralText();
-  }
-  return name;
-}
-
-/** What the source calls the part it fills in at run time. */
-function holeName(expr: Node): string {
-  if (N.isIdentifier(expr)) {
-    return expr.getText();
-  }
-  if (N.isPropertyAccessExpression(expr)) {
-    return expr.getName();
-  }
-  return "param";
 }
 
 /**

@@ -15,7 +15,7 @@
 
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 
-import { methodDeclaredIn } from "@suss/adapter-typescript";
+import { methodDeclaredIn, readName } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -123,14 +123,14 @@ export function redisRecognizer(call: unknown, ctx: unknown): Effect[] | null {
 
   const args = callNode.getArguments();
   const keys = (command.keys === "all" ? args : args.slice(0, 1))
-    .map((arg) => nameOf(arg, resolve))
+    .map((arg) => readName(arg, { resolve }))
     .filter((key): key is string => key !== null);
   const fields =
     command.fieldArg === undefined
       ? []
       : args
           .slice(command.fieldArg, command.fieldArg + 1)
-          .map((arg) => nameOf(arg, resolve))
+          .map((arg) => readName(arg, { resolve }))
           .filter((field): field is string => field !== null);
 
   return [
@@ -176,57 +176,6 @@ function namespaceOf(keys: string[]): string | null {
 /** Whether a client library declares this command. */
 function fromClientLibrary(callee: Node): boolean {
   return CLIENT_MODULES.some((module) => methodDeclaredIn(callee, module));
-}
-
-/**
- * The key an argument states, with a part built at run time written as
- * a hole. A key held in a const resolves to what the const was written
- * as, which is how a service that shares a key between its writer and
- * its reader spells it once.
- */
-function nameOf(
-  expr: Node,
-  resolve: (value: Node) => Node | null,
-): string | null {
-  const settled =
-    N.isStringLiteral(expr) || N.isTemplateExpression(expr)
-      ? expr
-      : (resolve(expr) ?? expr);
-
-  if (
-    N.isStringLiteral(settled) ||
-    N.isNoSubstitutionTemplateLiteral(settled)
-  ) {
-    return settled.getLiteralValue();
-  }
-  if (N.isTemplateExpression(settled)) {
-    return patternOf(settled);
-  }
-  return null;
-}
-
-/** `` `user_online:${id}` `` reads as `user_online:{id}`. */
-function patternOf(template: Node): string | null {
-  if (!N.isTemplateExpression(template)) {
-    return null;
-  }
-  let name = template.getHead().getLiteralText();
-  for (const span of template.getTemplateSpans()) {
-    name += `{${holeName(span.getExpression())}}`;
-    name += span.getLiteral().getLiteralText();
-  }
-  return name;
-}
-
-/** What the source calls the part it fills in at run time. */
-function holeName(expr: Node): string {
-  if (N.isIdentifier(expr)) {
-    return expr.getText();
-  }
-  if (N.isPropertyAccessExpression(expr)) {
-    return expr.getName();
-  }
-  return "param";
 }
 
 /**

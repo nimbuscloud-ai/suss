@@ -163,7 +163,7 @@ describe("a DynamoDB command", () => {
     expect(storageOf(effects[0]).semantics.container).toBeNull();
   });
 
-  it("leaves a table name built by any other operator alone", () => {
+  it("reads a table name joined with a plus the same way as a template", () => {
     const effects = effectsIn(`
       ${IMPORTS}
       declare const client: DynamoDBDocumentClient;
@@ -181,7 +181,9 @@ describe("a DynamoDB command", () => {
       }
     `);
 
-    expect(storageOf(effects[0]).semantics.container).toBeNull();
+    expect(storageOf(effects[0]).semantics.container).toBe(
+      "{prefix}-mappings-v2",
+    );
   });
 
   it("takes the index a query goes through as its own way in", () => {
