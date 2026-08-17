@@ -34,8 +34,6 @@
 // identifier's own name, which is what the source says rather than a guess.
 //
 // Out of scope for v0:
-//   - `db.execute(sql\`...\`)` raw SQL (needs a raw-SQL recognizer,
-//     same as Prisma's $queryRaw).
 //   - `alias(users, "u")` self-join aliases.
 //   - Join clauses (`.leftJoin(orders, ...)`): the joined table isn't
 //     yet emitted as a second effect; deferred to keep v0 focused.
@@ -44,6 +42,7 @@ import { type CallExpression, Node as N, type Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
+import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 
@@ -53,6 +52,14 @@ const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
 const TABLE_FACTORIES = new Set(["pgTable", "mysqlTable", "sqliteTable"]);
 
 const CHAIN_WALK_LIMIT = 12;
+
+/**
+ * The method that takes a statement written as SQL rather than a query
+ * built up. The SQLite driver's own methods take one too, and they are
+ * called `run`, `all`, and `get`, which are too ordinary to match on:
+ * a map's `get` in a Drizzle file would read as a query.
+ */
+const RAW_METHOD = "execute";
 
 export interface DrizzleRecognizerOptions {
   /**
@@ -75,6 +82,79 @@ interface RecognizedQuery {
   fields: string[];
   selector: string[] | null;
   calleeText: string;
+}
+
+/**
+ * `db.execute(sql\`...\`)` states its query as SQL rather than through
+ * table the statement touches becomes its own effect, which is also how a
+ * join reaches every table it reads.
+ */
+function makeRawRecognizer(
+  opts: DrizzleRecognizerOptions,
+): InvocationRecognizer {
+  const storageSystem = opts.storageSystem ?? "postgres";
+  const scope = opts.scope ?? "default";
+  return ((call: unknown) => {
+    const callNode = call as CallExpression;
+    const callee = callNode.getExpression();
+    if (!N.isPropertyAccessExpression(callee)) {
+      return null;
+    }
+    if (callee.getName() !== RAW_METHOD) {
+      return null;
+    }
+    const statement = sqlTextOf(callNode.getArguments()[0]);
+    if (statement === null) {
+      return null;
+    }
+    const accesses = readSqlAccess(statement, { dialect: storageSystem });
+    if (accesses.length === 0) {
+      return null;
+    }
+    return accesses.map((access) => ({
+      type: "interaction" as const,
+      binding: storageBinding({
+        recognition: "@suss/framework-drizzle",
+        storageSystem,
+        scope,
+        container: access.table,
+      }),
+      callee: callee.getText(),
+      interaction: {
+        class: "storage-access" as const,
+        kind: access.kind,
+        fields: access.fields,
+        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
+        operation: callee.getName(),
+      },
+    }));
+  }) as InvocationRecognizer;
+}
+
+/** The SQL a `sql` tagged template states, with its values as parameters. */
+function sqlTextOf(argument: Node | undefined): string | null {
+  if (argument === undefined) {
+    return null;
+  }
+  if (N.isNoSubstitutionTemplateLiteral(argument)) {
+    return argument.getLiteralValue();
+  }
+  if (N.isTaggedTemplateExpression(argument)) {
+    const template = argument.getTemplate();
+    if (N.isNoSubstitutionTemplateLiteral(template)) {
+      return template.getLiteralValue();
+    }
+    return sqlFromParts([
+      template.getHead().getLiteralText(),
+      ...template
+        .getTemplateSpans()
+        .map((span) => span.getLiteral().getLiteralText()),
+    ]);
+  }
+  if (N.isStringLiteral(argument)) {
+    return argument.getLiteralValue();
+  }
+  return null;
 }
 
 function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
@@ -498,7 +578,10 @@ export function drizzleFramework(
     // drizzle-orm/pg-core and driver entry points): files without
     // them can't type-check as Drizzle receivers anyway.
     requiresImport: ["drizzle-orm"],
-    invocationRecognizers: [makeRecognizer(options)],
+    invocationRecognizers: [
+      makeRecognizer(options),
+      makeRawRecognizer(options),
+    ],
   };
 }
 
