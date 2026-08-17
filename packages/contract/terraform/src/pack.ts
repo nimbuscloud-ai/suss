@@ -30,6 +30,20 @@ export interface StorageResource {
   accessPathBlocks?: string[];
   /** The block that gives each field a type, and its two attributes. */
   fieldTypes?: { block: string; nameAttribute: string; typeAttribute: string };
+  /**
+   * How another way in says what it can serve. A DynamoDB index copies
+   * some of an item rather than all of it, and a reader asking for
+   * anything else gets nothing back and no error, so what it copies is
+   * every field it has rather than the ones somebody wrote down.
+   */
+  serves?: {
+    /** The attribute that says which kind of copy it keeps. */
+    kindAttribute: string;
+    /** The attribute listing what it copies, for the kind that lists. */
+    fieldsAttribute: string;
+    /** The value of `kindAttribute` that means it copies the item. */
+    everything: string;
+  };
 }
 
 /** A channel messages cross. */

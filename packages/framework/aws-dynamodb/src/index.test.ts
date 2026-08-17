@@ -400,3 +400,35 @@ describe("a DynamoDB command", () => {
     expect(effects).toEqual([]);
   });
 });
+
+describe("a query that hides its attributes behind aliases", () => {
+  it("reads the projection through the names the call declares", () => {
+    const effects = effectsIn(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export async function feed(publicationId: string) {
+        return client.send(new QueryCommand({
+          TableName: "editions-v2",
+          IndexName: "by-publication-v2",
+          KeyConditionExpression: "#pub = :pub",
+          ProjectionExpression: "#pid, #status, web_content_title",
+          ExpressionAttributeNames: {
+            "#pub": "publication_id",
+            "#pid": "published_article_id",
+            "#status": "status",
+          },
+          ExpressionAttributeValues: { ":pub": publicationId },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "read",
+      fields: ["published_article_id", "status", "web_content_title"],
+    });
+    expect(storageOf(effects[0]).semantics).toMatchObject({
+      container: "editions-v2",
+      accessPath: "by-publication-v2",
+    });
+  });
+});

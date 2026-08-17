@@ -34,6 +34,11 @@ const AWS: TerraformPack = {
         fieldSet: "partial",
         identifies: ["hash_key", "range_key"],
         accessPathBlocks: ["global_secondary_index", "local_secondary_index"],
+        serves: {
+          kindAttribute: "projection_type",
+          fieldsAttribute: "non_key_attributes",
+          everything: "ALL",
+        },
         fieldTypes: {
           block: "attribute",
           nameAttribute: "name",
@@ -411,5 +416,90 @@ describe("shapes a configuration writes that the reader has to take as they come
     ].join("\n");
 
     expect(terraformToSummaries(source, "main.tf", PACKS)).toHaveLength(1);
+  });
+});
+
+// An index that copies part of an item serves those fields and no
+// others. A reader asking for anything else gets nothing back and no
+// error from the store, which is why the declaration matters.
+const NARROW_INDEX = `
+resource "aws_dynamodb_table" "editions" {
+  name      = "editions-v2"
+  hash_key  = "edition_id"
+  range_key = "created_at"
+
+  global_secondary_index {
+    name            = "by-publication-v2"
+    hash_key        = "publication_id"
+    range_key       = "created_at"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "status",
+      "web_content_title",
+    ]
+  }
+
+  global_secondary_index {
+    name            = "by-edition-v1"
+    hash_key        = "edition_id"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "keys-only-v1"
+    hash_key        = "status"
+    projection_type = "KEYS_ONLY"
+  }
+}
+`;
+
+describe("an index that copies part of an item", () => {
+  const summaries = terraformToSummaries(NARROW_INDEX, "main.tf", PACKS);
+  const byAccessPath = (path: string) =>
+    readStorageContractMetadata(
+      summaries.find((summary) =>
+        summary.identity.name.endsWith(`#${path}`),
+      ) as BehavioralSummary,
+    );
+
+  it("says every field it can serve, its own keys and the table's included", () => {
+    const contract = byAccessPath("by-publication-v2");
+
+    expect(contract?.fieldSet).toBe("exhaustive");
+    expect(contract?.fields?.map((field) => field.name).sort()).toEqual([
+      "created_at",
+      "edition_id",
+      "publication_id",
+      "status",
+      "web_content_title",
+    ]);
+  });
+
+  it("says nothing about fields for an index that copies the whole item", () => {
+    const contract = byAccessPath("by-edition-v1");
+
+    expect(contract?.fieldSet).toBe("partial");
+    expect(contract?.fields?.map((field) => field.name)).toEqual([
+      "edition_id",
+    ]);
+  });
+
+  it("serves only keys when that is all it copies", () => {
+    const contract = byAccessPath("keys-only-v1");
+
+    expect(contract?.fieldSet).toBe("exhaustive");
+    expect(contract?.fields?.map((field) => field.name).sort()).toEqual([
+      "created_at",
+      "edition_id",
+      "status",
+    ]);
+  });
+
+  it("leaves the table itself saying what it always said", () => {
+    const table = summaries.find(
+      (summary) => !summary.identity.name.includes("#"),
+    ) as BehavioralSummary;
+
+    expect(readStorageContractMetadata(table)?.fieldSet).toBe("partial");
   });
 });

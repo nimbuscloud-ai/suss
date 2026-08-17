@@ -50,6 +50,12 @@ interface KeyedShape {
   /** The block this describes, or null for the resource's own key. */
   accessPath: string | null;
   keyFields: string[];
+  /**
+   * Every field this can serve, for a way in that copies part of an
+   * item. Null when it serves whatever the item has, which is what the
+   * container itself does.
+   */
+  serves: string[] | null;
 }
 
 /** Every boundary one Terraform configuration declares. */
@@ -228,15 +234,17 @@ function storageSummary(opts: {
     confidence: { source: "declared", level: "high" },
     metadata: {
       storageContract: {
-        fieldSet: boundary.fieldSet,
+        // A way in that copies part of an item has every field it will
+        // ever have, whatever the container itself stores.
+        fieldSet: shape.serves === null ? boundary.fieldSet : "exhaustive",
         ...(boundary.identifies === undefined
           ? {}
           : {
               identifies: { kind: "keyFields", fields: shape.keyFields },
-              fields: shape.keyFields.map((field) => ({
+              fields: (shape.serves ?? shape.keyFields).map((field) => ({
                 name: field,
                 ...(types.has(field) ? { type: types.get(field) } : {}),
-                primary: true,
+                ...(shape.keyFields.includes(field) ? { primary: true } : {}),
               })),
             }),
         ...(physicalTable !== null ? { physicalTable } : {}),
@@ -300,10 +308,11 @@ function keyedShapes(
   boundary: StorageResource,
 ): KeyedShape[] {
   if (boundary.identifies === undefined) {
-    return [{ accessPath: null, keyFields: [] }];
+    return [{ accessPath: null, keyFields: [], serves: null }];
   }
+  const ownKeys = keyFields(body, boundary.identifies);
   const shapes: KeyedShape[] = [
-    { accessPath: null, keyFields: keyFields(body, boundary.identifies) },
+    { accessPath: null, keyFields: ownKeys, serves: null },
   ];
   for (const block of boundary.accessPathBlocks ?? []) {
     for (const declared of arrayOf(body[block])) {
@@ -312,13 +321,42 @@ function keyedShapes(
       if (index === null || indexName === null) {
         continue;
       }
+      const indexKeys = keyFields(index, boundary.identifies);
       shapes.push({
         accessPath: indexName,
-        keyFields: keyFields(index, boundary.identifies),
+        keyFields: indexKeys,
+        serves: servedFields(index, boundary, [...indexKeys, ...ownKeys]),
       });
     }
   }
   return shapes;
+}
+
+/**
+ * Every field a way in can serve, or null when it serves whatever the
+ * item has. A store always sends the keys, its own and the container's,
+ * so those count as served however narrow the copy is.
+ */
+function servedFields(
+  block: Record<string, unknown>,
+  boundary: StorageResource,
+  keys: string[],
+): string[] | null {
+  const spec = boundary.serves;
+  if (spec === undefined) {
+    return null;
+  }
+  const kind = stringOf(block[spec.kindAttribute]);
+  if (kind === null || kind === spec.everything) {
+    return null;
+  }
+  const listed = arrayOf(block[spec.fieldsAttribute]).flatMap((entry) =>
+    Array.isArray(entry) ? entry : [entry],
+  );
+  const named = listed.filter(
+    (entry): entry is string => typeof entry === "string",
+  );
+  return [...new Set([...keys, ...named])];
 }
 
 /**

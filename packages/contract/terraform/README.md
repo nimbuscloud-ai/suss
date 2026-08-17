@@ -49,3 +49,9 @@ A table declares its keys and lets every other attribute vary, so the contract s
 ## Where it fits in suss
 
 Depends on `@suss/behavioral-ir` for the summaries it produces and `hcl2-parser` for reading HCL. The storage pass in `@suss/checker` pairs what code touches against what this declares.
+
+## A way in that copies part of an item
+
+A DynamoDB index does not carry the whole item. `projection_type = "INCLUDE"` copies the attributes it lists, `KEYS_ONLY` copies none, and both copy the index's keys and the table's. A reader asking that index for anything else gets nothing back for it, and the store raises no error, so the caller sees an item with fields missing and nothing says why.
+
+So an index like that declares every field it will ever have, and its contract says `exhaustive` where the table's says `partial`. A pack states which attributes carry that, under `serves`, and a store without the idea leaves it out.

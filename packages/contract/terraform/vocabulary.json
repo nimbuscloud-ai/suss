@@ -1,5 +1,6 @@
 {
-  "terraform": "reader name, HashiCorp Terraform",
+  "exhaustive": "suss: a contract that declares every field an item has",
+  "keyFields": "suss: a storage contract identified by the fields a caller supplies",
   "library": "suss: marker for a value a library states",
-  "keyFields": "suss: a storage contract identified by the fields a caller supplies"
+  "terraform": "reader name, HashiCorp Terraform"
 }

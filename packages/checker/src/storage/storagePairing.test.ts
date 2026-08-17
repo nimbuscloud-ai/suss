@@ -791,3 +791,149 @@ describe("an access whose unit was told which store to reach", () => {
     ).toEqual([]);
   });
 });
+
+describe("an index that copies part of an item", () => {
+  /** What terraform says an INCLUDE index can serve. */
+  function narrowIndex(): BehavioralSummary {
+    return makeProvider({
+      container: "editions-v2",
+      storageSystem: "dynamodb",
+      accessPath: "by-publication-v2",
+      fieldSet: "exhaustive",
+      keyFields: ["publication_id", "created_at"],
+      fields: [
+        { name: "publication_id" },
+        { name: "created_at" },
+        { name: "edition_id" },
+        { name: "status" },
+        { name: "web_content_title" },
+      ],
+    });
+  }
+
+  it("reports a query that reads a field the index does not copy", () => {
+    const feed = makeAccessSummary({
+      name: "readerFeed",
+      file: "src/feed.ts",
+      accesses: [
+        {
+          container: "editions-v2",
+          storageSystem: "dynamodb",
+          accessPath: "by-publication-v2",
+          kind: "read",
+          fields: ["status", "web_content_title", "published_article_id"],
+          selector: ["publication_id"],
+        },
+      ],
+    });
+    const findings = checkStorage([narrowIndex(), feed]).filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.description).toContain("published_article_id");
+  });
+
+  it("says nothing when the query reads only what the index copies", () => {
+    const feed = makeAccessSummary({
+      name: "readerFeed",
+      file: "src/feed.ts",
+      accesses: [
+        {
+          container: "editions-v2",
+          storageSystem: "dynamodb",
+          accessPath: "by-publication-v2",
+          kind: "read",
+          fields: ["status", "web_content_title"],
+          selector: ["publication_id"],
+        },
+      ],
+    });
+
+    expect(
+      checkStorage([narrowIndex(), feed]).filter(
+        (f) => f.kind === "boundaryFieldUnknown",
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a read of the table itself alone, since any attribute may be there", () => {
+    const table = makeProvider({
+      container: "editions-v2",
+      storageSystem: "dynamodb",
+      fieldSet: "partial",
+      keyFields: ["edition_id", "created_at"],
+      fields: [{ name: "edition_id" }, { name: "created_at" }],
+    });
+    const byId = makeAccessSummary({
+      name: "readEdition",
+      file: "src/edition.ts",
+      accesses: [
+        {
+          container: "editions-v2",
+          storageSystem: "dynamodb",
+          kind: "read",
+          fields: ["published_article_id"],
+          selector: ["edition_id"],
+        },
+      ],
+    });
+
+    expect(
+      checkStorage([table, byId]).filter(
+        (f) => f.kind === "boundaryFieldUnknown",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("a read of whole items through an index that copies part of one", () => {
+  it("reports it, since the store sends what it has and says nothing", () => {
+    const index = makeProvider({
+      container: "editions-v2",
+      storageSystem: "dynamodb",
+      accessPath: "by-publication-v2",
+      fieldSet: "exhaustive",
+      keyFields: ["publication_id"],
+      fields: [{ name: "publication_id" }, { name: "status" }],
+    });
+    const feed = makeAccessSummary({
+      name: "readerFeed",
+      file: "src/feed.ts",
+      accesses: [
+        {
+          container: "editions-v2",
+          storageSystem: "dynamodb",
+          accessPath: "by-publication-v2",
+          kind: "read",
+          fields: ["*"],
+          selector: ["publication_id"],
+        },
+      ],
+    });
+    const findings = checkStorage([index, feed]).filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.description).toContain("whole items");
+  });
+
+  it("leaves a whole-item read of a table alone", () => {
+    const table = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }, { name: "email" }],
+    });
+    const all = makeAccessSummary({
+      name: "listUsers",
+      file: "src/users.ts",
+      accesses: [{ container: "users", kind: "read", fields: ["*"] }],
+    });
+
+    expect(
+      checkStorage([table, all]).filter(
+        (f) => f.kind === "boundaryFieldUnknown",
+      ),
+    ).toEqual([]);
+  });
+});

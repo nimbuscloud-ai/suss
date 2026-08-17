@@ -33,6 +33,11 @@ export function awsTerraform(): TerraformPack {
           fieldSet: "partial",
           identifies: ["hash_key", "range_key"],
           accessPathBlocks: ["global_secondary_index", "local_secondary_index"],
+          serves: {
+            kindAttribute: "projection_type",
+            fieldsAttribute: "non_key_attributes",
+            everything: "ALL",
+          },
           fieldTypes: {
             block: "attribute",
             nameAttribute: "name",

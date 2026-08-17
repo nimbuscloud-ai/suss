@@ -149,3 +149,45 @@ describe("what the AWS entries read", () => {
     ).toEqual([]);
   });
 });
+
+// The case this exists for: an index copies part of an item, a query
+// reads a field it does not copy, and DynamoDB returns nothing for that
+// field and raises no error. Both sides of that are here, so the
+// checker has something to compare.
+const NARROW_FEED_INDEX = `
+resource "aws_dynamodb_table" "editions" {
+  name      = "editions-v2"
+  hash_key  = "edition_id"
+  range_key = "created_at"
+
+  global_secondary_index {
+    name            = "by-publication-v2"
+    hash_key        = "publication_id"
+    range_key       = "created_at"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "status",
+      "web_content_title",
+    ]
+  }
+}
+`;
+
+describe("an index that copies part of an item", () => {
+  it("declares what a reader of it can get, and says the list is complete", () => {
+    const summaries = terraformToSummaries(NARROW_FEED_INDEX, "main.tf", PACKS);
+    const index = summaries.find((summary: BehavioralSummary) =>
+      summary.identity.name.endsWith("#by-publication-v2"),
+    );
+    const contract = readStorageContractMetadata(index as BehavioralSummary);
+
+    expect(contract?.fieldSet).toBe("exhaustive");
+    expect(contract?.fields?.map((field) => field.name).sort()).toEqual([
+      "created_at",
+      "edition_id",
+      "publication_id",
+      "status",
+      "web_content_title",
+    ]);
+  });
+});
