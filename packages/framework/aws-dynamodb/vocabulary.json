@@ -1,15 +1,16 @@
 {
-  "dynamodb": "AWS transport name, Amazon DynamoDB",
-  "TableName": "DynamoDB command input: which table",
+  "ExpressionAttributeNames": "DynamoDB command input: the alias each attribute is written as",
   "IndexName": "DynamoDB command input: which secondary index",
-  "ProjectionExpression": "DynamoDB command input: which attributes to read",
   "Item": "DynamoDB command input: the attributes to write",
   "Key": "DynamoDB command input: the key attributes that pick an item",
-  "send": "@aws-sdk/lib-dynamodb: the client method a command goes to",
-  "read": "suss: access kind",
-  "write": "suss: access kind",
-  "RequestItems": "DynamoDB command input: the tables a batch or transaction touches",
-  "Keys": "DynamoDB batch input: the keys a batch read asks for",
   "KeyConditionExpression": "DynamoDB query input: which key attributes the query filters on",
-  "ExpressionAttributeNames": "DynamoDB command input: the alias each attribute is written as"
+  "Keys": "DynamoDB batch input: the keys a batch read asks for",
+  "ProjectionExpression": "DynamoDB command input: which attributes to read",
+  "RequestItems": "DynamoDB command input: the tables a batch or transaction touches",
+  "TableName": "DynamoDB command input: which table",
+  "dynamodb": "AWS transport name, Amazon DynamoDB",
+  "read": "suss: access kind",
+  "reference": "suss: what a reader says instead of a name when the name is somewhere else",
+  "send": "@aws-sdk/lib-dynamodb: the client method a command goes to",
+  "write": "suss: access kind"
 }

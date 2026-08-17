@@ -185,7 +185,7 @@ describe("a Redis command", () => {
     expect(storageOf(effects[0]).semantics.container).toBeNull();
   });
 
-  it("settles no namespace when the key is built at run time", () => {
+  it("says which parameter a key built at run time comes from", () => {
     const effects = effectsIn(`
       ${CLIENT}
       export async function read(key: string) {
@@ -195,7 +195,7 @@ describe("a Redis command", () => {
 
     const { semantics, interaction } = storageOf(effects[0]);
     expect(semantics.container).toBeNull();
-    expect(interaction).not.toHaveProperty("selector");
+    expect(interaction).toMatchObject({ selector: ["{key}"] });
   });
 
   it("settles no namespace when the front of the key is built at run time", () => {

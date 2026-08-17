@@ -16,6 +16,13 @@ const UNNAMED_HOLE = "param";
 
 export interface ReadNameOptions {
   /**
+   * What to say about a name nothing here settles. `"nothing"` gives
+   * null. `"reference"` gives a hole named after what the source asked
+   * for, `{location.bucket}`, which says which value to go and ask
+   * about rather than which bucket this is.
+   */
+  unsettled?: "nothing" | "reference";
+  /**
    * The expression a value was written as, from the run's facts. A
    * caller with no store passes nothing, and the read runs on what the
    * source spells at the call site.
@@ -28,13 +35,26 @@ export function readName(
   expr: Node,
   options: ReadNameOptions = {},
 ): string | null {
-  return read(expr, {
+  const name = read(expr, {
     resolve: options.resolve ?? (() => null),
     bindings: new Map(),
     hops: 0,
     seen: new Set(),
     insideHole: false,
   });
+  if (name !== null || options.unsettled !== "reference") {
+    return name;
+  }
+  const asked = holeName(expr, {
+    resolve: () => null,
+    bindings: new Map(),
+    hops: 0,
+    seen: new Set(),
+    insideHole: true,
+  });
+  // A reference has to say what to go and ask about. An expression
+  // this cannot even name says nothing, which is what null means.
+  return asked === UNNAMED_HOLE ? null : `{${asked}}`;
 }
 
 /**

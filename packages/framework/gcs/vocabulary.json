@@ -1,9 +1,10 @@
 {
-  "gcs": "Google Cloud Storage, the store this reads",
+  "action": "@google-cloud/storage: what a signed URL is signed for",
   "bucket": "@google-cloud/storage: the call that says which bucket",
   "file": "@google-cloud/storage: the call that says which object",
+  "gcs": "Google Cloud Storage, the store this reads",
   "getSignedUrl": "@google-cloud/storage: hands back a URL that reaches the object later",
-  "action": "@google-cloud/storage: what a signed URL is signed for",
   "read": "suss: access kind",
+  "reference": "suss: what a reader says instead of a name when the name is somewhere else",
   "write": "suss: access kind"
 }

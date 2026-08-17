@@ -176,7 +176,7 @@ describe("an S3 object call", () => {
     });
   });
 
-  it("states no container for a bucket it cannot settle", () => {
+  it("says which parameter a bucket it cannot settle comes from", () => {
     const effects = effectsIn(`
       ${IMPORTS}
       declare const client: S3Client;
@@ -185,7 +185,7 @@ describe("an S3 object call", () => {
       }
     `);
 
-    expect(storageOf(effects[0]).semantics.container).toBeNull();
+    expect(storageOf(effects[0]).semantics.container).toBe("{bucket}");
   });
 
   it("leaves a command class of the same name from somewhere else alone", () => {
@@ -245,7 +245,7 @@ describe("a bucket named somewhere other than the call site", () => {
     expect(storageOf(effects[0]).semantics.container).toBe("media-prod");
   });
 
-  it("says nothing for a bucket that comes from a variable nothing settles", () => {
+  it("says which variable a bucket comes from when nothing settles it", () => {
     const effects = effectsIn(`
       ${IMPORTS}
       declare const client: S3Client;
@@ -255,7 +255,7 @@ describe("a bucket named somewhere other than the call site", () => {
       }
     `);
 
-    expect(storageOf(effects[0]).semantics.container).toBeNull();
+    expect(storageOf(effects[0]).semantics.container).toBe("{bucket}");
   });
 
   it("writes a key whose parts are computed as unnamed holes", () => {

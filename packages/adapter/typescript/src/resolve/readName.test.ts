@@ -182,3 +182,59 @@ describe("a name built by a helper", () => {
     ).toBeNull();
   });
 });
+
+describe("a name the code says is somewhere else", () => {
+  function referenceOf(source: string): string | null {
+    const project = createTestProject();
+    const file = project.createSourceFile("/repo.ts", source);
+    const store = new ResolutionStore();
+    const initializer = file
+      .getVariableDeclarationOrThrow("subject")
+      .getInitializerOrThrow();
+    return readName(initializer, {
+      resolve: (value: Node) => store.resolveWrittenValue(value),
+      unsettled: "reference",
+    });
+  }
+
+  it("says which parameter a wrapper takes its name from", () => {
+    expect(
+      referenceOf(`
+        declare const location: { bucket: string };
+        export const subject = location.bucket;
+      `),
+    ).toBe("{bucket}");
+  });
+
+  it("says which variable the name comes from", () => {
+    expect(
+      referenceOf(`
+        declare const bucketName: string;
+        export const subject = bucketName;
+      `),
+    ).toBe("{bucketName}");
+  });
+
+  it("still reads a name the source does state", () => {
+    expect(referenceOf(`export const subject = "orders";`)).toBe("orders");
+  });
+});
+
+describe("a reference with nothing to point at", () => {
+  it("says nothing, since a reference has to say what to ask about", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/repo.ts",
+      `
+        declare const config: Record<string, string>;
+        declare const which: string;
+        export const subject = config[which];
+      `,
+    );
+    const initializer = file
+      .getVariableDeclarationOrThrow("subject")
+      .getInitializerOrThrow();
+
+    expect(readName(initializer, { unsettled: "reference" })).toBeNull();
+  });
+});
