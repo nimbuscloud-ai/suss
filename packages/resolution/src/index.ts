@@ -49,6 +49,10 @@ export type {
 //   reExportsAll(m, m2)         m forwards everything m2 exports
 //
 // Node identity is the adapter's business. The rules only join on it.
+// Making one of a class is a call of the class, however the language
+// writes it: `Foo()`, `new Foo()`, `Foo.new`. The adapter says `call`
+// about whichever of those it reads, and lists the constructor's
+// parameters as `paramOf` of the class.
 //
 // Three relations come out. `comesTo(x, z)` follows a name to the value
 // it ends up being, which can be an object as well as a function; the
@@ -177,6 +181,18 @@ export const RESOLUTION_RULES = [
     [
       lit("moduleExport", v("m"), v("n"), v("f")),
       lit("imports", v("c"), v("m"), v("n")),
+      lit("call", v("r"), v("c")),
+    ],
+  ),
+  // The same, for a language whose adapter writes the import down as a
+  // declaration and the call's callee as the name referring to it.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [
+      lit("moduleExport", v("m"), v("n"), v("f")),
+      lit("imports", v("d"), v("m"), v("n")),
+      lit("binds", v("c"), v("d")),
       lit("call", v("r"), v("c")),
     ],
   ),

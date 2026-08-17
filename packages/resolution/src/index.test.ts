@@ -266,6 +266,26 @@ describe("an argument reaching a parameter", () => {
       ),
     ).toEqual([]);
   });
+
+  it("follows an argument into a function the caller imported", () => {
+    // import { take } from "mod"; take(handler)
+    expect(
+      resolutionsOf(
+        [
+          ["func", "handler"],
+          ["func", "take"],
+          ["exportsAs", "mod", "take", "take"],
+          ["imports", "takeImport", "mod", "take"],
+          ["binds", "takeRef", "takeImport"],
+          ["binds", "handlerRef", "handler"],
+          ["paramOf", "take", "0", "take#h"],
+          ["call", "site", "takeRef"],
+          ["callArg", "site", "0", "handlerRef"],
+        ],
+        "take#h",
+      ),
+    ).toEqual(["handler"]);
+  });
 });
 
 describe("a class the caller makes one of", () => {
@@ -285,6 +305,76 @@ describe("a class the caller makes one of", () => {
         "x",
       ),
     ).toEqual(["load"]);
+  });
+
+  it("puts a construction's argument in the constructor's parameter", () => {
+    // class Service { constructor(dao) {} }; new Service(dao)
+    expect(
+      resolutionsOf(
+        [
+          ["func", "dao"],
+          ["objectValue", "Service"],
+          ["paramOf", "Service", "0", "Service#dao"],
+          ["binds", "ServiceRef", "Service"],
+          ["binds", "daoRef", "dao"],
+          ["call", "made", "ServiceRef"],
+          ["callArg", "made", "0", "daoRef"],
+        ],
+        "Service#dao",
+      ),
+    ).toEqual(["dao"]);
+  });
+
+  it("follows a call through a field the constructor was handed", () => {
+    // new Service(new Dao()), and the service calls this.dao.find()
+    expect(
+      resolutionsOf(
+        [
+          ["func", "find"],
+          ["objectValue", "Dao"],
+          ["holdsProperty", "Dao", "find", "find"],
+          ["objectValue", "Service"],
+          ["paramOf", "Service", "0", "Service#dao"],
+          ["binds", "DaoRef", "Dao"],
+          ["binds", "ServiceRef", "Service"],
+          ["call", "madeDao", "DaoRef"],
+          ["call", "madeService", "ServiceRef"],
+          ["callArg", "madeService", "0", "madeDao"],
+          ["binds", "thisDao", "Service#dao"],
+          ["readsProperty", "callee", "thisDao", "find"],
+        ],
+        "callee",
+      ),
+    ).toEqual(["find"]);
+  });
+
+  it("gives both methods when two construction sites pass different classes", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "find"],
+          ["func", "findAgain"],
+          ["objectValue", "Dao"],
+          ["objectValue", "OtherDao"],
+          ["holdsProperty", "Dao", "find", "find"],
+          ["holdsProperty", "OtherDao", "find", "findAgain"],
+          ["objectValue", "Service"],
+          ["paramOf", "Service", "0", "Service#dao"],
+          ["binds", "DaoRef", "Dao"],
+          ["binds", "OtherDaoRef", "OtherDao"],
+          ["binds", "ServiceRef", "Service"],
+          ["call", "madeDao", "DaoRef"],
+          ["call", "madeOther", "OtherDaoRef"],
+          ["call", "siteA", "ServiceRef"],
+          ["callArg", "siteA", "0", "madeDao"],
+          ["call", "siteB", "ServiceRef"],
+          ["callArg", "siteB", "0", "madeOther"],
+          ["binds", "thisDao", "Service#dao"],
+          ["readsProperty", "callee", "thisDao", "find"],
+        ],
+        "callee",
+      ),
+    ).toEqual(["find", "findAgain"]);
   });
 
   it("leaves a factory call alone, since a function is not a class", () => {
