@@ -134,6 +134,29 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
+    name: "a class constructed with an argument",
+    requires:
+      "a module-level class whose constructor takes one parameter, and a site that makes one of it, passing a name",
+    // However a language writes construction, it is a call of the class, and
+    // the constructor's parameters are the class's. Keying them on the
+    // constructor instead leaves the argument with nowhere to land.
+    check: (facts) => {
+      const classes = new Set(facts("objectValue").map((row) => row[0] ?? ""));
+      const parameters = facts("paramOf").filter((row) =>
+        classes.has(row[0] ?? ""),
+      );
+      if (parameters.length === 0) {
+        return "a class lists none of its constructor's parameters, so an argument a construction site passes reaches nothing";
+      }
+      if (facts("call").length === 0) {
+        return "making one of a class is not written down as a call, so nothing says which class a construction arrives at";
+      }
+      return facts("callArg").length > 0
+        ? null
+        : "a construction passes its argument nowhere, so the parameter it lands in has no value";
+    },
+  },
+  {
     name: "a value another file declares",
     requires:
       "two files, one declaring a value and the other reading it by name",

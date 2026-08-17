@@ -14,6 +14,8 @@
 //     `packageImport`, not this pass.
 //   * Direct CallExpressions only: higher-order indirection (`fns.map(f)`
 //     where `f` is a parameter, dispatch-table lookups) isn't resolved.
+//   * A call landing on an interface the project declares goes into the
+//     class the construction site passed.
 //   * Function-shaped declarations: FunctionDeclaration, ArrowFunction,
 //     FunctionExpression, MethodDeclaration (as a module-level export).
 //   * One summary per function node: dedup against pack-produced
@@ -196,22 +198,60 @@ function declName(decl: Node): string | null {
 function resolveCallee(
   call: Node,
   calleeName: string,
+  scan: ScanContext,
 ): ReachableCandidate | null {
   if (!Node.isCallExpression(call)) {
     return null;
   }
   const callee = call.getExpression();
-  const symbol = callee.getSymbol();
-  if (symbol === undefined) {
-    return null;
-  }
-  for (const decl of symbol.getDeclarations()) {
+  const declarations = callee.getSymbol()?.getDeclarations() ?? [];
+  for (const decl of declarations) {
     const resolved = resolveDecl(decl, calleeName);
     if (resolved !== null) {
       return resolved;
     }
   }
-  return null;
+
+  // A call through a field the service was handed lands on the
+  // interface the field is declared as, and an interface has no body to
+  // walk into. Resolution says which class was passed.
+  if (scan.resolveCallable === undefined || !readsAField(callee)) {
+    return null;
+  }
+  if (!declarations.some(isDeclaredShape)) {
+    return null;
+  }
+  const value = scan.resolveCallable(callee, scan.reachedFrom);
+  return value === null ? null : resolveDecl(value, calleeName);
+}
+
+/**
+ * Whether the call goes through a field of the object whose method this
+ * is. Asking resolution costs a walk of the module graph, so the walk
+ * into a construction site is spent on the case it is about.
+ */
+function readsAField(callee: Node): boolean {
+  if (!Node.isPropertyAccessExpression(callee)) {
+    return false;
+  }
+  let receiver = callee.getExpression();
+  while (Node.isPropertyAccessExpression(receiver)) {
+    receiver = receiver.getExpression();
+  }
+  return Node.isThisExpression(receiver);
+}
+
+/**
+ * Whether a declaration states a shape rather than declaring a value.
+ * A call landing on one is a call whose implementation is somewhere
+ * else in the project.
+ */
+function isDeclaredShape(declaration: Node): boolean {
+  return (
+    (Node.isMethodSignature(declaration) ||
+      Node.isPropertySignature(declaration)) &&
+    !isInExternalCode(declaration.getSourceFile())
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +266,20 @@ function resolveCallee(
 // Dedup by function-node key keeps us from double-summarising a helper
 // that's also reached directly.
 
-function collectReachable(func: FunctionRoot): ReachableCandidate[] {
+/**
+ * What one pass over a function's body has to hand. `reachedFrom` is
+ * the file of whoever called this function, which is where a dependency
+ * it was handed was constructed.
+ */
+interface ScanContext {
+  resolveCallable?: (value: Node, alsoFrom?: SourceFile) => Node | null;
+  reachedFrom?: SourceFile;
+}
+
+function collectReachable(
+  func: FunctionRoot,
+  scan: ScanContext,
+): ReachableCandidate[] {
   const found: ReachableCandidate[] = [];
   const seen = new Set<string>();
 
@@ -235,7 +288,7 @@ function collectReachable(func: FunctionRoot): ReachableCandidate[] {
       return;
     }
     const calleeText = node.getExpression().getText();
-    const resolved = resolveCallee(node, calleeText);
+    const resolved = resolveCallee(node, calleeText, scan);
     if (resolved === null) {
       return;
     }
@@ -328,6 +381,12 @@ export interface ClosureRecognizers {
    * field reads as a class that states no table.
    */
   resolveWrittenValue?: (value: Node) => Node | null;
+  /**
+   * Which function a callee comes down to, for a call the type checker
+   * only takes as far as an interface. `alsoFrom` is the file the walk
+   * came in from, which is where the dependency was constructed.
+   */
+  resolveCallable?: (value: Node, alsoFrom?: SourceFile) => Node | null;
   invocation: InvocationRecognizer[];
   access: AccessRecognizer[];
 }
@@ -355,6 +414,10 @@ export function expandReachableClosure(
   const seedKeys = new Set<string>();
   const scanned = new Set<string>();
 
+  // The file a function was reached from, which is where whoever called
+  // it built the dependencies it works through.
+  const reachedFrom = new Map<string, SourceFile>();
+
   for (const seed of seeds) {
     const func = lookup.functionAt(seed.location);
     if (func !== null) {
@@ -381,10 +444,20 @@ export function expandReachableClosure(
       if (source === undefined) {
         continue;
       }
-      for (const candidate of collectReachable(source.func)) {
+      const cameFrom = reachedFrom.get(key);
+      const scan: ScanContext = {
+        ...(recognizers.resolveCallable === undefined
+          ? {}
+          : { resolveCallable: recognizers.resolveCallable }),
+        ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
+      };
+      for (const candidate of collectReachable(source.func, scan)) {
         const calleeKey = nodeKey(candidate.func);
         if (!functionByKey.has(calleeKey)) {
           functionByKey.set(calleeKey, candidate);
+        }
+        if (!reachedFrom.has(calleeKey)) {
+          reachedFrom.set(calleeKey, source.func.getSourceFile());
         }
         db.add("calls", [key, calleeKey]);
       }

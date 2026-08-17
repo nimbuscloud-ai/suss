@@ -36,29 +36,52 @@ const SOURCES: Record<string, CaseFiles> = {
       "\n",
     ),
   },
+  "a class constructed with an argument": {
+    "f.py": [
+      "class Loader:",
+      "    def __init__(self, source):",
+      "        self.source = source",
+      "",
+      "loader = Loader(source)",
+      "",
+    ].join("\n"),
+  },
   "a value another file declares": {
     "source.py": "value = 1\n",
     "f.py": "from source import value as renamed\n",
   },
 };
 
+/**
+ * Construction is the case Python does not key yet: `__init__` gets the
+ * parameters, so an argument passed to `Loader(...)` lands nowhere.
+ */
+const KNOWN_GAPS: Record<string, string> = {
+  "a class constructed with an argument":
+    "the parameters are keyed on __init__ rather than on the class",
+};
+
 describe("the Python adapter satisfies the fact contract", () => {
   it("keys every fact the way the rules expect", async () => {
-    const failures = await checkFactContract(SOURCES, async (files) => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "contract-"));
-      for (const [name, source] of Object.entries(files)) {
-        fs.writeFileSync(path.join(dir, name), source);
-      }
-      const db = new Database();
-      for (const file of findPythonFiles(dir)) {
-        const tree = await parsePython(fs.readFileSync(file, "utf8"));
-        emitModuleImportFacts(db, file, bindModule(tree.rootNode), {
-          roots: [dir],
-        });
-        emitValueFacts(db, file, tree.rootNode);
-      }
-      return db;
-    });
+    const failures = await checkFactContract(
+      SOURCES,
+      async (files) => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "contract-"));
+        for (const [name, source] of Object.entries(files)) {
+          fs.writeFileSync(path.join(dir, name), source);
+        }
+        const db = new Database();
+        for (const file of findPythonFiles(dir)) {
+          const tree = await parsePython(fs.readFileSync(file, "utf8"));
+          emitModuleImportFacts(db, file, bindModule(tree.rootNode), {
+            roots: [dir],
+          });
+          emitValueFacts(db, file, tree.rootNode);
+        }
+        return db;
+      },
+      { known: KNOWN_GAPS },
+    );
     expect(failures).toEqual([]);
   });
 });

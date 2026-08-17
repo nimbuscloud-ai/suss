@@ -1400,3 +1400,209 @@ describe("a class field", () => {
     );
   });
 });
+
+describe("a dependency the constructor was handed", () => {
+  // Two files rather than one, because a service takes its dependency as
+  // an interface and the class behind it lives somewhere else.
+  const READER = `
+    export interface OrdersReader {
+      findByCustomer(id: string): Promise<string>;
+    }
+    export class OrdersDao implements OrdersReader {
+      async findByCustomer(id: string): Promise<string> {
+        return "orders:" + id;
+      }
+    }
+    export class InvoicesDao implements OrdersReader {
+      async findByCustomer(id: string): Promise<string> {
+        return "invoices:" + id;
+      }
+    }
+  `;
+
+  /** The callee of the call a named method makes. */
+  function calleeIn(project: Project, file: string, method: string): Node {
+    const sourceFile = project.getSourceFileOrThrow(file);
+    for (const call of sourceFile.getDescendantsOfKind(
+      SyntaxKind.CallExpression,
+    )) {
+      const owner = call.getFirstAncestorByKind(SyntaxKind.MethodDeclaration);
+      if (owner?.getName() === method) {
+        return call.getExpression();
+      }
+    }
+    throw new Error(`No call inside ${method} in ${file}`);
+  }
+
+  function serviceProject(service: string, construction: string): Project {
+    return projectOf({
+      "/dao.ts": READER,
+      "/service.ts": service,
+      "/entry.ts": `
+        import { OrdersDao, InvoicesDao } from "./dao";
+        import { OrdersService } from "./service";
+        export const handler = async (id: string) => {
+          const service = new OrdersService(${construction});
+          return service.forCustomer(id);
+        };
+      `,
+    });
+  }
+
+  /**
+   * A run reads the file a unit was discovered in before it walks into
+   * the service, so the construction site's facts are already there.
+   */
+  function storeThatRead(project: Project): ResolutionStore {
+    const store = new ResolutionStore();
+    store.resolveCallable(exportValue(project, "/entry.ts", "handler"));
+    return store;
+  }
+
+  it("follows a call through a parameter property to the class that was constructed", () => {
+    const project = serviceProject(
+      `
+        import type { OrdersReader } from "./dao";
+        export class OrdersService {
+          constructor(private readonly dao: OrdersReader) {}
+          async forCustomer(id: string) {
+            return this.dao.findByCustomer(id);
+          }
+        }
+      `,
+      "new OrdersDao()",
+    );
+
+    expect(
+      resolvedBody(
+        storeThatRead(project),
+        calleeIn(project, "/service.ts", "forCustomer"),
+      ),
+    ).toContain('"orders:"');
+  });
+
+  it("follows a call through a field the constructor assigns", () => {
+    const project = serviceProject(
+      `
+        import type { OrdersReader } from "./dao";
+        export class OrdersService {
+          private readonly dao: OrdersReader;
+          constructor(dao: OrdersReader) {
+            this.dao = dao;
+          }
+          async forCustomer(id: string) {
+            return this.dao.findByCustomer(id);
+          }
+        }
+      `,
+      "new OrdersDao()",
+    );
+
+    expect(
+      resolvedBody(
+        storeThatRead(project),
+        calleeIn(project, "/service.ts", "forCustomer"),
+      ),
+    ).toContain('"orders:"');
+  });
+
+  it("follows a call through a field its own declaration constructs", () => {
+    const project = serviceProject(
+      `
+        import { OrdersDao, type OrdersReader } from "./dao";
+        export class OrdersService {
+          private readonly dao: OrdersReader = new OrdersDao();
+          async forCustomer(id: string) {
+            return this.dao.findByCustomer(id);
+          }
+        }
+      `,
+      "",
+    );
+
+    expect(
+      resolvedBody(
+        storeThatRead(project),
+        calleeIn(project, "/service.ts", "forCustomer"),
+      ),
+    ).toContain('"orders:"');
+  });
+
+  it("reads nothing from a parameter property a method writes again", () => {
+    const project = serviceProject(
+      `
+        import type { OrdersReader } from "./dao";
+        export class OrdersService {
+          constructor(private dao: OrdersReader) {}
+          swap(other: OrdersReader) {
+            this.dao = other;
+          }
+          async forCustomer(id: string) {
+            return this.dao.findByCustomer(id);
+          }
+        }
+      `,
+      "new OrdersDao()",
+    );
+
+    expect(
+      resolvedBody(
+        storeThatRead(project),
+        calleeIn(project, "/service.ts", "forCustomer"),
+      ),
+    ).toBeNull();
+  });
+
+  it("reads nothing when two construction sites pass different classes", () => {
+    const project = projectOf({
+      "/dao.ts": READER,
+      "/service.ts": `
+        import type { OrdersReader } from "./dao";
+        export class OrdersService {
+          constructor(private readonly dao: OrdersReader) {}
+          async forCustomer(id: string) {
+            return this.dao.findByCustomer(id);
+          }
+        }
+      `,
+      "/entry.ts": `
+        import { OrdersDao, InvoicesDao } from "./dao";
+        import { OrdersService } from "./service";
+        export const handler = async (id: string) => {
+          const orders = new OrdersService(new OrdersDao());
+          const invoices = new OrdersService(new InvoicesDao());
+          return [orders.forCustomer(id), invoices.forCustomer(id)];
+        };
+      `,
+    });
+
+    expect(
+      resolvedBody(
+        storeThatRead(project),
+        calleeIn(project, "/service.ts", "forCustomer"),
+      ),
+    ).toBeNull();
+  });
+
+  it("reads nothing when the construction site passes a value it cannot follow", () => {
+    const project = serviceProject(
+      `
+        import type { OrdersReader } from "./dao";
+        export class OrdersService {
+          constructor(private readonly dao: OrdersReader) {}
+          async forCustomer(id: string) {
+            return this.dao.findByCustomer(id);
+          }
+        }
+      `,
+      "JSON.parse(id) as OrdersReader",
+    );
+
+    expect(
+      resolvedBody(
+        storeThatRead(project),
+        calleeIn(project, "/service.ts", "forCustomer"),
+      ),
+    ).toBeNull();
+  });
+});

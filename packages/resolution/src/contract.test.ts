@@ -18,6 +18,8 @@ function conformingFacts(): Database {
   db.add("func", ["fn:a"]);
   db.add("objectValue", ["class:1"]);
   db.add("holdsProperty", ["class:1", "load", "fn:a"]);
+  db.add("paramOf", ["class:1", "0", "class:1#source"]);
+  db.add("callArg", ["call:1", "0", "f#source"]);
   db.add("exportsAs", ["f.py", "build", "fn:a"]);
   db.add("imports", ["f.py#renamed", "source.py", "value"]);
   return db;
@@ -75,6 +77,40 @@ describe("the fact contract", () => {
     });
     expect(failures.map((f) => f.problem).join(" ")).toContain(
       "not the node that declares the method",
+    );
+  });
+
+  it("catches constructor parameters keyed on something other than the class", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("paramOf", [["class:1", "0", "class:1#source"]]);
+      db.add("paramOf", ["class:1#ctor", "0", "class:1#source"]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "none of its constructor's parameters",
+    );
+  });
+
+  it("catches a construction written down as something other than a call", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("call", [["call:1", "f#build"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "not written down as a call",
+    );
+  });
+
+  it("catches a construction that passes its argument nowhere", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("callArg", [["call:1", "0", "f#source"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain(
+      "a class constructed with an argument",
     );
   });
 

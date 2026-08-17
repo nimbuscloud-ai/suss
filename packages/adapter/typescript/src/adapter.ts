@@ -2085,6 +2085,8 @@ export function createTypeScriptAdapter(
                   access: collectAccessRecognizers(config.frameworks, tallies),
                   resolveWrittenValue: (value) =>
                     resolution.resolveWrittenValue(value),
+                  resolveCallable: (value, alsoFrom) =>
+                    resolution.resolveCallable(value, alsoFrom),
                 },
               ),
             )

@@ -33,6 +33,16 @@ const SOURCES: Record<string, CaseFiles> = {
   "a class declaring a method": {
     "/f.ts": "export class Loader {\n  load() {}\n}\n",
   },
+  "a class constructed with an argument": {
+    "/f.ts": [
+      "declare const source: unknown;",
+      "export class Loader {",
+      "  constructor(readonly from: unknown) {}",
+      "}",
+      "export const loader = new Loader(source);",
+      "",
+    ].join("\n"),
+  },
   "a value another file declares": {
     "/source.ts": "export const value = 1;\n",
     "/f.ts":
