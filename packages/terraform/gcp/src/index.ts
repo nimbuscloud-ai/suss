@@ -9,8 +9,8 @@
  *
  * Google's vocabulary starts and stops in this file. Each entry says
  * which attribute a resource writes which of Google's words in, and
- * what they mean in the terms suss compares boundaries in, so `checkMetric` in
- * `@suss/checker` judges the pair without this pack being loaded.
+ * what they mean in the terms suss compares boundaries in, so
+ * `checkMetric` in `@suss/checker` judges a pair with no pack loaded.
  */
 
 import type { MetricAccumulation, MetricValueShape } from "@suss/behavioral-ir";
