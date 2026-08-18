@@ -114,3 +114,7 @@ Only `<resource_type>.<label>.<attribute>` resolves, and only when that resource
 A reference whose attribute is itself built from another reference is followed four hops, and then the hole stays. Two resources that refer to each other leave the value exactly as it was written.
 
 The scope is every file being read together, so a reference finds a resource another file in the module states, the way Terraform reads a module.
+
+## A name a locals block states
+
+A configuration that writes `local.table_name = "orders-v1"` and refers to it from every resource has stated that name as plainly as a resource would, so a reference to it resolves. One built from a variable, `"${var.environment}-orders-v1"`, expands to a value that still has a variable in it, which becomes a hole again, so a name built from a stage prefix reads the way it always did.

@@ -894,3 +894,50 @@ resource "signals_counter" "pong" {
     ).toBe("signals.example/counters/edp-refused");
   });
 });
+
+// A `locals` entry states a value as plainly as a resource does, and a
+// module that names its table once and refers to it everywhere is the
+// reason to read them.
+const LOCALS = `
+locals {
+  table_name  = "orders-v1"
+  scoped_name = "\${var.environment}-orders-v1"
+}
+
+resource "aws_dynamodb_table" "orders" {
+  name      = local.table_name
+  hash_key  = "order_id"
+}
+
+resource "aws_dynamodb_table" "scoped" {
+  name      = local.scoped_name
+  hash_key  = "order_id"
+}
+
+resource "aws_dynamodb_table" "missing" {
+  name      = local.never_stated
+  hash_key  = "order_id"
+}
+`;
+
+describe("a name a locals block states", () => {
+  const summaries = terraformToSummaries(LOCALS, "main.tf", PACKS);
+  const physical = (label: string) =>
+    readStorageContractMetadata(
+      summaries.find((summary) =>
+        summary.identity.name.endsWith(label),
+      ) as BehavioralSummary,
+    )?.physicalTable;
+
+  it("reads a literal local as the name it states", () => {
+    expect(physical("orders")).toBe("orders-v1");
+  });
+
+  it("keeps a hole for a local built from a variable", () => {
+    expect(physical("scoped")).toBe("{var.environment}-orders-v1");
+  });
+
+  it("keeps a hole for a local the configuration never states", () => {
+    expect(physical("missing")).toBe("{local.never_stated}");
+  });
+});
