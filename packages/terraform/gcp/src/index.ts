@@ -4,8 +4,9 @@
  *
  * A log-based metric is a boundary: the resource declares a series of
  * measurements, and an alert policy elsewhere reads it back by the type
- * string Cloud Monitoring gives it. Neither resource refers to the
- * other, so that string is all they share.
+ * string Cloud Monitoring gives it. That string is what the two share,
+ * whether the policy writes it out or builds it from a reference to the
+ * metric resource.
  *
  * Google's vocabulary starts and stops in this file. Each entry says
  * which attribute a resource writes which of Google's words in, and

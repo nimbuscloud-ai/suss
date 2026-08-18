@@ -8,8 +8,10 @@
  * A name is usually built at deploy time, and Terraform interpolates
  * the same way CloudFormation does, so `"${local.environment}-orders"`
  * becomes the pattern `{local.environment}-orders` and pairs with code
- * that builds the same name from its own variable. The README says how
- * a block that HCL states once or many times is read.
+ * that builds the same name from its own variable. An interpolation
+ * that refers to another resource in the same configuration resolves
+ * instead, since that resource states the value. The README says how a
+ * block that HCL states once or many times is read.
  */
 
 import fs from "node:fs";
@@ -27,6 +29,7 @@ import {
 } from "@suss/behavioral-ir";
 
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
+import { referenceScope, resolveReferences } from "./references.js";
 
 import type {
   BehavioralSummary,
@@ -43,6 +46,7 @@ import type {
   TerraformResource,
   TerraformResourcePattern,
 } from "./pack.js";
+import type { ReferenceScope } from "./references.js";
 
 export {
   type FilterCall,
@@ -89,34 +93,7 @@ export function terraformToSummaries(
   sourceFile: string,
   options: TerraformReadOptions,
 ): BehavioralSummary[] {
-  let parsed: unknown;
-  try {
-    // The parser gives back what it read and what stopped it, and a
-    // file it could not read comes back as nothing.
-    const [read] = hcl2.parseToObject(source);
-    parsed = read;
-  } catch {
-    return [];
-  }
-  const document = asRecord(parsed);
-  if (document === null) {
-    return [];
-  }
-
-  const constraints = providerConstraints(document);
-  const summaries: BehavioralSummary[] = [];
-  for (const [resourceType, label, body] of resourcesIn(document)) {
-    for (const pack of options.packs) {
-      const pattern = patternFor(pack, resourceType, constraints);
-      if (pattern === undefined) {
-        continue;
-      }
-      summaries.push(
-        ...summariesFor({ pattern, label, body, sourceFile, resourceType }),
-      );
-    }
-  }
-  return summaries;
+  return summariesForFiles([{ source, sourceFile }], options);
 }
 
 /** Read one `.tf` file, or every one directly inside a directory. */
@@ -130,9 +107,87 @@ export function terraformFileToSummaries(
         .filter((name) => name.endsWith(".tf"))
         .map((name) => path.join(target, name))
     : [target];
-  return files.flatMap((file) =>
-    terraformToSummaries(fs.readFileSync(file, "utf8"), file, options),
+  return summariesForFiles(
+    files.map((file) => ({
+      source: fs.readFileSync(file, "utf8"),
+      sourceFile: file,
+    })),
+    options,
   );
+}
+
+/** One `.tf` file, as it was read off disk. */
+interface SourceFile {
+  source: string;
+  sourceFile: string;
+}
+
+/** What one file states, once the parser has been through it. */
+interface ParsedFile {
+  sourceFile: string;
+  constraints: Map<string, string>;
+  resources: Array<[string, string, Record<string, unknown>]>;
+}
+
+/**
+ * The boundaries a set of files declares, read as one configuration. A
+ * module states its resources across several files and a reference in
+ * one of them may refer to a resource another one states, so every file
+ * being read contributes to the scope references resolve against.
+ */
+function summariesForFiles(
+  files: SourceFile[],
+  options: TerraformReadOptions,
+): BehavioralSummary[] {
+  const parsed = files
+    .map((file) => parseSource(file))
+    .filter((file): file is ParsedFile => file !== null);
+  const scope = referenceScope(parsed.flatMap((file) => file.resources));
+
+  const summaries: BehavioralSummary[] = [];
+  for (const file of parsed) {
+    for (const [resourceType, label, body] of file.resources) {
+      for (const pack of options.packs) {
+        const pattern = patternFor(pack, resourceType, file.constraints);
+        if (pattern === undefined) {
+          continue;
+        }
+        summaries.push(
+          ...summariesFor({
+            pattern,
+            label,
+            body,
+            sourceFile: file.sourceFile,
+            resourceType,
+            scope,
+          }),
+        );
+      }
+    }
+  }
+  return summaries;
+}
+
+/** What one file states, or null when the parser could not read it. */
+function parseSource(file: SourceFile): ParsedFile | null {
+  let read: unknown;
+  try {
+    // The parser gives back what it read and what stopped it, and a
+    // file it could not read comes back as nothing.
+    const [parsed] = hcl2.parseToObject(file.source);
+    read = parsed;
+  } catch {
+    return null;
+  }
+  const document = asRecord(read);
+  if (document === null) {
+    return null;
+  }
+  return {
+    sourceFile: file.sourceFile,
+    constraints: providerConstraints(document),
+    resources: resourcesIn(document),
+  };
 }
 
 /**
@@ -199,6 +254,8 @@ interface ResourceSite {
   body: Record<string, unknown>;
   sourceFile: string;
   resourceType: string;
+  /** What the rest of the configuration states, for a reference in it. */
+  scope: ReferenceScope;
 }
 
 /** One reader per kind of thing a pack entry can say a resource is. */
@@ -221,13 +278,9 @@ const READERS: ResourceReaders = {
   "metric-reading": (site, boundary) => readingSummaries({ ...site, boundary }),
 };
 
-function summariesFor(opts: {
-  pattern: TerraformResourcePattern;
-  label: string;
-  body: Record<string, unknown>;
-  sourceFile: string;
-  resourceType: string;
-}): BehavioralSummary[] {
+function summariesFor(
+  opts: ResourceSite & { pattern: TerraformResourcePattern },
+): BehavioralSummary[] {
   const { pattern, ...site } = opts;
   // The one cast joining a table that narrows per kind to a lookup that
   // does not, the way `dispatchByType` does it for the IR's own unions.
@@ -238,25 +291,21 @@ function summariesFor(opts: {
   return read(site, pattern.boundary);
 }
 
-function storageSummary(opts: {
-  boundary: StorageResource;
-  label: string;
-  body: Record<string, unknown>;
-  shape: KeyedShape;
-  types: Map<string, string>;
-  sourceFile: string;
-  resourceType: string;
-}): BehavioralSummary {
+function storageSummary(
+  opts: ResourceSite & {
+    boundary: StorageResource;
+    shape: KeyedShape;
+    types: Map<string, string>;
+  },
+): BehavioralSummary {
   const { boundary, label, shape, types } = opts;
   // Two resource types may share a label, so the summary goes by the
   // address Terraform itself refers to a resource by.
   const address = `${opts.resourceType}.${label}`;
-  const declaredName =
+  const physicalTable =
     boundary.nameAttribute === undefined
       ? null
-      : stringOf(opts.body[boundary.nameAttribute]);
-  const physicalTable =
-    declaredName === null ? null : namePatternFromSub(declaredName);
+      : namePattern(opts.body[boundary.nameAttribute], opts.scope);
 
   return {
     kind: "library",
@@ -305,20 +354,14 @@ function storageSummary(opts: {
   };
 }
 
-function busSummary(opts: {
-  boundary: MessageBusResource;
-  label: string;
-  body: Record<string, unknown>;
-  sourceFile: string;
-  resourceType: string;
-}): BehavioralSummary {
+function busSummary(
+  opts: ResourceSite & { boundary: MessageBusResource },
+): BehavioralSummary {
   const { boundary, label } = opts;
-  const declaredName =
+  const physicalName =
     boundary.nameAttribute === undefined
       ? null
-      : stringOf(opts.body[boundary.nameAttribute]);
-  const physicalName =
-    declaredName === null ? null : namePatternFromSub(declaredName);
+      : namePattern(opts.body[boundary.nameAttribute], opts.scope);
 
   return {
     kind: "library",
@@ -357,7 +400,10 @@ function metricSummary(
   opts: ResourceSite & { boundary: MetricResource },
 ): BehavioralSummary {
   const { boundary } = opts;
-  const declaredName = namePatternFromSub(opts.body[boundary.nameAttribute]);
+  const declaredName = namePattern(
+    opts.body[boundary.nameAttribute],
+    opts.scope,
+  );
   const metricType =
     declaredName === null
       ? null
@@ -412,7 +458,11 @@ function readingSummaries(
   const summaries: BehavioralSummary[] = [];
   for (const reading of blocksAt(opts.body, boundary.readingBlocks)) {
     const query = stringOf(valueAt(reading, boundary.queryAttribute));
-    for (const metricType of metricTypesIn(query, boundary.queryIdentityKey)) {
+    for (const metricType of metricTypesIn(
+      query,
+      boundary.queryIdentityKey,
+      opts.scope,
+    )) {
       summaries.push({
         kind: "consumer",
         location: {
@@ -447,6 +497,7 @@ function readingSummaries(
 function metricTypesIn(
   query: string | null,
   identityKey: string,
+  scope: ReferenceScope,
 ): Array<string | null> {
   if (query === null) {
     return [null];
@@ -456,7 +507,7 @@ function metricTypesIn(
     return [null];
   }
   const found = filterValuesFor(parsed.query, identityKey)
-    .map((value) => namePatternFromSub(value))
+    .map((value) => namePattern(value, scope))
     .filter((value): value is string => value !== null);
   return found.length === 0 ? [null] : found;
 }
@@ -665,6 +716,16 @@ function resourcesIn(
     }
   }
   return found;
+}
+
+/**
+ * The name a value states. A reference to a resource this configuration
+ * states is read as that resource's value rather than as a hole.
+ */
+function namePattern(value: unknown, scope: ReferenceScope): string | null {
+  return namePatternFromSub(
+    typeof value === "string" ? resolveReferences(value, scope) : value,
+  );
 }
 
 function arrayOf(value: unknown): unknown[] {

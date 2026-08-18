@@ -58,7 +58,7 @@ So an index like that declares every field it will ever have, and its contract s
 
 ## A resource that reads what another one declares
 
-Some resources refer to another resource by a string the deployment gives it, rather than by a Terraform reference. An alert refers to a metric that way, and a metric declares itself:
+Some resources refer to another resource by the string the deployment gives it. An alert refers to a metric that way, and a metric declares itself:
 
 ```hcl
 resource "signals_counter" "refusals" {
@@ -88,3 +88,29 @@ Both kinds also say what the resource's own words mean in suss's terms, so the c
 A reading translates two things the same way. `comparesTo: { attribute: "limit", whenSet: "number" }` says the reading compares the series against a single number when it states a limit at all, since a threshold is a number by being written down. `reducesTo` maps an aligner or reducer to what it leaves behind. Both land on the summary under `metricReading`, along with the setting and the values that would reduce the series, so a finding can name the fix without the checker knowing which provider it came from.
 
 Comparing the two sides is `checkMetric` in `@suss/checker`, and it runs off summaries alone. No pack is loaded at check time.
+
+## A reference to a resource in the same configuration
+
+The side that reads a metric often spells the name through a Terraform reference rather than by copying the string:
+
+```hcl
+resource "signals_counter" "refused" {
+  name = "edp-sweep-refused"
+}
+
+resource "signals_watch" "refused_sustained" {
+  rules {
+    over_threshold {
+      selector = "signal.id=\"signals.example/counters/${signals_counter.refused.name}\""
+    }
+  }
+}
+```
+
+Both resources deploy the same string, and the configuration already says what it is, so the reference resolves to `signals.example/counters/edp-sweep-refused` on both summaries and the two pair. Left as the hole `{signals_counter.refused.name}`, the two sides of one configuration spell the same metric differently and pair with nothing.
+
+Only `<resource_type>.<label>.<attribute>` resolves, and only when that resource writes the attribute as a literal string. An attribute the provider fills in at apply time, an `id` or an `arn` or a `self_link`, is not written anywhere in the file, so nothing is found and the hole stays. `var.` and `local.` stay holes as well: a variable's default is not what production runs with, and a name built from a stage prefix has to go on pairing with whatever stage the code that meets it was written for.
+
+A reference whose attribute is itself built from another reference is followed four hops, and then the hole stays. Two resources that refer to each other leave the value exactly as it was written.
+
+The scope is every file being read together, so a reference finds a resource another file in the module states, the way Terraform reads a module.
