@@ -24,6 +24,7 @@ import {
   namesAgree,
   namesNothing,
   readStorageContractMetadata,
+  summaryIdentifier,
 } from "@suss/behavioral-ir";
 
 import { makeSide } from "../coverage/responseMatch.js";
@@ -43,6 +44,7 @@ import type {
   StorageContractMetadata,
   StorageSemantics,
 } from "@suss/behavioral-ir";
+import type { ComparedPair } from "../pairing/comparedPair.js";
 
 type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   /**
@@ -65,12 +67,8 @@ const ALL_FIELDS = "*";
 export function checkStorage(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
-  /**
-   * Where to record what this pass compared. A report that counts only
-   * the boundaries pairing matched says nothing was compared on a run
-   * whose whole point was the stores.
-   */
-  compared?: Array<{ key: string; provider: string; consumer: string }>,
+  /** Where to record what this pass compared; see `ComparedPair`. */
+  compared?: ComparedPair[],
 ): Finding[] {
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
@@ -139,8 +137,8 @@ export function checkStorage(
     for (const access of inScope) {
       compared?.push({
         key: `${semantics.storageSystem}:${containerLabel(semantics)}`,
-        provider: provider.identity.name,
-        consumer: access.summary.identity.name,
+        provider: summaryIdentifier(provider),
+        consumer: summaryIdentifier(access.summary),
       });
     }
 

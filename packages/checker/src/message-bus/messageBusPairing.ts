@@ -16,8 +16,10 @@
 import {
   readMessageBusMetadata,
   readRuntimeContractMetadata,
+  summaryIdentifier,
   summaryRef,
 } from "@suss/behavioral-ir";
+import { busIdentityKey } from "@suss/ir-core";
 
 import {
   buildInteractionIndex,
@@ -39,6 +41,7 @@ import {
   createChannelSet,
   formatChannel,
   hasPair,
+  pairingOwners,
   parseChannel,
 } from "./channelPairing.js";
 
@@ -48,6 +51,7 @@ import type {
   Finding,
   MessageBusSemantics,
 } from "@suss/behavioral-ir";
+import type { ComparedPair } from "../pairing/comparedPair.js";
 
 type ProducerRecord = InteractionRecord<"message-send"> & {
   /** Null when no env var resolved to a template resource. */
@@ -57,6 +61,8 @@ type ProducerRecord = InteractionRecord<"message-send"> & {
 export function checkMessageBus(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
+  /** Where to record what this pass compared; see `ComparedPair`. */
+  compared?: ComparedPair[],
 ): Finding[] {
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
@@ -102,31 +108,31 @@ export function checkMessageBus(
   for (const p of queueProviders) {
     const ch = channelOf(p);
     if (ch !== null) {
-      addChannel(providerChannels, ch);
+      addChannel(providerChannels, ch, summaryIdentifier(p));
     }
   }
   for (const c of consumers) {
     const ch = channelOf(c);
     if (ch !== null) {
-      addChannel(consumerChannels, ch);
+      addChannel(consumerChannels, ch, summaryIdentifier(c));
     }
     // A consumer channelled by subject still drains a concrete queue,
     // which would otherwise be reported unused.
     const queue = consumedQueueOf(c);
     if (queue !== null) {
-      addChannel(consumerChannels, queue);
+      addChannel(consumerChannels, queue, summaryIdentifier(c));
     }
   }
   for (const r of codeReceivers) {
     const ch = channelOf(r);
     if (ch !== null) {
-      addChannel(consumerChannels, ch);
+      addChannel(consumerChannels, ch, summaryIdentifier(r));
     }
   }
   for (const p of producers) {
     const ch = effectiveChannel(p);
     if (ch !== null) {
-      addChannel(producerChannels, ch);
+      addChannel(producerChannels, ch, summaryIdentifier(p.summary));
     }
   }
 
@@ -139,14 +145,20 @@ export function checkMessageBus(
       continue;
     }
     const ch = effectiveChannel(p);
-    if (
-      ch === null ||
-      hasPair(providerChannels, ch) ||
-      hasPair(consumerChannels, ch)
-    ) {
+    if (ch === null) {
       continue;
     }
-    findings.push(makeOrphanProducerFinding(p, semantics, ch));
+    const declarers = [
+      ...pairingOwners(providerChannels, ch),
+      ...pairingOwners(consumerChannels, ch),
+    ];
+    if (declarers.length === 0) {
+      findings.push(makeOrphanProducerFinding(p, semantics, ch));
+      continue;
+    }
+    recordCompared(compared, semantics.messageBus, ch, declarers, [
+      summaryIdentifier(p.summary),
+    ]);
   }
 
   for (const c of consumers) {
@@ -181,10 +193,15 @@ export function checkMessageBus(
     if (semantics?.name !== "message-bus" || semantics.channel === null) {
       continue;
     }
-    if (
-      hasPair(producerChannels, semantics.channel) ||
-      hasPair(consumerChannels, semantics.channel)
-    ) {
+    const drainers = pairingOwners(consumerChannels, semantics.channel);
+    if (hasPair(producerChannels, semantics.channel) || drainers.length > 0) {
+      recordCompared(
+        compared,
+        semantics.messageBus,
+        semantics.channel,
+        [summaryIdentifier(p)],
+        drainers,
+      );
       continue;
     }
     findings.push(
@@ -206,6 +223,32 @@ export function checkMessageBus(
   );
 
   return findings;
+}
+
+/**
+ * Every declaring side against every sending side, keyed the way a
+ * finding on this channel is keyed so a reader sees one spelling.
+ */
+function recordCompared(
+  compared: ComparedPair[] | undefined,
+  messageBus: MessageBusSemantics["messageBus"],
+  channel: string,
+  declarers: string[],
+  senders: string[],
+): void {
+  if (compared === undefined) {
+    return;
+  }
+  const key = busIdentityKey(messageBus, parseChannel(channel).subject);
+  for (const provider of declarers) {
+    for (const consumer of senders) {
+      // One summary that both declares a subject and sends to it has
+      // not been compared against anything.
+      if (provider !== consumer) {
+        compared.push({ key, provider, consumer });
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

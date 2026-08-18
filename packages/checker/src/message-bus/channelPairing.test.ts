@@ -8,6 +8,7 @@ import {
   channelsPair,
   createChannelSet,
   hasPair,
+  pairingOwners,
   parseChannel,
 } from "./channelPairing.js";
 
@@ -74,7 +75,7 @@ describe("channelsPair", () => {
 describe("hasPair", () => {
   it("finds a bus-qualified channel from a bus-less lookup and back", () => {
     const set = createChannelSet();
-    addChannel(set, "default#order.placed");
+    addChannel(set, "default#order.placed", "orders::src/publish.ts::publish");
     expect(hasPair(set, "order.placed")).toBe(true);
     expect(hasPair(set, "default#order.placed")).toBe(true);
     expect(hasPair(set, "staging#order.placed")).toBe(false);
@@ -82,15 +83,40 @@ describe("hasPair", () => {
 
   it("answers false for a subject the set has never seen", () => {
     const set = createChannelSet();
-    addChannel(set, "default#order.placed");
+    addChannel(set, "default#order.placed", "orders::src/publish.ts::publish");
     expect(hasPair(set, "order.shipped")).toBe(false);
   });
 
   it("keeps every bus recorded for a subject two sides both publish", () => {
     const set = createChannelSet();
-    addChannel(set, "default#order.placed");
-    addChannel(set, "staging#order.placed");
+    addChannel(set, "default#order.placed", "orders::src/publish.ts::publish");
+    addChannel(set, "staging#order.placed", "orders::src/staging.ts::publish");
     expect(hasPair(set, "staging#order.placed")).toBe(true);
     expect(hasPair(set, "default#order.placed")).toBe(true);
+  });
+});
+
+describe("pairingOwners", () => {
+  it("says which summary put the channel that paired into the set", () => {
+    const set = createChannelSet();
+    addChannel(set, "default#order.placed", "orders::src/publish.ts::publish");
+    expect(pairingOwners(set, "order.placed")).toEqual([
+      "orders::src/publish.ts::publish",
+    ]);
+  });
+
+  it("leaves out an owner whose bus does not agree", () => {
+    const set = createChannelSet();
+    addChannel(set, "default#order.placed", "orders::src/publish.ts::publish");
+    addChannel(set, "staging#order.placed", "orders::src/staging.ts::publish");
+    expect(pairingOwners(set, "staging#order.placed")).toEqual([
+      "orders::src/staging.ts::publish",
+    ]);
+  });
+
+  it("is empty for a subject the set has never seen", () => {
+    const set = createChannelSet();
+    addChannel(set, "default#order.placed", "orders::src/publish.ts::publish");
+    expect(pairingOwners(set, "order.shipped")).toEqual([]);
   });
 });

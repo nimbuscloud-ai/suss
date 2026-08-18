@@ -1,3 +1,4 @@
+import { summaryIdentifier } from "@suss/behavioral-ir";
 import {
   displayLabel,
   exchangesHttpResponses,
@@ -27,6 +28,7 @@ import type {
   BoundaryBinding,
   Finding,
 } from "@suss/behavioral-ir";
+import type { ComparedPair } from "./pairing/comparedPair.js";
 import type { SummaryPair, UnpairableReason } from "./pairing/pairing.js";
 
 function describeBinding(binding: BoundaryBinding): string {
@@ -114,6 +116,8 @@ export {
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 
+export type { ComparedPair } from "./pairing/comparedPair.js";
+
 import { summaryWithDefinitionsInlined } from "./spelledOut.js";
 
 export { summaryWithDefinitionsInlined } from "./spelledOut.js";
@@ -156,12 +160,17 @@ function checkSpelledOutPair(
 
 export interface CheckAllResult {
   findings: Finding[];
-  pairs: Array<{ key: string; provider: string; consumer: string }>;
+  pairs: ComparedPair[];
   unmatched: {
-    providers: Array<{ name: string; key: string | null }>;
-    consumers: Array<{ name: string; key: string | null }>;
+    providers: Array<{ id: string; name: string; key: string | null }>;
+    consumers: Array<{ id: string; name: string; key: string | null }>;
     /** Summaries that took no part in pairing, each saying why. */
-    unpairable: Array<{ name: string; reason: UnpairableReason }>;
+    unpairable: Array<{
+      id: string;
+      name: string;
+      key: string | null;
+      reason: UnpairableReason;
+    }>;
   };
 }
 
@@ -186,8 +195,8 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
     }
     pairInfo.push({
       key: pair.key,
-      provider: pair.provider.identity.name,
-      consumer: pair.consumer.identity.name,
+      provider: summaryIdentifier(pair.provider),
+      consumer: summaryIdentifier(pair.consumer),
     });
   }
   const graphqlMatched = new Set<BehavioralSummary>();
@@ -196,8 +205,8 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
     graphqlMatched.add(consumer);
     pairInfo.push({
       key,
-      provider: provider.identity.name,
-      consumer: consumer.identity.name,
+      provider: summaryIdentifier(provider),
+      consumer: summaryIdentifier(consumer),
     });
   }
   const stillUnmatched = (s: BehavioralSummary): boolean =>
@@ -221,32 +230,42 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // transition's effects itself, and the walks add up per pass.
   const interactionIndex = buildInteractionIndex(summaries);
 
-  findings.push(...checkRuntimeConfig(summaries, interactionIndex));
+  findings.push(...checkRuntimeConfig(summaries, interactionIndex, pairInfo));
   findings.push(...checkStorage(summaries, interactionIndex, pairInfo));
-  findings.push(...checkMessageBus(summaries, interactionIndex));
+  findings.push(...checkMessageBus(summaries, interactionIndex, pairInfo));
+
+  // Pairing only knows method and path, so it files a store or a queue
+  // as unpaired even after the pass that owns that protocol compared it.
+  const compared = new Set(pairInfo.flatMap((p) => [p.provider, p.consumer]));
+  const wentUncompared = (s: BehavioralSummary): boolean =>
+    !compared.has(summaryIdentifier(s));
 
   return {
     findings: dedupeFindings(findings),
     pairs: pairInfo,
     unmatched: {
-      providers: unmatched.providers.map((s) => ({
-        name: s.identity.name,
-        key:
-          s.identity.boundaryBinding !== null
-            ? describeBinding(s.identity.boundaryBinding)
-            : null,
-      })),
-      consumers: unmatched.consumers.map((s) => ({
-        name: s.identity.name,
-        key:
-          s.identity.boundaryBinding !== null
-            ? describeBinding(s.identity.boundaryBinding)
-            : null,
-      })),
-      unpairable: unmatched.unpairable.map((u) => ({
-        name: u.summary.identity.name,
-        reason: u.reason,
-      })),
+      providers: unmatched.providers
+        .filter(wentUncompared)
+        .map(describeUnmatched),
+      consumers: unmatched.consumers
+        .filter(wentUncompared)
+        .map(describeUnmatched),
+      unpairable: unmatched.unpairable
+        .filter((u) => wentUncompared(u.summary))
+        .map((u) => ({ ...describeUnmatched(u.summary), reason: u.reason })),
     },
+  };
+}
+
+function describeUnmatched(summary: BehavioralSummary): {
+  id: string;
+  name: string;
+  key: string | null;
+} {
+  const binding = summary.identity.boundaryBinding;
+  return {
+    id: summaryIdentifier(summary),
+    name: summary.identity.name,
+    key: binding !== null ? describeBinding(binding) : null,
   };
 }
