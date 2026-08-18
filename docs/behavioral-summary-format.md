@@ -175,7 +175,7 @@ Tools consuming summaries can use confidence to decide how much to trust the ana
 
 ## Gaps
 
-A gap is something the summary could not account for. There are two kinds, and they point in opposite directions.
+A gap is something the summary could not account for. One kind says the code has a hole; the other two say suss could not read part of it.
 
 **`unhandledCase`** says the code has a hole. Either the contract declares a response that no transition produces, or a transition produces a status the contract never declared:
 
@@ -200,6 +200,18 @@ The checker reports these as `providerContractViolation` at error severity.
 ```
 
 The handler may be responding perfectly well in a form nobody taught the pack, so the checker reports `lowConfidence` at info severity instead of blaming the code.
+
+**`unfollowedCall`** says the walk stopped. A call could not be resolved to a function with a body, so whatever runs behind it is missing from this summary:
+
+```json
+{
+  "type": "unfollowedCall",
+  "consequence": "unknown",
+  "description": "The call to this.dao.getEditions lands on a declaration with no body, so whatever runs there is missing from this summary"
+}
+```
+
+Without it, a service reaching its database through an injected interface produces the same empty summary as a service that touches nothing. Only a call whose callee the project itself declares is recorded; a call into a dependency is described elsewhere, as a boundary crossing.
 
 ## Metadata
 

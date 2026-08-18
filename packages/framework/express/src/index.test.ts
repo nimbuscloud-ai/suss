@@ -185,9 +185,9 @@ describe("expressFramework: integration", () => {
     expect(twoArg).toBeDefined();
   });
 
-  it("has no gaps when there is no contract", () => {
+  it("has no unhandled-case gaps when there is no contract", () => {
     for (const s of summaries) {
-      expect(s.gaps).toEqual([]);
+      expect(s.gaps.filter((g) => g.type === "unhandledCase")).toEqual([]);
     }
   });
 });

@@ -32,6 +32,16 @@ import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
 import { exportedDeclarationsOf } from "../moduleExports.js";
+import {
+  classifyStop,
+  declarationsBehind,
+  hasBody,
+  isDeclaredShape,
+  isInExternalCode,
+  type UnfollowedCall,
+  unfollowedCallGap,
+  worthRecording,
+} from "./unfollowedCall.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
@@ -87,43 +97,12 @@ interface ReachableCandidate {
   name: string;
 }
 
-function isInExternalCode(sourceFile: SourceFile): boolean {
-  if (sourceFile.isDeclarationFile()) {
-    return true;
-  }
-  const filePath = sourceFile.getFilePath();
-  // ts-morph surfaces files from node_modules when they're transitively
-  // imported; skip them: the package-exports / package-import packs
-  // handle library boundaries separately.
-  if (filePath.includes("/node_modules/")) {
-    return true;
-  }
-  return false;
-}
-
 /**
  * Follow a declaration node to an underlying function-shaped declaration
  * we can extract from. Returns null for declarations that don't resolve
  * (namespaces, classes without a called method, external-module imports,
  * parameters, etc.): the closure skips those.
  */
-function hasBody(fn: FunctionRoot): boolean {
-  // FunctionDeclaration / MethodDeclaration can be ambient (`declare
-  // function foo()`) or overload signatures; both lack a body node.
-  // Arrow + function expressions always have an associated body. We
-  // don't want to follow into ambient declarations: they're type-
-  // only and have no behaviour to summarize.
-  if (
-    Node.isFunctionDeclaration(fn) ||
-    Node.isMethodDeclaration(fn) ||
-    Node.isFunctionExpression(fn)
-  ) {
-    const body = fn.getBody?.();
-    return body !== undefined;
-  }
-  return true;
-}
-
 function resolveDecl(
   decl: Node,
   calleeName: string,
@@ -195,52 +174,55 @@ function declName(decl: Node): string | null {
   return null;
 }
 
+/**
+ * What one call site came to: a function to walk into, or a stop the
+ * closure describes rather than drops.
+ */
+type CallOutcome =
+  | { readonly kind: "followed"; readonly candidate: ReachableCandidate }
+  | { readonly kind: "stopped"; readonly stop: UnfollowedCall };
+
 function resolveCallee(
   call: Node,
   calleeName: string,
   scan: ScanContext,
-): ReachableCandidate | null {
+): CallOutcome | null {
   if (!Node.isCallExpression(call)) {
     return null;
   }
   const callee = call.getExpression();
-  const declarations = callee.getSymbol()?.getDeclarations() ?? [];
+  const symbol = callee.getSymbol();
+  const declarations = symbol?.getDeclarations() ?? [];
   for (const decl of declarations) {
     const resolved = resolveDecl(decl, calleeName);
     if (resolved !== null) {
-      return resolved;
+      return { kind: "followed", candidate: resolved };
     }
   }
 
   // A call landing on an interface the project declares has no body to
   // walk into: the field was handed a class, or a factory built one.
-  // Resolution says which.
+  // Resolution says which, for the price of a module-graph walk.
+  const resolveCallable = scan.resolveCallable;
   if (
-    scan.resolveCallable === undefined ||
-    !Node.isPropertyAccessExpression(callee)
+    resolveCallable !== undefined &&
+    Node.isPropertyAccessExpression(callee) &&
+    declarations.some(isDeclaredShape)
   ) {
-    return null;
+    const value = resolveCallable(callee, scan.reachedFrom);
+    const resolved = value === null ? null : resolveDecl(value, calleeName);
+    if (resolved !== null) {
+      return { kind: "followed", candidate: resolved };
+    }
   }
-  // Asking costs a walk of the module graph, so it is spent only where
-  // the call lands on a shape rather than on a value.
-  if (!declarations.some(isDeclaredShape)) {
-    return null;
-  }
-  const value = scan.resolveCallable(callee, scan.reachedFrom);
-  return value === null ? null : resolveDecl(value, calleeName);
-}
 
-/**
- * Whether a declaration states a shape rather than declaring a value.
- * A call landing on one is a call whose implementation is somewhere
- * else in the project.
- */
-function isDeclaredShape(declaration: Node): boolean {
-  return (
-    (Node.isMethodSignature(declaration) ||
-      Node.isPropertySignature(declaration)) &&
-    !isInExternalCode(declaration.getSourceFile())
-  );
+  return {
+    kind: "stopped",
+    stop: {
+      callee: calleeName,
+      reason: classifyStop(declarationsBehind(symbol)),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -265,31 +247,54 @@ interface ScanContext {
   reachedFrom?: SourceFile;
 }
 
-function collectReachable(
-  func: FunctionRoot,
-  scan: ScanContext,
-): ReachableCandidate[] {
-  const found: ReachableCandidate[] = [];
+/** Everything one pass over a body found: edges to walk, and stops. */
+interface ScanResult {
+  readonly candidates: ReachableCandidate[];
+  readonly stops: UnfollowedCall[];
+}
+
+function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
+  const candidates: ReachableCandidate[] = [];
+  const stops: UnfollowedCall[] = [];
   const seen = new Set<string>();
 
   func.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const calleeText = node.getExpression().getText();
-    const resolved = resolveCallee(node, calleeText, scan);
-    if (resolved === null) {
+    const calleeText = normalizeCallee(node.getExpression().getText());
+    const outcome = resolveCallee(node, calleeText, scan);
+    if (outcome === null) {
       return;
     }
-    const key = nodeKey(resolved.func);
+    if (outcome.kind === "stopped") {
+      // One line per callee, however many times the body calls it: a
+      // loop calling the same unresolved method twenty times is one
+      // thing a reader cannot see, not twenty.
+      const stopKey = `${outcome.stop.reason}:${outcome.stop.callee}`;
+      if (!seen.has(stopKey) && worthRecording(outcome.stop.reason)) {
+        seen.add(stopKey);
+        stops.push(outcome.stop);
+      }
+      return;
+    }
+    const key = nodeKey(outcome.candidate.func);
     if (seen.has(key)) {
       return;
     }
     seen.add(key);
-    found.push(resolved);
+    candidates.push(outcome.candidate);
   });
 
-  return found;
+  return { candidates, stops };
+}
+
+/**
+ * The callee as one line. A call written across several lines would put
+ * its own newlines into a gap description otherwise.
+ */
+function normalizeCallee(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +408,12 @@ export function expandReachableClosure(
   const seedKeys = new Set<string>();
   const scanned = new Set<string>();
 
+  // What each scanned body called and could not be followed into. Held
+  // per function key, because the summary it belongs on is only built
+  // once the walk has finished.
+  const stopsByKey = new Map<string, UnfollowedCall[]>();
+  const summariesByKey = new Map<string, BehavioralSummary[]>();
+
   // The file a function was reached from, which is where whoever called
   // it built the dependencies it works through.
   const reachedFrom = new Map<string, SourceFile>();
@@ -414,6 +425,7 @@ export function expandReachableClosure(
       seedKeys.add(key);
       functionByKey.set(key, { func, name: seed.identity.name });
       facts?.unitKeyBySummary.set(seed, key);
+      rememberSummary(summariesByKey, key, seed);
       db.add("entry", [key]);
     }
   }
@@ -440,7 +452,11 @@ export function expandReachableClosure(
           : { resolveCallable: recognizers.resolveCallable }),
         ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
       };
-      for (const candidate of collectReachable(source.func, scan)) {
+      const { candidates, stops } = collectReachable(source.func, scan);
+      if (stops.length > 0) {
+        stopsByKey.set(key, stops);
+      }
+      for (const candidate of candidates) {
         const calleeKey = nodeKey(candidate.func);
         if (!functionByKey.has(calleeKey)) {
           functionByKey.set(calleeKey, candidate);
@@ -481,8 +497,41 @@ export function expandReachableClosure(
     }
     const summary = extractReachableSummary(candidate, options, recognizers);
     facts?.unitKeyBySummary.set(summary, key);
+    rememberSummary(summariesByKey, key, summary);
     reached.push(summary);
   }
 
+  recordStops(stopsByKey, summariesByKey, options);
+
   return [...seeds, ...reached];
+}
+
+function rememberSummary(
+  summariesByKey: Map<string, BehavioralSummary[]>,
+  key: string,
+  summary: BehavioralSummary,
+): void {
+  const bucket = summariesByKey.get(key) ?? [];
+  bucket.push(summary);
+  summariesByKey.set(key, bucket);
+}
+
+/**
+ * Put each body's unfollowed calls onto the summaries describing that
+ * body. A stop deeper in the call chain stays where it happened rather
+ * than climbing to every caller, so a reader gets the one place to look.
+ */
+function recordStops(
+  stopsByKey: ReadonlyMap<string, UnfollowedCall[]>,
+  summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
+  options: ExtractorOptions | undefined,
+): void {
+  if (options?.gapHandling === "silent") {
+    return;
+  }
+  for (const [key, stops] of stopsByKey) {
+    for (const summary of summariesByKey.get(key) ?? []) {
+      summary.gaps.push(...stops.map(unfollowedCallGap));
+    }
+  }
 }

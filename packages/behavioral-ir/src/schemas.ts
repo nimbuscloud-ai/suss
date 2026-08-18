@@ -538,8 +538,10 @@ export const GapSchema = z.object({
    * "unhandledCase" is a statement about the code. "unreadOutcome"
    * means no pack terminal matched part of what the unit produces, so a
    * checker should not count that against the handler.
+   * "unfollowedCall" means the walk met a call it could not resolve, so
+   * whatever that call does is missing from everything below it.
    */
-  type: z.enum(["unhandledCase", "unreadOutcome"]),
+  type: z.enum(["unhandledCase", "unreadOutcome", "unfollowedCall"]),
   conditions: z.array(PredicateSchema),
   consequence: z.enum([
     "frameworkDefault",

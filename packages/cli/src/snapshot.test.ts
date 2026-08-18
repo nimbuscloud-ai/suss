@@ -261,6 +261,36 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
+  it("renders unfollowed calls beside what the unit reaches", () => {
+    const withStop: BehavioralSummary = {
+      ...handlerSummary,
+      metadata: {
+        effectsClosure: [
+          { kind: "invocation", target: "db.findById", transitive: false },
+        ],
+      },
+      gaps: [
+        {
+          type: "unfollowedCall",
+          conditions: [],
+          consequence: "unknown",
+          description:
+            "The call to this.dao.getEditions lands on a declaration with no body, so whatever runs there is missing from this summary",
+        },
+      ],
+    };
+    const filePath = writeTempJson([withStop]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toContain("Reaches:");
+    expect(output).toContain("Could not follow:");
+    expect(output).toContain("this.dao.getEditions");
+    expect(output.indexOf("Reaches:")).toBeLessThan(
+      output.indexOf("Could not follow:"),
+    );
+    expect(output).toMatchSnapshot();
+  });
+
   it("renders multiple summaries", () => {
     const filePath = writeTempJson([handlerSummary, clientSummary]);
     const output = captureStdout(() => inspect({ file: filePath }));

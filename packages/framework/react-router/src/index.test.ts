@@ -201,9 +201,9 @@ describe("reactRouterFramework: integration", () => {
     }
   });
 
-  it("has no gaps when no contract reading is configured", () => {
+  it("has no unhandled-case gaps when no contract reading is configured", () => {
     for (const s of summaries) {
-      expect(s.gaps).toEqual([]);
+      expect(s.gaps.filter((g) => g.type === "unhandledCase")).toEqual([]);
       const keys = Object.keys(s.metadata ?? {});
       expect(keys.filter((k) => k !== "effectsClosure")).toEqual([]);
     }

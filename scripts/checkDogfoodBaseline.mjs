@@ -113,6 +113,33 @@ function compareFloor(label, before, after, allowance = 0) {
 }
 
 /**
+ * The same, for a count of what suss could not see. `unfollowedCalls`
+ * says how many calls the walk stopped at, so it is the one number the
+ * gate wants to stay down: a rise means the run followed less of the
+ * same source than the tree says it should.
+ */
+function compareCeiling(label, before, after) {
+  if (typeof before !== "number") {
+    return;
+  }
+  if (typeof after !== "number") {
+    console.log(`  ${label}: ${before} → missing`);
+    regressions.push({
+      label,
+      detail: `${before} on ${BASELINE_REF}, and this run produced no such count`,
+    });
+    return;
+  }
+  printDelta(label, before, after);
+  if (after > before) {
+    regressions.push({ label, detail: `${before} → ${after}` });
+  }
+}
+
+/** Which way each count is allowed to move. Floor unless listed here. */
+const CEILINGS = new Set(["unfollowedCalls"]);
+
+/**
  * How many units moved from the internal column to the consumer one.
  *
  * A function that starts calling into another package stops being only
@@ -136,11 +163,15 @@ function movedToConsumers(before, after) {
 }
 
 /** Compare one count, saying so when the baseline has never seen it. */
-function compareField(label, before, after, allowance = 0) {
+function compareField(field, label, before, after, allowance = 0) {
   if (before === undefined && typeof after === "number") {
     console.log(
       `  ${label}: ${after}, new since ${BASELINE_REF}, no baseline to compare`,
     );
+    return;
+  }
+  if (CEILINGS.has(field)) {
+    compareCeiling(label, before, after);
     return;
   }
   compareFloor(label, before, after, allowance);
@@ -154,6 +185,7 @@ const FIELD_ORDER = [
   "internal",
   "consumers",
   "pairs",
+  "unfollowedCalls",
 ];
 
 /**
@@ -186,6 +218,7 @@ if (totalsMoved > 0) {
 for (const field of countedFields(baseline.totals, current.totals)) {
   compareField(
     field,
+    field,
     baseline.totals[field],
     current.totals[field],
     field === "internal" ? totalsMoved : 0,
@@ -213,6 +246,7 @@ for (const [dir, before] of Object.entries(baseline.packages)) {
   }
   for (const field of countedFields(before, after)) {
     compareField(
+      field,
       `${label} ${field}`,
       before[field],
       after[field],
@@ -230,7 +264,7 @@ for (const dir of Object.keys(current.packages)) {
 const failed = reportRegressions({
   title: `suss sees less of this tree than ${BASELINE_REL_PATH} says it should:`,
   regressions,
-  hint: `Either a recognizer stopped firing, or the code these counted was deleted. If it was deleted, run \`npm run dogfood\` and commit the refreshed ${BASELINE_REL_PATH} on this branch. The drop then lands in the pull request diff, where a reviewer can see what went and agree it should have. A count reported as missing rather than lower means the run no longer produces a number the baseline has, which is either the same refresh or a bug in what computes it.`,
+  hint: `Either a recognizer stopped firing, or the code these counted was deleted. If it was deleted, run \`npm run dogfood\` and commit the refreshed ${BASELINE_REL_PATH} on this branch. The drop then lands in the pull request diff, where a reviewer can see what went and agree it should have. A count reported as missing rather than lower means the run no longer produces a number the baseline has, which is either the same refresh or a bug in what computes it. \`unfollowedCalls\` is the one count that fails on a rise instead: new code that reaches something through indirection raises it, and the same refresh declares that.`,
 });
 
 if (failed) {

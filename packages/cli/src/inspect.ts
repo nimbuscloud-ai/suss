@@ -890,6 +890,23 @@ function formatGap(g: Gap): string {
   return `    !! ${g.description}`;
 }
 
+/**
+ * The calls the walk stopped at, printed under their own heading right
+ * after what the unit reaches. Read together they say how much of the
+ * unit's behaviour the `Reaches:` list is standing for.
+ */
+function renderUnfollowedCalls(gaps: readonly Gap[]): string[] {
+  const stops = gaps.filter((gap) => gap.type === "unfollowedCall");
+  if (stops.length === 0) {
+    return [];
+  }
+  return [
+    "",
+    "  Could not follow:",
+    ...stops.map((gap) => `    ${gap.description}`),
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Summary rendering
 // ---------------------------------------------------------------------------
@@ -968,9 +985,12 @@ function renderSummary(
     }
   }
 
-  if (summary.gaps.length > 0) {
+  bodyLines.push(...renderUnfollowedCalls(summary.gaps));
+
+  const otherGaps = summary.gaps.filter((gap) => gap.type !== "unfollowedCall");
+  if (otherGaps.length > 0) {
     bodyLines.push("");
-    for (const gap of summary.gaps) {
+    for (const gap of otherGaps) {
       bodyLines.push(formatGap(gap));
     }
   }

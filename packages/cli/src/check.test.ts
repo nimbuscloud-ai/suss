@@ -1446,6 +1446,41 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
     expect(output).not.toMatch(/^\s+health$/m);
   });
 
+  it("says how much of the code the comparison stood for", () => {
+    const withGap = storageReader({
+      name: "listOrders",
+      container: "orders",
+      fields: ["id", "customerId"],
+    });
+    withGap.gaps = [
+      {
+        type: "unfollowedCall",
+        conditions: [],
+        consequence: "unknown",
+        description:
+          "The call to this.dao.getEditions lands on a declaration with no body, so whatever runs there is missing from this summary",
+      },
+    ];
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify([
+        storageTable({ container: "orders", fields: ["id", "customerId"] }),
+        withGap,
+      ]),
+    );
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("1 of 2 summaries records something suss");
+    expect(output).toContain("suss inspect");
+  });
+
+  it("says nothing about coverage when no summary records a gap", () => {
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).not.toContain("could not read");
+  });
+
   it("keeps saying nothing was compared when a run really compared nothing", () => {
     fs.writeFileSync(
       path.join(tmpDir, "all.json"),

@@ -344,7 +344,7 @@ How inputs reach a code unit. Most of these are for React/Vue components; HTTP h
 
 ```typescript
 interface Gap {
-  type: "unhandledCase" | "unreadOutcome";
+  type: "unhandledCase" | "unreadOutcome" | "unfollowedCall";
   conditions: Predicate[];
   consequence: "frameworkDefault" | "implicitThrow" | "fallthrough" | "unknown";
   description: string;
@@ -378,6 +378,18 @@ The checker turns each of these into a `providerContractViolation` at error seve
 ```
 
 The handler may be responding correctly in a form nobody taught the pack. Holding that against it would fail checks on working code, so the checker reports `lowConfidence` at info severity instead. Teaching the pack that terminal shape is what makes it go away.
+
+**`unfollowedCall`** is the other statement about how suss read the code. The reachable closure met a call it could not resolve to a function with a body, so whatever runs behind that call is missing from this summary and from every effect derived from it:
+
+```json
+{
+  "type": "unfollowedCall",
+  "consequence": "unknown",
+  "description": "The call to this.dao.getEditions lands on a declaration with no body, so whatever runs there is missing from this summary"
+}
+```
+
+A call into a dependency is unfollowable too, and it leaves no gap: the run describes that as a boundary crossing rather than as a body, and a gap on every `JSON.parse` would bury the stops a reader can act on. What is recorded is a call whose callee the project itself declares. `suss inspect` prints these under `Could not follow:` beside what the unit reaches, and `suss check` counts how many summaries in a run carry any gap at all.
 
 **`consequence`** tells you what actually happens in the unhandled case:
 

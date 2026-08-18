@@ -184,13 +184,20 @@ describe("extract: ts-rest", () => {
       expect(c.type).toBe("negation");
     }
 
-    // Gap: contract declares 500 that the handler never produces
+    // Gap: contract declares 500 that the handler never produces, and
+    // the fixture declares `db` without implementing it.
     expect(getUser.gaps).toEqual([
       {
         type: "unhandledCase",
         conditions: [],
         consequence: "frameworkDefault",
         description: "Declared response 500 is never produced by the handler",
+      },
+      {
+        type: "unfollowedCall",
+        conditions: [],
+        consequence: "unknown",
+        description: expect.stringContaining("db.findById"),
       },
     ]);
 
@@ -241,8 +248,10 @@ describe("extract: ts-rest", () => {
       false,
       true,
     ]);
-    // No gaps: contract declares exactly 201 and 400, both produced.
-    expect(createUser.gaps).toEqual([]);
+    // Contract declares exactly 201 and 400, both produced, so the only
+    // gap left is the call into the `db` the fixture never implements.
+    expect(createUser.gaps.map((g) => g.type)).toEqual(["unfollowedCall"]);
+    expect(createUser.gaps[0]?.description).toContain("db.createUser");
   });
 
   it("writes exactly the in-memory summaries to -o output file", async () => {
@@ -391,8 +400,15 @@ describe("extract: express", () => {
       expect(s.identity.boundaryBinding?.transport).toBe("http");
       expect(s.identity.boundaryBinding?.recognition).toBe("express");
       expect(s.identity.boundaryBinding?.semantics.name).toBe("rest");
-      expect(s.gaps).toEqual([]);
     }
+    // The fixture declares `db` and never implements it, so the one
+    // handler that calls it says where the walk stopped.
+    expect(summaries.flatMap((s) => s.gaps).map((g) => g.type)).toEqual([
+      "unfollowedCall",
+    ]);
+    expect(summaries.flatMap((s) => s.gaps)[0]?.description).toContain(
+      "db.findById",
+    );
     const paths = summaries
       .map((s) => {
         const sem = s.identity.boundaryBinding?.semantics;
@@ -576,8 +592,13 @@ describe("extract: react-router", () => {
         semantics: { name: "function-call" },
         recognition: "react-router",
       });
-      expect(s.gaps).toEqual([]);
     }
+    // `db` is declared and never implemented, so the loader and the
+    // action each say which call the walk stopped at.
+    expect(summaries.flatMap((s) => s.gaps).map((g) => g.description)).toEqual([
+      expect.stringContaining("db.findById"),
+      expect.stringContaining("db.updateUser"),
+    ]);
   });
 
   it("loader has full expected shape: three response transitions with default status codes", () => {

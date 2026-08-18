@@ -265,6 +265,16 @@ reviewer who reads "internal fell, exports held" knows to ask
 which of the two happened. When both counts were in one number
 there was nothing to ask.
 
+`unfollowedCalls` is the one count that runs the other way. It is
+how many calls the closure met and could not resolve, so it
+measures what suss could not see rather than what it saw, and
+`check:dogfood` fails on a rise instead of a drop. Better
+resolution takes it down. New code reaching something through
+indirection takes it up, and the same baseline refresh declares
+that. The classifier that decides which unfollowed calls are
+counted, and which are background noise, is documented in
+`packages/adapter/typescript/src/resolve/README.md`.
+
 ### What this blocks, and what to do about it
 
 A count going down fails the build. That is the point, and it
@@ -279,6 +289,7 @@ them:
 | Narrowed a recognizer that was over-firing | Same. This is the case worth being careful about, since the diff looks identical to a regression |
 | Renamed a package in place | Nothing. Packages are keyed by directory, so the rename looks like one package whose name changed |
 | Moved a package to a different directory | `npm run dogfood`, commit. The old path leaves the baseline and the new one enters it |
+| Added code that calls a method on an interface nothing wires up | Same, and this one raises `unfollowedCalls` rather than lowering a count. Check the new gaps read the way you expect before you commit the refresh |
 
 The refreshed baseline lands in the pull request diff as a
 per-package delta against main, which is where a reviewer reads

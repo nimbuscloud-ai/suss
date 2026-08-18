@@ -122,6 +122,7 @@ let totalExports = 0;
 let totalInternal = 0;
 let totalConsumers = 0;
 let totalPackagesWithExports = 0;
+let totalUnfollowedCalls = 0;
 const sussPackageNames = packages.map((p) => p.packageJson.name);
 // Also track sub-paths we know about so `@suss/behavioral-ir/schemas`
 // consumers pair correctly: the import-site matches the module
@@ -271,12 +272,19 @@ for (const result of extractResults) {
     .flatMap((s) => s.transitions)
     .flatMap((t) => t.conditions).length;
 
+  // Calls the walk stopped at, which is the other half of what a count
+  // of summaries means: how much of the code behind them was read.
+  const unfollowedCalls = summaries
+    .flatMap((s) => s.gaps)
+    .filter((g) => g.type === "unfollowedCall").length;
+
   if (exported.length > 0) {
     totalPackagesWithExports += 1;
   }
   totalExports += exported.length;
   totalInternal += internal.length;
   totalConsumers += consumers.length;
+  totalUnfollowedCalls += unfollowedCalls;
   allSummaries.push(...summaries);
 
   const summariesDir = path.join(pkg.dir, SUMMARIES_DIR);
@@ -295,6 +303,7 @@ for (const result of extractResults) {
     exportCount: exported.length,
     internalCount: internal.length,
     consumerCount: consumers.length,
+    unfollowedCallCount: unfollowedCalls,
     opaqueRatio: totalConditions === 0 ? null : opaqueCount / totalConditions,
     summaries: summaries.map((s) => ({
       name: s.identity.name,
@@ -308,6 +317,9 @@ for (const result of extractResults) {
       opaquePredicates: s.transitions
         .flatMap((t) => t.conditions)
         .filter((c) => c.type === "opaque").length,
+      unfollowedCalls: s.gaps
+        .filter((g) => g.type === "unfollowedCall")
+        .map((g) => g.description),
     })),
   });
 }
@@ -362,6 +374,7 @@ report.totalPackagesWithExports = totalPackagesWithExports;
 report.totalExports = totalExports;
 report.totalInternal = totalInternal;
 report.totalConsumers = totalConsumers;
+report.totalUnfollowedCalls = totalUnfollowedCalls;
 report.pairing = {
   pairs: pairing.pairs.length,
   unmatchedProviders: pairing.unmatched.providers.length,
@@ -399,6 +412,10 @@ const baseline = {
     internal: totalInternal,
     consumers: totalConsumers,
     pairs: pairing.pairs.length,
+    // The one count that runs the other way: every other number is
+    // something suss saw, so a drop is a regression, and this one is a
+    // call it could not see through, so a rise is.
+    unfollowedCalls: totalUnfollowedCalls,
   },
   packages: Object.fromEntries(
     report.packages
@@ -410,6 +427,7 @@ const baseline = {
           exports: p.exportCount,
           internal: p.internalCount,
           consumers: p.consumerCount,
+          unfollowedCalls: p.unfollowedCallCount,
         },
       ]),
   ),
