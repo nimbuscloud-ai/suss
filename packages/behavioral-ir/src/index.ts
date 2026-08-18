@@ -50,6 +50,7 @@ export {
   dispatchByType,
   displayLabel,
   exchangesHttpResponses,
+  fixedTextLength,
   formatChannel,
   functionCallBinding,
   graphqlOperationBinding,

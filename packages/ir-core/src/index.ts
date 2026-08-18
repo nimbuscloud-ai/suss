@@ -134,6 +134,7 @@ export {
 export { codeScopePath, fileInCodeScope } from "./codeScope.js";
 export { type DispatchTable, dispatchByType } from "./dispatch.js";
 export {
+  fixedTextLength,
   hasNameHole,
   namePatternFromSub,
   namePatternKey,

@@ -5,12 +5,13 @@
  * a template writes `!Sub "${StageName}-orders-v1"` and the code writes
  * `` `${stage}-orders-v1` ``. Neither side states a string, both agree
  * about the fixed text, and each spells the parameter its own way. So a
- * name is written here as fixed text with `{}` holes, the way a REST
- * path is written with `{id}`, and two names agree when their fixed
- * parts line up.
+ * name is written here as fixed text with `{}` holes, and two names
+ * agree when their fixed parts line up.
  *
- * A hole covers a whole parameter rather than one path segment,
- * because a name has no separator that every project agrees on.
+ * A hole covers a whole parameter rather than one piece of a name,
+ * because a name has no separator every project agrees on. Two
+ * patterns that both cover one name are told apart by how much fixed
+ * text each states, rather than by narrowing what a hole can cover.
  */
 
 /** What a hole looks like once a reader has written one. */
@@ -67,14 +68,36 @@ export function namePatternKey(name: string): string {
   return name.replace(HOLE, "{}");
 }
 
+/** How much of a name the writer stated rather than left for deploy time. */
+export function fixedTextLength(name: string): number {
+  return name.replace(HOLE, "").length;
+}
+
+function isHole(part: string): boolean {
+  return part.startsWith("{") && part.endsWith("}");
+}
+
+function quote(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * What a hole can cover. Anything, because a name has no separator
+ * every project agrees on: a region is written `us-east-1` and a hole
+ * that stopped at the first hyphen would miss it. Two patterns that
+ * both cover a name are told apart by which states more fixed text,
+ * which the checker does when it picks a container.
+ */
+function holeSource(_following: string): string {
+  return ".+";
+}
+
 /** Whether a concrete name has the pattern's fixed text in those places. */
 function admits(pattern: string, name: string): boolean {
-  const source = pattern
-    .split(/(\{[^}]*\})/)
-    .map((part) =>
-      part.startsWith("{") && part.endsWith("}")
-        ? ".+"
-        : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  const parts = pattern.split(/(\{[^}]*\})/);
+  const source = parts
+    .map((part, index) =>
+      isHole(part) ? holeSource(parts[index + 1] ?? "") : quote(part),
     )
     .join("");
   return new RegExp(`^${source}$`).test(name);

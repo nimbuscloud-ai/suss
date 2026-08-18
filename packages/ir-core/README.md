@@ -31,6 +31,18 @@ The boundary key uses only the subject, so both forms end up in the same bucket 
 
 Schemas are the single source of truth (`@suss/ir-core/schemas`); the types are derived from them. The recursive `TypeShape` is a hand-written named export so consuming packages reference it by name across the package boundary rather than inlining the recursion.
 
+## Names with a hole in them
+
+A deployed resource is often called something built at deploy time. A template writes `!Sub "${StageName}-orders-v1"` and the code writes `` `${stage}-orders-v1` ``, so neither side states a string, both agree about the fixed text, and each spells the parameter its own way. A name is written here as fixed text with `{}` holes, and `namesAgree` says whether two of them are the same name.
+
+A hole stops at the separator between it and what comes next. No separator works for every project, so the rule does not name one, it takes the separator from the pattern: when the fixed text after a hole starts with a character that is not a letter or a digit, that character divides the deploy-time value from the rest of the name, and the value may not contain it. So `{env}-publications-v1` covers `prod-publications-v1`, and it does not cover `prod-creator-publications-v1`, which the hole could only reach by swallowing a `-`.
+
+A greedy hole was the earlier rule, and a module declaring both of those tables had one storage access pair with each of them. The table the code never touches keys on something else, so the run reported a selector mismatch on a boundary that code never reaches.
+
+A hole at the end of a name, and a hole whose next character is a letter or a digit, has no separator to stop at, and it still covers anything. That costs a pair when the value has the separator inside it: `{region}-orders` does not cover `us-east-1-orders`, though `orders-{region}` still covers `orders-us-east-1`. Missing a pair is the better failure of the two, since a wrong match reports findings about a store the code never touches.
+
+One name can still be covered by two patterns. A hole at the end covers anything, so `orders-{suffix}` and `orders-blue-{suffix}` both cover `orders-blue-v1`. Choosing between them belongs to whichever pass picks a provider for an access, and `fixedTextLength` is what such a pass ranks by: the pattern that states more fixed text is the more specific one, and two patterns that state the same amount settle nothing between them.
+
 ## Where it fits in suss
 
 Both `@suss/behavioral-ir` (what code does) and `@suss/intent-ir` (what the team meant) build on this package, so neither IR depends on the other. They describe boundaries in the same vocabulary, and suss compares them rather than merging them. `@suss/behavioral-ir` re-exports these primitives, so existing consumers keep importing them from there unchanged.

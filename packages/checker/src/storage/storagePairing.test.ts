@@ -14,6 +14,7 @@ import type {
   Effect,
   Transition,
 } from "@suss/behavioral-ir";
+import type { ComparedPair } from "../pairing/comparedPair.js";
 
 function makeProvider(opts: {
   container: string | null;
@@ -1181,5 +1182,96 @@ describe("an access whose store the deployment sets a variable to", () => {
       }),
     ]);
     expect(findings).toEqual([]);
+  });
+});
+
+describe("a name two declared tables could both be", () => {
+  /** A table a module declares under a name the deployment finishes. */
+  function table(container: string, physical: string, key: string) {
+    return makeProvider({
+      container,
+      storageSystem: "dynamodb",
+      fieldSet: "partial",
+      physicalTable: physical,
+      keyFields: [key],
+      fields: [{ name: key }],
+    });
+  }
+
+  function listing(container: string, selector: string) {
+    return makeAccessSummary({
+      name: "listEditions",
+      file: "src/editions.ts",
+      accesses: [
+        {
+          container,
+          storageSystem: "dynamodb",
+          kind: "read",
+          fields: ["*"],
+          selector: [selector],
+        },
+      ],
+    });
+  }
+
+  it("pairs with the table whose name states more of what the access reached", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkStorage(
+      [
+        table("PublicationsTable", "{Env}-publications-v1", "pk"),
+        table(
+          "CreatorPublicationsTable",
+          "{Env}-creator-publications-v1",
+          "creatorId",
+        ),
+        listing("prod-creator-publications-v1", "creatorId"),
+      ],
+      undefined,
+      compared,
+    );
+
+    expect(findings).toEqual([]);
+    expect(compared.map((pair) => pair.key)).toEqual([
+      "dynamodb:CreatorPublicationsTable",
+    ]);
+  });
+
+  it("pairs with neither when the two state as much as each other, and says so", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkStorage(
+      [
+        table("OrdersBlue", "{StageName}-orders-blue", "orderId"),
+        table("OrdersProd", "prod-orders-{Colour}", "orderId"),
+        listing("prod-orders-blue", "customerId"),
+      ],
+      undefined,
+      compared,
+    );
+
+    expect(compared).toEqual([]);
+    expect(findings.map((f) => f.kind)).toEqual(["ambiguousProvider"]);
+    const [ambiguous] = findings;
+    expect(ambiguous?.severity).toBe("warning");
+    expect(ambiguous?.description).toContain("prod-orders-blue");
+    expect(ambiguous?.description).toContain("{StageName}-orders-blue");
+    expect(ambiguous?.description).toContain("prod-orders-{Colour}");
+  });
+
+  it("still pairs with both when the two are one table spelled two ways", () => {
+    const compared: ComparedPair[] = [];
+    checkStorage(
+      [
+        table("OrdersBlue", "{StageName}-orders-blue", "orderId"),
+        table("OrdersToo", "{Env}-orders-blue", "orderId"),
+        listing("prod-orders-blue", "orderId"),
+      ],
+      undefined,
+      compared,
+    );
+
+    expect(compared.map((pair) => pair.key).sort()).toEqual([
+      "dynamodb:OrdersBlue",
+      "dynamodb:OrdersToo",
+    ]);
   });
 });

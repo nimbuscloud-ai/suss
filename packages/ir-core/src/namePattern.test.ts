@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  fixedTextLength,
   namePatternFromSub,
   namePatternKey,
   namesAgree,
@@ -91,5 +92,46 @@ describe("a name that says only where to look", () => {
 
   it("still agrees when both sides state the same fixed text", () => {
     expect(namesAgree("{stage}-orders", "staging-orders")).toBe(true);
+  });
+});
+
+describe("how far a hole reaches", () => {
+  it("lets a hole at the end cover a value with a separator inside it", () => {
+    expect(namesAgree("orders-{region}", "orders-us-east-1")).toBe(true);
+  });
+
+  it("lets a hole cover anything when a letter comes next, since nothing separates them", () => {
+    expect(namesAgree("{env}publications", "prodpublications")).toBe(true);
+    expect(namesAgree("{env}publications", "prod-creator-publications")).toBe(
+      true,
+    );
+  });
+
+  it("compares two patterns on their fixed text, whatever a hole could cover", () => {
+    expect(namesAgree("{env}-publications-v1", "{stage}-publications-v1")).toBe(
+      true,
+    );
+    expect(
+      namesAgree("{env}-publications-v1", "{stage}-creator-publications-v1"),
+    ).toBe(false);
+  });
+
+  it("still refuses a name with no room for the value", () => {
+    expect(namesAgree("{env}-orders", "-orders")).toBe(false);
+  });
+});
+
+describe("how much of a name its writer stated", () => {
+  it("counts the fixed text and not the holes", () => {
+    expect(fixedTextLength("prod-orders-v1")).toBe(14);
+    expect(fixedTextLength("{env}-orders-v1")).toBe(10);
+    expect(fixedTextLength("{env}-creator-orders-v1")).toBe(18);
+    expect(fixedTextLength("{env}")).toBe(0);
+  });
+
+  it("ranks the pattern that states more of the name above the one that states less", () => {
+    expect(fixedTextLength("orders-blue-{suffix}")).toBeGreaterThan(
+      fixedTextLength("orders-{suffix}"),
+    );
   });
 });

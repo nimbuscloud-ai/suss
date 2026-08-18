@@ -13,6 +13,7 @@ These are the base pairing primitives every per-domain checker builds on: REST p
 - `pairing.ts:pairSummaries` is the public pairing pass. It returns `SummaryPair[]` and `unmatched.{providers, consumers, noBinding}`.
 - `graphqlPairing.ts:pairGraphqlOperations` pairs at the operation level. It parses the SDL lazily, once per schema, and caches the result; validating nested selections walks the AST.
 - `semanticBridging.ts:checkSemanticBridging` flags provider-side literal values, and fields whose presence tells one branch from another, that the consumer never tests on.
+- `mostSpecificName.ts:mostSpecificName` picks between providers declared under names that all cover what one consumer reached. Deploy-time names have holes in them, so more than one can cover a single name; the one that states more fixed text wins, and providers that state the same amount win nothing, so the caller reports the tie rather than pairing with all of them.
 
 ## Non-obvious things
 
