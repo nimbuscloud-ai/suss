@@ -327,10 +327,10 @@ function resolvedTypeName(
   spec: NestResolverSpec,
   declared: string,
 ): string | null {
-  if (declared !== "") {
-    return declared;
+  if (spec.operation !== "ResolveField") {
+    return spec.operation;
   }
-  return spec.operation === "ResolveField" ? null : spec.operation;
+  return declared === "" ? null : declared;
 }
 
 function nestMethodLines(spec: NestResolverSpec): string[] {

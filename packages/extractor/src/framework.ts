@@ -241,10 +241,10 @@ export type DiscoveryMatch =
        *
        * The adapter fills in `DiscoveredUnit.resolverInfo` so the binding
        * comes out as `graphql-resolver(typeName, fieldName)`.
-       * `typeName` resolves from the class decorator's first argument
-       * (`@Resolver(() => User)` gives `"User"`), or from
-       * `methodDecoratorTypeMap` when the class decorator has no
-       * argument. `fieldName` comes from the method decorator's `{ name }`
+       * `typeName` resolves from `methodDecoratorTypeMap` when the
+       * method decorator is in it, and otherwise from the class
+       * decorator's first argument (`@Resolver(() => User)` gives
+       * `"User"`). `fieldName` comes from the method decorator's `{ name }`
        * option when that is set, and otherwise from the method name.
        */
       type: "decoratedMethod";
@@ -266,10 +266,10 @@ export type DiscoveryMatch =
       classDecorators: string[];
       methodDecorators: string[];
       /**
-       * Maps a method decorator to the type its field belongs to when the
-       * class decorator does not say. NestJS puts `@Query` on the root
+       * Maps a method decorator to the type its field belongs to, for the
+       * decorators that settle it. NestJS puts `@Query` on the root
        * `Query` type and `@Mutation` on `Mutation` no matter what the class
-       * says, so those two settle it themselves.
+       * says, so an entry here wins over the class decorator's argument.
        *
        * When the map leaves a decorator out and the class decorator gives no
        * type either, nothing here works out which type owns the field. The

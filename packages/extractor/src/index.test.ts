@@ -214,6 +214,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
       declaredContract: null,
       bodyAccessors: ["body"],
       statusAccessors: ["statusCode"],
+      successAccessors: ["ok"],
       graphqlDocument: "query Q { me { id } }",
       graphqlSchemaSdl: "type Query { me: User }",
       sourceDocumentLabel: "server.ts",
@@ -228,6 +229,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
     expect(summary.metadata?.http).toMatchObject({
       bodyAccessors: ["body"],
       statusAccessors: ["statusCode"],
+      successAccessors: ["ok"],
     });
     expect(summary.metadata?.graphql).toMatchObject({
       document: "query Q { me { id } }",

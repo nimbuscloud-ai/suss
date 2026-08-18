@@ -2533,12 +2533,12 @@ describe("decoratedMethod discovery", () => {
     const file = project.createSourceFile(
       "src/foo.resolver.ts",
       `
-      import { Query } from "@nestjs/graphql";
+      import { ResolveField } from "@nestjs/graphql";
       import { InternalResolver } from "src/internal/internal-resolver.decorator";
 
       @InternalResolver(() => Foo)
       class FooResolver {
-        @Query()
+        @ResolveField()
         all(): Foo[] { return []; }
       }
       declare class Foo {}
@@ -2577,12 +2577,12 @@ describe("decoratedMethod discovery", () => {
     const file = project.createSourceFile(
       "src/foo.resolver.ts",
       `
-      import { Query } from "@nestjs/graphql";
+      import { ResolveField } from "@nestjs/graphql";
       import { AuditedResolver } from "./audited";
 
       @AuditedResolver(() => Foo)
       class FooResolver {
-        @Query()
+        @ResolveField()
         all(): Foo[] { return []; }
       }
       declare class Foo {}
@@ -2615,12 +2615,12 @@ describe("decoratedMethod discovery", () => {
     const file = project.createSourceFile(
       "src/foo.resolver.ts",
       `
-      import { Query } from "@nestjs/graphql";
+      import { ResolveField } from "@nestjs/graphql";
       import { ScopedResolver } from "./scoped";
 
       @ScopedResolver()
       class FooResolver {
-        @Query()
+        @ResolveField()
         all(): unknown[] { return []; }
       }
     `,
@@ -2728,10 +2728,10 @@ describe("decoratedMethod discovery", () => {
     const file = project.createSourceFile(
       "stub.ts",
       `
-      import { Query, Resolver } from "@nestjs/graphql";
+      import { ResolveField, Resolver } from "@nestjs/graphql";
       @Resolver(() => Pet)
       class PetResolver {
-        @Query(() => [Pet])
+        @ResolveField(() => [Pet])
         all = () => [];
       }
       declare class Pet { id: string; }
@@ -2744,6 +2744,29 @@ describe("decoratedMethod discovery", () => {
       typeName: "Pet",
       fieldName: "all",
     });
+  });
+
+  it("puts a @Query on the root Query type under a typed @Resolver", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Query, ResolveField, Resolver } from "@nestjs/graphql";
+      @Resolver(() => Pet)
+      class PetResolver {
+        @Query(() => [Pet])
+        allPets() { return []; }
+        @ResolveField(() => String)
+        label() { return "spot"; }
+      }
+      declare class Pet { id: string; }
+    `,
+    );
+    const units = discoverUnits(file, [makeDecoratedMethodPattern()]);
+    expect(units.map((u) => u.resolverInfo)).toEqual([
+      { typeName: "Query", fieldName: "allPets" },
+      { typeName: "Pet", fieldName: "label" },
+    ]);
   });
 
   it("names no type for a field resolver on a class that names none", () => {

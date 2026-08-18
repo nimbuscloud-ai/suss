@@ -109,3 +109,20 @@ export function statusAccessorsFor(
   }
   return new Set(["status", "statusCode"]);
 }
+
+/**
+ * Names of properties a consumer summary uses to ask whether a response
+ * succeeded, rather than which status it returned. `fetch` calls it `ok`,
+ * and a consumer guarding on it handles the whole 2xx class. Kept apart
+ * from the status accessors because the two answer different questions
+ * and only one of them compares against a number.
+ */
+export function successAccessorsFor(
+  summary: BehavioralSummary,
+): ReadonlySet<string> {
+  const fromMetadata = readHttpMetadata(summary)?.successAccessors;
+  if (fromMetadata !== undefined && fromMetadata.length > 0) {
+    return new Set(fromMetadata);
+  }
+  return new Set(["ok"]);
+}

@@ -3,10 +3,10 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 496,
-    "internal": 1923,
-    "consumers": 854,
-    "pairs": 847,
-    "unfollowedCalls": 193
+    "internal": 1938,
+    "consumers": 855,
+    "pairs": 848,
+    "unfollowedCalls": 196
   },
   "packages": {
     "packages/adapter/python": {
@@ -26,7 +26,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 648,
+      "internal": 649,
       "consumers": 56,
       "unfollowedCalls": 55
     },
@@ -40,9 +40,9 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 35,
-      "internal": 160,
-      "consumers": 115,
-      "unfollowedCalls": 13
+      "internal": 174,
+      "consumers": 116,
+      "unfollowedCalls": 16
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",

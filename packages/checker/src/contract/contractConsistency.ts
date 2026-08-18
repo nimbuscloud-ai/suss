@@ -6,6 +6,7 @@ import {
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
+import { consumerHandlesStatus } from "../coverage/statusRanges.js";
 import {
   readDeclaredContract,
   statusAccessorsFor,
@@ -73,9 +74,10 @@ export function checkContractConsistency(
       consumerExplicit.add(s);
     }
   }
+  const consumerHandles = consumerHandlesStatus(consumer);
 
   for (const declared of declaredStatuses) {
-    if (consumerExplicit.has(declared)) {
+    if (consumerHandles(declared)) {
       continue;
     }
     if (consumerHasDefault && isSuccessStatus(declared)) {
