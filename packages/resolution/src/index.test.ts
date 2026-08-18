@@ -36,6 +36,16 @@ function resolutionsOf(
     .sort();
 }
 
+/** What calling a value gives back. */
+function resultsOf(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+): string[] {
+  return derive(facts, "givesBack", value)
+    .map((t) => String(t[1]))
+    .sort();
+}
+
 /** The (module, name) pairs a value's chain arrives at. */
 function originsOf(
   facts: Array<[string, ...string[]]>,
@@ -390,6 +400,119 @@ describe("a class the caller makes one of", () => {
         "made",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("what a call gives back", () => {
+  // function makeDao() { return new Dao(); }; const dao = makeDao()
+  const factory: Array<[string, ...string[]]> = [
+    ["func", "load"],
+    ["objectValue", "Dao"],
+    ["holdsProperty", "Dao", "load", "load"],
+    ["binds", "DaoRef", "Dao"],
+    ["call", "madeDao", "DaoRef"],
+    ["func", "makeDao"],
+    ["returnsValue", "makeDao", "madeDao"],
+    ["binds", "makeDaoRef", "makeDao"],
+    ["call", "site", "makeDaoRef"],
+  ];
+
+  it("gives back the class the factory made one of", () => {
+    expect(resultsOf(factory, "site")).toEqual(["Dao"]);
+  });
+
+  it("gives back the same through the name the call was declared as", () => {
+    expect(resultsOf([...factory, ["binds", "dao", "site"]], "dao")).toEqual([
+      "Dao",
+    ]);
+  });
+
+  it("gives back the same through the parameter the call was passed to", () => {
+    // new Service(makeDao()), and the service calls this.dao.load().
+    const passedIn: Array<[string, ...string[]]> = [
+      ...factory,
+      ["objectValue", "Service"],
+      ["paramOf", "Service", "0", "Service#dao"],
+      ["binds", "ServiceRef", "Service"],
+      ["call", "madeService", "ServiceRef"],
+      ["callArg", "madeService", "0", "site"],
+    ];
+    expect(resultsOf(passedIn, "Service#dao")).toEqual(["Dao"]);
+  });
+
+  it("gives back the same through the property an object contains", () => {
+    // const deps = { dao: makeDao() }; deps.dao.load()
+    const inAnObject: Array<[string, ...string[]]> = [
+      ...factory,
+      ["objectValue", "deps"],
+      ["holdsProperty", "deps", "dao", "site"],
+      ["binds", "depsRef", "deps"],
+      ["readsProperty", "read", "depsRef", "dao"],
+    ];
+    expect(resultsOf(inAnObject, "read")).toEqual(["Dao"]);
+  });
+
+  it("gives back the same through the module the factory is imported from", () => {
+    const imported: Array<[string, ...string[]]> = [
+      ...factory.filter(([r, x]) => !(r === "binds" && x === "makeDaoRef")),
+      ["exportsAs", "factoryMod", "makeDao", "makeDao"],
+      ["imports", "makeDaoImport", "factoryMod", "makeDao"],
+      ["binds", "makeDaoRef", "makeDaoImport"],
+    ];
+    expect(resultsOf(imported, "site")).toEqual(["Dao"]);
+  });
+
+  it("gives back what the inner call does, for a factory returning a factory", () => {
+    // const dao = daoBuilder()(), where daoBuilder returns () => new Dao().
+    const twoHops: Array<[string, ...string[]]> = [
+      ...factory.filter(([r, x]) => !(r === "call" && x === "site")),
+      ["func", "builtFactory"],
+      ["returnsValue", "builtFactory", "madeDao"],
+      ["func", "daoBuilder"],
+      ["returnsValue", "daoBuilder", "builtFactory"],
+      ["binds", "daoBuilderRef", "daoBuilder"],
+      ["call", "inner", "daoBuilderRef"],
+      ["call", "outer", "inner"],
+      ["binds", "dao", "outer"],
+    ];
+    expect(resultsOf(twoHops, "dao")).toEqual(["Dao"]);
+  });
+
+  it("gives back nothing when the returned value resolves to nothing", () => {
+    // The factory returns a name nothing says anything about.
+    const opaque = factory.filter(([r]) => r !== "call" && r !== "binds");
+    expect(
+      resultsOf(
+        [
+          ...opaque,
+          ["binds", "makeDaoRef", "makeDao"],
+          ["call", "site", "makeDaoRef"],
+        ],
+        "site",
+      ),
+    ).toEqual([]);
+  });
+
+  it("gives back nothing for a call whose callee resolves to nothing", () => {
+    expect(resultsOf([["call", "site", "unknown"]], "site")).toEqual([]);
+  });
+
+  it("leaves the call's own comesTo alone, so a wrapper still unwraps", () => {
+    expect(resolutionsOf(factory, "site")).toEqual([]);
+  });
+
+  it("reaches a method read off a name the factory built", () => {
+    expect(
+      resolutionsOf(
+        [
+          ...factory,
+          ["binds", "dao", "site"],
+          ["readsProperty", "callee", "daoRef", "load"],
+          ["binds", "daoRef", "dao"],
+        ],
+        "callee",
+      ),
+    ).toEqual(["load"]);
   });
 });
 

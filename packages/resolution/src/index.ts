@@ -60,6 +60,9 @@ export type {
 // `list` holds. `resolves(x, z)` is `comesTo` narrowed to functions,
 // and is the question callers ask.
 //
+// `givesBack(x, z)` is the other direction of function application:
+// following x arrives at a call, and z is what that call returns.
+//
 // `comesFrom(x, m, n)` answers the other direction, for a name whose
 // value lives in a library nobody here can read: following x arrives
 // at the name n that module m exports. `callsInto(f, m, n)` puts that
@@ -142,12 +145,100 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
-  // The object an expression refers to. A name arrives at one by
-  // following `comesTo` through aliases and imports. A factory call
-  // arrives at one through what the function it calls returns; the
-  // call itself is given no `comesTo`, since a factory call usually IS
-  // the wrapper and answering with the raw returned function would
-  // fight the unwraps answer.
+  // The function a call runs, written from the call's side because a
+  // caller asking what a call gives back has the call in hand.
+  rule(
+    "invokes",
+    [v("r"), v("f")],
+    [lit("call", v("r"), v("c")), lit("comesTo", v("c"), v("f"))],
+  ),
+  // The callee is itself a call: `daoBuilder()()`.
+  rule(
+    "invokes",
+    [v("r"), v("f")],
+    [lit("call", v("r"), v("c")), lit("givesBack", v("c"), v("f"))],
+  ),
+
+  // What a call gives back, which is the direction `comesTo` never
+  // goes.
+  rule(
+    "givesBack",
+    [v("r"), v("z")],
+    [
+      lit("invokes", v("r"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("comesTo", v("ret"), v("z")),
+    ],
+  ),
+  // The function returns a call rather than a value written out, so a
+  // chain through two factories settles.
+  rule(
+    "givesBack",
+    [v("r"), v("z")],
+    [
+      lit("invokes", v("r"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("givesBack", v("ret"), v("z")),
+    ],
+  ),
+
+  // The hops `comesTo` follows, followed again: a name declared as the
+  // call, an import of that name, the parameter the call was passed to.
+  // Only the last step differs, and it is the one `comesTo` withholds.
+  rule(
+    "givesBack",
+    [v("x"), v("z")],
+    [lit("binds", v("x"), v("y")), lit("givesBack", v("y"), v("z"))],
+  ),
+  rule(
+    "givesBack",
+    [v("x"), v("z")],
+    [lit("endsHolding", v("x"), v("y")), lit("givesBack", v("y"), v("z"))],
+  ),
+  rule(
+    "givesBack",
+    [v("x"), v("z")],
+    [
+      lit("imports", v("x"), v("m"), v("n")),
+      lit("moduleExport", v("m"), v("n"), v("value")),
+      lit("givesBack", v("value"), v("z")),
+    ],
+  ),
+  rule(
+    "givesBack",
+    [v("p"), v("z")],
+    [
+      lit("paramOf", v("f"), v("k"), v("p")),
+      lit("callsFunction", v("r"), v("f")),
+      lit("callArg", v("r"), v("k"), v("a")),
+      lit("givesBack", v("a"), v("z")),
+    ],
+  ),
+  rule(
+    "givesBack",
+    [v("p"), v("z")],
+    [
+      lit("paramNamed", v("f"), v("n"), v("p")),
+      lit("callsFunction", v("r"), v("f")),
+      lit("callKeywordArg", v("r"), v("n"), v("a")),
+      lit("givesBack", v("a"), v("z")),
+    ],
+  ),
+  // The property an object contains is the call: `{ dao: makeDao() }`.
+  rule(
+    "givesBack",
+    [v("x"), v("z")],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("objectOf", v("o"), v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+      lit("givesBack", v("held"), v("z")),
+    ],
+  ),
+
+  // The object an expression refers to: a name through `comesTo`, a
+  // factory call through what it gives back. Naming the step is what
+  // makes `routes.list` and `make(body).handle` one rule.
   rule(
     "objectOf",
     [v("o"), v("obj")],
@@ -155,14 +246,8 @@ export const RESOLUTION_RULES = [
   ),
   rule(
     "objectOf",
-    [v("r"), v("obj")],
-    [
-      lit("call", v("r"), v("c")),
-      lit("comesTo", v("c"), v("f")),
-      lit("returnsValue", v("f"), v("ret")),
-      lit("comesTo", v("ret"), v("obj")),
-      lit("objectValue", v("obj")),
-    ],
+    [v("x"), v("obj")],
+    [lit("givesBack", v("x"), v("obj")), lit("objectValue", v("obj"))],
   ),
 
   // Which calls a function, found by the name the call is written as
@@ -194,19 +279,6 @@ export const RESOLUTION_RULES = [
       lit("imports", v("d"), v("m"), v("n")),
       lit("binds", v("c"), v("d")),
       lit("call", v("r"), v("c")),
-    ],
-  ),
-
-  // A function whose return is itself a call arrives at the same object
-  // that call does, so a chain passing through two factories settles.
-  rule(
-    "objectOf",
-    [v("r"), v("obj")],
-    [
-      lit("call", v("r"), v("c")),
-      lit("comesTo", v("c"), v("f")),
-      lit("returnsValue", v("f"), v("ret")),
-      lit("objectOf", v("ret"), v("obj")),
     ],
   ),
 
