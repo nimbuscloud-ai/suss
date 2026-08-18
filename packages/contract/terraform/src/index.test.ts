@@ -714,3 +714,183 @@ describe("a pack that only wants the metric's identity", () => {
     ).toEqual({});
   });
 });
+
+/**
+ * A counter whose name is written down, and a watch that spells the
+ * same metric through a reference rather than by copying the string.
+ */
+const REFERRING_CONFIGURATION = `
+resource "signals_counter" "refused" {
+  name = "edp-sweep-refused"
+
+  shape {
+    value_type = "SPREAD"
+  }
+}
+
+resource "signals_watch" "refused_sustained" {
+  rules {
+    over_threshold {
+      selector = "signal.id=\\"signals.example/counters/\${signals_counter.refused.name}\\" AND region=\\"west\\""
+      limit    = 0
+    }
+  }
+
+  rules {
+    over_threshold {
+      selector = "signal.id=\\"\${signals_counter.refused.id}\\""
+    }
+  }
+
+  rules {
+    over_threshold {
+      selector = "signal.id=\\"signals.example/counters/\${signals_counter.absent.name}\\""
+    }
+  }
+
+  rules {
+    over_threshold {
+      selector = "signal.id=\\"signals.example/counters/\${var.environment}-refused\\""
+    }
+  }
+}
+`;
+
+describe("an interpolation that refers to another resource", () => {
+  const metricTypeOf = (source: string, name: string) =>
+    (
+      terraformToSummaries(source, "signals.tf", { packs: [SIGNALS] }).find(
+        (summary) => summary.identity.name === name,
+      )?.identity.boundaryBinding?.semantics as { metricType?: string | null }
+    )?.metricType;
+
+  it("takes the value the resource it refers to states", () => {
+    expect(
+      metricTypeOf(
+        REFERRING_CONFIGURATION,
+        "signals_watch.refused_sustained#0",
+      ),
+    ).toBe("signals.example/counters/edp-sweep-refused");
+  });
+
+  it("spells the metric the way the resource declaring it does", () => {
+    expect(
+      metricTypeOf(REFERRING_CONFIGURATION, "signals_counter.refused"),
+    ).toBe("signals.example/counters/edp-sweep-refused");
+  });
+
+  it("leaves a hole for an attribute the deployment fills in", () => {
+    expect(
+      metricTypeOf(
+        REFERRING_CONFIGURATION,
+        "signals_watch.refused_sustained#1",
+      ),
+    ).toBe("{signals_counter.refused.id}");
+  });
+
+  it("leaves a hole for a resource the configuration does not state", () => {
+    expect(
+      metricTypeOf(
+        REFERRING_CONFIGURATION,
+        "signals_watch.refused_sustained#2",
+      ),
+    ).toBe("signals.example/counters/{signals_counter.absent.name}");
+  });
+
+  it("leaves a variable as the hole it has always been", () => {
+    expect(
+      metricTypeOf(
+        REFERRING_CONFIGURATION,
+        "signals_watch.refused_sustained#3",
+      ),
+    ).toBe("signals.example/counters/{var.environment}-refused");
+  });
+
+  it("follows a reference whose own value refers to a third resource", () => {
+    const chained = `
+resource "signals_counter" "prefix" {
+  name = "edp"
+}
+
+resource "signals_counter" "middle" {
+  name = "\${signals_counter.prefix.name}-sweep"
+}
+
+resource "signals_counter" "top" {
+  name = "\${signals_counter.middle.name}-refused"
+}
+`;
+
+    expect(metricTypeOf(chained, "signals_counter.top")).toBe(
+      "signals.example/counters/edp-sweep-refused",
+    );
+  });
+
+  it("stops a chain longer than the reader follows, leaving the hole", () => {
+    const links = ["one", "two", "three", "four", "five", "six"];
+    const deep = links
+      .map((link, index) =>
+        [
+          `resource "signals_counter" "${link}" {`,
+          index === 0
+            ? `  name = "edp"`
+            : `  name = "\${signals_counter.${links[index - 1]}.name}-${link}"`,
+          "}",
+        ].join("\n"),
+      )
+      .join("\n");
+
+    expect(metricTypeOf(deep, "signals_counter.six")).toBe(
+      "signals.example/counters/{signals_counter.one.name}-two-three-four-five-six",
+    );
+  });
+
+  it("leaves two resources that refer to each other as they were written", () => {
+    const circular = `
+resource "signals_counter" "ping" {
+  name = "\${signals_counter.pong.name}-ping"
+}
+
+resource "signals_counter" "pong" {
+  name = "\${signals_counter.ping.name}-pong"
+}
+`;
+
+    expect(metricTypeOf(circular, "signals_counter.ping")).toBe(
+      "signals.example/counters/{signals_counter.pong.name}-ping",
+    );
+  });
+
+  it("resolves a reference to a resource another file in the module states", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tf-refs-"));
+    fs.writeFileSync(
+      path.join(dir, "counters.tf"),
+      [
+        'resource "signals_counter" "refused" {',
+        '  name = "edp-refused"',
+        "}",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(dir, "watches.tf"),
+      [
+        'resource "signals_watch" "sustained" {',
+        "  rules {",
+        "    over_threshold {",
+        '      selector = "signal.id=\\"signals.example/counters/${signals_counter.refused.name}\\""',
+        "    }",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+
+    const watch = terraformFileToSummaries(dir, { packs: [SIGNALS] }).find(
+      (summary) => summary.identity.name === "signals_watch.sustained#0",
+    );
+
+    expect(
+      (watch?.identity.boundaryBinding?.semantics as { metricType?: string })
+        ?.metricType,
+    ).toBe("signals.example/counters/edp-refused");
+  });
+});
