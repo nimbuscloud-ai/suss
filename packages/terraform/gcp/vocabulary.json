@@ -1,0 +1,22 @@
+{
+  "google": "Terraform: the provider these resources come from",
+  "google_logging_metric": "Terraform Google provider: resource type, a log-based metric",
+  "google_monitoring_alert_policy": "Terraform Google provider: resource type, an alert policy",
+  "name": "Terraform Google provider: the attribute stating what a metric is called once deployed",
+  "conditions": "Terraform Google provider: a block declaring one condition of an alert policy",
+  "condition_threshold": "Terraform Google provider: the block of a condition that compares a series to a number",
+  "filter": "Terraform Google provider: the attribute stating which series a condition reads",
+  "comparison": "Terraform Google provider: the attribute stating how a condition compares the series to its threshold",
+  "threshold_value": "Terraform Google provider: the attribute stating the number a condition compares against",
+  "DISTRIBUTION": "Cloud Monitoring: the value type of a metric whose measurements are a spread of buckets",
+  "ALIGN_PERCENTILE_99": "Cloud Monitoring: an aligner reducing a distribution to its 99th percentile",
+  "ALIGN_PERCENTILE_95": "Cloud Monitoring: an aligner reducing a distribution to its 95th percentile",
+  "ALIGN_PERCENTILE_50": "Cloud Monitoring: an aligner reducing a distribution to its median",
+  "ALIGN_PERCENTILE_05": "Cloud Monitoring: an aligner reducing a distribution to its 5th percentile",
+  "metric": "suss: boundary kind for a named series of measurements",
+  "provider": "suss: the declaring side of a boundary",
+  "compares": "suss: how a finding describes a condition with no comparison stated",
+  "boundaryShapeMismatch": "suss: the finding kind for two sides that disagree about a value's type",
+  "read": "suss: the finding aspect for what a consumer takes from a boundary",
+  "error": "suss: the finding severity for something that fails when it runs"
+}
