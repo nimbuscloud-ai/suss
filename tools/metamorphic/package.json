@@ -1,0 +1,28 @@
+{
+  "name": "@suss/metamorphic",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Rewrites a seed program in ways the language keeps equivalent and asserts the effects do not move. Internal; never published.",
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/adapter-typescript": "*",
+    "@suss/behavioral-ir": "*",
+    "@suss/extractor": "*",
+    "@suss/framework-aws-dynamodb": "*",
+    "@suss/framework-redis": "*"
+  },
+  "devDependencies": {
+    "@suss/test-project": "*",
+    "ts-morph": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
