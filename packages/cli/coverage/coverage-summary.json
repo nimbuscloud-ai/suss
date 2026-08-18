@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 3160,
-      "covered": 2907,
+      "total": 3163,
+      "covered": 2910,
       "skipped": 0,
-      "pct": 91.99
+      "pct": 92
     },
     "statements": {
-      "total": 3242,
-      "covered": 2984,
+      "total": 3245,
+      "covered": 2987,
       "skipped": 0,
       "pct": 92.04
     },
@@ -59,10 +59,10 @@
   },
   "src/boundaryReach.ts": {
     "lines": {
-      "total": 46,
-      "covered": 39,
+      "total": 49,
+      "covered": 42,
       "skipped": 0,
-      "pct": 84.78
+      "pct": 85.71
     },
     "functions": {
       "total": 14,
@@ -71,10 +71,10 @@
       "pct": 64.28
     },
     "statements": {
-      "total": 47,
-      "covered": 40,
+      "total": 50,
+      "covered": 43,
       "skipped": 0,
-      "pct": 85.1
+      "pct": 86
     },
     "branches": {
       "total": 18,
