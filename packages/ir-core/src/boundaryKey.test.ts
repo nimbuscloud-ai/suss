@@ -11,6 +11,7 @@ import {
   graphqlResolverBinding,
   messageBusBinding,
   methodsAgree,
+  metricBinding,
   normalizePath,
   pairingKey,
   reportsUnpairedItself,
@@ -478,5 +479,30 @@ describe("boundaryLabel fallbacks", () => {
       channel: null,
     });
     expect(boundaryLabel(bus)).toContain("bus:sqs");
+  });
+});
+
+describe("a metric boundary", () => {
+  const metric = (metricType: string | null) =>
+    metricBinding({
+      recognition: "terraform",
+      metricSystem: "cloud-monitoring",
+      metricType,
+    });
+
+  it("keys on the system and the type both sides spell", () => {
+    expect(boundaryKey(metric("logging.googleapis.com/user/refusals"))).toBe(
+      "metric:cloud-monitoring logging.googleapis.com/user/refusals",
+    );
+  });
+
+  it("pairs with nothing when a source states a metric it could not spell", () => {
+    expect(boundaryKey(metric(null))).toBeNull();
+    expect(canPair(metric(null))).toBe(false);
+  });
+
+  it("gives back measurements rather than a status and a body", () => {
+    expect(exchangesHttpResponses(metric("a/b"))).toBe(false);
+    expect(reportsUnpairedItself(metric("a/b"))).toBe(false);
   });
 });
