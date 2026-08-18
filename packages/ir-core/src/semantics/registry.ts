@@ -15,6 +15,7 @@ import { functionCallSemantics } from "./functionCall.js";
 import { graphqlOperationSemantics } from "./graphqlOperation.js";
 import { graphqlResolverSemantics } from "./graphqlResolver.js";
 import { messageBusSemantics } from "./messageBus.js";
+import { metricSemantics } from "./metric.js";
 import { restSemantics } from "./rest.js";
 import { runtimeConfigSemantics } from "./runtimeConfig.js";
 import { storageSemantics } from "./storage.js";
@@ -33,6 +34,7 @@ export const SemanticsSchema = z.discriminatedUnion("name", [
   runtimeConfigSemantics.schema,
   storageSemantics.schema,
   messageBusSemantics.schema,
+  metricSemantics.schema,
 ]);
 
 export type Semantics = z.infer<typeof SemanticsSchema>;
@@ -45,6 +47,7 @@ const DEFINITIONS = [
   runtimeConfigSemantics,
   storageSemantics,
   messageBusSemantics,
+  metricSemantics,
 ] as const;
 
 const BY_NAME = new Map<string, (typeof DEFINITIONS)[number]>(
