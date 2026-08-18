@@ -62,6 +62,7 @@ Node identity is the adapter's business. The rules only join on it.
 ```
 comesTo(x, z)               following x arrives at the value z
 resolves(x, z)              comesTo narrowed to functions
+givesBack(x, z)             following x arrives at a call that returns z
 isWrittenAs(x, z)           x is written as the expression z
 comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
@@ -71,6 +72,22 @@ callsInto(f, m, n)          calling f ends up calling m's n
 underneath it, and it can come back with an object, because a chain has
 to pass through objects for `routes.list` to reach whatever `list`
 contains.
+
+`givesBack` is the other direction of function application. `comesTo`
+says what a value comes down to, and it stops at a call on purpose: a
+factory call is usually the wrapper itself, so resolving it to the
+function it returned would fight the unwrapping answer. That leaves
+nobody able to ask what a call returned, which is the whole question
+when a factory builds a dependency. `givesBack` asks it. It follows the
+hops `comesTo` follows, a name declared as the call, an import of that
+name, the parameter the call was passed to, and comes back with what
+the call at the end of the chain returns.
+
+Both directions run at once without interfering, because they answer
+different questions about the same call. `const dao = makeDao()` comes
+to nothing and gives back the class `makeDao` constructed, so
+`dao.findByCustomer` finds the method that class declares while
+`withAuth(handler)` still comes to `handler`.
 
 `isWrittenAs` follows the same names to the expression a value is
 written as, whatever kind of expression that turns out to be. A GraphQL
@@ -91,19 +108,24 @@ normal rather than ambiguous, because a wrapper that combines two
 library decorators applies both of them, so a caller asks whether the
 one it cares about is among them.
 
-One relation exists for the rules' own use rather than for callers:
+Two relations exist for the rules' own use rather than for callers:
 
 ```
 objectOf(x, obj)            x stands for the object literal obj
+invokes(r, f)               the call r runs the function f
 ```
 
 An object arrives two ways, through a name or as what a factory call
-returns. `objectOf` gives that step a name, so the rule for
-`routes.list` and the rule for `make(body).handle` are the same rule. A
-factory call gets an `objectOf` answer without getting a `comesTo`
-answer, because a factory call is usually the wrapper itself, and
-answering with the function it returns would fight the unwrapping
-answer.
+gives back. `objectOf` gives that step a name, so the rule for
+`routes.list` and the rule for `make(body).handle` are the same rule.
+This is where the two directions meet: a factory call gets an
+`objectOf` answer without getting a `comesTo` answer.
+
+`invokes` is the callee half of `givesBack`, kept apart so the case
+where the callee is itself a call, `daoBuilder()()`, is one rule rather
+than a copy of every other. It differs from `callsFunction`, which
+starts from the function because a caller asking for call sites has the
+function in hand.
 
 ## Why rules and not a walker
 

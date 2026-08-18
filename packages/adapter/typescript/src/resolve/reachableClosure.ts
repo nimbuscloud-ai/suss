@@ -15,7 +15,7 @@
 //   * Direct CallExpressions only: higher-order indirection (`fns.map(f)`
 //     where `f` is a parameter, dispatch-table lookups) isn't resolved.
 //   * A call landing on an interface the project declares goes into the
-//     class the construction site passed.
+//     class the construction site passed, or the one a factory built.
 //   * Function-shaped declarations: FunctionDeclaration, ArrowFunction,
 //     FunctionExpression, MethodDeclaration (as a module-level export).
 //   * One summary per function node: dedup against pack-produced
@@ -212,33 +212,22 @@ function resolveCallee(
     }
   }
 
-  // A call through a field the service was handed lands on the
-  // interface the field is declared as, and an interface has no body to
-  // walk into. Resolution says which class was passed.
-  if (scan.resolveCallable === undefined || !readsAField(callee)) {
+  // A call landing on an interface the project declares has no body to
+  // walk into: the field was handed a class, or a factory built one.
+  // Resolution says which.
+  if (
+    scan.resolveCallable === undefined ||
+    !Node.isPropertyAccessExpression(callee)
+  ) {
     return null;
   }
+  // Asking costs a walk of the module graph, so it is spent only where
+  // the call lands on a shape rather than on a value.
   if (!declarations.some(isDeclaredShape)) {
     return null;
   }
   const value = scan.resolveCallable(callee, scan.reachedFrom);
   return value === null ? null : resolveDecl(value, calleeName);
-}
-
-/**
- * Whether the call goes through a field of the object whose method this
- * is. Asking resolution costs a walk of the module graph, so the walk
- * into a construction site is spent on the case it is about.
- */
-function readsAField(callee: Node): boolean {
-  if (!Node.isPropertyAccessExpression(callee)) {
-    return false;
-  }
-  let receiver = callee.getExpression();
-  while (Node.isPropertyAccessExpression(receiver)) {
-    receiver = receiver.getExpression();
-  }
-  return Node.isThisExpression(receiver);
 }
 
 /**

@@ -1401,39 +1401,39 @@ describe("a class field", () => {
   });
 });
 
-describe("a dependency the constructor was handed", () => {
-  // Two files rather than one, because a service takes its dependency as
-  // an interface and the class behind it lives somewhere else.
-  const READER = `
-    export interface OrdersReader {
-      findByCustomer(id: string): Promise<string>;
-    }
-    export class OrdersDao implements OrdersReader {
-      async findByCustomer(id: string): Promise<string> {
-        return "orders:" + id;
-      }
-    }
-    export class InvoicesDao implements OrdersReader {
-      async findByCustomer(id: string): Promise<string> {
-        return "invoices:" + id;
-      }
-    }
-  `;
-
-  /** The callee of the call a named method makes. */
-  function calleeIn(project: Project, file: string, method: string): Node {
-    const sourceFile = project.getSourceFileOrThrow(file);
-    for (const call of sourceFile.getDescendantsOfKind(
-      SyntaxKind.CallExpression,
-    )) {
-      const owner = call.getFirstAncestorByKind(SyntaxKind.MethodDeclaration);
-      if (owner?.getName() === method) {
-        return call.getExpression();
-      }
-    }
-    throw new Error(`No call inside ${method} in ${file}`);
+// Two files rather than one, because a service takes its dependency as
+// an interface and the class behind it lives somewhere else.
+const READER = `
+  export interface OrdersReader {
+    findByCustomer(id: string): Promise<string>;
   }
+  export class OrdersDao implements OrdersReader {
+    async findByCustomer(id: string): Promise<string> {
+      return "orders:" + id;
+    }
+  }
+  export class InvoicesDao implements OrdersReader {
+    async findByCustomer(id: string): Promise<string> {
+      return "invoices:" + id;
+    }
+  }
+`;
 
+/** The callee of the call a named method makes. */
+function calleeIn(project: Project, file: string, method: string): Node {
+  const sourceFile = project.getSourceFileOrThrow(file);
+  for (const call of sourceFile.getDescendantsOfKind(
+    SyntaxKind.CallExpression,
+  )) {
+    const owner = call.getFirstAncestorByKind(SyntaxKind.MethodDeclaration);
+    if (owner?.getName() === method) {
+      return call.getExpression();
+    }
+  }
+  throw new Error(`No call inside ${method} in ${file}`);
+}
+
+describe("a dependency the constructor was handed", () => {
   function serviceProject(service: string, construction: string): Project {
     return projectOf({
       "/dao.ts": READER,
@@ -1602,6 +1602,127 @@ describe("a dependency the constructor was handed", () => {
       resolvedBody(
         storeThatRead(project),
         calleeIn(project, "/service.ts", "forCustomer"),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("a dependency a factory built", () => {
+  function factoryProject(factory: string, made: string): Project {
+    return projectOf({
+      "/dao.ts": READER,
+      "/factory.ts": factory,
+      "/entry.ts": `
+        import { makeDao } from "./factory";
+        import { OrdersService } from "./service";
+        export const handler = async (id: string) => {
+          const service = new OrdersService(${made});
+          return service.forCustomer(id);
+        };
+      `,
+      "/service.ts": `
+        import type { OrdersReader } from "./dao";
+        export class OrdersService {
+          constructor(private readonly dao: OrdersReader) {}
+          async forCustomer(id: string) {
+            return this.dao.findByCustomer(id);
+          }
+        }
+      `,
+    });
+  }
+
+  /**
+   * The entry file goes in as the second file to walk out from, which is
+   * what the closure hands in: nothing service.ts imports says where the
+   * factory it was handed lives.
+   */
+  function daoFrom(project: Project): string | null {
+    const resolved = new ResolutionStore().resolveCallable(
+      calleeIn(project, "/service.ts", "forCustomer"),
+      project.getSourceFileOrThrow("/entry.ts"),
+    );
+    return resolved === null ? null : resolved.getText().replace(/\s+/g, " ");
+  }
+
+  it("follows a call to the class a factory returns, with the return type declared", () => {
+    expect(
+      daoFrom(
+        factoryProject(
+          `
+            import { OrdersDao, type OrdersReader } from "./dao";
+            export function makeDao(): OrdersReader {
+              return new OrdersDao();
+            }
+          `,
+          "makeDao()",
+        ),
+      ),
+    ).toContain('"orders:"');
+  });
+
+  it("follows the same call when the factory's return type is inferred", () => {
+    expect(
+      daoFrom(
+        factoryProject(
+          `
+            import { OrdersDao } from "./dao";
+            export function makeDao() {
+              return new OrdersDao();
+            }
+          `,
+          "makeDao()",
+        ),
+      ),
+    ).toContain('"orders:"');
+  });
+
+  it("follows a call through a factory that returns a factory", () => {
+    expect(
+      daoFrom(
+        factoryProject(
+          `
+            import { OrdersDao, type OrdersReader } from "./dao";
+            export function makeDao(): () => OrdersReader {
+              return () => new OrdersDao();
+            }
+          `,
+          "makeDao()()",
+        ),
+      ),
+    ).toContain('"orders:"');
+  });
+
+  it("reads nothing when the factory returns a value it cannot follow", () => {
+    expect(
+      daoFrom(
+        factoryProject(
+          `
+            import type { OrdersReader } from "./dao";
+            export function makeDao(): OrdersReader {
+              return JSON.parse(process.env.DAO ?? "") as OrdersReader;
+            }
+          `,
+          "makeDao()",
+        ),
+      ),
+    ).toBeNull();
+  });
+
+  it("reads nothing when two factories return different classes", () => {
+    expect(
+      daoFrom(
+        factoryProject(
+          `
+            import { InvoicesDao, OrdersDao, type OrdersReader } from "./dao";
+            export function makeDao(): OrdersReader {
+              return process.env.MODE === "orders"
+                ? new OrdersDao()
+                : new InvoicesDao();
+            }
+          `,
+          "makeDao()",
+        ),
       ),
     ).toBeNull();
   });
