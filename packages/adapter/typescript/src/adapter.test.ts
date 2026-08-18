@@ -1781,6 +1781,65 @@ describe("createTypeScriptAdapter: reachable closure", () => {
       accessPath: "byCustomer",
     });
   });
+
+  it("leaves a gap where a method on an injected interface has nothing wiring it up", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "dao.ts",
+      `
+      export interface EditionDao {
+        getEditions(publicationId: string): Promise<string[]>;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "service.ts",
+      `
+      import type { EditionDao } from "./dao";
+      export class EditionService {
+        constructor(private readonly dao: EditionDao) {}
+        listForPublication(id: string) {
+          return this.dao.getEditions(id);
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { EditionService } from "./service";
+      const s = initServer();
+      declare const service: EditionService;
+      export const router = s.router({} as any, {
+        listEditions: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: await service.listForPublication(params.id) };
+        },
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const service = summaries.find(
+      (summary) => summary.identity.name === "listForPublication",
+    );
+    expect(service).toBeDefined();
+    expect(
+      (service?.transitions ?? []).flatMap((transition) => transition.effects),
+    ).toEqual([]);
+
+    const unfollowed = (service?.gaps ?? []).filter(
+      (gap) => gap.type === "unfollowedCall",
+    );
+    expect(unfollowed).toHaveLength(1);
+    expect(unfollowed[0]?.description).toContain("this.dao.getEditions");
+    expect(unfollowed[0]?.description).toContain("no body");
+  });
 });
 
 describe("createTypeScriptAdapter: boundary effects closure", () => {

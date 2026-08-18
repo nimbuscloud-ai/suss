@@ -20,6 +20,45 @@ This layer runs after discovery and during summary assembly. It has three roles:
 - `reachableClosure.ts:discoverReachableFunctions` — transitive-closure walk; emits library summaries with `recognition: "reachable"`.
 - `rethrowEnrichment.ts:enrichRethrows` — adds `rethrow.possibleSources` to throw transitions whose enclosing try-block calls into other summarized functions.
 
+## Which unfollowed calls leave a gap
+
+A call the closure cannot follow reads exactly like a call that is not
+there. Both produce nothing, and a reader cannot tell "this handler
+touches no storage" from "this handler touches storage through something
+we lost". So the closure records the stop as an `unfollowedCall` gap on
+the summary of the body that made the call, saying which callee and why.
+`unfollowedCall.ts:classifyStop` is where that decision is made.
+
+It sorts a stop into one of four, from the declarations the type checker
+offers for the callee. An imported or re-exported name is followed
+through to its last declaration first, or a barrel forwarding a
+dependency's function would look like project code.
+
+| Reason | What it is | Gap? |
+| --- | --- | --- |
+| `noBody` | A declaration the project wrote that states a signature and leaves the body to whoever implements it: a method on an interface, an abstract method, an ambient declaration. | yes |
+| `unsettledValue` | The project declares the callee as something other than a function: a parameter, a field, a variable whose initializer is a call. | yes |
+| `outsideRun` | Every declaration is in a dependency, or inside `declare module "name"`. | no |
+| `noDeclaration` | Nothing declares the callee, which is what a call on an untyped value comes to. | no |
+
+The two that leave no gap fail the same test: nothing about either says
+the callee is code the project owns. A codebase makes tens of thousands
+of calls into its dependencies, and `JSON.parse` in a gap list buries
+every stop a reader could act on. The run also already describes a call
+into another package, as a boundary crossing rather than as a body, so
+leaving it out here loses nothing.
+
+A third case belongs on the "gap" side and cannot get here yet: a call
+whose receiver a pack recognized but whose method it did not, a Redis
+client calling a command the redis pack has no entry for. A recognizer
+returns `null` for "not my library" and for "my library, a method I do
+not know" alike, so telling those apart needs a change to what a
+recognizer hands back.
+
+One gap per callee per body, however many times the body calls it. A
+stop deeper in the call chain stays on the summary where it happened
+rather than climbing to every caller, so a reader gets one place to look.
+
 ## What readName reads
 
 | Written as | Reads as |
