@@ -145,6 +145,11 @@ export {
   namesNothing,
 } from "./namePattern.js";
 export {
+  type Reference,
+  referenceFromName,
+  referenceName,
+} from "./reference.js";
+export {
   methodsAgree,
   normalizePath,
   routePathAdmits,

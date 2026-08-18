@@ -43,6 +43,20 @@ A hole at the end of a name, and a hole whose next character is a letter or a di
 
 One name can still be covered by two patterns. A hole at the end covers anything, so `orders-{suffix}` and `orders-blue-{suffix}` both cover `orders-blue-v1`. Choosing between them belongs to whichever pass picks a provider for an access, and `fixedTextLength` is what such a pass ranks by: the pattern that states more fixed text is the more specific one, and two patterns that state the same amount settle nothing between them.
 
+## A name that says where to go and ask
+
+Some code cannot say what it reaches. A storage layer takes the bucket as an argument, and a service reads its table name out of the deployment. Neither states a name, and a name is what the rest of suss pairs on, so both write a reference instead: one hole, no fixed text, saying where to go and ask.
+
+```ts
+referenceName({ root: "location", fields: ["bucket"] }); // "{location.bucket}"
+referenceName({ root: "ORDER_TABLE", fields: [] }); // "{ORDER_TABLE}"
+referenceFromName("{location.bucket}"); // { root: "location", fields: ["bucket"] }
+```
+
+The root is the value the code starts from, and the fields are what it reads inside that value. A language adapter writes one of these while reading source, and the checker settles it much later by joining over a whole run: `{location.bucket}` against what each caller passed for `location`, `{ORDER_TABLE}` against what the deployment sets. Those two sides live in different packages, and a reference is worth nothing unless both spell it the same way, so writing one and reading one are this pair of functions rather than a format each side implements for itself.
+
+`namesNothing` is true of every reference, which is what keeps one out of pairing until something settles it. A name with fixed text around the hole is not a reference: `{stage}-orders` states most of itself and pairs on the fixed text.
+
 ## Words OpenTelemetry already has
 
 A summary says what a unit can reach. A trace says what it did reach. Comparing the two is the point, and it only works if both sides spell a boundary the same way, so wherever OpenTelemetry's semantic conventions have a word for something in a binding, that is the word suss writes.
