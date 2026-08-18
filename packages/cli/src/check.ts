@@ -71,6 +71,8 @@ export interface CheckOptions {
   sussignore?: string;
   /** Skip loading any .sussignore, even if one would be auto-discovered. */
   noSuppressions?: boolean;
+  /** Print every finding and every list, not the collapsed report. */
+  all?: boolean;
 }
 
 export interface CheckDirOptions {
@@ -80,6 +82,7 @@ export interface CheckDirOptions {
   failOn?: FailOn;
   sussignore?: string;
   noSuppressions?: boolean;
+  all?: boolean;
   /**
    * Directory of team-authored intent specs (`*.intent` / `*.prd`).
    * When set, each boundary intent is paired against the code summaries
@@ -225,7 +228,7 @@ export function checkDir(
   const summariesWithGaps = countSummariesWithGaps(allSummaries);
   const rendered = options.json
     ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, runtimeNamedCrossings, summariesWithGaps, collisions }, null, 2)}\n`
-    : renderDirHuman(result, confidence) +
+    : renderDirHuman(result, confidence, scopeOf(options)) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
@@ -395,11 +398,11 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
 function emitFindings(
   findings: Finding[],
   confidence: ConfidenceLookup,
-  options: { json?: boolean; output?: string; failOn?: FailOn },
+  options: { json?: boolean; output?: string; failOn?: FailOn; all?: boolean },
 ): CheckResult {
   const rendered = options.json
     ? `${JSON.stringify(findings, null, 2)}\n`
-    : renderFindings(findings, confidence);
+    : renderFindings(findings, confidence, scopeOf(options));
 
   writeReport(rendered, options.output);
 
@@ -467,9 +470,40 @@ function formatParseIssues(
     .join("\n");
 }
 
+/** How much of a report gets written out rather than counted. */
+export interface ReportScope {
+  /** Write every finding and every list out. */
+  all?: boolean;
+  /** The threshold the run is gated on, which decides what prints. */
+  failOn?: FailOn;
+}
+
+function scopeOf(options: { all?: boolean; failOn?: FailOn }): ReportScope {
+  return {
+    ...(options.all === true ? { all: true } : {}),
+    ...(options.failOn !== undefined ? { failOn: options.failOn } : {}),
+  };
+}
+
+/**
+ * The severity a finding has to reach to be written out in full. It is
+ * the threshold the run fails on, so nothing that decides the exit code
+ * is ever left to a count.
+ */
+function printedSeverity(failOn: FailOn | undefined): number {
+  const threshold =
+    failOn === undefined || failOn === "none" ? "error" : failOn;
+  return SEVERITY_ORDER[threshold];
+}
+
+/**
+ * The findings, with whatever fails the run written out and the rest
+ * counted. `--all` writes every one out. `--json` is unaffected.
+ */
 export function renderFindings(
   findings: Finding[],
   confidence: ConfidenceLookup,
+  scope: ReportScope = {},
 ): string {
   if (findings.length === 0) {
     return "No findings.\n";
@@ -481,7 +515,12 @@ export function renderFindings(
     counts[f.severity] += 1;
   }
 
-  for (const f of findings) {
+  const printed = printedSeverity(scope.failOn);
+  const shown =
+    scope.all === true
+      ? findings
+      : findings.filter((f) => SEVERITY_ORDER[f.severity] <= printed);
+  for (const f of shown) {
     lines.push(`${"─".repeat(60)}`);
     const sevLabel = formatSeverityHeader(f);
     lines.push(`[${sevLabel}] ${f.kind}`);
@@ -508,12 +547,44 @@ export function renderFindings(
     );
     lines.push(...formatSuppressionRule(f));
   }
-  lines.push("─".repeat(60));
+  if (shown.length > 0) {
+    lines.push("─".repeat(60));
+  }
   lines.push(
     `${findings.length} finding${findings.length === 1 ? "" : "s"}: ${counts.error} error, ${counts.warning} warning, ${counts.info} info`,
   );
+  lines.push(...notShownLines(findings, shown));
 
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * What the report left out, counted by kind. Written only when
+ * something was left out, so a run with errors alone reads as before.
+ */
+function notShownLines(
+  findings: ReadonlyArray<Finding>,
+  shown: ReadonlyArray<Finding>,
+): string[] {
+  const printedOut = new Set(shown);
+  const hidden = findings.filter((f) => !printedOut.has(f));
+  if (hidden.length === 0) {
+    return [];
+  }
+
+  const perKind = new Map<string, number>();
+  for (const f of hidden) {
+    const key = `${f.kind} (${f.severity})`;
+    perKind.set(key, (perKind.get(key) ?? 0) + 1);
+  }
+  const spelled = [...perKind]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([key, count]) => `${count} ${key}`)
+    .join(", ");
+  return [
+    "",
+    `Not shown: ${spelled}. Run the same command with --all to see ${hidden.length === 1 ? "it" : "them"}.`,
+  ];
 }
 
 function formatSeverityHeader(f: Finding): string {
@@ -663,7 +734,9 @@ function renderGapCoverage(withGaps: number, total: number): string {
 function renderDirHuman(
   result: CheckAllResult,
   confidence: ConfidenceLookup,
+  scope: ReportScope,
 ): string {
+  const all = scope.all === true;
   const lines: string[] = [];
   const { providers, consumers, unpairable } = result.unmatched;
   const noBoundary = unpairable.filter((u) => u.reason === "noBoundary");
@@ -698,13 +771,15 @@ function renderDirHuman(
   // nothing at all, which is the opposite of a pass.
   const comparedByBoundary = groupPairsByKey(result.pairs);
   if (comparedByBoundary.size > 0) {
-    lines.push(
-      `Compared ${comparedByBoundary.size} boundar${comparedByBoundary.size === 1 ? "y" : "ies"}:`,
-    );
-    for (const [key, sides] of comparedByBoundary) {
-      lines.push(`  ${key}`);
-      for (const side of sides) {
-        lines.push(`    ${side}`);
+    const count = comparedByBoundary.size;
+    const noun = `boundar${count === 1 ? "y" : "ies"}`;
+    lines.push(`Compared ${count} ${noun}${all ? ":" : "."}`);
+    if (all) {
+      for (const [key, sides] of comparedByBoundary) {
+        lines.push(`  ${key}`);
+        for (const side of sides) {
+          lines.push(`    ${side}`);
+        }
       }
     }
   } else {
@@ -727,31 +802,52 @@ function renderDirHuman(
   // Group by boundary rather than by summary. One route described by
   // both a deploy template and its handler code is one boundary waiting
   // for a client, and listing it twice makes the count read wrong.
-  if (providers.length > 0) {
-    lines.push("");
-    lines.push("Providers with no client to compare against:");
-    lines.push(...listed(groupByKey(providers)));
+  if (all) {
+    if (providers.length > 0) {
+      lines.push("");
+      lines.push("Providers with no client to compare against:");
+      lines.push(...listed(groupByKey(providers)));
+    }
+
+    if (consumers.length > 0) {
+      lines.push("");
+      lines.push("Clients with no provider to compare against:");
+      lines.push(...listed(groupByKey(consumers)));
+    }
+
+    // A line per unit, because something crossed the boundary and a
+    // reader deciding what to trust needs to know it went unchecked.
+    if (nothingToCompare.length > 0) {
+      const many = nothingToCompare.length !== 1;
+      lines.push("");
+      lines.push(
+        `Nothing in this run paired with ${many ? `these ${nothingToCompare.length} boundaries` : "this boundary"}, so nothing was checked across ${many ? "them" : "it"}:`,
+      );
+      lines.push(...listed(groupByKey(nothingToCompare)));
+    }
   }
 
-  if (consumers.length > 0) {
-    lines.push("");
-    lines.push("Clients with no provider to compare against:");
-    lines.push(...listed(groupByKey(consumers)));
+  // Internal helpers reached through the closure pass land here by the
+  // dozen. Listing each one buries whatever else is on screen, and a
+  // function with no boundary is the normal case rather than a problem.
+  const internal =
+    noBoundary.length === 0
+      ? null
+      : `${noBoundary.length} other summar${noBoundary.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBoundary.length === 1 ? "it" : "them"}.`;
+
+  if (!all) {
+    const counts = unpairedCounts(providers, consumers, nothingToCompare);
+    if (counts.length > 0) {
+      lines.push("");
+      for (const count of counts) {
+        lines.push(`  ${count}`);
+      }
+      lines.push("  Run the same command with --all to list them.");
+    }
   }
 
-  /**
-   * A boundary nothing paired with gets a line per unit, because
-   * something crossed it and a reader deciding what to trust needs to
-   * know it went unchecked. The heading above each says which case it
-   * is: a store or a queue nothing in the run touched, or a route whose
-   * path the source never settled, which prints as `GET ?`.
-   */
-  if (nothingToCompare.length > 0) {
-    lines.push("");
-    lines.push(
-      `Nothing in this run paired with ${nothingToCompare.length === 1 ? "this boundary" : `these ${nothingToCompare.length} boundaries`}, so nothing was checked across ${nothingToCompare.length === 1 ? "it" : "them"}:`,
-    );
-    lines.push(...listed(groupByKey(nothingToCompare)));
+  if (internal !== null) {
+    lines.push("", internal);
   }
 
   const unknownKinds = unpairable.filter((u) => u.reason === "unknownKind");
@@ -762,25 +858,48 @@ function renderDirHuman(
     );
   }
 
-  // Internal helpers reached through the closure pass land here by the
-  // dozen. Listing each one buries whatever else is on screen, and a
-  // function with no boundary is the normal case rather than a problem.
-  if (noBoundary.length > 0) {
-    lines.push("");
-    lines.push(
-      `${noBoundary.length} other summar${noBoundary.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBoundary.length === 1 ? "it" : "them"}.`,
-    );
-  }
-
-  lines.push("");
-
   if (result.findings.length > 0) {
-    lines.push(renderFindings(result.findings, confidence).trimEnd());
+    lines.push(
+      "",
+      renderFindings(result.findings, confidence, scope).trimEnd(),
+    );
   } else if (result.pairs.length > 0) {
-    lines.push("No findings. Every compared boundary agreed.");
+    lines.push("", "No findings. Every compared boundary agreed.");
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * What went unpaired, one sentence per case, counted by boundary the
+ * same way `--all` lists them. Nothing here is a finding, and on a
+ * monorepo the lists run to thousands of lines.
+ */
+function unpairedCounts(
+  providers: ReadonlyArray<{ id: string; key?: string | null }>,
+  consumers: ReadonlyArray<{ id: string; key?: string | null }>,
+  nothingToCompare: ReadonlyArray<{ id: string; key?: string | null }>,
+): string[] {
+  const counts: string[] = [];
+  if (providers.length > 0) {
+    const n = groupByKey(providers).size;
+    counts.push(
+      `${n} provider-side boundar${n === 1 ? "y has" : "ies have"} no client to compare against.`,
+    );
+  }
+  if (consumers.length > 0) {
+    const n = groupByKey(consumers).size;
+    counts.push(
+      `${n} client-side boundar${n === 1 ? "y has" : "ies have"} no provider to compare against.`,
+    );
+  }
+  if (nothingToCompare.length > 0) {
+    const n = nothingToCompare.length;
+    counts.push(
+      `${n} boundar${n === 1 ? "y" : "ies"} had nothing to pair with, so nothing was checked across ${n === 1 ? "it" : "them"}.`,
+    );
+  }
+  return counts;
 }
 
 /**

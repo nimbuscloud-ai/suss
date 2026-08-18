@@ -57,9 +57,18 @@ suss contract --from intent intents/ [-o intent.json]
 **`check`**
 - `--dir`: directory of summary JSON files; auto-pairs by `(method, normalizedPath)`
 - `--at`: report on one file, `file:line`, boundary, or summary id instead of the whole folder. Needs `--dir`, and exits non-zero when it matches nothing
+- `--all`: write out every finding and every list, instead of the collapsed report
 - `--json`: emit findings as JSON
 - `-o, --output`: write findings to file instead of stdout
 - `--fail-on`: exit-code threshold: `error` (default), `warning`, `info`, or `none`
+
+### What `check` prints by default
+
+A run prints the errors in full and counts everything else: the findings below error severity, grouped by kind, and the boundaries that went unpaired. `--all` writes all of it out.
+
+Two measurements decided this. The unpaired lists are the bulk of a report on any repository of a realistic size. Over five public repositories and suss's own packages they ran between 66% and 99% of the lines, and not one of those lines is a finding. Warnings and infos also outnumber errors by a wide margin on a first run, so printing them in full puts the thing that fails the build off the top of the screen.
+
+The flag changes what is printed and nothing else. `--json` always includes every finding and every list, so a CI job that parses the JSON sees no difference. The exit code still comes from `--fail-on`, which defaults to `error`. `--at` prints in full whether or not `--all` is passed, because a reader who has narrowed the run to one file or one boundary has already said what they want to see.
 
 **`ask`**
 - Positional argument: the question, one of `what can I project from <boundary>`, `what reads <boundary>`, `what writes <boundary>`, `what does <unit> reach`

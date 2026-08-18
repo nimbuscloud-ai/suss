@@ -32,7 +32,7 @@ describe("pair a TypeScript client against a Python provider", () => {
   });
 
   it("pairs the two sides on the boundary they share", () => {
-    const check = runSuss(["check", "--dir", summaries]);
+    const check = runSuss(["check", "--dir", summaries, "--all"]);
 
     expect(check.stdout).toContain(
       "  GET /health\n    shop/main.py::health <-> suss::consumer.ts::getHealth",
@@ -40,7 +40,7 @@ describe("pair a TypeScript client against a Python provider", () => {
   });
 
   it("says which routes have nobody on the other side", () => {
-    const check = runSuss(["check", "--dir", summaries]);
+    const check = runSuss(["check", "--dir", summaries, "--all"]);
 
     expect(check.stdout).toContain(
       "Providers with no client to compare against",
@@ -53,7 +53,7 @@ describe("pair a TypeScript client against a Python provider", () => {
   });
 
   it("reports the branch the client handles and the provider never sends", () => {
-    const check = runSuss(["check", "--dir", summaries]);
+    const check = runSuss(["check", "--dir", summaries, "--all"]);
 
     expect(check.stdout).toContain("deadConsumerBranch");
     expect(check.stdout).toContain(
@@ -80,5 +80,29 @@ describe("pair a TypeScript client against a Python provider", () => {
     ]);
 
     expect(check.status).toBe(1);
+  });
+
+  it("counts the warnings and the unpaired routes on a plain run", () => {
+    const check = runSuss(["check", "--dir", summaries]);
+
+    expect(check.stdout).toContain("Compared 1 boundary.");
+    expect(check.stdout).toContain(
+      "Not shown: 2 deadConsumerBranch (warning).",
+    );
+    expect(check.stdout).toContain("--all to list them");
+    expect(check.stdout).not.toContain("POST /orders");
+  });
+
+  it("writes the warnings out once the run is gated on them", () => {
+    const check = runSuss([
+      "check",
+      "--dir",
+      summaries,
+      "--fail-on",
+      "warning",
+    ]);
+
+    expect(check.stdout).toContain("[WARNING] deadConsumerBranch");
+    expect(check.stdout).not.toContain("Not shown:");
   });
 });

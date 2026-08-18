@@ -571,6 +571,20 @@ describe("runCli check", () => {
     expect(io.stdout).toContain("Compared");
   });
 
+  it("--all names the compared boundaries the default run only counts", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    writeJson("consumer.json", [matchingConsumer]);
+
+    const plain = await capture(() => runCli(["check", "--dir", tmpDir]));
+    const all = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--all"]),
+    );
+
+    expect(plain.io.stdout).toContain("Compared 1 boundary.");
+    expect(all.io.stdout).toContain("Compared 1 boundary:");
+    expect(all.io.stdout.length).toBeGreaterThan(plain.io.stdout.length);
+  });
+
   it("--sussignore applies the named rule file to two-file checks", async () => {
     const provider = writeJson("provider.json", [
       {

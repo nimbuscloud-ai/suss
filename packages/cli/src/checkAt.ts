@@ -235,8 +235,15 @@ function renderScoped(
     lines.push("", ...unpaired);
   }
 
+  // Narrowing to one target is already the reader saying what they want
+  // to see, so nothing here is collapsed to a count.
   if (view.findings.length > 0) {
-    lines.push("", renderFindings(view.findings, checked.confidence).trimEnd());
+    lines.push(
+      "",
+      renderFindings(view.findings, checked.confidence, {
+        all: true,
+      }).trimEnd(),
+    );
   } else {
     lines.push("", "No findings here.");
   }

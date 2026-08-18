@@ -35,8 +35,8 @@ Usage:
   suss inspect --dir <directory>
   suss inspect --diff <before.json> <after.json>
   suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
-  suss check <provider.json> <consumer.json> [--json] [-o <output>]
-  suss check --dir <directory> [--intent <intent-dir>] [--json] [-o <output>]
+  suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
+  suss check --dir <directory> [--intent <intent-dir>] [--all] [--json] [-o <output>]
   suss check --dir <directory> --at <file[:line] | boundary | summary-id> [--json]
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
@@ -112,6 +112,11 @@ Options (check):
                    would read as agreement.
   --intent         Folder of intent docs (*.intent / *.prd) to check the code
                    against. Needs --dir.
+  --all            Write out every finding and every list. Without it a run
+                   prints the errors in full and counts the rest, because a
+                   first run over a repository reports far more at warning
+                   and info than at error. --at already prints in full, and
+                   --json is unaffected either way.
   --json           Write findings as JSON instead of prose
   -o, --output     Write findings to a file instead of stdout
   --fail-on        Which severity fails the run: error (default), warning,
@@ -415,6 +420,7 @@ function runCheck(args: string[]): number {
       dir: { type: "string" },
       at: { type: "string" },
       intent: { type: "string" },
+      all: { type: "boolean" },
       "fail-on": { type: "string" },
       sussignore: { type: "string" },
       "no-suppressions": { type: "boolean" },
@@ -440,6 +446,10 @@ function runCheck(args: string[]): number {
     );
     return 1;
   }
+
+  // --at is already scoped to one thing, so it prints in full and has
+  // nothing to collapse.
+  const all = values.all === true ? { all: true } : {};
 
   const shared = {
     ...(values.json === true ? { json: true } : {}),
@@ -474,6 +484,7 @@ function runCheck(args: string[]): number {
     const result = checkDir({
       dir: values.dir,
       ...shared,
+      ...all,
       ...(values.intent !== undefined ? { intent: values.intent } : {}),
     });
     return result.hasErrors ? 1 : 0;
@@ -497,6 +508,7 @@ function runCheck(args: string[]): number {
     providerFile: positionals[0],
     consumerFile: positionals[1],
     ...shared,
+    ...all,
   });
   return result.hasErrors ? 1 : 0;
 }
