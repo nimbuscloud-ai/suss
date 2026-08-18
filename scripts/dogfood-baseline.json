@@ -2,10 +2,10 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 482,
-    "internal": 1850,
-    "consumers": 800,
-    "pairs": 793
+    "exports": 484,
+    "internal": 1859,
+    "consumers": 803,
+    "pairs": 796
   },
   "packages": {
     "packages/adapter/python": {
@@ -28,15 +28,15 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 58,
+      "exports": 59,
       "internal": 15,
       "consumers": 4
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 34,
-      "internal": 153,
-      "consumers": 110
+      "internal": 159,
+      "consumers": 113
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -304,8 +304,8 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 49,
-      "internal": 10,
+      "exports": 50,
+      "internal": 13,
       "consumers": 0
     },
     "packages/manifest/aws": {

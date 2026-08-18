@@ -8,9 +8,10 @@
  * name is written here as fixed text with `{}` holes, and two names
  * agree when their fixed parts line up.
  *
- * A hole stops at the separator between it and what comes next, which
- * the pattern itself supplies. The README beside this file says why,
- * and what that costs.
+ * A hole covers a whole parameter rather than one piece of a name,
+ * because a name has no separator every project agrees on. Two
+ * patterns that both cover one name are told apart by how much fixed
+ * text each states, rather than by narrowing what a hole can cover.
  */
 
 /** What a hole looks like once a reader has written one. */
@@ -81,16 +82,14 @@ function quote(text: string): string {
 }
 
 /**
- * What a hole can cover, given the fixed text that follows it. A letter
- * or a digit next to the hole is part of the same word, so nothing
- * separates the two and the hole covers anything.
+ * What a hole can cover. Anything, because a name has no separator
+ * every project agrees on: a region is written `us-east-1` and a hole
+ * that stopped at the first hyphen would miss it. Two patterns that
+ * both cover a name are told apart by which states more fixed text,
+ * which the checker does when it picks a container.
  */
-function holeSource(following: string): string {
-  const separator = following.slice(0, 1);
-  if (separator === "" || /[A-Za-z0-9]/.test(separator)) {
-    return ".+";
-  }
-  return `[^${quote(separator)}]+`;
+function holeSource(_following: string): string {
+  return ".+";
 }
 
 /** Whether a concrete name has the pattern's fixed text in those places. */

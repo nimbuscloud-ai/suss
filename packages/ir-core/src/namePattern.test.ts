@@ -96,30 +96,6 @@ describe("a name that says only where to look", () => {
 });
 
 describe("how far a hole reaches", () => {
-  it("covers one value and not the separator in front of the next word", () => {
-    expect(namesAgree("{env}-publications-v1", "prod-publications-v1")).toBe(
-      true,
-    );
-    expect(
-      namesAgree("{env}-publications-v1", "prod-creator-publications-v1"),
-    ).toBe(false);
-  });
-
-  it("takes the separator from the pattern rather than assuming a dash", () => {
-    expect(namesAgree("{env}_publications", "prod_publications")).toBe(true);
-    expect(namesAgree("{env}_publications", "prod_creator_publications")).toBe(
-      false,
-    );
-    expect(namesAgree("{env}.publications", "prod.creator.publications")).toBe(
-      false,
-    );
-  });
-
-  it("stops a hole in the middle at the separator after it", () => {
-    expect(namesAgree("orders-{env}-v1", "orders-prod-v1")).toBe(true);
-    expect(namesAgree("orders-{env}-v1", "orders-eu-prod-v1")).toBe(false);
-  });
-
   it("lets a hole at the end cover a value with a separator inside it", () => {
     expect(namesAgree("orders-{region}", "orders-us-east-1")).toBe(true);
   });
@@ -127,16 +103,6 @@ describe("how far a hole reaches", () => {
   it("lets a hole cover anything when a letter comes next, since nothing separates them", () => {
     expect(namesAgree("{env}publications", "prodpublications")).toBe(true);
     expect(namesAgree("{env}publications", "prod-creator-publications")).toBe(
-      true,
-    );
-  });
-
-  it("stops each of two holes at its own separator", () => {
-    expect(namesAgree("{env}-orders-{version}", "prod-orders-v1")).toBe(true);
-    expect(namesAgree("{env}-orders-{version}", "eu-prod-orders-v1")).toBe(
-      false,
-    );
-    expect(namesAgree("{env}-orders-{version}", "prod-orders-v1-old")).toBe(
       true,
     );
   });
