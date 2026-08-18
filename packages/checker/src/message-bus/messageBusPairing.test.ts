@@ -34,10 +34,10 @@ function consumerSummary(opts: {
       name: opts.name,
       exportPath: null,
       boundaryBinding: {
-        transport: "sqs",
+        transport: "aws_sqs",
         semantics: {
           name: "message-bus",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: opts.channel,
         },
         recognition: "@suss/contract-cloudformation",
@@ -62,7 +62,7 @@ function producerSummary(opts: {
   /** Null is a send whose queue the code only works out at runtime. */
   channel: string | null;
   bodyFields?: string[] | null;
-  messageBus?: "sqs" | "eventbridge";
+  messageBus?: "aws_sqs" | "eventbridge";
 }): BehavioralSummary {
   const body =
     opts.bodyFields === null
@@ -81,10 +81,10 @@ function producerSummary(opts: {
   const sendEffect: Effect = {
     type: "interaction",
     binding: {
-      transport: "sqs",
+      transport: "aws_sqs",
       semantics: {
         name: "message-bus",
-        messageBus: opts.messageBus ?? "sqs",
+        messageBus: opts.messageBus ?? "aws_sqs",
         channel: opts.channel,
       },
       recognition: "@suss/framework-aws-sqs",
@@ -121,10 +121,10 @@ function consumerCodeSummary(opts: {
   const receiveEffect: Effect = {
     type: "interaction",
     binding: {
-      transport: "sqs",
+      transport: "aws_sqs",
       semantics: {
         name: "message-bus",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: null,
       },
       recognition: "@suss/framework-aws-sqs",
@@ -170,10 +170,10 @@ function queueProvider(channel: string): BehavioralSummary {
       name: channel,
       exportPath: null,
       boundaryBinding: {
-        transport: "sqs",
+        transport: "aws_sqs",
         semantics: {
           name: "message-bus",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel,
         },
         recognition: "@suss/contract-cloudformation",
@@ -658,7 +658,7 @@ function snsConsumer(opts: {
         transport: "sns",
         semantics: {
           name: "message-bus",
-          messageBus: "sns",
+          messageBus: "aws.sns",
           channel: opts.channel,
         },
         recognition: "cloudformation",
@@ -844,10 +844,10 @@ function codeReceiver(opts: {
       name: opts.name,
       exportPath: null,
       boundaryBinding: {
-        transport: "sqs",
+        transport: "aws_sqs",
         semantics: {
           name: "message-bus",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: opts.channel,
         },
         recognition: "@suss/framework-aws-lambda",
@@ -1173,8 +1173,8 @@ function handlerSummary(name: string, channel: string): BehavioralSummary {
       name,
       exportPath: null,
       boundaryBinding: {
-        transport: "sqs",
-        semantics: { name: "message-bus", messageBus: "sqs", channel },
+        transport: "aws_sqs",
+        semantics: { name: "message-bus", messageBus: "aws_sqs", channel },
         recognition: "@suss/framework-aws-lambda",
       },
     },
@@ -1201,7 +1201,7 @@ describe("what the message-bus pass records as compared", () => {
 
     expect(compared).toEqual([
       {
-        key: "bus:sqs OrdersQueue",
+        key: "bus:aws_sqs OrdersQueue",
         provider: "template.yaml::OrdersQueue",
         consumer: "src/order-producer/index.ts::OrderProducer",
       },
@@ -1222,7 +1222,7 @@ describe("what the message-bus pass records as compared", () => {
 
     expect(compared).toEqual([
       {
-        key: "bus:sqs OrdersQueue",
+        key: "bus:aws_sqs OrdersQueue",
         provider: "template.yaml::OrdersQueue",
         consumer: "template.yaml::OrderConsumer",
       },
@@ -1261,7 +1261,7 @@ describe("checkAll, message-bus pairing integration", () => {
 
     expect(result.pairs).toEqual([
       {
-        key: "bus:sqs order.placed",
+        key: "bus:aws_sqs order.placed",
         provider: "src/orders/placed.ts::OrderPlacedFunction.handler",
         consumer: "template.yaml::OrderPlacedFunction.QueueEvent",
       },

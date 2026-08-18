@@ -158,7 +158,7 @@ function dynamoBinding(
 ): BoundaryBinding {
   return storageBinding({
     recognition: RECOGNITION,
-    storageSystem: "dynamodb",
+    storageSystem: "aws.dynamodb",
     ...(read.transport === undefined ? {} : { transport: read.transport }),
     scope: "default",
     container: addressed.container,

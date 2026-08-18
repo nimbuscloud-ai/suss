@@ -14,7 +14,7 @@ import { flaskRestxFramework } from "@suss/framework-flask-restx";
 import { withSqlalchemy } from "@suss/framework-sqlalchemy";
 
 const pack = withSqlalchemy(flaskRestxFramework({}), {
-  storageSystem: "postgres",
+  storageSystem: "postgresql",
 });
 ```
 

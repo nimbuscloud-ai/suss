@@ -27,7 +27,7 @@ import { testCompilerOptions } from "@suss/test-project";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixtureRoot = path.resolve(__dirname, "../../../fixtures/aws-lambda");
-const SHARED_SUBJECT_KEY = "bus:sqs order.placed";
+const SHARED_SUBJECT_KEY = "bus:aws_sqs order.placed";
 
 async function extractCode(): Promise<BehavioralSummary[]> {
   clearTemplateCache();
@@ -70,7 +70,7 @@ describe("aws-lambda fan-out on one subject", () => {
       const semantics = s.identity.boundaryBinding?.semantics;
       return (
         semantics?.name === "message-bus" &&
-        semantics.messageBus === "sqs" &&
+        semantics.messageBus === "aws_sqs" &&
         semantics.channel !== null &&
         semantics.channel.endsWith("order.placed")
       );

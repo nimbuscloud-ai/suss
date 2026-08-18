@@ -271,7 +271,7 @@ npx suss extract --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/sch
 ```
 
 Add `-f activerecord=suss.activerecord.json` to classify the database
-calls the resolver bodies make, with `{ "storageSystem": "postgres" }`
+calls the resolver bodies make, with `{ "storageSystem": "postgresql" }`
 in the config, since ActiveRecord talks to several databases and only
 `database.yml` says which. The Python equivalent is
 `-f sqlalchemy=suss.sqlalchemy.json`, added beside `fastapi` or

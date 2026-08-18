@@ -23,7 +23,7 @@ export function awsTerraform(): TerraformPack {
         providerVersions: CURRENT,
         boundary: {
           kind: "storage",
-          storageSystem: "dynamodb",
+          storageSystem: "aws.dynamodb",
           // A caller reaches a table through the SDK over HTTPS rather
           // than through a wire protocol of its own.
           transport: "aws-sdk",
@@ -64,7 +64,7 @@ export function awsTerraform(): TerraformPack {
         providerVersions: CURRENT,
         boundary: {
           kind: "message-bus",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           nameAttribute: "name",
         },
       },
@@ -73,7 +73,7 @@ export function awsTerraform(): TerraformPack {
         providerVersions: CURRENT,
         boundary: {
           kind: "message-bus",
-          messageBus: "sns",
+          messageBus: "aws.sns",
           nameAttribute: "name",
         },
       },

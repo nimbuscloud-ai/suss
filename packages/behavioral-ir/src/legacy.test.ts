@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type BoundaryBinding,
+  boundaryKey,
+  normalizeLegacySummary,
   parseSummaries,
   parseSummary,
   SUMMARY_SCHEMA_VERSION,
@@ -138,7 +141,7 @@ describe("reading storage written before the layered variant", () => {
     );
     expect(parsed.identity.boundaryBinding?.semantics).toEqual({
       name: "storage",
-      storageSystem: "postgres",
+      storageSystem: "postgresql",
       scope: "default",
       container: "User",
       accessPath: null,
@@ -397,5 +400,171 @@ describe("backfilling identity.id", () => {
     ];
     const parsed = parseSummaries(withOwnIds);
     expect(parsed[0].identity.id).toBe(parsed[1].identity.id);
+  });
+});
+
+describe("reading a store and a bus written before the conventions", () => {
+  function v4Summary(
+    binding: Record<string, unknown>,
+    metadata?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return v1Summary({
+      schemaVersion: 4,
+      identity: {
+        name: "OrderPlacedFunction.handler",
+        exportPath: null,
+        id: "src/handler.ts::OrderPlacedFunction.handler",
+        boundaryBinding: binding,
+      },
+      ...(metadata === undefined ? {} : { metadata }),
+    });
+  }
+
+  it("reads postgres as postgresql", () => {
+    const parsed = parseSummary(
+      v4Summary({
+        transport: "postgres",
+        semantics: {
+          name: "storage",
+          storageSystem: "postgres",
+          scope: "default",
+          container: "User",
+          accessPath: null,
+        },
+        recognition: "prisma",
+      }),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: "postgresql",
+    });
+  });
+
+  it("reads dynamodb as aws.dynamodb", () => {
+    const parsed = parseSummary(
+      v4Summary({
+        transport: "dynamodb",
+        semantics: {
+          name: "storage",
+          storageSystem: "dynamodb",
+          scope: "default",
+          container: "Orders",
+          accessPath: null,
+        },
+        recognition: "cloudformation",
+      }),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: "aws.dynamodb",
+    });
+  });
+
+  it("leaves a store the conventions never named as it was", () => {
+    const parsed = parseSummary(
+      v4Summary({
+        transport: "aws-sdk",
+        semantics: {
+          name: "storage",
+          storageSystem: "s3",
+          scope: "default",
+          container: "uploads",
+          accessPath: null,
+        },
+        recognition: "aws-s3",
+      }),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: "s3",
+    });
+  });
+
+  it("reads sqs as aws_sqs, and keys the boundary by the new name", () => {
+    const parsed = parseSummary(
+      v4Summary({
+        transport: "sqs",
+        semantics: {
+          name: "message-bus",
+          messageBus: "sqs",
+          channel: "order.placed",
+        },
+        recognition: "aws-lambda",
+      }),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toMatchObject({
+      messageBus: "aws_sqs",
+    });
+    expect(
+      boundaryKey(parsed.identity.boundaryBinding as BoundaryBinding),
+    ).toBe("bus:aws_sqs order.placed");
+  });
+
+  it("reads sns as aws.sns, and the queue it delivers through with it", () => {
+    const parsed = parseSummary(
+      v4Summary(
+        {
+          transport: "sns",
+          semantics: {
+            name: "message-bus",
+            messageBus: "sns",
+            channel: "OrderTopic",
+          },
+          recognition: "cloudformation",
+        },
+        { messageBus: { deliveredThrough: "sqs", queue: "OrderQueue" } },
+      ),
+    );
+    expect(parsed.identity.boundaryBinding?.semantics).toMatchObject({
+      messageBus: "aws.sns",
+    });
+    expect(parsed.metadata?.messageBus).toMatchObject({
+      deliveredThrough: "aws_sqs",
+    });
+  });
+
+  it("renames a bus an effect states, not only the summary's own", () => {
+    const parsed = parseSummary(
+      v1Summary({
+        schemaVersion: 4,
+        transitions: [
+          {
+            id: "t-0",
+            conditions: [],
+            output: { type: "void" },
+            effects: [
+              {
+                type: "interaction",
+                binding: {
+                  transport: "sqs",
+                  semantics: {
+                    name: "message-bus",
+                    messageBus: "sqs",
+                    channel: "order.placed",
+                  },
+                  recognition: "@suss/framework-aws-sqs",
+                },
+                interaction: { class: "message-send" },
+              },
+            ],
+            location: { start: 0, end: 0 },
+            isDefault: true,
+          },
+        ],
+      }),
+    );
+    const effect = parsed.transitions[0]?.effects[0];
+    expect(
+      effect?.type === "interaction" ? effect.binding.semantics : null,
+    ).toMatchObject({ messageBus: "aws_sqs" });
+  });
+
+  it("leaves a binding whose bus is not a string alone", () => {
+    const summary = v4Summary({
+      transport: "sqs",
+      semantics: { name: "message-bus", messageBus: 7, channel: "orders" },
+      recognition: "aws-lambda",
+    });
+    const normalized = normalizeLegacySummary(summary) as {
+      identity: { boundaryBinding: { semantics: { messageBus: unknown } } };
+    };
+    expect(normalized.identity.boundaryBinding.semantics.messageBus).toBe(7);
   });
 });

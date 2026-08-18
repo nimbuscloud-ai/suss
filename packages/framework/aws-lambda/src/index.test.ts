@@ -242,7 +242,7 @@ describe("awsLambdaFramework: extraction", () => {
   it("binds a queue worker to the sqs wire, not http", () => {
     const sqs = byEventType(summaries, "SQS");
     const binding = (sqs as BehavioralSummary).identity.boundaryBinding;
-    expect(binding?.transport).toBe("sqs");
+    expect(binding?.transport).toBe("aws_sqs");
   });
 
   it("reads the summary object a scheduled job returns", () => {
@@ -334,10 +334,10 @@ describe("awsLambdaFramework: extraction", () => {
       .boundaryBinding as BoundaryBinding;
     expect(binding.semantics.name).toBe("message-bus");
     if (binding.semantics.name === "message-bus") {
-      expect(binding.semantics.messageBus).toBe("sqs");
+      expect(binding.semantics.messageBus).toBe("aws_sqs");
       expect(binding.semantics.channel).toBe("billing.invoicePaid");
     }
-    expect(binding.transport).toBe("sqs");
+    expect(binding.transport).toBe("aws_sqs");
     expect(binding.recognition).toBe("aws-lambda");
     // Still a recognized-not-http accounting unit underneath.
     const meta = (worker as BehavioralSummary).metadata?.awsLambda as {
@@ -354,7 +354,7 @@ describe("awsLambdaFramework: extraction", () => {
     const binding = (computed as BehavioralSummary).identity.boundaryBinding;
     // The wire is still SQS; only the channel stays unstated rather
     // than fabricated from a computed subject.
-    expect(binding?.transport).toBe("sqs");
+    expect(binding?.transport).toBe("aws_sqs");
     expect(
       binding?.semantics.name === "message-bus"
         ? binding.semantics.channel
@@ -367,7 +367,7 @@ describe("awsLambdaFramework: extraction", () => {
     const worker = byFunction(defaults, "SubjectWorkerFunction");
     expect(worker).toBeDefined();
     const binding = (worker as BehavioralSummary).identity.boundaryBinding;
-    expect(binding?.transport).toBe("sqs");
+    expect(binding?.transport).toBe("aws_sqs");
     expect(
       binding?.semantics.name === "message-bus"
         ? binding.semantics.channel

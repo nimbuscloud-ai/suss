@@ -53,10 +53,13 @@ export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
 export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
 export { StorageSemanticsSchema } from "./semantics/storage.js";
+export { semconvAttributes } from "./semconv.js";
 
 export type {
   BoundaryBehavior,
   BoundarySemanticsDefinition,
+  SemconvAttribute,
+  SemconvMapping,
 } from "./semantics/definition.js";
 
 // ---------------------------------------------------------------------------

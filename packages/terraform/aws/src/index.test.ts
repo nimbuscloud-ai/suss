@@ -77,7 +77,7 @@ describe("what the AWS entries read", () => {
     const table = boundary("aws_dynamodb_table.orders");
     expect(table.identity.boundaryBinding?.semantics).toMatchObject({
       name: "storage",
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       container: "orders",
       accessPath: null,
     });
@@ -121,12 +121,12 @@ describe("what the AWS entries read", () => {
       boundary("aws_sqs_queue.jobs").identity.boundaryBinding?.semantics,
     ).toMatchObject({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "jobs",
     });
     expect(
       boundary("aws_sns_topic.alerts").identity.boundaryBinding?.semantics,
-    ).toMatchObject({ messageBus: "sns" });
+    ).toMatchObject({ messageBus: "aws.sns" });
     const bus = read().find(
       (s) =>
         s.identity.boundaryBinding?.semantics.name === "message-bus" &&

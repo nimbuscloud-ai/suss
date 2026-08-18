@@ -14,7 +14,6 @@
   "updateMany": "@prisma/client: delegate write method",
   "deleteMany": "@prisma/client: delegate write method",
   "data": "@prisma/client: write argument key holding the row values",
-  "postgres": "storage system the pack reports for a Postgres datasource",
   "read": "suss: access kind",
   "write": "suss: access kind",
   "$queryRaw": "@prisma/client: method taking a query as a tagged template",

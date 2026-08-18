@@ -400,7 +400,7 @@ function buildQueueProviderSummary(
       exportPath: null,
       boundaryBinding: messageBusBinding({
         recognition,
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: logicalId,
       }),
     },
@@ -437,7 +437,7 @@ function buildTopicProviderSummary(
       exportPath: null,
       boundaryBinding: messageBusBinding({
         recognition,
-        messageBus: "sns",
+        messageBus: "aws.sns",
         channel: logicalId,
       }),
     },
@@ -502,7 +502,7 @@ function buildLambdaConsumerSummary(
       exportPath: null,
       boundaryBinding: messageBusBinding({
         recognition: opts.recognition,
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: opts.routed?.channel ?? opts.channel,
       }),
       deployableUnit: {
@@ -1180,16 +1180,16 @@ interface SnsLambdaConsumerOpts {
  */
 function sqsDeliveryOf(
   sqsSubscription: unknown,
-): { deliveredThrough: "sqs"; queue: string } | null {
+): { deliveredThrough: "aws_sqs"; queue: string } | null {
   if (sqsSubscription === undefined || sqsSubscription === false) {
     return null;
   }
   if (sqsSubscription === true) {
-    return { deliveredThrough: "sqs", queue: "<sam-managed>" };
+    return { deliveredThrough: "aws_sqs", queue: "<sam-managed>" };
   }
   const record = sqsSubscription as Record<string, unknown>;
   const queue = refTarget(record.QueueArn ?? record.QueueUrl);
-  return { deliveredThrough: "sqs", queue: queue ?? "<unresolved>" };
+  return { deliveredThrough: "aws_sqs", queue: queue ?? "<unresolved>" };
 }
 
 /**
@@ -1220,7 +1220,7 @@ function buildSnsLambdaConsumerSummary(
       exportPath: null,
       boundaryBinding: messageBusBinding({
         recognition: opts.recognition,
-        messageBus: "sns",
+        messageBus: "aws.sns",
         channel: opts.topicId,
       }),
       deployableUnit: {

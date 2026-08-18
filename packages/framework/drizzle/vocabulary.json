@@ -5,7 +5,6 @@
   "pgTable": "drizzle-orm: Postgres table factory",
   "mysqlTable": "drizzle-orm: MySQL table factory",
   "sqliteTable": "drizzle-orm: SQLite table factory",
-  "postgres": "storage system the pack reports for a Postgres dialect",
   "from": "drizzle-orm: query builder method",
   "insert": "drizzle-orm: query builder method",
   "update": "drizzle-orm: query builder method",

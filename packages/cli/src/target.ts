@@ -3,7 +3,7 @@
  *
  * Four spellings, resolved in this order: a summary id, which is
  * anything with `::` in it; a file and a line, `src/dao.ts:43`; a file;
- * and a boundary, `dynamodb:editions#by-publication`. A file wins over
+ * and a boundary, `aws.dynamodb:editions#by-publication`. A file wins over
  * a boundary, so a path is never read as a boundary whose words happen
  * to line up.
  *

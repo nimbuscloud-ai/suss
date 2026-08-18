@@ -13,14 +13,16 @@ describe("fnIdentityKey and busIdentityKey", () => {
     expect(fnIdentityKey("@acme/util", ["parse", "config"])).toBe(
       "fn:@acme/util::parse.config",
     );
-    expect(busIdentityKey("sqs", "order.placed")).toBe("bus:sqs order.placed");
+    expect(busIdentityKey("aws_sqs", "order.placed")).toBe(
+      "bus:aws_sqs order.placed",
+    );
   });
 
   it("closes the bus segment over the schema's technologies", () => {
     // @ts-expect-error a technology outside the enum refuses to compile
     busIdentityKey("carrier-pigeon", "order.placed");
     // @ts-expect-error a literal without the brand cannot claim the type
-    const wrong: BusIdentityKey = "bus:sqs order.placed";
+    const wrong: BusIdentityKey = "bus:aws_sqs order.placed";
     expect(wrong).toBeDefined();
   });
 });

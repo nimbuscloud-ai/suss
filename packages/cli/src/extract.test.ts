@@ -44,8 +44,8 @@ function writeConfig(contents: string): string {
 // project can say what its layout is or which database it talks to.
 const CONFIG_FOR: Record<string, unknown> = {
   "graphql-ruby": { root: "app/graphql" },
-  sqlalchemy: { storageSystem: "postgres" },
-  activerecord: { storageSystem: "postgres" },
+  sqlalchemy: { storageSystem: "postgresql" },
+  activerecord: { storageSystem: "postgresql" },
 };
 
 async function loadAnyPack(name: string): Promise<{ name: string }> {

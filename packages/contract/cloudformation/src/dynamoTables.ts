@@ -84,7 +84,7 @@ function tableSummary(opts: {
       exportPath: null,
       boundaryBinding: storageBinding({
         recognition: opts.recognition,
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         // A caller reaches the table through the AWS SDK over HTTPS,
         // rather than through a wire protocol of its own.
         transport: "aws-sdk",

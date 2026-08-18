@@ -9,7 +9,7 @@ export interface ActiveRecordPackOptions {
    * Which database is behind the connection. ActiveRecord talks to all of
    * them and database.yml says which, so the project supplies this.
    */
-  storageSystem: "postgres" | "mysql" | "sqlite";
+  storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
 /**
@@ -70,7 +70,7 @@ export function activeRecordFramework(
   // typed in front of it, so it can arrive here unset.
   if (typeof options?.storageSystem !== "string") {
     throw new Error(
-      "it needs `storageSystem`, which database is behind the connection: postgres, mysql, or sqlite. ActiveRecord talks to all of them and database.yml settles which, so the pack cannot.",
+      "it needs `storageSystem`, which database is behind the connection: postgresql, mysql, or sqlite. ActiveRecord talks to all of them and database.yml settles which, so the pack cannot.",
     );
   }
   return {

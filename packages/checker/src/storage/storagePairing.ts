@@ -397,7 +397,7 @@ function readStorageContract(
 // ---------------------------------------------------------------------------
 
 /**
- * How a report spells this store: `dynamodb:editions#by-publication`.
+ * How a report spells this store: `aws.dynamodb:editions#by-publication`.
  *
  * The semantics registry has no label for storage, so `boundaryLabel`
  * returns null and this pass is the only place the spelling exists.

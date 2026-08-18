@@ -51,10 +51,13 @@ const PRISMA_SCALARS = new Set([
   "Bytes",
 ]);
 
-/** Map Prisma datasource provider strings to our storageSystem enum. */
-const PROVIDER_TO_SYSTEM: Record<string, "postgres" | "mysql" | "sqlite"> = {
-  postgresql: "postgres",
-  postgres: "postgres",
+/**
+ * Prisma datasource providers, by the store each one talks to. Prisma
+ * takes both spellings of Postgres and the conventions take one.
+ */
+const PROVIDER_TO_SYSTEM: Record<string, "postgresql" | "mysql" | "sqlite"> = {
+  postgresql: "postgresql",
+  postgres: "postgresql",
   mysql: "mysql",
   sqlite: "sqlite",
 };
@@ -107,7 +110,7 @@ export function prismaSchemaToSummaries(
   // First pass: inventory model names + enum names + storage system.
   const modelNames = new Set<string>();
   const enumNames = new Set<string>();
-  let storageSystem: "postgres" | "mysql" | "sqlite" | null = null;
+  let storageSystem: "postgresql" | "mysql" | "sqlite" | null = null;
 
   for (const node of list) {
     const n = node as { type: string; name?: string };
@@ -186,7 +189,7 @@ interface BuildModelOpts {
   model: PrismaModel;
   modelNames: Set<string>;
   enumNames: Set<string>;
-  storageSystem: "postgres" | "mysql" | "sqlite";
+  storageSystem: "postgresql" | "mysql" | "sqlite";
   scope: string;
   sourceFile: string;
 }

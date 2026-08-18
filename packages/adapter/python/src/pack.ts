@@ -51,7 +51,7 @@ export interface StoragePattern {
    */
   queryFunctions?: string[];
   /** Which database the library is talking to, for the boundary binding. */
-  storageSystem: "postgres" | "mysql" | "sqlite";
+  storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
 /**
@@ -66,7 +66,7 @@ export interface RawSqlPattern {
   /** The functions that take a statement written as SQL. */
   functions: string[];
   /** Which database the library is talking to, for the boundary binding. */
-  storageSystem: "postgres" | "mysql" | "sqlite";
+  storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
 export type PythonDiscoveryPattern =

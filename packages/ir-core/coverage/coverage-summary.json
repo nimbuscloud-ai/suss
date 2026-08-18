@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 357,
-      "covered": 324,
+      "total": 369,
+      "covered": 336,
       "skipped": 0,
-      "pct": 90.75
+      "pct": 91.05
     },
     "statements": {
-      "total": 362,
-      "covered": 329,
+      "total": 374,
+      "covered": 341,
       "skipped": 0,
-      "pct": 90.88
+      "pct": 91.17
     },
     "functions": {
-      "total": 94,
-      "covered": 86,
+      "total": 97,
+      "covered": 89,
       "skipped": 0,
-      "pct": 91.48
+      "pct": 91.75
     },
     "branches": {
-      "total": 324,
-      "covered": 286,
+      "total": 328,
+      "covered": 290,
       "skipped": 0,
-      "pct": 88.27
+      "pct": 88.41
     },
     "branchesTrue": {
       "total": 0,
@@ -265,6 +265,32 @@
       "pct": 0
     }
   },
+  "src/semconv.ts": {
+    "lines": {
+      "total": 10,
+      "covered": 10,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 1,
+      "covered": 1,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 10,
+      "covered": 10,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
   "src/suppressions.ts": {
     "lines": {
       "total": 36,
@@ -475,22 +501,22 @@
   },
   "src/semantics/registry.ts": {
     "lines": {
-      "total": 13,
-      "covered": 12,
+      "total": 15,
+      "covered": 14,
       "skipped": 0,
-      "pct": 92.3
+      "pct": 93.33
     },
     "functions": {
-      "total": 4,
-      "covered": 4,
+      "total": 6,
+      "covered": 6,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 14,
-      "covered": 13,
+      "total": 16,
+      "covered": 15,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 93.75
     },
     "branches": {
       "total": 2,

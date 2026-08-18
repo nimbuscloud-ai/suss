@@ -79,7 +79,11 @@ describe("boundaryKey", () => {
     ).toThrow(/empty string/);
 
     expect(() =>
-      messageBusBinding({ recognition: "x", messageBus: "sqs", channel: "" }),
+      messageBusBinding({
+        recognition: "x",
+        messageBus: "aws_sqs",
+        channel: "",
+      }),
     ).toThrow(/empty string/);
   });
 
@@ -102,7 +106,7 @@ describe("boundaryKey", () => {
 
     const unnamed = messageBusBinding({
       recognition: "x",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: null,
     });
     expect(pairingKey(unnamed)).toBeNull();
@@ -180,11 +184,11 @@ describe("boundaryKey", () => {
       boundaryKey(
         messageBusBinding({
           recognition: "sqs",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: "jobs",
         }),
       ),
-    ).toBe("bus:sqs jobs");
+    ).toBe("bus:aws_sqs jobs");
   });
 
   it("has no key for a channel that names a bus and no subject", () => {
@@ -203,18 +207,18 @@ describe("boundaryKey", () => {
     const qualified = boundaryKey(
       messageBusBinding({
         recognition: "cloudformation",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: "default#order.placed",
       }),
     );
     const bare = boundaryKey(
       messageBusBinding({
         recognition: "aws-lambda",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: "order.placed",
       }),
     );
-    expect(qualified).toBe("bus:sqs order.placed");
+    expect(qualified).toBe("bus:aws_sqs order.placed");
     expect(bare).toBe(qualified);
   });
 
@@ -223,11 +227,11 @@ describe("boundaryKey", () => {
       boundaryKey(
         messageBusBinding({
           recognition: "cloudformation",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: "staging#order.placed",
         }),
       ),
-    ).toBe("bus:sqs order.placed");
+    ).toBe("bus:aws_sqs order.placed");
   });
 
   it("keeps the bus technology apart", () => {
@@ -259,11 +263,11 @@ describe("boundaryKey", () => {
       boundaryKey(
         messageBusBinding({
           recognition: "cloudformation",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: "OrderPlacedQueue",
         }),
       ),
-    ).toBe("bus:sqs OrderPlacedQueue");
+    ).toBe("bus:aws_sqs OrderPlacedQueue");
   });
 
   it("returns null for a channel with no subject", () => {
@@ -323,11 +327,11 @@ describe("displayLabel", () => {
       displayLabel(
         messageBusBinding({
           recognition: "runtime-node",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: null,
         }),
       ),
-    ).toBe("bus:sqs (channel named at runtime)");
+    ).toBe("bus:aws_sqs (channel named at runtime)");
   });
 
   it("falls back to the variant and recognizer when nothing is named", () => {
@@ -350,7 +354,7 @@ describe("what a protocol says about its own checking", () => {
     recognition: "express",
   });
   const channel = messageBusBinding({
-    messageBus: "sqs",
+    messageBus: "aws_sqs",
     channel: "OrdersQueue",
     recognition: "aws-sqs",
   });
@@ -408,7 +412,7 @@ describe("canPair", () => {
 
   it("says a runtime-named channel still pairs, through env-chain collapsing", () => {
     const channel = messageBusBinding({
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: null,
       recognition: "aws-sqs",
     });
@@ -426,7 +430,7 @@ describe("canPair", () => {
 
 describe("semanticsAgree", () => {
   const sqs = (channel: string) =>
-    messageBusBinding({ recognition: "t", messageBus: "sqs", channel })
+    messageBusBinding({ recognition: "t", messageBus: "aws_sqs", channel })
       .semantics;
 
   it("differing variant names never agree", () => {
@@ -475,10 +479,10 @@ describe("boundaryLabel fallbacks", () => {
   it("uses the display label where a variant defines one", () => {
     const bus = messageBusBinding({
       recognition: "t",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: null,
     });
-    expect(boundaryLabel(bus)).toContain("bus:sqs");
+    expect(boundaryLabel(bus)).toContain("bus:aws_sqs");
   });
 });
 

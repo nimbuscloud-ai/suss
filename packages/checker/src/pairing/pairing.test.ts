@@ -165,7 +165,7 @@ function consumerWithPath(
 function handlerOnChannel(
   name: string,
   channel: string,
-  messageBus: "sqs" | "eventbridge" = "sqs",
+  messageBus: "aws_sqs" | "eventbridge" = "aws_sqs",
 ): BehavioralSummary {
   const base = provider(name, [
     transition("t-200", { output: response(200), isDefault: true }),
@@ -187,7 +187,7 @@ function handlerOnChannel(
 function subscriberOnChannel(
   name: string,
   channel: string,
-  messageBus: "sqs" | "eventbridge" = "sqs",
+  messageBus: "aws_sqs" | "eventbridge" = "aws_sqs",
 ): BehavioralSummary {
   const base = consumer(name, [
     transition("ct-200", { output: { type: "return", value: null } }),
@@ -219,7 +219,7 @@ describe("pairSummaries over a message bus", () => {
     expect(result.pairs).toHaveLength(1);
     expect(result.pairs[0].provider).toBe(handler);
     expect(result.pairs[0].consumer).toBe(subscriber);
-    expect(result.pairs[0].key).toBe("bus:sqs jobs");
+    expect(result.pairs[0].key).toBe("bus:aws_sqs jobs");
     expect(result.unmatched.providers).toHaveLength(0);
     expect(result.unmatched.consumers).toHaveLength(0);
   });
@@ -237,7 +237,7 @@ describe("pairSummaries over a message bus", () => {
     const result = pairSummaries([handler, subscriber]);
 
     expect(result.pairs).toHaveLength(1);
-    expect(result.pairs[0].key).toBe("bus:sqs order.placed");
+    expect(result.pairs[0].key).toBe("bus:aws_sqs order.placed");
   });
 
   it("pairs when both sides name the same bus", () => {
@@ -281,7 +281,7 @@ describe("pairSummaries over a message bus", () => {
     const subscriber = subscriberOnChannel(
       "OrderPlacedFunction.QueueEvent",
       "order.placed",
-      "sqs",
+      "aws_sqs",
     );
 
     expect(pairSummaries([handler, subscriber]).pairs).toHaveLength(0);

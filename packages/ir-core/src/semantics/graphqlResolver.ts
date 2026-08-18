@@ -26,6 +26,9 @@ export type GraphqlResolverSemantics = z.infer<
 export const graphqlResolverSemantics = defineBoundarySemantics({
   name: "graphql-resolver",
   schema: GraphqlResolverSemanticsSchema,
+  // The conventions name the operation a client sent, not the
+  // resolver the server ran for one field of it.
+  semconv: {},
   behavior: {
     /** A resolver returns a field value, not a status and a body. */
     exchangesHttpResponses: false,

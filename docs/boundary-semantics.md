@@ -7,7 +7,7 @@ source code (recognition).
 
 Eight semantics variants ship today: `rest`, `function-call`,
 `graphql-resolver`, `graphql-operation`, `runtime-config`,
-`storage-relational`, `message-bus`, and `metric`, each as its own module under
+`storage`, `message-bus`, and `metric`, each as its own module under
 `packages/ir-core/src/semantics/`. If you came to ask whether a protocol
 already works, go to [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred);
 everything else explains the model those variants share.
@@ -123,7 +123,7 @@ type Semantics =
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
   | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
-  | { name: "message-bus"; messageBus: "sqs" | "sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
+  | { name: "message-bus"; messageBus: "aws_sqs" | "aws.sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
   | { name: "metric"; metricSystem: string; metricType: string | null };
 ```
 
@@ -131,7 +131,7 @@ An identity field is null when the source never states it. A queue
 URL that comes from a variable is the common case:
 
 ```json
-{ "name": "message-bus", "messageBus": "sqs", "channel": null }
+{ "name": "message-bus", "messageBus": "aws_sqs", "channel": null }
 ```
 
 The send is recorded. It pairs with nothing. The empty string is
@@ -237,6 +237,99 @@ when the source does not state a value.
 `packageExportBinding` is a thin wrapper over `functionCallBinding` that
 makes call sites declarative. It defaults `transport` to `"in-process"`.
 
+## Where the words come from
+
+A summary says what a unit can reach; a trace says what it did reach.
+Comparing them is what neither static analysis nor observability does
+today, and it needs both sides to spell a boundary the same way. So
+wherever OpenTelemetry's semantic conventions have a word for something
+in a binding, suss writes their word, and the rest of the vocabulary is
+ours. A span stays a record of one execution and a summary stays a
+statement about a unit, and suss does not emit traces.
+
+### The values are theirs
+
+| suss field | values | OpenTelemetry attribute |
+| --- | --- | --- |
+| `storage.storageSystem` | `postgresql`, `mysql`, `sqlite`, `redis`, `aws.dynamodb` | `db.system.name` |
+| `storage.scope` | the database, schema, or keyspace | `db.namespace` |
+| `storage.container` | the table, bucket, or collection | `db.collection.name` |
+| `message-bus.messageBus` | `aws_sqs`, `aws.sns`, `kafka` | `messaging.system` |
+| `message-bus.channel` | the queue, topic, or subject | `messaging.destination.name` |
+| `rest.method` | `GET`, `POST`, … | `http.request.method` |
+| `rest.path` | `/users/{id}` | `http.route` |
+| `graphql-operation.operationType` | `query`, `mutation`, `subscription` | `graphql.operation.type` |
+| `graphql-operation.operationName` | the document's name | `graphql.operation.name` |
+
+`aws_sqs` has an underscore and `aws.sns` has a dot because that is how
+the conventions spell them, one predating the other.
+
+Summaries written before this used `postgres`, `dynamodb`, `sqs`, and
+`sns`. They read back with the new names through the normalizer in
+`@suss/behavioral-ir`, and the format is at schema version 5. Pack
+config takes the new name too: a project passing
+`{ "storageSystem": "postgres" }` to the sqlalchemy, activerecord,
+prisma or drizzle pack writes `postgresql` instead.
+
+### The field names are ours
+
+An attribute name is a flat namespaced key (`db.system.name`), and an
+identity field is a member of a union that `semantics.name` already
+namespaces. Renaming the fields would leave a consumer working out the
+prefix anyway, so the fields keep their names and each protocol module
+declares which attribute each field goes under:
+
+```ts
+semconv: {
+  storageSystem: { name: "db.system.name" },
+  scope: { name: "db.namespace", placeholderValues: ["default"] },
+  container: { name: "db.collection.name" },
+},
+```
+
+`semconvAttributes(binding)` reads a binding through those declarations:
+
+```ts
+semconvAttributes(binding);
+// { "db.system.name": "postgresql", "db.namespace": "orders",
+//   "db.collection.name": "users" }
+```
+
+A field is in that projection only when our value is the value a span
+gets, so a consumer joining a summary against a trace compares strings
+and keeps no table of its own.
+
+### Where it stops
+
+Three kinds of field stay out of the projection, and every protocol
+module says which case it is in:
+
+- **The conventions never named it.** A secondary index
+  (`storage.accessPath`) is one. A `graphql-resolver` is another: the
+  conventions describe the operation a client sent, not the resolver the
+  server ran for one field of it.
+- **The value is ours because no source stated one.** `storage.scope` is
+  `"default"` when nothing said which database, and `rest.method` is
+  `"*"` for a route that responds to every method. A span says neither,
+  so emitting them would only ever produce a mismatch.
+- **The same thing under a different string.** `service.name` and
+  `cloud.resource_id` both point at the deployable that a
+  `runtime-config` boundary belongs to, but `instanceName` is the
+  deployment template's logical id, which is neither of those strings.
+
+Whole protocols stay ours as well. A `function-call` boundary is a call
+that never leaves the process, and a `metric` has a system and a type
+string the conventions never covered. Nor did they cover every store or
+bus: `s3`, `gcs`, `r2`, `d1` and `cloudflare-kv` on one side,
+`eventbridge`, `bullmq`, `nats` and the Cloudflare triggers on the
+other. `transport` is our own axis too, since the wire behind an
+AWS SDK call is not something a span reports.
+
+That is most of what makes suss useful: a boundary nobody crosses at run
+time never gets a span, so nobody outside has had to give it a name. When you
+add a protocol, fill in its `semconv`, empty included, and the compiler
+makes you answer the question.
+
 ## Dispatching on semantics
 
 Each protocol is one module under `@suss/ir-core`'s `semantics/`
@@ -245,7 +338,7 @@ the registry composes the modules into the `Semantics` union and the
 runtime lookup. Each behavior has to answer three questions:
 
 - `identityKey`: the name a reader sees and a suppression targets
-  (`"GET /users/{id}"`, `"* /api/users"`, `"bus:sqs order.placed"`), or
+  (`"GET /users/{id}"`, `"* /api/users"`, `"bus:aws_sqs order.placed"`), or
   null when the source never stated one.
 - `pairingKey`: the bucket that pairing groups by. It contains what both
   sides always know. A REST bucket contains the path alone, so

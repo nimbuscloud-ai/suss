@@ -820,10 +820,10 @@ describe("inspect", () => {
 
     const output = captureInspect(() => inspect({ file }));
     expect(output).toContain(
-      "OrderPlacedFunction.QueueEvent → sqs default#order.placed",
+      "OrderPlacedFunction.QueueEvent → aws_sqs default#order.placed",
     );
-    expect(output).toContain("sqs OrdersQueue");
-    expect(output).not.toContain("OrdersQueue → sqs OrdersQueue");
+    expect(output).toContain("aws_sqs OrdersQueue");
+    expect(output).not.toContain("OrdersQueue → aws_sqs OrdersQueue");
 
     fs.rmSync(dir, { recursive: true });
   });
@@ -1125,7 +1125,7 @@ function busSummary(name: string, channel: string): unknown {
       exportPath: null,
       boundaryBinding: {
         transport: "sqs",
-        semantics: { name: "message-bus", messageBus: "sqs", channel },
+        semantics: { name: "message-bus", messageBus: "aws_sqs", channel },
         recognition: "aws-sqs",
       },
     },

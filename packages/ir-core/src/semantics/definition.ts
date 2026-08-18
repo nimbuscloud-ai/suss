@@ -11,10 +11,35 @@
  * because a published summary has to mean the same thing to a reader
  * who never installed the pack that wrote it. If a pack needs a
  * protocol nobody has defined yet, add a module here.
+ *
+ * A protocol also says which of its words come from OpenTelemetry's
+ * semantic conventions, in `semconv`. The README says why that
+ * matters and where it stops.
  */
 
 import type { z } from "zod";
 import type { MatchResult } from "../typeShapeMatch.js";
+
+/** One identity field written as an OpenTelemetry attribute. */
+export interface SemconvAttribute {
+  /** The attribute name, as the semantic conventions spell it. */
+  name: string;
+  /**
+   * Values suss writes where the source named none. A span never says
+   * them, so the projection leaves the attribute off rather than
+   * emitting a string that could only ever mismatch.
+   */
+  placeholderValues?: readonly string[];
+}
+
+/**
+ * Which identity fields the semantic conventions have an attribute
+ * for. A field is absent when they have no attribute for it, or when
+ * our value is our own string rather than the one a span gets.
+ */
+export type SemconvMapping<S extends { name: string }> = {
+  readonly [K in Exclude<keyof S, "name">]?: SemconvAttribute;
+};
 
 /**
  * How one semantics variant keys its boundaries and pairs them up. Each
@@ -95,6 +120,11 @@ export interface BoundarySemanticsDefinition<
   name: z.infer<Z>["name"];
   schema: Z;
   behavior: BoundaryBehavior<z.infer<Z>>;
+  /**
+   * Every protocol declares this, empty included, so that adding one
+   * means deciding where its words come from.
+   */
+  semconv: SemconvMapping<z.infer<Z>>;
 }
 
 /** Keeps the schema's precise type, so the registry's union does not widen. */

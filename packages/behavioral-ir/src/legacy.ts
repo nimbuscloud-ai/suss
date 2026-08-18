@@ -25,14 +25,39 @@ import { summaryIdFromParts } from "./summaryId.js";
  *    Older artifacts all name one, so nothing is rewritten on the way
  *    in and the bump only marks that null as allowed.
  * 4: one `storage` variant replaces `storage-relational`.
+ * 5: a store and a bus go by the name OpenTelemetry's semantic
+ *    conventions give them, so a summary and a span spell the same
+ *    boundary the same way.
  */
-export const SUMMARY_SCHEMA_VERSION = 4;
+export const SUMMARY_SCHEMA_VERSION = 5;
 
 /** An empty identity field at or above this version is invalid, not legacy. */
 const NULL_IDENTITY_VERSION = 2;
 
 /** A storage binding at or above this version is already layered. */
 const STORAGE_LAYERS_VERSION = 4;
+
+/** Below this version a store and a bus go by suss's own names. */
+const SEMCONV_NAMES_VERSION = 5;
+
+/**
+ * What each protocol used to call its technology, and what the
+ * conventions call it. A name both already spelled the same way is
+ * absent.
+ */
+const SEMCONV_RENAMES: Record<
+  string,
+  { field: string; values: Record<string, string> }
+> = {
+  storage: {
+    field: "storageSystem",
+    values: { postgres: "postgresql", dynamodb: "aws.dynamodb" },
+  },
+  "message-bus": {
+    field: "messageBus",
+    values: { sqs: "aws_sqs", sns: "aws.sns" },
+  },
+};
 
 type LooseRecord = Record<string, unknown>;
 
@@ -101,6 +126,41 @@ function relayerStorageContractInPlace(input: LooseRecord): void {
   contract.fields = contract.columns;
   delete contract.columns;
   contract.fieldSet = "exhaustive";
+}
+
+/** A store or a bus written before the conventions settled its name. */
+function renameToSemconvInPlace(binding: unknown): void {
+  if (!isRecord(binding) || !isRecord(binding.semantics)) {
+    return;
+  }
+  const semantics = binding.semantics;
+  const rename =
+    typeof semantics.name === "string"
+      ? SEMCONV_RENAMES[semantics.name]
+      : undefined;
+  if (rename === undefined) {
+    return;
+  }
+  const value = semantics[rename.field];
+  if (typeof value !== "string") {
+    return;
+  }
+  const renamed = rename.values[value];
+  if (renamed !== undefined) {
+    semantics[rename.field] = renamed;
+  }
+}
+
+/** The queue an SNS subscription delivers through goes by it too. */
+function renameDeliveryToSemconvInPlace(input: LooseRecord): void {
+  const metadata = input.metadata;
+  if (!isRecord(metadata) || !isRecord(metadata.messageBus)) {
+    return;
+  }
+  const messageBus = metadata.messageBus;
+  if (messageBus.deliveredThrough === "sqs") {
+    messageBus.deliveredThrough = "aws_sqs";
+  }
 }
 
 /** A summary missing the fields the formula needs fails validation next. */
@@ -179,10 +239,17 @@ function normalizeOne(input: unknown): {
     if (version < STORAGE_LAYERS_VERSION) {
       relayerStorageBindingInPlace(binding);
     }
+    if (version < SEMCONV_NAMES_VERSION) {
+      renameToSemconvInPlace(binding);
+    }
   });
 
   if (version < STORAGE_LAYERS_VERSION) {
     relayerStorageContractInPlace(input);
+  }
+
+  if (version < SEMCONV_NAMES_VERSION) {
+    renameDeliveryToSemconvInPlace(input);
   }
 
   return { value: input, idBackfilled };

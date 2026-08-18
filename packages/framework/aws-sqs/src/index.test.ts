@@ -242,10 +242,10 @@ describe("sqs recognizer: happy path", () => {
     const sends = messageSendEffectsOf(effects);
     expect(sends).toHaveLength(1);
     const send = sends[0] ?? raise("no send effect");
-    expect(send.binding.transport).toBe("sqs");
+    expect(send.binding.transport).toBe("aws_sqs");
     expect(send.binding.semantics.name).toBe("message-bus");
     if (send.binding.semantics.name === "message-bus") {
-      expect(send.binding.semantics.messageBus).toBe("sqs");
+      expect(send.binding.semantics.messageBus).toBe("aws_sqs");
       expect(send.binding.semantics.channel).toBe("ORDERS_QUEUE_URL");
     }
   });
@@ -284,7 +284,7 @@ describe("sqs recognizer: happy path", () => {
       messageSendEffectsOf(recognizeAll(file))[0] ?? raise("no send");
     expect(send.binding.semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "https://sqs.us-east-1.amazonaws.com/123/orders",
     });
   });
@@ -304,7 +304,7 @@ describe("sqs recognizer: happy path", () => {
     expect(sends).toHaveLength(1);
     expect(sends[0]?.binding.semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "ORDERS_QUEUE_URL",
     });
   });
@@ -482,7 +482,7 @@ describe("sqs message-receive recognizer", () => {
     const receive = receives[0] ?? raise("no receive effect");
     expect(receive.binding.semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       // Channel intentionally empty: pairing layer fills from CFN
       // consumer summary's binding via codeScope.
       channel: null,
@@ -657,7 +657,7 @@ describe("sqs configured producer", () => {
     const send = sends[0];
     expect(send.binding.semantics).toEqual({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "order.placed",
     });
     expect(send.binding.recognition).toBe("@suss/framework-aws-sqs");
@@ -703,7 +703,7 @@ describe("sqs configured producer", () => {
     expect(sends[0].interaction.body).toBeUndefined();
     expect(sends[0].binding.semantics).toEqual({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "order.placed",
     });
   });

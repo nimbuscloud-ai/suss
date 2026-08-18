@@ -89,7 +89,7 @@ Optional rather than nullable: a React component or a library export is never de
 
 ```typescript
 interface BoundaryBinding {
-  transport: string;      // the wire: "http", "sqs", "in-process", "os"
+  transport: string;      // the wire: "http", "aws_sqs", "in-process", "os"
   semantics: Semantics;   // the pairing rule, a discriminated union on `name`
   recognition: string;    // which pack matched, or "reachable"
 }

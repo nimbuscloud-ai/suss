@@ -22,7 +22,7 @@ import type { RawSqlPattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 
 const SQLALCHEMY: RawSqlPattern[] = [
-  { module: "sqlalchemy", functions: ["text"], storageSystem: "postgres" },
+  { module: "sqlalchemy", functions: ["text"], storageSystem: "postgresql" },
 ];
 
 async function effectsFor(source: string) {
@@ -72,7 +72,7 @@ describe("a statement a Python body writes as SQL", () => {
     expect(effects).toHaveLength(1);
     const { semantics, interaction } = storageOf(effects[0] as Effect);
     expect(semantics).toMatchObject({
-      storageSystem: "postgres",
+      storageSystem: "postgresql",
       container: "users",
     });
     expect(interaction).toMatchObject({

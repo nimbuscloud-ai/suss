@@ -5,7 +5,6 @@
   "Query": "GraphQL spec: operation root type",
   "Mutation": "GraphQL spec: operation root type",
   "Subscription": "GraphQL spec: operation root type",
-  "sqs": "AWS transport name, Amazon SQS",
   "SQS": "SAM: event source type on a Serverless::Function",
   "event": "AWS Lambda: first parameter of the handler signature",
   "context": "AWS Lambda: second parameter of the handler signature",
@@ -13,7 +12,6 @@
   "body": "API Gateway: proxy response envelope field",
   "batchItemFailures": "AWS Lambda: partial batch response field",
   "POWERTOOLS_": "@aws-lambda-powertools: env-var prefix the library's configuration reads",
-  "sns": "AWS SNS: message-bus technology behind a SAM SNS event",
   "s3": "AWS S3: message-bus technology behind a SAM S3 event",
   "eventbridge": "AWS EventBridge: message-bus technology behind SAM Schedule and EventBridgeRule events"
 }

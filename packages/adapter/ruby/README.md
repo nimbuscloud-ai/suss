@@ -130,7 +130,7 @@ storage: [
   {
     baseClasses: ["ActiveRecord::Base"],
     writes: ["update", "destroy", "save", "create", "delete_all"],
-    storageSystem: "postgres",
+    storageSystem: "postgresql",
   },
 ]
 ```

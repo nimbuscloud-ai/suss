@@ -211,9 +211,13 @@ describe("the dialects it reads", () => {
     expect(access.fields).toEqual(["event_name"]);
   });
 
-  it("takes the name a pack calls Postgres as well as the parser's", () => {
+  it("reads Postgres under the one name the store goes by", () => {
+    const [access] = readSqlAccess("SELECT id FROM users", {
+      dialect: "postgresql",
+    });
+    expect(access.table).toBe("users");
     expect(
-      readSqlAccess("SELECT id FROM users", { dialect: "postgresql" }),
-    ).toEqual(readSqlAccess("SELECT id FROM users", { dialect: "postgres" }));
+      readSqlAccess("SELECT id FROM users", { dialect: "postgres" }),
+    ).toEqual([]);
   });
 });

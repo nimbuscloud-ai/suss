@@ -24,8 +24,11 @@ import { defineBoundarySemantics } from "./definition.js";
 export const MessageBusSemanticsSchema = z.object({
   name: z.literal("message-bus"),
   messageBus: z.enum([
-    "sqs",
-    "sns",
+    // The conventions spell the two AWS buses this way, one with an
+    // underscore and one with a dot, so these are their strings and
+    // not a typo.
+    "aws_sqs",
+    "aws.sns",
     "s3",
     "eventbridge",
     "bullmq",
@@ -55,6 +58,10 @@ export type MessageBusTechnology = MessageBusSemantics["messageBus"];
 export const messageBusSemantics = defineBoundarySemantics({
   name: "message-bus",
   schema: MessageBusSemanticsSchema,
+  semconv: {
+    messageBus: { name: "messaging.system" },
+    channel: { name: "messaging.destination.name" },
+  },
   behavior: {
     /** A message goes onto the channel and nothing comes back. */
     exchangesHttpResponses: false,

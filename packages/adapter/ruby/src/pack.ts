@@ -31,7 +31,7 @@ export interface RbStoragePattern {
   /** Methods that change what is stored. Anything else reads. */
   writes: string[];
   /** Which database is behind the connection, which the project settles. */
-  storageSystem: "postgres" | "mysql" | "sqlite";
+  storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
 export type RubyDiscoveryPattern = GraphqlObjectFields;

@@ -262,7 +262,7 @@ One more rule applies on top of that: a recognizer that matched records the cros
 // QueueUrl came from a variable. The send still happened.
 messageBusBinding({
   recognition: "@suss/framework-aws-sqs",
-  messageBus: "sqs",
+  messageBus: "aws_sqs",
   channel: null,
 });
 ```

@@ -42,12 +42,11 @@ interface ParserModule {
 }
 
 /**
- * The dialects this reads, by the name a pack calls its store. Postgres
- * goes under both spellings, since a pack says `postgres` and the
- * parser says `postgresql`.
+ * The dialects this reads, by the name a pack calls its store. Both
+ * sides say `postgresql` now, so the second spelling this kept for
+ * Postgres is gone.
  */
 const DIALECTS: Record<string, { module: ParserModule; database: string }> = {
-  postgres: { module: postgresql as ParserModule, database: "postgresql" },
   postgresql: { module: postgresql as ParserModule, database: "postgresql" },
   mysql: { module: mysql as ParserModule, database: "mysql" },
   sqlite: { module: sqlite as ParserModule, database: "sqlite" },
@@ -59,7 +58,7 @@ export function readSqlAccess(
   sql: string,
   options: SqlReadOptions = {},
 ): SqlAccess[] {
-  const dialect = DIALECTS[options.dialect ?? "postgres"];
+  const dialect = DIALECTS[options.dialect ?? "postgresql"];
   if (dialect === undefined) {
     return [];
   }

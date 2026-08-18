@@ -488,7 +488,7 @@ function makeUnresolvableRuleFinding(consumer: BehavioralSummary): Finding {
 function defaultUnresolvableReason(
   messageBus: MessageBusSemantics["messageBus"],
 ): string {
-  if (messageBus === "sns") {
+  if (messageBus === "aws.sns") {
     return "the FilterPolicy couldn't be reduced to the whole topic";
   }
   if (messageBus === "s3") {
@@ -503,7 +503,7 @@ function unresolvableDescription(
   meta: ReturnType<typeof readMessageBusMetadata>,
   reason: string,
 ): string {
-  if (semantics.messageBus === "sns") {
+  if (semantics.messageBus === "aws.sns") {
     const subscription = meta?.subscription ?? consumer.identity.name;
     return `SNS subscription "${subscription}" on topic "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. It's surfaced as unpaired-unresolvable rather than dropped.`;
   }

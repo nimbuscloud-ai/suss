@@ -15,10 +15,10 @@ An earlier change modelled the deployable unit each summary runs in, stamped it 
 Run the fan-out fixture end to end and one subject gives four pairs:
 
 ```
-bus:sqs order.placed  OrderIndexerFunction.handler  <-> OrderIndexerFunction.Orders
-bus:sqs order.placed  OrderIndexerFunction.handler  <-> OrderNotifierFunction.Orders
-bus:sqs order.placed  OrderNotifierFunction.handler <-> OrderIndexerFunction.Orders
-bus:sqs order.placed  OrderNotifierFunction.handler <-> OrderNotifierFunction.Orders
+bus:aws_sqs order.placed  OrderIndexerFunction.handler  <-> OrderIndexerFunction.Orders
+bus:aws_sqs order.placed  OrderIndexerFunction.handler  <-> OrderNotifierFunction.Orders
+bus:aws_sqs order.placed  OrderNotifierFunction.handler <-> OrderIndexerFunction.Orders
+bus:aws_sqs order.placed  OrderNotifierFunction.handler <-> OrderNotifierFunction.Orders
 ```
 
 Neither side of any of those lines is a publisher, and the two sides are not two descriptions of one thing either. They are different kinds of statement about the same function.
@@ -31,7 +31,7 @@ Comparing a contract against a wiring statement is keyed on the function, becaus
 
 ## The model
 
-**A queue is a boundary.** Publishers send to it, subscribers receive from it. Its key is the queue's CFN logical id, `bus:sqs <QueueLogicalId>`. An event source mapping ties one queue to one function, so the queue alone identifies a subscriber and nothing else is needed.
+**A queue is a boundary.** Publishers send to it, subscribers receive from it. Its key is the queue's CFN logical id, `bus:aws_sqs <QueueLogicalId>`. An event source mapping ties one queue to one function, so the queue alone identifies a subscriber and nothing else is needed.
 
 **An EventBridge subject is a boundary.** Its key stays `(bus, detailType)`, because one bus multiplexes many subjects and a rule subscribes to a subset.
 

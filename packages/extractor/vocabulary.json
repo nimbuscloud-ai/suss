@@ -74,6 +74,8 @@
   "typescript": "language the adapter reads",
   "javascript": "language the adapter reads",
   "node": "runtime the adapter reads",
+  "postgresql": "OpenTelemetry semconv: db.system.name value, Postgres",
+  "aws_sqs": "OpenTelemetry semconv: messaging.system value, Amazon SQS",
   "http": "transport name, HTTP",
   "HTTP": "transport name, HTTP",
   "GET": "HTTP method, RFC 9110",

@@ -77,7 +77,7 @@ describe("suss check --at", () => {
     const { output, result } = report("src/editions/dao.ts:78");
 
     expect(output).toContain("No findings here.");
-    expect(output).toContain("dynamodb:editions#by-publication");
+    expect(output).toContain("aws.dynamodb:editions#by-publication");
     expect(result.findings).toEqual([]);
     expect(result.hasErrors).toBe(false);
   });
@@ -99,7 +99,7 @@ describe("suss check --at", () => {
   });
 
   it("reports on a boundary key, both sides of it", () => {
-    const { output, result } = report("dynamodb:editions#by-publication");
+    const { output, result } = report("aws.dynamodb:editions#by-publication");
 
     expect(output).toContain("Compared 1 boundary here:");
     expect(output).toContain("src/editions/dao.ts::byPublication");
@@ -178,7 +178,7 @@ describe("suss check --at", () => {
   });
 
   it("writes JSON an agent can read", () => {
-    const { output } = report("dynamodb:editions#by-publication", {
+    const { output } = report("aws.dynamodb:editions#by-publication", {
       json: true,
     });
     const parsed = JSON.parse(output) as {
@@ -190,13 +190,13 @@ describe("suss check --at", () => {
       gaps: Array<{ summary: string }>;
     };
 
-    expect(parsed.at).toBe("dynamodb:editions#by-publication");
+    expect(parsed.at).toBe("aws.dynamodb:editions#by-publication");
     expect(parsed.matched).toBe(true);
     expect(parsed.target.kind).toBe("boundary");
     expect(parsed.findings).toHaveLength(1);
     expect(parsed.touches).toContainEqual(
       expect.objectContaining({
-        boundary: "dynamodb:editions#by-publication",
+        boundary: "aws.dynamodb:editions#by-publication",
         relations: ["reads"],
       }),
     );

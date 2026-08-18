@@ -66,6 +66,7 @@ export {
   packageExportBinding,
   restBinding,
   runtimeConfigBinding,
+  semconvAttributes,
   storageBinding,
 } from "@suss/ir-core";
 

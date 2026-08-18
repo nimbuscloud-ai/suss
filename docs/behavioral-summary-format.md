@@ -115,7 +115,7 @@ An identity field is null when the source never states it. A send
 whose queue URL comes from a variable still appears:
 
 ```json
-{ "name": "message-bus", "messageBus": "sqs", "channel": null }
+{ "name": "message-bus", "messageBus": "aws_sqs", "channel": null }
 ```
 
 It pairs with nothing. A REST `method` of `"*"` means the handler

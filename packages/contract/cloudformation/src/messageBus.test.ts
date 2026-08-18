@@ -95,7 +95,7 @@ describe("buildMessageBusSummaries", () => {
     expect(consumer.identity.name).toBe("OrderProcessor.FromOrders");
     expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "OrdersQueue",
     });
     // The Lambda this subscription belongs to, so pairing keeps it
@@ -983,7 +983,7 @@ describe("buildMessageBusSummaries: subject channels", () => {
     const consumer = pickConsumers(out)[0] ?? raise("no consumer");
     expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "default#order.placed",
     });
     expect(consumer.metadata?.messageBus).toMatchObject({
@@ -1229,7 +1229,7 @@ describe("buildMessageBusSummaries: subject channels", () => {
 
 function isSns(summary: BehavioralSummary): boolean {
   const sem = summary.identity.boundaryBinding?.semantics;
-  return sem?.name === "message-bus" && sem.messageBus === "sns";
+  return sem?.name === "message-bus" && sem.messageBus === "aws.sns";
 }
 
 function snsProviders(summaries: BehavioralSummary[]): BehavioralSummary[] {
@@ -1298,7 +1298,7 @@ describe("buildMessageBusSummaries — SNS", () => {
     expect(consumer.identity.name).toBe("OrderProcessor.ToOrderProcessor");
     expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sns",
+      messageBus: "aws.sns",
       channel: "OrderEvents",
     });
     expect(consumer.identity.deployableUnit).toEqual({
@@ -1337,7 +1337,7 @@ describe("buildMessageBusSummaries — SNS", () => {
     const consumer = consumers[0] ?? raise("no consumer");
     expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sns",
+      messageBus: "aws.sns",
       channel: "OrderEvents",
     });
     expect(consumer.identity.deployableUnit).toEqual({
@@ -1405,7 +1405,7 @@ describe("buildMessageBusSummaries — SNS", () => {
       channel: "OrderEvents",
     });
     expect(consumer.metadata?.messageBus).toMatchObject({
-      deliveredThrough: "sqs",
+      deliveredThrough: "aws_sqs",
       queue: "<sam-managed>",
     });
   });
@@ -1437,7 +1437,7 @@ describe("buildMessageBusSummaries — SNS", () => {
     });
     const consumer = snsConsumers(out)[0] ?? raise("no consumer");
     expect(consumer.metadata?.messageBus).toMatchObject({
-      deliveredThrough: "sqs",
+      deliveredThrough: "aws_sqs",
       queue: "OrderQueue",
     });
   });
@@ -1612,7 +1612,7 @@ describe("buildMessageBusSummaries — SNS", () => {
       const consumer = pickConsumers(out)[0] ?? raise("no consumer");
       expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
         name: "message-bus",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: "OrderEvents",
       });
       expect(consumer.metadata?.messageBus).toMatchObject({
@@ -2154,7 +2154,7 @@ describe("buildMessageBusSummaries: S3", () => {
       const consumer = pickConsumers(out)[0] ?? raise("no consumer");
       expect(consumer.identity.boundaryBinding?.semantics).toMatchObject({
         name: "message-bus",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: "Uploads",
       });
       expect(consumer.metadata?.messageBus).toMatchObject({

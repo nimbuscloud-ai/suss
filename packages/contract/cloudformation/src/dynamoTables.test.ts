@@ -54,7 +54,7 @@ describe("a DynamoDB table", () => {
     );
 
     expect(table.semantics).toMatchObject({
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       scope: "default",
       container: "Orders",
       accessPath: null,

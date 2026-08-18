@@ -82,7 +82,7 @@ describe("servesRequest through the registry", () => {
   it("answers null for a protocol without request matching, apart from an abstaining one", () => {
     const binding: BoundaryBinding = {
       transport: "queue",
-      semantics: { name: "message-bus", messageBus: "sqs", channel: null },
+      semantics: { name: "message-bus", messageBus: "aws_sqs", channel: null },
       recognition: "test",
     };
     expect(servesRequest(binding, "GET", "/orders/7")).toBeNull();

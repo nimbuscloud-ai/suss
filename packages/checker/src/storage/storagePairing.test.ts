@@ -39,7 +39,7 @@ function makeProvider(opts: {
       exportPath: null,
       boundaryBinding: storageBinding({
         recognition: "prisma",
-        storageSystem: opts.storageSystem ?? "postgres",
+        storageSystem: opts.storageSystem ?? "postgresql",
         scope: opts.scope ?? "default",
         container: opts.container,
         accessPath: opts.accessPath ?? null,
@@ -87,7 +87,7 @@ function makeAccessSummary(opts: {
         type: "interaction",
         binding: storageBinding({
           recognition: "test",
-          storageSystem: a.storageSystem ?? "postgres",
+          storageSystem: a.storageSystem ?? "postgresql",
           scope: a.scope ?? "default",
           container: a.container,
           accessPath: a.accessPath ?? null,
@@ -246,7 +246,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "Orders",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fieldSet: "partial",
         fields: [{ name: "pk" }, { name: "sk" }],
       }),
@@ -256,7 +256,7 @@ describe("checkStorage", () => {
         accesses: [
           {
             container: "Orders",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["pk", "shippedAt"],
           },
@@ -272,7 +272,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "Orders",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         accessPath: "byCustomer",
         fields: [{ name: "customerId" }],
       }),
@@ -282,7 +282,7 @@ describe("checkStorage", () => {
         accesses: [
           {
             container: "Orders",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["customerId", "orderId"],
           },
@@ -298,7 +298,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "Orders",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         accessPath: "byCustomer",
         fields: [{ name: "customerId" }],
       }),
@@ -308,7 +308,7 @@ describe("checkStorage", () => {
         accesses: [
           {
             container: "Orders",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             accessPath: "byCustomer",
             kind: "read",
             fields: ["customerId", "orderId"],
@@ -329,7 +329,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "OrdersTable",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fieldSet: "partial",
         physicalTable: "{StageName}-orders-v1",
         fields: [{ name: "orderId" }],
@@ -340,7 +340,7 @@ describe("checkStorage", () => {
         accesses: [
           {
             container: "prod-orders-v1",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["orderId", "shippedAt"],
           },
@@ -355,7 +355,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "OrdersTable",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fieldSet: "partial",
         physicalTable: "{StageName}-orders-v1",
         fields: [{ name: "orderId" }],
@@ -366,7 +366,7 @@ describe("checkStorage", () => {
         accesses: [
           {
             container: "prod-invoices-v1",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["invoiceId"],
           },
@@ -384,7 +384,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "Orders",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fieldSet: "partial",
         keyFields: ["orderId"],
         fields: [{ name: "orderId" }],
@@ -395,7 +395,7 @@ describe("checkStorage", () => {
         accesses: [
           {
             container: "Orders",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["*"],
             selector: ["customerId"],
@@ -416,7 +416,7 @@ describe("checkStorage", () => {
     const findings = checkStorage([
       makeProvider({
         container: "Orders",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fieldSet: "partial",
         keyFields: ["orderId", "placedAt"],
         fields: [{ name: "orderId" }, { name: "placedAt" }],
@@ -427,7 +427,7 @@ describe("checkStorage", () => {
         accesses: [
           {
             container: "Orders",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["*"],
             selector: ["orderId", "placedAt"],
@@ -805,7 +805,7 @@ describe("an index that copies part of an item", () => {
   function narrowIndex(): BehavioralSummary {
     return makeProvider({
       container: "ledger-v2",
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       accessPath: "by-tenant-v2",
       fieldSet: "exhaustive",
       keyFields: ["tenant_id", "created_at"],
@@ -826,7 +826,7 @@ describe("an index that copies part of an item", () => {
       accesses: [
         {
           container: "ledger-v2",
-          storageSystem: "dynamodb",
+          storageSystem: "aws.dynamodb",
           accessPath: "by-tenant-v2",
           kind: "read",
           fields: ["status", "headline", "receipt_id"],
@@ -849,7 +849,7 @@ describe("an index that copies part of an item", () => {
       accesses: [
         {
           container: "ledger-v2",
-          storageSystem: "dynamodb",
+          storageSystem: "aws.dynamodb",
           accessPath: "by-tenant-v2",
           kind: "read",
           fields: ["status", "headline"],
@@ -868,7 +868,7 @@ describe("an index that copies part of an item", () => {
   it("leaves a read of the table itself alone, since any attribute may be there", () => {
     const table = makeProvider({
       container: "ledger-v2",
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       fieldSet: "partial",
       keyFields: ["entry_id", "created_at"],
       fields: [{ name: "entry_id" }, { name: "created_at" }],
@@ -879,7 +879,7 @@ describe("an index that copies part of an item", () => {
       accesses: [
         {
           container: "ledger-v2",
-          storageSystem: "dynamodb",
+          storageSystem: "aws.dynamodb",
           kind: "read",
           fields: ["receipt_id"],
           selector: ["entry_id"],
@@ -899,7 +899,7 @@ describe("a read of whole items through an index that copies part of one", () =>
   it("reports it, since the store sends what it has and says nothing", () => {
     const index = makeProvider({
       container: "ledger-v2",
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       accessPath: "by-tenant-v2",
       fieldSet: "exhaustive",
       keyFields: ["tenant_id"],
@@ -911,7 +911,7 @@ describe("a read of whole items through an index that copies part of one", () =>
       accesses: [
         {
           container: "ledger-v2",
-          storageSystem: "dynamodb",
+          storageSystem: "aws.dynamodb",
           accessPath: "by-tenant-v2",
           kind: "read",
           fields: ["*"],
@@ -1042,7 +1042,7 @@ describe("an access whose store the deployment sets a variable to", () => {
     const findings = checkStorage([
       makeProvider({
         container: "prod-orders-v2",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fields: [{ name: "id" }],
         fieldSet: "partial",
         keyFields: ["id"],
@@ -1058,7 +1058,7 @@ describe("an access whose store the deployment sets a variable to", () => {
         accesses: [
           {
             container: "{ORDER_TABLE}",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["id", "total"],
             selector: ["customerId"],
@@ -1078,7 +1078,7 @@ describe("an access whose store the deployment sets a variable to", () => {
     const findings = checkStorage([
       makeProvider({
         container: "prod-orders-v2",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fields: [{ name: "id" }],
         fieldSet: "partial",
         keyFields: ["id"],
@@ -1094,7 +1094,7 @@ describe("an access whose store the deployment sets a variable to", () => {
         accesses: [
           {
             container: "{ORDER_TABLE}",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["id"],
             selector: ["customerId"],
@@ -1109,14 +1109,14 @@ describe("an access whose store the deployment sets a variable to", () => {
     const summaries = [
       makeProvider({
         container: "prod-orders-v2",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fields: [{ name: "id" }],
         fieldSet: "partial",
         keyFields: ["id"],
       }),
       makeProvider({
         container: "staging-orders-v2",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fields: [{ name: "id" }],
         fieldSet: "partial",
         keyFields: ["id"],
@@ -1137,7 +1137,7 @@ describe("an access whose store the deployment sets a variable to", () => {
         accesses: [
           {
             container: "{ORDER_TABLE}",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["id"],
             selector: ["customerId"],
@@ -1157,7 +1157,7 @@ describe("an access whose store the deployment sets a variable to", () => {
     const findings = checkStorage([
       makeProvider({
         container: "prod-orders-v2",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         fields: [{ name: "id" }],
         fieldSet: "partial",
         keyFields: ["id"],
@@ -1173,7 +1173,7 @@ describe("an access whose store the deployment sets a variable to", () => {
         accesses: [
           {
             container: "{ORDER_TABLE}",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             kind: "read",
             fields: ["id"],
             selector: ["customerId"],
@@ -1190,7 +1190,7 @@ describe("a name two declared tables could both be", () => {
   function table(container: string, physical: string, key: string) {
     return makeProvider({
       container,
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       fieldSet: "partial",
       physicalTable: physical,
       keyFields: [key],
@@ -1205,7 +1205,7 @@ describe("a name two declared tables could both be", () => {
       accesses: [
         {
           container,
-          storageSystem: "dynamodb",
+          storageSystem: "aws.dynamodb",
           kind: "read",
           fields: ["*"],
           selector: [selector],
@@ -1232,7 +1232,7 @@ describe("a name two declared tables could both be", () => {
 
     expect(findings).toEqual([]);
     expect(compared.map((pair) => pair.key)).toEqual([
-      "dynamodb:CreatorPublicationsTable",
+      "aws.dynamodb:CreatorPublicationsTable",
     ]);
   });
 
@@ -1270,8 +1270,8 @@ describe("a name two declared tables could both be", () => {
     );
 
     expect(compared.map((pair) => pair.key).sort()).toEqual([
-      "dynamodb:OrdersBlue",
-      "dynamodb:OrdersToo",
+      "aws.dynamodb:OrdersBlue",
+      "aws.dynamodb:OrdersToo",
     ]);
   });
 });
