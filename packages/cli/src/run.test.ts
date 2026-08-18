@@ -644,6 +644,61 @@ describe("runCli check", () => {
   });
 });
 
+describe("runCli check --at", () => {
+  it("needs --dir, and says so", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--at", "src/x.ts"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("needs --dir");
+  });
+
+  it("reports on one file out of the folder", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    writeJson("consumer.json", [matchingConsumer]);
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--at", "x.ts"]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain("x.ts");
+    expect(io.stdout).toContain("No findings here.");
+  });
+
+  it("exits non-zero when the target matches nothing", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--at", "src/nowhere.ts"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stdout).toContain("Nothing here is at src/nowhere.ts");
+  });
+});
+
+describe("runCli ask", () => {
+  it("needs a question", async () => {
+    const { exit, io } = await capture(() => runCli(["ask"]));
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("ask needs a question");
+  });
+
+  it("says which boundaries a file reaches", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    const { exit, io } = await capture(() =>
+      runCli(["ask", "what does x.ts reach", "--dir", tmpDir]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain("x.ts");
+  });
+
+  it("prints the shapes it takes when the question is not one of them", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["ask", "why is x.ts slow", "--dir", tmpDir]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stdout).toContain("one of four questions");
+  });
+});
+
 describe("runCli contract", () => {
   const inlineSpec = {
     openapi: "3.0.3",

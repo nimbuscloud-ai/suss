@@ -25,10 +25,12 @@ answer rather than rendering one is
 [`inspect --flow`](#suss-inspect-flow), which walks the routing a set of
 summaries declares to work out who serves a request.
 
-Two more commands are outside the pipeline. `suss init` works out which
-packs your project needs and offers to set them up. `suss corroborate`
-(experimental, [below](#suss-corroborate-experimental)) executes handlers
-against their own summaries.
+Three more commands are outside the pipeline. `suss init` works out which
+packs your project needs and offers to set them up. `suss ask`
+([below](#suss-ask)) answers one question about one boundary from
+summaries already on disk. `suss corroborate` (experimental,
+[below](#suss-corroborate-experimental)) executes handlers against their
+own summaries.
 
 ## `suss init`
 
@@ -371,11 +373,15 @@ suss check PROVIDER.json CONSUMER.json [--json] [-o OUTPUT] [--fail-on THRESHOLD
 # A whole directory, auto-pairs by boundary key
 suss check --dir DIR [--intent INTENT_DIR] [--json] [-o OUTPUT]
            [--fail-on THRESHOLD] [--sussignore PATH] [--no-suppressions]
+
+# One thing out of that directory
+suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 ```
 
 | Flag | Description |
 |---|---|
 | `--dir PATH` | Directory containing summary JSON files. suss reads every `.json` in the dir and auto-pairs by boundary. Mutually exclusive with positional args. |
+| `--at TARGET` | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Needs `--dir`. |
 | `--intent PATH` | Directory of team-authored intent docs (`*.intent.yaml`, `*.intent.yml`, `*.intent.json`, and the same three for `*.prd`). Each boundary intent is paired against the summaries in `--dir`, adding intent-coverage findings to the report. Needs `--dir`. |
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
@@ -388,14 +394,135 @@ it, ready to paste under `rules:`. The rule identifies the transition on
 whichever side has it, so it matches that finding and no other. See
 [Suppressions](/suppressions).
 
+### Reporting on one thing
+
+`--at` runs the same passes over the same folder and prints the part of
+the report about one target. It is the question you have while editing a
+file: does this call line up with what it reaches.
+
+A target is one of four spellings, resolved in this order:
+
+| Spelling | Example | What it picks out |
+|---|---|---|
+| Summary id | `app::src/editions/dao.ts::byPublication` | That one summary. A tail of the id works too, so the workspace in front is optional. |
+| File and line | `src/editions/dao.ts:43` | The units covering line 43, and the branches that line falls in. Findings about other branches of the same function are left out. |
+| File | `src/editions/dao.ts` | Every unit in that file. Matching is on whole path segments, so `dao.ts` finds it and `ao.ts` does not. |
+| Boundary | `dynamodb:editions#by-publication` | Everything either side of that boundary, whichever file it is in. |
+
+A file wins over a boundary, so a path is never read as a boundary whose
+words happen to line up.
+
+A boundary is spelled the way reports spell it, and a shorter spelling
+covers more: `dynamodb:editions` covers the table and every index on it,
+and `dynamodb:editions#by-publication` narrows it to the one index. The
+same goes for a route, where `/editions` covers `GET /editions`.
+
+```
+$ suss check --dir .suss --at 'src/editions/dao.ts:45'
+src/editions/dao.ts:45 (src/editions/dao.ts line 45, 1 summary, 1 branch over that line)
+
+What it touches:
+  dynamodb:editions#by-publication
+    reads    src/editions/dao.ts::byPublication  via docClient.query
+
+Compared 1 boundary here:
+  dynamodb:editions#by-publication
+    infra/editions.tf::aws_dynamodb_table.editions#by-publication <-> src/editions/dao.ts::byPublication
+
+────────────────────────────────────────────────────────────
+[ERROR] boundaryFieldUnknown
+  byPublication selects "wordCount" on editions#by-publication (dynamodb) but the contract declares no wordCount field.
+  ...
+────────────────────────────────────────────────────────────
+1 finding: 1 error, 0 warning, 0 info
+
+1 thing here suss could not read, so what it knows about this target is partial:
+  src/editions/dao.ts::byPublication
+    suss met a call to loadCursor and could not settle which function it is, so whatever it does is missing from this summary.
+```
+
+The last paragraph is there whether or not anything was found: "no
+findings here" means less when part of the unit could not be read, so a
+target with a gap on it says so either way.
+
+A target that matches nothing prints what it could not find and exits
+`1`. An empty report would read as agreement.
+
 ### Exit codes
 
 - `0`: no findings at or above the threshold (after suppressions).
-- `1`: at least one finding at or above the threshold.
+- `1`: at least one finding at or above the threshold, or, under `--at`,
+  a target that matched nothing.
 
 Suppressions (`.sussignore`) affect counting: `mark` and `hide`
 effects don't count toward the threshold; `downgrade` counts at
 the downgraded severity. See [Suppressions](/suppressions).
+
+## `suss ask`
+
+Ask one question about one boundary, without writing a call first.
+
+**What it does.** It reads summaries off disk and answers from them. An
+index with a narrow projection is a set of attributes fixed in terraform
+and invisible to TypeScript; autocomplete is the right answer to that and
+there is nowhere to put it, so the next best thing is being able to ask.
+
+```
+suss ask "QUESTION" [--dir DIR | SUMMARIES.json] [--json] [-o OUTPUT]
+```
+
+Four questions, in these words:
+
+| Question | What comes back |
+|---|---|
+| `what can I project from <boundary>` | What the boundary declares: the fields a store serves, the statuses a contract declares, the env vars a runtime takes. Also written `what does <boundary> declare`. |
+| `what reads <boundary>` | Every unit that reads it, with the file, the line, and the call. |
+| `what writes <boundary>` | The same, for writes. |
+| `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads or writes each. |
+
+The boundary is spelled the way reports spell it, and a shorter spelling
+covers more, exactly as under [`--at`](#reporting-on-one-thing). A
+service call counts as both a read and a write, since a request sends a
+body out and gets a response back.
+
+```
+$ suss ask 'what can I project from dynamodb:editions#by-publication' --dir .suss
+dynamodb:editions#by-publication declares 3 things you can ask it for:
+  field publicationId (S)  from infra/editions.tf::aws_dynamodb_table.editions#by-publication
+  field editionId (S)  from infra/editions.tf::aws_dynamodb_table.editions#by-publication
+  field title (S)  from infra/editions.tf::aws_dynamodb_table.editions#by-publication
+
+$ suss ask 'what reads dynamodb:editions' --dir .suss
+2 units read dynamodb:editions#by-publication:
+  src/editions/dao.ts::byPublication (src/editions/dao.ts:30) through docClient.query
+  src/editions/dao.ts::forDashboard (src/editions/dao.ts:70) through docClient.query
+
+dynamodb:editions#by-publication is provided by infra/editions.tf::aws_dynamodb_table.editions#by-publication.
+```
+
+An answer that cannot be given from what is on disk says which input
+would give it, rather than assembling one out of what the call sites
+happen to ask for:
+
+```
+$ suss ask 'what can I project from dynamodb:editions#by-publication' --dir .suss
+Nothing here declares what dynamodb:editions#by-publication serves.
+  code here reads it through docClient.query, in src/editions/dao.ts::byPublication
+
+No summary here provides dynamodb:editions#by-publication. Read the schema or deploy
+template that declares it: suss contract --from terraform <path> -o summaries/infra.json
+```
+
+An answer also says when a unit suss could not read all of could be
+missing from it. `--json` gives the same answer as `{ question, shape,
+subject, found, headline, items, needs, caveats }`.
+
+### Exit codes
+
+- `0`: the question was one of the four and its subject is in these
+  summaries, including when the answer is empty.
+- `1`: the question was not one of the four, or nothing here is at the
+  boundary it asked about.
 
 ## `suss inspect`
 
@@ -754,7 +881,7 @@ commands rather than prompting, the same as `--plain`.
 
 | Target | Default |
 |---|---|
-| stdout | Summary JSON (`extract`, `contract`), human text (`inspect`, `check`), finding JSON (`check --json`) |
+| stdout | Summary JSON (`extract`, `contract`), human text (`inspect`, `check`, `ask`), finding JSON (`check --json`) |
 | stderr | "Wrote N summaries to PATH" acknowledgements, extraction warnings, error messages |
 | exit code | Per-command threshold as described above |
 
