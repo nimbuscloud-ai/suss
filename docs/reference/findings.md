@@ -115,13 +115,31 @@ The provider declares a field that no consumer references. Per-domain instances:
 
 **Bug when:** dead config left from a removed feature, or a renamed field the contract still references. Remove from the contract, or restore the consumer.
 
-### `boundaryShapeMismatch`
+### `boundaryShapeMismatch` *(shipped)*
 
-**Severity:** per-emitter (typically warning for read-side coercions, error for write-side type mismatches)
+**Severity:** per-emitter (typically warning for read-side coercions, error for write-side type mismatches) • **Emitted by:** `checkMetric`
 
-Both sides declare the field but disagree about its form (type, nullability, content-type, etc.). The `aspect` says which side discovered the disagreement (read / write / send / receive / construct / selector).
+Both sides declare the value but disagree about its form (type, nullability, content-type, etc.). The `aspect` says which side discovered the disagreement (read / write / send / receive / construct / selector).
 
-No emitter ships today. The kind is reserved for the message-bus body-shape pairing coming soon, and for the type-aware extensions of the storage / runtime-config / graphql checkers. It subsumes the per-domain shape-mismatch kinds earlier versions reserved (`storageTypeMismatch`, `storageNullableViolation`, `storageSelectorIndexMismatch`, `envVarTypeCoercionMissing`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch`, `componentPropTypeMismatch`, `contentTypeMismatch`).
+`checkMetric` is the one emitter today. A monitoring system's alert compares a series against a single number, and the resource that declares the series says its measurements are a spread of buckets, so the comparison has nothing to run against:
+
+```
+[ERROR] boundaryShapeMismatch (aspect: read)
+  google_monitoring_alert_policy.sweep_refused_sustained#0 compares
+  logging.googleapis.com/user/sweep-refused against a single number, and
+  google_logging_metric.sweep_refused declares that metric's measurements
+  as a spread of buckets, so the comparison has nothing to run against
+  unless the reading reduces each window to a single number first, by
+  setting aggregations.per_series_aligner to one of ALIGN_PERCENTILE_99,
+  ALIGN_PERCENTILE_95, ALIGN_PERCENTILE_50, ALIGN_PERCENTILE_05.
+  provider: monitoring.tf::google_logging_metric.sweep_refused
+  consumer: monitoring.tf::google_monitoring_alert_policy.sweep_refused_sustained#0
+  boundary: terraform (cloud-monitoring)
+```
+
+Both sides have to say what the value is. A metric whose summary states no `metadata.metricContract.values`, and a reading that states no `metadata.metricReading.comparesTo`, claim nothing here.
+
+The kind is also where the message-bus body-shape pairing will report, along with the type-aware extensions of the storage / runtime-config / graphql checkers. It subsumes the per-domain shape-mismatch kinds earlier versions reserved (`storageTypeMismatch`, `storageNullableViolation`, `storageSelectorIndexMismatch`, `envVarTypeCoercionMissing`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch`, `componentPropTypeMismatch`, `contentTypeMismatch`).
 
 ### `boundaryFieldRequired`
 
