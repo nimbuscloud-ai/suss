@@ -29,6 +29,8 @@ export {
   fnIdentityKey,
   type GqlIdentityKey,
   gqlIdentityKey,
+  type MetricIdentityKey,
+  metricIdentityKey,
 } from "./identityKeys.js";
 export {
   BoundaryBindingSchema,
@@ -46,6 +48,7 @@ export { FunctionCallSemanticsSchema } from "./semantics/functionCall.js";
 export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
 export { GraphqlResolverSemanticsSchema } from "./semantics/graphqlResolver.js";
 export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
+export { MetricSemanticsSchema } from "./semantics/metric.js";
 export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
 export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
@@ -83,6 +86,7 @@ export type {
   MessageBusSemantics,
   MessageBusTechnology,
 } from "./semantics/messageBus.js";
+export type { MetricSemantics } from "./semantics/metric.js";
 export type { Semantics } from "./semantics/registry.js";
 export type { RestSemantics } from "./semantics/rest.js";
 export type { RuntimeConfigSemantics } from "./semantics/runtimeConfig.js";
@@ -379,6 +383,27 @@ export function messageBusBinding(opts: {
       name: "message-bus",
       messageBus: opts.messageBus,
       channel: namedOrNull(opts.channel, "message-bus channel"),
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a metric binding, the boundary between whatever declares a
+ * named series of measurements and whatever reads it back by that name.
+ */
+export function metricBinding(opts: {
+  recognition: string;
+  metricSystem: string;
+  /** Null when this source states a metric it could not name. */
+  metricType: string | null;
+}): BoundaryBinding {
+  return {
+    transport: opts.metricSystem,
+    semantics: {
+      name: "metric",
+      metricSystem: opts.metricSystem,
+      metricType: namedOrNull(opts.metricType, "metric type"),
     },
     recognition: opts.recognition,
   };

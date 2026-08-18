@@ -43,6 +43,7 @@ export const coveragePackages = [
   ["packages/sql", "sql"],
   ["packages/contract/terraform", "contract-terraform"],
   ["packages/terraform/aws", "terraform-aws"],
+  ["packages/terraform/gcp", "terraform-gcp"],
   ["packages/framework/aws-dynamodb", "aws-dynamodb"],
   ["packages/framework/aws-s3", "aws-s3"],
   ["packages/framework/aws-sqs", "aws-sqs"],

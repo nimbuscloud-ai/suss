@@ -21,20 +21,45 @@ import semver from "semver";
 
 import {
   messageBusBinding,
+  metricBinding,
   namePatternFromSub,
   storageBinding,
 } from "@suss/behavioral-ir";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
+
 import type {
+  BehavioralSummary,
+  MetricContractMetadata,
+  MetricReadingMetadata,
+} from "@suss/behavioral-ir";
+import type {
+  AttributeMeaning,
   MessageBusResource,
+  MetricReadingResource,
+  MetricResource,
   StorageResource,
   TerraformPack,
+  TerraformResource,
   TerraformResourcePattern,
 } from "./pack.js";
 
+export {
+  type FilterCall,
+  type FilterParse,
+  type FilterQuery,
+  type FilterTerm,
+  filterCalls,
+  filterTerms,
+  filterValuesFor,
+  parseFilterQuery,
+} from "./filterQuery.js";
+
 export type {
+  AttributeMeaning,
   MessageBusResource,
+  MetricReadingResource,
+  MetricResource,
   StorageResource,
   TerraformPack,
   TerraformResource,
@@ -168,6 +193,34 @@ function patternFor(
   });
 }
 
+/** Where in the configuration one resource was written. */
+interface ResourceSite {
+  label: string;
+  body: Record<string, unknown>;
+  sourceFile: string;
+  resourceType: string;
+}
+
+/** One reader per kind of thing a pack entry can say a resource is. */
+type ResourceReaders = {
+  [K in TerraformResource["kind"]]: (
+    site: ResourceSite,
+    boundary: Extract<TerraformResource, { kind: K }>,
+  ) => BehavioralSummary[];
+};
+
+const READERS: ResourceReaders = {
+  storage: (site, boundary) => {
+    const types = fieldTypes(site.body, boundary);
+    return keyedShapes(site.body, boundary).map((shape) =>
+      storageSummary({ ...site, boundary, shape, types }),
+    );
+  },
+  "message-bus": (site, boundary) => [busSummary({ ...site, boundary })],
+  metric: (site, boundary) => [metricSummary({ ...site, boundary })],
+  "metric-reading": (site, boundary) => readingSummaries({ ...site, boundary }),
+};
+
 function summariesFor(opts: {
   pattern: TerraformResourcePattern;
   label: string;
@@ -175,15 +228,14 @@ function summariesFor(opts: {
   sourceFile: string;
   resourceType: string;
 }): BehavioralSummary[] {
-  const { pattern } = opts;
-  if (pattern.boundary.kind === "message-bus") {
-    return [busSummary({ ...opts, boundary: pattern.boundary })];
-  }
-  const boundary = pattern.boundary;
-  const types = fieldTypes(opts.body, boundary);
-  return keyedShapes(opts.body, boundary).map((shape) =>
-    storageSummary({ ...opts, boundary, shape, types }),
-  );
+  const { pattern, ...site } = opts;
+  // The one cast joining a table that narrows per kind to a lookup that
+  // does not, the way `dispatchByType` does it for the IR's own unions.
+  const read = READERS[pattern.boundary.kind] as (
+    site: ResourceSite,
+    boundary: TerraformResource,
+  ) => BehavioralSummary[];
+  return read(site, pattern.boundary);
 }
 
 function storageSummary(opts: {
@@ -296,6 +348,194 @@ function busSummary(opts: {
       },
     },
   };
+}
+
+/** Where a metric type template leaves room for the declared name. */
+const NAME_HOLE = "{name}";
+
+function metricSummary(
+  opts: ResourceSite & { boundary: MetricResource },
+): BehavioralSummary {
+  const { boundary } = opts;
+  const declaredName = namePatternFromSub(opts.body[boundary.nameAttribute]);
+  const metricType =
+    declaredName === null
+      ? null
+      : boundary.metricTypeTemplate.replace(NAME_HOLE, declaredName);
+  return {
+    kind: "library",
+    location: {
+      file: opts.sourceFile,
+      range: { start: 1, end: 1 },
+      exportName: null,
+    },
+    identity: {
+      name: `${opts.resourceType}.${opts.label}`,
+      exportPath: null,
+      boundaryBinding: metricBinding({
+        recognition: "terraform",
+        metricSystem: boundary.metricSystem,
+        metricType,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: { metricContract: metricContract(opts.body, boundary) },
+  };
+}
+
+/** What the resource says its measurements are, in suss's own words. */
+function metricContract(
+  body: Record<string, unknown>,
+  boundary: MetricResource,
+): MetricContractMetadata {
+  const values = meaningOf(body, boundary.values);
+  const accumulates = meaningOf(body, boundary.accumulates);
+  return {
+    ...(values !== undefined ? { values } : {}),
+    ...(accumulates !== undefined ? { accumulates } : {}),
+  };
+}
+
+/**
+ * One summary per metric a resource reads. A reading whose query this
+ * could not read, or which states no metric, still becomes a summary,
+ * with no metric type on it: a resource watching something nobody can
+ * spell is worth seeing, and it pairs with nothing.
+ */
+function readingSummaries(
+  opts: ResourceSite & { boundary: MetricReadingResource },
+): BehavioralSummary[] {
+  const { boundary } = opts;
+  const summaries: BehavioralSummary[] = [];
+  for (const reading of blocksAt(opts.body, boundary.readingBlocks)) {
+    const query = stringOf(valueAt(reading, boundary.queryAttribute));
+    for (const metricType of metricTypesIn(query, boundary.queryIdentityKey)) {
+      summaries.push({
+        kind: "consumer",
+        location: {
+          file: opts.sourceFile,
+          range: { start: 1, end: 1 },
+          exportName: null,
+        },
+        identity: {
+          name: `${opts.resourceType}.${opts.label}#${summaries.length}`,
+          exportPath: null,
+          boundaryBinding: metricBinding({
+            recognition: "terraform",
+            metricSystem: boundary.metricSystem,
+            metricType,
+          }),
+        },
+        inputs: [],
+        transitions: [],
+        gaps: [],
+        confidence: { source: "declared", level: "high" },
+        metadata: { metricReading: metricReading(reading, boundary) },
+      });
+    }
+  }
+  return summaries;
+}
+
+/**
+ * Every metric a query says it is about, or one null when the query is
+ * missing, unreadable, or has no value under this key.
+ */
+function metricTypesIn(
+  query: string | null,
+  identityKey: string,
+): Array<string | null> {
+  if (query === null) {
+    return [null];
+  }
+  const parsed = parseFilterQuery(query);
+  if (!parsed.ok) {
+    return [null];
+  }
+  const found = filterValuesFor(parsed.query, identityKey)
+    .map((value) => namePatternFromSub(value))
+    .filter((value): value is string => value !== null);
+  return found.length === 0 ? [null] : found;
+}
+
+/**
+ * What one reading needs from the series, in suss's own words, plus the
+ * setting a fix would be written in. The table goes through as the pack
+ * wrote it, so a pack states its aligners once and a finding can name
+ * the ones that would help without knowing Google.
+ */
+function metricReading(
+  reading: Record<string, unknown>,
+  boundary: MetricReadingResource,
+): MetricReadingMetadata {
+  const compares = boundary.comparesTo;
+  const comparesTo =
+    compares !== undefined && valueAt(reading, compares.attribute) !== undefined
+      ? compares.whenSet
+      : undefined;
+  const reduces = boundary.reducesTo;
+  const reducesTo = meaningOf(reading, reduces);
+  return {
+    ...(comparesTo !== undefined ? { comparesTo } : {}),
+    ...(reducesTo !== undefined ? { reducesTo } : {}),
+    ...(reduces === undefined
+      ? {}
+      : { reduction: { setting: reduces.attribute, leaves: reduces.means } }),
+  };
+}
+
+/**
+ * What the pack says the value at that attribute means, or undefined
+ * when the resource states nothing there, or states something the pack
+ * does not list.
+ */
+function meaningOf<T extends string>(
+  body: Record<string, unknown>,
+  spec: AttributeMeaning<T> | undefined,
+): T | undefined {
+  if (spec === undefined) {
+    return undefined;
+  }
+  const stated = stringOf(valueAt(body, spec.attribute));
+  return stated === null ? undefined : spec.means[stated];
+}
+
+/**
+ * The value at a dotted path, stepping into a block on the way. A block
+ * HCL states once and a block it states many times both arrive as a
+ * list, and a path takes the first, since a path is about one value.
+ */
+function valueAt(body: Record<string, unknown>, path: string): unknown {
+  const steps = path.split(".");
+  const last = steps.pop() as string;
+  let current: Record<string, unknown> | null = body;
+  for (const step of steps) {
+    const nested = arrayOf(current[step])[0];
+    current = asRecord(nested);
+    if (current === null) {
+      return undefined;
+    }
+  }
+  return current[last];
+}
+
+/** Every block at the end of a chain of nested block names. */
+function blocksAt(
+  body: Record<string, unknown>,
+  blocks: string[],
+): Array<Record<string, unknown>> {
+  let found: Array<Record<string, unknown>> = [body];
+  for (const block of blocks) {
+    found = found.flatMap((record) =>
+      arrayOf(record[block])
+        .map(asRecord)
+        .filter((nested): nested is Record<string, unknown> => nested !== null),
+    );
+  }
+  return found;
 }
 
 /**

@@ -5,9 +5,9 @@ separate fields: what bytes travel (transport), what the participants think
 they're doing (semantics), and how a particular library expresses that in
 source code (recognition).
 
-Seven semantics variants ship today: `rest`, `function-call`,
+Eight semantics variants ship today: `rest`, `function-call`,
 `graphql-resolver`, `graphql-operation`, `runtime-config`,
-`storage-relational`, and `message-bus`, each as its own module under
+`storage-relational`, `message-bus`, and `metric`, each as its own module under
 `packages/ir-core/src/semantics/`. If you came to ask whether a protocol
 already works, go to [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred);
 everything else explains the model those variants share.
@@ -113,7 +113,7 @@ interface BoundaryBinding {
 }
 ```
 
-`Semantics` is a discriminated union of seven variants today:
+`Semantics` is a discriminated union of eight variants today:
 
 ```ts
 type Semantics =
@@ -123,7 +123,8 @@ type Semantics =
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
   | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
-  | { name: "message-bus"; messageBus: "sqs" | "sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null };
+  | { name: "message-bus"; messageBus: "sqs" | "sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
+  | { name: "metric"; metricSystem: string; metricType: string | null };
 ```
 
 An identity field is null when the source never states it. A queue
@@ -206,9 +207,16 @@ has a null channel. A receive effect always has one: the event-source
 mapping is what states which queue the handler drains, and the checker joins
 the two by code scope.
 
+**`metric`** is a named series of measurements: one side declares it, another
+side reads it back by the type string the monitoring system gives it. Neither
+side can see the other's declaration, so the type string is the whole identity.
+Pairing key: `(metricSystem, metricType)`. What only the declaring side knows,
+whether a measurement is one number or a spread, goes on its summary's
+metadata, the way a storage contract's field list does.
+
 ### Pack helpers
 
-`@suss/behavioral-ir` exports eight builder helpers so packs don't hand-roll
+`@suss/behavioral-ir` exports nine builder helpers so packs don't hand-roll
 the three-layer structure themselves:
 
 ```ts
@@ -220,6 +228,7 @@ graphqlOperationBinding({ transport, recognition, operationType, operationName? 
 runtimeConfigBinding({ recognition, deploymentTarget, instanceName })
 storageRelationalBinding({ recognition, storageSystem, scope, table })
 messageBusBinding({ recognition, messageBus, channel /* string | null */ })
+metricBinding({ recognition, metricSystem, metricType /* string | null */ })
 ```
 
 The builders throw on an empty string in an identity field. Write null
@@ -337,11 +346,11 @@ consumer side of each infrastructure component) are the work ahead.
 Shipped:
 
 1. `BoundaryBinding` has `transport`, `semantics`, and `recognition` as
-   top-level fields. `@suss/behavioral-ir` exports eight binding builder
+   top-level fields. `@suss/behavioral-ir` exports nine binding builder
    helpers; packs and contract sources use them rather than hand-rolling
    the structure themselves.
-2. Seven `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
-   `graphql-operation`, `runtime-config`, `storage`, `message-bus`.
+2. Eight `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
+   `graphql-operation`, `runtime-config`, `storage`, `message-bus`, `metric`.
 3. Metadata namespaced under `metadata.http.*` and `metadata.graphql.*`,
    with `metadata.runtimeContract.*` and `metadata.storageContract.*` for the
    newer semantics.

@@ -57,14 +57,15 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
   },
   terraform: async (specPath) => {
     // A path may be one `.tf` file or the directory a module lives in,
-    // since a module states its resources across several files. The AWS
-    // pack ships loaded; another provider's pack goes here beside it.
-    const [reader, aws] = await Promise.all([
+    // since a module states its resources across several files. Every
+    // shipped pack loads; another provider's goes here beside them.
+    const [reader, aws, gcp] = await Promise.all([
       import("@suss/contract-terraform"),
       import("@suss/terraform-aws"),
+      import("@suss/terraform-gcp"),
     ]);
     return reader.terraformFileToSummaries(specPath, {
-      packs: [aws.awsTerraform()],
+      packs: [aws.awsTerraform(), gcp.googleTerraform()],
     });
   },
   serverless: async (specPath, source) => {

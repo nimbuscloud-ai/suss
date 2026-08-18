@@ -1,5 +1,4 @@
 {
-  "terraform-aws": "pack name, the AWS Terraform provider",
   "aws": "Terraform: the provider these resources come from",
   "aws_dynamodb_table": "Terraform AWS provider: resource type, a DynamoDB table",
   "aws_s3_bucket": "Terraform AWS provider: resource type, an S3 bucket",
@@ -21,5 +20,8 @@
   "eventbridge": "AWS transport name, Amazon EventBridge",
   "storage": "suss: boundary kind for a store",
   "partial": "suss: a storage contract that declares some of an item's fields",
-  "none": "suss: a storage contract with no fields to compare against"
+  "none": "suss: a storage contract with no fields to compare against",
+  "projection_type": "Terraform AWS provider: the attribute stating which copy of an item an index keeps",
+  "non_key_attributes": "Terraform AWS provider: the attribute listing what an INCLUDE index copies",
+  "ALL": "Terraform AWS provider: the projection type of an index that copies the whole item"
 }

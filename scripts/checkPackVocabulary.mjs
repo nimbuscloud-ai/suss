@@ -40,7 +40,13 @@ import ts from "typescript";
 const ROOT = path.resolve(import.meta.dirname, "..");
 
 /** Package families whose members ship pattern packs. */
-const PACK_FAMILIES = ["framework", "client", "runtime", "contract"];
+const PACK_FAMILIES = [
+  "framework",
+  "client",
+  "runtime",
+  "contract",
+  "terraform",
+];
 
 /** Names suss itself defines: IR kinds, roles, protocols, grammar tags. */
 const SHARED_VOCABULARY_FILE = path.join(
@@ -62,6 +68,7 @@ const KEYED_BY_IDENTIFIER = new Set([
   "knownProperties",
   "codes",
   "scalars",
+  "means",
 ]);
 
 /**

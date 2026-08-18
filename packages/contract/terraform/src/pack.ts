@@ -11,7 +11,11 @@
  * pack to ship code the reader cannot see into.
  */
 
-import type { MessageBusTechnology } from "@suss/behavioral-ir";
+import type {
+  MessageBusTechnology,
+  MetricAccumulation,
+  MetricValueShape,
+} from "@suss/behavioral-ir";
 
 /** A store a caller addresses by container and key. */
 export interface StorageResource {
@@ -53,7 +57,67 @@ export interface MessageBusResource {
   nameAttribute?: string;
 }
 
-export type TerraformResource = StorageResource | MessageBusResource;
+/**
+ * An attribute whose value the pack translates into one of suss's own
+ * words. The reader takes the value at `attribute` and looks it up in
+ * `means`; a value the pack did not list says nothing, the same as an
+ * attribute the configuration never set.
+ */
+export interface AttributeMeaning<T extends string> {
+  /** The attribute path whose value says which one it is. */
+  attribute: string;
+  /** What each value the provider can write there means. */
+  means: Record<string, T>;
+}
+
+/** A named series of measurements a resource declares. */
+export interface MetricResource {
+  kind: "metric";
+  /** Which system the series lives in: cloud-monitoring. */
+  metricSystem: string;
+  /** The attribute that says what the metric is called. */
+  nameAttribute: string;
+  /**
+   * How the deployed metric type is spelled, with `{name}` standing
+   * for the declared name. That string is what a resource reading the
+   * metric spells, so it is the identity the two sides share.
+   */
+  metricTypeTemplate: string;
+  /** Which attribute says whether one measurement is a number or a spread. */
+  values?: AttributeMeaning<MetricValueShape>;
+  /** Which attribute says what a measurement covers. */
+  accumulates?: AttributeMeaning<MetricAccumulation>;
+}
+
+/**
+ * A resource that reads a metric another resource declares. One
+ * resource usually states several readings, each in its own block and
+ * each about its own metric, so each becomes a boundary of its own.
+ */
+export interface MetricReadingResource {
+  kind: "metric-reading";
+  metricSystem: string;
+  /** The blocks one reading is written inside, outermost first. */
+  readingBlocks: string[];
+  /** The attribute whose query says which metric the reading is about. */
+  queryAttribute: string;
+  /** The key inside that query whose value is the metric's type. */
+  queryIdentityKey: string;
+  /**
+   * The attribute whose presence means the reading compares the series
+   * against a value of this shape. A condition states a threshold, so
+   * the number it compares against is the attribute being set at all.
+   */
+  comparesTo?: { attribute: string; whenSet: MetricValueShape };
+  /** Which attribute says what the reading reduces each window to first. */
+  reducesTo?: AttributeMeaning<MetricValueShape>;
+}
+
+export type TerraformResource =
+  | StorageResource
+  | MessageBusResource
+  | MetricResource
+  | MetricReadingResource;
 
 /** One resource type, as one version range of one provider declares it. */
 export interface TerraformResourcePattern {

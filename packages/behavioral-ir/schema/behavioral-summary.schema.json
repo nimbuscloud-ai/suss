@@ -316,6 +316,30 @@
                         },
                         "required": ["name", "messageBus", "channel"],
                         "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "const": "metric"
+                          },
+                          "metricSystem": {
+                            "type": "string"
+                          },
+                          "metricType": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["name", "metricSystem", "metricType"],
+                        "additionalProperties": false
                       }
                     ]
                   },
@@ -973,6 +997,34 @@
                                   }
                                 },
                                 "required": ["name", "messageBus", "channel"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "const": "metric"
+                                  },
+                                  "metricSystem": {
+                                    "type": "string"
+                                  },
+                                  "metricType": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "metricSystem",
+                                  "metricType"
+                                ],
                                 "additionalProperties": false
                               }
                             ]

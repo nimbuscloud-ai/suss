@@ -42,3 +42,15 @@ export function busIdentityKey(
 ): BusIdentityKey {
   return `bus:${messageBus} ${subject}` as BusIdentityKey;
 }
+
+/** `metric:system type`, the key both sides of a metric pair on. */
+export type MetricIdentityKey = `metric:${string} ${string}` & {
+  readonly [IdentityKeyBrand]: "metric";
+};
+
+export function metricIdentityKey(
+  metricSystem: string,
+  metricType: string,
+): MetricIdentityKey {
+  return `metric:${metricSystem} ${metricType}` as MetricIdentityKey;
+}

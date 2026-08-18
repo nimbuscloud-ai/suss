@@ -37,6 +37,7 @@ const PROTOCOLS = [
   "runtime-config",
   "storage",
   "function-call",
+  "metric",
 ];
 
 const PROTOCOL_SET = new Set(PROTOCOLS);
@@ -94,11 +95,13 @@ function protocolBranchCount(abs) {
 const OWNING_DIRS = [
   "packages/ir-core/src/semantics/",
   "packages/contract/",
+  "packages/terraform/",
   "packages/framework/",
   "packages/client/",
   "packages/runtime/",
   "packages/manifest/",
   "packages/checker/src/message-bus/",
+  "packages/checker/src/metric/",
   "packages/checker/src/runtime-config/",
   "packages/checker/src/storage/",
   "packages/checker/src/story/",
