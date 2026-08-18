@@ -622,7 +622,10 @@ describe("a metric one resource declares and another reads", () => {
     ).toEqual({
       comparesTo: "number",
       reducesTo: "number",
-      reduction: { setting: "window.reducer", options: ["MEDIAN"] },
+      reduction: {
+        setting: "window.reducer",
+        leaves: { MEDIAN: "number", EVERY_BUCKET: "spread" },
+      },
     });
   });
 
@@ -632,7 +635,10 @@ describe("a metric one resource declares and another reads", () => {
         named("signals_watch.refusals_climbing#1") as BehavioralSummary,
       ),
     ).toEqual({
-      reduction: { setting: "window.reducer", options: ["MEDIAN"] },
+      reduction: {
+        setting: "window.reducer",
+        leaves: { MEDIAN: "number", EVERY_BUCKET: "spread" },
+      },
     });
   });
 

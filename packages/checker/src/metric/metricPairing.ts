@@ -127,17 +127,24 @@ function shapeMismatch(
 
 /**
  * The setting that would give the reading the shape it compares
- * against, when whoever read it said how one is written.
+ * against, and the values of it that would, when whoever read the
+ * reading said how one is written.
  */
 function howToFix(
   needs: MetricReadingMetadata,
   wanted: MetricValueShape,
 ): string {
   const reduction = needs.reduction;
-  if (reduction === undefined || reduction.options.length === 0) {
+  if (reduction === undefined) {
     return "";
   }
-  return ` unless the reading reduces each window to ${SHAPE_WORDS[wanted]} first, by setting ${reduction.setting} to one of ${reduction.options.join(", ")}`;
+  const options = Object.entries(reduction.leaves)
+    .filter(([, shape]) => shape === wanted)
+    .map(([option]) => option);
+  if (options.length === 0) {
+    return "";
+  }
+  return ` unless the reading reduces each window to ${SHAPE_WORDS[wanted]} first, by setting ${reduction.setting} to one of ${options.join(", ")}`;
 }
 
 function sideOf(summary: BehavioralSummary): FindingSide {

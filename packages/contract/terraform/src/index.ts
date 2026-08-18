@@ -463,9 +463,9 @@ function metricTypesIn(
 
 /**
  * What one reading needs from the series, in suss's own words, plus the
- * setting a fix would be written in. The options come off the same
- * table the reading was read through, so a pack states the aligners
- * once and a finding can name them without knowing Google.
+ * setting a fix would be written in. The table goes through as the pack
+ * wrote it, so a pack states its aligners once and a finding can name
+ * the ones that would help without knowing Google.
  */
 function metricReading(
   reading: Record<string, unknown>,
@@ -483,14 +483,7 @@ function metricReading(
     ...(reducesTo !== undefined ? { reducesTo } : {}),
     ...(reduces === undefined
       ? {}
-      : {
-          reduction: {
-            setting: reduces.attribute,
-            options: Object.entries(reduces.means)
-              .filter(([, shape]) => shape === "number")
-              .map(([option]) => option),
-          },
-        }),
+      : { reduction: { setting: reduces.attribute, leaves: reduces.means } }),
   };
 }
 

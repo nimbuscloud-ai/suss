@@ -102,12 +102,12 @@ describe("what the Google entries read", () => {
       comparesTo: "number",
       reduction: {
         setting: "aggregations.per_series_aligner",
-        options: [
-          "ALIGN_PERCENTILE_99",
-          "ALIGN_PERCENTILE_95",
-          "ALIGN_PERCENTILE_50",
-          "ALIGN_PERCENTILE_05",
-        ],
+        leaves: {
+          ALIGN_PERCENTILE_99: "number",
+          ALIGN_PERCENTILE_95: "number",
+          ALIGN_PERCENTILE_50: "number",
+          ALIGN_PERCENTILE_05: "number",
+        },
       },
     });
   });

@@ -769,13 +769,16 @@ const MetricReadingMetadataSchema = z.object({
   /** What the reading turns each window into first, when it states one. */
   reducesTo: MetricValueShapeSchema.optional(),
   /**
-   * The setting this kind of reading states a reduction in, and the
-   * values that reduce to a single number. A reader that knows the
-   * monitoring system fills these in, so a finding can say which
-   * setting to change without the checker knowing the system.
+   * The setting this kind of reading states a reduction in, and what
+   * each value of it leaves behind. A reader that knows the monitoring
+   * system fills these in, so a finding can say which setting to change
+   * without the checker knowing the system.
    */
   reduction: z
-    .object({ setting: z.string(), options: z.array(z.string()) })
+    .object({
+      setting: z.string(),
+      leaves: z.record(z.string(), MetricValueShapeSchema),
+    })
     .optional(),
 });
 

@@ -76,7 +76,10 @@ describe("a reading compared against a shape the series does not produce", () =>
       declares({ values: "spread" }),
       reads({
         comparesTo: "number",
-        reduction: { setting: "window.reducer", options: ["MEDIAN", "P95"] },
+        reduction: {
+          setting: "window.reducer",
+          leaves: { MEDIAN: "number", P95: "number", EVERY_BUCKET: "spread" },
+        },
       }),
     ]);
 
@@ -89,6 +92,8 @@ describe("a reading compared against a shape the series does not produce", () =>
     expect(findings[0]?.description).toContain("a spread of buckets");
     expect(findings[0]?.description).toContain("window.reducer");
     expect(findings[0]?.description).toContain("MEDIAN, P95");
+    // A reducer that leaves the spread alone is no way out of this.
+    expect(findings[0]?.description).not.toContain("EVERY_BUCKET");
   });
 
   it("still reports when nobody said how a reduction is written", () => {

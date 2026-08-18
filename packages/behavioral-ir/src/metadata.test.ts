@@ -444,13 +444,13 @@ describe("typed metadata namespaces", () => {
         carrier({
           metricReading: {
             comparesTo: "number",
-            reduction: { setting: "reducer", options: ["MEDIAN"] },
+            reduction: { setting: "reducer", leaves: { MEDIAN: "number" } },
           },
         }),
       ),
     ).toEqual({
       comparesTo: "number",
-      reduction: { setting: "reducer", options: ["MEDIAN"] },
+      reduction: { setting: "reducer", leaves: { MEDIAN: "number" } },
     });
   });
 
