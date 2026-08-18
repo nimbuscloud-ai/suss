@@ -169,6 +169,13 @@ jobs:
         if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:dispatch
 
+      # A metadata field with a writer and no reader is a feature that
+      # cannot work, and both sides pass their own tests while it is in
+      # that state. Four shipped that way before this ran (#464).
+      - name: Metadata wiring
+        if: steps.diff.outputs.docs_only != 'true'
+        run: npm run check:metadata-wiring
+
       # The fixed-seed fuzz run: a few thousand generated programs
       # through the pipeline itself, in about twenty seconds. A shape
       # that works today and stops working fails the build the day it

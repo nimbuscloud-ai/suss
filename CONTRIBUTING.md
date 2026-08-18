@@ -68,6 +68,10 @@ A framework pack is a set of patterns you declare in configuration rather than w
 
 A pack may hardcode an identifier only when the library that pack is about defines it. An identifier that comes from one particular codebase belongs in per-project configuration instead. If you ship it as a default, other users get false matches on it, and coverage measured against the codebase the name came from looks better than it is, because discovery found those units by name rather than by pattern. List every identifier your pack hardcodes in its `vocabulary.json`, or `npm run check:vocabulary` will fail. [`docs/internal/style.md#identifiers-a-pack-names`](docs/internal/style.md#identifiers-a-pack-names) has the detail.
 
+## Adding a metadata field
+
+A field on a metadata namespace needs a writer and a reader before it does anything. Both halves are usually written weeks apart, and the test on each side passes whether or not the other side exists, so `npm run check:metadata-wiring` compares the two lists instead. A field with a writer and no reader, or a reader and no writer, fails the build. If the consumer is genuinely still to come, add the field to `EXEMPT` in [`scripts/checkMetadataWiring.mjs`](scripts/checkMetadataWiring.mjs) with the reason and the issue that tracks it. [`docs/internal/style.md#both-sides-of-a-metadata-field`](docs/internal/style.md#both-sides-of-a-metadata-field) has the detail.
+
 ## Reporting bugs
 
 Open an issue using the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/). For a bug, a tsconfig plus a handful of TS files is usually enough to reproduce it.

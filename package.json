@@ -74,6 +74,7 @@
     "fuzz:long": "npm run -w @suss/differential fuzz:long",
     "check:vocabulary": "node scripts/checkPackVocabulary.mjs",
     "check:dispatch": "node scripts/checkProtocolDispatch.mjs",
+    "check:metadata-wiring": "node scripts/checkMetadataWiring.mjs",
     "check:perf": "node scripts/checkPerfBaseline.mjs",
     "check:corpus": "node scripts/checkCorpusBaseline.mjs"
   },

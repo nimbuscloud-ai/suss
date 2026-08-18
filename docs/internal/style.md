@@ -59,6 +59,14 @@ Each pack declares its vocabulary in `vocabulary.json` at the package root: ever
 
 The same check runs against the language adapters, the other way round. An adapter's shipped source may not contain a string literal that some pack's vocabulary declares as belonging to its library. The adapter owns language syntax and scoping, and every library-defined identifier reaches it through a typed pack field instead. Each adapter is checked against the framework packs that declare a dependency on it.
 
+## Both sides of a metadata field
+
+A field on a metadata namespace in `packages/behavioral-ir/src/metadata.ts` is a claim two parties share: a contract reader, a pack or an adapter writes it, and a checker pass, `inspect` or `ask` reads it back. The two halves get built weeks apart, each with a test that asserts its own side, and neither test can fail while the other side is missing. That is how a field ships with a writer, a schema entry, a green suite, and no effect on anything a user sees. `metadata.http.statusRange` is the example to keep in mind: the OpenAPI reader writes the range a `4XX` response covers, its own test asserts the range, and no pass has ever compared a consumer branch against one, so a range-coded spec still reports correct branches as errors.
+
+`npm run check:metadata-wiring` compares the two lists. It reads the namespaces out of `metadata.ts`, finds each field's writers under `packages/` outside the reading packages, finds its readers under `packages/checker`, `packages/checker-intent` and `packages/cli`, and fails when a field has only one side. Tests and `__fixtures__` count as neither, since a test on the writing side is what these fields already have. It also fails when a writer sets a key the schema does not declare, which is a silent drop at read time rather than an error anywhere.
+
+A field waiting on a consumer that has not been built yet is a fine state to be in, and it goes in `EXEMPT` in `scripts/checkMetadataWiring.mjs` with the reason it waits and the issue tracking the other half.
+
 ## Naming
 
 A name should say what the thing is for, so someone who has never opened the file can guess what it does before reading it.
