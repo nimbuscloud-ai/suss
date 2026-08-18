@@ -16,7 +16,7 @@ function readEffect(fields: string[]): Effect {
     type: "interaction",
     binding: storageBinding({
       recognition: "aws-dynamodb-query",
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       scope: "default",
       container: "editions",
       accessPath: "by-publication",
@@ -45,7 +45,7 @@ export const indexContract: BehavioralSummary = {
     exportPath: null,
     boundaryBinding: storageBinding({
       recognition: "terraform",
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       scope: "default",
       container: "editions",
       accessPath: "by-publication",

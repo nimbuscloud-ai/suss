@@ -25,7 +25,7 @@ describe("boundarySpelling", () => {
   it("spells a store the way the report that compares it does", () => {
     expect(
       boundarySpelling(indexContract.identity.boundaryBinding as never),
-    ).toBe("dynamodb:editions#by-publication");
+    ).toBe("aws.dynamodb:editions#by-publication");
   });
 
   it("spells a route the way the registry does", () => {
@@ -37,8 +37,8 @@ describe("boundarySpelling", () => {
 
 describe("spellingTokens", () => {
   it("cuts the separators between parts of a name and leaves the parts alone", () => {
-    expect(spellingTokens("dynamodb:editions#by-publication")).toEqual([
-      "dynamodb",
+    expect(spellingTokens("aws.dynamodb:editions#by-publication")).toEqual([
+      "aws.dynamodb",
       "editions",
       "by-publication",
     ]);
@@ -51,13 +51,16 @@ describe("namesBoundary", () => {
   const index = indexContract.identity.boundaryBinding as never;
 
   it("takes a shorter spelling as covering the longer one", () => {
-    expect(namesBoundary("dynamodb:editions", index)).toBe(true);
+    expect(namesBoundary("aws.dynamodb:editions", index)).toBe(true);
     expect(namesBoundary("editions", index)).toBe(true);
-    expect(namesBoundary("dynamodb:editions#by-publication", index)).toBe(true);
+    expect(namesBoundary("dynamodb:editions", index)).toBe(true);
+    expect(namesBoundary("aws.dynamodb:editions#by-publication", index)).toBe(
+      true,
+    );
   });
 
   it("refuses a spelling with a word the boundary does not have", () => {
-    expect(namesBoundary("dynamodb:editions#by-author", index)).toBe(false);
+    expect(namesBoundary("aws.dynamodb:editions#by-author", index)).toBe(false);
     expect(namesBoundary("postgres:editions", index)).toBe(false);
     expect(namesBoundary("", index)).toBe(false);
   });
@@ -138,7 +141,7 @@ describe("resolveTarget", () => {
   });
 
   it("takes a boundary when the words are not a file here", () => {
-    const result = resolved("dynamodb:editions#by-publication");
+    const result = resolved("aws.dynamodb:editions#by-publication");
 
     expect(result.matched).toBe(true);
     if (!result.matched) {
@@ -169,7 +172,7 @@ describe("resolveTarget", () => {
       return;
     }
     expect(result.message).toContain("Nothing here is at kafka:orders");
-    expect(result.message).toContain("dynamodb:editions#by-publication");
+    expect(result.message).toContain("aws.dynamodb:editions#by-publication");
   });
 
   it("asks for something to point at when given nothing", () => {

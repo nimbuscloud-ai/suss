@@ -15,21 +15,23 @@ import { ask, parseQuestion } from "./ask.js";
 
 describe("parseQuestion", () => {
   it("reads each of the four shapes, whatever the case", () => {
-    expect(parseQuestion("what can I project from dynamodb:editions")).toEqual({
+    expect(
+      parseQuestion("what can I project from aws.dynamodb:editions"),
+    ).toEqual({
       shape: "declares",
-      subject: "dynamodb:editions",
+      subject: "aws.dynamodb:editions",
     });
     expect(parseQuestion("What does GET /editions declare")).toEqual({
       shape: "declares",
       subject: "GET /editions",
     });
-    expect(parseQuestion("what reads dynamodb:editions?")).toEqual({
+    expect(parseQuestion("what reads aws.dynamodb:editions?")).toEqual({
       shape: "reads",
-      subject: "dynamodb:editions",
+      subject: "aws.dynamodb:editions",
     });
-    expect(parseQuestion("what writes bus:sqs orders")).toEqual({
+    expect(parseQuestion("what writes bus:aws_sqs orders")).toEqual({
       shape: "writes",
-      subject: "bus:sqs orders",
+      subject: "bus:aws_sqs orders",
     });
     expect(parseQuestion("what does src/dao.ts reach")).toEqual({
       shape: "reaches",
@@ -39,7 +41,7 @@ describe("parseQuestion", () => {
 
   it("refuses a question that is not one of them", () => {
     expect(parseQuestion("why is the store slow")).toBeNull();
-    expect(parseQuestion("what happens to dynamodb:editions")).toBeNull();
+    expect(parseQuestion("what happens to aws.dynamodb:editions")).toBeNull();
   });
 });
 
@@ -82,7 +84,7 @@ describe("suss ask", () => {
 
   it("lists what an index declares", () => {
     const { output, code } = answer(
-      "what can I project from dynamodb:editions#by-publication",
+      "what can I project from aws.dynamodb:editions#by-publication",
     );
 
     expect(code).toBe(0);
@@ -93,7 +95,7 @@ describe("suss ask", () => {
   });
 
   it("lists what reads a store, and where each reader is", () => {
-    const { output, code } = answer("what reads dynamodb:editions");
+    const { output, code } = answer("what reads aws.dynamodb:editions");
 
     expect(code).toBe(0);
     expect(output).toContain("2 units read");
@@ -103,7 +105,7 @@ describe("suss ask", () => {
   });
 
   it("says plainly when nothing writes the store, and who serves it", () => {
-    const { output, code } = answer("what writes dynamodb:editions");
+    const { output, code } = answer("what writes aws.dynamodb:editions");
 
     expect(code).toBe(0);
     expect(output).toContain("Nothing in these summaries writes");
@@ -111,7 +113,7 @@ describe("suss ask", () => {
   });
 
   it("warns that a unit it could not read might be missing from the answer", () => {
-    const { output } = answer("what writes dynamodb:editions");
+    const { output } = answer("what writes aws.dynamodb:editions");
 
     expect(output).toContain("could be missing from this answer");
   });
@@ -122,7 +124,7 @@ describe("suss ask", () => {
     expect(code).toBe(0);
     expect(output).toContain("reaches 1 boundary");
     expect(output).toContain("reads");
-    expect(output).toContain("dynamodb:editions#by-publication");
+    expect(output).toContain("aws.dynamodb:editions#by-publication");
     expect(output).toContain("loadCursor");
   });
 
@@ -137,7 +139,7 @@ describe("suss ask", () => {
   it("says which input it would need when no provider is in the run at all", () => {
     fs.rmSync(path.join(dir, "infra.json"));
     const { output } = answer(
-      "what can I project from dynamodb:editions#by-publication",
+      "what can I project from aws.dynamodb:editions#by-publication",
     );
 
     expect(output).toContain("No summary here provides");
@@ -146,11 +148,11 @@ describe("suss ask", () => {
   });
 
   it("does not pretend a boundary it has never seen is empty", () => {
-    const { output, code } = answer("what reads dynamodb:authors");
+    const { output, code } = answer("what reads aws.dynamodb:authors");
 
     expect(code).toBe(1);
     expect(output).toContain(
-      "Nothing in these summaries is at dynamodb:authors",
+      "Nothing in these summaries is at aws.dynamodb:authors",
     );
     expect(output).toContain("then ask again");
   });
@@ -163,7 +165,9 @@ describe("suss ask", () => {
   });
 
   it("writes JSON an agent can read", () => {
-    const { output } = answer("what reads dynamodb:editions", { json: true });
+    const { output } = answer("what reads aws.dynamodb:editions", {
+      json: true,
+    });
     const parsed = JSON.parse(output) as {
       shape: string;
       subject: string;
@@ -174,7 +178,7 @@ describe("suss ask", () => {
     };
 
     expect(parsed.shape).toBe("reads");
-    expect(parsed.subject).toBe("dynamodb:editions");
+    expect(parsed.subject).toBe("aws.dynamodb:editions");
     expect(parsed.found).toBe(true);
     expect(parsed.items).toHaveLength(2);
     expect(parsed.items[0]).toEqual({
@@ -195,7 +199,7 @@ describe("suss ask", () => {
     }) as typeof process.stdout.write;
     try {
       const code = ask({
-        question: "what reads dynamodb:editions",
+        question: "what reads aws.dynamodb:editions",
         file: path.join(dir, "app.json"),
       });
       expect(code).toBe(0);
@@ -207,7 +211,7 @@ describe("suss ask", () => {
   });
 
   it("says what it needs when no summaries were given at all", () => {
-    expect(() => ask({ question: "what reads dynamodb:editions" })).toThrow(
+    expect(() => ask({ question: "what reads aws.dynamodb:editions" })).toThrow(
       /ask needs summaries to read/,
     );
   });

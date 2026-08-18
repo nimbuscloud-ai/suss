@@ -5,7 +5,7 @@
  * `suss check --at` and `suss ask` both start by working out which
  * boundary the words in front of them mean. Those words get cut into
  * tokens, the boundary does too, and a boundary matches when it has
- * every token somebody wrote. So `dynamodb:editions` matches the table
+ * every token somebody wrote. So `aws.dynamodb:editions` matches the table
  * and every index on it, and adding `#by-publication` narrows it to the
  * one index.
  */
@@ -68,6 +68,13 @@ export function bindingTokens(binding: BoundaryBinding): Set<string> {
       for (const token of spellingTokens(value)) {
         tokens.add(token);
       }
+    }
+  }
+  // A word OpenTelemetry spells with a dot in it, "aws.dynamodb", is
+  // askable by its parts too, so somebody types the product name.
+  for (const token of [...tokens]) {
+    for (const part of token.split(".")) {
+      tokens.add(part);
     }
   }
   return tokens;

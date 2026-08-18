@@ -69,9 +69,9 @@ const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
 ];
 
 const HOW_TO_ASK = `suss ask takes one of four questions:
-  suss ask 'what can I project from dynamodb:editions#by-publication'
-  suss ask 'what reads dynamodb:editions'
-  suss ask 'what writes dynamodb:editions'
+  suss ask 'what can I project from aws.dynamodb:editions#by-publication'
+  suss ask 'what reads aws.dynamodb:editions'
+  suss ask 'what writes aws.dynamodb:editions'
   suss ask 'what does src/editions/dao.ts reach'
 Add --dir to say which summaries to read, or pass one summaries file.`;
 
@@ -115,7 +115,7 @@ function loadSummaries(options: AskOptions): BehavioralSummary[] {
     );
   }
   throw new UsageError(
-    "ask needs summaries to read. Try: suss ask 'what reads dynamodb:editions' --dir summaries/",
+    "ask needs summaries to read. Try: suss ask 'what reads aws.dynamodb:editions' --dir summaries/",
   );
 }
 
