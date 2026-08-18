@@ -448,6 +448,12 @@ target with a gap on it says so either way.
 A target that matches nothing prints what it could not find and exits
 `1`. An empty report would read as agreement.
 
+`--json` writes the same report as `{ at, matched, target, touches,
+findings, pairs, unmatched, gaps }`, where `touches` is one entry per
+unit and boundary (`{ boundary, relations, unit, via }`) and `findings`
+is the finding shape [`check --json`](#suss-check) already writes. A
+target that matched nothing writes `{ at, matched: false, message }`.
+
 ### Exit codes
 
 - `0`: no findings at or above the threshold (after suppressions).
