@@ -728,7 +728,8 @@ function renderGapCoverage(withGaps: number, total: number): string {
   if (withGaps === 0) {
     return "";
   }
-  return `\n${withGaps} of ${total} summar${total === 1 ? "y" : "ies"} record${withGaps === 1 ? "s" : ""} something suss could not read, so what this run knows about ${withGaps === 1 ? "that unit" : "those units"} is partial. Run \`suss inspect\` over the same files to see what.\n`;
+  const units = withGaps === 1 ? "one unit" : `${withGaps} units`;
+  return `\nsuss met a call it could not follow in ${units}, of ${total}, so ${withGaps === 1 ? "that one is" : "those are"} described in part. \`suss inspect\` says which calls.\n`;
 }
 
 function renderDirHuman(

@@ -115,7 +115,7 @@ describe("suss ask", () => {
   it("warns that a unit it could not read might be missing from the answer", () => {
     const { output } = answer("what writes aws.dynamodb:editions");
 
-    expect(output).toContain("could be missing from this answer");
+    expect(output).toContain("so a reader could be hiding in it");
   });
 
   it("lists the boundaries a file reaches", () => {

@@ -1511,7 +1511,9 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
     );
     const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
 
-    expect(output).toContain("1 of 2 summaries records something suss");
+    expect(output).toContain(
+      "suss met a call it could not follow in one unit, of 2",
+    );
     expect(output).toContain("suss inspect");
   });
 
