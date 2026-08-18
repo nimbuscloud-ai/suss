@@ -25,7 +25,7 @@ import {
 import { boundariesTouchedBy, namesBoundary } from "./boundaryReach.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
-import { resolveTarget } from "./target.js";
+import { resolveTarget, type TargetTouch } from "./target.js";
 import { UsageError } from "./usageError.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -137,10 +137,7 @@ const ANSWERS: Record<
 function touchesAt(
   subject: string,
   summaries: ReadonlyArray<BehavioralSummary>,
-): Array<{
-  summary: BehavioralSummary;
-  touched: ReturnType<typeof boundariesTouchedBy>[number];
-}> {
+): TargetTouch[] {
   return summaries.flatMap((summary) =>
     boundariesTouchedBy(summary)
       .filter((touched) => namesBoundary(subject, touched.binding))
@@ -234,12 +231,7 @@ function answerDeclares(
  * field list gathered from call sites is what somebody happened to ask
  * for, so it is offered as that and never as the declaration.
  */
-function touchedFields(
-  touches: ReadonlyArray<{
-    summary: BehavioralSummary;
-    touched: ReturnType<typeof boundariesTouchedBy>[number];
-  }>,
-): AnswerItem[] {
+function touchedFields(touches: ReadonlyArray<TargetTouch>): AnswerItem[] {
   const items: AnswerItem[] = [];
   for (const { summary, touched } of touches) {
     if (touched.relation === "provides") {
