@@ -267,9 +267,9 @@ the conventions spell them, one predating the other.
 Summaries written before this used `postgres`, `dynamodb`, `sqs`, and
 `sns`. They read back with the new names through the normalizer in
 `@suss/behavioral-ir`, and the format is at schema version 5. Pack
-config takes the new name too: a Python or Ruby project passing
-`{ "storageSystem": "postgres" }` to `@suss/framework-sqlalchemy` or
-`@suss/framework-activerecord` writes `postgresql` instead.
+config takes the new name too: a project passing
+`{ "storageSystem": "postgres" }` to the sqlalchemy, activerecord,
+prisma or drizzle pack writes `postgresql` instead.
 
 ### The field names are ours
 
