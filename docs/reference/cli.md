@@ -368,10 +368,10 @@ a concrete pair.
 
 ```
 # Two explicit summary files
-suss check PROVIDER.json CONSUMER.json [--json] [-o OUTPUT] [--fail-on THRESHOLD]
+suss check PROVIDER.json CONSUMER.json [--all] [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 
 # A whole directory, auto-pairs by boundary key
-suss check --dir DIR [--intent INTENT_DIR] [--json] [-o OUTPUT]
+suss check --dir DIR [--intent INTENT_DIR] [--all] [--json] [-o OUTPUT]
            [--fail-on THRESHOLD] [--sussignore PATH] [--no-suppressions]
 
 # One thing out of that directory
@@ -383,6 +383,7 @@ suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 | `--dir PATH` | Directory containing summary JSON files. suss reads every `.json` in the dir and auto-pairs by boundary. Mutually exclusive with positional args. |
 | `--at TARGET` | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Needs `--dir`, and does not run with `--intent`. |
 | `--intent PATH` | Directory of team-authored intent docs (`*.intent.yaml`, `*.intent.yml`, `*.intent.json`, and the same three for `*.prd`). Each boundary intent is paired against the summaries in `--dir`, adding intent-coverage findings to the report. Needs `--dir`. |
+| `--all` | Write out every finding and every list. See [What a run prints](#what-a-run-prints). |
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
 | `--fail-on THRESHOLD` | `error` (default), exit non-zero when any error-severity finding exists. `warning`, also fail on warnings. `info`, fail on any finding. `none`, never fail (still prints). |
@@ -393,6 +394,39 @@ A finding that points at one transition prints a `.sussignore` rule for
 it, ready to paste under `rules:`. The rule identifies the transition on
 whichever side has it, so it matches that finding and no other. See
 [Suppressions](/suppressions).
+
+### What a run prints
+
+A run prints the errors in full, then counts everything else. The
+counted parts are the findings below error severity, grouped by kind,
+and the boundaries that went unpaired.
+
+```
+Compared 194 boundaries.
+
+  400 provider-side boundaries have no client to compare against.
+  10 client-side boundaries have no provider to compare against.
+  11248 boundaries had nothing to pair with, so nothing was checked across them.
+  Run the same command with --all to list them.
+
+167 findings: 0 error, 167 warning, 0 info
+
+Not shown: 167 boundaryFieldUnknown (warning). Run the same command with --all to see them.
+
+4862 of 12229 summaries record something suss could not read, so what this run knows about those units is partial. Run `suss inspect` over the same files to see what.
+```
+
+Errors are what `--fail-on error` gates on, so they are what a run
+leads with. The rest is there in a count, and `--all` writes all of it
+out. Three things do not change with the flag. `--json` always includes
+every finding and every list. `--at` always prints in full, because it
+is already narrowed to one thing. The exit code is decided by
+`--fail-on` rather than by what got printed.
+
+Without the collapse, a first run over a repository of any size prints
+thousands of lines before the first error. Over five public
+repositories and suss's own packages, the unpaired lists alone were
+between 66% and 99% of the report.
 
 ### Reporting on one thing
 
