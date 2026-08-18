@@ -123,7 +123,10 @@ export type { ComparedPair } from "./pairing/comparedPair.js";
 import { summaryWithDefinitionsInlined } from "./spelledOut.js";
 
 export { summaryWithDefinitionsInlined } from "./spelledOut.js";
-export { checkStorage } from "./storage/storagePairing.js";
+export {
+  checkStorage,
+  storageBoundaryKey,
+} from "./storage/storagePairing.js";
 export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 export {
   applySuppressions,

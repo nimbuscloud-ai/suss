@@ -49,6 +49,7 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   Finding,
+  Semantics,
   StorageContractMetadata,
   StorageSemantics,
 } from "@suss/behavioral-ir";
@@ -121,7 +122,7 @@ export function checkStorage(
 
     for (const access of inScope) {
       compared?.push({
-        key: `${semantics.storageSystem}:${containerLabel(semantics)}`,
+        key: keyOf(semantics),
         provider: summaryIdentifier(provider),
         consumer: summaryIdentifier(access.summary),
       });
@@ -394,6 +395,24 @@ function readStorageContract(
 // ---------------------------------------------------------------------------
 // Finding builders
 // ---------------------------------------------------------------------------
+
+/**
+ * How a report spells this store: `dynamodb:editions#by-publication`.
+ *
+ * The semantics registry has no label for storage, so `boundaryLabel`
+ * returns null and this pass is the only place the spelling exists.
+ * Somebody who saw that key in a report will type it back to ask about
+ * the store, so whatever resolves what they typed calls this instead of
+ * keeping a second copy of the formula. Returns null for semantics from
+ * any other protocol.
+ */
+export function storageBoundaryKey(semantics: Semantics): string | null {
+  return semantics.name === "storage" ? keyOf(semantics) : null;
+}
+
+function keyOf(semantics: StorageSemantics): string {
+  return `${semantics.storageSystem}:${containerLabel(semantics)}`;
+}
 
 function containerLabel(semantics: StorageSemantics): string {
   const container = semantics.container ?? "<unnamed container>";
