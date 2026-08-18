@@ -176,8 +176,8 @@ export function checkDirectory(options: {
   }
 
   const summaries: BehavioralSummary[] = [];
-  // Which file each summary came from, so that a boundary with
-  // providers in two different files can be called out below.
+  // Which file each summary came from, so a caller can report a
+  // boundary two different files both claim to provide.
   const sourceFile = new Map<BehavioralSummary, string>();
   for (const file of files) {
     for (const summary of readSummaries(path.join(resolved, file))) {
