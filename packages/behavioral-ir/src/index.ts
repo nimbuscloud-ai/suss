@@ -110,8 +110,11 @@ export {
   readReactMetadata,
   readRoutingMetadata,
   readRuntimeContractMetadata,
+  readSourceDocumentMetadata,
   readStorageContractMetadata,
   readStorybookMetadata,
+  type SourceDocumentMetadata,
+  SourceDocumentMetadataSchema,
   type StorageContractMetadata,
   type StorybookMetadata,
   withGraphqlMetadata,
@@ -119,6 +122,7 @@ export {
   withMessageBusMetadata,
   withRoutingMetadata,
   withRuntimeContractMetadata,
+  withSourceDocumentMetadata,
 } from "./metadata.js";
 export {
   type DocumentLabelParts,

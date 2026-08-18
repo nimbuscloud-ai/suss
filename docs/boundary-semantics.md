@@ -371,6 +371,10 @@ naming convention applies across all semantics:
 
 - `metadata.http.*`, REST-scoped
 - `metadata.graphql.*`, GraphQL-scoped
+- `metadata.sourceDocument.label`: which document a summary was read out
+  of, so summaries from one document can find each other. The GraphQL
+  schema goes on the summary standing for the schema document, and its
+  resolvers reach it through the shared label
 - `metadata.runtimeContract.*`: runtime-config env var lists
 - `metadata.storageContract.*`: the field declarations for a storage
   container, and whether they are the complete set

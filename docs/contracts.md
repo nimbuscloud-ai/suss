@@ -137,9 +137,12 @@ Declarations live under the protocol they describe, regardless of which artifact
 - `metadata.http.*`: declaredContract, statusAccessors, bodyAccessors, statusRange
 - `metadata.graphql.*`: declaredContract, document, schemaSdl
 - `metadata.appsync.*`: kind (UNIT vs PIPELINE)
+- `metadata.sourceDocument.label`: which document a summary was read out of
 - `metadata.storybook.*` / `metadata.component.*`, story-level and component-context metadata
 
 New protocols add their own `metadata.<protocol>.*` namespace rather than nesting by source. The checker reads the namespace it understands; downstream tooling ignores what it doesn't.
+
+`metadata.sourceDocument` is the exception to protocol scoping, because it says nothing about a protocol. One document declares many boundaries and states things every one of them relies on. A GraphQL schema is the case that ships: the reader emits one summary standing for the schema document, puts the SDL on it at `metadata.graphql.schemaSdl`, and gives every summary read out of that document the same label. The checker goes from a resolver to its document to read the schema, so the schema is stated once rather than on all 222 of a large schema's root fields. An OpenAPI document's `components.schemas` and a CloudFormation template's parameters are the same shape and are not read this way yet.
 
 ## How new domains get added
 

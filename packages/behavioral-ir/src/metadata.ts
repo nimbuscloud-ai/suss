@@ -418,10 +418,14 @@ export const GraphqlMetadataSchema = z.object({
    */
   declaredContract: GraphqlDeclaredContractSchema.optional(),
   /**
-   * Schema SDL behind a resolver, when the reader has it on hand
-   * (AppSync's resolved schema, an Apollo code-first server's static
-   * `typeDefs`). Lets the checker's pairing pass walk a consumer
-   * operation's nested selections against the resolver's return type.
+   * The schema SDL, on the summary standing for the schema document
+   * rather than on each resolver the document declares. The checker's
+   * pairing pass finds it from a resolver through the document label
+   * they share, and walks the consumer operation's nested selections
+   * against the resolver's return type.
+   *
+   * A reader that has no document summary to put it on may still write
+   * it beside a resolver, and the pairing pass reads that too.
    */
   schemaSdl: z.string().optional(),
   /**
@@ -490,6 +494,49 @@ export function readGraphqlMetadata(
   summary: BehavioralSummary,
 ): GraphqlMetadata | undefined {
   return readNamespace(GraphqlMetadataSchema, summary.metadata?.graphql);
+}
+
+/**
+ * The document a summary was read out of.
+ *
+ * One document declares many boundaries and states things every one of
+ * them relies on: a GraphQL schema's type definitions, an OpenAPI
+ * document's `components.schemas`. Those belong to the document, so a
+ * reader puts them on a summary standing for the document and gives
+ * every summary from that document the same label. A checker that needs
+ * them goes from a boundary to its document and reads them once.
+ *
+ * The label is the one the reader records on `location.file`, so
+ * `parseDocumentLabel` reads it the same way here as it does there.
+ */
+export const SourceDocumentMetadataSchema = z.object({
+  label: z.string(),
+});
+
+export type SourceDocumentMetadata = z.infer<
+  typeof SourceDocumentMetadataSchema
+>;
+
+/** A metadata bag saying which document its summary was read out of. */
+export function withSourceDocumentMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: SourceDocumentMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    sourceDocument: SourceDocumentMetadataSchema.strict().parse(value),
+  };
+}
+
+/** The document namespace, or undefined when absent or not an object. */
+export function readSourceDocumentMetadata(
+  summary: BehavioralSummary,
+): SourceDocumentMetadata | undefined {
+  const read = readNamespace(
+    SourceDocumentMetadataSchema,
+    summary.metadata?.sourceDocument,
+  );
+  return read?.label === undefined ? undefined : read;
 }
 
 const HttpContractProvenanceSchema = z.enum(["derived", "independent"]);

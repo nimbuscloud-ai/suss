@@ -12,6 +12,7 @@ import {
   readReactMetadata,
   readRoutingMetadata,
   readRuntimeContractMetadata,
+  readSourceDocumentMetadata,
   readStorageContractMetadata,
   readStorybookMetadata,
   withGraphqlMetadata,
@@ -19,6 +20,7 @@ import {
   withMessageBusMetadata,
   withRoutingMetadata,
   withRuntimeContractMetadata,
+  withSourceDocumentMetadata,
 } from "./index.js";
 
 import type { BehavioralSummary, Transition } from "./index.js";
@@ -277,6 +279,29 @@ describe("the graphql metadata namespace", () => {
         fieldname: "user",
       }),
     ).toThrow();
+  });
+});
+
+describe("the sourceDocument metadata namespace", () => {
+  it("round-trips the label a reader sets", () => {
+    const metadata = withSourceDocumentMetadata(
+      { graphql: { rootType: "Query" } },
+      { label: "services/api/schema.graphql" },
+    );
+    expect(readSourceDocumentMetadata(summaryWith(metadata))?.label).toBe(
+      "services/api/schema.graphql",
+    );
+    expect(metadata.graphql).toEqual({ rootType: "Query" });
+  });
+
+  it("reads nothing when the namespace is absent or has no label", () => {
+    expect(readSourceDocumentMetadata(summaryWith(undefined))).toBeUndefined();
+    expect(
+      readSourceDocumentMetadata(summaryWith({ sourceDocument: {} })),
+    ).toBeUndefined();
+    expect(
+      readSourceDocumentMetadata(summaryWith({ sourceDocument: 42 })),
+    ).toBeUndefined();
   });
 });
 
