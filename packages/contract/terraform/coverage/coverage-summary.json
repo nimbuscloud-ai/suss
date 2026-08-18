@@ -1,60 +1,34 @@
 {
   "total": {
     "lines": {
-      "total": 340,
-      "covered": 324,
+      "total": 333,
+      "covered": 318,
       "skipped": 0,
-      "pct": 95.29
+      "pct": 95.49
     },
     "statements": {
-      "total": 341,
-      "covered": 325,
+      "total": 334,
+      "covered": 319,
       "skipped": 0,
-      "pct": 95.3
+      "pct": 95.5
     },
     "functions": {
-      "total": 67,
-      "covered": 67,
+      "total": 68,
+      "covered": 68,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 241,
-      "covered": 206,
+      "total": 233,
+      "covered": 201,
       "skipped": 0,
-      "pct": 85.47
+      "pct": 86.26
     },
     "branchesTrue": {
       "total": 0,
       "covered": 0,
       "skipped": 0,
       "pct": "Unknown"
-    }
-  },
-  "src/declaration.ts": {
-    "lines": {
-      "total": 15,
-      "covered": 15,
-      "skipped": 0,
-      "pct": 100
-    },
-    "functions": {
-      "total": 3,
-      "covered": 3,
-      "skipped": 0,
-      "pct": 100
-    },
-    "statements": {
-      "total": 15,
-      "covered": 15,
-      "skipped": 0,
-      "pct": 100
-    },
-    "branches": {
-      "total": 17,
-      "covered": 17,
-      "skipped": 0,
-      "pct": 100
     }
   },
   "src/filterQuery.ts": {
@@ -111,28 +85,28 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 165,
-      "covered": 156,
+      "total": 173,
+      "covered": 165,
       "skipped": 0,
-      "pct": 94.54
+      "pct": 95.37
     },
     "functions": {
-      "total": 39,
-      "covered": 39,
+      "total": 43,
+      "covered": 43,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 165,
-      "covered": 156,
+      "total": 173,
+      "covered": 165,
       "skipped": 0,
-      "pct": 94.54
+      "pct": 95.37
     },
     "branches": {
-      "total": 108,
-      "covered": 82,
+      "total": 117,
+      "covered": 94,
       "skipped": 0,
-      "pct": 75.92
+      "pct": 80.34
     }
   },
   "src/pack.ts": {
