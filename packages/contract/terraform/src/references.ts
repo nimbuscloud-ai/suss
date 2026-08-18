@@ -15,9 +15,15 @@
  * the resource writes that attribute as a literal string. An attribute
  * the provider fills in at apply time, an `id` or an `arn` or a
  * `self_link`, is never written in the file, so the lookup finds
- * nothing and the hole stays. It also keeps `var.`, `local.`, `data.`,
- * and `module.` out, since none of those is a resource address, so the
- * lookup never finds one.
+ * nothing and the hole stays.
+ *
+ * A `locals` entry resolves the same way, since a configuration that
+ * writes `local.table = "orders-v1"` has stated the name as plainly as
+ * a resource does. One built from a variable expands to a value that
+ * still has `${var...}` in it, which becomes a hole again, so a stage
+ * prefix keeps behaving as it did. `var.`, `data.` and `module.` stay
+ * out: a variable's default is not what production runs with, and the
+ * other two say nothing this file can read.
  */
 
 /** Every attribute each resource states, by the address Terraform uses. */
@@ -30,6 +36,12 @@ const SUB_TOKEN = /\$\{([^}]*)\}/g;
 const RESOURCE_ATTRIBUTE =
   /^([A-Za-z][\w-]*)\.([A-Za-z_][\w-]*)\.([A-Za-z_][\w-]*)$/;
 
+/** `local.name`, which a `locals` block states in the same configuration. */
+const LOCAL_VALUE = /^local\.([A-Za-z_][\w-]*)$/;
+
+/** The address a locals block is kept under, which no resource can spell. */
+const LOCALS = "local";
+
 /**
  * How many hops a chain of references is followed. A resource may state
  * a name that refers to another, which refers to a third, and past a
@@ -40,6 +52,7 @@ const CHAIN_LIMIT = 4;
 /** Every resource a configuration states, by the address a reference spells. */
 export function referenceScope(
   resources: Iterable<[string, string, Record<string, unknown>]>,
+  locals: Iterable<Record<string, unknown>> = [],
 ): ReferenceScope {
   const scope: ReferenceScope = new Map();
   for (const [resourceType, label, body] of resources) {
@@ -48,6 +61,17 @@ export function referenceScope(
       scope.set(address, body);
     }
   }
+  // A module states its locals across several blocks and several files,
+  // and every one of them is `local.<name>` to a reference.
+  const stated: Record<string, unknown> = {};
+  for (const block of locals) {
+    for (const [name, value] of Object.entries(block)) {
+      if (!(name in stated)) {
+        stated[name] = value;
+      }
+    }
+  }
+  scope.set(LOCALS, stated);
   return scope;
 }
 
@@ -99,6 +123,11 @@ function expand(
 
 /** What the configuration writes at a reference, when that is a string. */
 function statedValue(reference: string, scope: ReferenceScope): string | null {
+  const local = LOCAL_VALUE.exec(reference);
+  if (local !== null) {
+    const stated = scope.get(LOCALS)?.[local[1] as string];
+    return typeof stated === "string" ? stated : null;
+  }
   const parsed = RESOURCE_ATTRIBUTE.exec(reference);
   if (parsed === null) {
     return null;

@@ -3,9 +3,9 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 482,
-    "internal": 1849,
-    "consumers": 799,
-    "pairs": 792
+    "internal": 1850,
+    "consumers": 800,
+    "pairs": 793
   },
   "packages": {
     "packages/adapter/python": {
@@ -125,8 +125,8 @@
     "packages/contract/terraform": {
       "name": "@suss/contract-terraform",
       "exports": 6,
-      "internal": 36,
-      "consumers": 17
+      "internal": 37,
+      "consumers": 18
     },
     "packages/contract/wrangler": {
       "name": "@suss/contract-wrangler",

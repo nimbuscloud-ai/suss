@@ -127,6 +127,7 @@ interface ParsedFile {
   sourceFile: string;
   constraints: Map<string, string>;
   resources: Array<[string, string, Record<string, unknown>]>;
+  locals: Array<Record<string, unknown>>;
 }
 
 /**
@@ -142,7 +143,10 @@ function summariesForFiles(
   const parsed = files
     .map((file) => parseSource(file))
     .filter((file): file is ParsedFile => file !== null);
-  const scope = referenceScope(parsed.flatMap((file) => file.resources));
+  const scope = referenceScope(
+    parsed.flatMap((file) => file.resources),
+    parsed.flatMap((file) => file.locals),
+  );
 
   const summaries: BehavioralSummary[] = [];
   for (const file of parsed) {
@@ -187,6 +191,7 @@ function parseSource(file: SourceFile): ParsedFile | null {
     sourceFile: file.sourceFile,
     constraints: providerConstraints(document),
     resources: resourcesIn(document),
+    locals: localsIn(document),
   };
 }
 
@@ -686,6 +691,20 @@ function fieldTypes(
     }
   }
   return types;
+}
+
+/** Every `locals` block a file states, each a name to a value. */
+function localsIn(
+  document: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const found: Array<Record<string, unknown>> = [];
+  for (const block of arrayOf(document.locals)) {
+    const stated = asRecord(block);
+    if (stated !== null) {
+      found.push(stated);
+    }
+  }
+  return found;
 }
 
 /** Every resource a configuration states, as `[type, label, body]`. */
