@@ -458,6 +458,13 @@ function runCheck(args: string[]): number {
     return 1;
   }
 
+  if (values.at !== undefined && values.intent !== undefined) {
+    process.stderr.write(
+      "--at reports on one thing and --intent scores every boundary intent against the code, so they cannot run together. Run them one at a time.\n",
+    );
+    return 1;
+  }
+
   if (values.dir !== undefined && values.at !== undefined) {
     const scoped = checkAt({ dir: values.dir, at: values.at, ...shared });
     return scoped.hasErrors ? 1 : 0;

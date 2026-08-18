@@ -381,7 +381,7 @@ suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 | Flag | Description |
 |---|---|
 | `--dir PATH` | Directory containing summary JSON files. suss reads every `.json` in the dir and auto-pairs by boundary. Mutually exclusive with positional args. |
-| `--at TARGET` | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Needs `--dir`. |
+| `--at TARGET` | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Needs `--dir`, and does not run with `--intent`. |
 | `--intent PATH` | Directory of team-authored intent docs (`*.intent.yaml`, `*.intent.yml`, `*.intent.json`, and the same three for `*.prd`). Each boundary intent is paired against the summaries in `--dir`, adding intent-coverage findings to the report. Needs `--dir`. |
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |

@@ -653,6 +653,14 @@ describe("runCli check --at", () => {
     expect(io.stderr).toContain("needs --dir");
   });
 
+  it("refuses to run alongside --intent", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--at", "x.ts", "--intent", "intent/"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("cannot run together");
+  });
+
   it("reports on one file out of the folder", async () => {
     writeJson("provider.json", [minimalSummary]);
     writeJson("consumer.json", [matchingConsumer]);
