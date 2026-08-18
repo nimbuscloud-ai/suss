@@ -10,7 +10,11 @@ import { describe, expect, it } from "vitest";
 
 import { readStorageContractMetadata } from "@suss/behavioral-ir";
 
-import { terraformFileToSummaries, terraformToSummaries } from "./index.js";
+import {
+  readTerraformDeclaration,
+  terraformFileToSummaries,
+  terraformToSummaries,
+} from "./index.js";
 
 import type { BehavioralSummary, StorageSemantics } from "@suss/behavioral-ir";
 import type { TerraformPack } from "./pack.js";
@@ -499,5 +503,124 @@ describe("an index that copies part of an item", () => {
     ) as BehavioralSummary;
 
     expect(readStorageContractMetadata(table)?.fieldSet).toBe("partial");
+  });
+});
+
+/**
+ * A pack for a provider nobody ships, so what the reader does with a
+ * metric and with a resource that reads one is visible without any
+ * shipped provider's vocabulary being involved.
+ */
+const SIGNALS: TerraformPack = {
+  name: "test-signals",
+  provider: "signals",
+  resources: [
+    {
+      resource: "signals_counter",
+      providerVersions: ">=1 <2",
+      boundary: {
+        kind: "metric",
+        metricSystem: "signals",
+        nameAttribute: "name",
+        metricTypeTemplate: "signals.example/counters/{name}",
+        states: ["shape.value_type"],
+      },
+    },
+    {
+      resource: "signals_watch",
+      providerVersions: ">=1 <2",
+      boundary: {
+        kind: "metric-reading",
+        metricSystem: "signals",
+        readingBlocks: ["rules", "over_threshold"],
+        queryAttribute: "selector",
+        queryIdentityKey: "signal.id",
+        states: ["limit", "window.reducer"],
+      },
+    },
+  ],
+};
+
+const SIGNAL_CONFIGURATION = `
+resource "signals_counter" "refusals" {
+  name = "\${var.environment}-refusals"
+
+  shape {
+    value_type = "SPREAD"
+  }
+}
+
+resource "signals_watch" "refusals_climbing" {
+  rules {
+    over_threshold {
+      selector = "signal.id=\\"signals.example/counters/\${var.environment}-refusals\\" AND region=\\"west\\""
+      limit    = 5
+
+      window {
+        reducer = "MEDIAN"
+      }
+    }
+  }
+
+  rules {
+    over_threshold {
+      selector = "signal.id ="
+    }
+  }
+}
+`;
+
+describe("a metric one resource declares and another reads", () => {
+  const summaries = terraformToSummaries(SIGNAL_CONFIGURATION, "signals.tf", {
+    packs: [SIGNALS],
+  });
+  const named = (name: string) =>
+    summaries.find((summary) => summary.identity.name === name);
+
+  it("gives the metric the identity the deployed series has", () => {
+    const metric = named("signals_counter.refusals");
+
+    expect(metric?.kind).toBe("library");
+    expect(metric?.identity.boundaryBinding?.semantics).toEqual({
+      name: "metric",
+      metricSystem: "signals",
+      metricType: "signals.example/counters/{var.environment}-refusals",
+    });
+  });
+
+  it("copies out the attributes the pack asked for, nested ones too", () => {
+    expect(
+      readTerraformDeclaration(
+        named("signals_counter.refusals") as BehavioralSummary,
+      ),
+    ).toEqual({
+      resource: "signals_counter",
+      attributes: { "shape.value_type": "SPREAD" },
+    });
+    expect(
+      readTerraformDeclaration(
+        named("signals_watch.refusals_climbing#0") as BehavioralSummary,
+      ),
+    ).toEqual({
+      resource: "signals_watch",
+      attributes: { limit: 5, "window.reducer": "MEDIAN" },
+    });
+  });
+
+  it("reads each rule as its own consumer, spelling the metric the same way", () => {
+    const reading = named("signals_watch.refusals_climbing#0");
+
+    expect(reading?.kind).toBe("consumer");
+    expect(reading?.identity.boundaryBinding?.semantics).toMatchObject({
+      metricType: "signals.example/counters/{var.environment}-refusals",
+    });
+  });
+
+  it("says a rule whose selector it could not read is about no metric", () => {
+    const unreadable = named("signals_watch.refusals_climbing#1");
+
+    expect(unreadable?.identity.boundaryBinding?.semantics).toMatchObject({
+      metricType: null,
+    });
   });
 });

@@ -1,10 +1,10 @@
 # @suss/contract-terraform
 
-Reads the storage a Terraform configuration declares, so code can be checked against it.
+Reads the boundaries a Terraform configuration declares, so code and other resources can be checked against them.
 
 ## What this package is
 
-A contract reader. It walks `.tf` files for `aws_dynamodb_table` resources and describes each one as a boundary, the same way `@suss/contract-cloudformation` describes a table a template declares.
+A contract reader. It walks `.tf` files and describes what it finds as boundaries, the same way `@suss/contract-cloudformation` describes what a template declares. It knows no provider: a pack says that `aws_dynamodb_table` is a store and that `google_logging_metric` is a metric, and this matches on what the pack says.
 
 ```bash
 suss contract --from terraform infra/terraform/dynamodb -o tables.json
@@ -42,7 +42,7 @@ A table declares its keys and lets every other attribute vary, so the contract s
 
 ## What it will not tell you
 
-- **Only DynamoDB tables.** An RDS instance, an S3 bucket, or an SQS queue declared in the same configuration is skipped.
+- **Only what a loaded pack describes.** A resource no entry covers, an IAM policy or a subnet, is skipped.
 - **A resource built with `for_each` or `count`** states one block for many tables, and this reads the block as written rather than working out what it expands to.
 - **A name a variable supplies whole**, `name = var.table_name`, has no fixed text to pair on, so it records nothing rather than guessing.
 
@@ -55,3 +55,32 @@ Depends on `@suss/behavioral-ir` for the summaries it produces and `hcl2-parser`
 A DynamoDB index does not carry the whole item. `projection_type = "INCLUDE"` copies the attributes it lists, `KEYS_ONLY` copies none, and both copy the index's keys and the table's. A reader asking that index for anything else gets nothing back for it, and the store raises no error, so the caller sees an item with fields missing and nothing says why.
 
 So an index like that declares every field it will ever have, and its contract says `exhaustive` where the table's says `partial`. A pack states which attributes carry that, under `serves`, and a store without the idea leaves it out.
+
+## A resource that reads what another one declares
+
+Some resources refer to another resource by a string the deployment gives it, rather than by a Terraform reference. An alert refers to a metric that way, and a metric declares itself:
+
+```hcl
+resource "signals_counter" "refusals" {
+  name = "${var.environment}-refusals"
+
+  shape {
+    value_type = "SPREAD"
+  }
+}
+
+resource "signals_watch" "refusals_climbing" {
+  rules {
+    over_threshold {
+      selector = "signal.id=\"signals.example/counters/${var.environment}-refusals\" AND region=\"west\""
+      limit    = 5
+    }
+  }
+}
+```
+
+An entry with `kind: "metric"` says which attribute is the name and how the deployed identity is spelled around it, as `metricTypeTemplate`, so the reader can build the string the other side spells. An entry with `kind: "metric-reading"` says which blocks one reading is written inside, which attribute is the selector, and which key inside that selector is the metric. Each reading becomes its own consumer summary, since one resource usually states several, each about a different metric.
+
+The selector is a small query language rather than a name, so `parseFilterQuery` reads it: comparisons joined by `AND` and `OR`, with parentheses, `NOT`, quoted or bare values, and terms written next to each other for AND. A key may quote one of its own segments, `metric.label."response_code_class"`, and that comes back as one key with the quotes off. A call may stand where a comparison would, which is how Cloud Monitoring writes an SLO burn-rate condition, and `filterCalls` gives those back. The parser is exported, so a pack that has to read the same string for something else does not write a second one. A selector it cannot read leaves the reading with no metric on it, which pairs with nothing.
+
+Both kinds take a `states` list of attribute paths. The reader copies out whatever the configuration set them to, dotted paths stepping into nested blocks, and puts them on the summary under `terraformDeclaration`. It does not interpret them: what `value_type = "SPREAD"` means is the pack's business, and `@suss/terraform-gcp` is where the Google version of that judgement lives.

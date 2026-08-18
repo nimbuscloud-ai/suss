@@ -53,7 +53,46 @@ export interface MessageBusResource {
   nameAttribute?: string;
 }
 
-export type TerraformResource = StorageResource | MessageBusResource;
+/** A named series of measurements a resource declares. */
+export interface MetricResource {
+  kind: "metric";
+  /** Which system the series lives in: cloud-monitoring. */
+  metricSystem: string;
+  /** The attribute that says what the metric is called. */
+  nameAttribute: string;
+  /**
+   * How the deployed metric type is spelled, with `{name}` standing
+   * for the declared name. That string is what a resource reading the
+   * metric spells, so it is the identity the two sides share.
+   */
+  metricTypeTemplate: string;
+  /** Attribute paths whose values say what the metric measures. */
+  states?: string[];
+}
+
+/**
+ * A resource that reads a metric another resource declares. One
+ * resource usually states several readings, each in its own block and
+ * each about its own metric, so each becomes a boundary of its own.
+ */
+export interface MetricReadingResource {
+  kind: "metric-reading";
+  metricSystem: string;
+  /** The blocks one reading is written inside, outermost first. */
+  readingBlocks: string[];
+  /** The attribute whose query says which metric the reading is about. */
+  queryAttribute: string;
+  /** The key inside that query whose value is the metric's type. */
+  queryIdentityKey: string;
+  /** Attribute paths whose values say how the reading treats it. */
+  states?: string[];
+}
+
+export type TerraformResource =
+  | StorageResource
+  | MessageBusResource
+  | MetricResource
+  | MetricReadingResource;
 
 /** One resource type, as one version range of one provider declares it. */
 export interface TerraformResourcePattern {

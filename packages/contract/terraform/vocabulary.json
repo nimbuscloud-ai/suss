@@ -2,5 +2,17 @@
   "exhaustive": "suss: a contract that declares every field an item has",
   "keyFields": "suss: a storage contract identified by the fields a caller supplies",
   "library": "suss: marker for a value a library states",
-  "terraform": "reader name, HashiCorp Terraform"
+  "terraform": "reader name, HashiCorp Terraform",
+  "AND": "filter grammar: the keyword joining two comparisons that both have to hold",
+  "OR": "filter grammar: the keyword joining two comparisons where either may hold",
+  "NOT": "filter grammar: the keyword turning a comparison around",
+  "and": "filter grammar: what this reader calls an AND once it has read one",
+  "or": "filter grammar: what this reader calls an OR once it has read one",
+  "term": "filter grammar: one comparison, the leaf of what a filter reads as",
+  "junction": "filter grammar: comparisons joined by AND or OR",
+  "negation": "filter grammar: a comparison NOT turned around",
+  "word": "filter grammar: a bare run of text, a key or an unquoted value",
+  "operator": "filter grammar: the comparison between a key and a value",
+  "open": "filter grammar: the parenthesis a group starts with",
+  "close": "filter grammar: the parenthesis a group ends with"
 }
