@@ -1322,7 +1322,7 @@
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["unhandledCase", "unreadOutcome"]
+              "enum": ["unhandledCase", "unreadOutcome", "unfollowedCall"]
             },
             "conditions": {
               "type": "array",
