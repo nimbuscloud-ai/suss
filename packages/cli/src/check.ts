@@ -185,10 +185,12 @@ export function checkDir(
   const collisions = findBoundaryCollisions(allSummaries, sourceFile);
 
   const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
+  const summariesWithGaps = countSummariesWithGaps(allSummaries);
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, runtimeNamedCrossings, collisions }, null, 2)}\n`
+    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, runtimeNamedCrossings, summariesWithGaps, collisions }, null, 2)}\n`
     : renderDirHuman(result, confidence) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
+      renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
       renderIntentSection(intent);
 
@@ -597,6 +599,24 @@ function renderRuntimeNamedCrossings(count: number): string {
     return "";
   }
   return `\n${count} send${count === 1 ? "" : "s"} name${count === 1 ? "s" : ""} ${count === 1 ? "its" : "their"} queue or bus at runtime. Each is recorded; none can be checked from source.\n`;
+}
+
+/**
+ * How many summaries describe a unit suss could not read all of. A run
+ * with no findings agreed on everything it compared, and this says how
+ * much of the code those comparisons were standing for.
+ */
+function countSummariesWithGaps(
+  summaries: ReadonlyArray<BehavioralSummary>,
+): number {
+  return summaries.filter((summary) => summary.gaps.length > 0).length;
+}
+
+function renderGapCoverage(withGaps: number, total: number): string {
+  if (withGaps === 0) {
+    return "";
+  }
+  return `\n${withGaps} of ${total} summar${total === 1 ? "y" : "ies"} record${withGaps === 1 ? "s" : ""} something suss could not read, so what this run knows about ${withGaps === 1 ? "that unit" : "those units"} is partial. Run \`suss inspect\` over the same files to see what.\n`;
 }
 
 function renderDirHuman(
