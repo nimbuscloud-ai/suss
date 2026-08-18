@@ -12,7 +12,9 @@
 
 import {
   graphqlResolverBinding,
+  nestedDocumentLabel,
   withGraphqlMetadata,
+  withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 
 import { schemaKey } from "./schema.js";
@@ -66,8 +68,72 @@ export function buildResolverSummaries(
     functionById: byLogicalId(config.functions),
     dataSourceById: byLogicalId(config.dataSources),
   };
-  return config.resolvers.map((resolver) =>
-    buildOne(resolver, indexes, resolvedByApi, schemasByApi, sourceFile),
+  const resolverApis = new Set(
+    config.resolvers.map((resolver) => resolver.apiLogicalId),
+  );
+  return [
+    ...schemaDocumentSummaries(
+      resolvedByApi,
+      resolverApis,
+      indexes,
+      sourceFile,
+    ),
+    ...config.resolvers.map((resolver) =>
+      buildOne(resolver, indexes, resolvedByApi, schemasByApi, sourceFile),
+    ),
+  ];
+}
+
+/**
+ * One summary per API whose schema the reader resolved, which is where
+ * the SDL goes. The type definitions belong to the API's schema rather
+ * than to any one resolver, and a client crosses `Query.users`, not the
+ * schema. Each resolver points here through the document label.
+ *
+ * A template can declare two APIs, so the label says which one, the way
+ * a nested stack's does.
+ */
+function schemaDocumentSummaries(
+  resolvedByApi: Map<string, ResolvedSchema>,
+  resolverApis: ReadonlySet<string | null>,
+  indexes: Indexes,
+  sourceFile: string,
+): BehavioralSummary[] {
+  const out: BehavioralSummary[] = [];
+  for (const [apiLogicalId, resolved] of resolvedByApi) {
+    const sdl = resolvedSdl(resolved);
+    if (sdl === null || !resolverApis.has(apiLogicalId)) {
+      continue;
+    }
+    const label = schemaDocumentLabel(sourceFile, apiLogicalId);
+    out.push({
+      kind: "library",
+      location: { file: label, range: { start: 0, end: 0 }, exportName: null },
+      identity: {
+        name: indexes.apiById.get(apiLogicalId)?.name ?? apiLogicalId,
+        exportPath: null,
+        boundaryBinding: null,
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: { source: "derived", level: "high" },
+      metadata: withGraphqlMetadata(
+        withSourceDocumentMetadata(undefined, { label }),
+        { schemaSdl: sdl },
+      ),
+    });
+  }
+  return out;
+}
+
+function schemaDocumentLabel(
+  sourceFile: string,
+  apiLogicalId: string | null,
+): string {
+  return nestedDocumentLabel(
+    sourceFile,
+    apiLogicalId === null ? [] : [apiLogicalId],
   );
 }
 
@@ -104,7 +170,10 @@ function buildOne(
     schema?.get(schemaKey(resolver.typeName, resolver.fieldName)) ?? null;
 
   const ownerKey = `${resolver.typeName}.${resolver.fieldName}`;
-  const schemaSdl = resolved === null ? null : resolvedSdl(resolved);
+  const schemaDocument =
+    resolved === null || resolvedSdl(resolved) === null
+      ? null
+      : schemaDocumentLabel(sourceFile, resolver.apiLogicalId);
 
   return {
     kind: "resolver",
@@ -131,7 +200,14 @@ function buildOne(
     transitions: buildTransitions(ownerKey, resolver, field),
     gaps: [],
     confidence: { source: "derived", level: "high" },
-    metadata: buildMetadata(resolver, api, resolved, field, indexes, schemaSdl),
+    metadata: buildMetadata(
+      resolver,
+      api,
+      resolved,
+      field,
+      indexes,
+      schemaDocument,
+    ),
   };
 }
 
@@ -141,20 +217,18 @@ function buildMetadata(
   resolved: ResolvedSchema | null,
   field: FieldInfo | null,
   indexes: Indexes,
-  schemaSdl: string | null,
+  schemaDocument: string | null,
 ): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     appsync: buildAppsyncMetadata(resolver, api, resolved, field, indexes),
   };
-  // Surface the resolved SDL so the checker can resolve nested
-  // selections against this resolver's return type. Repeated across
-  // every resolver from the same API by design, each summary travels
-  // independently; keeping the SDL on-hand is simpler than
-  // cross-summary schema lookup, and the checker caches parses per-SDL.
-  if (schemaSdl === null) {
+  // Which schema document declares this field, so the checker can find
+  // the SDL and resolve a consumer's nested selections against this
+  // resolver's return type.
+  if (schemaDocument === null) {
     return metadata;
   }
-  return withGraphqlMetadata(metadata, { schemaSdl });
+  return withSourceDocumentMetadata(metadata, { label: schemaDocument });
 }
 
 function buildAppsyncMetadata(
