@@ -208,3 +208,28 @@ describe("a threshold on a distribution", () => {
     expect(checkMetric(read(bool))).toEqual([]);
   });
 });
+
+describe("an alert whose filter refers to the metric resource", () => {
+  const REFERRED = withEdit(
+    'metric.type=\\"logging.googleapis.com/user/sweep-refused\\"',
+    'metric.type=\\"logging.googleapis.com/user/${google_logging_metric.sweep_refused.name}\\"',
+  );
+
+  it("reads the condition as the metric that resource declares", () => {
+    const condition = boundary(
+      REFERRED,
+      "google_monitoring_alert_policy.sweep_refused_sustained#0",
+    );
+    expect(condition.identity.boundaryBinding?.semantics).toMatchObject({
+      metricType: "logging.googleapis.com/user/sweep-refused",
+    });
+  });
+
+  it("reports the threshold on a distribution, as the literal filter does", () => {
+    const findings = checkMetric(read(REFERRED));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.provider.summary).toContain(
+      "google_logging_metric.sweep_refused",
+    );
+  });
+});
