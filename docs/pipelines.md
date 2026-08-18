@@ -73,6 +73,8 @@ Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows not
 
 `suss check --dir summaries/` is the same flow with an upstream step: `pairSummaries` groups every summary by its boundary key (`(method, normalizedPath)` for HTTP today) and by role (`BOUNDARY_ROLE[kind]`), producing matched pairs + buckets of unmatched providers / consumers / summaries-with-no-binding. `checkPair` runs on each matched pair.
 
+That grouping only knows method and path, so a store, a queue, and a runtime's configuration all come back unpaired from it. Each of those has a pass of its own, and each records what it compared into the same `pairs` list. `checkAll` drops those from the unmatched buckets afterwards, which is what stops one table being reported as compared and unpaired in the same run.
+
 <svg class="suss-diagram" viewBox="0 0 660 356" role="img" aria-labelledby="check-title check-desc">
   <title id="check-title">How a folder of summaries becomes findings</title>
   <desc id="check-desc">Every summary in the folder is grouped by its boundary key and by whether it provides or consumes. Groups holding both sides become pairs, which run through six independent checks. Groups holding one side are reported as waiting for a counterpart.</desc>

@@ -122,7 +122,8 @@ npx suss check --dir summaries/
 
 ```
 Compared 1 boundary:
-  GET /users/{id}: get <-> loadUser
+  GET /users/{id}
+    suss-tutorial::api.ts::get <-> suss-tutorial::client.ts::loadUser
 
 ────────────────────────────────────────────────────────────
 [ERROR] unhandledProviderCase
@@ -174,7 +175,8 @@ npx suss check --dir summaries/
 
 ```
 Compared 1 boundary:
-  GET /users/{id}: get <-> loadUser
+  GET /users/{id}
+    suss-tutorial::api.ts::get <-> suss-tutorial::client.ts::loadUser
 
 No findings. Every compared boundary agreed.
 ```
