@@ -12,22 +12,24 @@ import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
- * The type whose field this method implements, or the empty string when
- * the source does not say.
+ * The type whose field this method implements, or null when the source
+ * does not say.
  *
- * A class decorator that gives a type covers every method under it.
- * Without one, the pack's own default applies: a decorator that puts its
- * field on a root operation type is in the pack's map, and one that
- * needs the class to name a type is not. The second kind, on a class
- * that names none, has nowhere left to read the type from, and null
- * takes that through to a binding nothing pairs with.
+ * A method decorator that settles the type itself wins. `@Query` puts
+ * its field on the root `Query` type however the class is decorated, so
+ * `@Resolver(() => User)` above a `@Query` says which type
+ * `@ResolveField` members hang off and nothing about the query. Reading
+ * it the other way files every root operation under the wrong type.
+ *
+ * A decorator the map leaves out needs the class to name a type, and a
+ * class that names none leaves nowhere to read it from.
  */
 function resolverTypeName(args: {
   classTypeName: string | null;
   decoratorName: string;
   typeMap: Record<string, string>;
 }): string | null {
-  return args.classTypeName ?? args.typeMap[args.decoratorName] ?? null;
+  return args.typeMap[args.decoratorName] ?? args.classTypeName ?? null;
 }
 
 /**

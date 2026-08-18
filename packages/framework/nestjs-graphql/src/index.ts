@@ -1,49 +1,17 @@
-// @suss/framework-nestjs-graphql: the PatternPack for NestJS GraphQL
-// resolvers (`@nestjs/graphql`).
-//
-// NestJS expresses resolvers as classes decorated with `@Resolver()`,
-// where each method has a GraphQL operation decorator on it
-// (`@Query`, `@Mutation`, `@ResolveField`, or `@Subscription`).
-// There is no `new ApolloServer({ resolvers: {...} })` call in user
-// code, because the framework wires resolvers internally, so the
-// resolverMap-style discovery used by `@suss/framework-apollo` finds
-// nothing here. Decorator-driven discovery covers it.
-//
-// Resolver typeName comes from the class decorator's first argument
-// (`@Resolver(() => User)` → "User"). A class decorator with no
-// argument leaves it to the operation decorator: `@Query` puts its
-// field on the root `Query` type and `@Mutation` on `Mutation`, so a
-// top-level operation class still produces a well-formed
-// `graphql-resolver` binding.
-//
-// `@ResolveField` is the one that cannot say this for itself. The type it
-// resolves a field on is what the class decorator's argument would have given,
-// so on a class that passes no argument there is nothing left to read it from.
-// The binding then has no type, the summary gets a gap saying so, and nothing
-// pairs with it. NestJS rejects that class at
-// startup; suss reports what it could not read rather than picking a
-// root operation type and claiming a field the schema does not have.
-//
-// Field name reads the method-decorator's `name` option override
-// (`@Query(() => User, { name: "lookupUser" })`) when present;
-// otherwise the method's own name.
-//
-// Inputs are mapped by parameter decorator. NestJS uses
-// `@Args()` / `@Parent()` / `@Context()` / `@Info()` to inject the
-// (parent, args, context, info) tuple Apollo passes positionally.
-// Each parameter's first matching decorator decides its role.
-//
-// Deferred:
-//   - `@Args('field')` shape: today every `@Args` lands as a single
-//     "args" Input; v0 doesn't decompose the field-path / type
-//     options. Adequate for the binding identity; pairing logic that
-//     wants per-arg shape will need a richer decorator-arg parse.
-//   - Class inheritance / mixins: resolvers split across an abstract
-//     base + concrete child are discovered separately but pairing
-//     doesn't yet collapse them.
-//   - Decorator factories (`createParamDecorator(...)`-defined custom
-//     decorators) bypass the role map.
-
+/**
+ * The PatternPack for NestJS GraphQL resolvers (`@nestjs/graphql`).
+ *
+ * NestJS expresses resolvers as classes decorated with `@Resolver()`,
+ * where each method has a GraphQL operation decorator on it. The
+ * framework wires them internally, so there is no
+ * `new ApolloServer({ resolvers: {...} })` call for the resolver-map
+ * discovery in `@suss/framework-apollo` to find.
+ *
+ * Which type owns a field is the part that is easy to get backwards:
+ * `@Query` and `@Mutation` settle it themselves, and
+ * `@Resolver(() => User)` is there for `@ResolveField`. The README
+ * beside this file spells that out, along with what v0 leaves out.
+ */
 import type { PatternPack } from "@suss/extractor";
 
 export interface NestjsGraphqlPackOptions {
@@ -87,9 +55,9 @@ export function nestjsGraphqlFramework(
             "ResolveField",
             "Subscription",
           ],
-          // The three NestJS routes to a root operation type, each
-          // named after the type it puts its field on. `ResolveField`
-          // is deliberately absent: it needs the class to name a type.
+          // The three that settle their own type, each named after the
+          // type it puts its field on. `ResolveField` is deliberately
+          // absent: it is the one that needs the class decorator.
           methodDecoratorTypeMap: {
             Query: "Query",
             Mutation: "Mutation",

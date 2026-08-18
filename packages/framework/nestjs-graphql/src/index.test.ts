@@ -119,7 +119,7 @@ describe("nestjsGraphqlFramework: integration", () => {
     }
   });
 
-  it("maps `@Resolver(() => User)` to a User-typed graphql-resolver binding", () => {
+  it("puts a @Query on the root Query type even under @Resolver(() => User)", () => {
     const findUser = summaries.find(
       (s) => s.identity.name === "UserResolver.findUser",
     );
@@ -129,8 +129,22 @@ describe("nestjsGraphqlFramework: integration", () => {
     }
     expect(findUser.identity.boundaryBinding?.semantics).toMatchObject({
       name: "graphql-resolver",
-      typeName: "User",
+      typeName: "Query",
       fieldName: "findUser",
+    });
+  });
+
+  it("puts a @ResolveField on the type the class decorator names", () => {
+    const workspace = summaries.find(
+      (s) => s.identity.name === "UserResolver.workspace",
+    );
+    if (!workspace) {
+      throw new Error("workspace missing");
+    }
+    expect(workspace.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "graphql-resolver",
+      typeName: "User",
+      fieldName: "workspace",
     });
   });
 
@@ -143,7 +157,7 @@ describe("nestjsGraphqlFramework: integration", () => {
     }
     expect(create.identity.boundaryBinding?.semantics).toMatchObject({
       name: "graphql-resolver",
-      typeName: "User",
+      typeName: "Mutation",
       fieldName: "createUserCustom",
     });
   });
@@ -185,12 +199,9 @@ describe("nestjsGraphqlFramework: integration", () => {
     if (!sub) {
       throw new Error("subscription missing");
     }
-    // @Resolver(() => User) on the class wins over the decorator's own type
-    // name, so the subscription comes out as "on User". The decorator only
-    // decides the type when the class decorator was given no argument.
     expect(sub.identity.boundaryBinding?.semantics).toMatchObject({
       name: "graphql-resolver",
-      typeName: "User",
+      typeName: "Subscription",
       fieldName: "userUpdated",
     });
   });
