@@ -2,11 +2,11 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 484,
-    "internal": 1868,
-    "consumers": 803,
-    "pairs": 796,
-    "unfollowedCalls": 189
+    "exports": 488,
+    "internal": 1910,
+    "consumers": 825,
+    "pairs": 818,
+    "unfollowedCalls": 193
   },
   "packages": {
     "packages/adapter/python": {
@@ -39,8 +39,8 @@
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 34,
-      "internal": 159,
+      "exports": 35,
+      "internal": 160,
       "consumers": 113,
       "unfollowedCalls": 13
     },
@@ -53,10 +53,10 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 10,
-      "internal": 245,
-      "consumers": 157,
-      "unfollowedCalls": 29
+      "exports": 13,
+      "internal": 286,
+      "consumers": 179,
+      "unfollowedCalls": 33
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
