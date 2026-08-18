@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 55,
-    "packagesWithExports": 55,
-    "exports": 470,
-    "internal": 1822,
-    "consumers": 772,
-    "pairs": 765
+    "packages": 56,
+    "packagesWithExports": 56,
+    "exports": 482,
+    "internal": 1843,
+    "consumers": 781,
+    "pairs": 774
   },
   "packages": {
     "packages/adapter/python": {
@@ -28,7 +28,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 55,
+      "exports": 56,
       "internal": 15,
       "consumers": 4
     },
@@ -124,9 +124,9 @@
     },
     "packages/contract/terraform": {
       "name": "@suss/contract-terraform",
-      "exports": 2,
-      "internal": 12,
-      "consumers": 10
+      "exports": 8,
+      "internal": 27,
+      "consumers": 14
     },
     "packages/contract/wrangler": {
       "name": "@suss/contract-wrangler",
@@ -304,7 +304,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 47,
+      "exports": 49,
       "internal": 10,
       "consumers": 0
     },
@@ -337,6 +337,12 @@
       "exports": 2,
       "internal": 1,
       "consumers": 6
+    },
+    "packages/terraform/gcp": {
+      "name": "@suss/terraform-gcp",
+      "exports": 3,
+      "internal": 6,
+      "consumers": 5
     }
   }
 }
