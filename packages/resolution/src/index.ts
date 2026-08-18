@@ -53,72 +53,237 @@ export type {
 // writes it: `Foo()`, `new Foo()`, `Foo.new`. The adapter says `call`
 // about whichever of those it reads, and lists the constructor's
 // parameters as `paramOf` of the class.
-//
-// Three relations come out. `comesTo(x, z)` follows a name to the value
-// it ends up being, which can be an object as well as a function; the
-// chain has to pass through objects for `routes.list` to reach what
-// `list` holds. `resolves(x, z)` is `comesTo` narrowed to functions,
-// and is the question callers ask.
-//
-// `givesBack(x, z)` is the other direction of function application:
-// following x arrives at a call, and z is what that call returns.
-//
-// `comesFrom(x, m, n)` answers the other direction, for a name whose
-// value lives in a library nobody here can read: following x arrives
-// at the name n that module m exports. `callsInto(f, m, n)` puts that
-// together with the calls a function makes, so a project wrapper
-// answers with the library names calling it reaches.
-//
-// A caller says which values it is asking about, with `wanted(x)` and
-// `wantedOrigin(x)`, and reads its answers out of the relations
-// `RESOLUTION_QUESTIONS` derives. Writing the questions down is what
-// lets the engine follow a chain only where somebody is waiting on it.
-//
-// `isWrittenAs(x, z)` follows the same names to the expression the
-// value is written as, whatever kind of expression that is. A GraphQL
-// document is neither a function nor an object, so `comesTo` never
-// reaches one; reading a document back off a named constant means
-// following the same binds and imports to a template literal or a tag
-// call and letting the caller decide what it is looking at.
 
-import { lit, rule, variable as v } from "@suss/datalog";
+import { constant, lit, rule, variable as v } from "@suss/datalog";
+
+/** A step to the value x is written as. */
+export const VALUE_STEP = constant("value");
+
+/** A step to what running the call x is handed back. */
+export const RESULT_STEP = constant("result");
 
 /**
  * The rules every language adapter shares. Concatenate a language's own
  * rules onto these before evaluating.
+ *
+ * Every construct states its hops once, as `stepsTo(x, y, kind)`, which
+ * says x leads to y. A value step goes to the value x is written as, and a
+ * result step runs the call x is and goes to what that call handed back.
+ * `reaches` is the closure of those steps, and a walk counts as a result
+ * walk once it has run a call anywhere along it.
+ *
+ * Each question is that one closure with its own stopping condition, so
+ * adding a construct is one step and every question gets it, and adding
+ * a question is a stopping condition and no steps at all.
  */
 export const RESOLUTION_RULES = [
-  // A value comes to itself; every chain ends at something written out
-  // in source, a function or an object.
-  rule("comesTo", [v("x"), v("x")], [lit("func", v("x"))]),
-  rule("comesTo", [v("x"), v("x")], [lit("objectValue", v("x"))]),
-
   // Aliasing: const x = y, or an identifier referencing a declaration.
-  rule(
-    "comesTo",
-    [v("x"), v("z")],
-    [lit("binds", v("x"), v("y")), lit("comesTo", v("y"), v("z"))],
-  ),
+  // A language with a hop of its own, like JavaScript's `.bind`, states
+  // it as a step too, or every question but `comesTo` misses it.
+  rule("stepsTo", [v("x"), v("y"), VALUE_STEP], [lit("binds", v("x"), v("y"))]),
 
   // A name written more than once has the value the last write left
-  // there, and `binds` says nothing about it. The adapter works out
-  // which write that is, in its own language's terms, and stays quiet
-  // when control flow decides. A name it stays quiet about comes to no
-  // value, which is the answer.
+  // there. The adapter works out which write that is and stays quiet
+  // when control flow decides, so such a name steps nowhere at all.
   rule(
-    "comesTo",
-    [v("x"), v("z")],
-    [lit("endsHolding", v("x"), v("y")), lit("comesTo", v("y"), v("z"))],
+    "stepsTo",
+    [v("x"), v("y"), VALUE_STEP],
+    [lit("endsHolding", v("x"), v("y"))],
   ),
 
-  // An import comes to what the module exports under that name.
+  // An import steps to what the module exports under that name.
   rule(
-    "comesTo",
-    [v("x"), v("z")],
+    "stepsTo",
+    [v("x"), v("value"), VALUE_STEP],
     [
       lit("imports", v("x"), v("m"), v("n")),
       lit("moduleExport", v("m"), v("n"), v("value")),
-      lit("comesTo", v("value"), v("z")),
+    ],
+  ),
+
+  // A parameter steps to what a call passes it. A function called from
+  // several places leaves its parameter with more than one value, and a
+  // caller that needs those apart asks `paramAt`.
+  rule(
+    "stepsTo",
+    [v("p"), v("a"), VALUE_STEP],
+    [lit("passesArgument", v("r"), v("p"), v("a"))],
+  ),
+
+  // Reading a property steps to what the object contains under that
+  // name, whichever way the object arrived: `routes.list` off a name,
+  // or `make(body).handle` off a call.
+  rule(
+    "stepsTo",
+    [v("x"), v("held"), VALUE_STEP],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("objectOf", v("o"), v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+    ],
+  ),
+
+  // Calling a class makes one of it, so the call steps to the class and
+  // a method read off the result is the one the class declares. The
+  // caveat below is about a factory function, and a class is not one.
+  rule(
+    "stepsTo",
+    [v("r"), v("cls"), VALUE_STEP],
+    [
+      lit("call", v("r"), v("c")),
+      lit("comesTo", v("c"), v("cls")),
+      lit("objectValue", v("cls")),
+    ],
+  ),
+
+  // Wrapper transparency, derived: calling a factory that returns a
+  // function which calls its parameter k steps to argument k.
+  rule(
+    "stepsTo",
+    [v("r"), v("a"), VALUE_STEP],
+    [
+      lit("call", v("r"), v("c")),
+      lit("comesTo", v("c"), v("f")),
+      lit("unwraps", v("f"), v("k")),
+      lit("callArg", v("r"), v("k"), v("a")),
+    ],
+  ),
+
+  // Wrapper transparency, declared: a pack says this callee wraps
+  // argument k. The callee has to come from the library the pack said,
+  // so a local object spelled the same way is not mistaken for it.
+  rule(
+    "stepsTo",
+    [v("r"), v("a"), VALUE_STEP],
+    [
+      lit("calleeName", v("r"), v("n")),
+      lit("unwrapsByName", v("n"), v("k")),
+      lit("wrapperModule", v("n"), v("m")),
+      lit("calleeOrigin", v("r"), v("m")),
+      lit("callArg", v("r"), v("k"), v("a")),
+    ],
+  ),
+
+  // The one step that runs a function forwards: a call steps to what
+  // the function it invokes returns.
+  rule(
+    "stepsTo",
+    [v("r"), v("ret"), RESULT_STEP],
+    [lit("invokes", v("r"), v("f")), lit("returnsValue", v("f"), v("ret"))],
+  ),
+
+  // Where a walk gets to, and whether it ran a call on the way. A value
+  // step keeps whatever the rest of the walk was, and a result step
+  // makes the whole walk one that ran a call.
+  rule(
+    "reaches",
+    [v("x"), v("z"), v("kind")],
+    [lit("stepsTo", v("x"), v("z"), v("kind"))],
+  ),
+  rule(
+    "reaches",
+    [v("x"), v("z"), v("kind")],
+    [
+      lit("stepsTo", v("x"), v("y"), VALUE_STEP),
+      lit("reaches", v("y"), v("z"), v("kind")),
+    ],
+  ),
+  // Two rules rather than one leaving the rest of the walk's kind free.
+  // A free kind is a second question about the same relation, and a
+  // demand-driven run then derives both to answer either.
+  rule(
+    "reaches",
+    [v("x"), v("z"), RESULT_STEP],
+    [
+      lit("stepsTo", v("x"), v("y"), RESULT_STEP),
+      lit("reaches", v("y"), v("z"), VALUE_STEP),
+    ],
+  ),
+  rule(
+    "reaches",
+    [v("x"), v("z"), RESULT_STEP],
+    [
+      lit("stepsTo", v("x"), v("y"), RESULT_STEP),
+      lit("reaches", v("y"), v("z"), RESULT_STEP),
+    ],
+  ),
+
+  // What a value comes down to: the walk that never ran a call, stopped
+  // at a function or an object. Something already written out comes to
+  // itself, and every other walk ends at one of those.
+  rule("comesTo", [v("x"), v("x")], [lit("func", v("x"))]),
+  rule("comesTo", [v("x"), v("x")], [lit("objectValue", v("x"))]),
+  rule(
+    "comesTo",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), VALUE_STEP), lit("func", v("z"))],
+  ),
+  rule(
+    "comesTo",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), VALUE_STEP), lit("objectValue", v("z"))],
+  ),
+
+  // The same stopping condition, for the walk that ran a call. A call
+  // gets no `comesTo` answer on purpose: coming back with what a
+  // factory returned would fight the unwrapping answer.
+  rule(
+    "givesBack",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), RESULT_STEP), lit("func", v("z"))],
+  ),
+  rule(
+    "givesBack",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), RESULT_STEP), lit("objectValue", v("z"))],
+  ),
+
+  // Following a value to the expression it is written as, whatever kind
+  // that is. A GraphQL document is neither a function nor an object, so
+  // `comesTo` never reaches one.
+  rule("isWrittenAs", [v("x"), v("x")], [lit("writtenValue", v("x"))]),
+  rule("isWrittenAs", [v("x"), v("x")], [lit("objectValue", v("x"))]),
+  rule(
+    "isWrittenAs",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), VALUE_STEP), lit("writtenValue", v("z"))],
+  ),
+  rule(
+    "isWrittenAs",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), VALUE_STEP), lit("objectValue", v("z"))],
+  ),
+
+  // What one call site put in a parameter, told apart from what the
+  // other callers passed.
+  rule(
+    "paramAt",
+    [v("r"), v("p"), v("z")],
+    [
+      lit("passesArgument", v("r"), v("p"), v("a")),
+      lit("comesTo", v("a"), v("z")),
+    ],
+  ),
+
+  // An argument arriving at the parameter it is passed to, by position
+  // or by the name the caller wrote, keeping the call it went through
+  // so `paramAt` can tell two call sites apart.
+  rule(
+    "passesArgument",
+    [v("r"), v("p"), v("a")],
+    [
+      lit("paramOf", v("f"), v("k"), v("p")),
+      lit("callsFunction", v("r"), v("f")),
+      lit("callArg", v("r"), v("k"), v("a")),
+    ],
+  ),
+  rule(
+    "passesArgument",
+    [v("r"), v("p"), v("a")],
+    [
+      lit("paramNamed", v("f"), v("n"), v("p")),
+      lit("callsFunction", v("r"), v("f")),
+      lit("callKeywordArg", v("r"), v("n"), v("a")),
     ],
   ),
 
@@ -157,83 +322,6 @@ export const RESOLUTION_RULES = [
     "invokes",
     [v("r"), v("f")],
     [lit("call", v("r"), v("c")), lit("givesBack", v("c"), v("f"))],
-  ),
-
-  // What a call gives back, which is the direction `comesTo` never
-  // goes.
-  rule(
-    "givesBack",
-    [v("r"), v("z")],
-    [
-      lit("invokes", v("r"), v("f")),
-      lit("returnsValue", v("f"), v("ret")),
-      lit("comesTo", v("ret"), v("z")),
-    ],
-  ),
-  // The function returns a call rather than a value written out, so a
-  // chain through two factories settles.
-  rule(
-    "givesBack",
-    [v("r"), v("z")],
-    [
-      lit("invokes", v("r"), v("f")),
-      lit("returnsValue", v("f"), v("ret")),
-      lit("givesBack", v("ret"), v("z")),
-    ],
-  ),
-
-  // The hops `comesTo` follows, followed again: a name declared as the
-  // call, an import of that name, the parameter the call was passed to.
-  // Only the last step differs, and it is the one `comesTo` withholds.
-  rule(
-    "givesBack",
-    [v("x"), v("z")],
-    [lit("binds", v("x"), v("y")), lit("givesBack", v("y"), v("z"))],
-  ),
-  rule(
-    "givesBack",
-    [v("x"), v("z")],
-    [lit("endsHolding", v("x"), v("y")), lit("givesBack", v("y"), v("z"))],
-  ),
-  rule(
-    "givesBack",
-    [v("x"), v("z")],
-    [
-      lit("imports", v("x"), v("m"), v("n")),
-      lit("moduleExport", v("m"), v("n"), v("value")),
-      lit("givesBack", v("value"), v("z")),
-    ],
-  ),
-  rule(
-    "givesBack",
-    [v("p"), v("z")],
-    [
-      lit("paramOf", v("f"), v("k"), v("p")),
-      lit("callsFunction", v("r"), v("f")),
-      lit("callArg", v("r"), v("k"), v("a")),
-      lit("givesBack", v("a"), v("z")),
-    ],
-  ),
-  rule(
-    "givesBack",
-    [v("p"), v("z")],
-    [
-      lit("paramNamed", v("f"), v("n"), v("p")),
-      lit("callsFunction", v("r"), v("f")),
-      lit("callKeywordArg", v("r"), v("n"), v("a")),
-      lit("givesBack", v("a"), v("z")),
-    ],
-  ),
-  // The property an object contains is the call: `{ dao: makeDao() }`.
-  rule(
-    "givesBack",
-    [v("x"), v("z")],
-    [
-      lit("readsProperty", v("x"), v("o"), v("n")),
-      lit("objectOf", v("o"), v("obj")),
-      lit("contains", v("obj"), v("n"), v("held")),
-      lit("givesBack", v("held"), v("z")),
-    ],
   ),
 
   // The object an expression refers to: a name through `comesTo`, a
@@ -282,31 +370,6 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
-  // An argument reaches the parameter it is passed to, by position or
-  // by the name the caller wrote. A function called from several places
-  // leaves its parameter with more than one value, and the caller
-  // decides what to do about that.
-  rule(
-    "comesTo",
-    [v("p"), v("z")],
-    [
-      lit("paramOf", v("f"), v("k"), v("p")),
-      lit("callsFunction", v("r"), v("f")),
-      lit("callArg", v("r"), v("k"), v("a")),
-      lit("comesTo", v("a"), v("z")),
-    ],
-  ),
-  rule(
-    "comesTo",
-    [v("p"), v("z")],
-    [
-      lit("paramNamed", v("f"), v("n"), v("p")),
-      lit("callsFunction", v("r"), v("f")),
-      lit("callKeywordArg", v("r"), v("n"), v("a")),
-      lit("comesTo", v("a"), v("z")),
-    ],
-  ),
-
   // What an object contains, its base class included, so a method the base
   // declares is found on a subclass that never overrode it. A method both
   // declare gives two, and the caller decides. This is its own relation
@@ -327,35 +390,8 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
-  // Calling a class makes one of it, and reading a method off the
-  // result finds the method the class declares. The caveat above is
-  // about a factory function, and a class is not one.
-  rule(
-    "comesTo",
-    [v("r"), v("cls")],
-    [
-      lit("call", v("r"), v("c")),
-      lit("comesTo", v("c"), v("cls")),
-      lit("objectValue", v("cls")),
-    ],
-  ),
-
-  // Reading a property comes to what the object holds under that name,
-  // whichever way the object arrived: `routes.list` off a name, or
-  // `make(body).handle` off a call.
-  rule(
-    "comesTo",
-    [v("x"), v("z")],
-    [
-      lit("readsProperty", v("x"), v("o"), v("n")),
-      lit("objectOf", v("o"), v("obj")),
-      lit("contains", v("obj"), v("n"), v("held")),
-      lit("comesTo", v("held"), v("z")),
-    ],
-  ),
-
-  // Wrapper transparency, derived: calling a factory that returns a
-  // function which calls its parameter k comes to argument k.
+  // Which function a factory returns, and which of its parameters that
+  // function calls: together they are what makes it a wrapper.
   rule(
     "returnsFunc",
     [v("f"), v("g")],
@@ -417,41 +453,9 @@ export const RESOLUTION_RULES = [
       lit("paramOf", v("f"), v("k"), v("p")),
     ],
   ),
-  rule(
-    "comesTo",
-    [v("r"), v("h")],
-    [
-      lit("call", v("r"), v("c")),
-      lit("comesTo", v("c"), v("f")),
-      lit("unwraps", v("f"), v("k")),
-      lit("callArg", v("r"), v("k"), v("a")),
-      lit("comesTo", v("a"), v("h")),
-    ],
-  ),
-
-  // Wrapper transparency, declared: a pack says this callee wraps
-  // argument k, whatever its implementation looks like. The callee has
-  // to have been imported from the library the pack named, so a local
-  // object spelled the same way is not mistaken for it.
-  rule(
-    "comesTo",
-    [v("r"), v("h")],
-    [
-      lit("calleeName", v("r"), v("n")),
-      lit("unwrapsByName", v("n"), v("k")),
-      lit("wrapperModule", v("n"), v("m")),
-      lit("calleeOrigin", v("r"), v("m")),
-      lit("callArg", v("r"), v("k"), v("a")),
-      lit("comesTo", v("a"), v("h")),
-    ],
-  ),
-
   // Where a name comes from, when what it refers to lives outside the
-  // source being read. `comesTo` ends at something written out, so it
-  // never reaches a library's own function, and a project's alias of a
-  // library name has no answer at all. This follows the same aliases
-  // and barrels in the other direction and answers with the module and
-  // the name that module exports.
+  // source being read. A walk ends at something written out in source,
+  // so it never reaches a library's own function.
   rule(
     "comesFrom",
     [v("x"), v("m"), v("n")],
@@ -460,15 +464,9 @@ export const RESOLUTION_RULES = [
   rule(
     "comesFrom",
     [v("x"), v("m"), v("n")],
-    [lit("binds", v("x"), v("y")), lit("comesFrom", v("y"), v("m"), v("n"))],
-  ),
-  rule(
-    "comesFrom",
-    [v("x"), v("m"), v("n")],
     [
-      lit("imports", v("x"), v("m2"), v("n2")),
-      lit("moduleExport", v("m2"), v("n2"), v("value")),
-      lit("comesFrom", v("value"), v("m"), v("n")),
+      lit("reaches", v("x"), v("y"), VALUE_STEP),
+      lit("imports", v("y"), v("m"), v("n")),
     ],
   ),
 
@@ -506,37 +504,6 @@ export const RESOLUTION_RULES = [
     "resolves",
     [v("x"), v("z")],
     [lit("comesTo", v("x"), v("z")), lit("func", v("z"))],
-  ),
-
-  // Following a name to the expression it is written as. A separate
-  // relation rather than a widening of `comesTo`, so a caller asking
-  // the older question never sees a new answer: a factory call already
-  // has an unwrapping answer, and letting it also answer with itself
-  // would make that pair ambiguous.
-  //
-  // The two seeds are the two ways an expression can be written out. An
-  // object literal is one of them, and it is the shape a generated
-  // GraphQL document takes.
-  rule("isWrittenAs", [v("x"), v("x")], [lit("writtenValue", v("x"))]),
-  rule("isWrittenAs", [v("x"), v("x")], [lit("objectValue", v("x"))]),
-  rule(
-    "isWrittenAs",
-    [v("x"), v("z")],
-    [lit("binds", v("x"), v("y")), lit("isWrittenAs", v("y"), v("z"))],
-  ),
-  rule(
-    "isWrittenAs",
-    [v("x"), v("z")],
-    [lit("endsHolding", v("x"), v("y")), lit("isWrittenAs", v("y"), v("z"))],
-  ),
-  rule(
-    "isWrittenAs",
-    [v("x"), v("z")],
-    [
-      lit("imports", v("x"), v("m"), v("n")),
-      lit("moduleExport", v("m"), v("n"), v("value")),
-      lit("isWrittenAs", v("value"), v("z")),
-    ],
   ),
 ];
 
@@ -585,6 +552,13 @@ export const RESOLUTION_QUESTIONS = [
     "wantedObjectOf",
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("objectOf", v("x"), v("z"))],
+  ),
+  // Keyed by the parameter, since that is what a caller has in hand
+  // when it wants the call sites told apart.
+  rule(
+    "wantedParamAt",
+    [v("p"), v("r"), v("z")],
+    [lit("wanted", v("p")), lit("paramAt", v("r"), v("p"), v("z"))],
   ),
   rule(
     "wantedComesFrom",

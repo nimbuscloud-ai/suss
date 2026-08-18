@@ -282,12 +282,15 @@ describe("axiosPack — instance built in another file", () => {
     });
     const summaries = await adapter.extractAll();
 
-    // The wrapper method itself: method extracted, path unresolved
-    // (the path is a forwarded parameter, not a literal).
+    // The wrapper method itself. Its path is a forwarded parameter, and
+    // one caller passes a literal, so the parameter is that literal.
+    // Two callers passing different paths would leave it unresolved.
     const wrapper = summaries.find((s) => s.identity.name === "get");
     expect(wrapper).toBeDefined();
     const wrapperSem = wrapper?.identity.boundaryBinding?.semantics;
-    expect(wrapperSem?.name === "rest" ? wrapperSem.path : "unset").toBeNull();
+    expect(wrapperSem?.name === "rest" ? wrapperSem.path : "unset").toBe(
+      "/users/{id}",
+    );
 
     // The caller, synthesised by wrapper expansion from its own
     // literal-path call site.

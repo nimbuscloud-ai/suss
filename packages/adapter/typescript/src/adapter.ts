@@ -22,6 +22,7 @@ import {
   type ParameterDeclaration,
   Project,
   type SourceFile,
+  SyntaxKind,
   type TemplateExpression,
 } from "ts-morph";
 
@@ -1521,8 +1522,7 @@ function expandWrapperCallers(
     if (
       binding === null ||
       binding.semantics.name !== "rest" ||
-      binding.semantics.method === null ||
-      binding.semantics.path !== null
+      binding.semantics.method === null
     ) {
       continue;
     }
@@ -1549,6 +1549,9 @@ function expandWrapperCallers(
   return [...summaries, ...derived];
 }
 
+// One caller passing a literal is enough for the store to say what the
+// parameter is, so a filled-in path does not mean the function wrote
+// one. What makes it a wrapper is forwarding the parameter.
 function findWrapperPathParam(
   summary: BehavioralSummary,
   lookup: SourceFileLookup,
@@ -1557,12 +1560,21 @@ function findWrapperPathParam(
   if (func === null) {
     return null;
   }
-  // Parameter zero is a guess that fits axios and ts-rest conventions.
-  const params = func.getParameters();
-  if (params.length === 0) {
+  const names = func.getParameters().map((p) => p.getName());
+  if (names.length === 0) {
     return null;
   }
-  return { func, pathParamPosition: 0 };
+  for (const call of func.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const first = call.getArguments()[0];
+    if (first === undefined || !Node.isIdentifier(first)) {
+      continue;
+    }
+    const at = names.indexOf(first.getText());
+    if (at !== -1) {
+      return { func, pathParamPosition: at };
+    }
+  }
+  return null;
 }
 
 function synthesizeCallerSummaries(

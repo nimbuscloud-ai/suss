@@ -31,6 +31,7 @@ import {
   ANSWER_RELATIONS,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES as SHARED_RULES,
+  VALUE_STEP,
 } from "@suss/resolution";
 
 import { isFunctionRoot } from "../discovery/shared.js";
@@ -53,11 +54,12 @@ import type { TransparentWrapper } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 
 const JS_RULES = [
-  // f.bind(...) resolves to whatever f resolves to.
+  // f.bind(...) leads wherever f leads. Stated as a step, so the
+  // questions other than `comesTo` follow it too.
   rule(
-    "comesTo",
-    [v("r"), v("h")],
-    [lit("bindCall", v("r"), v("t")), lit("comesTo", v("t"), v("h"))],
+    "stepsTo",
+    [v("r"), v("t"), VALUE_STEP],
+    [lit("bindCall", v("r"), v("t"))],
   ),
 ];
 

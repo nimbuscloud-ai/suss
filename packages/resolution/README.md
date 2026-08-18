@@ -57,6 +57,32 @@ demand nothing generates.
 
 Node identity is the adapter's business. The rules only join on it.
 
+## One relation of steps
+
+Every construct states its hops once, in one relation:
+
+```
+stepsTo(x, y, kind)         following x leads to y in one hop
+reaches(x, z, kind)         the closure of those hops
+```
+
+A value step goes to the value x is written as: a name to its
+declaration, an import to what the module exports, a parameter to what a
+call passes it, a property read to what the object contains under that
+name, a construction to the class, a transparent wrapper to the argument
+it wraps. A result step goes the other way, from a call to what the
+function it invokes returns. A walk counts as a result walk once it has
+run a call anywhere along it, which is what keeps a factory call out of
+the answers that stop at a value.
+
+A language with a hop of its own states it as a step too. JavaScript's
+`.bind` and Ruby's `Const.new` are each one rule, and every question
+below picks them up without being told.
+
+Each question is that one closure with its own stopping condition. So
+adding a construct is one step and every question gets it, and adding a
+question is a stopping condition and no steps at all.
+
 ## What comes out
 
 ```
@@ -66,6 +92,7 @@ givesBack(x, z)             following x arrives at a call that returns z
 isWrittenAs(x, z)           x is written as the expression z
 comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
+paramAt(r, p, z)            the call r puts z in the parameter p
 ```
 
 `resolves` is the question most callers ask. `comesTo` is the one
@@ -78,10 +105,9 @@ says what a value comes down to, and it stops at a call on purpose: a
 factory call is usually the wrapper itself, so resolving it to the
 function it returned would fight the unwrapping answer. That leaves
 nobody able to ask what a call returned, which is the whole question
-when a factory builds a dependency. `givesBack` asks it. It follows the
-hops `comesTo` follows, a name declared as the call, an import of that
-name, the parameter the call was passed to, and comes back with what
-the call at the end of the chain returns.
+when a factory builds a dependency. `givesBack` asks it, over the same
+steps and with the same stopping condition, of the walks that ran a
+call.
 
 Both directions run at once without interfering, because they answer
 different questions about the same call. `const dao = makeDao()` comes
@@ -97,8 +123,14 @@ reaches one.
 `comesFrom` covers the direction `comesTo` cannot. Every `comesTo` chain
 ends at something written out in the source suss is reading, so a name
 for a library's own function ends nowhere, because the library's body is
-not here. `comesFrom` follows the same aliases, imports and barrels, and
-comes back with the module plus the name that module exports.
+not here. `comesFrom` walks the same steps and stops at the import
+instead, so it comes back with the module plus the name that module
+exports.
+
+`paramAt` is the one question that keeps the call it went through.
+`comesTo` merges call sites, so a function called from two places leaves
+its parameter with two values and a caller wanting one gets nothing.
+`paramAt` says which call put which value there.
 
 `callsInto` puts that together with the calls a function makes. A
 project writes its own decorator that calls `Resolver()` and applies

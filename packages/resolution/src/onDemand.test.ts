@@ -291,11 +291,14 @@ describe("deriving the resolution rules on demand", () => {
     expect(db.facts("wantedResolves").map((t) => t.join("|"))).toEqual([
       "asked|target",
     ]);
+    // The target's own `comesTo` is not among them either. Demand
+    // follows the steps out of the value asked about, and nobody asked
+    // what the far end of the chain comes to.
     expect(
       db
         .facts("comesTo")
         .map((t) => t.join("|"))
         .sort(),
-    ).toEqual(["asked|target", "target|target"]);
+    ).toEqual(["asked|target"]);
   });
 });
