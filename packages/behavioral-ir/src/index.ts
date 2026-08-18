@@ -121,6 +121,7 @@ export {
 export {
   disambiguateSummaryIds,
   type SummaryIdParts,
+  summaryIdentifier,
   summaryIdFromParts,
 } from "./summaryId.js";
 
