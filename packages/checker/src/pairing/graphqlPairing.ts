@@ -3,14 +3,18 @@
 // set.
 //
 // Root-level selections pair by (rootTypeName, fieldName). When
-// the matched provider resolver has an SDL (via
-// `metadata.graphql.schemaSdl`: AppSync stubs or Apollo
-// code-first servers with statically-resolvable `typeDefs`), the
-// pairing pass also walks the operation's NESTED selections on
-// the resolved return type and flags any that the schema doesn't
+// the matched provider resolver's schema is on hand, the pairing
+// pass also walks the operation's NESTED selections on the
+// resolved return type and flags any that the schema doesn't
 // declare. That's the `graphqlSelectionFieldUnknown` finding,
 // the second half of "what can go wrong across a GraphQL
 // boundary" alongside the root-field not-implemented finding.
+//
+// The schema comes from the summary standing for the schema
+// document, which the resolver points at through the document
+// label both were read under. A reader with no document summary
+// may write the SDL beside the resolver instead, and that is read
+// too. See this directory's README.
 //
 // Parsing is lazy + cached: operation documents parse once per
 // checker pass; SDLs parse once per unique text. Keeps the pass
@@ -28,7 +32,11 @@ import {
   type TypeNode,
 } from "graphql";
 
-import { readGraphqlMetadata, summaryRef } from "@suss/behavioral-ir";
+import {
+  readGraphqlMetadata,
+  readSourceDocumentMetadata,
+  summaryRef,
+} from "@suss/behavioral-ir";
 import { boundaryKey, gqlIdentityKey } from "@suss/ir-core";
 
 import type {
@@ -74,7 +82,10 @@ export function pairGraphqlOperations(
     return { pairs: [], findings: [] };
   }
   const resolverIndex = indexResolvers(summaries);
-  const schemaCache = new Map<string, SchemaIndex>();
+  const schemas: SchemaLookup = {
+    byDocument: schemasByDocument(summaries),
+    parsed: new Map<string, SchemaIndex>(),
+  };
   const pairs: SummaryPair[] = [];
   const findings: Finding[] = [];
 
@@ -83,14 +94,7 @@ export function pairGraphqlOperations(
     if (doc === null) {
       continue;
     }
-    pairOneOperation(
-      operation,
-      doc,
-      resolverIndex,
-      schemaCache,
-      pairs,
-      findings,
-    );
+    pairOneOperation(operation, doc, resolverIndex, schemas, pairs, findings);
   }
 
   return { pairs, findings };
@@ -100,7 +104,7 @@ function pairOneOperation(
   operation: BehavioralSummary,
   doc: OperationDoc,
   resolverIndex: Map<string, BehavioralSummary[]>,
-  schemaCache: Map<string, SchemaIndex>,
+  schemas: SchemaLookup,
   pairs: SummaryPair[],
   findings: Finding[],
 ): void {
@@ -142,12 +146,11 @@ function pairOneOperation(
         consumer: operation,
         key,
       });
-      // When the provider has an SDL, walk nested selections
-      // against the declared field set. The same SDL text cached
-      // once per pass: a monolithic schema from 50 resolvers
-      // parses once, not 50 times.
+      // When the provider's schema is on hand, walk nested selections
+      // against the declared field set. Fifty resolvers out of one
+      // schema document share one parse.
       if (selection.nested.length > 0) {
-        const schema = resolverSchema(resolver, schemaCache);
+        const schema = resolverSchema(resolver, schemas);
         if (schema !== null) {
           walkNestedSelections(
             operation,
@@ -424,23 +427,75 @@ interface SchemaIndex {
   objectTypes: Map<string, { fields: Map<string, TypeNode> }>;
 }
 
+interface SchemaLookup {
+  /** Document label → the SDL that document declares. */
+  byDocument: Map<string, string>;
+  /** Parsed and indexed SDL, keyed by its text. */
+  parsed: Map<string, SchemaIndex>;
+}
+
+/**
+ * The SDL out of every summary standing for a schema document. Two
+ * documents under one label would each answer for the other's fields,
+ * so a label whose summaries disagree drops out and its resolvers check
+ * nothing, the same as a resolver with no schema at all.
+ */
+function schemasByDocument(
+  summaries: BehavioralSummary[],
+): Map<string, string> {
+  const byLabel = new Map<string, string>();
+  const disputed = new Set<string>();
+  for (const summary of summaries) {
+    const label = readSourceDocumentMetadata(summary)?.label;
+    const sdl = readSchemaSdl(summary);
+    if (label === undefined || sdl === null) {
+      continue;
+    }
+    const seen = byLabel.get(label);
+    if (seen !== undefined && seen !== sdl) {
+      disputed.add(label);
+    }
+    byLabel.set(label, sdl);
+  }
+  for (const label of disputed) {
+    byLabel.delete(label);
+  }
+  return byLabel;
+}
+
+/**
+ * The schema behind a resolver: the one its document declares, or one
+ * written beside the resolver itself by a reader with no document
+ * summary to put it on.
+ */
 function resolverSchema(
   resolver: BehavioralSummary,
-  cache: Map<string, SchemaIndex>,
+  schemas: SchemaLookup,
 ): SchemaIndex | null {
-  const sdl = readSchemaSdl(resolver);
+  const sdl = documentSdl(resolver, schemas) ?? readSchemaSdl(resolver);
   if (sdl === null) {
     return null;
   }
-  const cached = cache.get(sdl);
+  const cached = schemas.parsed.get(sdl);
   if (cached !== undefined) {
     return cached;
   }
   const index = buildSchemaIndex(sdl);
   if (index !== null) {
-    cache.set(sdl, index);
+    schemas.parsed.set(sdl, index);
   }
   return index;
+}
+
+function documentSdl(
+  resolver: BehavioralSummary,
+  schemas: SchemaLookup,
+): string | null {
+  const label = readSourceDocumentMetadata(resolver)?.label;
+  if (label === undefined) {
+    return null;
+  }
+  return schemas.byDocument.get(label) ?? null;
 }
 
 function readSchemaSdl(summary: BehavioralSummary): string | null {
