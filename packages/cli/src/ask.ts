@@ -25,7 +25,7 @@ import {
 import { boundariesTouchedBy, namesBoundary } from "./boundaryReach.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
-import { resolveTarget, type TargetTouch } from "./target.js";
+import { collapseTouches, resolveTarget, type TargetTouch } from "./target.js";
 import { UsageError } from "./usageError.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -328,14 +328,14 @@ function answerReaches(
   const target = resolution.target;
   const seen = new Set<string>();
   const items: AnswerItem[] = [];
-  for (const { summary, touched } of target.touches) {
+  for (const touch of collapseTouches(target.touches)) {
     const data = {
-      boundary: touched.label,
-      relation: touched.relation,
-      unit: summaryIdentifier(summary),
-      ...(touched.callee !== undefined ? { via: touched.callee } : {}),
+      boundary: touch.boundary,
+      relations: touch.relations,
+      unit: touch.unit,
+      ...(touch.callee !== undefined ? { via: touch.callee } : {}),
     };
-    const text = `${touched.relation.padEnd(8)} ${touched.label}${touched.callee === undefined ? "" : `  through ${touched.callee}`}`;
+    const text = `${touch.relations.join(" and ")} ${touch.boundary}${touch.callee === undefined ? "" : `  through ${touch.callee}`}`;
     if (!seen.has(text)) {
       seen.add(text);
       items.push({ text, data });

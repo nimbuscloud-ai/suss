@@ -18,6 +18,7 @@ import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
 import {
   boundariesTouchedBy,
   namesBoundary,
+  type Relation,
   type TouchedBoundary,
 } from "./boundaryReach.js";
 
@@ -259,6 +260,44 @@ function endsWithSegments(whole: string, tail: string): boolean {
  */
 function idMatches(spec: string, id: string): boolean {
   return id === spec || id.endsWith(`::${spec}`);
+}
+
+/** One line's worth of what a unit does at one boundary. */
+export interface CollapsedTouch {
+  boundary: string;
+  unit: string;
+  relations: Relation[];
+  callee: string | undefined;
+}
+
+/**
+ * One entry per unit and boundary, with the relations gathered onto it.
+ * A call both reads and writes, and printing that as two lines about
+ * the same call reads like two calls.
+ */
+export function collapseTouches(
+  touches: ReadonlyArray<TargetTouch>,
+): CollapsedTouch[] {
+  const byPair = new Map<string, CollapsedTouch>();
+  for (const { summary, touched } of touches) {
+    const unit = summaryIdentifier(summary);
+    const key = `${touched.label}\u0000${unit}\u0000${touched.callee ?? ""}`;
+    const seen = byPair.get(key);
+    if (seen === undefined) {
+      byPair.set(key, {
+        boundary: touched.label,
+        unit,
+        relations: [touched.relation],
+        callee: touched.callee,
+      });
+      continue;
+    }
+
+    if (!seen.relations.includes(touched.relation)) {
+      seen.relations.push(touched.relation);
+    }
+  }
+  return [...byPair.values()];
 }
 
 function touchesOf(

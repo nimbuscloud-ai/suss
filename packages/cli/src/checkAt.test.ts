@@ -185,7 +185,7 @@ describe("suss check --at", () => {
       at: string;
       matched: boolean;
       target: { kind: string; summaries: string[] };
-      touches: Array<{ boundary: string; relation: string }>;
+      touches: Array<{ boundary: string; relations: string[] }>;
       findings: unknown[];
       gaps: Array<{ summary: string }>;
     };
@@ -197,7 +197,7 @@ describe("suss check --at", () => {
     expect(parsed.touches).toContainEqual(
       expect.objectContaining({
         boundary: "dynamodb:editions#by-publication",
-        relation: "reads",
+        relations: ["reads"],
       }),
     );
     expect(parsed.gaps[0].summary).toBe("src/editions/dao.ts::byPublication");

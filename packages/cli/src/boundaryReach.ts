@@ -10,12 +10,14 @@
  * one index.
  */
 
+import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
 import { storageBoundaryKey } from "@suss/checker";
 import { boundaryLabel, displayLabel } from "@suss/ir-core";
 
 import type {
   BehavioralSummary,
   BoundaryBinding,
+  BoundaryRole,
   Effect,
 } from "@suss/behavioral-ir";
 
@@ -128,6 +130,12 @@ export function relationsOf(interaction: Interaction): Relation[] {
   return handler(interaction);
 }
 
+/** What a unit does at the boundary its own identity is bound to. */
+const OWN_BINDING: Record<BoundaryRole, Relation[]> = {
+  provider: ["provides"],
+  consumer: ["reads", "writes"],
+};
+
 /**
  * Every boundary this unit touches: the one it serves, and one entry
  * per relation for each call site that goes through one. The call sites
@@ -139,17 +147,21 @@ export function boundariesTouchedBy(
   transitionIds?: ReadonlySet<string>,
 ): TouchedBoundary[] {
   const touched: TouchedBoundary[] = [];
-  // The boundary a unit serves is what it does at every line in it, so
-  // asking about one line still reports it.
+  // What a unit does at its own boundary is true of every line in it,
+  // so asking about one line still reports it. A unit on the calling
+  // side of a boundary is bound to it too, and it reads and writes
+  // there the same way a call to a service does.
   const own = summary.identity.boundaryBinding;
   if (own !== null) {
-    touched.push({
-      label: boundarySpelling(own),
-      binding: own,
-      relation: "provides",
-      callee: undefined,
-      transitionId: undefined,
-    });
+    for (const relation of OWN_BINDING[BOUNDARY_ROLE[summary.kind]]) {
+      touched.push({
+        label: boundarySpelling(own),
+        binding: own,
+        relation,
+        callee: undefined,
+        transitionId: undefined,
+      });
+    }
   }
 
   for (const transition of summary.transitions) {

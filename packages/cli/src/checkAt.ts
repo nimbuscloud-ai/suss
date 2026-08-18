@@ -23,7 +23,11 @@ import {
   renderFindings,
   writeReport,
 } from "./check.js";
-import { type ResolvedTarget, resolveTarget } from "./target.js";
+import {
+  collapseTouches,
+  type ResolvedTarget,
+  resolveTarget,
+} from "./target.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 import type { CheckAllResult, ComparedPair } from "@suss/checker";
@@ -189,13 +193,11 @@ function asJson(target: ResolvedTarget, view: ScopedView): unknown {
       summaries: target.summaries.map((s) => summaryIdentifier(s)),
       transitions: target.transitionIds,
     },
-    touches: target.touches.map((touch) => ({
-      boundary: touch.touched.label,
-      relation: touch.touched.relation,
-      unit: summaryIdentifier(touch.summary),
-      ...(touch.touched.callee !== undefined
-        ? { via: touch.touched.callee }
-        : {}),
+    touches: collapseTouches(target.touches).map((touch) => ({
+      boundary: touch.boundary,
+      relations: touch.relations,
+      unit: touch.unit,
+      ...(touch.callee !== undefined ? { via: touch.callee } : {}),
     })),
     findings: view.findings,
     pairs: view.pairs,
@@ -249,14 +251,14 @@ function renderScoped(
 /** Each boundary the target touches, and which unit does what at it. */
 function renderTouches(target: ResolvedTarget): string[] {
   const byBoundary = new Map<string, string[]>();
-  for (const { summary, touched } of target.touches) {
-    const via = touched.callee !== undefined ? `  via ${touched.callee}` : "";
-    const line = `    ${touched.relation.padEnd(8)} ${summaryIdentifier(summary)}${via}`;
-    const lines = byBoundary.get(touched.label) ?? [];
+  for (const touch of collapseTouches(target.touches)) {
+    const via = touch.callee !== undefined ? `  via ${touch.callee}` : "";
+    const line = `    ${touch.relations.join(" and ")} ${touch.unit}${via}`;
+    const lines = byBoundary.get(touch.boundary) ?? [];
     if (!lines.includes(line)) {
       lines.push(line);
     }
-    byBoundary.set(touched.label, lines);
+    byBoundary.set(touch.boundary, lines);
   }
 
   const rendered: string[] = [];
