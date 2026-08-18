@@ -364,7 +364,11 @@ describe("check CLI command", () => {
     fs.writeFileSync(consumerPath, JSON.stringify([cons]));
 
     const output = captureStdout(() => {
-      check({ providerFile: providerPath, consumerFile: consumerPath });
+      check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        all: true,
+      });
     });
 
     // Provider is medium → annotation expected on the provider line.
@@ -454,7 +458,11 @@ describe("check CLI command", () => {
   it("prints a rule that names the side the finding's transition sits on", () => {
     writeTwoSidedScenario();
     const output = captureStdout(() => {
-      check({ providerFile: providerPath, consumerFile: consumerPath });
+      check({
+        providerFile: providerPath,
+        consumerFile: consumerPath,
+        all: true,
+      });
     });
     expect(output).toContain('provider: { transitionId: "t-410" }');
     expect(output).toContain('consumer: { transitionId: "ct-503" }');
@@ -513,6 +521,7 @@ describe("check CLI command", () => {
         providerFile: providerPath,
         consumerFile: consumerPath,
         sussignore: ignore,
+        all: true,
       });
     });
     expect(output).not.toContain('provider: { transitionId: "t-410" }');
@@ -1178,7 +1187,7 @@ describe("checkDir", () => {
     );
 
     const output = captureStdout(() => {
-      const result = checkDir({ dir: tmpDir });
+      const result = checkDir({ dir: tmpDir, all: true });
       expect(result.result.pairs).toHaveLength(0);
       expect(result.result.unmatched.providers).toHaveLength(1);
       expect(result.result.unmatched.consumers).toHaveLength(1);
@@ -1186,6 +1195,32 @@ describe("checkDir", () => {
     expect(output).toContain("Nothing was compared");
     expect(output).toContain("getUser");
     expect(output).toContain("OrgPage");
+  });
+
+  it("counts the unmatched two instead of naming them, without --all", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "summaries.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+        consumerWithRoute("OrgPage", "GET", "/orgs/:id", [
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+
+    const output = captureStdout(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain(
+      "1 provider-side boundary has no client to compare against.",
+    );
+    expect(output).toContain(
+      "1 client-side boundary has no provider to compare against.",
+    );
+    expect(output).toContain("--all to list them");
+    expect(output).not.toContain("getUser");
+    expect(output).not.toContain("OrgPage");
   });
 
   it("detects findings across automatically paired summaries", () => {
@@ -1408,7 +1443,9 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
 
   it("counts the storage pair in the header instead of saying nothing was compared", () => {
     fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
-    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, all: true }),
+    );
 
     expect(output).toContain("Compared 1 boundary:");
     expect(output).not.toContain("Nothing was compared");
@@ -1417,7 +1454,9 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
 
   it("stops listing a compared table as a boundary nothing paired with", () => {
     fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
-    const { output, result } = captureQuietly(() => checkDir({ dir: tmpDir }));
+    const { output, result } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, all: true }),
+    );
 
     expect(output).not.toContain("Nothing in this run paired with");
     expect(result.result.unmatched.unpairable).toEqual([]);
@@ -1432,7 +1471,9 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
 
   it("spells every side as a boundary key or a summary id, never a bare name", () => {
     fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
-    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, all: true }),
+    );
 
     expect(output).toContain(
       "  aws.dynamodb:orders\n    infra::infra/tables.tf::orders <-> api::api/src/listOrders.ts::listOrders",
@@ -1491,7 +1532,9 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
         ]),
       ]),
     );
-    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, all: true }),
+    );
 
     expect(output).toContain("Nothing was compared.");
     expect(output).toContain("Nothing in this run paired with this boundary");
@@ -1515,7 +1558,9 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
         }),
       ]),
     );
-    const { output, result } = captureQuietly(() => checkDir({ dir: tmpDir }));
+    const { output, result } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, all: true }),
+    );
 
     expect(result.result.pairs).toHaveLength(2);
     expect(output).toContain("Compared 1 boundary:");
@@ -1613,5 +1658,94 @@ describe("--fail-on threshold", () => {
       expect(resultWarning.hasErrors).toBe(true);
       expect(resultError.hasErrors).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What a default run prints, and what --all adds back
+// ---------------------------------------------------------------------------
+
+describe("the collapsed report", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-collapse-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** One error and one warning, over one paired route. */
+  function mixedSeverities(): void {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+          transition("t-404", { statusCode: 404 }),
+        ]),
+        consumerWithRoute("UserPage", "GET", "/users/:id", [
+          transition("ct-410", { conditionStatus: 410 }),
+          transition("ct-default", { isDefault: true }),
+        ]),
+      ]),
+    );
+  }
+
+  it("writes the error out and counts the warning", () => {
+    mixedSeverities();
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("[ERROR] unhandledProviderCase");
+    expect(output).not.toContain("[WARNING]");
+    expect(output).toContain("Not shown: 1 deadConsumerBranch (warning).");
+    expect(output).toContain("--all to see it");
+  });
+
+  it("writes both out under --all", () => {
+    mixedSeverities();
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, all: true }),
+    );
+
+    expect(output).toContain("[ERROR] unhandledProviderCase");
+    expect(output).toContain("[WARNING] deadConsumerBranch");
+    expect(output).not.toContain("Not shown:");
+  });
+
+  it("keeps the tally over every finding, shown or not", () => {
+    mixedSeverities();
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("2 findings: 1 error, 1 warning, 0 info");
+  });
+
+  it("writes out whatever --fail-on gates the run on", () => {
+    mixedSeverities();
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, failOn: "warning" }),
+    );
+
+    expect(output).toContain("[WARNING] deadConsumerBranch");
+    expect(output).not.toContain("Not shown:");
+  });
+
+  it("leaves --json reporting every finding", () => {
+    mixedSeverities();
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, json: true }),
+    );
+
+    const parsed = JSON.parse(output) as { findings: Array<{ kind: string }> };
+    expect(parsed.findings).toHaveLength(2);
+  });
+
+  it("decides the exit code on the threshold, not on what got printed", () => {
+    mixedSeverities();
+    const { result } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, failOn: "warning" }),
+    );
+
+    expect(result.hasErrors).toBe(true);
   });
 });
