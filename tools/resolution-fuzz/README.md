@@ -45,7 +45,7 @@ base, and the pools they draw from are weighted toward whatever was made
 last, so the bases come out as chains rather than as heaps of unrelated
 pairs. Chains are what the rules follow.
 
-Two of the constructs assemble a shape rather than a single fact. A
+A few of the constructs assemble a shape rather than a single fact. A
 wrapper factory needs a function, a parameter, a returned function, and a
 call of that parameter to line up before anything unwraps, and a call
 site has to pass an argument at a position the callee really declares
@@ -112,8 +112,8 @@ Three rule changes made on purpose, each reverted afterwards:
 | The closure chaining a value walk onto a result step | 30 | `comesTo` 5794 → 5847, `resolves` 4173 → 4212 |
 
 The third one is why four thousand bases run rather than five hundred:
-it moved six per cent of the committed lines, and six hundred and
-sixty-seven answers across the wider sweep.
+it moved 30 of the 500 committed lines, and 667 answers across the wider
+sweep.
 
 ## What it does not catch
 
