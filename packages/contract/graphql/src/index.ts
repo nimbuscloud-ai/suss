@@ -26,6 +26,7 @@ import {
 import {
   graphqlResolverBinding,
   withGraphqlMetadata,
+  withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 
 import { typeNodeToShape } from "./typeShape.js";
@@ -80,20 +81,32 @@ export function graphqlSdlToSummaries(
     return [];
   }
 
-  const source = options.source ?? "graphql";
-  const recognition = options.recognition ?? "graphql";
-  const transport = options.transport ?? "http-graphql";
+  const settings: ReaderSettings = {
+    sdl,
+    source: options.source ?? "graphql",
+    recognition: options.recognition ?? "graphql",
+    transport: options.transport ?? "http-graphql",
+  };
 
-  const out: BehavioralSummary[] = [];
   const rootFields = collectRootFields(doc);
+  if (rootFields.length === 0) {
+    return [];
+  }
 
+  const out: BehavioralSummary[] = [buildSchemaDocumentSummary(settings)];
   for (const { rootType, field } of rootFields) {
-    out.push(
-      buildResolverSummary(rootType, field, source, recognition, transport),
-    );
+    out.push(buildResolverSummary(rootType, field, settings));
   }
 
   return out;
+}
+
+/** What every summary from one read of one SDL has in common. */
+interface ReaderSettings {
+  sdl: string;
+  source: string;
+  recognition: string;
+  transport: string;
 }
 
 /**
@@ -181,10 +194,9 @@ function isRootType(name: string): name is RootType {
 function buildResolverSummary(
   rootType: RootType,
   field: FieldDefinitionNode,
-  source: string,
-  recognition: string,
-  transport: string,
+  settings: ReaderSettings,
 ): BehavioralSummary {
+  const { source, recognition, transport } = settings;
   const fieldName = field.name.value;
   const ownerKey = `${rootType}.${fieldName}`;
 
@@ -214,11 +226,43 @@ function buildResolverSummary(
     // is "derived" because both this metadata and the summary's
     // transitions come from the same SDL field declaration;
     // self-comparison would be tautological.
-    metadata: withGraphqlMetadata(undefined, {
-      rootType,
-      fieldName,
-      declaredContract: buildDeclaredContract(field, recognition),
-    }),
+    metadata: withGraphqlMetadata(
+      withSourceDocumentMetadata(undefined, { label: source }),
+      {
+        rootType,
+        fieldName,
+        declaredContract: buildDeclaredContract(field, recognition),
+      },
+    ),
+  };
+}
+
+/**
+ * One summary for the schema document itself, which is where the SDL
+ * goes: the type definitions belong to the schema rather than to any
+ * one field, and a client crosses `Query.users`, not the schema. The
+ * checker follows the document label from a resolver to here when it
+ * checks what a consumer selected.
+ *
+ * It binds to no boundary, so pairing records it as taking no part
+ * rather than looking for a counterpart.
+ */
+function buildSchemaDocumentSummary(
+  settings: ReaderSettings,
+): BehavioralSummary {
+  const { source, sdl } = settings;
+  return {
+    kind: "library",
+    location: { file: source, range: { start: 0, end: 0 }, exportName: null },
+    identity: { name: source, exportPath: null, boundaryBinding: null },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "derived", level: "high" },
+    metadata: withGraphqlMetadata(
+      withSourceDocumentMetadata(undefined, { label: source }),
+      { schemaSdl: sdl },
+    ),
   };
 }
 

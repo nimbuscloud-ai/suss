@@ -4,7 +4,18 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import {
+  readGraphqlMetadata,
+  readSourceDocumentMetadata,
+} from "@suss/behavioral-ir";
+
 import { graphqlSdlToSummaries, loadSdlFile } from "./index.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+function resolvers(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return summaries.filter((s) => s.kind === "resolver");
+}
 
 describe("graphqlSdlToSummaries", () => {
   it("emits one resolver summary per Query field", () => {
@@ -15,12 +26,11 @@ describe("graphqlSdlToSummaries", () => {
       }
       type User { id: ID! name: String! }
     `;
-    const summaries = graphqlSdlToSummaries(sdl);
+    const summaries = resolvers(graphqlSdlToSummaries(sdl));
     expect(summaries.map((s) => s.identity.name).sort()).toEqual([
       "Query.user",
       "Query.users",
     ]);
-    expect(summaries.every((s) => s.kind === "resolver")).toBe(true);
   });
 
   it("emits separate summaries for Query / Mutation / Subscription", () => {
@@ -29,7 +39,7 @@ describe("graphqlSdlToSummaries", () => {
       type Mutation { b: String }
       type Subscription { c: String }
     `;
-    const summaries = graphqlSdlToSummaries(sdl);
+    const summaries = resolvers(graphqlSdlToSummaries(sdl));
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual(["Mutation.b", "Query.a", "Subscription.c"]);
   });
@@ -39,7 +49,7 @@ describe("graphqlSdlToSummaries", () => {
       type Query { a: String }
       extend type Query { b: String }
     `;
-    const summaries = graphqlSdlToSummaries(sdl);
+    const summaries = resolvers(graphqlSdlToSummaries(sdl));
     expect(summaries.map((s) => s.identity.name).sort()).toEqual([
       "Query.a",
       "Query.b",
@@ -95,7 +105,7 @@ describe("graphqlSdlToSummaries", () => {
 
   it("each summary carries graphql-resolver binding with type+field", () => {
     const sdl = "type Query { ping: String }";
-    const summaries = graphqlSdlToSummaries(sdl);
+    const summaries = resolvers(graphqlSdlToSummaries(sdl));
     const ping = summaries[0];
     expect(ping?.identity.boundaryBinding?.semantics).toEqual({
       name: "graphql-resolver",
@@ -106,7 +116,7 @@ describe("graphqlSdlToSummaries", () => {
 
   it("each summary has a success + throw transition", () => {
     const sdl = "type Query { ping: String }";
-    const summaries = graphqlSdlToSummaries(sdl);
+    const summaries = resolvers(graphqlSdlToSummaries(sdl));
     const ping = summaries[0];
     expect(ping?.transitions).toHaveLength(2);
     expect(ping?.transitions[0]?.output.type).toBe("return");
@@ -120,6 +130,32 @@ describe("graphqlSdlToSummaries", () => {
   it("returns no summaries for SDL without root types", () => {
     const sdl = "type User { id: ID! }";
     expect(graphqlSdlToSummaries(sdl)).toEqual([]);
+  });
+});
+
+describe("graphqlSdlToSummaries: the schema document", () => {
+  const sdl = `
+    type Query { user(id: ID!): User }
+    type User { id: ID! name: String! }
+  `;
+
+  it("states the SDL once, on a summary for the document", () => {
+    const summaries = graphqlSdlToSummaries(sdl, { source: "schema.graphql" });
+    const withSdl = summaries.filter(
+      (s) => readGraphqlMetadata(s)?.schemaSdl !== undefined,
+    );
+    expect(withSdl).toHaveLength(1);
+    expect(
+      readGraphqlMetadata(withSdl[0] as BehavioralSummary)?.schemaSdl,
+    ).toBe(sdl);
+    expect(withSdl[0]?.identity.boundaryBinding).toBeNull();
+  });
+
+  it("labels the resolvers with the document they came from", () => {
+    const summaries = graphqlSdlToSummaries(sdl, { source: "schema.graphql" });
+    for (const summary of summaries) {
+      expect(readSourceDocumentMetadata(summary)?.label).toBe("schema.graphql");
+    }
   });
 });
 
