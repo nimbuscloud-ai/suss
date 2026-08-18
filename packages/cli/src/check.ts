@@ -31,7 +31,11 @@ import type {
   ConfidenceInfo,
   Finding,
 } from "@suss/behavioral-ir";
-import type { CheckAllResult, SuppressionRule } from "@suss/checker";
+import type {
+  CheckAllResult,
+  ComparedPair,
+  SuppressionRule,
+} from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 
 /**
@@ -602,7 +606,9 @@ function renderDirHuman(
   const lines: string[] = [];
   const { providers, consumers, unpairable } = result.unmatched;
   const noBoundary = unpairable.filter((u) => u.reason === "noBoundary");
-  const unnamed = unpairable.filter((u) => u.reason === "unnamedBoundary");
+  const nothingToCompare = unpairable.filter(
+    (u) => u.reason === "unnamedBoundary",
+  );
 
   /**
    * At most a screenful, then a count. A run over a monorepo has
@@ -612,14 +618,14 @@ function renderDirHuman(
   const listed = (grouped: Map<string, string[]>): string[] => {
     const out: string[] = [];
     let shown = 0;
-    for (const [key, names] of grouped) {
+    for (const [key, ids] of grouped) {
       if (shown === DIAGNOSTIC_LIMIT) {
         out.push(`  ... and ${grouped.size - shown} more`);
         break;
       }
       out.push(`  ${key}`);
-      if (names.length > 0) {
-        out.push(`    ${names.join(", ")}`);
+      for (const id of ids) {
+        out.push(`    ${id}`);
       }
       shown++;
     }
@@ -629,12 +635,16 @@ function renderDirHuman(
   // Lead with how much was actually compared. "No findings" on its own
   // looks like a pass, and a run where nothing paired has checked
   // nothing at all, which is the opposite of a pass.
-  if (result.pairs.length > 0) {
+  const comparedByBoundary = groupPairsByKey(result.pairs);
+  if (comparedByBoundary.size > 0) {
     lines.push(
-      `Compared ${result.pairs.length} boundar${result.pairs.length === 1 ? "y" : "ies"}:`,
+      `Compared ${comparedByBoundary.size} boundar${comparedByBoundary.size === 1 ? "y" : "ies"}:`,
     );
-    for (const pair of result.pairs) {
-      lines.push(`  ${pair.key}: ${pair.provider} <-> ${pair.consumer}`);
+    for (const [key, sides] of comparedByBoundary) {
+      lines.push(`  ${key}`);
+      for (const side of sides) {
+        lines.push(`    ${side}`);
+      }
     }
   } else {
     lines.push("Nothing was compared.");
@@ -669,18 +679,18 @@ function renderDirHuman(
   }
 
   /**
-   * A boundary the source never gave a name to gets a line per unit,
-   * because something crossed it and a reader deciding what to trust
-   * needs to know it went unchecked. "No name to pair on" covers both a
-   * value assigned at runtime and a binding whose identity fields a
-   * pack never filled in.
+   * A boundary nothing paired with gets a line per unit, because
+   * something crossed it and a reader deciding what to trust needs to
+   * know it went unchecked. The heading above each says which case it
+   * is: a store or a queue nothing in the run touched, or a route whose
+   * path the source never settled, which prints as `GET ?`.
    */
-  if (unnamed.length > 0) {
+  if (nothingToCompare.length > 0) {
     lines.push("");
     lines.push(
-      `${unnamed.length} boundar${unnamed.length === 1 ? "y has" : "ies have"} no name to pair on, so nothing can be checked against ${unnamed.length === 1 ? "it" : "them"}:`,
+      `Nothing in this run paired with ${nothingToCompare.length === 1 ? "this boundary" : `these ${nothingToCompare.length} boundaries`}, so nothing was checked across ${nothingToCompare.length === 1 ? "it" : "them"}:`,
     );
-    lines.push(...listed(new Map(unnamed.map((u) => [u.name, []]))));
+    lines.push(...listed(groupByKey(nothingToCompare)));
   }
 
   const unknownKinds = unpairable.filter((u) => u.reason === "unknownKind");
@@ -712,21 +722,51 @@ function renderDirHuman(
   return `${lines.join("\n")}\n`;
 }
 
-/** Collapse summaries onto the boundary they describe. */
+/**
+ * Collapse summaries onto the boundary they describe. Each line under a
+ * boundary is a summary id, because two files can both export `update`
+ * and a reader has to be able to tell which one a line is about.
+ */
 function groupByKey(
-  entries: ReadonlyArray<{ name: string; key?: string | null }>,
+  entries: ReadonlyArray<{ id: string; key?: string | null }>,
 ): Map<string, string[]> {
   const byKey = new Map<string, string[]>();
   for (const entry of entries) {
-    const key = entry.key ?? "no path";
-    const names = byKey.get(key);
-    if (names !== undefined) {
-      names.push(entry.name);
-    } else {
-      byKey.set(key, [entry.name]);
-    }
+    fileUnderKey(byKey, entry.key ?? "no name to pair on", entry.id);
   }
   return byKey;
+}
+
+/**
+ * The compared sides under the boundary they met on. A route a service
+ * and its OpenAPI document both describe is one boundary, so counting
+ * the rows would say two.
+ */
+function groupPairsByKey(
+  pairs: ReadonlyArray<ComparedPair>,
+): Map<string, string[]> {
+  const byKey = new Map<string, string[]>();
+  for (const pair of pairs) {
+    fileUnderKey(byKey, pair.key, `${pair.provider} <-> ${pair.consumer}`);
+  }
+  return byKey;
+}
+
+/** A line the report has already printed under this key is not printed twice. */
+function fileUnderKey(
+  byKey: Map<string, string[]>,
+  key: string,
+  line: string,
+): void {
+  const lines = byKey.get(key);
+  if (lines === undefined) {
+    byKey.set(key, [line]);
+    return;
+  }
+
+  if (!lines.includes(line)) {
+    lines.push(line);
+  }
 }
 
 /** Why a run compared nothing, in terms of what the user has and lacks. */

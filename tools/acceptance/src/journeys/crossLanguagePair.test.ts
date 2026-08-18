@@ -34,7 +34,9 @@ describe("pair a TypeScript client against a Python provider", () => {
   it("pairs the two sides on the boundary they share", () => {
     const check = runSuss(["check", "--dir", summaries]);
 
-    expect(check.stdout).toContain("GET /health: health <-> getHealth");
+    expect(check.stdout).toContain(
+      "  GET /health\n    shop/main.py::health <-> suss::consumer.ts::getHealth",
+    );
   });
 
   it("says which routes have nobody on the other side", () => {
