@@ -19,8 +19,7 @@ import type {
   Effect,
 } from "@suss/behavioral-ir";
 
-type InteractionEffect = Extract<Effect, { type: "interaction" }>;
-type Interaction = InteractionEffect["interaction"];
+type Interaction = Extract<Effect, { type: "interaction" }>["interaction"];
 
 /**
  * Protocols that spell a boundary somewhere other than the semantics
@@ -131,16 +130,19 @@ export function relationsOf(interaction: Interaction): Relation[] {
 
 /**
  * Every boundary this unit touches: the one it serves, and one entry
- * per relation for each call site that goes through one. Limited to the
- * given transitions when a caller asks about part of a unit.
+ * per relation for each call site that goes through one. The call sites
+ * narrow to the given transitions when a caller asks about part of a
+ * unit.
  */
 export function boundariesTouchedBy(
   summary: BehavioralSummary,
   transitionIds?: ReadonlySet<string>,
 ): TouchedBoundary[] {
   const touched: TouchedBoundary[] = [];
+  // The boundary a unit serves is what it does at every line in it, so
+  // asking about one line still reports it.
   const own = summary.identity.boundaryBinding;
-  if (own !== null && transitionIds === undefined) {
+  if (own !== null) {
     touched.push({
       label: boundarySpelling(own),
       binding: own,

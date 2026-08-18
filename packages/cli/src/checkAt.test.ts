@@ -82,6 +82,22 @@ describe("suss check --at", () => {
     expect(result.hasErrors).toBe(false);
   });
 
+  it("leaves out a branch the line does not fall in", () => {
+    const inTheBadBranch = report("src/editions/routes.ts:25");
+    const inTheGoodOne = report("src/editions/routes.ts:15");
+
+    expect(inTheBadBranch.result.findings).toHaveLength(1);
+    expect(inTheBadBranch.output).toContain("503");
+    expect(inTheGoodOne.result.findings).toEqual([]);
+  });
+
+  it("says which boundary the unit at that line serves", () => {
+    const { output } = report("src/editions/routes.ts:15");
+
+    expect(output).toContain("provides src/editions/routes.ts::listEditions");
+    expect(output).toContain("GET /editions");
+  });
+
   it("reports on a boundary key, both sides of it", () => {
     const { output, result } = report("dynamodb:editions#by-publication");
 
