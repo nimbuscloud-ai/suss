@@ -3,7 +3,7 @@
     "packages": 55,
     "packagesWithExports": 55,
     "exports": 470,
-    "internal": 1812,
+    "internal": 1822,
     "consumers": 772,
     "pairs": 765
   },
@@ -23,7 +23,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 631,
+      "internal": 638,
       "consumers": 46
     },
     "packages/behavioral-ir": {
@@ -35,7 +35,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 33,
-      "internal": 151,
+      "internal": 152,
       "consumers": 103
     },
     "packages/checker-intent": {
@@ -47,7 +47,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 10,
-      "internal": 240,
+      "internal": 242,
       "consumers": 157
     },
     "packages/client/apollo": {
