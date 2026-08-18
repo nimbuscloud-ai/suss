@@ -334,7 +334,11 @@ A pairing pass refused to emit substantive findings because too many predicates 
 
 **Severity:** warning
 
-One pairing key matched providers in more than one workspace. Two GraphQL services in one repo can each declare `Query.user`, and the key has no endpoint identity to tell them apart, so the consumer pairs with both and some of those pairs are wrong. The finding says which services collided so you can see where the extra pairs came from.
+One consumer matched two providers where at most one of them can be right.
+
+Two GraphQL services in one repo can each declare `Query.user`, and the key has no endpoint identity to tell them apart, so the operation pairs with both and some of those pairs are wrong. The finding says which services collided so you can see where the extra pairs came from.
+
+Storage says it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` are both called something that covers `prod-orders-blue`, and each states as much of its name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and this finding says which two were in the way. When one of the two states more of its name, that one takes the access and no finding is emitted.
 
 ---
 

@@ -110,7 +110,7 @@ export const FindingKindSchema = z.enum([
   "unsupportedSemantics",
   /** Too many predicates were opaque to pair on. Reported per pair, unlike `lowConfidence`. */
   "opaquePredicateBlocking",
-  /** One pairing key matched providers in more than one workspace, so some pairs under it are wrong. */
+  /** One consumer matched two providers, and pairing with both would be wrong. */
   "ambiguousProvider",
 ]);
 

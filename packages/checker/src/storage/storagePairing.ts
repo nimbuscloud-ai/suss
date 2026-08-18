@@ -19,8 +19,15 @@
 // the provider's. Multi-attribution is intentional, a shared util
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
+//
+// Two containers can be declared under names that both cover what one
+// access reached, since a name built at deploy time has a hole in it.
+// The access pairs with the more specific of the two, and with neither
+// when they are equally specific: see `ambiguousProvider` below, and
+// the README beside this file.
 
 import {
+  fixedTextLength,
   namesAgree,
   namesNothing,
   readStorageContractMetadata,
@@ -35,6 +42,7 @@ import {
   interactionsOf,
   providersOf,
 } from "../interactions/dispatcher.js";
+import { mostSpecificName } from "../pairing/mostSpecificName.js";
 import { groundReferences } from "./grounding.js";
 
 import type {
@@ -45,6 +53,7 @@ import type {
   StorageSemantics,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
+import type { NameCandidate, NameChoice } from "../pairing/mostSpecificName.js";
 
 type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   /**
@@ -89,7 +98,7 @@ export function checkStorage(
       : [container];
   };
 
-  const providers = providersOf(idx, "storage");
+  const containers = declaredContainers(providersOf(idx, "storage"));
   const accesses: StorageAccessRecord[] = interactionsOf(
     idx,
     "storage-access",
@@ -99,40 +108,16 @@ export function checkStorage(
     semantics: record.effect.binding.semantics as StorageSemantics,
   }));
 
-  for (const provider of providers) {
-    const binding = provider.identity.boundaryBinding;
-    if (binding === null) {
-      // Defensive: filter above guarantees one. Skip rather than crash.
-      continue;
-    }
-    const semantics = binding.semantics as StorageSemantics;
-    const contract = readStorageContract(provider);
+  const claimed = claimAccesses(containers, accesses, namesReached);
+  findings.push(...claimed.findings);
+
+  for (const container of containers) {
+    const { summary: provider, binding, semantics, contract } = container;
     const declaredFields = new Set((contract.fields ?? []).map((f) => f.name));
     // Only a contract that declares every field an item has can call
     // a field it does not declare unknown.
     const fieldSetIsComplete = contract.fieldSet === "exhaustive";
-
-    // In-scope accesses: same store, scope, and access path, with a
-    // container agreeing with either declared name, the binding's own
-    // (a Prisma model) or the physical name a template states.
-    const containerNames = [semantics.container, contract.physicalTable].filter(
-      (name): name is string => name !== undefined && name !== null,
-    );
-    // A provider whose container this reader could not settle claims no
-    // accesses, rather than every access that spells it the same way.
-    if (containerNames.length === 0) {
-      continue;
-    }
-    const inScope = accesses.filter(
-      (a) =>
-        a.semantics.storageSystem === semantics.storageSystem &&
-        a.semantics.scope === semantics.scope &&
-        a.semantics.accessPath === semantics.accessPath &&
-        namesReached(a).some((reached) =>
-          containerNames.some((name) => namesAgree(name, reached)),
-        ) &&
-        sameService(provider, a.summary),
-    );
+    const inScope = claimed.byContainer.get(container) ?? [];
 
     for (const access of inScope) {
       compared?.push({
@@ -240,6 +225,131 @@ export function checkStorage(
 }
 
 /**
+ * A container somebody declared, with what the pass needs about it
+ * worked out once. `names` are the two spellings it is declared under,
+ * the binding's own (a Prisma model) and the physical one a template
+ * states.
+ */
+interface DeclaredContainer {
+  summary: BehavioralSummary;
+  binding: BoundaryBinding;
+  semantics: StorageSemantics;
+  contract: StorageContractMetadata;
+  names: string[];
+}
+
+interface Claims {
+  byContainer: Map<DeclaredContainer, StorageAccessRecord[]>;
+  findings: Finding[];
+}
+
+function declaredContainers(
+  summaries: BehavioralSummary[],
+): DeclaredContainer[] {
+  const containers: DeclaredContainer[] = [];
+  for (const summary of summaries) {
+    const binding = summary.identity.boundaryBinding;
+    if (binding === null) {
+      // Defensive: the lookup above guarantees one. Skip rather than crash.
+      continue;
+    }
+    const contract = readStorageContract(summary);
+    const semantics = binding.semantics as StorageSemantics;
+    const names = [semantics.container, contract.physicalTable].filter(
+      (name): name is string => name !== undefined && name !== null,
+    );
+    // A container this reader could not settle claims no accesses,
+    // rather than every access that spells it the same way.
+    if (names.length === 0) {
+      continue;
+    }
+    containers.push({ summary, binding, semantics, contract, names });
+  }
+  return containers;
+}
+
+/**
+ * Which accesses each container is checked against. Every name an access
+ * reaches is offered to every container declared under a name that
+ * covers it, and the most specific of those takes it. An even contest
+ * takes nothing and says so.
+ */
+function claimAccesses(
+  containers: DeclaredContainer[],
+  accesses: StorageAccessRecord[],
+  namesReached: (access: StorageAccessRecord) => string[],
+): Claims {
+  const byContainer = new Map<DeclaredContainer, StorageAccessRecord[]>();
+  const findings: Finding[] = [];
+  for (const access of accesses) {
+    for (const reached of namesReached(access)) {
+      const candidates: NameCandidate<DeclaredContainer>[] = [];
+      for (const container of containers) {
+        const name = nameCovering(container, access, reached);
+        if (name !== null) {
+          candidates.push({ subject: container, name });
+        }
+      }
+      const choice = mostSpecificName(candidates);
+      if (choice.tied.length > 0) {
+        findings.push(makeAmbiguousContainerFinding(access, reached, choice));
+        continue;
+      }
+      for (const container of choice.chosen) {
+        claim(byContainer, container, access);
+      }
+    }
+  }
+  return { byContainer, findings };
+}
+
+/**
+ * The name this container is declared under that covers what the
+ * access reached, or null when the two do not meet. A container with
+ * two names offers the one that states more of itself, since that is
+ * what the choice between containers is made on.
+ */
+function nameCovering(
+  container: DeclaredContainer,
+  access: StorageAccessRecord,
+  reached: string,
+): string | null {
+  const semantics = container.semantics;
+  if (
+    access.semantics.storageSystem !== semantics.storageSystem ||
+    access.semantics.scope !== semantics.scope ||
+    access.semantics.accessPath !== semantics.accessPath ||
+    !sameService(container.summary, access.summary)
+  ) {
+    return null;
+  }
+  const covering = container.names.filter((name) => namesAgree(name, reached));
+  if (covering.length === 0) {
+    return null;
+  }
+  return covering.reduce((most, name) =>
+    fixedTextLength(name) > fixedTextLength(most) ? name : most,
+  );
+}
+
+/** One access reaching two names can arrive at one container twice. */
+function claim(
+  byContainer: Map<DeclaredContainer, StorageAccessRecord[]>,
+  container: DeclaredContainer,
+  access: StorageAccessRecord,
+): void {
+  const already = byContainer.get(container);
+  if (already === undefined) {
+    byContainer.set(container, [access]);
+    return;
+  }
+
+  if (!already.includes(access)) {
+    already.push(access);
+  }
+}
+
+/**
  * Whether a schema and an access belong to one service. Two services
  * both keep a users table under the scope "default", so the key alone
  * puts them together and each gets checked against the other's schema
@@ -299,6 +409,28 @@ function containerLabel(semantics: StorageSemantics): string {
     return addressed;
   }
   return `${semantics.scope}/${addressed}`;
+}
+
+/**
+ * Two containers, both declared under a name covering what one access
+ * reached, and neither states more of itself than the other.
+ */
+function makeAmbiguousContainerFinding(
+  access: StorageAccessRecord,
+  reached: string,
+  choice: NameChoice<DeclaredContainer>,
+): Finding {
+  const tied = choice.tied;
+  const first = tied[0] as NameCandidate<DeclaredContainer>;
+  const spelled = tied.map((candidate) => `"${candidate.name}"`).join(", ");
+  return {
+    kind: "ambiguousProvider",
+    boundary: access.effect.binding,
+    provider: makeSide(first.subject.summary),
+    consumer: makeSide(access.summary, access.transitionId),
+    description: `${access.summary.identity.name} reaches "${reached}" on ${access.semantics.storageSystem}, and ${tied.length} declared containers cover it (${spelled}). Each states as much of its own name as the other, so nothing in this run settles which one the code reaches. The access pairs with none of them, rather than reporting fields and selectors against a container it never touches.`,
+    severity: "warning",
+  };
 }
 
 function makeFieldUnknownFinding(
