@@ -4,6 +4,7 @@ import { checkAll } from "../index.js";
 import { checkMessageBus } from "./messageBusPairing.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { ComparedPair } from "../pairing/comparedPair.js";
 
 function emptyTransition(id: string, effects: Effect[] = []) {
   return {
@@ -1184,6 +1185,66 @@ function handlerSummary(name: string, channel: string): BehavioralSummary {
   };
 }
 
+describe("what the message-bus pass records as compared", () => {
+  it("names the queue and the code that sends to it", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+    ];
+    const compared: ComparedPair[] = [];
+    checkMessageBus(summaries, undefined, compared);
+
+    expect(compared).toEqual([
+      {
+        key: "bus:sqs OrdersQueue",
+        provider: "template.yaml::OrdersQueue",
+        consumer: "src/order-producer/index.ts::OrderProducer",
+      },
+    ]);
+  });
+
+  it("records a queue a subscriber drains even with nobody sending to it", () => {
+    const summaries = [
+      queueProvider("OrdersQueue"),
+      consumerSummary({
+        name: "OrderConsumer",
+        channel: "OrdersQueue",
+        codeScopePath: "src/order-consumer/",
+      }),
+    ];
+    const compared: ComparedPair[] = [];
+    checkMessageBus(summaries, undefined, compared);
+
+    expect(compared).toEqual([
+      {
+        key: "bus:sqs OrdersQueue",
+        provider: "template.yaml::OrdersQueue",
+        consumer: "template.yaml::OrderConsumer",
+      },
+    ]);
+  });
+
+  it("records nothing for a send whose queue nothing declares", () => {
+    const summaries = [
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+    ];
+    const compared: ComparedPair[] = [];
+    checkMessageBus(summaries, undefined, compared);
+
+    expect(compared).toEqual([]);
+  });
+});
+
 describe("checkAll, message-bus pairing integration", () => {
   it("surfaces which handler answers a declared subscriber", () => {
     const handler = handlerSummary(
@@ -1201,8 +1262,8 @@ describe("checkAll, message-bus pairing integration", () => {
     expect(result.pairs).toEqual([
       {
         key: "bus:sqs order.placed",
-        provider: "OrderPlacedFunction.handler",
-        consumer: "OrderPlacedFunction.QueueEvent",
+        provider: "src/orders/placed.ts::OrderPlacedFunction.handler",
+        consumer: "template.yaml::OrderPlacedFunction.QueueEvent",
       },
     ]);
   });

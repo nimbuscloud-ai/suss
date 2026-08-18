@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 2118,
-      "covered": 1947,
+      "total": 2151,
+      "covered": 1983,
       "skipped": 0,
-      "pct": 91.92
+      "pct": 92.18
     },
     "statements": {
-      "total": 2155,
-      "covered": 1984,
+      "total": 2188,
+      "covered": 2020,
       "skipped": 0,
-      "pct": 92.06
+      "pct": 92.32
     },
     "functions": {
-      "total": 380,
-      "covered": 350,
+      "total": 386,
+      "covered": 359,
       "skipped": 0,
-      "pct": 92.1
+      "pct": 93
     },
     "branches": {
-      "total": 1441,
-      "covered": 1195,
+      "total": 1448,
+      "covered": 1203,
       "skipped": 0,
-      "pct": 82.92
+      "pct": 83.08
     },
     "branchesTrue": {
       "total": 0,
@@ -59,28 +59,28 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 42,
-      "covered": 37,
+      "total": 46,
+      "covered": 44,
       "skipped": 0,
-      "pct": 88.09
+      "pct": 95.65
     },
     "functions": {
-      "total": 11,
-      "covered": 8,
+      "total": 13,
+      "covered": 13,
       "skipped": 0,
-      "pct": 72.72
+      "pct": 100
     },
     "statements": {
-      "total": 42,
-      "covered": 37,
+      "total": 47,
+      "covered": 45,
       "skipped": 0,
-      "pct": 88.09
+      "pct": 95.74
     },
     "branches": {
-      "total": 16,
-      "covered": 10,
+      "total": 14,
+      "covered": 11,
       "skipped": 0,
-      "pct": 62.5
+      "pct": 78.57
     }
   },
   "src/match.ts": {
@@ -605,20 +605,20 @@
   },
   "src/message-bus/channelPairing.ts": {
     "lines": {
-      "total": 12,
-      "covered": 12,
+      "total": 15,
+      "covered": 15,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 4,
-      "covered": 4,
+      "total": 6,
+      "covered": 6,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 13,
-      "covered": 13,
+      "total": 15,
+      "covered": 15,
       "skipped": 0,
       "pct": 100
     },
@@ -631,28 +631,54 @@
   },
   "src/message-bus/messageBusPairing.ts": {
     "lines": {
-      "total": 208,
-      "covered": 193,
+      "total": 221,
+      "covered": 206,
       "skipped": 0,
-      "pct": 92.78
+      "pct": 93.21
     },
     "functions": {
-      "total": 28,
-      "covered": 28,
+      "total": 29,
+      "covered": 29,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 209,
-      "covered": 194,
+      "total": 222,
+      "covered": 207,
       "skipped": 0,
-      "pct": 92.82
+      "pct": 93.24
     },
     "branches": {
-      "total": 154,
-      "covered": 125,
+      "total": 157,
+      "covered": 127,
       "skipped": 0,
-      "pct": 81.16
+      "pct": 80.89
+    }
+  },
+  "src/pairing/comparedPair.ts": {
+    "lines": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
     }
   },
   "src/pairing/graphqlPairing.ts": {
@@ -761,28 +787,28 @@
   },
   "src/runtime-config/runtimeConfigPairing.ts": {
     "lines": {
-      "total": 171,
-      "covered": 156,
+      "total": 184,
+      "covered": 169,
       "skipped": 0,
-      "pct": 91.22
+      "pct": 91.84
     },
     "functions": {
-      "total": 35,
-      "covered": 35,
+      "total": 36,
+      "covered": 36,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 176,
-      "covered": 161,
+      "total": 189,
+      "covered": 174,
       "skipped": 0,
-      "pct": 91.47
+      "pct": 92.06
     },
     "branches": {
-      "total": 83,
-      "covered": 71,
+      "total": 89,
+      "covered": 76,
       "skipped": 0,
-      "pct": 85.54
+      "pct": 85.39
     }
   },
   "src/scope/entryClosure.ts": {

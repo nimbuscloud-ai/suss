@@ -172,9 +172,10 @@ npx suss check --dir summaries
 ```
 
 ```
-Compared 2 boundaries:
-  GET /users/{id}: get <-> loadUser
-  GET /users/{id}: GET /users/{id} <-> loadUser
+Compared 1 boundary:
+  GET /users/{id}
+    suss-pair-tutorial::server.ts::get <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
+    openapi:openapi.yaml::GET /users/{id} <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
 
 ────────────────────────────────────────────────────────────
 [ERROR] unhandledProviderCase
@@ -249,9 +250,10 @@ npx suss check --dir summaries
 ```
 
 ```
-Compared 2 boundaries:
-  GET /users/{id}: get <-> loadUser
-  GET /users/{id}: GET /users/{id} <-> loadUser
+Compared 1 boundary:
+  GET /users/{id}
+    suss-pair-tutorial::server.ts::get <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
+    openapi:openapi.yaml::GET /users/{id} <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
 
 No findings. Every compared boundary agreed.
 ```

@@ -66,6 +66,30 @@ function settleWith(
   }
 }
 
+/**
+ * How a report should spell a summary that does not cross a boundary.
+ *
+ * A producer that ran through the parse boundary already has an id, and
+ * that is what a reader should see, because the run settled its
+ * collisions. A summary handed straight to a checker never went through
+ * that step, so the same formula runs here over the fields it does
+ * have: the file it is in and its export path. That leaves out the
+ * workspace, which only the producer knows, and it leaves out the
+ * collision settling, which needs the whole run. Both give a reader a
+ * file to open, which a bare name does not.
+ */
+export function summaryIdentifier(summary: BehavioralSummary): string {
+  if (summary.identity.id !== undefined) {
+    return summary.identity.id;
+  }
+  return summaryIdFromParts({
+    workspace: undefined,
+    file: summary.location.file,
+    name: summary.identity.name,
+    exportPath: summary.identity.exportPath,
+  });
+}
+
 export function summaryIdFromParts(parts: SummaryIdParts): string {
   const reached =
     parts.exportPath !== null && parts.exportPath.length > 0

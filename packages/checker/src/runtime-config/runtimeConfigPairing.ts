@@ -34,6 +34,7 @@ import {
   type LibraryEnvReads,
   readLibraryEnvReads,
   readRuntimeContractMetadata,
+  summaryIdentifier,
 } from "@suss/behavioral-ir";
 import { fileInCodeScope } from "@suss/ir-core";
 
@@ -53,6 +54,7 @@ import type {
   InteractionIndex,
   InteractionRecord,
 } from "../interactions/dispatcher.js";
+import type { ComparedPair } from "../pairing/comparedPair.js";
 import type { UnitsByFile } from "../scope/unitScope.js";
 import type { PlacedRuntime } from "./placement.js";
 
@@ -91,6 +93,8 @@ export function checkRuntimeConfig(
   // Passing the index lets `checkAll` share one walk across all
   // per-class pairing passes.
   index?: InteractionIndex,
+  /** Where to record what this pass compared; see `ComparedPair`. */
+  compared?: ComparedPair[],
 ): Finding[] {
   const findings: Finding[] = [];
 
@@ -122,6 +126,7 @@ export function checkRuntimeConfig(
     const inScope = codeReads.filter((r) => runsIn(r.summary, scope, byFile));
     const provided = readProvidedEnvVars(runtime);
     const providedSet = new Set(provided);
+    recordCompared(compared, runtime, binding, inScope);
 
     // envVarUnprovided: one finding per (read site, var); the deduper
     // collapses identical ones later. A read with a fallback is
@@ -174,6 +179,36 @@ export function checkRuntimeConfig(
   findings.push(...contestedFindings(codeReads, contested, placed, byFile));
 
   return findings;
+}
+
+/**
+ * One entry per file whose reads this runtime was asked about, not one
+ * per variable: a file reading four variables was compared once.
+ */
+function recordCompared(
+  compared: ComparedPair[] | undefined,
+  runtime: BehavioralSummary,
+  binding: BoundaryBinding,
+  inScope: EnvVarRead[],
+): void {
+  if (compared === undefined) {
+    return;
+  }
+  const semantics = binding.semantics;
+  const key =
+    semantics.name === "runtime-config"
+      ? `runtime-config:${semantics.instanceName}`
+      : `runtime-config:${runtime.identity.name}`;
+  const provider = summaryIdentifier(runtime);
+  const seen = new Set<string>();
+  for (const read of inScope) {
+    const consumer = summaryIdentifier(read.summary);
+    if (seen.has(consumer)) {
+      continue;
+    }
+    seen.add(consumer);
+    compared.push({ key, provider, consumer });
+  }
 }
 
 function libraryReads(marker: LibraryEnvReads, name: string): boolean {

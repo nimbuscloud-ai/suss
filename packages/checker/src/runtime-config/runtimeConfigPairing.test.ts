@@ -8,6 +8,7 @@ import {
 import { checkRuntimeConfig } from "./runtimeConfigPairing.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
+import type { ComparedPair } from "../pairing/comparedPair.js";
 
 function makeRuntimeProvider(opts: {
   instanceName: string;
@@ -157,6 +158,46 @@ describe("checkRuntimeConfig", () => {
     expect(unused).toHaveLength(1);
     expect(unused[0].severity).toBe("warning");
     expect(unused[0].description).toContain("LEGACY_FLAG");
+  });
+
+  it("records the runtime and the file it was asked about as compared", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "checkout",
+      envVars: ["A", "B"],
+      codeScope: { kind: "codeUri", path: "src/checkout/" },
+    });
+    const code = makeCodeSummary({
+      name: "checkoutHandler",
+      file: "src/checkout/index.ts",
+      envReads: ["A", "B"],
+    });
+    const compared: ComparedPair[] = [];
+    checkRuntimeConfig([runtime, code], undefined, compared);
+
+    expect(compared).toEqual([
+      {
+        key: "runtime-config:checkout",
+        provider: "template.yaml::checkout",
+        consumer: "src/checkout/index.ts::checkoutHandler",
+      },
+    ]);
+  });
+
+  it("records one comparison for a file that reads four variables", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "checkout",
+      envVars: ["A", "B", "C", "D"],
+      codeScope: { kind: "codeUri", path: "src/checkout/" },
+    });
+    const code = makeCodeSummary({
+      name: "checkoutHandler",
+      file: "src/checkout/index.ts",
+      envReads: ["A", "B", "C", "D"],
+    });
+    const compared: ComparedPair[] = [];
+    checkRuntimeConfig([runtime, code], undefined, compared);
+
+    expect(compared).toHaveLength(1);
   });
 
   it("emits no findings when reads and provided sets match exactly", () => {

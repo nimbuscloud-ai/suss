@@ -688,8 +688,8 @@ describe("checkAll — graphql pairing integration", () => {
     const result = checkAll([petResolver, op]);
     expect(result.pairs).toHaveLength(1);
     expect(result.pairs[0].key).toBe("gql:Query.pet");
-    expect(result.pairs[0].provider).toBe("Query.pet");
-    expect(result.pairs[0].consumer).toBe("usePet.GetPet");
+    expect(result.pairs[0].provider).toBe("server/Query.ts::Query.pet");
+    expect(result.pairs[0].consumer).toBe("client/usePet.ts::usePet");
   });
 
   it("does not list graphql-matched summaries as unmatched", () => {

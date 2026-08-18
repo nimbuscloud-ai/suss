@@ -20,6 +20,7 @@ import {
   safeParseSummaries,
   safeParseSummary,
   storageBinding,
+  summaryIdentifier,
   summaryRef,
   type Transition,
 } from "./index.js";
@@ -66,6 +67,29 @@ describe("summaryRef", () => {
     const summary = makeSummary([]);
     summary.identity.id = "some-workspace::src/test.ts::test";
     expect(summaryRef(summary)).toBe("src/test.ts::test");
+  });
+});
+
+describe("summaryIdentifier", () => {
+  it("takes the id the producer settled when there is one", () => {
+    const summary = makeSummary([]);
+    summary.identity.id = "web::src/test.ts::test#GET /users";
+    expect(summaryIdentifier(summary)).toBe(
+      "web::src/test.ts::test#GET /users",
+    );
+  });
+
+  it("falls back to the file and the export path a summary carries", () => {
+    const summary = makeSummary([]);
+    summary.identity.exportPath = ["routes", "listUsers"];
+    expect(summaryIdentifier(summary)).toBe("src/test.ts::routes.listUsers");
+  });
+
+  it("falls back to the name when a summary reaches no export", () => {
+    const summary = makeSummary([]);
+    summary.identity.name = "listUsers";
+    summary.identity.exportPath = null;
+    expect(summaryIdentifier(summary)).toBe("src/test.ts::listUsers");
   });
 });
 

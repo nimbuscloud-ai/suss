@@ -184,8 +184,8 @@ describe("checkAll, which pairs get the response-shaped checks", () => {
     expect(result.pairs).toEqual([
       {
         key: "fn:orders::placeOrder",
-        provider: "placeOrder",
-        consumer: "CheckoutPage",
+        provider: "src/handlers/placeOrder.ts::placeOrder",
+        consumer: "src/ui/CheckoutPage.ts::CheckoutPage",
       },
     ]);
   });

@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { functionCallBinding, restBinding } from "@suss/behavioral-ir";
+import {
+  functionCallBinding,
+  restBinding,
+  storageBinding,
+} from "@suss/behavioral-ir";
 
 import { check, checkDir } from "./check.js";
 
@@ -1285,6 +1289,224 @@ describe("checkDir", () => {
     expect(() => checkDir({ dir: emptyDir })).toThrow("has no JSON files");
   });
 });
+
+// ---------------------------------------------------------------------------
+// checkDir: what the report says was compared, and how it spells things
+// ---------------------------------------------------------------------------
+
+function storageTable(opts: {
+  container: string;
+  fields: string[];
+}): BehavioralSummary {
+  return {
+    kind: "library",
+    location: {
+      file: "infra/tables.tf",
+      range: { start: 1, end: 12 },
+      exportName: null,
+    },
+    identity: {
+      id: `infra::infra/tables.tf::${opts.container}`,
+      name: opts.container,
+      exportPath: null,
+      boundaryBinding: storageBinding({
+        recognition: "terraform",
+        storageSystem: "dynamodb",
+        scope: "default",
+        container: opts.container,
+        accessPath: null,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      storageContract: {
+        fieldSet: "exhaustive",
+        fields: opts.fields.map((name) => ({ name })),
+      },
+    },
+  };
+}
+
+function storageReader(opts: {
+  name: string;
+  container: string;
+  fields: string[];
+}): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: `api/src/${opts.name}.ts`,
+      range: { start: 1, end: 20 },
+      exportName: opts.name,
+    },
+    identity: {
+      id: `api::api/src/${opts.name}.ts::${opts.name}`,
+      name: opts.name,
+      exportPath: [opts.name],
+      boundaryBinding: null,
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "t-read",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: storageBinding({
+              recognition: "dynamodb-sdk",
+              storageSystem: "dynamodb",
+              scope: "default",
+              container: opts.container,
+              accessPath: null,
+            }),
+            interaction: {
+              class: "storage-access",
+              kind: "read",
+              fields: opts.fields,
+            },
+          },
+        ],
+        location: { start: 5, end: 12 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+describe("checkDir over a run whose only comparison is a storage pass", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-storagedir-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** The fixture the three problems in the report were found on. */
+  function monorepo(): BehavioralSummary[] {
+    return [
+      storageTable({ container: "orders", fields: ["id", "customerId"] }),
+      storageReader({
+        name: "listOrders",
+        container: "orders",
+        fields: ["id", "customerId"],
+      }),
+      providerWithRoute("health", "GET", "/health", [
+        transition("t-200", { statusCode: 200, isDefault: true }),
+      ]),
+    ];
+  }
+
+  it("counts the storage pair in the header instead of saying nothing was compared", () => {
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("Compared 1 boundary:");
+    expect(output).not.toContain("Nothing was compared");
+    expect(output).toContain("dynamodb:orders");
+  });
+
+  it("stops listing a compared table as a boundary nothing paired with", () => {
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
+    const { output, result } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).not.toContain("Nothing in this run paired with");
+    expect(result.result.unmatched.unpairable).toEqual([]);
+  });
+
+  it("stops counting the reader as internal code that pairs with nothing", () => {
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).not.toContain("internal code with no boundary");
+  });
+
+  it("spells every side as a boundary key or a summary id, never a bare name", () => {
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain(
+      "  dynamodb:orders\n    infra::infra/tables.tf::orders <-> api::api/src/listOrders.ts::listOrders",
+    );
+    expect(output).toContain(
+      "  GET /health\n    src/handlers/health.ts::health",
+    );
+    // A bare name would sit on a line of its own, which no line here has.
+    expect(output).not.toMatch(/^\s+listOrders$/m);
+    expect(output).not.toMatch(/^\s+orders$/m);
+    expect(output).not.toMatch(/^\s+health$/m);
+  });
+
+  it("keeps saying nothing was compared when a run really compared nothing", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify([
+        storageTable({ container: "orders", fields: ["id"] }),
+        providerWithRoute("health", "GET", "/health", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("Nothing was compared.");
+    expect(output).toContain("Nothing in this run paired with this boundary");
+    expect(output).toContain("    infra::infra/tables.tf::orders");
+  });
+
+  it("counts one boundary when a table is read from two places", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify([
+        storageTable({ container: "orders", fields: ["id", "customerId"] }),
+        storageReader({
+          name: "listOrders",
+          container: "orders",
+          fields: ["id"],
+        }),
+        storageReader({
+          name: "getOrder",
+          container: "orders",
+          fields: ["customerId"],
+        }),
+      ]),
+    );
+    const { output, result } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(result.result.pairs).toHaveLength(2);
+    expect(output).toContain("Compared 1 boundary:");
+    expect(output).toContain(
+      "    infra::infra/tables.tf::orders <-> api::api/src/listOrders.ts::listOrders",
+    );
+    expect(output).toContain(
+      "    infra::infra/tables.tf::orders <-> api::api/src/getOrder.ts::getOrder",
+    );
+  });
+});
+
+function captureQuietly<T>(fn: () => T): { output: string; result: T } {
+  const chunks: string[] = [];
+  const orig = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string) => {
+    chunks.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    const result = fn();
+    return { output: chunks.join(""), result };
+  } finally {
+    process.stdout.write = orig;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // --fail-on
