@@ -5,12 +5,12 @@
  * a template writes `!Sub "${StageName}-orders-v1"` and the code writes
  * `` `${stage}-orders-v1` ``. Neither side states a string, both agree
  * about the fixed text, and each spells the parameter its own way. So a
- * name is written here as fixed text with `{}` holes, the way a REST
- * path is written with `{id}`, and two names agree when their fixed
- * parts line up.
+ * name is written here as fixed text with `{}` holes, and two names
+ * agree when their fixed parts line up.
  *
- * A hole covers a whole parameter rather than one path segment,
- * because a name has no separator that every project agrees on.
+ * A hole stops at the separator between it and what comes next, which
+ * the pattern itself supplies. The README beside this file says why,
+ * and what that costs.
  */
 
 /** What a hole looks like once a reader has written one. */
@@ -67,14 +67,38 @@ export function namePatternKey(name: string): string {
   return name.replace(HOLE, "{}");
 }
 
+/** How much of a name the writer stated rather than left for deploy time. */
+export function fixedTextLength(name: string): number {
+  return name.replace(HOLE, "").length;
+}
+
+function isHole(part: string): boolean {
+  return part.startsWith("{") && part.endsWith("}");
+}
+
+function quote(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * What a hole can cover, given the fixed text that follows it. A letter
+ * or a digit next to the hole is part of the same word, so nothing
+ * separates the two and the hole covers anything.
+ */
+function holeSource(following: string): string {
+  const separator = following.slice(0, 1);
+  if (separator === "" || /[A-Za-z0-9]/.test(separator)) {
+    return ".+";
+  }
+  return `[^${quote(separator)}]+`;
+}
+
 /** Whether a concrete name has the pattern's fixed text in those places. */
 function admits(pattern: string, name: string): boolean {
-  const source = pattern
-    .split(/(\{[^}]*\})/)
-    .map((part) =>
-      part.startsWith("{") && part.endsWith("}")
-        ? ".+"
-        : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  const parts = pattern.split(/(\{[^}]*\})/);
+  const source = parts
+    .map((part, index) =>
+      isHole(part) ? holeSource(parts[index + 1] ?? "") : quote(part),
     )
     .join("");
   return new RegExp(`^${source}$`).test(name);
