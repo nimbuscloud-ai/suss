@@ -5,14 +5,34 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  appsyncFileToSummaries,
-  appsyncToSummaries,
+  readGraphqlMetadata,
+  readSourceDocumentMetadata,
+} from "@suss/behavioral-ir";
+
+import {
   type CfnTemplate,
+  appsyncFileToSummaries as readAppsyncFile,
+  appsyncToSummaries as readAppsyncTemplate,
 } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/appsync");
+
+// A read also produces one summary per API standing for its schema
+// document. Those have their own block at the end of the file; every
+// other test here is about the resolvers.
+function appsyncToSummaries(
+  ...args: Parameters<typeof readAppsyncTemplate>
+): BehavioralSummary[] {
+  return readAppsyncTemplate(...args).filter((s) => s.kind === "resolver");
+}
+
+function appsyncFileToSummaries(
+  ...args: Parameters<typeof readAppsyncFile>
+): BehavioralSummary[] {
+  return readAppsyncFile(...args).filter((s) => s.kind === "resolver");
+}
 
 function restSemanticsOf(
   summary: BehavioralSummary,
@@ -1037,6 +1057,33 @@ describe("appsyncFileToSummaries — file loading", () => {
       expect(summaries.map((s) => s.identity.name)).toEqual(["Query.ping"]);
     } finally {
       fs.rmSync(tmp, { recursive: true });
+    }
+  });
+});
+
+describe("appsyncFileToSummaries: the schema document", () => {
+  const summaries = readAppsyncFile(path.join(fixturesDir, "petstore.yaml"));
+
+  it("states the API's SDL once rather than on every resolver", () => {
+    const withSdl = summaries.filter(
+      (s) => readGraphqlMetadata(s)?.schemaSdl !== undefined,
+    );
+    expect(withSdl).toHaveLength(1);
+    expect(withSdl[0]?.kind).toBe("library");
+    expect(withSdl[0]?.identity.boundaryBinding).toBeNull();
+    expect(
+      readGraphqlMetadata(withSdl[0] as BehavioralSummary)?.schemaSdl,
+    ).toContain("type Pet");
+  });
+
+  it("labels the API's resolvers with the document they came from", () => {
+    const document = summaries.find((s) => s.kind === "library");
+    const label = readSourceDocumentMetadata(
+      document as BehavioralSummary,
+    )?.label;
+    expect(label).toMatch(/#PetApi$/);
+    for (const resolver of summaries.filter((s) => s.kind === "resolver")) {
+      expect(readSourceDocumentMetadata(resolver)?.label).toBe(label);
     }
   });
 });

@@ -3,6 +3,10 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import {
+  readGraphqlMetadata,
+  readSourceDocumentMetadata,
+} from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { apolloFramework } from "./index.js";
@@ -76,15 +80,28 @@ describe("apolloFramework — integration", () => {
   }, 90_000);
 
   it("discovers one resolver summary per (typeName, fieldName) pair", async () => {
-    const names = summaries.map((s) => s.identity.name).sort();
+    const resolvers = summaries.filter((s) => s.kind === "resolver");
+    const names = resolvers.map((s) => s.identity.name).sort();
     expect(names).toEqual([
       "Mutation.createUser",
       "Query.user",
       "Query.users",
       "User.fullName",
     ]);
-    for (const s of summaries) {
-      expect(s.kind).toBe("resolver");
+  });
+
+  it("states the server's typeDefs once, on a summary for the schema", async () => {
+    const withSdl = summaries.filter(
+      (s) => readGraphqlMetadata(s)?.schemaSdl !== undefined,
+    );
+    expect(withSdl).toHaveLength(1);
+    expect(withSdl[0]?.identity.boundaryBinding).toBeNull();
+    const label = readSourceDocumentMetadata(
+      withSdl[0] as BehavioralSummary,
+    )?.label;
+    expect(label).toMatch(/server\.ts$/);
+    for (const resolver of summaries.filter((s) => s.kind === "resolver")) {
+      expect(readSourceDocumentMetadata(resolver)?.label).toBe(label);
     }
   });
 

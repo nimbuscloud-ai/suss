@@ -100,7 +100,12 @@ export function discoverResolverMaps(
           resolverInfo: {
             typeName,
             fieldName,
-            ...(schemaSdl !== null ? { schemaSdl } : {}),
+            ...(schemaSdl !== null
+              ? {
+                  schemaSdl,
+                  schemaDocument: config.getSourceFile().getFilePath(),
+                }
+              : {}),
           },
         });
       }

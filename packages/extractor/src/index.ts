@@ -16,6 +16,7 @@ import {
   exchangesHttpResponses,
   withGraphqlMetadata,
   withHttpMetadata,
+  withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 
 import { inputReadsOf } from "./inputReads.js";
@@ -302,6 +303,9 @@ export interface RawCodeStructure {
    * graphql-js. The parsing happens at check time. */
   graphqlDocument?: string;
   graphqlSchemaSdl?: string;
+  /** The document this unit was read out of, when something else read out of
+   * the same document states what this one relies on. */
+  sourceDocumentLabel?: string;
   /** The extractor cannot derive this. An adapter that has the SDL and knows
    * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
@@ -566,6 +570,11 @@ function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
   const graphql = buildGraphqlMetadataValue(raw);
   if (graphql !== null) {
     metadata = withGraphqlMetadata(metadata, graphql);
+  }
+  if (raw.sourceDocumentLabel !== undefined) {
+    metadata = withSourceDocumentMetadata(metadata, {
+      label: raw.sourceDocumentLabel,
+    });
   }
   return Object.keys(metadata).length > 0 ? metadata : null;
 }

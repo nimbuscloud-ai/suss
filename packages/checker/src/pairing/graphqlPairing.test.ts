@@ -14,11 +14,25 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 // Fixture builders
 // ---------------------------------------------------------------------------
 
+/** What a reader emits for the schema document its resolvers came from. */
+function schemaDocument(label: string, schemaSdl: string): BehavioralSummary {
+  return {
+    kind: "library",
+    location: { file: label, range: { start: 0, end: 0 }, exportName: null },
+    identity: { name: label, exportPath: null, boundaryBinding: null },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "derived", level: "high" },
+    metadata: { sourceDocument: { label }, graphql: { schemaSdl } },
+  };
+}
+
 function resolver(
   typeName: string,
   fieldName: string,
   recognition = "apollo",
-  opts: { schemaSdl?: string } = {},
+  opts: { schemaSdl?: string; document?: string } = {},
 ): BehavioralSummary {
   const ownerKey = `${typeName}.${fieldName}`;
   return {
@@ -42,8 +56,17 @@ function resolver(
     transitions: [],
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
-    ...(opts.schemaSdl !== undefined
-      ? { metadata: { graphql: { schemaSdl: opts.schemaSdl } } }
+    ...(opts.schemaSdl !== undefined || opts.document !== undefined
+      ? {
+          metadata: {
+            ...(opts.schemaSdl !== undefined
+              ? { graphql: { schemaSdl: opts.schemaSdl } }
+              : {}),
+            ...(opts.document !== undefined
+              ? { sourceDocument: { label: opts.document } }
+              : {}),
+          },
+        }
       : {}),
   };
 }
@@ -665,6 +688,44 @@ describe("pairGraphqlOperations — nested selections", () => {
       `query GetPet { pet(id: "1") { id bogus } }`,
     );
     const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(
+      result.findings.filter((f) => f.kind === "boundaryFieldUnknown"),
+    ).toEqual([]);
+  });
+});
+
+describe("pairGraphqlOperations: the schema on the document summary", () => {
+  const staleQuery = `query Stale { pet(id: "1") { id deletedAt } }`;
+
+  it("reads the schema through the label the resolver shares with it", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      document: "schema.graphql",
+    });
+    const op = operation("useStale", "Stale", "query", staleQuery);
+    const result = pairGraphqlOperations([
+      schemaDocument("schema.graphql", petSchemaSdl),
+      petResolver,
+      op,
+    ]);
+    expect(
+      result.findings
+        .filter((f) => f.kind === "boundaryFieldUnknown")
+        .map((f) => f.provider.summary),
+    ).toEqual(["Pet.deletedAt (undeclared)"]);
+  });
+
+  it("checks nothing when two documents claim one label", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      document: "schema.graphql",
+    });
+    const op = operation("useStale", "Stale", "query", staleQuery);
+    const result = pairGraphqlOperations([
+      schemaDocument("schema.graphql", petSchemaSdl),
+      schemaDocument("schema.graphql", "type Query { pet(id: ID!): Pet }"),
+      petResolver,
+      op,
+    ]);
     expect(result.pairs).toHaveLength(1);
     expect(
       result.findings.filter((f) => f.kind === "boundaryFieldUnknown"),

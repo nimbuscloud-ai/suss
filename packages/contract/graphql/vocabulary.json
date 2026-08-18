@@ -6,5 +6,6 @@
   "GraphQLError": "graphql-js: the error type a failed field answers with",
   "args": "suss: input role",
   "text": "suss: shape kind for a scalar the document does not type",
-  "ref": "suss: marker for a named type the document refers to"
+  "ref": "suss: marker for a named type the document refers to",
+  "library": "suss: code-unit kind"
 }

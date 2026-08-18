@@ -3,7 +3,12 @@ import path from "node:path";
 import { type CallExpression, Node, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { readHttpMetadata, storageBinding } from "@suss/behavioral-ir";
+import {
+  readGraphqlMetadata,
+  readHttpMetadata,
+  readSourceDocumentMetadata,
+  storageBinding,
+} from "@suss/behavioral-ir";
 import { assembleSummary } from "@suss/extractor";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
@@ -847,6 +852,81 @@ describe("module imports on summaries", () => {
     const summaries = await adapter.extractAll();
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser?.metadata?.moduleImports).toEqual(["/helper.ts"]);
+  });
+});
+
+const graphqlServerPack: PatternPack = {
+  name: "apollo",
+  protocol: "http",
+  languages: ["typescript"],
+  discovery: [
+    {
+      kind: "resolver",
+      match: {
+        type: "resolverMap",
+        importModule: "@apollo/server",
+        importName: "ApolloServer",
+        mapProperty: "resolvers",
+      },
+    },
+  ],
+  terminals: [],
+  inputMapping: {
+    type: "positionalParams",
+    params: [
+      { position: 0, role: "parent" },
+      { position: 1, role: "args" },
+    ],
+  },
+};
+
+describe("a GraphQL server's schema", () => {
+  async function summariesForServer(): Promise<BehavioralSummary[]> {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({
+        typeDefs: \`type Query { ping: String  pong: String }\`,
+        resolvers: {
+          Query: { ping: () => "pong", pong: () => "ping" },
+        },
+      });
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [graphqlServerPack],
+      cacheDir: null,
+    });
+    return adapter.extractAll();
+  }
+
+  it("is stated once, on a summary for the file that declares it", async () => {
+    const summaries = await summariesForServer();
+    const withSdl = summaries.filter(
+      (s) => readGraphqlMetadata(s)?.schemaSdl !== undefined,
+    );
+    expect(withSdl).toHaveLength(1);
+    expect(withSdl[0]?.identity.boundaryBinding).toBeNull();
+    expect(
+      readGraphqlMetadata(withSdl[0] as BehavioralSummary)?.schemaSdl,
+    ).toContain("type Query");
+    expect(withSdl[0]?.location.file).toBe("/server.ts");
+  });
+
+  it("is what every resolver in the map points at", async () => {
+    const summaries = await summariesForServer();
+    const resolvers = summaries.filter((s) => s.kind === "resolver");
+    expect(resolvers.map((s) => s.identity.name).sort()).toEqual([
+      "Query.ping",
+      "Query.pong",
+    ]);
+    for (const resolver of resolvers) {
+      expect(readSourceDocumentMetadata(resolver)?.label).toBe("/server.ts");
+      expect(readGraphqlMetadata(resolver)?.schemaSdl).toBeUndefined();
+    }
   });
 });
 

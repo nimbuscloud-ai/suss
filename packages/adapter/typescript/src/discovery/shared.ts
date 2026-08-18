@@ -68,17 +68,19 @@ export interface DiscoveredUnit {
    * path.
    *
    * `schemaSdl` is the typeDefs string captured from the same
-   * ApolloServer config object the resolver map came from, when
-   * we can statically resolve it (string literal or gql-tagged
-   * template, inline or const-bound). Surfaced on the summary so
-   * the checker's nested-selection pairing can look up return-type
-   * fields without needing a separate schema provenance.
+   * ApolloServer config object the resolver map came from, when we can
+   * statically resolve it (string literal or gql-tagged template,
+   * inline or const-bound). The adapter puts it on one summary
+   * standing for that schema, and `schemaDocument` is the label
+   * pointing every resolver at it.
    */
   resolverInfo?: {
     /** Null when the source never says which type the resolver attaches to. */
     typeName: string | null;
     fieldName: string;
     schemaSdl?: string;
+    /** The file whose server config declares the schema. */
+    schemaDocument?: string;
   };
   /**
    * Populated by `graphqlHookCall` discovery (GraphQL consumer side).

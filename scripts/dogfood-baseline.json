@@ -2,10 +2,10 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 494,
-    "internal": 1922,
-    "consumers": 825,
-    "pairs": 818,
+    "exports": 496,
+    "internal": 1923,
+    "consumers": 854,
+    "pairs": 847,
     "unfollowedCalls": 193
   },
   "packages": {
@@ -26,13 +26,13 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 647,
-      "consumers": 47,
+      "internal": 648,
+      "consumers": 56,
       "unfollowedCalls": 55
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 62,
+      "exports": 64,
       "internal": 17,
       "consumers": 4,
       "unfollowedCalls": 2
@@ -41,7 +41,7 @@
       "name": "@suss/checker",
       "exports": 35,
       "internal": 160,
-      "consumers": 113,
+      "consumers": 115,
       "unfollowedCalls": 13
     },
     "packages/checker-intent": {
@@ -55,7 +55,7 @@
       "name": "@suss/cli",
       "exports": 13,
       "internal": 291,
-      "consumers": 178,
+      "consumers": 181,
       "unfollowedCalls": 33
     },
     "packages/client/apollo": {
@@ -83,7 +83,7 @@
       "name": "@suss/contract-appsync",
       "exports": 2,
       "internal": 44,
-      "consumers": 5,
+      "consumers": 11,
       "unfollowedCalls": 0
     },
     "packages/contract/aws-apigateway": {
@@ -104,7 +104,7 @@
       "name": "@suss/contract-graphql",
       "exports": 6,
       "internal": 25,
-      "consumers": 6,
+      "consumers": 12,
       "unfollowedCalls": 0
     },
     "packages/contract/intent": {
@@ -167,7 +167,7 @@
       "name": "@suss/extractor",
       "exports": 27,
       "internal": 29,
-      "consumers": 3,
+      "consumers": 4,
       "unfollowedCalls": 5
     },
     "packages/framework/activerecord": {
@@ -181,7 +181,7 @@
       "name": "@suss/framework-apollo",
       "exports": 2,
       "internal": 0,
-      "consumers": 6,
+      "consumers": 8,
       "unfollowedCalls": 0
     },
     "packages/framework/aws-dynamodb": {

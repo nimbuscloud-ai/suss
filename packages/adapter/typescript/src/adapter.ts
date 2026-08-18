@@ -32,7 +32,11 @@ import {
   graphqlResolverBinding,
   messageBusBinding,
   packageExportBinding,
+  readGraphqlMetadata,
+  readSourceDocumentMetadata,
   restBinding,
+  withGraphqlMetadata,
+  withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
 import {
@@ -1182,6 +1186,9 @@ function extractFromSourceFile(
         }
         if (unit.resolverInfo.schemaSdl !== undefined) {
           raw.graphqlSchemaSdl = unit.resolverInfo.schemaSdl;
+          if (unit.resolverInfo.schemaDocument !== undefined) {
+            raw.sourceDocumentLabel = unit.resolverInfo.schemaDocument;
+          }
           // With no declared type there is no schema entry to compare
           // against.
           if (unit.resolverInfo.typeName !== null) {
@@ -1436,6 +1443,52 @@ function fileImporting(
     }
   }
   return undefined;
+}
+
+/**
+ * Move each schema onto one summary standing for the document that
+ * declares it, and leave every resolver pointing at that document.
+ *
+ * A server's `typeDefs` is one schema however many resolvers it
+ * declares, and repeating it on each of them makes the artifact grow
+ * with the schema times the field count. The checker reads it back
+ * through the same label.
+ */
+function liftSchemasOntoDocuments(summaries: BehavioralSummary[]): void {
+  const sdlByDocument = new Map<string, string>();
+  for (const summary of summaries) {
+    const label = readSourceDocumentMetadata(summary)?.label;
+    const graphql = readGraphqlMetadata(summary);
+    if (label === undefined || graphql?.schemaSdl === undefined) {
+      continue;
+    }
+    sdlByDocument.set(label, graphql.schemaSdl);
+    const { schemaSdl: _movedToTheDocument, ...rest } = graphql;
+    summary.metadata = withGraphqlMetadata(summary.metadata, rest);
+  }
+  for (const [label, schemaSdl] of sdlByDocument) {
+    summaries.push(schemaDocumentSummary(label, schemaSdl));
+  }
+}
+
+/** Binds to no boundary: a client crosses `Query.users`, not a schema. */
+function schemaDocumentSummary(
+  label: string,
+  schemaSdl: string,
+): BehavioralSummary {
+  return {
+    kind: "library",
+    location: { file: label, range: { start: 0, end: 0 }, exportName: null },
+    identity: { name: label, exportPath: null, boundaryBinding: null },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: withGraphqlMetadata(
+      withSourceDocumentMetadata(undefined, { label }),
+      { schemaSdl },
+    ),
+  };
 }
 
 function libraryEnvReadMarker(
@@ -2121,6 +2174,9 @@ export function createTypeScriptAdapter(
       );
       timer.time("emitLibraryEnvReadMarkers", () =>
         emitLibraryEnvReadMarkers(enriched, project, config.frameworks),
+      );
+      timer.time("liftSchemasOntoDocuments", () =>
+        liftSchemasOntoDocuments(enriched),
       );
       timer.time("stampGraphqlClientRefs", () =>
         stampGraphqlClientRefs(

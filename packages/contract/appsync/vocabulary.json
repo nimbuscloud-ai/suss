@@ -17,5 +17,6 @@
   "ref": "CloudFormation: the Ref intrinsic, lower cased",
   "remote": "suss: marker for a value the template does not resolve",
   "computed": "suss: marker for a schema location the template computes with an intrinsic",
-  "args": "suss: input role"
+  "args": "suss: input role",
+  "library": "suss: code-unit kind"
 }
