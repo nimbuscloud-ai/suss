@@ -59,7 +59,7 @@ export const MessageBusMetadataSchema = z.object({
    */
   enabled: z.boolean().optional(),
   /**
-   * "sqs" when an SNS subscription delivers through a queue rather
+   * "aws_sqs" when an SNS subscription delivers through a queue rather
    * than invoking the function directly, the SAM SqsSubscription
    * shape. The `queue` field then says which queue, or
    * "<sam-managed>" for the one SAM creates outside the template.
