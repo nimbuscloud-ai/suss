@@ -8,24 +8,13 @@ import type { RunDescription } from "./extract.js";
 import type { Rewrite } from "./rewrite.js";
 import type { Seed } from "./seed.js";
 
-/** A gap in the resolution rules rather than in a pack, so every seed hits it. */
-function inTheRules(reason: string): Readonly<Record<string, string>> {
-  return Object.fromEntries(SEEDS.map((seed) => [seed.name, reason]));
-}
-
-const FACTORY_RESULT = inTheRules(
-  "the rules give a call no comesTo, so what a factory returns never reaches the site that uses it, https://github.com/nimbuscloud-ai/suss/issues/436",
-);
-
 /**
  * The rewrites suss does not follow yet, by rewrite name and then by seed,
  * each with why and where it is written down. A gap that starts passing
  * fails too, so a closed one does not stay on the list.
  */
-const KNOWN_GAPS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  "the dependency built by a factory function": FACTORY_RESULT,
-  "the dependency built by a factory returning a factory": FACTORY_RESULT,
-};
+const KNOWN_GAPS: Readonly<Record<string, Readonly<Record<string, string>>>> =
+  {};
 
 function listDifference(
   label: string,
