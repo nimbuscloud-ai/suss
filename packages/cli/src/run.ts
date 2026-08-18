@@ -11,7 +11,9 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
+import { ask } from "./ask.js";
 import { check, checkDir } from "./check.js";
+import { checkAt } from "./checkAt.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
 import { extract } from "./extract.js";
@@ -35,6 +37,8 @@ Usage:
   suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
   suss check <provider.json> <consumer.json> [--json] [-o <output>]
   suss check --dir <directory> [--intent <intent-dir>] [--json] [-o <output>]
+  suss check --dir <directory> --at <file[:line] | boundary | summary-id> [--json]
+  suss ask "<question>" [--dir <directory> | <summaries.json>] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
 
@@ -44,7 +48,10 @@ Commands:
             it prints either way.
   extract   Read your source and describe what each boundary does
   inspect   Read a summaries file back in a form meant for people
-  check     Compare two sides of a boundary and report what disagrees
+  check     Compare two sides of a boundary and report what disagrees.
+            --at reports on one file, line, boundary, or summary instead
+            of the whole folder
+  ask       Answer one question about one boundary from summaries on disk
   contract  Describe boundaries from a schema or deploy template
   corroborate  Extract, then run each handler against its own claims
             (experimental). A claim that survives execution is marked
@@ -97,6 +104,12 @@ Options (inspect --flow):
 
 Options (check):
   --dir            Folder of summary files, paired up by method and path
+  --at             Report on one thing instead of the whole folder: a file
+                   (src/dao.ts), a file and a line (src/dao.ts:43), a
+                   boundary (dynamodb:editions#by-publication), or a summary
+                   id (pkg::src/dao.ts::byPublication). Needs --dir. Exits
+                   non-zero when it matches nothing, since an empty report
+                   would read as agreement.
   --intent         Folder of intent docs (*.intent / *.prd) to check the code
                    against. Needs --dir.
   --json           Write findings as JSON instead of prose
@@ -105,6 +118,19 @@ Options (check):
                    info, none
   --sussignore     Path to a .sussignore file, instead of finding one nearby
   --no-suppressions  Report every finding, ignoring any .sussignore
+
+Options (ask):
+  The question is one of four, in these words:
+    what can I project from <boundary>   what the boundary declares
+    what reads <boundary>                which units read it
+    what writes <boundary>               which units write it
+    what does <unit> reach               which boundaries a file or
+                                         summary goes through
+  A boundary is written the way reports write it, and a shorter spelling
+  matches more: "dynamodb:editions" covers every index on that table.
+  --dir            Folder of summary files to read, instead of one file
+  --json           Write the answer as JSON instead of prose
+  -o, --output     Write the answer to a file instead of stdout
 
 Options (contract):
   --from           What kind of file to read: openapi, cloudformation,
@@ -190,6 +216,9 @@ async function dispatch(args: string[]): Promise<number> {
   if (command === "check") {
     return runCheck(args.slice(1));
   }
+  if (command === "ask") {
+    return runAsk(args.slice(1));
+  }
   if (command === "contract") {
     return await runContract(args.slice(1));
   }
@@ -198,7 +227,7 @@ async function dispatch(args: string[]): Promise<number> {
   }
 
   process.stderr.write(
-    `There is no "${command}" command. suss has init, extract, inspect, check, contract, and corroborate.\n`,
+    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, and corroborate.\n`,
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
@@ -384,6 +413,7 @@ function runCheck(args: string[]): number {
       json: { type: "boolean" },
       output: { type: "string", short: "o" },
       dir: { type: "string" },
+      at: { type: "string" },
       intent: { type: "string" },
       "fail-on": { type: "string" },
       sussignore: { type: "string" },
@@ -421,6 +451,25 @@ function runCheck(args: string[]): number {
     ...(values["no-suppressions"] === true ? { noSuppressions: true } : {}),
   };
 
+  if (values.at !== undefined && values.dir === undefined) {
+    process.stderr.write(
+      "--at narrows a run over a folder of summaries, so it needs --dir too. Try: suss check --dir summaries/ --at src/editions/dao.ts:43\n",
+    );
+    return 1;
+  }
+
+  if (values.at !== undefined && values.intent !== undefined) {
+    process.stderr.write(
+      "--at reports on one thing and --intent scores every boundary intent against the code, so they cannot run together. Run them one at a time.\n",
+    );
+    return 1;
+  }
+
+  if (values.dir !== undefined && values.at !== undefined) {
+    const scoped = checkAt({ dir: values.dir, at: values.at, ...shared });
+    return scoped.hasErrors ? 1 : 0;
+  }
+
   if (values.dir !== undefined) {
     const result = checkDir({
       dir: values.dir,
@@ -450,6 +499,37 @@ function runCheck(args: string[]): number {
     ...shared,
   });
   return result.hasErrors ? 1 : 0;
+}
+
+function runAsk(args: string[]): number {
+  const { values, positionals } = parseArgs({
+    args,
+    options: {
+      dir: { type: "string" },
+      json: { type: "boolean" },
+      output: { type: "string", short: "o" },
+    },
+    allowPositionals: true,
+  });
+
+  // The question comes first, and a summaries file may follow it, the
+  // same way `inspect` takes one.
+  const question = positionals[0];
+  if (question === undefined) {
+    process.stderr.write(
+      "ask needs a question. Try: suss ask 'what reads dynamodb:editions' --dir summaries/\n",
+    );
+    return 1;
+  }
+
+  const file = positionals[1];
+  return ask({
+    question,
+    ...(values.dir !== undefined ? { dir: values.dir } : {}),
+    ...(file !== undefined ? { file } : {}),
+    ...(values.json === true ? { json: true } : {}),
+    ...(values.output !== undefined ? { output: values.output } : {}),
+  });
 }
 
 async function runCorroborate(args: string[]): Promise<number> {

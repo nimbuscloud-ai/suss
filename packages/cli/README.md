@@ -30,6 +30,14 @@ suss check provider.json consumer.json [--json] [-o findings.json]
 # Directory check: auto-pair providers with consumers by (method, path)
 suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
 
+# The part of that report about one file, line, boundary, or summary
+suss check --dir summaries/ --at src/editions/dao.ts:43
+suss check --dir summaries/ --at 'dynamodb:editions#by-publication'
+
+# One question about one boundary, from summaries already on disk
+suss ask 'what can I project from dynamodb:editions#by-publication' --dir summaries/
+suss ask 'what reads dynamodb:editions' --dir summaries/
+
 # Generate summaries from a declared contract (no source extraction)
 suss contract --from openapi spec.yaml [-o provider.json]
 suss contract --from openapi https://example.com/openapi.yaml [-o provider.json]
@@ -48,9 +56,16 @@ suss contract --from intent intents/ [-o intent.json]
 
 **`check`**
 - `--dir`: directory of summary JSON files; auto-pairs by `(method, normalizedPath)`
+- `--at`: report on one file, `file:line`, boundary, or summary id instead of the whole folder. Needs `--dir`, and exits non-zero when it matches nothing
 - `--json`: emit findings as JSON
 - `-o, --output`: write findings to file instead of stdout
 - `--fail-on`: exit-code threshold: `error` (default), `warning`, `info`, or `none`
+
+**`ask`**
+- Positional argument: the question, one of `what can I project from <boundary>`, `what reads <boundary>`, `what writes <boundary>`, `what does <unit> reach`
+- `--dir`: directory of summary JSON files, or pass one summaries file instead
+- `--json`: emit the answer as JSON
+- `-o, --output`: write the answer to file instead of stdout
 
 **`stub`**
 - `--from`: stub source kind: `openapi` or `cloudformation`

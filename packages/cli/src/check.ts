@@ -45,9 +45,9 @@ import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
  * use confidence to decide anything; the human-output renderer
  * surfaces it so reviewers can weigh findings themselves.
  */
-type ConfidenceLookup = Map<string, ConfidenceInfo>;
+export type ConfidenceLookup = Map<string, ConfidenceInfo>;
 
-function buildConfidenceLookup(
+export function buildConfidenceLookup(
   ...groups: BehavioralSummary[][]
 ): ConfidenceLookup {
   const map: ConfidenceLookup = new Map();
@@ -132,9 +132,29 @@ function loadSuppressionsForOptions(
   });
 }
 
-export function checkDir(
-  options: CheckDirOptions,
-): CheckResult & { result: CheckAllResult } {
+/** Everything one pass over a directory of summaries produced. */
+export interface CheckedDirectory {
+  summaries: BehavioralSummary[];
+  /** Which file each summary came from. */
+  sourceFile: Map<BehavioralSummary, string>;
+  /** The checker's own result, with suppressions already applied. */
+  result: CheckAllResult;
+  suppressions: SuppressionRule[];
+  confidence: ConfidenceLookup;
+}
+
+/**
+ * Read a directory of summaries and run every pass over it.
+ *
+ * `suss check --dir` and `suss check --at` both go through here, so a
+ * scoped run is the full run with a filter over it rather than a second
+ * way of checking that could answer differently.
+ */
+export function checkDirectory(options: {
+  dir: string;
+  sussignore?: string;
+  noSuppressions?: boolean;
+}): CheckedDirectory {
   const resolved = path.resolve(options.dir);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     throw new UsageError(
@@ -155,24 +175,41 @@ export function checkDir(
     );
   }
 
-  const allSummaries: BehavioralSummary[] = [];
-  // Which file each summary came from, so that a boundary with
-  // providers in two different files can be called out below.
+  const summaries: BehavioralSummary[] = [];
+  // Which file each summary came from, so a caller can report a
+  // boundary two different files both claim to provide.
   const sourceFile = new Map<BehavioralSummary, string>();
   for (const file of files) {
     for (const summary of readSummaries(path.join(resolved, file))) {
-      allSummaries.push(summary);
+      summaries.push(summary);
       sourceFile.set(summary, file);
     }
   }
 
-  const rawResult = checkAll(allSummaries);
+  const rawResult = checkAll(summaries);
   const suppressions = loadSuppressionsForOptions(options, resolved);
-  const result: CheckAllResult = {
-    ...rawResult,
-    findings: applySuppressions(rawResult.findings, suppressions),
+  return {
+    summaries,
+    sourceFile,
+    result: {
+      ...rawResult,
+      findings: applySuppressions(rawResult.findings, suppressions),
+    },
+    suppressions,
+    confidence: buildConfidenceLookup(summaries),
   };
-  const confidence = buildConfidenceLookup(allSummaries);
+}
+
+export function checkDir(
+  options: CheckDirOptions,
+): CheckResult & { result: CheckAllResult } {
+  const {
+    summaries: allSummaries,
+    sourceFile,
+    result,
+    suppressions,
+    confidence,
+  } = checkDirectory(options);
 
   // Intent is a separate citizen with its own finding shape. When
   // --intent is supplied, pair it against the same code summaries and
@@ -194,11 +231,7 @@ export function checkDir(
       renderCollisions(collisions) +
       renderIntentSection(intent);
 
-  if (options.output !== undefined) {
-    fs.writeFileSync(options.output, rendered);
-  } else {
-    process.stdout.write(rendered);
-  }
+  writeReport(rendered, options.output);
 
   const failOn = options.failOn ?? "error";
   return {
@@ -366,18 +399,26 @@ function emitFindings(
 ): CheckResult {
   const rendered = options.json
     ? `${JSON.stringify(findings, null, 2)}\n`
-    : renderHuman(findings, confidence);
+    : renderFindings(findings, confidence);
 
-  if (options.output !== undefined) {
-    fs.writeFileSync(options.output, rendered);
-  } else {
-    process.stdout.write(rendered);
-  }
+  writeReport(rendered, options.output);
 
   return {
     findings,
     hasErrors: meetsThreshold(findings, options.failOn ?? "error"),
   };
+}
+
+/** Where a rendered report goes: a file when asked for, stdout otherwise. */
+export function writeReport(
+  rendered: string,
+  output: string | undefined,
+): void {
+  if (output !== undefined) {
+    fs.writeFileSync(output, rendered);
+    return;
+  }
+  process.stdout.write(rendered);
 }
 
 const SEVERITY_ORDER: Record<string, number> = {
@@ -386,7 +427,7 @@ const SEVERITY_ORDER: Record<string, number> = {
   info: 2,
 };
 
-function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
+export function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
   if (failOn === "none") {
     return false;
   }
@@ -426,7 +467,7 @@ function formatParseIssues(
     .join("\n");
 }
 
-function renderHuman(
+export function renderFindings(
   findings: Finding[],
   confidence: ConfidenceLookup,
 ): string {
@@ -734,7 +775,7 @@ function renderDirHuman(
   lines.push("");
 
   if (result.findings.length > 0) {
-    lines.push(renderHuman(result.findings, confidence).trimEnd());
+    lines.push(renderFindings(result.findings, confidence).trimEnd());
   } else if (result.pairs.length > 0) {
     lines.push("No findings. Every compared boundary agreed.");
   }

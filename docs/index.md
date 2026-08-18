@@ -59,6 +59,12 @@ suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
 # Compare them
 suss check --dir summaries/
 
+# Or only the part about the file you are editing
+suss check --dir summaries/ --at src/users.ts:43
+
+# Ask about one boundary before you write the call
+suss ask 'what can I project from dynamodb:editions#by-publication' --dir summaries/
+
 # Read a summary file back
 suss inspect summaries/api.json
 ```
