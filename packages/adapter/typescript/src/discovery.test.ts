@@ -1583,6 +1583,27 @@ describe("resolverMap discovery, a map assembled across modules", () => {
     );
     expect(units[0]?.resolverInfo?.schemaSdl).toContain("type Query");
   });
+
+  it("says which file declares the schema, so one summary can state it", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "server.ts",
+      `
+      import { ApolloServer } from "@apollo/server";
+      new ApolloServer({
+        typeDefs: "type Query { ping: String }",
+        resolvers: { Query: { ping: () => "pong" } },
+      });
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeResolverMapPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0]?.resolverInfo?.schemaDocument).toBe(file.getFilePath());
+  });
 });
 
 describe("resolverMap discovery", () => {

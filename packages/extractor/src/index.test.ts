@@ -216,6 +216,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
       statusAccessors: ["statusCode"],
       graphqlDocument: "query Q { me { id } }",
       graphqlSchemaSdl: "type Query { me: User }",
+      sourceDocumentLabel: "server.ts",
     };
 
     const summary = assembleSummary(raw);
@@ -232,6 +233,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
       document: "query Q { me { id } }",
       schemaSdl: "type Query { me: User }",
     });
+    expect(summary.metadata?.sourceDocument).toEqual({ label: "server.ts" });
     const effect = summary.transitions[0].effects[0];
     expect(effect.type).toBe("invocation");
     if (effect.type === "invocation") {
