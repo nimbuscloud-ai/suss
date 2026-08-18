@@ -124,14 +124,14 @@ function comparisonRange(
   if (refLooksLikeStatus(pred.left, accessors)) {
     const n = literalNumber(pred.right);
     const bound = BOUND_BY_OP[pred.op];
-    return n !== null && bound !== undefined ? [bound(n)] : null;
+    return n !== null && bound !== undefined ? normalise([bound(n)]) : null;
   }
 
   if (refLooksLikeStatus(pred.right, accessors)) {
     const n = literalNumber(pred.left);
     const flipped = FLIPPED_OP[pred.op];
     const bound = flipped !== undefined ? BOUND_BY_OP[flipped] : undefined;
-    return n !== null && bound !== undefined ? [bound(n)] : null;
+    return n !== null && bound !== undefined ? normalise([bound(n)]) : null;
   }
 
   return null;
