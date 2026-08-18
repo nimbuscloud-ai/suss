@@ -4,20 +4,19 @@
  * value it does not have.
  *
  * The declaring side says what one measurement is under
- * `metricContract`. A reading says under `metricReading` what shape it
- * compares against and what it turns each window into first. Comparing
- * those two is the whole rule, and it is true of any monitoring system,
- * so no pack runs at check time.
+ * `metricContract`, and a reading says under `metricReading` what shape
+ * it compares against and what it turns each window into first.
+ * Comparing those two is the whole rule, so no pack runs at check time.
  *
- * Pairing key: (metricSystem, metricType), the type string the
- * monitoring system knows the series by.
+ * Both sides key on (metricSystem, metricType), so the generic pairing
+ * pass already put them together and recorded the pair. This one only
+ * judges.
  */
 
 import {
   BOUNDARY_ROLE,
   readMetricContractMetadata,
   readMetricReadingMetadata,
-  summaryIdentifier,
   summaryRef,
 } from "@suss/behavioral-ir";
 import { metricIdentityKey } from "@suss/ir-core";
@@ -36,7 +35,6 @@ import type {
   MetricSemantics,
   MetricValueShape,
 } from "@suss/behavioral-ir";
-import type { ComparedPair } from "../pairing/comparedPair.js";
 
 /** How a finding says what a measurement is. */
 const SHAPE_WORDS: Record<MetricValueShape, string> = {
@@ -52,8 +50,6 @@ const SHAPE_WORDS: Record<MetricValueShape, string> = {
 export function checkMetric(
   summaries: BehavioralSummary[],
   index?: InteractionIndex,
-  /** Where to record what this pass compared; see `ComparedPair`. */
-  compared?: ComparedPair[],
 ): Finding[] {
   const idx = index ?? buildInteractionIndex(summaries);
   const metrics = providersOf(idx, "metric");
@@ -72,14 +68,9 @@ export function checkMetric(
     }
     const key = keyOf(reading);
     const provider = key === null ? undefined : declared.get(key);
-    if (key === null || provider === undefined) {
+    if (provider === undefined) {
       continue;
     }
-    compared?.push({
-      key,
-      provider: summaryIdentifier(provider),
-      consumer: summaryIdentifier(reading),
-    });
     const finding = shapeMismatch(provider, reading);
     if (finding !== null) {
       findings.push(finding);

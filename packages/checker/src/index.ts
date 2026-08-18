@@ -235,7 +235,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   findings.push(...checkRuntimeConfig(summaries, interactionIndex, pairInfo));
   findings.push(...checkStorage(summaries, interactionIndex, pairInfo));
   findings.push(...checkMessageBus(summaries, interactionIndex, pairInfo));
-  findings.push(...checkMetric(summaries, interactionIndex, pairInfo));
+  findings.push(...checkMetric(summaries, interactionIndex));
 
   // Pairing only knows method and path, so it files a store or a queue
   // as unpaired even after the pass that owns that protocol compared it.

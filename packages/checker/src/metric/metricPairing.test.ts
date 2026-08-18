@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { metricBinding } from "@suss/behavioral-ir";
 
+import { checkAll } from "../index.js";
 import { checkMetric } from "./metricPairing.js";
 
 import type {
@@ -9,7 +10,6 @@ import type {
   MetricContractMetadata,
   MetricReadingMetadata,
 } from "@suss/behavioral-ir";
-import type { ComparedPair } from "../pairing/comparedPair.js";
 
 const SYSTEM = "test-monitoring";
 const SERIES = "example.test/counters/refusals";
@@ -171,16 +171,18 @@ describe("what the pass declines to judge", () => {
   });
 });
 
-describe("what the pass records", () => {
-  it("records the pair it compared, so nothing calls the metric unpaired", () => {
-    const compared: ComparedPair[] = [];
-    checkMetric(
-      [declares({ values: "number" }), reads({ comparesTo: "number" })],
-      undefined,
-      compared,
-    );
+describe("the pair reaching the report", () => {
+  it("is recorded by the generic pairing pass, not by this one", () => {
+    const summaries = [
+      declares({ values: "spread" }),
+      reads({ comparesTo: "number" }),
+    ];
 
-    expect(compared).toHaveLength(1);
-    expect(compared[0]?.key).toContain(SERIES);
+    const result = checkAll(summaries);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0]?.key).toContain(SERIES);
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "boundaryShapeMismatch",
+    ]);
   });
 });
