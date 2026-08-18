@@ -11,11 +11,16 @@ import { Database, evaluate } from "@suss/datalog";
 
 import { RESOLUTION_RULES } from "./index.js";
 
-/** Feed facts in, run the rules, and read one relation back. */
+/**
+ * Feed facts in, run the rules, and read one relation back, keeping the
+ * tuples with `subject` in column `at`. Every relation here is keyed by
+ * the value asked about except `paramAt`, which is keyed by the call.
+ */
 function derive(
   facts: Array<[string, ...string[]]>,
   relation: string,
   subject: string,
+  at = 0,
 ): ReadonlyArray<ReadonlyArray<string | number>> {
   const db = new Database();
   for (const [name, ...tuple] of facts) {
@@ -23,7 +28,7 @@ function derive(
   }
   return evaluate(db, RESOLUTION_RULES)
     .facts(relation)
-    .filter((t) => t[0] === subject);
+    .filter((t) => t[at] === subject);
 }
 
 /** What a value comes down to. */
@@ -43,6 +48,26 @@ function resultsOf(
 ): string[] {
   return derive(facts, "givesBack", value)
     .map((t) => String(t[1]))
+    .sort();
+}
+
+/** The expressions a value is written as. */
+function writtenAsOf(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+): string[] {
+  return derive(facts, "isWrittenAs", value)
+    .map((t) => String(t[1]))
+    .sort();
+}
+
+/** What each call site put in a parameter, as `call:value`. */
+function perCallSite(
+  facts: Array<[string, ...string[]]>,
+  param: string,
+): string[] {
+  return derive(facts, "paramAt", param, 1)
+    .map((t) => `${t[0]}:${t[2]}`)
     .sort();
 }
 
@@ -782,5 +807,85 @@ describe("a name written more than once", () => {
         "panel",
       ),
     ).toEqual(["body"]);
+  });
+});
+
+describe("the same steps, whichever question is asked", () => {
+  it("reads a name handed to a constructor back off the field", () => {
+    // new Dao("orders-v1"), and the class reads this.table.
+    expect(
+      writtenAsOf(
+        [
+          ["writtenValue", "orders-v1"],
+          ["objectValue", "Dao"],
+          ["paramOf", "Dao", "0", "Dao#table"],
+          ["binds", "DaoRef", "Dao"],
+          ["call", "made", "DaoRef"],
+          ["callArg", "made", "0", "orders-v1"],
+          ["binds", "thisTable", "Dao#table"],
+        ],
+        "thisTable",
+      ),
+    ).toEqual(["orders-v1"]);
+  });
+
+  it("follows a parameter to the library its argument was imported from", () => {
+    // take(client), where client is the SDK's own export.
+    expect(
+      originsOf(
+        [
+          ["func", "take"],
+          ["paramOf", "take", "0", "take#client"],
+          ["binds", "takeRef", "take"],
+          ["call", "site", "takeRef"],
+          ["callArg", "site", "0", "clientRef"],
+          ["binds", "clientRef", "clientImport"],
+          ["imports", "clientImport", "@aws-sdk/client-s3", "S3Client"],
+        ],
+        "take#client",
+      ),
+    ).toEqual(["@aws-sdk/client-s3:S3Client"]);
+  });
+
+  it("reads a property out of an object a caller passed in", () => {
+    // new Service({ table: "orders-v1" }), and the class reads
+    // this.deps.table.
+    expect(
+      writtenAsOf(
+        [
+          ["writtenValue", "orders-v1"],
+          ["objectValue", "deps"],
+          ["holdsProperty", "deps", "table", "orders-v1"],
+          ["objectValue", "Service"],
+          ["paramOf", "Service", "0", "Service#deps"],
+          ["binds", "ServiceRef", "Service"],
+          ["binds", "depsRef", "deps"],
+          ["call", "made", "ServiceRef"],
+          ["callArg", "made", "0", "depsRef"],
+          ["binds", "thisDeps", "Service#deps"],
+          ["readsProperty", "read", "thisDeps", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual(["orders-v1"]);
+  });
+
+  it("tells two call sites apart, where the parameter's own answer cannot", () => {
+    const twoCallers: Array<[string, ...string[]]> = [
+      ["func", "first"],
+      ["func", "second"],
+      ["func", "take"],
+      ["binds", "takeRef", "take"],
+      ["paramOf", "take", "0", "take#h"],
+      ["call", "siteA", "takeRef"],
+      ["callArg", "siteA", "0", "first"],
+      ["call", "siteB", "takeRef"],
+      ["callArg", "siteB", "0", "second"],
+    ];
+    expect(resolutionsOf(twoCallers, "take#h")).toEqual(["first", "second"]);
+    expect(perCallSite(twoCallers, "take#h")).toEqual([
+      "siteA:first",
+      "siteB:second",
+    ]);
   });
 });
