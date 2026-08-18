@@ -593,16 +593,17 @@ function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
       provenance: raw.declaredContract.provenance ?? "independent",
     };
   }
-  const accessorFields = [
-    "bodyAccessors",
-    "statusAccessors",
-    "successAccessors",
-  ] as const;
-  for (const field of accessorFields) {
-    const names = raw[field];
-    if (names !== undefined && names.length > 0) {
-      http[field] = names;
-    }
+  // Spelled out one field at a time, rather than looped over a list of
+  // names, because `check:metadata-wiring` finds a writer by reading
+  // these assignments and a computed key hides all three from it.
+  if (raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0) {
+    http.bodyAccessors = raw.bodyAccessors;
+  }
+  if (raw.statusAccessors !== undefined && raw.statusAccessors.length > 0) {
+    http.statusAccessors = raw.statusAccessors;
+  }
+  if (raw.successAccessors !== undefined && raw.successAccessors.length > 0) {
+    http.successAccessors = raw.successAccessors;
   }
   return Object.keys(http).length > 0 ? http : null;
 }
