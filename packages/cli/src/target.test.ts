@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { functionCallBinding } from "@suss/behavioral-ir";
+
 import {
   allSummaries,
   dao,
@@ -12,6 +14,8 @@ import {
   spellingTokens,
 } from "./boundaryReach.js";
 import { resolveTarget } from "./target.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 function resolved(spec: string): ReturnType<typeof resolveTarget> {
   return resolveTarget(spec, allSummaries);
@@ -83,6 +87,29 @@ describe("resolveTarget", () => {
     ]);
 
     expect(result.matched).toBe(true);
+  });
+
+  it("takes a package export boundary, which has :: in it too", () => {
+    const caller: BehavioralSummary = {
+      ...dao,
+      kind: "caller",
+      identity: {
+        ...dao.identity,
+        boundaryBinding: functionCallBinding({
+          transport: "in-process",
+          recognition: "packageImport",
+          package: "@suss/checker",
+          exportPath: ["checkAll"],
+        }),
+      },
+    };
+    const result = resolveTarget("fn:@suss/checker::checkAll", [caller]);
+
+    expect(result.matched).toBe(true);
+    if (!result.matched) {
+      return;
+    }
+    expect(result.target.kind).toBe("boundary");
   });
 
   it("takes a file and a line, and picks the unit that covers the line", () => {

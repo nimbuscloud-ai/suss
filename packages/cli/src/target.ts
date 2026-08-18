@@ -63,8 +63,16 @@ export function resolveTarget(
     };
   }
 
+  // A package export boundary, `fn:@suss/checker::checkAll`, has the
+  // same `::` in it as a summary id, so a spelling that matches no
+  // summary is tried as a boundary before it is turned down.
   if (spec.includes("::")) {
-    return summaryTarget(spec, summaries);
+    const asSummary = summaryTarget(spec, summaries);
+    if (asSummary.matched) {
+      return asSummary;
+    }
+    const asBoundary = boundaryTarget(spec, summaries);
+    return asBoundary.matched ? asBoundary : asSummary;
   }
 
   const withLine = /^(.*):(\d+)$/.exec(spec);
