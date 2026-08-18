@@ -20,7 +20,7 @@ import {
   sweepOf,
   writeBaseline,
 } from "./baselineFile.js";
-import { CONSTRUCT_NAMES, factBase, factBases } from "./factBases.js";
+import { factBase, factBases, STATED_RELATIONS } from "./factBases.js";
 import { headerReport, movedReport, sweepReport } from "./report.js";
 
 import type { Answers } from "./answers.js";
@@ -108,16 +108,14 @@ describe.skipIf(UPDATING)("what the resolution rules derive", () => {
     ).toEqual([]);
   });
 
-  it("draws every construct the generator knows", () => {
+  it("states every fact the rules read", () => {
     const drawn = new Set<string>();
     for (let index = 0; index < LINES; index += 1) {
       for (const [relation] of factBase(SEED, index).facts) {
         drawn.add(relation);
       }
     }
-    // Every construct states some relation no other construct states,
-    // so a relation nothing states is a construct nothing ever drew.
-    expect(drawn.size).toBeGreaterThanOrEqual(CONSTRUCT_NAMES.length);
+    expect([...drawn].sort()).toEqual([...STATED_RELATIONS].sort());
   });
 });
 

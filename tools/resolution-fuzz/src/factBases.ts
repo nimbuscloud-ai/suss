@@ -423,8 +423,39 @@ const DRAWS: string[] = Object.entries(WEIGHTS).flatMap(([name, weight]) =>
   Array.from({ length: weight }, () => name),
 );
 
-/** The constructs, so a test can assert every one of them is reachable. */
-export const CONSTRUCT_NAMES: readonly string[] = Object.keys(CONSTRUCTS);
+/**
+ * Every relation the constructs above can state, which is every fact the
+ * `@suss/resolution` header asks an adapter for plus the four a pack
+ * supplies about a wrapper. A test compares this against what the bases
+ * really state, so a construct that stopped firing, or a fact that
+ * arrived in the vocabulary and nothing generates, fails the run.
+ */
+export const STATED_RELATIONS: readonly string[] = [
+  "binds",
+  "bodyCalls",
+  "call",
+  "callArg",
+  "calleeName",
+  "calleeOrigin",
+  "callKeywordArg",
+  "containsFn",
+  "endsHolding",
+  "exportsAs",
+  "extends",
+  "func",
+  "holdsProperty",
+  "imports",
+  "objectValue",
+  "paramNamed",
+  "paramOf",
+  "readsProperty",
+  "reExports",
+  "reExportsAll",
+  "returnsValue",
+  "unwrapsByName",
+  "wrapperModule",
+  "writtenValue",
+];
 
 const runConstruct = (p: Program, rnd: Random, name: string): void => {
   const construct = CONSTRUCTS[name];
