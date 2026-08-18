@@ -173,6 +173,15 @@ resolved 11 handlers and missed most of what the template declared. The
 fix was one condition in fact extraction, and the existing rules found
 the rest without any change.
 
+## Changing a rule
+
+Every rule here composes with every other one, so a change meant for one
+construct lands on chains nobody had in mind. `@suss/resolution-fuzz`
+generates four thousand fact bases, runs these rules over each, and
+compares what came out against a committed baseline, which is what turns
+a change into a diff a reviewer reads. Run `npm run resolution:baseline`
+to accept one, and commit the rewritten file with the rule.
+
 ## What is not modelled
 
 **A handler passed as one property of a config.** `make({ body:
