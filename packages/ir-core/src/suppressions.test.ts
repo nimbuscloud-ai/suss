@@ -88,14 +88,20 @@ describe("normalizeRuleBoundary / ruleBoundaryMatchesKey", () => {
     // The key has a space, like a REST key, and is case-sensitive,
     // unlike one. It used to be uppercased into a key that could
     // never match; a rule edited by hand silently stopped firing.
-    expect(normalizeRuleBoundary(" bus:sqs order.placed ")).toBe(
-      "bus:sqs order.placed",
+    expect(normalizeRuleBoundary(" bus:aws_sqs order.placed ")).toBe(
+      "bus:aws_sqs order.placed",
     );
     expect(
-      ruleBoundaryMatchesKey("bus:sqs order.placed", "bus:sqs order.placed"),
+      ruleBoundaryMatchesKey(
+        "bus:aws_sqs order.placed",
+        "bus:aws_sqs order.placed",
+      ),
     ).toBe(true);
     expect(
-      ruleBoundaryMatchesKey("bus:sqs Order.Placed", "bus:sqs order.placed"),
+      ruleBoundaryMatchesKey(
+        "bus:aws_sqs Order.Placed",
+        "bus:aws_sqs order.placed",
+      ),
     ).toBe(false);
   });
 });

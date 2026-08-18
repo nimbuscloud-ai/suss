@@ -14,7 +14,7 @@ import { graphqlRubyFramework } from "@suss/framework-graphql-ruby";
 import { withActiveRecord } from "@suss/framework-activerecord";
 
 const pack = withActiveRecord(graphqlRubyFramework({}), {
-  storageSystem: "postgres",
+  storageSystem: "postgresql",
 });
 ```
 

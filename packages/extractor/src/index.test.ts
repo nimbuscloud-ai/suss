@@ -357,7 +357,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
         transport: "queue",
         semantics: {
           name: "message-bus",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: "OrdersQueue",
         },
         recognition: "aws-sqs",

@@ -380,7 +380,7 @@ describe("the method behind a field", () => {
         {
           baseClasses: ["ActiveRecord::Base"],
           writes: ["update", "destroy", "save"],
-          storageSystem: "postgres",
+          storageSystem: "postgresql",
         },
       ],
     };

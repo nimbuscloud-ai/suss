@@ -183,7 +183,7 @@ describe("prisma recognizer: happy path", () => {
     );
     expect(access.binding.semantics).toMatchObject({
       name: "storage",
-      storageSystem: "postgres",
+      storageSystem: "postgresql",
       scope: "default",
       container: "User",
     });

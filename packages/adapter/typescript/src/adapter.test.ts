@@ -1365,7 +1365,7 @@ const storagePack: PatternPack = {
           type: "interaction",
           binding: storageBinding({
             recognition: "storage",
-            storageSystem: "dynamodb",
+            storageSystem: "aws.dynamodb",
             scope: "default",
             container: literal("TableName"),
             accessPath: literal("IndexName"),
@@ -1483,7 +1483,7 @@ describe("createTypeScriptAdapter: reachable closure", () => {
                 transport: "sqs",
                 semantics: {
                   name: "message-bus",
-                  messageBus: "sqs",
+                  messageBus: "aws_sqs",
                   channel: "thing.done",
                 },
                 recognition: "sender",

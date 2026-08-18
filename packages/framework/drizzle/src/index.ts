@@ -67,7 +67,7 @@ export interface DrizzleRecognizerOptions {
    * `storageSystem` on provider summaries for pairing keys to line
    * up. Defaults to `"postgres"`, the dominant Drizzle deployment.
    */
-  storageSystem?: "postgres" | "mysql" | "sqlite";
+  storageSystem?: "postgresql" | "mysql" | "sqlite";
   /** Scope label for the storage binding. Defaults to `"default"`. */
   scope?: string;
 }
@@ -92,7 +92,7 @@ interface RecognizedQuery {
 function makeRawRecognizer(
   opts: DrizzleRecognizerOptions,
 ): InvocationRecognizer {
-  const storageSystem = opts.storageSystem ?? "postgres";
+  const storageSystem = opts.storageSystem ?? "postgresql";
   const scope = opts.scope ?? "default";
   return ((call: unknown) => {
     const callNode = call as CallExpression;
@@ -164,7 +164,7 @@ function sqlTextOf(argument: Node | undefined): string | null {
 }
 
 function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
-  const storageSystem = opts.storageSystem ?? "postgres";
+  const storageSystem = opts.storageSystem ?? "postgresql";
   const scope = opts.scope ?? "default";
   return (call) => {
     const query = recognizeAnchor(call as CallExpression);

@@ -22,14 +22,14 @@ const SQLALCHEMY: StoragePattern[] = [
     module: "sqlalchemy.orm",
     queryTypes: ["Query"],
     writes: ["update", "delete", "add"],
-    storageSystem: "postgres",
+    storageSystem: "postgresql",
   },
   {
     module: "sqlalchemy",
     queryTypes: ["Select"],
     writes: ["update", "delete"],
     queryFunctions: ["select"],
-    storageSystem: "postgres",
+    storageSystem: "postgresql",
   },
 ];
 

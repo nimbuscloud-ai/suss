@@ -1311,7 +1311,7 @@ function storageTable(opts: {
       exportPath: null,
       boundaryBinding: storageBinding({
         recognition: "terraform",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         scope: "default",
         container: opts.container,
         accessPath: null,
@@ -1359,7 +1359,7 @@ function storageReader(opts: {
             type: "interaction",
             binding: storageBinding({
               recognition: "dynamodb-sdk",
-              storageSystem: "dynamodb",
+              storageSystem: "aws.dynamodb",
               scope: "default",
               container: opts.container,
               accessPath: null,
@@ -1412,7 +1412,7 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
 
     expect(output).toContain("Compared 1 boundary:");
     expect(output).not.toContain("Nothing was compared");
-    expect(output).toContain("dynamodb:orders");
+    expect(output).toContain("aws.dynamodb:orders");
   });
 
   it("stops listing a compared table as a boundary nothing paired with", () => {
@@ -1435,7 +1435,7 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
     const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
 
     expect(output).toContain(
-      "  dynamodb:orders\n    infra::infra/tables.tf::orders <-> api::api/src/listOrders.ts::listOrders",
+      "  aws.dynamodb:orders\n    infra::infra/tables.tf::orders <-> api::api/src/listOrders.ts::listOrders",
     );
     expect(output).toContain(
       "  GET /health\n    src/handlers/health.ts::health",

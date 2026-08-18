@@ -64,7 +64,7 @@ export const MessageBusMetadataSchema = z.object({
    * shape. The `queue` field then says which queue, or
    * "<sam-managed>" for the one SAM creates outside the template.
    */
-  deliveredThrough: z.literal("sqs").optional(),
+  deliveredThrough: z.literal("aws_sqs").optional(),
   /** Whether a declared queue is FIFO. */
   fifoQueue: z.boolean().optional(),
   /** Whether a declared SNS topic is FIFO. */

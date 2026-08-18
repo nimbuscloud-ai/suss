@@ -66,7 +66,7 @@ describe("a DynamoDB command", () => {
     expect(effects).toHaveLength(1);
     const { semantics, interaction } = storageOf(effects[0]);
     expect(semantics).toMatchObject({
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       container: "orders-v1",
       accessPath: null,
     });
@@ -442,7 +442,7 @@ describe("a project's own request function", () => {
     expect(effects).toHaveLength(1);
     const { semantics, interaction } = storageOf(effects[0]);
     expect(semantics).toMatchObject({
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       container: "orders-v1",
       accessPath: "byCustomer",
     });

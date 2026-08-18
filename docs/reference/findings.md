@@ -39,12 +39,12 @@ The consumer references a field the provider's contract doesn't declare. Per-dom
 - **Storage** (`binding.semantics.name = "storage"`, aspect `read` or `write`)
   ```
   [ERROR] boundaryFieldUnknown (aspect: read)
-    loadUser selects "deltedAt" on User (postgres) but the schema declares
+    loadUser selects "deltedAt" on User (postgresql) but the schema declares
     no deltedAt column. At runtime this resolves to undefined on reads,
     changing which execution paths the function takes downstream.
     provider: prisma/schema.prisma::User
     consumer: src/loadUser.ts::loadUser
-    boundary: prisma (in-process) storage:postgres:default:User
+    boundary: prisma (in-process) storage:postgresql:default:User
   ```
 
 - **Runtime config** (`binding.semantics.name = "runtime-config"`, aspect `read`)
@@ -91,7 +91,7 @@ The provider declares a field that no consumer references. Per-domain instances:
   [WARNING] boundaryFieldUnused
     User declares column "deletedAt" but no code in the project reads
     or writes it.
-    boundary: prisma (in-process) storage:postgres:default:User
+    boundary: prisma (in-process) storage:postgresql:default:User
   ```
   suss suppresses this when ANY caller uses default-shape (`["*"]`) reads on the table, because then we can't tell whether default-shape consumers actually use the column.
 
@@ -166,11 +166,11 @@ The consumer picks items by something the provider does not key on. A store that
 ```
 [ERROR] boundarySelectorMismatch (aspect: read)
   listByCustomer picks items on Orders by "customerId", which is not one
-  of its key attributes (orderId). dynamodb refuses a request keyed on
+  of its key attributes (orderId). DynamoDB refuses a request keyed on
   anything else, so this fails when it runs.
   provider: template.yaml::Orders
   consumer: src/listByCustomer.ts::listByCustomer
-  boundary: cloudformation (aws-sdk) storage:dynamodb:default:Orders
+  boundary: cloudformation (aws-sdk) storage:aws.dynamodb:default:Orders
 ```
 
 A contract that does not state `metadata.storageContract.identifies` claims nothing here, and neither does an access that states no selector. A query through a secondary index pairs against that index's own summary, so it is checked against the index's key rather than the table's.

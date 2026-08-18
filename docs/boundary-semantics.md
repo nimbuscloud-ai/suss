@@ -7,7 +7,7 @@ source code (recognition).
 
 Eight semantics variants ship today: `rest`, `function-call`,
 `graphql-resolver`, `graphql-operation`, `runtime-config`,
-`storage-relational`, `message-bus`, and `metric`, each as its own module under
+`storage`, `message-bus`, and `metric`, each as its own module under
 `packages/ir-core/src/semantics/`. If you came to ask whether a protocol
 already works, go to [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred);
 everything else explains the model those variants share.
@@ -123,7 +123,7 @@ type Semantics =
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
   | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
-  | { name: "message-bus"; messageBus: "sqs" | "sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
+  | { name: "message-bus"; messageBus: "aws_sqs" | "aws.sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
   | { name: "metric"; metricSystem: string; metricType: string | null };
 ```
 
@@ -131,7 +131,7 @@ An identity field is null when the source never states it. A queue
 URL that comes from a variable is the common case:
 
 ```json
-{ "name": "message-bus", "messageBus": "sqs", "channel": null }
+{ "name": "message-bus", "messageBus": "aws_sqs", "channel": null }
 ```
 
 The send is recorded. It pairs with nothing. The empty string is
@@ -245,7 +245,7 @@ the registry composes the modules into the `Semantics` union and the
 runtime lookup. Each behavior has to answer three questions:
 
 - `identityKey`: the name a reader sees and a suppression targets
-  (`"GET /users/{id}"`, `"* /api/users"`, `"bus:sqs order.placed"`), or
+  (`"GET /users/{id}"`, `"* /api/users"`, `"bus:aws_sqs order.placed"`), or
   null when the source never stated one.
 - `pairingKey`: the bucket that pairing groups by. It contains what both
   sides always know. A REST bucket contains the path alone, so

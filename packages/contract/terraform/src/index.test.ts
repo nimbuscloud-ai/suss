@@ -32,7 +32,7 @@ const AWS: TerraformPack = {
       providerVersions: ">=4 <7",
       boundary: {
         kind: "storage",
-        storageSystem: "dynamodb",
+        storageSystem: "aws.dynamodb",
         transport: "aws-sdk",
         nameAttribute: "name",
         fieldSet: "partial",
@@ -55,7 +55,7 @@ const AWS: TerraformPack = {
       providerVersions: ">=4 <7",
       boundary: {
         kind: "message-bus",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         nameAttribute: "name",
       },
     },
@@ -108,7 +108,7 @@ describe("a table Terraform declares", () => {
     ).filter((s) => s.semantics.accessPath === null);
 
     expect(table.semantics).toMatchObject({
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       container: "orders",
       accessPath: null,
     });
@@ -264,7 +264,7 @@ describe("what a pack says, and which provider version it says it for", () => {
 
     expect(semantics).toMatchObject({
       name: "message-bus",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "jobs",
     });
     expect(
@@ -379,7 +379,7 @@ describe("shapes a configuration writes that the reader has to take as they come
           providerVersions: ">=1",
           boundary: {
             kind: "message-bus" as const,
-            messageBus: "sqs" as const,
+            messageBus: "aws_sqs" as const,
             nameAttribute: "name",
           },
         },

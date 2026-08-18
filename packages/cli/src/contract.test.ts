@@ -103,7 +103,7 @@ describe("contract CLI command", () => {
     expect(summaries[0].identity.name).toBe("aws_dynamodb_table.orders");
     expect(summaries[0].identity.boundaryBinding?.semantics).toMatchObject({
       name: "storage",
-      storageSystem: "dynamodb",
+      storageSystem: "aws.dynamodb",
       container: "orders",
     });
   });

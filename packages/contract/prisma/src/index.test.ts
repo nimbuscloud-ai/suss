@@ -109,7 +109,7 @@ describe("prismaSchemaToSummaries", () => {
   it("infers storage system from datasource provider", () => {
     const summaries = prismaSchemaToSummaries(postgresSchema);
     for (const s of summaries) {
-      expect(storageSystemOf(s)).toBe("postgres");
+      expect(storageSystemOf(s)).toBe("postgresql");
     }
   });
 

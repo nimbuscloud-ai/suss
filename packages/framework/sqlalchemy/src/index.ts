@@ -14,7 +14,7 @@ export interface SqlalchemyPackOptions {
    * them and the URL says which, so this is the project's own choice
    * rather than something the library settles.
    */
-  storageSystem: "postgres" | "mysql" | "sqlite";
+  storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
 /**
@@ -86,7 +86,7 @@ export function sqlalchemyFramework(
   // typed in front of it, so it can arrive here unset.
   if (typeof options?.storageSystem !== "string") {
     throw new Error(
-      "it needs `storageSystem`, which database is behind the engine: postgres, mysql, or sqlite. SQLAlchemy talks to all of them and the connection URL settles which, so the pack cannot.",
+      "it needs `storageSystem`, which database is behind the engine: postgresql, mysql, or sqlite. SQLAlchemy talks to all of them and the connection URL settles which, so the pack cannot.",
     );
   }
   return {

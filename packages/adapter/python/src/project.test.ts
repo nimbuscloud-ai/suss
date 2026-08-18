@@ -289,7 +289,7 @@ describe("a route whose body talks to the database", () => {
         queryTypes: ["Select"],
         writes: ["update", "delete"],
         queryFunctions: ["select"],
-        storageSystem: "postgres",
+        storageSystem: "postgresql",
       },
     ],
   };
@@ -301,7 +301,7 @@ describe("a route whose body talks to the database", () => {
         module: "sqlalchemy.orm",
         queryTypes: ["Query"],
         writes: ["update", "delete"],
-        storageSystem: "postgres",
+        storageSystem: "postgresql",
       },
     ],
   };

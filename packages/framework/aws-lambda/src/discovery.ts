@@ -135,7 +135,8 @@ function accountingUnit(
 ): DiscoveredCustomUnit {
   const eventTypes = accountedEventTypes(entry);
   const backs = typeFields(entry);
-  const wire = channel !== null ? ("sqs" as const) : messageBusWire(eventTypes);
+  const wire =
+    channel !== null ? ("aws_sqs" as const) : messageBusWire(eventTypes);
   return {
     func,
     kind: "handler",
@@ -217,8 +218,8 @@ function subjectChannel(
  * (Kinesis, DynamoDB streams) stay off the map rather than guessed.
  */
 const EVENT_WIRES: Record<string, MessageBusSemantics["messageBus"]> = {
-  SQS: "sqs",
-  SNS: "sns",
+  SQS: "aws_sqs",
+  SNS: "aws.sns",
   S3: "s3",
   Schedule: "eventbridge",
   ScheduleV2: "eventbridge",

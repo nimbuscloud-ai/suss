@@ -177,7 +177,7 @@ function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
       type: "interaction",
       binding: messageBusBinding({
         recognition: "@suss/framework-aws-sqs",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel,
       }),
       callee: callNode.getExpression().getText(),
@@ -374,7 +374,7 @@ function messageReceiveRecognizer(
       // name it and the pairing pass joins by codeScope instead.
       binding: messageBusBinding({
         recognition: "@suss/framework-aws-sqs",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: null,
       }),
       callee: callNode.getExpression().getText(),
@@ -525,7 +525,7 @@ function configuredProducerRecognizer(
         type: "interaction",
         binding: messageBusBinding({
           recognition: "@suss/framework-aws-sqs",
-          messageBus: "sqs",
+          messageBus: "aws_sqs",
           channel: read.subject,
         }),
         callee: read.callee,

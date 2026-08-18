@@ -290,8 +290,8 @@
                           "messageBus": {
                             "type": "string",
                             "enum": [
-                              "sqs",
-                              "sns",
+                              "aws_sqs",
+                              "aws.sns",
                               "s3",
                               "eventbridge",
                               "bullmq",
@@ -972,8 +972,8 @@
                                   "messageBus": {
                                     "type": "string",
                                     "enum": [
-                                      "sqs",
-                                      "sns",
+                                      "aws_sqs",
+                                      "aws.sns",
                                       "s3",
                                       "eventbridge",
                                       "bullmq",

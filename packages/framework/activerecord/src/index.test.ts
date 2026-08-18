@@ -16,7 +16,7 @@ const graphqlPack: RubyPack = {
 
 describe("the ActiveRecord pack", () => {
   it("says which base class the library gives a model", () => {
-    const [pattern] = activeRecordStorage({ storageSystem: "postgres" });
+    const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
     expect(pattern?.baseClasses).toEqual(["ActiveRecord::Base"]);
     expect(pattern?.writes).toContain("destroy");
     expect(pattern?.writes).toContain("save!");
@@ -40,16 +40,20 @@ describe("the ActiveRecord pack", () => {
     const already: RubyPack = {
       ...graphqlPack,
       storage: [
-        { baseClasses: ["Other::Base"], writes: [], storageSystem: "postgres" },
+        {
+          baseClasses: ["Other::Base"],
+          writes: [],
+          storageSystem: "postgresql",
+        },
       ],
     };
     expect(
-      withActiveRecord(already, { storageSystem: "postgres" }).storage,
+      withActiveRecord(already, { storageSystem: "postgresql" }).storage,
     ).toHaveLength(2);
   });
 
   it("stands alone for a run that wants no discovery", () => {
-    const pack = activeRecordFramework({ storageSystem: "postgres" });
+    const pack = activeRecordFramework({ storageSystem: "postgresql" });
     expect(pack.discovery).toEqual([]);
     expect(pack.storage).toHaveLength(1);
   });

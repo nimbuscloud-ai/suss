@@ -59,7 +59,7 @@ export function readSqlAccess(
   sql: string,
   options: SqlReadOptions = {},
 ): SqlAccess[] {
-  const dialect = DIALECTS[options.dialect ?? "postgres"];
+  const dialect = DIALECTS[options.dialect ?? "postgresql"];
   if (dialect === undefined) {
     return [];
   }

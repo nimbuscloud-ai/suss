@@ -16,7 +16,7 @@ import type { RbNode } from "./parser.js";
 const ACTIVE_RECORD: RbStoragePattern = {
   baseClasses: ["ActiveRecord::Base"],
   writes: ["update", "destroy", "save", "create", "delete_all"],
-  storageSystem: "postgres",
+  storageSystem: "postgresql",
 };
 
 /** Rails puts its own base class between the library and every model. */

@@ -626,15 +626,15 @@ describe("binding constructors", () => {
   it("storageBinding uses storageSystem as transport", () => {
     const b = storageBinding({
       recognition: "prisma",
-      storageSystem: "postgres",
+      storageSystem: "postgresql",
       scope: "default",
       container: "User",
     });
     expect(b).toEqual({
-      transport: "postgres",
+      transport: "postgresql",
       semantics: {
         name: "storage",
-        storageSystem: "postgres",
+        storageSystem: "postgresql",
         scope: "default",
         container: "User",
         accessPath: null,
@@ -646,14 +646,14 @@ describe("binding constructors", () => {
   it("messageBusBinding uses messageBus as transport and channel as identity", () => {
     const b = messageBusBinding({
       recognition: "sqs-recognizer",
-      messageBus: "sqs",
+      messageBus: "aws_sqs",
       channel: "OrdersQueue",
     });
     expect(b).toEqual({
-      transport: "sqs",
+      transport: "aws_sqs",
       semantics: {
         name: "message-bus",
-        messageBus: "sqs",
+        messageBus: "aws_sqs",
         channel: "OrdersQueue",
       },
       recognition: "sqs-recognizer",

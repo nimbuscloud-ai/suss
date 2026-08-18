@@ -87,7 +87,7 @@ export interface PrismaRecognizerOptions {
    * pairing keys won't match. Defaults to `"postgres"` since that's
    * the dominant Prisma deployment.
    */
-  storageSystem?: "postgres" | "mysql" | "sqlite";
+  storageSystem?: "postgresql" | "mysql" | "sqlite";
   /**
    * Scope label that must match the schema reader's scope. Defaults
    * to `"default"` to align with `prismaSchemaToSummaries`'s default.
@@ -96,7 +96,7 @@ export interface PrismaRecognizerOptions {
 }
 
 function makeRecognizer(opts: PrismaRecognizerOptions): InvocationRecognizer {
-  const storageSystem = opts.storageSystem ?? "postgres";
+  const storageSystem = opts.storageSystem ?? "postgresql";
   const scope = opts.scope ?? "default";
   return (call, ctx) => recognizePrismaCall(call, ctx, storageSystem, scope);
 }
@@ -104,7 +104,7 @@ function makeRecognizer(opts: PrismaRecognizerOptions): InvocationRecognizer {
 function recognizePrismaCall(
   call: unknown,
   ctx: unknown,
-  storageSystem: "postgres" | "mysql" | "sqlite",
+  storageSystem: "postgresql" | "mysql" | "sqlite",
   scope: string,
 ): Effect[] | null {
   const callNode = call as CallExpression;
@@ -313,7 +313,7 @@ function extractSelector(optionsArg: ObjectArg | null): string[] | null {
  * gets handed one.
  */
 function makeRawRecognizer(opts: PrismaRecognizerOptions): AccessRecognizer {
-  const storageSystem = opts.storageSystem ?? "postgres";
+  const storageSystem = opts.storageSystem ?? "postgresql";
   const scope = opts.scope ?? "default";
   return ((node: unknown) => {
     const statement = rawStatementAt(node as Node);

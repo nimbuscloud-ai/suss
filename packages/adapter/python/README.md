@@ -154,7 +154,7 @@ storage: [
     module: "sqlalchemy.orm",
     queryTypes: ["Query"],
     writes: ["update", "delete", "add"],
-    storageSystem: "postgres",
+    storageSystem: "postgresql",
   },
 ]
 ```

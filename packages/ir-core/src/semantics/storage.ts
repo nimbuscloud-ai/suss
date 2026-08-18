@@ -20,9 +20,9 @@ import { defineBoundarySemantics } from "./definition.js";
 export const StorageSemanticsSchema = z.object({
   name: z.literal("storage"),
   /**
-   * Which store this is: postgres, mysql, sqlite, dynamodb. Two
-   * products' containers can share a name, so this keeps them apart,
-   * and it is what a finding message calls the store.
+   * Which store this is: postgresql, mysql, aws.dynamodb, or our own
+   * word for one OpenTelemetry never named, such as s3. Two products'
+   * containers can share a name, so this keeps them apart.
    */
   storageSystem: z.string(),
   /**

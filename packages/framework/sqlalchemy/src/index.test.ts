@@ -16,11 +16,11 @@ const routePack: PythonPack = {
 
 describe("the SQLAlchemy pack", () => {
   it("says which types a query comes back as", () => {
-    const patterns = sqlalchemyStorage({ storageSystem: "postgres" });
+    const patterns = sqlalchemyStorage({ storageSystem: "postgresql" });
     expect(patterns.flatMap((pattern) => pattern.queryTypes)).toContain(
       "Query",
     );
-    expect(patterns.every((p) => p.storageSystem === "postgres")).toBe(true);
+    expect(patterns.every((p) => p.storageSystem === "postgresql")).toBe(true);
   });
 
   it("takes the database from the caller, since SQLAlchemy talks to all of them", () => {
@@ -43,17 +43,17 @@ describe("the SQLAlchemy pack", () => {
           module: "other",
           queryTypes: ["Thing"],
           writes: [],
-          storageSystem: "postgres",
+          storageSystem: "postgresql",
         },
       ],
     };
     expect(
-      withSqlalchemy(already, { storageSystem: "postgres" }).storage,
+      withSqlalchemy(already, { storageSystem: "postgresql" }).storage,
     ).toHaveLength(3);
   });
 
   it("stands alone for a run that wants no routes", () => {
-    const pack = sqlalchemyFramework({ storageSystem: "postgres" });
+    const pack = sqlalchemyFramework({ storageSystem: "postgresql" });
     expect(pack.discovery).toEqual([]);
     expect(pack.storage).toHaveLength(2);
   });

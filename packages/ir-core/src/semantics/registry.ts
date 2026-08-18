@@ -60,13 +60,17 @@ const BY_NAME = new Map<string, (typeof DEFINITIONS)[number]>(
  * way `dispatchByType` does.
  */
 export function behaviorOf(semantics: Semantics): BoundaryBehavior<Semantics> {
-  const definition = BY_NAME.get(semantics.name);
+  return definitionFor(semantics.name).behavior as BoundaryBehavior<Semantics>;
+}
+
+function definitionFor(name: string): (typeof DEFINITIONS)[number] {
+  const definition = BY_NAME.get(name);
   if (definition === undefined) {
     // Unreachable while the union and the list are the same modules;
     // the check below keeps them the same modules.
-    throw new Error(`no boundary behavior for semantics "${semantics.name}"`);
+    throw new Error(`no boundary definition for semantics "${name}"`);
   }
-  return definition.behavior as BoundaryBehavior<Semantics>;
+  return definition;
 }
 
 /**
