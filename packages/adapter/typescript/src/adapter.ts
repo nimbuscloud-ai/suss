@@ -526,6 +526,36 @@ function responseAccessorNames(
     .map((m) => m.name);
 }
 
+/**
+ * The pack's response properties, grouped the way the checker asks for
+ * them: how a consumer reaches the body, the status, and the success
+ * flag. A kind the pack declares nothing for is left out entirely, so
+ * the checker never sees an empty list and reads it as "this pack has no
+ * accessors" when it means "this pack did not say".
+ */
+const ACCESSOR_FIELD_SEMANTICS = {
+  bodyAccessors: "body",
+  statusAccessors: "statusCode",
+  successAccessors: "statusRange",
+} as const satisfies Record<
+  string,
+  ResponsePropertyMapping["semantics"]["type"]
+>;
+
+function responseAccessors(
+  pack: PatternPack,
+): Partial<Record<keyof typeof ACCESSOR_FIELD_SEMANTICS, string[]>> {
+  const out: Partial<Record<keyof typeof ACCESSOR_FIELD_SEMANTICS, string[]>> =
+    {};
+  for (const [field, kind] of Object.entries(ACCESSOR_FIELD_SEMANTICS)) {
+    const names = responseAccessorNames(pack, kind);
+    if (names !== undefined && names.length > 0) {
+      out[field as keyof typeof ACCESSOR_FIELD_SEMANTICS] = names;
+    }
+  }
+  return out;
+}
+
 function readCodeStructure(
   unit: DiscoveredUnit,
   pack: PatternPack,
@@ -586,14 +616,7 @@ function readCodeStructure(
     }
   }
 
-  const bodyAccessors =
-    unit.callSite !== undefined
-      ? responseAccessorNames(pack, "body")
-      : undefined;
-  const statusAccessors =
-    unit.callSite !== undefined
-      ? responseAccessorNames(pack, "statusCode")
-      : undefined;
+  const accessors = unit.callSite !== undefined ? responseAccessors(pack) : {};
 
   return {
     identity: {
@@ -618,12 +641,7 @@ function readCodeStructure(
     bodyContent: bodyContentOf(func),
     dependencyCalls: depCalls,
     declaredContract: null,
-    ...(bodyAccessors !== undefined && bodyAccessors.length > 0
-      ? { bodyAccessors }
-      : {}),
-    ...(statusAccessors !== undefined && statusAccessors.length > 0
-      ? { statusAccessors }
-      : {}),
+    ...accessors,
   };
 }
 

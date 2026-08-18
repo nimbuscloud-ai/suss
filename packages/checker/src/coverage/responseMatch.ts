@@ -68,8 +68,16 @@ export function consumerExpectedStatuses(
   t: Transition,
   accessors: StatusAccessors,
 ): number[] {
+  return statusesNamedIn(t.conditions, accessors);
+}
+
+/** The same, for conditions read on their own rather than off a transition. */
+export function statusesNamedIn(
+  conditions: readonly Predicate[],
+  accessors: StatusAccessors,
+): number[] {
   const statuses: number[] = [];
-  for (const pred of t.conditions) {
+  for (const pred of conditions) {
     collectStatusLiterals(pred, accessors, statuses);
   }
   return statuses;

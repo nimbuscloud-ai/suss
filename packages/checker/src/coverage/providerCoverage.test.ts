@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   consumer,
+  negated,
   opaqueResponse,
   provider,
   response,
   statusEq,
+  statusInRange,
+  successFlag,
   transition,
 } from "../__fixtures__/pairs.js";
 import { checkProviderCoverage } from "./providerCoverage.js";
@@ -293,5 +296,114 @@ describe("checkProviderCoverage — sub-case analysis", () => {
     expect(subcaseFindings).toHaveLength(3);
     expect(subcaseFindings[0].description).toContain("3 different situations");
     expect(subcaseFindings[0].description).toContain("status 404");
+  });
+  it("treats a negated 2xx range as handling every non-2xx status", () => {
+    const p = provider("renewDomain", [
+      transition("t-400", { output: response(400) }),
+      transition("t-404", { output: response(404) }),
+      transition("t-409", { output: response(409) }),
+      transition("t-200", { output: response(200) }),
+    ]);
+    // `if (!res.ok) { toast.error(...); return }`, then the success path.
+    const c = consumer("RenewDomain", [
+      transition("ct-failed", {
+        conditions: [negated(statusInRange(200, 299))],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-ok", {
+        conditions: [negated(negated(statusInRange(200, 299)))],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("reads `res.ok` left as a truthiness check the same way", () => {
+    const p = provider("renewDomain", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200) }),
+    ]);
+    const c = consumer("RenewDomain", [
+      transition("ct-failed", {
+        conditions: [successFlag(true)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-ok", {
+        conditions: [successFlag(false)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("leaves a status outside every branch's range reported", () => {
+    const p = provider("renewDomain", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200) }),
+    ]);
+    // Only the failure path exists: nothing admits a 200.
+    const c = consumer("RenewDomain", [
+      transition("ct-failed", {
+        conditions: [negated(statusInRange(200, 299))],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    const findings = checkProviderCoverage(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("200");
+  });
+
+  it("does not let a branch with no status guard cover every status", () => {
+    const p = provider("banLink", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200) }),
+    ]);
+    // `.then((r) => r.json())`, then a branch on a body field.
+    const c = consumer("BanLink", [
+      transition("ct-error", {
+        conditions: [
+          {
+            type: "truthinessCheck",
+            subject: { type: "input", inputRef: "res", path: ["error"] },
+            negated: false,
+          },
+        ],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    const findings = checkProviderCoverage(p, c);
+    expect(findings.map((f) => f.description)).toEqual([
+      "Provider produces status 404 but no consumer branch handles it",
+      "Provider produces status 200 but no consumer branch handles it",
+    ]);
+  });
+
+  it("reads a one-sided comparison as the range it describes", () => {
+    const p = provider("getUser", [
+      transition("t-500", { output: response(500) }),
+      transition("t-200", { output: response(200) }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-server-error", {
+        conditions: [
+          {
+            type: "comparison",
+            left: {
+              type: "derived",
+              from: { type: "dependency", name: "fetch", accessChain: [] },
+              derivation: { type: "propertyAccess", property: "status" },
+            },
+            op: "gte",
+            right: { type: "literal", value: 500 },
+          },
+        ],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
   });
 });

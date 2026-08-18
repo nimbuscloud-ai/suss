@@ -35,6 +35,45 @@ export function statusEq(status: number): Predicate {
   };
 }
 
+/** What the adapter rewrites `res.ok` into: `status >= min && status <= max`. */
+export function statusInRange(min: number, max: number): Predicate {
+  return {
+    type: "compound",
+    op: "and",
+    operands: [
+      {
+        type: "comparison",
+        left: responseStatusRef,
+        op: "gte",
+        right: { type: "literal", value: min },
+      },
+      {
+        type: "comparison",
+        left: responseStatusRef,
+        op: "lte",
+        right: { type: "literal", value: max },
+      },
+    ],
+  };
+}
+
+export function negated(operand: Predicate): Predicate {
+  return { type: "negation", operand };
+}
+
+/** `res.ok` left as written, which is how a hand-written summary spells it. */
+export function successFlag(isNegated: boolean): Predicate {
+  return {
+    type: "truthinessCheck",
+    subject: {
+      type: "derived",
+      from: responseValueRef,
+      derivation: { type: "propertyAccess", property: "ok" },
+    },
+    negated: isNegated,
+  };
+}
+
 export function response(
   status: number,
   body: TypeShape | null = null,

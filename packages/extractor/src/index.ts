@@ -299,6 +299,8 @@ export interface RawCodeStructure {
   bodyAccessors?: string[];
   /** The same, for the status: `status` for fetch and for axios. */
   statusAccessors?: string[];
+  /** The same, for the success flag: `ok` for fetch, nothing for axios. */
+  successAccessors?: string[];
   /** Left exactly as written, because the extractor does not depend on
    * graphql-js. The parsing happens at check time. */
   graphqlDocument?: string;
@@ -591,11 +593,16 @@ function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
       provenance: raw.declaredContract.provenance ?? "independent",
     };
   }
-  if (raw.bodyAccessors !== undefined && raw.bodyAccessors.length > 0) {
-    http.bodyAccessors = raw.bodyAccessors;
-  }
-  if (raw.statusAccessors !== undefined && raw.statusAccessors.length > 0) {
-    http.statusAccessors = raw.statusAccessors;
+  const accessorFields = [
+    "bodyAccessors",
+    "statusAccessors",
+    "successAccessors",
+  ] as const;
+  for (const field of accessorFields) {
+    const names = raw[field];
+    if (names !== undefined && names.length > 0) {
+      http[field] = names;
+    }
   }
   return Object.keys(http).length > 0 ? http : null;
 }

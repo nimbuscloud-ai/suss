@@ -632,6 +632,14 @@ export const HttpMetadataSchema = z.object({
    * `["status", "statusCode"]` when absent.
    */
   statusAccessors: z.array(z.string()).optional(),
+  /**
+   * Names of pack-declared response properties whose semantics is
+   * `statusRange`: `["ok"]` for fetch, and nothing for axios, which has
+   * no success flag. A consumer guarding on one of these handles the
+   * whole 2xx class rather than one status. Falls back to `["ok"]` when
+   * absent.
+   */
+  successAccessors: z.array(z.string()).optional(),
   /** Code that implements this declared route, when the manifest says which. */
   implementingHandler: HttpHandlerPointerSchema.optional(),
   /** The range spec ("2XX", "5xx", and so on) this transition's response covers. */

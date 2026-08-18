@@ -1,7 +1,9 @@
-import { statusAccessorsFor } from "../contract/declaredContract.js";
+import {
+  statusAccessorsFor,
+  successAccessorsFor,
+} from "../contract/declaredContract.js";
 import { predicatesMatch } from "../match.js";
 import {
-  consumerExpectedStatuses,
   extractResponseStatus,
   hasOpaqueStatus,
   isSuccessStatus,
@@ -10,6 +12,11 @@ import {
   refLooksLikeStatus,
   type StatusAccessors,
 } from "./responseMatch.js";
+import {
+  branchHandlesStatus,
+  branchStatusRanges,
+  consumerHandlesStatus,
+} from "./statusRanges.js";
 
 import type {
   BehavioralSummary,
@@ -25,17 +32,10 @@ export function checkProviderCoverage(
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
   const statusAccessors = statusAccessorsFor(consumer);
+  const successAccessors = successAccessorsFor(consumer);
 
-  const consumerStatuses = new Set<number>();
-  let consumerHasDefault = false;
-  for (const ct of consumer.transitions) {
-    if (ct.isDefault) {
-      consumerHasDefault = true;
-    }
-    for (const s of consumerExpectedStatuses(ct, statusAccessors)) {
-      consumerStatuses.add(s);
-    }
-  }
+  const consumerHandles = consumerHandlesStatus(consumer);
+  const consumerHasDefault = consumer.transitions.some((ct) => ct.isDefault);
 
   // Group provider transitions by status code for sub-case analysis
   const providerByStatus = new Map<number, Transition[]>();
@@ -59,7 +59,7 @@ export function checkProviderCoverage(
     }
 
     if (
-      !consumerStatuses.has(status) &&
+      !consumerHandles(status) &&
       !(consumerHasDefault && isSuccessStatus(status))
     ) {
       findings.push({
@@ -89,17 +89,21 @@ export function checkProviderCoverage(
     }
 
     // Find consumer transitions that handle this status
-    const consumerForStatus = consumer.transitions.filter((ct) => {
-      if (ct.isDefault && isSuccessStatus(status)) {
-        return true;
-      }
-      return consumerExpectedStatuses(ct, statusAccessors).includes(status);
-    });
+    const consumerForStatus = consumer.transitions.filter(
+      (ct) =>
+        (ct.isDefault && isSuccessStatus(status)) ||
+        branchHandlesStatus(
+          ct.conditions,
+          statusAccessors,
+          successAccessors,
+          status,
+        ),
+    );
 
     // Extract non-status predicates from consumer transitions (the conditions
     // beyond "status === N" that distinguish sub-cases)
     const consumerNonStatusPredicates = consumerForStatus.flatMap((ct) =>
-      getNonStatusConditions(ct, statusAccessors),
+      getNonStatusConditions(ct, statusAccessors, successAccessors),
     );
 
     // If the consumer has no conditions beyond the status check, it's
@@ -134,7 +138,11 @@ export function checkProviderCoverage(
         continue;
       }
 
-      const ptNonStatus = getNonStatusConditions(pt, statusAccessors);
+      const ptNonStatus = getNonStatusConditions(
+        pt,
+        statusAccessors,
+        successAccessors,
+      );
       if (ptNonStatus.length === 0) {
         continue;
       }
@@ -183,11 +191,24 @@ export function checkProviderCoverage(
 function getNonStatusConditions(
   t: Transition,
   accessors: StatusAccessors,
+  successAccessors: StatusAccessors,
 ): Predicate[] {
-  return t.conditions.filter((p) => !isStatusPredicate(p, accessors));
+  return t.conditions.filter(
+    (p) => !isStatusPredicate(p, accessors, successAccessors),
+  );
 }
 
-function isStatusPredicate(p: Predicate, accessors: StatusAccessors): boolean {
+/**
+ * Whether `p` says something about the response status rather than about
+ * what came back in the body. A `!res.ok` guard reaches here as a
+ * compound of two comparisons, which is why the range reader gets a say
+ * and not only the two direct shapes below.
+ */
+function isStatusPredicate(
+  p: Predicate,
+  accessors: StatusAccessors,
+  successAccessors: StatusAccessors,
+): boolean {
   if (p.type === "comparison") {
     return (
       refLooksLikeStatus(p.left, accessors) ||
@@ -195,7 +216,7 @@ function isStatusPredicate(p: Predicate, accessors: StatusAccessors): boolean {
     );
   }
   if (p.type === "negation") {
-    return isStatusPredicate(p.operand, accessors);
+    return isStatusPredicate(p.operand, accessors, successAccessors);
   }
-  return false;
+  return branchStatusRanges([p], accessors, successAccessors) !== null;
 }
