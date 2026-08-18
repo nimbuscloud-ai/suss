@@ -26,11 +26,15 @@ import {
   storageBinding,
 } from "@suss/behavioral-ir";
 
-import { withTerraformDeclaration } from "./declaration.js";
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
+  BehavioralSummary,
+  MetricContractMetadata,
+  MetricReadingMetadata,
+} from "@suss/behavioral-ir";
+import type {
+  AttributeMeaning,
   MessageBusResource,
   MetricReadingResource,
   MetricResource,
@@ -40,11 +44,6 @@ import type {
   TerraformResourcePattern,
 } from "./pack.js";
 
-export {
-  readTerraformDeclaration,
-  type TerraformDeclaration,
-  withTerraformDeclaration,
-} from "./declaration.js";
 export {
   type FilterCall,
   type FilterParse,
@@ -57,6 +56,7 @@ export {
 } from "./filterQuery.js";
 
 export type {
+  AttributeMeaning,
   MessageBusResource,
   MetricReadingResource,
   MetricResource,
@@ -382,10 +382,20 @@ function metricSummary(
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
-    metadata: withTerraformDeclaration(undefined, {
-      resource: opts.resourceType,
-      attributes: statedValues(opts.body, boundary.states ?? []),
-    }),
+    metadata: { metricContract: metricContract(opts.body, boundary) },
+  };
+}
+
+/** What the resource says its measurements are, in suss's own words. */
+function metricContract(
+  body: Record<string, unknown>,
+  boundary: MetricResource,
+): MetricContractMetadata {
+  const values = meaningOf(body, boundary.values);
+  const accumulates = meaningOf(body, boundary.accumulates);
+  return {
+    ...(values !== undefined ? { values } : {}),
+    ...(accumulates !== undefined ? { accumulates } : {}),
   };
 }
 
@@ -423,10 +433,7 @@ function readingSummaries(
         transitions: [],
         gaps: [],
         confidence: { source: "declared", level: "high" },
-        metadata: withTerraformDeclaration(undefined, {
-          resource: opts.resourceType,
-          attributes: statedValues(reading, boundary.states ?? []),
-        }),
+        metadata: { metricReading: metricReading(reading, boundary) },
       });
     }
   }
@@ -454,23 +461,53 @@ function metricTypesIn(
   return found.length === 0 ? [null] : found;
 }
 
-/** What the configuration set each attribute path the pack asked for. */
-function statedValues(
+/**
+ * What one reading needs from the series, in suss's own words, plus the
+ * setting a fix would be written in. The options come off the same
+ * table the reading was read through, so a pack states the aligners
+ * once and a finding can name them without knowing Google.
+ */
+function metricReading(
+  reading: Record<string, unknown>,
+  boundary: MetricReadingResource,
+): MetricReadingMetadata {
+  const compares = boundary.comparesTo;
+  const comparesTo =
+    compares !== undefined && valueAt(reading, compares.attribute) !== undefined
+      ? compares.whenSet
+      : undefined;
+  const reduces = boundary.reducesTo;
+  const reducesTo = meaningOf(reading, reduces);
+  return {
+    ...(comparesTo !== undefined ? { comparesTo } : {}),
+    ...(reducesTo !== undefined ? { reducesTo } : {}),
+    ...(reduces === undefined
+      ? {}
+      : {
+          reduction: {
+            setting: reduces.attribute,
+            options: Object.entries(reduces.means)
+              .filter(([, shape]) => shape === "number")
+              .map(([option]) => option),
+          },
+        }),
+  };
+}
+
+/**
+ * What the pack says the value at that attribute means, or undefined
+ * when the resource states nothing there, or states something the pack
+ * does not list.
+ */
+function meaningOf<T extends string>(
   body: Record<string, unknown>,
-  paths: string[],
-): Record<string, string | number | boolean> {
-  const stated: Record<string, string | number | boolean> = {};
-  for (const path of paths) {
-    const value = valueAt(body, path);
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
-      stated[path] = value;
-    }
+  spec: AttributeMeaning<T> | undefined,
+): T | undefined {
+  if (spec === undefined) {
+    return undefined;
   }
-  return stated;
+  const stated = stringOf(valueAt(body, spec.attribute));
+  return stated === null ? undefined : spec.means[stated];
 }
 
 /**

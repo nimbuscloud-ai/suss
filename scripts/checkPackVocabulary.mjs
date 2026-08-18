@@ -68,6 +68,7 @@ const KEYED_BY_IDENTIFIER = new Set([
   "knownProperties",
   "codes",
   "scalars",
+  "means",
 ]);
 
 /**

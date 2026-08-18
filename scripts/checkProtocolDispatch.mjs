@@ -101,6 +101,7 @@ const OWNING_DIRS = [
   "packages/runtime/",
   "packages/manifest/",
   "packages/checker/src/message-bus/",
+  "packages/checker/src/metric/",
   "packages/checker/src/runtime-config/",
   "packages/checker/src/storage/",
   "packages/checker/src/story/",

@@ -1,0 +1,186 @@
+import { describe, expect, it } from "vitest";
+
+import { metricBinding } from "@suss/behavioral-ir";
+
+import { checkMetric } from "./metricPairing.js";
+
+import type {
+  BehavioralSummary,
+  MetricContractMetadata,
+  MetricReadingMetadata,
+} from "@suss/behavioral-ir";
+import type { ComparedPair } from "../pairing/comparedPair.js";
+
+const SYSTEM = "test-monitoring";
+const SERIES = "example.test/counters/refusals";
+
+function declares(
+  contract: MetricContractMetadata,
+  metricType: string = SERIES,
+): BehavioralSummary {
+  return {
+    kind: "library",
+    location: {
+      file: "signals.tf",
+      range: { start: 1, end: 1 },
+      exportName: null,
+    },
+    identity: {
+      name: "counter.refusals",
+      exportPath: null,
+      boundaryBinding: metricBinding({
+        recognition: "test",
+        metricSystem: SYSTEM,
+        metricType,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: { metricContract: contract },
+  };
+}
+
+function reads(
+  reading: MetricReadingMetadata,
+  metricType: string | null = SERIES,
+): BehavioralSummary {
+  return {
+    kind: "consumer",
+    location: {
+      file: "alerts.tf",
+      range: { start: 1, end: 1 },
+      exportName: null,
+    },
+    identity: {
+      name: "watch.refusals_climbing",
+      exportPath: null,
+      boundaryBinding: metricBinding({
+        recognition: "test",
+        metricSystem: SYSTEM,
+        metricType,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: { metricReading: reading },
+  };
+}
+
+describe("a reading compared against a shape the series does not produce", () => {
+  it("is an error, and says which setting would reduce it", () => {
+    const findings = checkMetric([
+      declares({ values: "spread" }),
+      reads({
+        comparesTo: "number",
+        reduction: { setting: "window.reducer", options: ["MEDIAN", "P95"] },
+      }),
+    ]);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      kind: "boundaryShapeMismatch",
+      aspect: "read",
+      severity: "error",
+    });
+    expect(findings[0]?.description).toContain("a spread of buckets");
+    expect(findings[0]?.description).toContain("window.reducer");
+    expect(findings[0]?.description).toContain("MEDIAN, P95");
+  });
+
+  it("still reports when nobody said how a reduction is written", () => {
+    const findings = checkMetric([
+      declares({ values: "spread" }),
+      reads({ comparesTo: "number" }),
+    ]);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.description).not.toContain("unless");
+  });
+
+  it("says nothing once the reading reduces to what it compares", () => {
+    expect(
+      checkMetric([
+        declares({ values: "spread" }),
+        reads({ comparesTo: "number", reducesTo: "number" }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("says nothing when the series already measures what it compares", () => {
+    expect(
+      checkMetric([
+        declares({ values: "number", accumulates: "point" }),
+        reads({ comparesTo: "number" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("what the pass declines to judge", () => {
+  it("makes no claim when the declaring side did not say what it measures", () => {
+    expect(
+      checkMetric([
+        declares({ accumulates: "sinceStart" }),
+        reads({ comparesTo: "number" }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("makes no claim when the reading compares nothing", () => {
+    expect(
+      checkMetric([
+        declares({ values: "spread" }),
+        reads({ reducesTo: "spread" }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("leaves alone a reading of a metric nothing in the run declares", () => {
+    expect(
+      checkMetric([
+        declares({ values: "spread" }, "example.test/counters/other"),
+        reads({ comparesTo: "number" }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("pairs a reading that named no metric with nothing", () => {
+    expect(
+      checkMetric([
+        declares({ values: "spread" }),
+        reads({ comparesTo: "number" }, null),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps two monitoring systems apart", () => {
+    const elsewhere = declares({ values: "spread" });
+    elsewhere.identity.boundaryBinding = metricBinding({
+      recognition: "test",
+      metricSystem: "other-monitoring",
+      metricType: SERIES,
+    });
+
+    expect(checkMetric([elsewhere, reads({ comparesTo: "number" })])).toEqual(
+      [],
+    );
+  });
+});
+
+describe("what the pass records", () => {
+  it("records the pair it compared, so nothing calls the metric unpaired", () => {
+    const compared: ComparedPair[] = [];
+    checkMetric(
+      [declares({ values: "number" }), reads({ comparesTo: "number" })],
+      undefined,
+      compared,
+    );
+
+    expect(compared).toHaveLength(1);
+    expect(compared[0]?.key).toContain(SERIES);
+  });
+});

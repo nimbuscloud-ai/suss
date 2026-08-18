@@ -6,6 +6,8 @@ import {
   readHttpMetadata,
   readLibraryEnvReads,
   readMessageBusMetadata,
+  readMetricContractMetadata,
+  readMetricReadingMetadata,
   readModuleImports,
   readReactMetadata,
   readRoutingMetadata,
@@ -429,6 +431,36 @@ describe("typed metadata namespaces", () => {
         carrier({ storage_contract: { fields: [{ name: "id" }] } }),
       ),
     ).toBeUndefined();
+  });
+
+  it("reads what a metric measures and what a reading needs", () => {
+    expect(
+      readMetricContractMetadata(
+        carrier({ metricContract: { values: "spread", accumulates: "point" } }),
+      ),
+    ).toEqual({ values: "spread", accumulates: "point" });
+    expect(
+      readMetricReadingMetadata(
+        carrier({
+          metricReading: {
+            comparesTo: "number",
+            reduction: { setting: "reducer", options: ["MEDIAN"] },
+          },
+        }),
+      ),
+    ).toEqual({
+      comparesTo: "number",
+      reduction: { setting: "reducer", options: ["MEDIAN"] },
+    });
+  });
+
+  it("drops a metric field written as a word neither side has", () => {
+    expect(
+      readMetricContractMetadata(
+        carrier({ metricContract: { values: "histogram" } }),
+      ),
+    ).toEqual({});
+    expect(readMetricReadingMetadata(carrier({}))).toBeUndefined();
   });
 
   it("reads a code scope and a react sub-unit", () => {

@@ -16,6 +16,7 @@ import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { dedupeFindings } from "./dedupe.js";
 import { buildInteractionIndex } from "./interactions/dispatcher.js";
 import { checkMessageBus } from "./message-bus/messageBusPairing.js";
+import { checkMetric } from "./metric/metricPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
@@ -100,6 +101,7 @@ export {
 } from "./flow/routingFacts.js";
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export { checkMessageBus } from "./message-bus/messageBusPairing.js";
+export { checkMetric } from "./metric/metricPairing.js";
 export {
   type GraphqlPairingResult,
   pairGraphqlOperations,
@@ -233,6 +235,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   findings.push(...checkRuntimeConfig(summaries, interactionIndex, pairInfo));
   findings.push(...checkStorage(summaries, interactionIndex, pairInfo));
   findings.push(...checkMessageBus(summaries, interactionIndex, pairInfo));
+  findings.push(...checkMetric(summaries, interactionIndex, pairInfo));
 
   // Pairing only knows method and path, so it files a store or a queue
   // as unpaired even after the pass that owns that protocol compared it.

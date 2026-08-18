@@ -717,6 +717,80 @@ export function readStorageContractMetadata(
   );
 }
 
+/**
+ * What one measurement of a metric is. `"number"` is a single value per
+ * point, which is what a comparison against a threshold needs.
+ * `"spread"` is a histogram's buckets, which have no one value, so
+ * something has to reduce it before anything can compare it.
+ *
+ * Every monitoring system draws this line somewhere: Cloud Monitoring
+ * calls the second one DISTRIBUTION, Prometheus calls it a histogram.
+ */
+export const MetricValueShapeSchema = z.enum(["number", "spread"]);
+
+export type MetricValueShape = z.infer<typeof MetricValueShapeSchema>;
+
+/**
+ * What one measurement covers: the value at a point, the change across
+ * the interval before it, or the total since the series started.
+ */
+export const MetricAccumulationSchema = z.enum([
+  "point",
+  "interval",
+  "sinceStart",
+]);
+
+export type MetricAccumulation = z.infer<typeof MetricAccumulationSchema>;
+
+const MetricContractMetadataSchema = z.object({
+  /** What one measurement is, when the declaring side says. */
+  values: MetricValueShapeSchema.optional(),
+  /** What one measurement covers, when the declaring side says. */
+  accumulates: MetricAccumulationSchema.optional(),
+});
+
+export type MetricContractMetadata = z.infer<
+  typeof MetricContractMetadataSchema
+>;
+
+/** What the side declaring a metric says its measurements are. */
+export function readMetricContractMetadata(
+  summary: BehavioralSummary,
+): MetricContractMetadata | undefined {
+  return readNamespace(
+    MetricContractMetadataSchema,
+    summary.metadata?.metricContract,
+  );
+}
+
+const MetricReadingMetadataSchema = z.object({
+  /** What the reading compares the series against, when it compares. */
+  comparesTo: MetricValueShapeSchema.optional(),
+  /** What the reading turns each window into first, when it states one. */
+  reducesTo: MetricValueShapeSchema.optional(),
+  /**
+   * The setting this kind of reading states a reduction in, and the
+   * values that reduce to a single number. A reader that knows the
+   * monitoring system fills these in, so a finding can say which
+   * setting to change without the checker knowing the system.
+   */
+  reduction: z
+    .object({ setting: z.string(), options: z.array(z.string()) })
+    .optional(),
+});
+
+export type MetricReadingMetadata = z.infer<typeof MetricReadingMetadataSchema>;
+
+/** What the side reading a metric needs from it. */
+export function readMetricReadingMetadata(
+  summary: BehavioralSummary,
+): MetricReadingMetadata | undefined {
+  return readNamespace(
+    MetricReadingMetadataSchema,
+    summary.metadata?.metricReading,
+  );
+}
+
 const CodeScopeMetadataSchema = z.object({
   kind: z.enum(["codeUri", "unknown"]),
   path: z.string().optional(),

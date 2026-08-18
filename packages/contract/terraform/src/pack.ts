@@ -11,7 +11,11 @@
  * pack to ship code the reader cannot see into.
  */
 
-import type { MessageBusTechnology } from "@suss/behavioral-ir";
+import type {
+  MessageBusTechnology,
+  MetricAccumulation,
+  MetricValueShape,
+} from "@suss/behavioral-ir";
 
 /** A store a caller addresses by container and key. */
 export interface StorageResource {
@@ -53,6 +57,19 @@ export interface MessageBusResource {
   nameAttribute?: string;
 }
 
+/**
+ * An attribute whose value the pack translates into one of suss's own
+ * words. The reader takes the value at `attribute` and looks it up in
+ * `means`; a value the pack did not list says nothing, the same as an
+ * attribute the configuration never set.
+ */
+export interface AttributeMeaning<T extends string> {
+  /** The attribute path whose value says which one it is. */
+  attribute: string;
+  /** What each value the provider can write there means. */
+  means: Record<string, T>;
+}
+
 /** A named series of measurements a resource declares. */
 export interface MetricResource {
   kind: "metric";
@@ -66,8 +83,10 @@ export interface MetricResource {
    * metric spells, so it is the identity the two sides share.
    */
   metricTypeTemplate: string;
-  /** Attribute paths whose values say what the metric measures. */
-  states?: string[];
+  /** Which attribute says whether one measurement is a number or a spread. */
+  values?: AttributeMeaning<MetricValueShape>;
+  /** Which attribute says what a measurement covers. */
+  accumulates?: AttributeMeaning<MetricAccumulation>;
 }
 
 /**
@@ -84,8 +103,14 @@ export interface MetricReadingResource {
   queryAttribute: string;
   /** The key inside that query whose value is the metric's type. */
   queryIdentityKey: string;
-  /** Attribute paths whose values say how the reading treats it. */
-  states?: string[];
+  /**
+   * The attribute whose presence means the reading compares the series
+   * against a value of this shape. A condition states a threshold, so
+   * the number it compares against is the attribute being set at all.
+   */
+  comparesTo?: { attribute: string; whenSet: MetricValueShape };
+  /** Which attribute says what the reading reduces each window to first. */
+  reducesTo?: AttributeMeaning<MetricValueShape>;
 }
 
 export type TerraformResource =

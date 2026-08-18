@@ -1,15 +1,17 @@
-// What the entries say, read through the reader they are written for,
-// and what the rule says about the pairs that come out. A test that
-// only looked at the table would pass on entries that describe nothing.
+// What the entries say, read through the reader they are written for
+// and checked by the pass that judges the pairs. A test that stopped at
+// the reader would pass on entries nothing judges.
 
 import { describe, expect, it } from "vitest";
 
 import {
-  readTerraformDeclaration,
-  terraformToSummaries,
-} from "@suss/contract-terraform";
+  readMetricContractMetadata,
+  readMetricReadingMetadata,
+} from "@suss/behavioral-ir";
+import { checkMetric } from "@suss/checker";
+import { terraformToSummaries } from "@suss/contract-terraform";
 
-import { checkAlertConditions, googleTerraform } from "./index.js";
+import { googleTerraform } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -80,9 +82,9 @@ describe("what the Google entries read", () => {
       metricSystem: "cloud-monitoring",
       metricType: "logging.googleapis.com/user/sweep-refused",
     });
-    expect(readTerraformDeclaration(metric)?.attributes).toEqual({
-      "metric_descriptor.metric_kind": "DELTA",
-      "metric_descriptor.value_type": "DISTRIBUTION",
+    expect(readMetricContractMetadata(metric)).toEqual({
+      values: "spread",
+      accumulates: "interval",
     });
   });
 
@@ -96,9 +98,17 @@ describe("what the Google entries read", () => {
       name: "metric",
       metricType: "logging.googleapis.com/user/sweep-refused",
     });
-    expect(readTerraformDeclaration(condition)?.attributes).toEqual({
-      comparison: "COMPARISON_GT",
-      threshold_value: 5,
+    expect(readMetricReadingMetadata(condition)).toEqual({
+      comparesTo: "number",
+      reduction: {
+        setting: "aggregations.per_series_aligner",
+        options: [
+          "ALIGN_PERCENTILE_99",
+          "ALIGN_PERCENTILE_95",
+          "ALIGN_PERCENTILE_50",
+          "ALIGN_PERCENTILE_05",
+        ],
+      },
     });
   });
 
@@ -110,7 +120,7 @@ describe("what the Google entries read", () => {
 
 describe("a threshold on a distribution", () => {
   it("is an error when nothing reduces the distribution", () => {
-    const findings = checkAlertConditions(read(REFUSED));
+    const findings = checkMetric(read(REFUSED));
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
       kind: "boundaryShapeMismatch",
@@ -133,7 +143,12 @@ describe("a threshold on a distribution", () => {
         per_series_aligner = "ALIGN_PERCENTILE_95"
       }`,
     );
-    expect(checkAlertConditions(read(aligned))).toEqual([]);
+    const condition = boundary(
+      aligned,
+      "google_monitoring_alert_policy.sweep_refused_sustained#0",
+    );
+    expect(readMetricReadingMetadata(condition)?.reducesTo).toBe("number");
+    expect(checkMetric(read(aligned))).toEqual([]);
   });
 
   it("is fine when the metric is a single number", () => {
@@ -143,7 +158,12 @@ describe("a threshold on a distribution", () => {
       `    metric_kind = "GAUGE"
     value_type  = "INT64"`,
     );
-    expect(checkAlertConditions(read(gauge))).toEqual([]);
+    expect(
+      readMetricContractMetadata(
+        boundary(gauge, "google_logging_metric.sweep_refused"),
+      ),
+    ).toEqual({ values: "number", accumulates: "point" });
+    expect(checkMetric(read(gauge))).toEqual([]);
   });
 
   it("says nothing about a metric this run never read", () => {
@@ -159,7 +179,7 @@ describe("a threshold on a distribution", () => {
           s.identity.boundaryBinding?.semantics.name === "metric",
       ),
     ).toBe(true);
-    expect(checkAlertConditions(summaries)).toEqual([]);
+    expect(checkMetric(summaries)).toEqual([]);
   });
 
   it("reads a condition whose filter it cannot parse as naming no metric", () => {
@@ -172,6 +192,19 @@ describe("a threshold on a distribution", () => {
     expect(condition?.identity.boundaryBinding?.semantics).toMatchObject({
       metricType: null,
     });
-    expect(checkAlertConditions(summaries)).toEqual([]);
+    expect(checkMetric(summaries)).toEqual([]);
+  });
+
+  it("says nothing about a value type this pack does not describe", () => {
+    const bool = withEdit(
+      `value_type  = "DISTRIBUTION"`,
+      `value_type  = "BOOL"`,
+    );
+    expect(
+      readMetricContractMetadata(
+        boundary(bool, "google_logging_metric.sweep_refused"),
+      )?.values,
+    ).toBeUndefined();
+    expect(checkMetric(read(bool))).toEqual([]);
   });
 });
