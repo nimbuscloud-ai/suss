@@ -29,6 +29,10 @@ export type RuntimeConfigSemantics = z.infer<
 export const runtimeConfigSemantics = defineBoundarySemantics({
   name: "runtime-config",
   schema: RuntimeConfigSemanticsSchema,
+  // service.name and cloud.resource_id name the same deployable, but
+  // instanceName is the deployment template's logical id, which is
+  // neither of those strings.
+  semconv: {},
   behavior: {
     /** A process reads its config at startup, and nothing replies. */
     exchangesHttpResponses: false,

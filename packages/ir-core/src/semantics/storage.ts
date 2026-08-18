@@ -53,6 +53,14 @@ export type StorageSemantics = z.infer<typeof StorageSemanticsSchema>;
 export const storageSemantics = defineBoundarySemantics({
   name: "storage",
   schema: StorageSemanticsSchema,
+  semconv: {
+    storageSystem: { name: "db.system.name" },
+    // "default" is our word for a source that named no database.
+    scope: { name: "db.namespace", placeholderValues: ["default"] },
+    container: { name: "db.collection.name" },
+    // A secondary index has no attribute of its own, so accessPath
+    // stays our word.
+  },
   behavior: {
     /** A query returns rows or items, not a status and a body. */
     exchangesHttpResponses: false,

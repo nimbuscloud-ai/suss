@@ -37,6 +37,9 @@ export type MetricSemantics = z.infer<typeof MetricSemanticsSchema>;
 export const metricSemantics = defineBoundarySemantics({
   name: "metric",
   schema: MetricSemanticsSchema,
+  // OpenTelemetry knows a metric by its instrument name, and has no
+  // attribute for the system it lives in or the type string it goes by.
+  semconv: {},
   behavior: {
     exchangesHttpResponses: false,
     reportsUnpairedItself: false,

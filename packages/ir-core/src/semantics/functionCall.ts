@@ -49,6 +49,9 @@ export type FunctionCallSemantics = z.infer<typeof FunctionCallSemanticsSchema>;
 export const functionCallSemantics = defineBoundarySemantics({
   name: "function-call",
   schema: FunctionCallSemanticsSchema,
+  // A call that never leaves the process does not produce a span, and
+  // the conventions do not name one. All of it is ours.
+  semconv: {},
   behavior: {
     /** A call returns a value, which is not a status and a body. */
     exchangesHttpResponses: false,

@@ -58,6 +58,10 @@ export type MessageBusTechnology = MessageBusSemantics["messageBus"];
 export const messageBusSemantics = defineBoundarySemantics({
   name: "message-bus",
   schema: MessageBusSemanticsSchema,
+  semconv: {
+    messageBus: { name: "messaging.system" },
+    channel: { name: "messaging.destination.name" },
+  },
   behavior: {
     /** A message goes onto the channel and nothing comes back. */
     exchangesHttpResponses: false,

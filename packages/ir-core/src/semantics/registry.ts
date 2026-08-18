@@ -20,7 +20,7 @@ import { restSemantics } from "./rest.js";
 import { runtimeConfigSemantics } from "./runtimeConfig.js";
 import { storageSemantics } from "./storage.js";
 
-import type { BoundaryBehavior } from "./definition.js";
+import type { BoundaryBehavior, SemconvAttribute } from "./definition.js";
 
 /**
  * The discriminated union every boundary binding validates against.
@@ -71,6 +71,20 @@ function definitionFor(name: string): (typeof DEFINITIONS)[number] {
     throw new Error(`no boundary definition for semantics "${name}"`);
   }
   return definition;
+}
+
+/**
+ * Which of a semantics value's fields the OpenTelemetry semantic
+ * conventions have an attribute for. The keys are checked against each
+ * protocol's own schema where the protocol declares them, so the
+ * lookup hands back plain strings for the fields.
+ */
+export function semconvMappingOf(
+  semantics: Semantics,
+): Readonly<Record<string, SemconvAttribute>> {
+  return definitionFor(semantics.name).semconv as Readonly<
+    Record<string, SemconvAttribute>
+  >;
 }
 
 /**

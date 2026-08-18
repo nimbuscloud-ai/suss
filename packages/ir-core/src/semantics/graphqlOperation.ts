@@ -25,6 +25,10 @@ export type GraphqlOperationSemantics = z.infer<
 export const graphqlOperationSemantics = defineBoundarySemantics({
   name: "graphql-operation",
   schema: GraphqlOperationSemanticsSchema,
+  semconv: {
+    operationName: { name: "graphql.operation.name" },
+    operationType: { name: "graphql.operation.type" },
+  },
   behavior: {
     /**
      * An operation gets a data-and-errors document back, which the

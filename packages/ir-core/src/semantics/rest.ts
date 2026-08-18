@@ -116,6 +116,14 @@ export function routePathAdmits(
 export const restSemantics = defineBoundarySemantics({
   name: "rest",
   schema: RestSemanticsSchema,
+  semconv: {
+    // A span states the one method a request used, so a route that
+    // responds to every method has nothing to compare.
+    method: { name: "http.request.method", placeholderValues: ["*"] },
+    path: { name: "http.route" },
+    // declaredResponses is a list, and http.response.status_code is
+    // the one status a request got back.
+  },
   behavior: {
     /** A request goes out, a status and a body come back. */
     exchangesHttpResponses: true,

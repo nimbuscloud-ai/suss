@@ -43,6 +43,37 @@ A hole at the end of a name, and a hole whose next character is a letter or a di
 
 One name can still be covered by two patterns. A hole at the end covers anything, so `orders-{suffix}` and `orders-blue-{suffix}` both cover `orders-blue-v1`. Choosing between them belongs to whichever pass picks a provider for an access, and `fixedTextLength` is what such a pass ranks by: the pattern that states more fixed text is the more specific one, and two patterns that state the same amount settle nothing between them.
 
+## Words OpenTelemetry already has
+
+A summary says what a unit can reach. A trace says what it did reach. Comparing the two is the point, and it only works if both sides spell a boundary the same way, so wherever OpenTelemetry's semantic conventions have a word for something in a binding, that is the word suss writes.
+
+The values are theirs. A Postgres table is `postgresql`, not `postgres`; a DynamoDB table is `aws.dynamodb`; an SQS queue is `aws_sqs` and an SNS topic is `aws.sns`, spelled the two different ways the conventions spell them.
+
+The field names are ours. Each protocol module says which attribute each of its fields goes under, and `semconvAttributes(binding)` reads a binding as the attributes a span would state:
+
+```ts
+semconvAttributes(
+  storageBinding({
+    recognition: "prisma",
+    storageSystem: "postgresql",
+    scope: "orders",
+    container: "users",
+  }),
+);
+// { "db.system.name": "postgresql", "db.namespace": "orders",
+//   "db.collection.name": "users" }
+```
+
+A field appears in that projection only when the value suss writes is the value a span gets, so the comparison is byte for byte with nothing in between. Three kinds of field stay out of it:
+
+- **A field the conventions have no attribute for.** A secondary index (`accessPath`) is one, and a GraphQL resolver's type and field are another, since the conventions describe the operation a client sent and not the resolver the server ran for one field of it.
+- **A value suss writes where the source stated none.** `scope: "default"` means no source said which database, and a REST method of `"*"` means the route responds to every method. A span says neither.
+- **The same thing under a different string.** `service.name` and `cloud.resource_id` both point at the deployable a `runtime-config` boundary belongs to, but `instanceName` is the deployment template's logical id, which is neither of those strings.
+
+Where the conventions have no word at all, suss keeps its own: a store they never covered (`s3`, `gcs`, `r2`, `d1`, `cloudflare-kv`), a bus they never covered (`eventbridge`, `bullmq`, `nats`, the Cloudflare triggers), a metric's system and type, and every boundary nobody crosses at run time, which is a function call across a package boundary, a contract a template declares, and an intent. Those are the boundaries suss exists for, and no observability convention has a word for them.
+
+Adding a protocol means filling in `semconv` on its definition, empty included, so the question gets answered rather than skipped.
+
 ## Where it fits in suss
 
 Both `@suss/behavioral-ir` (what code does) and `@suss/intent-ir` (what the team meant) build on this package, so neither IR depends on the other. They describe boundaries in the same vocabulary, and suss compares them rather than merging them. `@suss/behavioral-ir` re-exports these primitives, so existing consumers keep importing them from there unchanged.
