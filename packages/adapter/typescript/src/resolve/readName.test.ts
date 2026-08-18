@@ -197,13 +197,61 @@ describe("a name the code says is somewhere else", () => {
     });
   }
 
-  it("says which parameter a wrapper takes its name from", () => {
+  /** The same read, on an expression inside a function that takes arguments. */
+  function referenceInWrapper(source: string): string | null {
+    const project = createTestProject();
+    const file = project.createSourceFile("/wrapper.ts", source);
+    const store = new ResolutionStore();
+    const initializer = file
+      .getFunctionOrThrow("wrapper")
+      .getVariableDeclarationOrThrow("subject")
+      .getInitializerOrThrow();
+    return readName(initializer, {
+      resolve: (value: Node) => store.resolveWrittenValue(value),
+      unsettled: "reference",
+    });
+  }
+
+  it("states the whole path from the parameter a caller fills in", () => {
     expect(
-      referenceOf(`
-        declare const location: { bucket: string };
-        export const subject = location.bucket;
+      referenceInWrapper(`
+        export function wrapper(location: { bucket: string }) {
+          const subject = location.bucket;
+          return subject;
+        }
+      `),
+    ).toBe("{location.bucket}");
+  });
+
+  it("states every field on the way in, however deep", () => {
+    expect(
+      referenceInWrapper(`
+        export function wrapper(input: { location: { bucket: string } }) {
+          const subject = input.location.bucket;
+          return subject;
+        }
+      `),
+    ).toBe("{input.location.bucket}");
+  });
+
+  it("states a parameter that is the name itself", () => {
+    expect(
+      referenceInWrapper(`
+        export function wrapper(bucket: string) {
+          const subject = bucket;
+          return subject;
+        }
       `),
     ).toBe("{bucket}");
+  });
+
+  it("says which variable a name nobody passes comes from", () => {
+    expect(
+      referenceOf(`
+        declare const env: { ORDERS_TABLE: string };
+        export const subject = env.ORDERS_TABLE;
+      `),
+    ).toBe("{ORDERS_TABLE}");
   });
 
   it("says which variable the name comes from", () => {

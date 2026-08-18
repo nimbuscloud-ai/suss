@@ -8,6 +8,10 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { referenceName } from "@suss/behavioral-ir";
+
+import type { Reference } from "@suss/behavioral-ir";
+
 /** How far this follows a helper that calls a helper. */
 const MAX_HELPER_HOPS = 2;
 
@@ -17,9 +21,8 @@ const UNNAMED_HOLE = "param";
 export interface ReadNameOptions {
   /**
    * What to say about a name nothing here settles. `"nothing"` gives
-   * null. `"reference"` gives a hole named after what the source asked
-   * for, `{location.bucket}`, which says which value to go and ask
-   * about rather than which bucket this is.
+   * null. `"reference"` gives `{location.bucket}`, which says which
+   * value to go and ask about rather than which bucket this is.
    */
   unsettled?: "nothing" | "reference";
   /**
@@ -45,6 +48,22 @@ export function readName(
   if (name !== null || options.unsettled !== "reference") {
     return name;
   }
+  const reference = referenceIn(expr);
+  return reference === null ? null : referenceName(reference);
+}
+
+/**
+ * Where an expression says to go and ask. A value that came in as an
+ * argument is asked about at the call sites, so the reference states
+ * the parameter and every field read inside it. Anything else, a local
+ * or a field of one, nobody can be asked about, so the reference states
+ * what the part is called and leaves settling it to whoever knows.
+ */
+function referenceIn(expr: Node): Reference | null {
+  const fromParameter = parameterPath(expr);
+  if (fromParameter !== null) {
+    return fromParameter;
+  }
   const asked = holeName(expr, {
     resolve: () => null,
     bindings: new Map(),
@@ -54,7 +73,29 @@ export function readName(
   });
   // A reference has to say what to go and ask about. An expression
   // this cannot even name says nothing, which is what null means.
-  return asked === UNNAMED_HOLE ? null : `{${asked}}`;
+  return asked === UNNAMED_HOLE ? null : { root: asked, fields: [] };
+}
+
+/** The parameter an expression reads from, and the fields inside it. */
+function parameterPath(expr: Node): Reference | null {
+  const fields: string[] = [];
+  let step = expr;
+  while (Node.isPropertyAccessExpression(step)) {
+    fields.unshift(step.getName());
+    step = step.getExpression();
+  }
+  if (!Node.isIdentifier(step) || !isParameter(step)) {
+    return null;
+  }
+  return { root: step.getText(), fields };
+}
+
+/** Whether a name was declared as a parameter of the code around it. */
+function isParameter(identifier: Node): boolean {
+  const declarations = identifier.getSymbol()?.getDeclarations() ?? [];
+  return declarations.some((declaration) =>
+    Node.isParameterDeclaration(declaration),
+  );
 }
 
 /**
