@@ -8,21 +8,24 @@
  * than another walk over source.
  *
  * The other half is `{SOME_TABLE}`, a variable the deployment sets
- * rather than an argument anybody passes. What it is set to is on the
- * runtime that runs the code, so that is where the answer comes from.
- * The README beside this file says what a grounded access pairs as.
+ * rather than an argument anybody passes, and the runtime that runs the
+ * code is where that answer comes from. Both are read with
+ * `referenceFromName`, the function the adapter wrote them with.
  */
 
 import {
   namePatternFromSub,
-  namesNothing,
   readRuntimeContractMetadata,
+  referenceFromName,
 } from "@suss/behavioral-ir";
 
 import { placeRuntimes } from "../runtime-config/placement.js";
 import { runsIn, unitsByFile } from "../scope/unitScope.js";
 
-import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Effect, Reference } from "@suss/behavioral-ir";
+
+/** What a pack calls the argument a runtime's configuration arrives in. */
+const CONFIG_ROLE = "config";
 
 /** What a caller passed, in the shape the extractor records arguments. */
 type Argument =
@@ -64,12 +67,12 @@ export function groundReferences(summaries: BehavioralSummary[]): Grounding {
 
   return {
     namesFor(summary, container) {
-      const path = referencePath(container);
-      if (path === null) {
+      const reference = referenceFromName(container);
+      if (reference === null) {
         return [];
       }
-      const names = new Set(configured(summary, path));
-      for (const name of callerNames(summary, path, callsInto)) {
+      const names = new Set(configured(summary, reference));
+      for (const name of callerNames(summary, reference, callsInto)) {
         names.add(name);
       }
       return [...names];
@@ -80,20 +83,20 @@ export function groundReferences(summaries: BehavioralSummary[]): Grounding {
 /** The names a reference reaches through whoever called the unit. */
 function callerNames(
   summary: BehavioralSummary,
-  path: string[],
+  reference: Reference,
   callsInto: ReadonlyMap<string, Argument[][]>,
 ): string[] {
   const id = summary.identity.id;
   if (id === undefined) {
     return [];
   }
-  const position = inputPosition(summary, path[0] as string);
-  if (position === null) {
+  const parameter = parameterNamed(summary, reference.root);
+  if (parameter === null) {
     return [];
   }
   const names: string[] = [];
   for (const args of callsInto.get(id) ?? []) {
-    const passed = valueAt(args[position] ?? null, path.slice(1));
+    const passed = valueAt(args[parameter.position] ?? null, reference.fields);
     const name = passed === null ? null : nameOf(passed);
     if (name !== null) {
       names.push(name);
@@ -104,8 +107,6 @@ function callerNames(
 
 /**
  * What a variable is set to, for the runtimes that run a given summary.
- * A reference is a variable only when it is one bare name: `{location.
- * bucket}` asks about a field of an argument, and nothing sets that.
  *
  * The same code deployed twice reads two values, and both count, so a
  * Worker sharing a module between staging and production pairs against
@@ -113,7 +114,7 @@ function callerNames(
  */
 function configuredNames(
   summaries: BehavioralSummary[],
-): (summary: BehavioralSummary, path: string[]) => string[] {
+): (summary: BehavioralSummary, reference: Reference) => string[] {
   const { placed } = placeRuntimes(summaries);
   if (placed.length === 0) {
     return () => [];
@@ -124,11 +125,11 @@ function configuredNames(
     set: readRuntimeContractMetadata(runtime.runtime)?.envVarValues ?? {},
   }));
 
-  return (summary, path) => {
-    if (path.length !== 1) {
+  return (summary, reference) => {
+    const variable = variableAsked(summary, reference);
+    if (variable === null) {
       return [];
     }
-    const variable = path[0] as string;
     const names: string[] = [];
     for (const { scope, set } of values) {
       const value = set[variable];
@@ -138,6 +139,23 @@ function configuredNames(
     }
     return names;
   };
+}
+
+/**
+ * The variable a reference asks about, or null when it asks about an
+ * argument instead. One bare name is a variable. A path through the
+ * argument a pack calls the configuration is one too, since what fills
+ * that argument is the runtime rather than any call site in the run.
+ */
+function variableAsked(
+  summary: BehavioralSummary,
+  reference: Reference,
+): string | null {
+  if (reference.fields.length === 0) {
+    return reference.root;
+  }
+  const parameter = parameterNamed(summary, reference.root);
+  return parameter?.role === CONFIG_ROLE ? reference.fields.join(".") : null;
 }
 
 /** The call this effect is, when it says which summary it reaches. */
@@ -150,27 +168,14 @@ function invocationInto(
   return { summary: effect.summary, args: effect.args as Argument[] };
 }
 
-/**
- * The value a reference asks about, as the parameter it starts at and
- * the fields after it. A container that states a name rather than a
- * reference asks about nothing.
- */
-function referencePath(container: string): string[] | null {
-  if (!namesNothing(container)) {
-    return null;
-  }
-  const inside = container.slice(1, -1);
-  return inside === "" ? null : inside.split(".");
-}
-
-/** Which argument fills the parameter a reference starts at. */
-function inputPosition(
+/** The parameter of this unit a reference starts at, if it takes one. */
+function parameterNamed(
   summary: BehavioralSummary,
   name: string,
-): number | null {
+): { position: number; role: string | null } | null {
   for (const input of summary.inputs) {
     if (input.type === "parameter" && input.name === name) {
-      return input.position;
+      return { position: input.position, role: input.role };
     }
   }
   return null;

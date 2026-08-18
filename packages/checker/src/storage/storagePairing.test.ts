@@ -1153,6 +1153,84 @@ describe("an access whose store the deployment sets a variable to", () => {
     expect(containers.join("\n")).toContain("staging-orders-v2");
   });
 
+  it("pairs an access that reads the variable off its config argument", () => {
+    const handler = makeAccessSummary({
+      name: "fetch",
+      file: "services/orders/src/worker.ts",
+      accesses: [
+        {
+          container: "{env.ORDER_TABLE}",
+          storageSystem: "aws.dynamodb",
+          kind: "read",
+          fields: ["id"],
+          selector: ["customerId"],
+        },
+      ],
+    });
+    const findings = checkStorage([
+      makeProvider({
+        container: "prod-orders-v2",
+        storageSystem: "aws.dynamodb",
+        fields: [{ name: "id" }],
+        fieldSet: "partial",
+        keyFields: ["id"],
+      }),
+      runtime({
+        instanceName: "order-router",
+        codeScope: "services/orders",
+        values: { ORDER_TABLE: "prod-orders-v2" },
+      }),
+      {
+        ...handler,
+        inputs: [
+          {
+            type: "parameter",
+            name: "env",
+            position: 1,
+            role: "config",
+            shape: null,
+          },
+        ],
+      },
+    ]);
+
+    const mismatch = findings.filter(
+      (f) => f.kind === "boundarySelectorMismatch",
+    );
+    expect(mismatch).toHaveLength(1);
+  });
+
+  it("leaves a field of an ordinary argument to the callers", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "prod-orders-v2",
+        storageSystem: "aws.dynamodb",
+        fields: [{ name: "id" }],
+        fieldSet: "partial",
+        keyFields: ["id"],
+      }),
+      runtime({
+        instanceName: "order-router",
+        codeScope: "services/orders",
+        values: { ORDER_TABLE: "prod-orders-v2" },
+      }),
+      makeAccessSummary({
+        name: "readRow",
+        file: "services/orders/src/dao.ts",
+        accesses: [
+          {
+            container: "{location.ORDER_TABLE}",
+            storageSystem: "aws.dynamodb",
+            kind: "read",
+            fields: ["id"],
+            selector: ["customerId"],
+          },
+        ],
+      }),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
   it("says nothing about a variable no deployment sets", () => {
     const findings = checkStorage([
       makeProvider({

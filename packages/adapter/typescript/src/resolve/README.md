@@ -75,7 +75,20 @@ A hole is named after what the caller passed rather than after the parameter it 
 
 A fallback is read differently depending on where it sits. At the top of a name, `process.env.TABLE ?? "orders-prod"` reads as the default, because a whole name that is one hole would pair with every table there is. Inside a longer name, `` `${process.env.STAGE || "staging"}-orders` `` keeps the hole, because a deployment sets that variable and the default is what runs when nobody did.
 
-A caller that passes `unsettled: "reference"` gets a hole instead of null for a name the code says is somewhere else: `location.bucket` reads as `{location.bucket}`, which says which value to go and ask about. An expression it cannot even name still gives null, since a reference has to say what to ask about. `namesNothing` in `@suss/ir-core` is what keeps a name like that out of pairing, because a name that is one hole would otherwise agree with every name there is.
+A caller that passes `unsettled: "reference"` gets a hole instead of null for a name the code says is somewhere else. Which hole depends on who can be asked about the value.
+
+| Written as | Reads as | Who settles it |
+| --- | --- | --- |
+| `location.bucket`, `location` a parameter | `{location.bucket}` | whoever called this function |
+| `bucket`, a parameter | `{bucket}` | whoever called this function |
+| `env.ORDERS_TABLE`, `env` a local or a module const | `{ORDERS_TABLE}` | the deployment that sets the variable |
+| `config[which]` | null | nobody, so the name says nothing |
+
+A value that arrived as an argument is asked about at the call sites, so the reference states the parameter and every field read inside it. Anything else, a local or a field of one, has no call site to ask, so the reference states what the part is called and leaves settling it to whoever knows. `referenceName` in `@suss/ir-core` is what writes both, and the checker reads them back with `referenceFromName` from the same file, so neither side spells or parses a reference of its own.
+
+An expression this cannot even name still gives null, since a reference has to say what to ask about. `namesNothing` in `@suss/ir-core` is what keeps a name like that out of pairing, because a name that is one hole would otherwise agree with every name there is.
+
+A hole inside a longer name is a different thing and keeps its short name: `` `${stage}-orders` `` reads as `{stage}-orders`. That hole labels the part a deployment fills in rather than saying where to go and ask, and a name with fixed text around it pairs on the fixed text.
 
 Following a helper stops after two hops, and it stops at a body that does more than return one expression. A name that depends on a branch is not a name.
 

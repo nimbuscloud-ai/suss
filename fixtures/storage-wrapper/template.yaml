@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: An order lookup and the table it reads. Invented fixture.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: .
+    Timeout: 10
+
+Resources:
+  GetOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/orders.getOrder
+      Events:
+        Get:
+          Type: HttpApi
+          Properties:
+            Method: GET
+            Path: /orders/{customer}
+
+  # The storage layer never says which table it reads. The handler does,
+  # and the name it passes is the one declared here.
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: orders-v1
+      AttributeDefinitions:
+        - AttributeName: orderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: orderId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
