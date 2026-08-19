@@ -6,7 +6,8 @@
     "internal": 1961,
     "consumers": 863,
     "pairs": 856,
-    "unfollowedCalls": 199
+    "unfollowedCalls": 199,
+    "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {

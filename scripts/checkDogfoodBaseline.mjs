@@ -137,7 +137,7 @@ function compareCeiling(label, before, after) {
 }
 
 /** Which way each count is allowed to move. Floor unless listed here. */
-const CEILINGS = new Set(["unfollowedCalls"]);
+const CEILINGS = new Set(["unfollowedCalls", "findingErrors"]);
 
 /**
  * How many units moved from the internal column to the consumer one.
@@ -186,6 +186,7 @@ const FIELD_ORDER = [
   "consumers",
   "pairs",
   "unfollowedCalls",
+  "findingErrors",
 ];
 
 /**
