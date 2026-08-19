@@ -104,15 +104,6 @@ export type { StorageSemantics } from "./semantics/storage.js";
 // that neither checker, behavioural or intent, owns them and the two
 // cannot drift apart.
 
-// ---------------------------------------------------------------------------
-// Shared comparison primitives
-// ---------------------------------------------------------------------------
-//
-// These are pure operations over the primitives above that more than one
-// checker needs and that all of them have to agree on. They are here so
-// that neither checker, behavioural or intent, owns them and the two
-// cannot drift apart.
-
 // normalizeRuleBoundary is defined in boundaryKey.ts too, but it is exported
 // below with the suppressions, next to the matcher that uses it.
 export {
@@ -127,6 +118,23 @@ export {
   servesRequest,
 } from "./boundaryKey.js";
 export {
+  type BoundaryName,
+  boundaryNameString,
+  fixedTextLength,
+  hasNameHole,
+  type NamePart,
+  namePatternFromSub,
+  namePatternKey,
+  namesAgree,
+  namesNothing,
+  parseBoundaryName,
+  patternHole,
+  type Reference,
+  referenceFromName,
+  referenceName,
+  referenceOf,
+} from "./boundaryName.js";
+export {
   busesAgree,
   type Channel,
   channelsPair,
@@ -136,19 +144,6 @@ export {
 } from "./channel.js";
 export { codeScopePath, fileInCodeScope } from "./codeScope.js";
 export { type DispatchTable, dispatchByType } from "./dispatch.js";
-export {
-  fixedTextLength,
-  hasNameHole,
-  namePatternFromSub,
-  namePatternKey,
-  namesAgree,
-  namesNothing,
-} from "./namePattern.js";
-export {
-  type Reference,
-  referenceFromName,
-  referenceName,
-} from "./reference.js";
 export {
   methodsAgree,
   normalizePath,

@@ -9,14 +9,14 @@
  *
  * The other half is `{SOME_TABLE}`, a variable the deployment sets
  * rather than an argument anybody passes, and the runtime that runs the
- * code is where that answer comes from. Both are read with
- * `referenceFromName`, the function the adapter wrote them with.
+ * code is where that answer comes from. The pairing pass classifies
+ * the container through the one boundary-name parser and hands the
+ * reference over, so nothing here reads the string again.
  */
 
 import {
   namePatternFromSub,
   readRuntimeContractMetadata,
-  referenceFromName,
 } from "@suss/behavioral-ir";
 
 import { placeRuntimes } from "../runtime-config/placement.js";
@@ -38,10 +38,11 @@ type Argument =
 export interface Grounding {
   /**
    * The names an access reaches, for an access whose container says
-   * only where to look. Empty when nobody calls the unit, or when every
-   * caller passes something nobody can settle.
+   * only where to look. Empty when nobody calls the unit, when every
+   * caller passes something nobody can settle, or when the reference
+   * itself is null because a part of it was missing.
    */
-  namesFor(summary: BehavioralSummary, container: string): string[];
+  namesFor(summary: BehavioralSummary, reference: Reference | null): string[];
 }
 
 /**
@@ -66,8 +67,7 @@ export function groundReferences(summaries: BehavioralSummary[]): Grounding {
   }
 
   return {
-    namesFor(summary, container) {
-      const reference = referenceFromName(container);
+    namesFor(summary, reference) {
       if (reference === null) {
         return [];
       }

@@ -8,7 +8,7 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
-import { referenceName } from "@suss/behavioral-ir";
+import { patternHole, referenceName } from "@suss/behavioral-ir";
 
 import type { Reference } from "@suss/behavioral-ir";
 
@@ -416,7 +416,7 @@ function boundOnce(expr: Node, ctx: Context): Bound | null {
 /** The name a part states, or a hole for a part built at run time. */
 function readOrHole(expr: Node, ctx: Context): string {
   const name = read(expr, ctx);
-  return name ?? `{${holeName(expr, ctx)}}`;
+  return name ?? patternHole(holeName(expr, ctx));
 }
 
 /**

@@ -176,6 +176,13 @@ jobs:
         if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:metadata-wiring
 
+      # A second parser of the boundary-name braces can disagree with
+      # the one in @suss/ir-core about what a name means, which is how
+      # a reference shipped written one way and read another (#456).
+      - name: Boundary-name syntax
+        if: steps.diff.outputs.docs_only != 'true'
+        run: npm run check:name-syntax
+
       # The fixed-seed fuzz run: a few thousand generated programs
       # through the pipeline itself, in about twenty seconds. A shape
       # that works today and stops working fails the build the day it

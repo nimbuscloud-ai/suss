@@ -35,7 +35,9 @@ export const StorageSemanticsSchema = z.object({
    * The table, bucket, collection, or index, as the source declares
    * it, or null when the source states one this reader could not
    * settle. A null container pairs with nothing, rather than with
-   * whatever its source text happens to spell.
+   * whatever its source text happens to spell. The string is in the
+   * boundary-name syntax: a literal, a pattern with `{}` holes, or a
+   * reference, and `parseBoundaryName` is the one reader of it.
    */
   container: z.string().nullable(),
   /**
