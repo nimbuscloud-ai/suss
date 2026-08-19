@@ -661,3 +661,36 @@ describe("reading a metric written before the data model's words", () => {
     expect(normalized.metadata.metricContract.values).toBe("spread");
   });
 });
+
+describe("reading a container written by an earlier version", () => {
+  // The wire form of a name is the brace string itself, whichever of
+  // the three things it means, so no version rewrites one on the way in.
+  it("keeps a literal, a pattern, and a reference byte for byte", () => {
+    const containers = ["orders-v1", "{stage}-orders-v1", "{location.table}"];
+    for (const container of containers) {
+      const parsed = parseSummary(
+        v1Summary({
+          schemaVersion: 5,
+          identity: {
+            name: "OrderStore.read",
+            exportPath: null,
+            id: "src/orderStore.ts::OrderStore.read",
+            boundaryBinding: {
+              transport: "dynamodb",
+              semantics: {
+                name: "storage",
+                storageSystem: "aws.dynamodb",
+                scope: "default",
+                container,
+                accessPath: null,
+              },
+              recognition: "aws-dynamodb",
+            },
+          },
+        }),
+      );
+      const semantics = parsed.identity.boundaryBinding?.semantics;
+      expect(semantics).toMatchObject({ container });
+    }
+  });
+});
