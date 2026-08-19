@@ -1,12 +1,103 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  boundaryNameString,
   fixedTextLength,
+  hasNameHole,
   namePatternFromSub,
   namePatternKey,
   namesAgree,
   namesNothing,
-} from "./namePattern.js";
+  parseBoundaryName,
+  patternHole,
+  referenceFromName,
+  referenceName,
+  referenceOf,
+} from "./boundaryName.js";
+
+describe("what a name string means", () => {
+  it("reads a name with no holes as the name itself", () => {
+    expect(parseBoundaryName("orders-v1")).toEqual({
+      type: "literal",
+      value: "orders-v1",
+    });
+    expect(parseBoundaryName("")).toEqual({ type: "literal", value: "" });
+  });
+
+  it("reads fixed text with holes as a pattern", () => {
+    expect(parseBoundaryName("{stage}-orders-v1")).toEqual({
+      type: "pattern",
+      parts: [
+        { type: "hole", label: "stage" },
+        { type: "text", text: "-orders-v1" },
+      ],
+    });
+  });
+
+  it("reads two holes with nothing between them as a pattern", () => {
+    expect(parseBoundaryName("{env}{name}")).toEqual({
+      type: "pattern",
+      parts: [
+        { type: "hole", label: "env" },
+        { type: "hole", label: "name" },
+      ],
+    });
+  });
+
+  it("reads one hole and nothing else as a reference", () => {
+    expect(parseBoundaryName("{location.bucket}")).toEqual({
+      type: "reference",
+      path: ["location", "bucket"],
+    });
+    expect(parseBoundaryName("{ORDER_TABLE}")).toEqual({
+      type: "reference",
+      path: ["ORDER_TABLE"],
+    });
+  });
+
+  it("reads a brace nothing closes as text", () => {
+    expect(parseBoundaryName("orders-{v1")).toEqual({
+      type: "literal",
+      value: "orders-{v1",
+    });
+  });
+
+  it("keeps a malformed reference a reference, so it still pairs with nothing", () => {
+    expect(parseBoundaryName("{}")).toEqual({ type: "reference", path: [""] });
+    expect(namesAgree("{}", "orders")).toBe(false);
+  });
+});
+
+describe("printing a name back", () => {
+  it("returns every string it parsed, byte for byte", () => {
+    const names = [
+      "orders-v1",
+      "{stage}-orders-v1",
+      "orders-{region}",
+      "{env}{name}",
+      "{location.bucket}",
+      "{ORDER_TABLE}",
+      "{}",
+      "",
+      "orders-{v1",
+      "a-{x}-b-{y}-c",
+    ];
+    for (const name of names) {
+      expect(boundaryNameString(parseBoundaryName(name))).toBe(name);
+    }
+  });
+
+  it("spells a hole the way the parser reads one", () => {
+    expect(patternHole("stage")).toBe("{stage}");
+    expect(parseBoundaryName(`x-${patternHole("stage")}`)).toEqual({
+      type: "pattern",
+      parts: [
+        { type: "text", text: "x-" },
+        { type: "hole", label: "stage" },
+      ],
+    });
+  });
+});
 
 describe("reading a name a template builds", () => {
   it("turns each substitution into a hole", () => {
@@ -133,5 +224,88 @@ describe("how much of a name its writer stated", () => {
     expect(fixedTextLength("orders-blue-{suffix}")).toBeGreaterThan(
       fixedTextLength("orders-{suffix}"),
     );
+  });
+});
+
+describe("whether a name is finished", () => {
+  it("is not, when any part waits for deploy time or for grounding", () => {
+    expect(hasNameHole("orders-v1")).toBe(false);
+    expect(hasNameHole("{stage}-orders-v1")).toBe(true);
+    expect(hasNameHole("{ORDER_TABLE}")).toBe(true);
+  });
+});
+
+describe("a reference to a field of an argument", () => {
+  it("writes the whole path from the parameter", () => {
+    expect(referenceName({ root: "location", fields: ["bucket"] })).toBe(
+      "{location.bucket}",
+    );
+  });
+
+  it("reads back the parameter and the fields inside it", () => {
+    expect(referenceFromName("{location.bucket}")).toEqual({
+      root: "location",
+      fields: ["bucket"],
+    });
+  });
+
+  it("survives a round trip through a name, however deep", () => {
+    const reference = { root: "input", fields: ["location", "bucket"] };
+    const name = referenceName(reference) as string;
+
+    expect(referenceFromName(name)).toEqual(reference);
+  });
+});
+
+describe("a reference to a variable the deployment sets", () => {
+  it("writes the variable and no fields", () => {
+    expect(referenceName({ root: "ORDER_TABLE", fields: [] })).toBe(
+      "{ORDER_TABLE}",
+    );
+  });
+
+  it("reads back the variable and no fields", () => {
+    expect(referenceFromName("{ORDER_TABLE}")).toEqual({
+      root: "ORDER_TABLE",
+      fields: [],
+    });
+  });
+});
+
+describe("a name that is not a reference", () => {
+  it("states a name of its own", () => {
+    expect(referenceFromName("orders-v1")).toBeNull();
+  });
+
+  it("has fixed text around the hole", () => {
+    expect(referenceFromName("{stage}-orders")).toBeNull();
+  });
+
+  it("points at nothing", () => {
+    expect(referenceFromName("{}")).toBeNull();
+    expect(referenceFromName("{location.}")).toBeNull();
+  });
+});
+
+describe("a reference with a part missing", () => {
+  it("is written as no name at all", () => {
+    expect(referenceName({ root: "", fields: [] })).toBeNull();
+    expect(referenceName({ root: "location", fields: [""] })).toBeNull();
+  });
+
+  it("is read back as a place nobody can answer for", () => {
+    expect(referenceOf(parseBoundaryName("{location..bucket}"))).toBeNull();
+    expect(referenceOf(parseBoundaryName("{stage}-orders"))).toBeNull();
+  });
+});
+
+describe("every reference", () => {
+  it("pairs with nothing until something settles it", () => {
+    const name = referenceName({
+      root: "location",
+      fields: ["bucket"],
+    }) as string;
+
+    expect(namesNothing(name)).toBe(true);
   });
 });

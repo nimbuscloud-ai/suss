@@ -31,21 +31,27 @@ The boundary key uses only the subject, so both forms end up in the same bucket 
 
 Schemas are the single source of truth (`@suss/ir-core/schemas`); the types are derived from them. The recursive `TypeShape` is a hand-written named export so consuming packages reference it by name across the package boundary rather than inlining the recursion.
 
-## Names with a hole in them
+## Boundary names
 
-A deployed resource is often called something built at deploy time. A template writes `!Sub "${StageName}-orders-v1"` and the code writes `` `${stage}-orders-v1` ``, so neither side states a string, both agree about the fixed text, and each spells the parameter its own way. A name is written here as fixed text with `{}` holes, and `namesAgree` says whether two of them are the same name.
+A container or an access path in a summary is a string that means one of three things, and the braces alone say which:
 
-A hole stops at the separator between it and what comes next. No separator works for every project, so the rule does not name one, it takes the separator from the pattern: when the fixed text after a hole starts with a character that is not a letter or a digit, that character divides the deploy-time value from the rest of the name, and the value may not contain it. So `{env}-publications-v1` covers `prod-publications-v1`, and it does not cover `prod-creator-publications-v1`, which the hole could only reach by swallowing a `-`.
+- A **literal** (`orders-v1`) is the name itself.
+- A **pattern** (`{stage}-orders-v1`) is fixed text with `{}` holes for the parts a deployment fills in. A template writes `!Sub "${StageName}-orders-v1"` and the code writes `` `${stage}-orders-v1` ``: neither states a string, both agree about the fixed text, and each spells the parameter its own way.
+- A **reference** (`{location.bucket}`, `{ORDER_TABLE}`) is one hole and no fixed text, saying where to go and ask rather than what the name is.
 
-A greedy hole was the earlier rule, and a module declaring both of those tables had one storage access pair with each of them. The table the code never touches keys on something else, so the run reported a selector mismatch on a boundary that code never reaches.
+`boundaryName.ts` owns the syntax in both directions. `parseBoundaryName` turns a string into the discriminated `BoundaryName` value, `boundaryNameString` turns one back into exactly the string it came from, and everything else, `namesAgree`, `namesNothing`, `fixedTextLength`, `referenceName`, `referenceFromName`, is a view over that pair. Nothing outside the module reads or writes the braces itself: a second parser can disagree about which of the three a string is, and a second printer can spell a value the parser cannot read back. Both have happened. The two halves of caller grounding once spelled a reference differently and never met (#456), which is why writing one and reading one are the same module rather than a format each side implements for itself. `check:name-syntax` in CI keeps it that way.
 
-A hole at the end of a name, and a hole whose next character is a letter or a digit, has no separator to stop at, and it still covers anything. That costs a pair when the value has the separator inside it: `{region}-orders` does not cover `us-east-1-orders`, though `orders-{region}` still covers `orders-us-east-1`. Missing a pair is the better failure of the two, since a wrong match reports findings about a store the code never touches.
+The wire format is the string. Summaries on disk carry `orders-v1`, `{stage}-orders-v1`, `{location.table}` unchanged, so nothing about this layout is a schema change, and an old summary reads the same as a new one.
 
-One name can still be covered by two patterns. A hole at the end covers anything, so `orders-{suffix}` and `orders-blue-{suffix}` both cover `orders-blue-v1`. Choosing between them belongs to whichever pass picks a provider for an access, and `fixedTextLength` is what such a pass ranks by: the pattern that states more fixed text is the more specific one, and two patterns that state the same amount settle nothing between them.
+### How two names pair
 
-## A name that says where to go and ask
+`namesAgree` says whether two names are the same name. Two patterns agree when their fixed parts line up, since a hole on one side meets a hole on the other. A pattern and a literal agree when the fixed text is where the pattern says it is, which is what happens when one side hardcoded what the other parameterized. A reference agrees with nothing until something settles it, since one bare hole would otherwise agree with every name there is.
 
-Some code cannot say what it reaches. A storage layer takes the bucket as an argument, and a service reads its table name out of the deployment. Neither states a name, and a name is what the rest of suss pairs on, so both write a reference instead: one hole, no fixed text, saying where to go and ask.
+A hole covers anything, because a name has no separator every project agrees on: a region is written `us-east-1`, and a hole that stopped at the first hyphen would miss it. The cost is that one name can be covered by two patterns, `orders-{suffix}` and `orders-blue-{suffix}` both cover `orders-blue-v1`, so choosing between them belongs to whichever pass picks a provider for an access. `fixedTextLength` is what such a pass ranks by: the pattern that states more fixed text is the more specific one, and two patterns that state the same amount settle nothing between them.
+
+### A name that says where to go and ask
+
+Some code cannot say what it reaches. A storage layer takes the bucket as an argument, and a service reads its table name out of the deployment. Neither states a name, and a name is what the rest of suss pairs on, so both write a reference instead.
 
 ```ts
 referenceName({ root: "location", fields: ["bucket"] }); // "{location.bucket}"
@@ -53,9 +59,11 @@ referenceName({ root: "ORDER_TABLE", fields: [] }); // "{ORDER_TABLE}"
 referenceFromName("{location.bucket}"); // { root: "location", fields: ["bucket"] }
 ```
 
-The root is the value the code starts from, and the fields are what it reads inside that value. A language adapter writes one of these while reading source, and the checker settles it much later by joining over a whole run: `{location.bucket}` against what each caller passed for `location`, `{ORDER_TABLE}` against what the deployment sets. Those two sides live in different packages, and a reference is worth nothing unless both spell it the same way, so writing one and reading one are this pair of functions rather than a format each side implements for itself.
+The root is the value the code starts from, and the fields are what it reads inside that value. A language adapter writes one while reading source, and the checker settles it much later by joining over a whole run: `{location.bucket}` against what each caller passed for `location`, `{ORDER_TABLE}` against what the deployment sets. Whether the root is a parameter of the unit or a variable the deployment sets is not in the string, on purpose: it depends on the unit's inputs and their roles, which the grounding pass already has in hand, and a bare `{X}` is deliberately tried both ways there. A root kind written into the name would either be ignored or change which of those runs.
 
-`namesNothing` is true of every reference, which is what keeps one out of pairing until something settles it. A name with fixed text around the hole is not a reference: `{stage}-orders` states most of itself and pairs on the fixed text.
+### Two look-alike conventions that stay apart
+
+A REST route path also spells its parameters with braces (`/users/{id}`), but a route hole stops at the `/` between segments, so route paths keep their own comparison beside the REST semantics. A message-bus channel never uses braces at all; its `bus#subject` form has its own module, described above.
 
 ## Words OpenTelemetry already has
 
