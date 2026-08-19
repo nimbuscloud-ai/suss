@@ -783,24 +783,32 @@ export function readStorageContractMetadata(
 /**
  * What one measurement of a metric is. `"number"` is a single value per
  * point, which is what a comparison against a threshold needs.
- * `"spread"` is a histogram's buckets, which have no one value, so
- * something has to reduce it before anything can compare it.
+ * `"histogram"` is buckets, which have no one value, so something has
+ * to reduce it before anything can compare it.
  *
- * Every monitoring system draws this line somewhere: Cloud Monitoring
- * calls the second one DISTRIBUTION, Prometheus calls it a histogram.
+ * `"histogram"` is the OpenTelemetry metrics data model's word for the
+ * bucketed point kind. Cloud Monitoring calls the same thing
+ * DISTRIBUTION, and the pack that reads it translates.
  */
-export const MetricValueShapeSchema = z.enum(["number", "spread"]);
+export const MetricValueShapeSchema = z.enum(["number", "histogram"]);
 
 export type MetricValueShape = z.infer<typeof MetricValueShapeSchema>;
 
 /**
- * What one measurement covers: the value at a point, the change across
- * the interval before it, or the total since the series started.
+ * What one measurement covers: `"gauge"` is the value at a point,
+ * `"delta"` the change across the interval before it, and
+ * `"cumulative"` the total since the series started.
+ *
+ * `"delta"` and `"cumulative"` are OpenTelemetry's aggregation
+ * temporalities. OpenTelemetry gives an instantaneous measurement no
+ * temporality and calls its point kind a gauge instead, and Cloud
+ * Monitoring's metric kind spells all three outright: GAUGE, DELTA,
+ * CUMULATIVE.
  */
 export const MetricAccumulationSchema = z.enum([
-  "point",
-  "interval",
-  "sinceStart",
+  "gauge",
+  "delta",
+  "cumulative",
 ]);
 
 export type MetricAccumulation = z.infer<typeof MetricAccumulationSchema>;

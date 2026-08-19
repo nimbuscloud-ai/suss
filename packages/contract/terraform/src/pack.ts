@@ -83,7 +83,7 @@ export interface MetricResource {
    * metric spells, so it is the identity the two sides share.
    */
   metricTypeTemplate: string;
-  /** Which attribute says whether one measurement is a number or a spread. */
+  /** Which attribute says whether one measurement is a number or a histogram. */
   values?: AttributeMeaning<MetricValueShape>;
   /** Which attribute says what a measurement covers. */
   accumulates?: AttributeMeaning<MetricAccumulation>;

@@ -461,9 +461,11 @@ describe("typed metadata namespaces", () => {
   it("reads what a metric measures and what a reading needs", () => {
     expect(
       readMetricContractMetadata(
-        carrier({ metricContract: { values: "spread", accumulates: "point" } }),
+        carrier({
+          metricContract: { values: "histogram", accumulates: "gauge" },
+        }),
       ),
-    ).toEqual({ values: "spread", accumulates: "point" });
+    ).toEqual({ values: "histogram", accumulates: "gauge" });
     expect(
       readMetricReadingMetadata(
         carrier({
@@ -482,7 +484,7 @@ describe("typed metadata namespaces", () => {
   it("drops a metric field written as a word neither side has", () => {
     expect(
       readMetricContractMetadata(
-        carrier({ metricContract: { values: "histogram" } }),
+        carrier({ metricContract: { values: "DISTRIBUTION" } }),
       ),
     ).toEqual({});
     expect(readMetricReadingMetadata(carrier({}))).toBeUndefined();

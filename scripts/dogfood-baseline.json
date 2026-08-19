@@ -3,7 +3,7 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 497,
-    "internal": 1959,
+    "internal": 1961,
     "consumers": 863,
     "pairs": 856,
     "unfollowedCalls": 199
@@ -33,7 +33,7 @@
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
       "exports": 65,
-      "internal": 17,
+      "internal": 19,
       "consumers": 4,
       "unfollowedCalls": 2
     },

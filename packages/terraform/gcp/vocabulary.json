@@ -9,7 +9,7 @@
   "threshold_value": "Terraform Google provider: the attribute stating the number a condition compares against",
   "INT64": "Cloud Monitoring: the value type of a metric measured as a whole number",
   "DOUBLE": "Cloud Monitoring: the value type of a metric measured as a decimal",
-  "DISTRIBUTION": "Cloud Monitoring: the value type of a metric whose measurements are a spread of buckets",
+  "DISTRIBUTION": "Cloud Monitoring: the value type of a metric measured as a distribution over buckets",
   "GAUGE": "Cloud Monitoring: the metric kind whose measurement is the value at a point",
   "DELTA": "Cloud Monitoring: the metric kind whose measurement covers the interval before it",
   "CUMULATIVE": "Cloud Monitoring: the metric kind whose measurement totals since the series started",
@@ -18,9 +18,5 @@
   "ALIGN_PERCENTILE_50": "Cloud Monitoring: an aligner reducing a distribution to its median",
   "ALIGN_PERCENTILE_05": "Cloud Monitoring: an aligner reducing a distribution to its 5th percentile",
   "metric": "suss: boundary kind for a named series of measurements",
-  "number": "suss: a metric whose measurement is a single value",
-  "spread": "suss: a metric whose measurement is a range of buckets",
-  "point": "suss: a measurement that is the value at one moment",
-  "interval": "suss: a measurement that covers the window before it",
-  "sinceStart": "suss: a measurement that totals since the series started"
+  "number": "suss: a metric whose measurement is a single value"
 }

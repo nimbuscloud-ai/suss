@@ -211,7 +211,7 @@ the two by code scope.
 side reads it back by the type string the monitoring system gives it. Neither
 side can see the other's declaration, so the type string is the whole identity.
 Pairing key: `(metricSystem, metricType)`. What only the declaring side knows,
-whether a measurement is one number or a spread, goes on its summary's
+whether a measurement is one number or a histogram, goes on its summary's
 metadata, the way a storage contract's field list does.
 
 ### Pack helpers
@@ -266,7 +266,8 @@ the conventions spell them, one predating the other.
 
 Summaries written before this used `postgres`, `dynamodb`, `sqs`, and
 `sns`. They read back with the new names through the normalizer in
-`@suss/behavioral-ir`, and the format is at schema version 5. Pack
+`@suss/behavioral-ir`, which brought the format to schema version 5;
+the metric words above followed at version 6. Pack
 config takes the new name too: a project passing
 `{ "storageSystem": "postgres" }` to the sqlalchemy, activerecord,
 prisma or drizzle pack writes `postgresql` instead.
@@ -319,7 +320,11 @@ module says which case it is in:
 
 Whole protocols stay ours as well. A `function-call` boundary is a call
 that never leaves the process, and a `metric` has a system and a type
-string the conventions never covered. Nor did they cover every store or
+string the conventions never covered. A metric's measurement words in
+its contract metadata do come from OpenTelemetry, though from the
+metrics data model rather than an attribute registry: `histogram` for a
+bucketed measurement, and `gauge`, `delta`, `cumulative` for what one
+measurement covers. Nor did the conventions cover every store or
 bus: `s3`, `gcs`, `r2`, `d1` and `cloudflare-kv` on one side,
 `eventbridge`, `bullmq`, `nats` and the Cloudflare triggers on the
 other. `transport` is our own axis too, since the wire behind an

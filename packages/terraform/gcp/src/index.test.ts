@@ -83,8 +83,8 @@ describe("what the Google entries read", () => {
       metricType: "logging.googleapis.com/user/sweep-refused",
     });
     expect(readMetricContractMetadata(metric)).toEqual({
-      values: "spread",
-      accumulates: "interval",
+      values: "histogram",
+      accumulates: "delta",
     });
   });
 
@@ -162,7 +162,7 @@ describe("a threshold on a distribution", () => {
       readMetricContractMetadata(
         boundary(gauge, "google_logging_metric.sweep_refused"),
       ),
-    ).toEqual({ values: "number", accumulates: "point" });
+    ).toEqual({ values: "number", accumulates: "gauge" });
     expect(checkMetric(read(gauge))).toEqual([]);
   });
 
