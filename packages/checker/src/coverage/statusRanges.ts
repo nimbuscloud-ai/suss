@@ -24,6 +24,7 @@ import {
 import type {
   BehavioralSummary,
   Predicate,
+  Transition,
   ValueRef,
 } from "@suss/behavioral-ir";
 
@@ -102,11 +103,42 @@ function literalNumber(v: ValueRef): number | null {
   return v.type === "literal" && typeof v.value === "number" ? v.value : null;
 }
 
+/**
+ * What a consumer's pack calls the status and the success flag, plus
+ * whether an equality guard on this branch narrows it.
+ */
+export interface StatusGuards {
+  accessors: StatusAccessors;
+  successAccessors: StatusAccessors;
+  /**
+   * True on an arm the consumer wrote. The `else` of
+   * `if (res.status === 404)` runs on every status but 404, so the
+   * equality says what that arm covers. On the path left over after a
+   * guard the consumer wrote no `else` for, they said nothing about the
+   * other statuses, and this stays false.
+   */
+  readsEquality: boolean;
+}
+
+/** The guards on a fall-through path, which no equality narrows. */
+export function fallthroughGuards(
+  accessors: StatusAccessors,
+  successAccessors: StatusAccessors,
+): StatusGuards {
+  return { accessors, successAccessors, readsEquality: false };
+}
+
 const BOUND_BY_OP: Record<string, (n: number) => StatusRange> = {
   gte: (n) => ({ min: n, max: STATUS_MAX }),
   gt: (n) => ({ min: n + 1, max: STATUS_MAX }),
   lte: (n) => ({ min: STATUS_MIN, max: n }),
   lt: (n) => ({ min: STATUS_MIN, max: n - 1 }),
+};
+
+/** Read only on an arm the consumer wrote; `StatusGuards` says why. */
+const EQUALITY_BY_OP: Record<string, (n: number) => StatusSet> = {
+  eq: (n) => [{ min: n, max: n }],
+  neq: (n) => complement([{ min: n, max: n }]),
 };
 
 /** `400 <= status` describes what `status >= 400` does, read the other way. */
@@ -117,21 +149,32 @@ const FLIPPED_OP: Record<string, string> = {
   lt: "gt",
 };
 
+/** `status === 404` and `404 === status` say the same thing, so no flip. */
+function setForOp(
+  op: string,
+  n: number,
+  guards: StatusGuards,
+): StatusSet | null {
+  const equality = guards.readsEquality ? EQUALITY_BY_OP[op] : undefined;
+  if (equality !== undefined) {
+    return normalise(equality(n));
+  }
+  const bound = BOUND_BY_OP[op];
+  return bound === undefined ? null : normalise([bound(n)]);
+}
+
 function comparisonRange(
   pred: Extract<Predicate, { type: "comparison" }>,
-  accessors: StatusAccessors,
+  guards: StatusGuards,
 ): StatusSet | null {
-  if (refLooksLikeStatus(pred.left, accessors)) {
+  if (refLooksLikeStatus(pred.left, guards.accessors)) {
     const n = literalNumber(pred.right);
-    const bound = BOUND_BY_OP[pred.op];
-    return n !== null && bound !== undefined ? normalise([bound(n)]) : null;
+    return n === null ? null : setForOp(pred.op, n, guards);
   }
 
-  if (refLooksLikeStatus(pred.right, accessors)) {
+  if (refLooksLikeStatus(pred.right, guards.accessors)) {
     const n = literalNumber(pred.left);
-    const flipped = FLIPPED_OP[pred.op];
-    const bound = flipped !== undefined ? BOUND_BY_OP[flipped] : undefined;
-    return n !== null && bound !== undefined ? normalise([bound(n)]) : null;
+    return n === null ? null : setForOp(FLIPPED_OP[pred.op] ?? pred.op, n, guards);
   }
 
   return null;
@@ -155,12 +198,9 @@ function truthinessRange(
 
 function compoundRange(
   pred: Extract<Predicate, { type: "compound" }>,
-  accessors: StatusAccessors,
-  successAccessors: StatusAccessors,
+  guards: StatusGuards,
 ): StatusSet | null {
-  const parts = pred.operands.map((op) =>
-    statusSetOf(op, accessors, successAccessors),
-  );
+  const parts = pred.operands.map((op) => statusSetOf(op, guards));
 
   if (pred.op === "or") {
     // An operand saying nothing about the status can be true for any status,
@@ -181,22 +221,18 @@ function compoundRange(
   return known.reduce((acc, p) => intersect(acc, p));
 }
 
-function statusSetOf(
-  pred: Predicate,
-  accessors: StatusAccessors,
-  successAccessors: StatusAccessors,
-): StatusSet | null {
+function statusSetOf(pred: Predicate, guards: StatusGuards): StatusSet | null {
   if (pred.type === "comparison") {
-    return comparisonRange(pred, accessors);
+    return comparisonRange(pred, guards);
   }
   if (pred.type === "truthinessCheck") {
-    return truthinessRange(pred, successAccessors);
+    return truthinessRange(pred, guards.successAccessors);
   }
   if (pred.type === "compound") {
-    return compoundRange(pred, accessors, successAccessors);
+    return compoundRange(pred, guards);
   }
   if (pred.type === "negation") {
-    const inner = statusSetOf(pred.operand, accessors, successAccessors);
+    const inner = statusSetOf(pred.operand, guards);
     return inner === null ? null : complement(inner);
   }
   return null;
@@ -209,11 +245,10 @@ function statusSetOf(
  */
 export function branchStatusRanges(
   conditions: readonly Predicate[],
-  accessors: StatusAccessors,
-  successAccessors: StatusAccessors,
+  guards: StatusGuards,
 ): StatusRange[] | null {
   const known = conditions
-    .map((c) => statusSetOf(c, accessors, successAccessors))
+    .map((c) => statusSetOf(c, guards))
     .filter((s): s is StatusSet => s !== null);
 
   if (known.length === 0) {
@@ -232,15 +267,27 @@ function rangesInclude(
 /** Whether one branch handles `status`, by naming it or by admitting it. */
 export function branchHandlesStatus(
   conditions: readonly Predicate[],
-  accessors: StatusAccessors,
-  successAccessors: StatusAccessors,
+  guards: StatusGuards,
   status: number,
 ): boolean {
-  if (statusesNamedIn(conditions, accessors).includes(status)) {
+  if (statusesNamedIn(conditions, guards.accessors).includes(status)) {
     return true;
   }
-  const ranges = branchStatusRanges(conditions, accessors, successAccessors);
+  const ranges = branchStatusRanges(conditions, guards);
   return ranges !== null && rangesInclude(ranges, status);
+}
+
+/** The guards a consumer's own branch is read under. */
+export function guardsForBranch(
+  transition: Transition,
+  accessors: StatusAccessors,
+  successAccessors: StatusAccessors,
+): StatusGuards {
+  return {
+    accessors,
+    successAccessors,
+    readsEquality: !transition.isDefault,
+  };
 }
 
 /**
@@ -255,6 +302,10 @@ export function consumerHandlesStatus(
   const successAccessors = successAccessorsFor(consumer);
   return (status) =>
     consumer.transitions.some((ct) =>
-      branchHandlesStatus(ct.conditions, accessors, successAccessors, status),
+      branchHandlesStatus(
+        ct.conditions,
+        guardsForBranch(ct, accessors, successAccessors),
+        status,
+      ),
     );
 }

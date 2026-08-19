@@ -126,3 +126,14 @@ export function successAccessorsFor(
   }
   return new Set(["ok"]);
 }
+
+/**
+ * How this consumer's client hands back a response the server refused.
+ * On `"exception"` there is no status for a guard to read, so the
+ * consumer's `catch` is the branch every failure arrives on.
+ */
+export function failureDeliveryFor(
+  summary: BehavioralSummary,
+): "response" | "exception" {
+  return readHttpMetadata(summary)?.failureDelivery ?? "response";
+}

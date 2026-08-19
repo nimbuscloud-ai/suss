@@ -356,6 +356,37 @@ describe("checkBodyCompatibility", () => {
       expect(findings[0].description).toContain("a 201 body");
     });
 
+    it("lets the default branch read a field only a failing body returns", () => {
+      const p = provider("api", [
+        transition("t-200", {
+          output: response(200, record({ name: text })),
+        }),
+        transition("t-404", {
+          output: response(404, record({ error: text })),
+        }),
+      ]);
+      const c = defaultConsumer(
+        record({ name: { type: "unknown" }, error: { type: "unknown" } }),
+      );
+
+      expect(checkBodyCompatibility(p, c)).toEqual([]);
+    });
+
+    it("does not read the accessor a client reaches the body through as a body field", () => {
+      const p = provider("api", [
+        transition("t-200", {
+          output: response(200, record({ name: text })),
+        }),
+      ]);
+      // `.then((r) => r.json()).then((r) => ...)` records the accessor
+      // again inside the shape it already unwrapped once.
+      const c = defaultConsumer(
+        record({ name: { type: "unknown" }, body: { type: "unknown" } }),
+      );
+
+      expect(checkBodyCompatibility(p, c)).toEqual([]);
+    });
+
     it("emits a default-branch optional finding when the 2xx body declares the field optional", () => {
       const optionalText: TypeShape = {
         type: "union",

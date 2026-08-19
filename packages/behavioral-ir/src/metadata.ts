@@ -640,6 +640,14 @@ export const HttpMetadataSchema = z.object({
    * absent.
    */
   successAccessors: z.array(z.string()).optional(),
+  /**
+   * How the consumer's client hands back a response the server refused.
+   * `"response"` is fetch, where the caller reads the status. `"exception"`
+   * is axios and ky, where every non-2xx reaches the caller through a
+   * `catch` and no status guard can be written. Falls back to
+   * `"response"` when absent.
+   */
+  failureDelivery: z.enum(["response", "exception"]).optional(),
   /** Code that implements this declared route, when the manifest says which. */
   implementingHandler: HttpHandlerPointerSchema.optional(),
   /** The range spec ("2XX", "5xx", and so on) this transition's response covers. */

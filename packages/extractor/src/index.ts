@@ -40,6 +40,7 @@ import type {
   TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
+import type { FailureDelivery } from "./framework.js";
 import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
@@ -72,6 +73,7 @@ export type {
   DiscoveredSubUnitParent,
   DiscoveryMatch,
   DiscoveryPattern,
+  FailureDelivery,
   InputMappingPattern,
   InvocationRecognizer,
   PatternPack,
@@ -301,6 +303,8 @@ export interface RawCodeStructure {
   statusAccessors?: string[];
   /** The same, for the success flag: `ok` for fetch, nothing for axios. */
   successAccessors?: string[];
+  /** Whether this client's non-2xx arrives as a response or a rejection. */
+  failureDelivery?: FailureDelivery;
   /** Left exactly as written, because the extractor does not depend on
    * graphql-js. The parsing happens at check time. */
   graphqlDocument?: string;
@@ -604,6 +608,9 @@ function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
   }
   if (raw.successAccessors !== undefined && raw.successAccessors.length > 0) {
     http.successAccessors = raw.successAccessors;
+  }
+  if (raw.failureDelivery !== undefined) {
+    http.failureDelivery = raw.failureDelivery;
   }
   return Object.keys(http).length > 0 ? http : null;
 }

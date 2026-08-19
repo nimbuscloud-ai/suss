@@ -1,8 +1,12 @@
+import { isCatchEntry } from "@suss/behavioral-ir";
+
 import {
+  failureDeliveryFor,
   statusAccessorsFor,
   successAccessorsFor,
 } from "../contract/declaredContract.js";
 import { predicatesMatch } from "../match.js";
+import { consumerDiscriminatesByContent } from "./contentDiscrimination.js";
 import {
   extractResponseStatus,
   hasOpaqueStatus,
@@ -16,6 +20,8 @@ import {
   branchHandlesStatus,
   branchStatusRanges,
   consumerHandlesStatus,
+  fallthroughGuards,
+  guardsForBranch,
 } from "./statusRanges.js";
 
 import type {
@@ -24,6 +30,38 @@ import type {
   Predicate,
   Transition,
 } from "@suss/behavioral-ir";
+
+/**
+ * Whether the consumer has anything at all for a status the provider
+ * can send. Four things count, and the README beside this file says why
+ * each one does: a branch that admits the status, a fall-through over
+ * the 2xx class, a guard on a body field only the failing status
+ * returns, and a catch on a client that throws rather than returning a
+ * response.
+ */
+function coverageOf(
+  provider: BehavioralSummary,
+  consumer: BehavioralSummary,
+): (status: number) => boolean {
+  const handles = consumerHandlesStatus(consumer);
+  const hasDefault = consumer.transitions.some((ct) => ct.isDefault);
+  const discriminatesByContent = consumerDiscriminatesByContent(
+    provider,
+    consumer,
+  );
+  const catchesThrownFailures =
+    failureDeliveryFor(consumer) === "exception" &&
+    consumer.transitions.some((ct) => ct.conditions.some(isCatchEntry));
+
+  return (status) => {
+    if (isSuccessStatus(status)) {
+      return handles(status) || hasDefault;
+    }
+    return (
+      handles(status) || discriminatesByContent(status) || catchesThrownFailures
+    );
+  };
+}
 
 export function checkProviderCoverage(
   provider: BehavioralSummary,
@@ -34,8 +72,7 @@ export function checkProviderCoverage(
   const statusAccessors = statusAccessorsFor(consumer);
   const successAccessors = successAccessorsFor(consumer);
 
-  const consumerHandles = consumerHandlesStatus(consumer);
-  const consumerHasDefault = consumer.transitions.some((ct) => ct.isDefault);
+  const covers = coverageOf(provider, consumer);
 
   // Group provider transitions by status code for sub-case analysis
   const providerByStatus = new Map<number, Transition[]>();
@@ -58,10 +95,7 @@ export function checkProviderCoverage(
       continue;
     }
 
-    if (
-      !consumerHandles(status) &&
-      !(consumerHasDefault && isSuccessStatus(status))
-    ) {
+    if (!covers(status)) {
       findings.push({
         kind: "unhandledProviderCase",
         boundary,
@@ -94,8 +128,7 @@ export function checkProviderCoverage(
         (ct.isDefault && isSuccessStatus(status)) ||
         branchHandlesStatus(
           ct.conditions,
-          statusAccessors,
-          successAccessors,
+          guardsForBranch(ct, statusAccessors, successAccessors),
           status,
         ),
     );
@@ -218,5 +251,8 @@ function isStatusPredicate(
   if (p.type === "negation") {
     return isStatusPredicate(p.operand, accessors, successAccessors);
   }
-  return branchStatusRanges([p], accessors, successAccessors) !== null;
+  return (
+    branchStatusRanges([p], fallthroughGuards(accessors, successAccessors)) !==
+    null
+  );
 }

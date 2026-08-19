@@ -3,6 +3,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { readHttpMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { axiosPack } from "./index.js";
@@ -32,6 +33,10 @@ describe("axiosPack — pack shape", () => {
     const status = semantics.find((s) => s.name === "status");
     expect(status?.semantics.type).toBe("statusCode");
   });
+
+  it("says a refused request rejects rather than coming back as a response", async () => {
+    expect(axiosPack().failureDelivery).toBe("exception");
+  });
 });
 
 describe("axiosPack — integration", () => {
@@ -57,6 +62,7 @@ describe("axiosPack — integration", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0].kind).toBe("client");
     expect(summaries[0].identity.name).toBe("getUser");
+    expect(readHttpMetadata(summaries[0])?.failureDelivery).toBe("exception");
     expect(summaries[0].identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/users/1" },

@@ -13,6 +13,8 @@
  * enclosure conditions plus an opaque conjunct instead of guessing.
  */
 
+import { CATCH_ENTRY_TEXT } from "@suss/behavioral-ir";
+
 import type {
   CaseGroup,
   ConditionInfo,
@@ -108,7 +110,7 @@ const loopCompletedCond = <Cond>(
 /** The catch entry condition, stable across languages so transition IDs stay stable. */
 const catchEntryCond = <Cond>(): PathCond<Cond> =>
   fixedCond<Cond>(
-    { sourceText: "catch", expression: null },
+    { sourceText: CATCH_ENTRY_TEXT, expression: null },
     "positive",
     "catchBlock",
   );
