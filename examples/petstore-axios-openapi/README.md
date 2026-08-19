@@ -16,7 +16,7 @@ make all
 
 1. `make extract` runs `suss extract -p tsconfig.json -f axios -o out/consumer.json`
 2. `make contract` runs `suss contract --from openapi petstore-openapi.json -o out/provider.json`
-3. `make check` runs `suss check --dir out/` (intentionally exits non-zero when there are error-severity findings, so CI pipelines fail on regressions)
+3. `make check` runs `suss check --dir out/ --fail-on warning` (intentionally exits non-zero on the warnings this consumer's bugs produce, so CI pipelines fail on regressions)
 
 Or inspect each side as a human-readable rendering:
 
@@ -27,25 +27,26 @@ make inspect-provider
 
 ## What you should see
 
-The `check` step produces 18 findings: 7 errors, 7 warnings, and 4 info. Below is what each one means and which line of the consumer caused it.
+The `check` step produces 16 findings: 12 warnings and 4 info. Below is what each one means and which line of the consumer caused it.
 
-### Errors — provider produces a status the consumer doesn't handle
+### Warnings: provider produces a status the consumer doesn't handle
 
-These are real bugs in the consumer. Petstore declares 200, 400, and 404 for `GET /pet/{petId}` (and 200, 400 for `findByStatus`); the consumer ignores 400 in every shape and ignores 404 in one.
+These are bugs in the consumer, reported as `unhandledProviderCase` at warning severity: whether an uncovered status is a defect depends on intent the code does not state, which is why the run gates on them only with `--fail-on warning`. Petstore declares 200, 400, and 404 for `GET /pet/{petId}` (and 200, 400 for `findByStatus`); the consumer ignores 400 in every shape and ignores 404 in two.
 
 | Consumer | Endpoint | Missed status | Why |
 |----------|----------|---------------|-----|
 | `getPetById` (line 23)  | `GET /pet/{petId}`        | 400 | branches on `status === 404` only |
-| `safeGetPet` (line 33)  | `GET /pet/{petId}`        | 400 | catches 404 only via `err.response?.status` |
 | `describePet` (line 66) | `GET /pet/{petId}`        | 400 + 404 | no status handling at all, assumes 200 |
 | `listPets` (line 48)    | `GET /pet/findByStatus`   | 400 | wrapper-callsite (via `getJson`), no status handling |
 | `describePetViaWrapper` (line 58) | `GET /pet/{petId}` | 400 + 404 | wrapper-callsite, no status handling |
 
-Note that `listPets` doesn't directly call axios — it calls `getJson()` from `api-client.ts`, which forwards `path` to `axios.get`. `suss` walks references to wrapper functions and synthesises a per-caller summary so the call site is still pairable.
+`safeGetPet` (line 33) catches thrown failures via `err.response?.status`, and a catch on a client that throws counts as coverage, so it reports nothing.
 
-### Warnings: the same seven gaps, from the contract's side
+Note that `listPets` doesn't directly call axios. It calls `getJson()` from `api-client.ts`, which forwards `path` to `axios.get`. `suss` walks references to wrapper functions and synthesises a per-caller summary so the call site is still pairable.
 
-Each unhandled status above is also reported as a `consumerContractViolation` at warning severity ("Contract declares response 400 but consumer does not handle it"). The error comes from pairing the two summaries; the warning comes from checking the consumer against the declared OpenAPI contract directly. Adding the missing consumer branch clears the error and its warning together.
+### Warnings: the same gaps, from the contract's side
+
+Each unhandled status above is also reported as a `consumerContractViolation` at warning severity ("Contract declares response 400 but consumer does not handle it"). One comes from pairing the two summaries; the other comes from checking the consumer against the declared OpenAPI contract directly. Adding the missing consumer branch clears both together.
 
 ### Info — consumer reads a field the provider declares optional
 

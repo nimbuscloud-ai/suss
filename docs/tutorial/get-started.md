@@ -117,16 +117,19 @@ which argument is which.
 ## Step 5. Compare them
 
 ```bash
-npx suss check --dir summaries/
+npx suss check --dir summaries/ --fail-on warning
 ```
 
+An uncovered status is a warning, because whether the fall-through is
+the intended handling is your call to make, and a default run only
+fails on errors. `--fail-on warning` prints warnings and fails on them,
+which is what this tutorial wants: the disagreement is the point.
+
 ```
-Compared 1 boundary:
-  GET /users/{id}
-    suss-tutorial::api.ts::get <-> suss-tutorial::client.ts::loadUser
+Compared 1 boundary.
 
 ────────────────────────────────────────────────────────────
-[ERROR] unhandledProviderCase
+[WARNING] unhandledProviderCase
   Provider produces status 404 but no consumer branch handles it
   provider: src/api.ts::get (src/api.ts:5)
   consumer: src/client.ts::loadUser (src/client.ts:1)
@@ -137,7 +140,7 @@ Compared 1 boundary:
       provider: { transitionId: "get:response:404:afd032b" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
-1 finding: 1 error, 0 warning, 0 info
+1 finding: 0 error, 1 warning, 0 info
 ```
 
 The endpoint separates "no such user" from every other failure. The
@@ -170,13 +173,11 @@ export async function loadUser(id: string) {
 
 ```bash
 npx suss extract -f fetch -o summaries/web.json
-npx suss check --dir summaries/
+npx suss check --dir summaries/ --fail-on warning
 ```
 
 ```
-Compared 1 boundary:
-  GET /users/{id}
-    suss-tutorial::api.ts::get <-> suss-tutorial::client.ts::loadUser
+Compared 1 boundary.
 
 No findings. Every compared boundary agreed.
 ```
@@ -197,12 +198,12 @@ endpoint again and compare:
 
 ```bash
 npx suss extract -f hono -o summaries/api.json
-npx suss check --dir summaries/
+npx suss check --dir summaries/ --fail-on warning
 ```
 
 ```
 ────────────────────────────────────────────────────────────
-[ERROR] unhandledProviderCase
+[WARNING] unhandledProviderCase
   Provider produces status 410 but no consumer branch handles it
   provider: src/api.ts::get (src/api.ts:5)
   consumer: src/client.ts::loadUser (src/client.ts:1)
@@ -213,12 +214,12 @@ npx suss check --dir summaries/
       provider: { transitionId: "get:response:410:3b915da" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
-1 finding: 1 error, 0 warning, 0 info
+1 finding: 0 error, 1 warning, 0 info
 ```
 
-Nobody touched the caller, and the caller is now wrong. `check` exits
-non-zero, so this fails on the pull request that adds the 410 rather
-than in a bug report a week later.
+Nobody touched the caller, and the caller is now wrong. With
+`--fail-on warning` the run exits non-zero, so this fails on the pull
+request that adds the 410 rather than in a bug report a week later.
 
 ## What happened
 

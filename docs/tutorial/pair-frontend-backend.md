@@ -168,17 +168,19 @@ backend/src/server.ts
 ## Step 6. Compare them
 
 ```bash
-npx suss check --dir summaries
+npx suss check --dir summaries --fail-on warning
 ```
 
+The missing 404 branch is a warning: whether the loader's fall-through
+is the intended handling is a judgement, so a default run does not fail
+on it. `--fail-on warning` prints warnings and fails on them, which is
+what this tutorial wants. The `.name` read is an error either way.
+
 ```
-Compared 1 boundary:
-  GET /users/{id}
-    suss-pair-tutorial::server.ts::get <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
-    openapi:openapi.yaml::GET /users/{id} <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
+Compared 1 boundary.
 
 ────────────────────────────────────────────────────────────
-[ERROR] unhandledProviderCase
+[WARNING] unhandledProviderCase
   Provider produces status 404 but no consumer branch handles it
   provider: backend/src/server.ts::get (backend/src/server.ts:14)
     also from: openapi:openapi.yaml::GET /users/{id}
@@ -188,18 +190,6 @@ Compared 1 boundary:
     - kind: unhandledProviderCase
       boundary: "GET /users/{id}"
       provider: { transitionId: "get:response:404:afd032b" }
-      reason: TODO say why you accept this
-────────────────────────────────────────────────────────────
-[ERROR] unhandledProviderCase
-  Consumer's default branch reads fields on status 200 that the provider never sends
-  provider: backend/src/server.ts::get (backend/src/server.ts:14)
-    also from: openapi:openapi.yaml::GET /users/{id}
-  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
-  boundary: express (http) GET /users/:id
-  to silence this one, add to the rules in .sussignore.yml:
-    - kind: unhandledProviderCase
-      boundary: "GET /users/{id}"
-      provider: { transitionId: "get:response:200:ddaf2ab" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 [WARNING] consumerContractViolation
@@ -213,10 +203,19 @@ Compared 1 boundary:
   provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
   consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
   boundary: openapi (http) GET /users/{id}
+────────────────────────────────────────────────────────────
+[ERROR] unhandledProviderCase
+  Consumer's default branch reads fields that a 200 body the provider can send does not include
+  provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
+────────────────────────────────────────────────────────────
+4 findings: 1 error, 3 warning, 0 info
 ```
 
-Both bugs are there, and each is reported twice: once against the
-handler, once against the document.
+Both bugs are there, and each is reported twice: once from pairing the
+two summaries, once from checking the loader against the declared
+contract.
 
 The `.name` read is the interesting one. suss followed the response
 through two `.then` callbacks to work out which fields the loader
@@ -246,14 +245,11 @@ Re-read the frontend and compare again:
 
 ```bash
 npx suss extract -p tsconfig.json -f fetch -o summaries/frontend.json
-npx suss check --dir summaries
+npx suss check --dir summaries --fail-on warning
 ```
 
 ```
-Compared 1 boundary:
-  GET /users/{id}
-    suss-pair-tutorial::server.ts::get <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
-    openapi:openapi.yaml::GET /users/{id} <-> suss-pair-tutorial::frontend/src/loadUser.ts::loadUser
+Compared 1 boundary.
 
 No findings. Every compared boundary agreed.
 ```

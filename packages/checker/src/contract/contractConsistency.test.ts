@@ -116,7 +116,7 @@ describe("checkContractConsistency", () => {
         f.kind === "consumerContractViolation" && f.description.includes("418"),
     );
     expect(undeclared).toBeDefined();
-    expect(undeclared?.severity).toBe("error");
+    expect(undeclared?.severity).toBe("warning");
   });
 
   it("flags consumer as violating when it fails to handle a declared non-success status", () => {

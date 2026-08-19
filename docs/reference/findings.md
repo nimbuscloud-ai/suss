@@ -20,6 +20,18 @@ Every finding follows the same JSON shape:
 | `sources` | `string[]?` | Present only when two or more identical findings from different providers were collapsed by the dedupe pass. Each entry is a `${file}::${name}` matching `FindingSide.summary`. |
 | `suppressed` | `FindingSuppression?` | Present only when a `.sussignore` rule matched. It contains `{ reason, effect, originalSeverity? }`, see [Suppressions](/suppressions). |
 
+## How a kind gets its severity
+
+One principle decides every default severity.
+
+- **Error: the code will misread or lose data on an input that the other side produces.** The claim is about behavior, both sides are in the run, and the corpus says the kind is usually right when it fires.
+- **Warning: the two sides disagree in a way that needs a person to judge.** The disagreement is there in the files, and whether it is a defect depends on intent the repository does not state.
+- **Info: suss is reporting on itself.** Confidence, coverage, something it could not read. Never about the code being wrong.
+
+The test for error is outcome-shaped: name the input and the wrong result. Every kind below states that sentence next to its severity. A kind for which no such sentence can be written is a warning by construction. A kind at error whose measured precision over the pinned corpus falls under half moves down until its model improves; that is how `unhandledProviderCase` moved to warning.
+
+---
+
 Three of the kinds below, `boundaryFieldUnknown`, `boundaryFieldUnused`, and `boundaryShapeMismatch`, are **generic** and emitted by every per-domain checker. The boundary's `binding.semantics.name` gives you the domain context (storage, runtime-config, graphql-resolver, message-bus, etc.), and the `aspect` field says which direction the failure runs in. The remaining kinds are domain-specific or meta.
 
 The catalog is organised: **shipped generic kinds**, then **shipped domain-specific kinds** grouped by domain, then **reserved kinds** (in the IR enum, awaiting an emitter), then **meta kinds**.
@@ -32,7 +44,9 @@ These three kinds replace the per-domain field-mismatch enums earlier versions u
 
 ### `boundaryFieldUnknown`
 
-**Severity:** error (read / write aspects), warning (construct / send aspects) • **Emitted by:** every domain pairing pass
+**Severity:** error (read / write aspects against a contract in the run), warning (construct / send aspects, or a provider suss did not extract) • **Emitted by:** every domain pairing pass
+
+A read of a field the contract does not declare comes back with nothing, no error says so, and the code branches on what is not there. That is the error sentence; the construct / send aspects and the missing-provider case cannot state one, so they stay warnings.
 
 The consumer references a field the provider's contract doesn't declare. Per-domain instances:
 
@@ -59,15 +73,17 @@ The consumer references a field the provider's contract doesn't declare. Per-dom
 
 - **GraphQL** (`binding.semantics.name = "graphql-operation"`, aspect `read`)
   ```
-  [WARNING] boundaryFieldUnknown (aspect: read)
+  [ERROR] boundaryFieldUnknown (aspect: read)
     GraphQL operation "usePet.GetPet" selects "Pet.deletedAt" but the
-    provider's schema doesn't declare that field on "Pet". The server
-    response will not include it.
+    provider's schema doesn't declare that field on "Pet". Likely a
+    stale selection after a schema change.
     provider: Pet.deletedAt (undeclared)
     consumer: src/usePet.ts::usePet.GetPet
     boundary: apollo-client (http) query GetPet
   ```
-  *(Also fires for missing root resolvers, operation selects `Query.deletedAt` but no resolver implements it.)*
+  The server rejects the whole operation at validation, so every operation using the selection fails, not only the one field. A selection kept in a shared fragment breaks every operation that spreads it.
+
+  *(Also fires at warning for a missing root resolver, operation selects `Query.deletedAt` but no extracted resolver implements it. That resolver may live in a repository suss did not read, so the provider side is not in the run and no outcome can be stated.)*
 
 - **React / Storybook** (`binding.semantics.name = "function-call"`, aspect `construct`)
   ```
@@ -83,6 +99,8 @@ The consumer references a field the provider's contract doesn't declare. Per-dom
 ### `boundaryFieldUnused`
 
 **Severity:** warning • **Emitted by:** every domain pairing pass
+
+No input produces a wrong result here: an unread field breaks nothing at runtime, and whether it is dead or reserved for future use is intent the repository does not state.
 
 The provider declares a field that no consumer references. Per-domain instances:
 
@@ -119,6 +137,8 @@ The provider declares a field that no consumer references. Per-domain instances:
 
 **Severity:** per-emitter (typically warning for read-side coercions, error for write-side type mismatches) • **Emitted by:** `checkMetric`
 
+The error sentence for the one shipped emitter: the alert compares each window against a single number, the metric records a spread of buckets, so the comparison never runs against what the metric actually measures and the alert never fires.
+
 Both sides declare the value but disagree about its form (type, nullability, content-type, etc.). The `aspect` says which side discovered the disagreement (read / write / send / receive / construct / selector).
 
 `checkMetric` is the one emitter today. A monitoring system's alert compares a series against a single number, and the resource that declares the series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
@@ -145,13 +165,17 @@ The kind is also where the message-bus body-shape pairing will report, along wit
 
 **Severity:** error
 
-The provider declares a field as required and the consumer doesn't supply it. The `aspect` usually points at the payload (`send` / `construct`). At runtime the provider rejects the request, returns a 4xx, or the component fails to render.
+A request sent without the required field is rejected by the provider, so the call fails every time it runs: a 4xx, or a component that fails to render.
+
+The provider declares a field as required and the consumer doesn't supply it. The `aspect` usually points at the payload (`send` / `construct`).
 
 No emitter ships today. This kind subsumes earlier per-domain reserved kinds: `requiredHeaderMissing`, `requiredQueryParamMissing`, `componentRequiredPropMissing`, `graphqlRequiredArgMissing`.
 
 ### `boundaryConstraintViolation`
 
 **Severity:** per-emitter
+
+Each emitter states its own outcome sentence when it ships: a value the store refuses loses the write, while a value the store silently truncates loses part of it.
 
 The value supplied for a field violates a value-level constraint the provider declared, enum membership, declared length, etc. This is distinct from `boundaryShapeMismatch` because the value's *type* is correct; only the value itself violates the constraint.
 
@@ -161,7 +185,7 @@ No emitter ships today. This kind subsumes earlier per-domain reserved kinds: `s
 
 **Severity:** error • **Emitted by:** `checkStorage`
 
-The consumer picks items by something the provider does not key on. A store that only accepts its key attributes in a query refuses the request, so the call fails when it runs rather than returning nothing.
+The consumer picks items by something the provider does not key on. A store that only accepts its key attributes in a query refuses the request, so every run of this query fails rather than returning nothing.
 
 ```
 [ERROR] boundarySelectorMismatch (aspect: read)
@@ -181,7 +205,9 @@ A contract that does not state `metadata.storageContract.identifies` claims noth
 
 ### `unhandledProviderCase` *(shipped)*
 
-**Severity:** warning • **Emitted by:** `checkProviderCoverage`, `checkBodyCompatibility`
+**Severity:** warning for an uncovered status, error for a misread body • **Emitted by:** `checkProviderCoverage`, `checkBodyCompatibility`, `checkSemanticBridging`
+
+The two severities split on the outcome test. A consumer branch that reads fields a body the provider can send does not include misreads that response every time it arrives, so the body-field form is an error. An uncovered status has no such sentence: the fall-through may be the intended handling, and over the pinned corpus the uncovered-status form was wrong far more often than right, so it is a warning.
 
 The provider produces a status code (or a body field on a status) that no consumer branch reads. The consumer hits its fall-through path, throwing, returning undefined, or silently ignoring, when the provider returns that status.
 
@@ -199,15 +225,19 @@ The provider produces a status code (or a body field on a status) that no consum
 
 ### `deadConsumerBranch` *(shipped)*
 
-**Severity:** error • **Emitted by:** `checkConsumerSatisfaction`
+**Severity:** warning • **Emitted by:** `checkConsumerSatisfaction`
 
-The consumer has a branch that reads a status the provider never produces. That branch never runs, and it usually comes from a consumer copy-pasted from another endpoint.
+The branch never runs, and nothing misreads at runtime because of it, so no outcome sentence can be written. Whether to delete it or to fix the provider is a judgement.
 
-**Bug when:** common. Delete the branch, or add the missing status to the provider contract.
+The consumer has a branch that reads a status the provider never produces. It usually comes from a consumer copy-pasted from another endpoint.
+
+**Fix:** delete the branch, or add the missing status to the provider contract.
 
 ### `providerContractViolation` *(shipped)*
 
 **Severity:** error • **Emitted by:** `checkContractConsistency`
+
+A caller built to the declared contract meets a status or a body the contract never told it about, and takes a path written for something else.
 
 The provider produces a status code (or body shape) its declared contract doesn't include. This is a self-inconsistency: the provider and consumer fields point at the same summary. The checker skips it when the contract source is itself derived from the implementation.
 
@@ -217,13 +247,17 @@ Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap 
 
 ### `consumerContractViolation` *(shipped)*
 
-**Severity:** warning • **Emitted by:** `checkContractConsistency`, `checkConsumerContract`, `checkBodyCompatibility`
+**Severity:** warning (info for a read of a field the contract declares optional) • **Emitted by:** `checkContractConsistency`, `checkConsumerContract`, `checkBodyCompatibility`
+
+No outcome can be stated against a contract alone: a branch for an undeclared status never runs, and a missing branch may be the intended fall-through. Which side is right, the branch or the contract, is a judgement.
 
 The consumer's expected statuses or body-field reads disagree with the contract. It handles a status the contract doesn't declare, fails to handle one the contract requires, or reads a body field the contract doesn't promise.
 
 ### `contractDisagreement` *(shipped)*
 
 **Severity:** warning • **Emitted by:** `checkContractAgreement`
+
+Two contract sources disagree and at most one of them is right; which one is a judgement the repository does not settle.
 
 Two or more providers at the same boundary (e.g. an OpenAPI spec and a CFN template) declare contracts that disagree. `sources` lists every contributor.
 
@@ -234,6 +268,24 @@ Two or more providers at the same boundary (e.g. an OpenAPI spec and a CFN templ
   boundary: openapi (http) GET /pets/:id
 ```
 
+### `contractOperationUnimplemented` *(shipped)*
+
+**Severity:** warning • **Emitted by:** `checkContractCompleteness`
+
+The handler may live in a repository suss did not read, so no outcome can be stated; whether the operation is missing or elsewhere is a judgement.
+
+A contract source (an OpenAPI document, a CFN template) declares an operation and no extracted provider implements it.
+
+```
+[WARNING] contractOperationUnimplemented
+  The openapi contract declares DELETE /pets/{petId} and no extracted
+  provider implements it.
+```
+
+**Legitimate when:** the handler lives in another repository or service. Suppress.
+
+**Bug when:** the operation was removed from the code and the contract still declares it. Remove it from the contract.
+
 ---
 
 ## React / Storybook findings
@@ -241,6 +293,8 @@ Two or more providers at the same boundary (e.g. an OpenAPI spec and a CFN templ
 ### `scenarioCoverageGap` *(shipped)*
 
 **Severity:** warning • **Emitted by:** `checkComponentStoryAgreement`
+
+Nothing misbehaves at runtime; the branch is merely undeclared in the stories, and whether it deserves one is a judgement.
 
 A component has a conditional branch that depends on a prop, but no story supplies that prop. The branch exists with no declared coverage, so a change can break it silently.
 
@@ -254,6 +308,8 @@ A component has a conditional branch that depends on a prop, but no story suppli
 
 **Severity:** warning • **Emitted by:** `checkMessageBus`
 
+The queue may be declared in a stack suss did not read, so the provider side is not in the run and no outcome can be stated.
+
 Code sends a message to a queue / topic that no provider in the analyzed scope declares. Common false-positives: multi-repo deployments (queue declared in another stack); work-in-progress before infra is wired up.
 
 **Fix:** add the contract source that declares the queue, or suppress.
@@ -262,13 +318,13 @@ Code sends a message to a queue / topic that no provider in the analyzed scope d
 
 **Severity:** warning • **Emitted by:** `checkMessageBus`
 
-A consumer Lambda is wired to receive from a channel but no code in the project sends to that channel. It could be dead infra, or the producer may live in a different repo.
+A consumer Lambda is wired to receive from a channel but no code in the project sends to that channel. It could be dead infra, or the producer may live in a different repo; which of the two needs a person.
 
 ### `messageBusUnused` *(shipped)*
 
 **Severity:** warning • **Emitted by:** `checkMessageBus`
 
-A queue / topic is declared in infrastructure but neither produced to nor consumed from anywhere in the project. It is probably an orphan resource left over from a removed feature.
+A queue / topic is declared in infrastructure but neither produced to nor consumed from anywhere in the project. Nothing breaks at runtime; it is probably an orphan resource left over from a removed feature, and removing it is a judgement.
 
 ---
 
@@ -294,9 +350,9 @@ Or several providers declare a directory containing the same source file, and th
 
 These kinds exist in the enum but no checker emits them today. They cover failure modes distinct enough not to fold into the generic `boundaryField*` / `boundaryShapeMismatch` family.
 
-- `restMethodOnUnknownPath`: error. The consumer's call targets a `(method, path)` the provider doesn't expose. This is distinct from `boundaryFieldUnknown` because the mismatch is at the boundary identity level (the endpoint itself), not at field level. Today's pairing layer leaves both summaries unmatched, which quietly obscures what is probably a typo. The emitter ships once the pairing layer adds a "consumer with no provider" finding distinct from "unmatched / no boundary binding."
-- `authPolicyMismatch`: error. The provider requires authentication and the consumer's call doesn't supply it correctly. This one is boundary-level (auth policy) rather than field-level, so it is kept distinct from the generic kinds. It needs auth-policy modeling on both sides (OpenAPI security schemes plus the client-side header / interceptor patterns).
-- `envVarRequiredButUnmarked`: warning. The code treats `process.env.X` as definitely-required (`if (!process.env.X) throw …`) but the runtime contract doesn't mark it required. This is about contract-side metadata rather than a disagreement over a field or its form. The emitter waits for the runtime contract to grow a "required" attribute on env-var entries.
+- `restMethodOnUnknownPath`: error. Every call to the missing endpoint returns a 404 the caller wrote no branch for. The consumer's call targets a `(method, path)` the provider doesn't expose. This is distinct from `boundaryFieldUnknown` because the mismatch is at the boundary identity level (the endpoint itself), not at field level. Today's pairing layer leaves both summaries unmatched, which quietly obscures what is probably a typo. The emitter ships once the pairing layer adds a "consumer with no provider" finding distinct from "unmatched / no boundary binding."
+- `authPolicyMismatch`: error. Every call without the credential the provider requires is rejected, so the consumer's request fails whenever it runs. The provider requires authentication and the consumer's call doesn't supply it correctly. This one is boundary-level (auth policy) rather than field-level, so it is kept distinct from the generic kinds. It needs auth-policy modeling on both sides (OpenAPI security schemes plus the client-side header / interceptor patterns).
+- `envVarRequiredButUnmarked`: warning. Nothing misreads while the var is set; the contract merely understates what the code needs, and tightening it is a judgement. The code treats `process.env.X` as definitely-required (`if (!process.env.X) throw …`) but the runtime contract doesn't mark it required. This is about contract-side metadata rather than a disagreement over a field or its form. The emitter waits for the runtime contract to grow a "required" attribute on env-var entries.
 
 ---
 
@@ -333,6 +389,8 @@ A pairing pass refused to emit substantive findings because too many predicates 
 ### `ambiguousProvider`
 
 **Severity:** warning
+
+Which of the colliding providers the code reaches needs a person; the run itself cannot settle it, and nothing is known to misbehave.
 
 One consumer matched two providers where at most one of them can be right.
 

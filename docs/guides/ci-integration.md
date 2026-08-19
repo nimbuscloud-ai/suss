@@ -106,9 +106,9 @@ rules:
     boundary: GET /legacy/health
     reason: legacy handler kept around for load balancer; intentional
     effect: mark  # still shown, doesn't count toward exit threshold
-  - kind: unhandledProviderCase
+  - kind: boundaryFieldUnknown
     boundary: POST /users
-    effect: downgrade  # error → warning; still counted, less severe
+    effect: downgrade  # one severity lower; still counted
     reason: planned work in JIRA-1234
 ```
 

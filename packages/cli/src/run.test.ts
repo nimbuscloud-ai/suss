@@ -119,6 +119,41 @@ const matchingConsumer: BehavioralSummary = {
   ],
 };
 
+// The provider's 200 body has only "code" and the consumer's 200 branch
+// reads "message", so the body check reports one error-severity finding.
+const mismatchedBodyProvider: BehavioralSummary = {
+  ...minimalSummary,
+  transitions: [
+    {
+      ...minimalSummary.transitions[0],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: { type: "record", properties: { code: { type: "text" } } },
+        headers: {},
+      },
+    },
+  ],
+};
+
+const mismatchedBodyConsumer: BehavioralSummary = {
+  ...matchingConsumer,
+  transitions: [
+    {
+      ...matchingConsumer.transitions[0],
+      expectedInput: {
+        type: "record",
+        properties: {
+          body: {
+            type: "record",
+            properties: { message: { type: "unknown" } },
+          },
+        },
+      },
+    },
+  ],
+};
+
 let tmpDir: string;
 
 beforeEach(() => {
@@ -534,29 +569,8 @@ describe("runCli check", () => {
   });
 
   it("returns 1 when the checker reports any error finding", async () => {
-    // The provider declares 200 and 500, and the consumer handles only 200.
-    const provider = writeJson("provider.json", [
-      {
-        ...minimalSummary,
-        transitions: [
-          ...minimalSummary.transitions,
-          {
-            id: "h:response:500:t",
-            conditions: [],
-            output: {
-              type: "response",
-              statusCode: { type: "literal", value: 500 },
-              body: null,
-              headers: {},
-            },
-            effects: [],
-            location: { start: 6, end: 7 },
-            isDefault: false,
-          },
-        ],
-      },
-    ]);
-    const consumer = writeJson("consumer.json", [matchingConsumer]);
+    const provider = writeJson("provider.json", [mismatchedBodyProvider]);
+    const consumer = writeJson("consumer.json", [mismatchedBodyConsumer]);
     const { exit } = await capture(() => runCli(["check", provider, consumer]));
     expect(exit).toBe(1);
   });
@@ -586,28 +600,8 @@ describe("runCli check", () => {
   });
 
   it("--sussignore applies the named rule file to two-file checks", async () => {
-    const provider = writeJson("provider.json", [
-      {
-        ...minimalSummary,
-        transitions: [
-          ...minimalSummary.transitions,
-          {
-            id: "h:response:500:t",
-            conditions: [],
-            output: {
-              type: "response",
-              statusCode: { type: "literal", value: 500 },
-              body: null,
-              headers: {},
-            },
-            effects: [],
-            location: { start: 6, end: 7 },
-            isDefault: false,
-          },
-        ],
-      },
-    ]);
-    const consumer = writeJson("consumer.json", [matchingConsumer]);
+    const provider = writeJson("provider.json", [mismatchedBodyProvider]);
+    const consumer = writeJson("consumer.json", [mismatchedBodyConsumer]);
     const ignore = writeJson("rules.yml", null);
     fs.writeFileSync(
       ignore,
@@ -616,7 +610,7 @@ describe("runCli check", () => {
         "rules:",
         "  - kind: unhandledProviderCase",
         '    boundary: "GET /x"',
-        "    reason: 500 is retried by middleware",
+        "    reason: the field is optional in the UI, absent means blank",
         "    effect: hide",
       ].join("\n"),
     );
@@ -629,28 +623,8 @@ describe("runCli check", () => {
 
   it("--no-suppressions ignores an auto-discovered .sussignore", async () => {
     // The working directory has a rule in it that would hide the finding.
-    writeJson("provider.json", [
-      {
-        ...minimalSummary,
-        transitions: [
-          ...minimalSummary.transitions,
-          {
-            id: "h:response:500:t",
-            conditions: [],
-            output: {
-              type: "response",
-              statusCode: { type: "literal", value: 500 },
-              body: null,
-              headers: {},
-            },
-            effects: [],
-            location: { start: 6, end: 7 },
-            isDefault: false,
-          },
-        ],
-      },
-    ]);
-    writeJson("consumer.json", [matchingConsumer]);
+    writeJson("provider.json", [mismatchedBodyProvider]);
+    writeJson("consumer.json", [mismatchedBodyConsumer]);
     const { exit } = await capture(() =>
       runCli(["check", "--dir", tmpDir, "--no-suppressions"]),
     );
