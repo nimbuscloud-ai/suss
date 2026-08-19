@@ -188,6 +188,7 @@ export function extractRawBranches(
   const { byTerminal } = computePathConditions(
     func,
     terminals.map(({ node }) => node),
+    barriers,
   );
 
   // Synthesise a fall-through terminal when (a) the pack opted in by
@@ -216,7 +217,11 @@ export function extractRawBranches(
       terminals.push(synthetic);
       // The synthetic terminal anchors at the body itself; its
       // condition lists are the paths that fall through the body's end.
-      const pathResult = computePathConditions(func, [synthetic.node]);
+      const pathResult = computePathConditions(
+        func,
+        [synthetic.node],
+        barriers,
+      );
       byTerminal.set(
         synthetic.node,
         pathResult.fallthrough.length > 0 ? pathResult.fallthrough : [[]],

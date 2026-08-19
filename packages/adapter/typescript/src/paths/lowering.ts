@@ -17,15 +17,29 @@ import {
   type CaseGroup,
   type ConditionHandle,
   type ExitKind,
+  type StatementBlock,
   type StructuredStatement,
   UnmodeledFlow,
 } from "@suss/extractor";
 
-export const isFunctionBoundary = (node: Node): boolean =>
-  Node.isFunctionDeclaration(node) ||
-  Node.isFunctionExpression(node) ||
-  Node.isArrowFunction(node) ||
-  Node.isMethodDeclaration(node);
+import {
+  type DescentBarriers,
+  isDescentStop,
+  isInlineCallback,
+  NO_BARRIERS,
+  startsItsOwnScope,
+} from "../walk/descent.js";
+
+/**
+ * What the walk needs at every node: the pack's sub-unit barriers, the
+ * unit root they are relative to, and the map back from a raw statement
+ * to what it lowered into.
+ */
+interface LowerContext {
+  readonly func: Node;
+  readonly barriers: DescentBarriers;
+  readonly rawToStructured: Map<Node, StructuredStatement<Expression>>;
+}
 
 /**
  * Does this statement's own subtree exit the unit (return/throw not
@@ -37,7 +51,7 @@ function exitKindOf(stmt: Node): ExitKind {
   let sawReturn = false;
   let sawThrow = false;
   const visit = (node: Node): void => {
-    if (node !== stmt && isFunctionBoundary(node)) {
+    if (node !== stmt && startsItsOwnScope(node)) {
       return;
     }
     if (Node.isReturnStatement(node)) {
@@ -105,18 +119,115 @@ const conditionOf = (expr: Expression): ConditionHandle<Expression> => ({
 
 function lowerStatement(
   stmt: Statement,
-  rawToStructured: Map<Node, StructuredStatement<Expression>>,
+  ctx: LowerContext,
 ): StructuredStatement<Expression> {
-  const structured = buildStructured(stmt, rawToStructured);
-  rawToStructured.set(stmt, structured);
+  const structured = {
+    ...buildStructured(stmt, ctx),
+    callbacks: lowerCallbacksIn(ownExpressionsOf(stmt), ctx),
+  };
+  ctx.rawToStructured.set(stmt, structured);
   return structured;
 }
 
 function lowerList(
   stmts: readonly Statement[],
-  rawToStructured: Map<Node, StructuredStatement<Expression>>,
+  ctx: LowerContext,
 ): StructuredStatement<Expression>[] {
-  return spliceBlocks(stmts).map((s) => lowerStatement(s, rawToStructured));
+  return spliceBlocks(stmts).map((s) => lowerStatement(s, ctx));
+}
+
+/**
+ * The parts of `stmt` that are not lowered as statements of their own:
+ * its test, its header, the value it returns. A callback written in one
+ * of these runs where the statement does, and a callback inside a child
+ * block is collected when that block's own statements are lowered.
+ */
+function ownExpressionsOf(stmt: Statement): Node[] {
+  if (Node.isIfStatement(stmt) || Node.isSwitchStatement(stmt)) {
+    return [stmt.getExpression()];
+  }
+  if (Node.isWhileStatement(stmt) || Node.isDoStatement(stmt)) {
+    return [stmt.getExpression()];
+  }
+  if (Node.isForOfStatement(stmt) || Node.isForInStatement(stmt)) {
+    return [stmt.getInitializer(), stmt.getExpression()];
+  }
+  if (Node.isForStatement(stmt)) {
+    return [
+      stmt.getInitializer(),
+      stmt.getCondition(),
+      stmt.getIncrementor(),
+    ].filter((n) => n !== undefined);
+  }
+  if (Node.isTryStatement(stmt)) {
+    return [];
+  }
+  if (Node.isReturnStatement(stmt) || Node.isThrowStatement(stmt)) {
+    const value = stmt.getExpression();
+    return value === undefined ? [] : [value];
+  }
+  if (Node.isBreakStatement(stmt) || Node.isContinueStatement(stmt)) {
+    return [];
+  }
+  return [stmt];
+}
+
+/**
+ * The lowered bodies of the callbacks this statement passes to calls it
+ * makes. Descent stops at anything the pack claimed as a sub-unit and at
+ * every named declaration, so the set is the one the effect walk uses.
+ */
+function lowerCallbacksIn(
+  parts: readonly Node[],
+  ctx: LowerContext,
+): StatementBlock<Expression>[] {
+  const bodies: StatementBlock<Expression>[] = [];
+
+  const visit = (node: Node, root: Node): void => {
+    if (node !== root && isDescentStop(node, ctx.func, ctx.barriers)) {
+      return;
+    }
+    if (
+      node !== root &&
+      (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) &&
+      isInlineCallback(node, ctx.func, ctx.barriers)
+    ) {
+      const body = node.getBody();
+      // A concise body has no statements of its own, but a call in it
+      // can still take a callback, so the walk keeps going through it.
+      if (body !== undefined && Node.isBlock(body)) {
+        bodies.push(lowerList(body.getStatements(), ctx));
+        return;
+      }
+    } else if (node !== root && startsItsOwnScope(node)) {
+      return;
+    }
+    for (const child of node.getChildren()) {
+      visit(child, root);
+    }
+  };
+
+  for (const part of parts) {
+    visit(part, part);
+  }
+  return bodies;
+}
+
+/**
+ * The same, for an arrow written without braces. There is no statement
+ * flow to enumerate, so the callbacks in the expression are all the
+ * branching the body has.
+ */
+export function lowerExpressionBodyCallbacks(
+  expression: Node,
+  func: Node,
+  barriers: DescentBarriers = NO_BARRIERS,
+): StatementBlock<Expression>[] {
+  return lowerCallbacksIn([expression], {
+    func,
+    barriers,
+    rawToStructured: new Map(),
+  });
 }
 
 /**
@@ -133,21 +244,18 @@ function spliceBlocks(stmts: readonly Statement[]): Statement[] {
 
 function buildStructured(
   stmt: Statement,
-  rawToStructured: Map<Node, StructuredStatement<Expression>>,
+  ctx: LowerContext,
 ): StructuredStatement<Expression> {
   if (Node.isIfStatement(stmt)) {
     const elseBranch = stmt.getElseStatement();
     return {
       kind: "if",
       condition: conditionOf(stmt.getExpression()),
-      thenBody: lowerList(
-        statementsOf(stmt.getThenStatement()),
-        rawToStructured,
-      ),
+      thenBody: lowerList(statementsOf(stmt.getThenStatement()), ctx),
       elseBody:
         elseBranch === undefined
           ? null
-          : lowerList(statementsOf(elseBranch), rawToStructured),
+          : lowerList(statementsOf(elseBranch), ctx),
       exitKind: exitKindOf(stmt),
     };
   }
@@ -155,7 +263,7 @@ function buildStructured(
   if (Node.isSwitchStatement(stmt)) {
     return {
       kind: "switch",
-      groups: lowerSwitchGroups(stmt, rawToStructured),
+      groups: lowerSwitchGroups(stmt, ctx),
       exitKind: exitKindOf(stmt),
     };
   }
@@ -164,7 +272,7 @@ function buildStructured(
     return {
       kind: "loop",
       condition: { sourceText: loopHeaderText(stmt), expression: null },
-      body: lowerList(statementsOf(getLoopBody(stmt)), rawToStructured),
+      body: lowerList(statementsOf(getLoopBody(stmt)), ctx),
       exitKind: exitKindOf(stmt),
     };
   }
@@ -174,15 +282,15 @@ function buildStructured(
     const finallyBlock = stmt.getFinallyBlock();
     return {
       kind: "try",
-      tryBody: lowerList(stmt.getTryBlock().getStatements(), rawToStructured),
+      tryBody: lowerList(stmt.getTryBlock().getStatements(), ctx),
       catchBody:
         catchClause === undefined
           ? null
-          : lowerList(catchClause.getBlock().getStatements(), rawToStructured),
+          : lowerList(catchClause.getBlock().getStatements(), ctx),
       finallyBody:
         finallyBlock === undefined
           ? null
-          : lowerList(finallyBlock.getStatements(), rawToStructured),
+          : lowerList(finallyBlock.getStatements(), ctx),
       exitKind: exitKindOf(stmt),
     };
   }
@@ -216,7 +324,7 @@ function buildStructured(
  */
 function lowerSwitchGroups(
   stmt: SwitchStatement,
-  rawToStructured: Map<Node, StructuredStatement<Expression>>,
+  ctx: LowerContext,
 ): CaseGroup<Expression>[] {
   const switchText = stmt.getExpression().getText();
   const groups: CaseGroup<Expression>[] = [];
@@ -236,7 +344,7 @@ function lowerSwitchGroups(
       }
       groups.push({
         condition: null,
-        ...lowerGroupBody(stmts, rawToStructured),
+        ...lowerGroupBody(stmts, ctx),
       });
       continue;
     }
@@ -254,7 +362,7 @@ function lowerSwitchGroups(
     const sourceText = labels.map((l) => `${switchText} === ${l}`).join(" || ");
     groups.push({
       condition: { sourceText, expression: null },
-      ...lowerGroupBody(stmts, rawToStructured),
+      ...lowerGroupBody(stmts, ctx),
     });
   }
 
@@ -282,7 +390,7 @@ function validateClauseBreaks(stmts: readonly Statement[]): void {
     }
     stmt.forEachDescendant((node, traversal) => {
       if (
-        isFunctionBoundary(node) ||
+        startsItsOwnScope(node) ||
         Node.isSwitchStatement(node) ||
         isLoop(node)
       ) {
@@ -301,7 +409,7 @@ function validateClauseBreaks(stmts: readonly Statement[]): void {
 
 function lowerGroupBody(
   rawStmts: Statement[],
-  rawToStructured: Map<Node, StructuredStatement<Expression>>,
+  ctx: LowerContext,
 ): { hasTrailingBreak: boolean; body: StructuredStatement<Expression>[] } {
   // Splice before the break rules run, so a break at the end of a
   // braced case counts as the clause's own trailing break.
@@ -310,13 +418,13 @@ function lowerGroupBody(
   const last = stmts[stmts.length - 1];
   const hasTrailingBreak = last !== undefined && Node.isBreakStatement(last);
   const kept = hasTrailingBreak ? stmts.slice(0, -1) : stmts;
-  const body = lowerList(kept, rawToStructured);
+  const body = lowerList(kept, ctx);
   // A trailing break still gets lowered (registered), even though it's
   // excluded from `body` and never enumerated, matching the legacy
   // collector, which also marked it "visited" so a caller-given
   // terminal that happens to name it still resolves a home.
   if (hasTrailingBreak && last !== undefined) {
-    lowerStatement(last, rawToStructured);
+    lowerStatement(last, ctx);
   }
   return { hasTrailingBreak, body };
 }
@@ -352,9 +460,12 @@ export interface LoweredFunctionBody {
 export function lowerFunctionBody(
   body: Block,
   terminalNodes: readonly Node[],
+  func: Node = body,
+  barriers: DescentBarriers = NO_BARRIERS,
 ): LoweredFunctionBody {
   const rawToStructured = new Map<Node, StructuredStatement<Expression>>();
-  const statements = lowerList(body.getStatements(), rawToStructured);
+  const ctx: LowerContext = { func, barriers, rawToStructured };
+  const statements = lowerList(body.getStatements(), ctx);
 
   const terminalsByStmt = new Map<StructuredStatement<Expression>, Node[]>();
   const terminalHomeRaw = new Map<Node, Node>();

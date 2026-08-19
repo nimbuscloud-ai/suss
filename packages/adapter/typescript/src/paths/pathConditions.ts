@@ -50,11 +50,12 @@
 // lists (and therefore transition IDs) are byte-identical on shapes
 // the legacy pipeline handled soundly.
 
-import { Node } from "ts-morph";
+import { type Expression, Node } from "ts-morph";
 
 import {
   enumerateStructuredPaths,
   PathBudgetExceeded,
+  type StructuredStatement,
   UnmodeledFlow,
 } from "@suss/extractor";
 
@@ -63,7 +64,16 @@ import {
   collectAncestorConditionInfosBelow,
   type FunctionRoot,
 } from "../conditions.js";
-import { isFunctionBoundary, lowerFunctionBody } from "./lowering.js";
+import {
+  type DescentBarriers,
+  isDescentStop,
+  NO_BARRIERS,
+} from "../walk/descent.js";
+import {
+  type LoweredFunctionBody,
+  lowerExpressionBodyCallbacks,
+  lowerFunctionBody,
+} from "./lowering.js";
 
 /** Paths for one terminal: each entry is one path's condition list. */
 export type TerminalPaths = ConditionInfo[][];
@@ -90,10 +100,14 @@ export interface PathConditionsResult {
  * `lowering.ts` has to represent. Nested function bodies don't count,
  * their control flow is not the unit's statement flow.
  */
-function containsUnmodeledFlow(body: Node): boolean {
+function containsUnmodeledFlow(
+  body: Node,
+  func: Node,
+  barriers: DescentBarriers,
+): boolean {
   let found = false;
   body.forEachDescendant((node, traversal) => {
-    if (isFunctionBoundary(node)) {
+    if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }
@@ -103,6 +117,31 @@ function containsUnmodeledFlow(body: Node): boolean {
     }
   });
   return found;
+}
+
+/**
+ * An arrow written without braces has no statement flow, so its whole
+ * body is one statement and every terminal in it lives there. The
+ * callbacks written in the expression branch that statement the way they
+ * would anywhere else, which is what a `.then` chain in this position
+ * needs.
+ */
+function loweredExpressionBody(
+  body: Node,
+  terminalNodes: readonly Node[],
+  func: Node,
+  barriers: DescentBarriers,
+): LoweredFunctionBody {
+  const statement: StructuredStatement<Expression> = {
+    kind: "opaque",
+    exitKind: null,
+    callbacks: lowerExpressionBodyCallbacks(body, func, barriers),
+  };
+  return {
+    statements: [statement],
+    terminalsByStmt: new Map([[statement, terminalNodes]]),
+    terminalHomeRaw: new Map(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -118,33 +157,21 @@ function containsUnmodeledFlow(body: Node): boolean {
 export function computePathConditions(
   func: FunctionRoot,
   terminalNodes: readonly Node[],
+  barriers: DescentBarriers = NO_BARRIERS,
 ): PathConditionsResult {
   const body = func.getBody();
   if (body === undefined) {
     // Ambient declaration, nothing to enumerate, nothing terminates.
     return { byTerminal: new Map(), fallthrough: [] };
   }
-  if (!Node.isBlock(body)) {
-    // Expression-bodied arrow: one unconditional path; all branching is
-    // expression-level (ternaries, &&/||), same as the legacy walk.
-    // The body itself is a terminal here, because an arrow written
-    // without braces returns it. Only a block body can also anchor the
-    // synthetic fall-through terminal the caller fills in, so nothing
-    // is skipped on this path.
-    const byTerminal = new Map<Node, TerminalPaths>();
-    for (const terminal of terminalNodes) {
-      byTerminal.set(terminal, [
-        collectAncestorConditionInfosBelow(terminal, func),
-      ]);
-    }
-    return { byTerminal, fallthrough: [] };
-  }
-  if (containsUnmodeledFlow(body)) {
+  if (containsUnmodeledFlow(body, func, barriers)) {
     return degradedResult(func, terminalNodes, "labeled statement");
   }
 
   try {
-    const lowered = lowerFunctionBody(body, terminalNodes);
+    const lowered = Node.isBlock(body)
+      ? lowerFunctionBody(body, terminalNodes, func, barriers)
+      : loweredExpressionBody(body, terminalNodes, func, barriers);
     const result = enumerateStructuredPaths({
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
