@@ -437,7 +437,7 @@ function runCaveats(
     return [];
   }
   return [
-    `${withGaps.length} of ${summaries.length} summar${summaries.length === 1 ? "y" : "ies"} in this run record${withGaps.length === 1 ? "s" : ""} something suss could not read, so a unit could be missing from this answer.`,
+    `suss met a call it could not follow in ${withGaps.length === 1 ? "one unit" : `${withGaps.length} units`}, of ${summaries.length}, so a reader could be hiding in ${withGaps.length === 1 ? "it" : "one of them"}.`,
   ];
 }
 
