@@ -709,3 +709,109 @@ describe("enumerateOrDegrade", () => {
     expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
   });
 });
+
+describe("enumerateStructuredPaths, callbacks a statement runs", () => {
+  const withCallbacks = (stmt: S, ...bodies: S[][]): S => ({
+    ...stmt,
+    callbacks: bodies,
+  });
+
+  it("walks a callback body on the path its statement is on", () => {
+    const statements: S[] = [
+      withCallbacks(opq(), [mkIf(cond("res.ok"), [opq()], [opq()])]),
+    ];
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>(),
+    });
+    expect(pathSigs(result.fallthrough)).toEqual([
+      "<unconditional>",
+      "negative:explicit:res.ok",
+      "positive:explicit:res.ok",
+    ]);
+  });
+
+  it("records a terminal inside a callback with the conditions on it", () => {
+    const inner = ret();
+    const statements: S[] = [
+      withCallbacks(opq(), [mkIf(cond("res.ok"), [inner], null)]),
+    ];
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map([[inner, ["T0"]]]),
+    });
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      "positive:explicit:res.ok",
+    ]);
+  });
+
+  it("gives the statement's own terminal one entry per path the callback took", () => {
+    const stmt = withCallbacks(ret(), [mkIf(cond("res.ok"), [opq()], [opq()])]);
+    const result = enumerateStructuredPaths({
+      statements: [stmt],
+      terminalsByStmt: new Map([[stmt, ["T0"]]]),
+    });
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      "<unconditional>",
+      "negative:explicit:res.ok",
+      "positive:explicit:res.ok",
+    ]);
+  });
+
+  it("lets the enclosing flow continue past a return written in a callback", () => {
+    const statements: S[] = [
+      withCallbacks(opq(), [mkIf(cond("res.ok"), [ret()], null), opq()]),
+      opq(),
+    ];
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>(),
+    });
+    // The statement after the callback is reached whether or not the
+    // guard fired, so the two paths through the callback rejoin.
+    expect(pathSigs(result.fallthrough)).toEqual(["<unconditional>"]);
+  });
+
+  it("keeps a throw inside a callback out of the unit's exits", () => {
+    const statements: S[] = [
+      withCallbacks(opq(), [mkIf(cond("res.ok"), [thr()], null)]),
+    ];
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>(),
+    });
+    // The guarded path survives: the throw rejected the promise rather
+    // than ending the unit, so the body still runs off its end there.
+    expect(pathSigs(result.fallthrough)).toEqual([
+      "<unconditional>",
+      "negative:earlyThrow:res.ok",
+      "positive:explicit:res.ok",
+    ]);
+  });
+
+  it("walks each callback on a statement that passes several", () => {
+    const statements: S[] = [
+      withCallbacks(
+        opq(),
+        [mkIf(cond("a"), [opq()], [opq()])],
+        [mkIf(cond("b"), [opq()], [opq()])],
+      ),
+    ];
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>(),
+    });
+    expect(pathSigs(result.fallthrough)).toContain(
+      "positive:explicit:a ∧ positive:explicit:b",
+    );
+  });
+
+  it("leaves a lowering that declares no callbacks exactly as it was", () => {
+    const statements: S[] = [mkIf(cond("a"), [opq()], [opq()]), opq()];
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>(),
+    });
+    expect(pathSigs(result.fallthrough)).toEqual(["<unconditional>"]);
+  });
+});
