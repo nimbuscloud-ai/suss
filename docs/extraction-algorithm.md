@@ -124,6 +124,16 @@ It models the whole structured statement language: `if`/`else`, `switch` (case g
 - **Loops.** Nothing can decide statically whether a condition held *on some iteration*, so in-loop terminals get an opaque "some iteration of:" condition and post-loop terminals get an opaque "loop exited" negation. The engine under-specifies here; it never fabricates.
 - **Catch blocks.** Nothing can decide statically which statement threw, so catch-body terminals get a single opaque `catch` condition (`source: "catchBlock"`).
 
+### Callbacks the unit hands to its own calls
+
+A nested arrow or function expression is part of the unit that wrote it unless a pack claimed it as a sub-unit. `walk/descent.ts` decides that once, and every pass asks it there: the recognizer walk, the invocation-effect walk, terminal discovery, and the statement lowering. So a `.then`, `.map`, or promise-executor callback contributes its branches to the unit the same way its calls already contributed their effects, and a route handler or event subscription a pack declared stays a unit of its own.
+
+Its exits are its own, though. A `return` or a `throw` inside a callback ends the callback, not the unit, so the enclosing path picks up again past the call and the code after it stays reachable. The callback's `return` never becomes one of the unit's terminals: `fetch(u).then((r) => r.json())` resolves the promise the unit returns, and calling that a second exit would invent a transition nobody wrote.
+
+### When a branch reaches the summary
+
+A branch that rejoins leaves nothing behind on the terminals after it: `if (a) { log() } return X` gives X one unconditional path, because X is reached either way. `mergeRejoined` is what does that, and it is also what stops a run of guards multiplying. The paths a body hands back are the exception. No statement follows those, so nothing merges them, and `if (res.ok) { toast.success() } else { toast.error() }` at the end of a function leaves two fall-through branches rather than one. That is what lets the checker see a consumer discriminate on a status when neither arm returns.
+
 ### Declined shapes degrade, never lie
 
 A few constructs the engine does not model: labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, and functions exceeding the 256-path budget. There is no second engine behind these. They **degrade**: each terminal keeps its enclosure conditions (the ancestor branches it is inside, which gate it no matter how the flow weaves) plus one opaque `unmodeled control flow (<reason>)` conjunct, so the transition abstains from claiming a complete condition set. Under-specification over occasionally-wrong claims is correctness principle #2.
