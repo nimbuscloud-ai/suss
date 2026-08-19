@@ -556,6 +556,40 @@ function responseAccessors(
   return out;
 }
 
+/**
+ * A function that ends without returning still ends. Whether that
+ * counts as a terminal is the pack's call, and an HTTP handler says no,
+ * because a handler that sends no response should come out with none.
+ */
+const FUNCTION_FALLTHROUGH_TERMINAL: TerminalPattern = {
+  kind: "return",
+  match: { type: "functionFallthrough" },
+  extraction: {},
+};
+
+/**
+ * The terminals to read this unit's body with. A consumer gets the
+ * fall-through terminal whether or not its pack asked for one, because
+ * the code around a client call runs off the end of its function all
+ * the time, and without a branch for that the success half of
+ * `if (!res.ok) { toast.error(...); return }` is missing.
+ */
+function terminalsFor(
+  unit: DiscoveredUnit,
+  pack: PatternPack,
+): TerminalPattern[] {
+  // A pack whose units follow more than one convention overrides the
+  // pack-level terminals per unit.
+  const declared = unit.terminals ?? pack.terminals;
+  if (unit.callSite === undefined) {
+    return declared;
+  }
+  if (declared.some((p) => p.match.type === "functionFallthrough")) {
+    return declared;
+  }
+  return [...declared, FUNCTION_FALLTHROUGH_TERMINAL];
+}
+
 function readCodeStructure(
   unit: DiscoveredUnit,
   pack: PatternPack,
@@ -569,14 +603,14 @@ function readCodeStructure(
     return announcedBoundaryStructure(unit);
   }
   // A pack whose units follow more than one convention overrides the
-  // pack-level terminals or input mapping per unit.
+  // pack-level input mapping per unit.
   const params = extractParameters(
     func,
     unit.inputMapping ?? pack.inputMapping,
   );
   const extracted = extractRawBranches(
     func,
-    unit.terminals ?? pack.terminals,
+    terminalsFor(unit, pack),
     invocationRecognizers,
     accessRecognizers,
     barriers,
@@ -2324,14 +2358,7 @@ function synthesizeSubUnits(
 const DEFAULT_SUB_UNIT_TERMINALS: TerminalPattern[] = [
   { kind: "return", match: { type: "returnStatement" }, extraction: {} },
   { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
-  // A callback routinely falls off the end returning `undefined`, so
-  // fall-through gives it a default transition. HTTP packs do not opt in:
-  // a handler that sends no response should come out with none.
-  {
-    kind: "return",
-    match: { type: "functionFallthrough" },
-    extraction: {},
-  },
+  FUNCTION_FALLTHROUGH_TERMINAL,
 ];
 
 const DEFAULT_SUB_UNIT_INPUT_MAPPING: InputMappingPattern = {

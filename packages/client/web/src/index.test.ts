@@ -99,6 +99,32 @@ describe("webFetchPack — integration", () => {
     expect(summaries).toHaveLength(1);
     expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("gives the success path a branch when the caller runs off the end", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      declare function toast(message: string): void;
+      export async function save() {
+        const res = await fetch("/save", { method: "POST" });
+        if (!res.ok) {
+          toast("failed");
+          return;
+        }
+        toast("saved");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const save = summaries.find((s) => s.identity.name === "save");
+    expect(save?.transitions.some((t) => t.isDefault)).toBe(true);
+  });
 });
 
 describe("webFetchPack — fixtures", () => {
