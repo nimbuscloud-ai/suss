@@ -118,8 +118,10 @@ const catchEntryCond = <Cond>(): PathCond<Cond> =>
 /**
  * Settle the condition sources for one terminal. A condition whose branch
  * statement encloses the terminal's home statement is an `explicit`
- * ancestor branch. A negative condition passed on the way, meaning the
- * guard did not fire, is an early return or an early throw.
+ * ancestor branch. A negative condition passed on the way is an early
+ * return or an early throw when the guard it failed would have left the
+ * unit; when the other arm ran on and rejoined, nothing returned early
+ * and the condition is as explicit as the guard itself.
  */
 function classify<Cond>(
   path: PathCond<Cond>[],
@@ -134,7 +136,11 @@ function classify<Cond>(
       return cond.info;
     }
     const encloses = home !== null && isAncestorOrSelf(cond.branchStmt, home);
-    if (encloses || cond.info.polarity === "positive") {
+    if (
+      encloses ||
+      cond.info.polarity === "positive" ||
+      cond.oppositeExit === null
+    ) {
       return { ...cond.info, source: "explicit" as const };
     }
     const source: ConditionSource =
@@ -147,8 +153,19 @@ function classify<Cond>(
 // Structural helpers over the lowered tree
 // ---------------------------------------------------------------------------
 
-/** Every direct statement child, across every construct that has one. */
+/**
+ * Every direct statement child, across every construct that has one. A
+ * callback body counts: the statements in it belong to this statement,
+ * which is what makes a terminal inside one findable and gives its
+ * conditions somewhere to hang.
+ */
 function childrenOf<Cond>(
+  stmt: StructuredStatement<Cond>,
+): StatementBlock<Cond> {
+  return [...ownBlocksOf(stmt), ...(stmt.callbacks ?? []).flat()];
+}
+
+function ownBlocksOf<Cond>(
   stmt: StructuredStatement<Cond>,
 ): StatementBlock<Cond> {
   if (stmt.kind === "if") {
@@ -187,7 +204,7 @@ function hasStrayBreak<Cond>(nodes: StatementBlock<Cond>): boolean {
     if (node.kind === "switch" || node.kind === "loop") {
       return false;
     }
-    return hasStrayBreak(childrenOf(node));
+    return hasStrayBreak(ownBlocksOf(node));
   });
 }
 
@@ -212,6 +229,13 @@ interface EngineState<Cond, Terminal> {
   byTerminal: Map<Terminal, ConditionInfo<Cond>[][]>;
   fallthrough: ConditionInfo<Cond>[][];
   pathCount: number;
+  /**
+   * One collector per callback body currently being walked, innermost
+   * last. A return or a throw inside a callback leaves the callback and
+   * not the unit, so its path goes here and the enclosing flow picks it
+   * up again once the callback is done.
+   */
+  callbackExits: PathCond<Cond>[][][];
 }
 
 interface Ctx<Cond, Terminal> {
@@ -270,15 +294,6 @@ function stepIf<Cond, Terminal>(
   path: PathCond<Cond>[],
   ctx: Ctx<Cond, Terminal>,
 ): PathCond<Cond>[][] {
-  const armsExit = stmt.exitKind !== null;
-  const armsHaveTerminals = containsTerminal(ctx, stmt);
-
-  // Neither arm exits and neither contains a terminal, so the branch cannot
-  // tell anything downstream apart. Collapse it to a pass-through.
-  if (!armsExit && !armsHaveTerminals) {
-    return [path];
-  }
-
   const thenExit = exitKindOfList(stmt.thenBody);
   const elseExit =
     stmt.elseBody === null ? null : exitKindOfList(stmt.elseBody);
@@ -287,9 +302,16 @@ function stepIf<Cond, Terminal>(
     ...path,
     branchCond(stmt, stmt.condition, "positive", elseExit),
   ];
+  // An else somebody wrote is an arm rather than the path left over
+  // after a guard, so failing the test is not an early return there.
   const elsePath = [
     ...path,
-    branchCond(stmt, stmt.condition, "negative", thenExit),
+    branchCond(
+      stmt,
+      stmt.condition,
+      "negative",
+      stmt.elseBody === null ? thenExit : null,
+    ),
   ];
 
   const out: PathCond<Cond>[][] = [];
@@ -404,12 +426,24 @@ function stepTry<Cond, Terminal>(
   return out;
 }
 
-/** Return, throw, break, and continue all end their path. */
+/**
+ * Return, throw, break, and continue all end their path. Inside a
+ * callback, a return or a throw ends the callback rather than the unit,
+ * so the path is handed to the callback's collector and the enclosing
+ * flow resumes from it.
+ */
 function stepExit<Cond, Terminal>(
-  _stmt: Extract<StructuredStatement<Cond>, { kind: "exit" }>,
-  _path: PathCond<Cond>[],
-  _ctx: Ctx<Cond, Terminal>,
+  stmt: Extract<StructuredStatement<Cond>, { kind: "exit" }>,
+  path: PathCond<Cond>[],
+  ctx: Ctx<Cond, Terminal>,
 ): PathCond<Cond>[][] {
+  const collector = ctx.state.callbackExits[ctx.state.callbackExits.length - 1];
+  if (
+    collector !== undefined &&
+    (stmt.exit === "return" || stmt.exit === "throw")
+  ) {
+    collector.push(path);
+  }
   return [];
 }
 
@@ -447,14 +481,46 @@ const stepHandlers: StepHandlers = {
   opaque: stepOpaque,
 };
 
+/**
+ * Walk one callback body and give back every path through it: the ones
+ * that ran off its end, plus the ones a return or a throw ended, since
+ * neither ends the unit. An empty result would mean nothing gets past
+ * the statement, which is never true of a callback.
+ */
+function stepCallback<Cond, Terminal>(
+  ctx: Ctx<Cond, Terminal>,
+  body: StatementBlock<Cond>,
+  path: PathCond<Cond>[],
+): PathCond<Cond>[][] {
+  const exits: PathCond<Cond>[][] = [];
+  ctx.state.callbackExits.push(exits);
+  let fellThrough: PathCond<Cond>[][];
+  try {
+    fellThrough = enumerate(ctx, body, path);
+  } finally {
+    ctx.state.callbackExits.pop();
+  }
+  const out = [...fellThrough, ...exits];
+  return out.length === 0 ? [path] : out;
+}
+
 function stepStatement<Cond, Terminal>(
   ctx: Ctx<Cond, Terminal>,
   stmt: StructuredStatement<Cond>,
   path: PathCond<Cond>[],
 ): PathCond<Cond>[][] {
+  // The callbacks run first, so a statement that ends the path, such as
+  // `return chain.then(cb)`, still gets what the callback decided.
+  let paths: PathCond<Cond>[][] = [path];
+  for (const body of stmt.callbacks ?? []) {
+    paths = paths.flatMap((each) => stepCallback(ctx, body, each));
+  }
+
   const ownTerminals = ctx.terminalsByStmt.get(stmt) ?? [];
-  for (const terminal of ownTerminals) {
-    recordTerminal(ctx, terminal, stmt, path);
+  for (const each of withRejoined(paths)) {
+    for (const terminal of ownTerminals) {
+      recordTerminal(ctx, terminal, stmt, each);
+    }
   }
 
   const handler = stepHandlers[stmt.kind] as (
@@ -462,11 +528,14 @@ function stepStatement<Cond, Terminal>(
     path: AnyPathCond[],
     ctx: AnyCtx,
   ) => AnyPathCond[][];
-  return handler(
-    stmt as AnyStructuredStatement,
-    path as AnyPathCond[],
-    ctx as AnyCtx,
-  ) as PathCond<Cond>[][];
+  return paths.flatMap(
+    (each) =>
+      handler(
+        stmt as AnyStructuredStatement,
+        each as AnyPathCond[],
+        ctx as AnyCtx,
+      ) as PathCond<Cond>[][],
+  );
 }
 
 /**
@@ -511,12 +580,14 @@ function soleDisagreement<Cond>(
 }
 
 /**
- * Two paths that reach here differing only over one branch reach here whether
- * that branch fired or not, so the two become one path without it. The arms
- * recorded their own terminals on the way through and keep their conditions.
- *
- * This is what stops a run of guards multiplying. Nine of them that each
- * rejoin are one path out rather than five hundred and twelve.
+ * Two paths that reach the next statement differing only over one branch
+ * reach it whether that branch fired or not, so the two become one path
+ * without it. The arms recorded their own terminals on the way through
+ * and keep their conditions. This is what stops a run of guards
+ * multiplying: nine that each rejoin are one path into the next
+ * statement rather than five hundred and twelve. Nothing asks it of the
+ * paths a body hands back, since no statement follows those, and what
+ * they still say about the branch is the body's last word.
  */
 function mergeRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
   let current = paths;
@@ -552,6 +623,19 @@ function mergeRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
   return current;
 }
 
+/**
+ * The paths as walked, and, when some of them rejoined, what they come
+ * to with the branch they disagreed over taken back off. Both are true
+ * of the code: each arm of a closing `if`/`else` says what it did, and
+ * the rejoined path says the unit got here whichever arm ran, which is
+ * what makes it the default. Nothing is added when nothing rejoined,
+ * so a guard that ended one arm early leaves no such claim behind.
+ */
+function withRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
+  const merged = mergeRejoined(paths);
+  return merged.length === paths.length ? paths : [...merged, ...paths];
+}
+
 function enumerate<Cond, Terminal>(
   ctx: Ctx<Cond, Terminal>,
   stmts: StatementBlock<Cond>,
@@ -561,10 +645,10 @@ function enumerate<Cond, Terminal>(
 
   for (const stmt of stmts) {
     const nextFrontiers: PathCond<Cond>[][] = [];
-    for (const path of frontiers) {
+    for (const path of mergeRejoined(frontiers)) {
       nextFrontiers.push(...stepStatement(ctx, stmt, path));
     }
-    frontiers = mergeRejoined(nextFrontiers);
+    frontiers = nextFrontiers;
     if (frontiers.length > MAX_PATHS) {
       throw new PathBudgetExceeded(
         `path budget exceeded, more than ${MAX_PATHS} paths`,
@@ -654,6 +738,7 @@ export function enumerateStructuredPaths<Cond, Terminal>(
     byTerminal: new Map(),
     fallthrough: [],
     pathCount: 0,
+    callbackExits: [],
   };
   const ctx: Ctx<Cond, Terminal> = {
     terminalsByStmt: input.terminalsByStmt,
@@ -661,7 +746,7 @@ export function enumerateStructuredPaths<Cond, Terminal>(
     isAncestorOrSelf,
   };
 
-  const continuations = enumerate(ctx, input.statements, []);
+  const continuations = withRejoined(enumerate(ctx, input.statements, []));
   for (const path of continuations) {
     chargeBudget(state);
     state.fallthrough.push(classify(path, null, isAncestorOrSelf));

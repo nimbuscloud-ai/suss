@@ -87,7 +87,7 @@ describe("computePathConditions: stable conditions on sound shapes", () => {
     ]);
   });
 
-  it("non-exit non-terminal ifs collapse: no path split, legacy parity", () => {
+  it("a branch that rejoins before the terminal leaves nothing on it", () => {
     const fn = getFunction(`
       export function handler(a: any, log: any) {
         if (a) {
@@ -100,6 +100,24 @@ describe("computePathConditions: stable conditions on sound shapes", () => {
     const result = computePathConditions(fn, terminals);
     expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
       "<unconditional>",
+    ]);
+  });
+
+  it("the same branch with nothing after it leaves both arms on the fall-through", () => {
+    const fn = getFunction(`
+      export function handler(a: any, log: any) {
+        if (a) {
+          log("hello");
+        } else {
+          log("goodbye");
+        }
+      }
+    `);
+    const result = computePathConditions(fn, []);
+    expect((result?.fallthrough ?? []).map(sig).sort()).toEqual([
+      "<unconditional>",
+      "negative:explicit:a",
+      "positive:explicit:a",
     ]);
   });
 
@@ -1028,5 +1046,160 @@ describe("computePathConditions, a braced case body splices into the clause", ()
       'positive:explicit:req.query.kind === "b" ∧ negative:explicit:req.query.kind === "x"',
       'positive:explicit:req.query.kind === "b" ∧ positive:explicit:req.query.kind === "x"',
     ]);
+  });
+});
+
+describe("computePathConditions, branches written inside a callback", () => {
+  it("a guard in a then callback branches the paths the statement leaves on", () => {
+    const fn = getFunction(`
+      export function load(id: string) {
+        fetch("/thing/" + id).then((res) => {
+          if (!res.ok) {
+            reportFailure(res.status);
+          } else {
+            reportSuccess(res);
+          }
+        });
+      }
+    `);
+    const result = computePathConditions(fn, []);
+    expect((result?.fallthrough ?? []).map(sig).sort()).toEqual([
+      "<unconditional>",
+      "negative:explicit:!res.ok",
+      "positive:explicit:!res.ok",
+    ]);
+  });
+
+  it("a guard in a map callback does the same", () => {
+    const fn = getFunction(`
+      export function loadAll(ids: string[]) {
+        ids.map((id) => {
+          if (id.length === 0) {
+            skip(id);
+          } else {
+            keep(id);
+          }
+        });
+      }
+    `);
+    const result = computePathConditions(fn, []);
+    expect((result?.fallthrough ?? []).map(sig).sort()).toEqual([
+      "<unconditional>",
+      "negative:explicit:id.length === 0",
+      "positive:explicit:id.length === 0",
+    ]);
+  });
+
+  it("a guard in a promise executor does the same", () => {
+    const fn = getFunction(`
+      export function loadOnce(id: string) {
+        return new Promise((resolve, reject) => {
+          if (id === "") {
+            reject(new Error("no id"));
+          } else {
+            resolve(id);
+          }
+        });
+      }
+    `);
+    const terminals = returnTerminals(fn);
+    const result = computePathConditions(fn, terminals);
+    expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
+      "<unconditional>",
+      'negative:explicit:id === ""',
+      'positive:explicit:id === ""',
+    ]);
+  });
+
+  it("the unit's own return is reported once per path the callback takes", () => {
+    const fn = getFunction(`
+      export function load(id: string) {
+        return fetch("/thing/" + id).then((res) => {
+          if (!res.ok) {
+            return null;
+          }
+          return res.json();
+        });
+      }
+    `);
+    const outer = fn
+      .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+      .filter((r) => r.getParent()?.getParent() === fn);
+    const result = computePathConditions(fn, outer);
+    // Both the callback's own returns and the unit's exit stay one
+    // terminal: the guard splits how it is reached, not what it is.
+    expect(result?.byTerminal.size).toBe(1);
+    expect(pathSigs(result?.byTerminal.get(outer[0]))).toEqual([
+      "<unconditional>",
+      "negative:earlyReturn:!res.ok",
+      "positive:explicit:!res.ok",
+    ]);
+  });
+
+  it("a return inside a callback leaves the callback, so what follows the call still runs", () => {
+    const fn = getFunction(`
+      export function load(id: string) {
+        fetch("/thing/" + id).then((res) => {
+          if (!res.ok) {
+            return;
+          }
+          use(res);
+        });
+        markStarted();
+      }
+    `);
+    const result = computePathConditions(fn, []);
+    // One path, not the guarded half: had the callback's return ended
+    // the unit's path, `markStarted()` would only be reached when the
+    // guard did not fire, and the fall-through would say so.
+    expect((result?.fallthrough ?? []).map(sig)).toEqual(["<unconditional>"]);
+  });
+
+  it("an arrow written without braces still branches on the callbacks in it", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "expr.ts",
+      `
+        export const submit = async (id: string) =>
+          await fetch("/thing/" + id).then((res) => {
+            if (res.error) {
+              reportFailure(res.error);
+            } else {
+              reportSuccess();
+            }
+          });
+      `,
+    );
+    const arrow = file.getDescendantsOfKind(SyntaxKind.ArrowFunction)[0];
+    if (arrow === undefined) {
+      throw new Error("no arrow to read");
+    }
+    const body = arrow.getBody();
+    const result = computePathConditions(arrow, [body]);
+    expect(pathSigs(result?.byTerminal.get(body))).toEqual([
+      "<unconditional>",
+      "negative:explicit:res.error",
+      "positive:explicit:res.error",
+    ]);
+  });
+
+  it("a callback a pack claimed as a sub-unit contributes nothing to the parent", () => {
+    const fn = getFunction(`
+      export function register(app: any) {
+        app.get("/thing", (req, res) => {
+          if (req.query.id === undefined) {
+            res.status(400);
+          } else {
+            res.status(200);
+          }
+        });
+      }
+    `);
+    const handler = fn.getDescendantsOfKind(SyntaxKind.ArrowFunction)[0];
+    if (handler === undefined) {
+      throw new Error("no handler to claim");
+    }
+    const result = computePathConditions(fn, [], new Set<Node>([handler]));
+    expect((result?.fallthrough ?? []).map(sig)).toEqual(["<unconditional>"]);
   });
 });

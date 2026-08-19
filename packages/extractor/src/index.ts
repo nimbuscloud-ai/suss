@@ -96,6 +96,7 @@ export type {
   ConditionInfo,
   ConditionSource,
   ExitKind,
+  LoweredStatementParts,
   StatementBlock,
   StructuredStatement,
 } from "./paths/structuredStatement.js";

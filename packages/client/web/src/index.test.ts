@@ -125,6 +125,39 @@ describe("webFetchPack — integration", () => {
     const save = summaries.find((s) => s.identity.name === "save");
     expect(save?.transitions.some((t) => t.isDefault)).toBe(true);
   });
+
+  it("branches on a status guard written inside a then callback", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      declare function toast(message: string): void;
+      export async function save() {
+        await fetch("/save", { method: "POST" }).then(async (res) => {
+          if (res.ok) {
+            toast("saved");
+          } else {
+            toast(await res.text());
+          }
+        });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const save = summaries.find((s) => s.identity.name === "save");
+    const guarded = (save?.transitions ?? []).filter(
+      (t) => t.conditions.length > 0,
+    );
+    expect(guarded).toHaveLength(2);
+    expect(
+      guarded.every((t) => JSON.stringify(t.conditions).includes("status")),
+    ).toBe(true);
+  });
 });
 
 describe("webFetchPack — fixtures", () => {

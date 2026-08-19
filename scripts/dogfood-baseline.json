@@ -3,9 +3,9 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 497,
-    "internal": 1951,
-    "consumers": 861,
-    "pairs": 854,
+    "internal": 1959,
+    "consumers": 863,
+    "pairs": 856,
     "unfollowedCalls": 199
   },
   "packages": {
@@ -26,7 +26,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 650,
+      "internal": 655,
       "consumers": 56,
       "unfollowedCalls": 55
     },
@@ -76,7 +76,7 @@
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 10,
+      "consumers": 12,
       "unfollowedCalls": 0
     },
     "packages/contract/appsync": {
@@ -166,7 +166,7 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 27,
-      "internal": 29,
+      "internal": 32,
       "consumers": 4,
       "unfollowedCalls": 5
     },

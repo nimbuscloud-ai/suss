@@ -1,10 +1,12 @@
 // descent.ts: language-structural rules for the unit-body walkers.
 //
 // A code unit's body is walked by several passes (recognizer dispatch,
-// invocation-effect capture, terminal discovery). Each pass runs a
+// invocation-effect capture, terminal discovery, control-flow
+// lowering). Each pass runs a
 // ts-morph `forEachDescendant` from the unit root and has to settle the
 // same question at every nested function it reaches: descend into it, or
-// treat it as a hard stop?
+// treat it as a hard stop? They all ask it here, so a callback whose
+// calls count as the unit's cannot have branches that do not.
 //
 // This is ECMAScript knowledge, not runtime or framework knowledge, so
 // it lives in the adapter (see docs/architecture.md, "Adapter vs pack
@@ -62,6 +64,29 @@ export function isDescentStop(
     return barriers.has(node);
   }
   return false;
+}
+
+/**
+ * Is `node` a nested function whose body runs as part of `func`'s own
+ * flow: an arrow or a function expression that no pack claimed?
+ *
+ * This is the same rule as `isDescentStop`, asked the other way round,
+ * so the pass that reads a unit's control flow and the passes that read
+ * its effects agree on which nested functions belong to it. A named
+ * declaration is a unit of record and never one of these.
+ */
+export function isInlineCallback(
+  node: Node,
+  func: Node,
+  barriers: DescentBarriers = NO_BARRIERS,
+): boolean {
+  if (node === func) {
+    return false;
+  }
+  if (!(Node.isArrowFunction(node) || Node.isFunctionExpression(node))) {
+    return false;
+  }
+  return !barriers.has(node);
 }
 
 /**
