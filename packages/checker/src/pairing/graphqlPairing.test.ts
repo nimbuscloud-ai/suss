@@ -488,6 +488,7 @@ describe("pairGraphqlOperations — meta-fields and fragments", () => {
     const result = pairGraphqlOperations([petResolver, op]);
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].description).toContain("Pet.deletedAt");
+    expect(result.findings[0].severity).toBe("error");
   });
 
   it("checks an inline fragment's fields against its type condition", () => {

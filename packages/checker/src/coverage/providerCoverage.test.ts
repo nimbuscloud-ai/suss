@@ -57,7 +57,7 @@ describe("checkProviderCoverage", () => {
     const findings = checkProviderCoverage(p, c);
     expect(findings).toHaveLength(1);
     expect(findings[0].kind).toBe("unhandledProviderCase");
-    expect(findings[0].severity).toBe("error");
+    expect(findings[0].severity).toBe("warning");
     expect(findings[0].description).toContain("410");
     expect(findings[0].provider.transitionId).toBe("t-410");
   });

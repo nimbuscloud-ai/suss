@@ -20,6 +20,10 @@ function transition(
     statusCode?: number;
     conditionStatus?: number;
     isDefault?: boolean;
+    /** The response gets a record body with these fields. */
+    bodyFields?: string[];
+    /** The branch reads these fields off the response body. */
+    readsBodyFields?: string[];
   } = {},
 ): BehavioralSummary["transitions"][number] {
   const conditions =
@@ -47,6 +51,32 @@ function transition(
           },
         ]
       : [];
+  const body =
+    opts.bodyFields !== undefined
+      ? {
+          type: "record" as const,
+          properties: Object.fromEntries(
+            opts.bodyFields.map((field) => [field, { type: "text" as const }]),
+          ),
+        }
+      : null;
+  const expectedInput =
+    opts.readsBodyFields !== undefined
+      ? {
+          type: "record" as const,
+          properties: {
+            body: {
+              type: "record" as const,
+              properties: Object.fromEntries(
+                opts.readsBodyFields.map((field) => [
+                  field,
+                  { type: "unknown" as const },
+                ]),
+              ),
+            },
+          },
+        }
+      : undefined;
   return {
     id,
     conditions,
@@ -55,13 +85,14 @@ function transition(
         ? {
             type: "response",
             statusCode: { type: "literal", value: opts.statusCode },
-            body: null,
+            body,
             headers: {},
           }
         : { type: "return", value: null },
     effects: [],
     location: { start: 1, end: 10 },
     isDefault: opts.isDefault ?? false,
+    ...(expectedInput !== undefined ? { expectedInput } : {}),
   };
 }
 
@@ -211,23 +242,28 @@ describe("check CLI command", () => {
   });
 
   it("hasErrors is true when any finding has error severity", () => {
-    const providerSummary = provider("getUser", [
-      transition("t-200", { statusCode: 200, isDefault: true }),
-    ]);
-    providerSummary.metadata = {
-      http: {
-        declaredContract: {
-          framework: "ts-rest",
-          responses: [{ statusCode: 200 }],
-        },
-      },
-    };
-    fs.writeFileSync(providerPath, JSON.stringify([providerSummary]));
+    // The 200 body has only "name"; the consumer's 200 branch reads
+    // "email", so the body check reports an error-severity finding.
+    fs.writeFileSync(
+      providerPath,
+      JSON.stringify([
+        provider("getUser", [
+          transition("t-200", {
+            statusCode: 200,
+            isDefault: true,
+            bodyFields: ["name"],
+          }),
+        ]),
+      ]),
+    );
     fs.writeFileSync(
       consumerPath,
       JSON.stringify([
         consumer("UserPage", [
-          transition("ct-418", { conditionStatus: 418 }),
+          transition("ct-200", {
+            conditionStatus: 200,
+            readsBodyFields: ["email"],
+          }),
           transition("ct-default", { isDefault: true }),
         ]),
       ]),
@@ -239,8 +275,8 @@ describe("check CLI command", () => {
         consumerFile: consumerPath,
       });
       expect(result.hasErrors).toBe(true);
-      const kinds = result.findings.map((f) => f.kind);
-      expect(kinds).toContain("consumerContractViolation");
+      const errors = result.findings.filter((f) => f.severity === "error");
+      expect(errors.map((f) => f.kind)).toContain("unhandledProviderCase");
     });
   });
 
@@ -1684,9 +1720,15 @@ describe("the collapsed report", () => {
       JSON.stringify([
         providerWithRoute("getUser", "GET", "/users/:id", [
           transition("t-200", { statusCode: 200, isDefault: true }),
-          transition("t-404", { statusCode: 404 }),
+          transition("t-404", { statusCode: 404, bodyFields: ["code"] }),
         ]),
         consumerWithRoute("UserPage", "GET", "/users/:id", [
+          // Reads a field the 404 body does not include: the error.
+          transition("ct-404", {
+            conditionStatus: 404,
+            readsBodyFields: ["message"],
+          }),
+          // Expects a status the provider never produces: the warning.
           transition("ct-410", { conditionStatus: 410 }),
           transition("ct-default", { isDefault: true }),
         ]),

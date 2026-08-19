@@ -103,7 +103,10 @@ export function checkContractConsistency(
       provider: makeSide(provider),
       consumer: makeSide(consumer),
       description: `Consumer handles status ${expected} but contract does not declare it`,
-      severity: "error",
+      // The branch never runs if the contract is right, and nothing
+      // misreads at runtime either way; dead code is a judgement, the
+      // same call deadConsumerBranch makes (#471).
+      severity: "warning",
     });
   }
 

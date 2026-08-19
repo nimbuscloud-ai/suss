@@ -102,7 +102,9 @@ export function checkProviderCoverage(
         provider: makeSide(provider, pt.id),
         consumer: makeSide(consumer),
         description: `Provider produces status ${status} but no consumer branch handles it`,
-        severity: "error",
+        // Whether the missing branch is a defect depends on intent the
+        // repository does not state, so a person judges it (#471).
+        severity: "warning",
       });
       continue;
     }
