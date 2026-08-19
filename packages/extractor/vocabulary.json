@@ -32,6 +32,7 @@
   "statusRange": "suss: TerminalExtraction source tag",
   "statusCode": "suss: ResponsePropertyMeaning tag",
   "body": "suss: ResponsePropertyMeaning tag",
+  "exception": "suss: FailureDelivery tag",
   "method": "suss: RestSemantics field",
   "path": "suss: RestSemantics field",
   "status": "WHATWG Fetch: Response member, the adapter's fallback and canonical status accessor",

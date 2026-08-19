@@ -144,6 +144,10 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
       { name: "status", access: "property", semantics: { type: "statusCode" } },
       { name: "headers", access: "property", semantics: { type: "headers" } },
     ],
+
+    // A non-2xx rejects, so the caller never gets a response to read a
+    // status off, and its catch is where every failure arrives.
+    failureDelivery: "exception",
   };
 }
 

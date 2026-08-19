@@ -229,7 +229,8 @@ The `metadata` field contains framework-specific data that doesn't fit the unive
         ]
       },
       "bodyAccessors": ["data"],
-      "statusAccessors": ["status"]
+      "statusAccessors": ["status"],
+      "failureDelivery": "exception"
     }
   }
 }
@@ -238,6 +239,7 @@ The `metadata` field contains framework-specific data that doesn't fit the unive
 - `http.declaredContract`: the response schema the pack declared (status codes plus body shapes). Frameworks that read a contract, like ts-rest, fill this in.
 - `http.bodyAccessors`: names of the response properties the consumer uses to read the body (`.data` for axios, `.body`/`.json()` for fetch). These let the cross-boundary checker unwrap `expectedInput` correctly.
 - `http.statusAccessors`: names of the response properties the consumer uses to read the status code. These let the checker recognise pack-specific names beyond the historical `["status", "statusCode"]`.
+- `http.failureDelivery`: `"response"` when a refused request comes back as a response the caller reads a status off, which is `fetch`, and `"exception"` when it rejects, which is axios and ky. On `"exception"` the consumer's `catch` is the branch every non-2xx arrives on, and the coverage check counts it as handling them.
 
 Semantics-neutral keys (valid for every boundary kind) stay at the top level, e.g. `metadata.derivedFromWrapper` on summaries that came out of wrapper expansion.
 

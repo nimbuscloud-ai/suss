@@ -857,6 +857,9 @@ export type ResponsePropertyMeaning =
   | { type: "body" }
   | { type: "headers" };
 
+/** Whether a refused request comes back as a response or as an exception. */
+export type FailureDelivery = "response" | "exception";
+
 export interface ResponsePropertyMapping {
   /** Property or method name on the response (e.g. "ok", "status", "json") */
   name: string;
@@ -931,6 +934,14 @@ export interface PatternPack {
    * `.json()` into a structured IR construct instead of leaving it opaque.
    */
   responseSemantics?: ResponsePropertyMapping[];
+  /**
+   * How this client hands back a response the server refused. `fetch`
+   * returns one and the caller reads the status off it. axios and ky
+   * reject instead, so every non-2xx reaches the caller through a
+   * `catch` and there is no status for a guard to read. Defaults to
+   * `"response"`.
+   */
+  failureDelivery?: FailureDelivery;
   /**
    * Synthesize extra code units out of a parent unit's body, for when one
    * construct the user wrote implicitly spawns several units the runtime

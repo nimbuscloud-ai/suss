@@ -230,6 +230,25 @@ export function summaryRef(summary: BehavioralSummary): SummaryRef {
 }
 
 // ---------------------------------------------------------------------------
+// Catch entry
+// ---------------------------------------------------------------------------
+
+/**
+ * The source text a path engine writes on the condition that says a
+ * branch was reached by an exception. It is the same in every language
+ * so transition IDs stay stable, and `isCatchEntry` is how a check asks
+ * without spelling the string a second time.
+ */
+export const CATCH_ENTRY_TEXT = "catch";
+
+/** Whether this condition says the branch was reached by an exception. */
+export function isCatchEntry(predicate: Predicate): boolean {
+  return (
+    predicate.type === "opaque" && predicate.sourceText === CATCH_ENTRY_TEXT
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Boundary role (provider vs consumer)
 // ---------------------------------------------------------------------------
 

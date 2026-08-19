@@ -676,6 +676,9 @@ function readCodeStructure(
     dependencyCalls: depCalls,
     declaredContract: null,
     ...accessors,
+    ...(unit.callSite !== undefined && pack.failureDelivery !== undefined
+      ? { failureDelivery: pack.failureDelivery }
+      : {}),
   };
 }
 
