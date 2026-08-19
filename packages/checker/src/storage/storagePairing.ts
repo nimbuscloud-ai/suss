@@ -27,10 +27,12 @@
 // the README beside this file.
 
 import {
+  dispatchByType,
   fixedTextLength,
   namesAgree,
-  namesNothing,
+  parseBoundaryName,
   readStorageContractMetadata,
+  referenceOf,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
 
@@ -48,6 +50,7 @@ import { groundReferences } from "./grounding.js";
 import type {
   BehavioralSummary,
   BoundaryBinding,
+  BoundaryName,
   Finding,
   Semantics,
   StorageContractMetadata,
@@ -94,9 +97,15 @@ export function checkStorage(
     if (container === null) {
       return [];
     }
-    return namesNothing(container)
-      ? grounding.namesFor(access.summary, container)
-      : [container];
+    return dispatchByType<BoundaryName, string[]>(
+      {
+        literal: () => [container],
+        pattern: () => [container],
+        reference: (name) =>
+          grounding.namesFor(access.summary, referenceOf(name)),
+      },
+      parseBoundaryName(container),
+    );
   };
 
   const containers = declaredContainers(providersOf(idx, "storage"));
