@@ -58,52 +58,61 @@ export interface CaseGroup<Cond> {
 }
 
 /**
+ * What every lowered statement has on it, whichever construct it is.
+ *
+ * The lowering works `exitKind` out by scanning the statement's own
+ * subtree for a return or a throw, skipping every nested function body.
+ *
+ * `callbacks` is the bodies of the functions this statement passes to
+ * calls it makes, as far as the language counts those as running for the
+ * enclosing unit. The engine walks them on the same path as the
+ * statement, so their branches are the unit's branches. Their `return`
+ * is not the unit's, so a path that ends inside one continues past the
+ * statement. A lowering that leaves the field out behaves as it did
+ * before there was one.
+ */
+export interface LoweredStatementParts<Cond> {
+  readonly exitKind: ExitKind;
+  readonly callbacks?: readonly StatementBlock<Cond>[];
+}
+
+/**
  * One statement in the unit's control flow, already lowered out of the
- * source language. Every variant has the same four things on it:
- * `kind` says which construct it is, `condition` (where
- * one applies) is the opaque test, the block and group fields are its
- * children, and `exitKind` is worked out by the lowering step (a deep
- * scan of the statement's own subtree for a return or throw, skipping
- * nested function bodies, the same scan every language needs in order to
- * tell an early return from an early throw).
+ * source language. `kind` says which construct it is, `condition` (where
+ * one applies) is the opaque test, and the block and group fields are its
+ * children. `LoweredStatementParts` describes the rest.
  */
 export type StructuredStatement<Cond = unknown> =
-  | {
+  | (LoweredStatementParts<Cond> & {
       readonly kind: "if";
       readonly condition: ConditionHandle<Cond>;
       readonly thenBody: StatementBlock<Cond>;
       /** null when the source has no else/elif tail at all. */
       readonly elseBody: StatementBlock<Cond> | null;
-      readonly exitKind: ExitKind;
-    }
-  | {
+    })
+  | (LoweredStatementParts<Cond> & {
       readonly kind: "switch";
       /** Source order; at most one group has a null (default) condition. */
       readonly groups: readonly CaseGroup<Cond>[];
-      readonly exitKind: ExitKind;
-    }
-  | {
+    })
+  | (LoweredStatementParts<Cond> & {
       readonly kind: "loop";
       /** Display text for the loop header. The engine builds two synthetic conditions out of it: "some iteration of: ..." and "loop exited via ...: ...". */
       readonly condition: ConditionHandle<Cond>;
       readonly body: StatementBlock<Cond>;
-      readonly exitKind: ExitKind;
-    }
-  | {
+    })
+  | (LoweredStatementParts<Cond> & {
       readonly kind: "try";
       readonly tryBody: StatementBlock<Cond>;
       readonly catchBody: StatementBlock<Cond> | null;
       /** Here only so it can be validated. A finally that exits, or that contains a terminal the caller gave us, is not modeled, and its own conditions are never enumerated. */
       readonly finallyBody: StatementBlock<Cond> | null;
-      readonly exitKind: ExitKind;
-    }
-  | {
+    })
+  | (LoweredStatementParts<Cond> & {
       readonly kind: "exit";
       readonly exit: "return" | "throw" | "break" | "continue";
-      readonly exitKind: ExitKind;
-    }
-  | {
+    })
+  | (LoweredStatementParts<Cond> & {
       /** Anything else: expression statements, declarations, and any statement the enumeration does not branch on. */
       readonly kind: "opaque";
-      readonly exitKind: ExitKind;
-    };
+    });
