@@ -6,6 +6,8 @@ import {
   normalizeLegacySummary,
   parseSummaries,
   parseSummary,
+  readMetricContractMetadata,
+  readMetricReadingMetadata,
   SUMMARY_SCHEMA_VERSION,
   safeParseSummary,
 } from "./index.js";
@@ -566,5 +568,96 @@ describe("reading a store and a bus written before the conventions", () => {
       identity: { boundaryBinding: { semantics: { messageBus: unknown } } };
     };
     expect(normalized.identity.boundaryBinding.semantics.messageBus).toBe(7);
+  });
+});
+
+describe("reading a metric written before the data model's words", () => {
+  function v5Summary(metadata: Record<string, unknown>) {
+    return v1Summary({
+      schemaVersion: 5,
+      identity: {
+        name: "google_logging_metric.sweep_refused",
+        exportPath: null,
+        id: "monitoring.tf::google_logging_metric.sweep_refused",
+        boundaryBinding: {
+          transport: "cloud-monitoring",
+          semantics: {
+            name: "metric",
+            metricSystem: "cloud-monitoring",
+            metricType: "logging.googleapis.com/user/sweep-refused",
+          },
+          recognition: "terraform-gcp",
+        },
+      },
+      metadata,
+    });
+  }
+
+  it("reads a spread as a histogram, and a point as a gauge", () => {
+    const parsed = parseSummary(
+      v5Summary({ metricContract: { values: "spread", accumulates: "point" } }),
+    );
+    expect(readMetricContractMetadata(parsed)).toEqual({
+      values: "histogram",
+      accumulates: "gauge",
+    });
+  });
+
+  it("reads an interval as a delta and sinceStart as cumulative", () => {
+    const delta = parseSummary(
+      v5Summary({ metricContract: { accumulates: "interval" } }),
+    );
+    expect(readMetricContractMetadata(delta)).toEqual({
+      accumulates: "delta",
+    });
+    const cumulative = parseSummary(
+      v5Summary({ metricContract: { accumulates: "sinceStart" } }),
+    );
+    expect(readMetricContractMetadata(cumulative)).toEqual({
+      accumulates: "cumulative",
+    });
+  });
+
+  it("renames what a reading compares, reduces, and could reduce to", () => {
+    const parsed = parseSummary(
+      v5Summary({
+        metricReading: {
+          comparesTo: "spread",
+          reducesTo: "spread",
+          reduction: {
+            setting: "aggregations.per_series_aligner",
+            leaves: { ALIGN_PERCENTILE_95: "number", ALIGN_NONE: "spread" },
+          },
+        },
+      }),
+    );
+    expect(readMetricReadingMetadata(parsed)).toEqual({
+      comparesTo: "histogram",
+      reducesTo: "histogram",
+      reduction: {
+        setting: "aggregations.per_series_aligner",
+        leaves: { ALIGN_PERCENTILE_95: "number", ALIGN_NONE: "histogram" },
+      },
+    });
+  });
+
+  it("leaves a number as it was", () => {
+    const parsed = parseSummary(
+      v5Summary({
+        metricContract: { values: "number" },
+        metricReading: { comparesTo: "number" },
+      }),
+    );
+    expect(readMetricContractMetadata(parsed)).toEqual({ values: "number" });
+    expect(readMetricReadingMetadata(parsed)).toEqual({ comparesTo: "number" });
+  });
+
+  it("leaves a summary written at the current version alone", () => {
+    const summary = v5Summary({ metricContract: { values: "spread" } });
+    summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
+    const normalized = normalizeLegacySummary(summary) as {
+      metadata: { metricContract: { values: unknown } };
+    };
+    expect(normalized.metadata.metricContract.values).toBe("spread");
   });
 });

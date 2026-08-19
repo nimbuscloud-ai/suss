@@ -31,14 +31,14 @@ const METRIC_SYSTEM = "cloud-monitoring";
 const VALUE_TYPES: Record<string, MetricValueShape> = {
   INT64: "number",
   DOUBLE: "number",
-  DISTRIBUTION: "spread",
+  DISTRIBUTION: "histogram",
 };
 
 /** What each metric kind says one measurement covers. */
 const METRIC_KINDS: Record<string, MetricAccumulation> = {
-  GAUGE: "point",
-  DELTA: "interval",
-  CUMULATIVE: "sinceStart",
+  GAUGE: "gauge",
+  DELTA: "delta",
+  CUMULATIVE: "cumulative",
 };
 
 /**

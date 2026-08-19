@@ -121,14 +121,14 @@ The provider declares a field that no consumer references. Per-domain instances:
 
 Both sides declare the value but disagree about its form (type, nullability, content-type, etc.). The `aspect` says which side discovered the disagreement (read / write / send / receive / construct / selector).
 
-`checkMetric` is the one emitter today. A monitoring system's alert compares a series against a single number, and the resource that declares the series says its measurements are a spread of buckets, so the comparison has nothing to run against:
+`checkMetric` is the one emitter today. A monitoring system's alert compares a series against a single number, and the resource that declares the series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
 
 ```
 [ERROR] boundaryShapeMismatch (aspect: read)
   google_monitoring_alert_policy.sweep_refused_sustained#0 compares
   logging.googleapis.com/user/sweep-refused against a single number, and
   google_logging_metric.sweep_refused declares that metric's measurements
-  as a spread of buckets, so the comparison has nothing to run against
+  as a histogram of buckets, so the comparison has nothing to run against
   unless the reading reduces each window to a single number first, by
   setting aggregations.per_series_aligner to one of ALIGN_PERCENTILE_99,
   ALIGN_PERCENTILE_95, ALIGN_PERCENTILE_50, ALIGN_PERCENTILE_05.

@@ -525,11 +525,11 @@ const SIGNALS: TerraformPack = {
         metricTypeTemplate: "signals.example/counters/{name}",
         values: {
           attribute: "shape.value_type",
-          means: { SPREAD: "spread", SCALAR: "number" },
+          means: { SPREAD: "histogram", SCALAR: "number" },
         },
         accumulates: {
           attribute: "shape.reset",
-          means: { NEVER: "sinceStart", EACH_WINDOW: "interval" },
+          means: { NEVER: "cumulative", EACH_WINDOW: "delta" },
         },
       },
     },
@@ -545,7 +545,7 @@ const SIGNALS: TerraformPack = {
         comparesTo: { attribute: "limit", whenSet: "number" },
         reducesTo: {
           attribute: "window.reducer",
-          means: { MEDIAN: "number", EVERY_BUCKET: "spread" },
+          means: { MEDIAN: "number", EVERY_BUCKET: "histogram" },
         },
       },
     },
@@ -611,7 +611,7 @@ describe("a metric one resource declares and another reads", () => {
       readMetricContractMetadata(
         named("signals_counter.refusals") as BehavioralSummary,
       ),
-    ).toEqual({ values: "spread", accumulates: "interval" });
+    ).toEqual({ values: "histogram", accumulates: "delta" });
   });
 
   it("says what a rule needs, and how a fix to it would be written", () => {
@@ -624,7 +624,7 @@ describe("a metric one resource declares and another reads", () => {
       reducesTo: "number",
       reduction: {
         setting: "window.reducer",
-        leaves: { MEDIAN: "number", EVERY_BUCKET: "spread" },
+        leaves: { MEDIAN: "number", EVERY_BUCKET: "histogram" },
       },
     });
   });
@@ -637,7 +637,7 @@ describe("a metric one resource declares and another reads", () => {
     ).toEqual({
       reduction: {
         setting: "window.reducer",
-        leaves: { MEDIAN: "number", EVERY_BUCKET: "spread" },
+        leaves: { MEDIAN: "number", EVERY_BUCKET: "histogram" },
       },
     });
   });

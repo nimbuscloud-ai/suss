@@ -27,9 +27,14 @@ Every summary includes `schemaVersion`. A summary without one is
 version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read
 every version ever published, so an artifact never needs rewriting.
 Version 2 writes an unnamed identity field as null, rejects the empty
-string there, and adds `"*"` as the REST method wildcard. Version 3 is
-current. It lets a parameter input's `role` be null, for a parameter
-whose role suss could not work out.
+string there, and adds `"*"` as the REST method wildcard. Version 3
+lets a parameter input's `role` be null, for a parameter whose role
+suss could not work out. Version 4 replaces the `storage-relational`
+variant with the layered `storage` one. Version 5 spells a store and a
+bus the way OpenTelemetry's semantic conventions do. Version 6 is
+current: a metric's measurement words are OpenTelemetry's as well,
+`histogram` for a bucketed measurement, and `gauge`, `delta`,
+`cumulative` for what one measurement covers.
 
 ## Core concept: transitions
 

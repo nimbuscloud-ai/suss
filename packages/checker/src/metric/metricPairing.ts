@@ -39,7 +39,7 @@ import type {
 /** How a finding says what a measurement is. */
 const SHAPE_WORDS: Record<MetricValueShape, string> = {
   number: "a single number",
-  spread: "a spread of buckets",
+  histogram: "a histogram of buckets",
 };
 
 /**

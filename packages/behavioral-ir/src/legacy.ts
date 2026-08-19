@@ -28,8 +28,10 @@ import { summaryIdFromParts } from "./summaryId.js";
  * 5: a store and a bus go by the name OpenTelemetry's semantic
  *    conventions give them, so a summary and a span spell the same
  *    boundary the same way.
+ * 6: a metric's measurement words are OpenTelemetry's too: histogram,
+ *    and gauge, delta, cumulative for what one covers.
  */
-export const SUMMARY_SCHEMA_VERSION = 5;
+export const SUMMARY_SCHEMA_VERSION = 6;
 
 /** An empty identity field at or above this version is invalid, not legacy. */
 const NULL_IDENTITY_VERSION = 2;
@@ -39,6 +41,9 @@ const STORAGE_LAYERS_VERSION = 4;
 
 /** Below this version a store and a bus go by suss's own names. */
 const SEMCONV_NAMES_VERSION = 5;
+
+/** Below this version a metric's measurement words are suss's own. */
+const METRIC_WORDS_VERSION = 6;
 
 /**
  * What each protocol used to call its technology, and what the
@@ -151,6 +156,59 @@ function renameToSemconvInPlace(binding: unknown): void {
   }
 }
 
+/** What a bucketed measurement used to be called. */
+const METRIC_SHAPE_RENAMES: Record<string, string> = {
+  spread: "histogram",
+};
+
+/** What each word for a measurement's coverage used to be. */
+const METRIC_ACCUMULATION_RENAMES: Record<string, string> = {
+  point: "gauge",
+  interval: "delta",
+  sinceStart: "cumulative",
+};
+
+/** Renames one field's value when the table lists it, in place. */
+function renameFieldInPlace(
+  record: LooseRecord,
+  field: string,
+  renames: Record<string, string>,
+): void {
+  const value = record[field];
+  if (typeof value !== "string") {
+    return;
+  }
+  const renamed = renames[value];
+  if (renamed !== undefined) {
+    record[field] = renamed;
+  }
+}
+
+/** A metric measurement written before the data model settled its words. */
+function renameMetricWordsInPlace(input: LooseRecord): void {
+  const metadata = input.metadata;
+  if (!isRecord(metadata)) {
+    return;
+  }
+  const contract = metadata.metricContract;
+  if (isRecord(contract)) {
+    renameFieldInPlace(contract, "values", METRIC_SHAPE_RENAMES);
+    renameFieldInPlace(contract, "accumulates", METRIC_ACCUMULATION_RENAMES);
+  }
+  const reading = metadata.metricReading;
+  if (!isRecord(reading)) {
+    return;
+  }
+  renameFieldInPlace(reading, "comparesTo", METRIC_SHAPE_RENAMES);
+  renameFieldInPlace(reading, "reducesTo", METRIC_SHAPE_RENAMES);
+  const reduction = reading.reduction;
+  if (isRecord(reduction) && isRecord(reduction.leaves)) {
+    for (const option of Object.keys(reduction.leaves)) {
+      renameFieldInPlace(reduction.leaves, option, METRIC_SHAPE_RENAMES);
+    }
+  }
+}
+
 /** The queue an SNS subscription delivers through goes by it too. */
 function renameDeliveryToSemconvInPlace(input: LooseRecord): void {
   const metadata = input.metadata;
@@ -250,6 +308,10 @@ function normalizeOne(input: unknown): {
 
   if (version < SEMCONV_NAMES_VERSION) {
     renameDeliveryToSemconvInPlace(input);
+  }
+
+  if (version < METRIC_WORDS_VERSION) {
+    renameMetricWordsInPlace(input);
   }
 
   return { value: input, idBackfilled };

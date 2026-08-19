@@ -28,7 +28,7 @@ Everything else a configuration declares is skipped.
 
 ## The pair the provider refuses
 
-A log-based metric can declare that each measurement is a spread of buckets:
+A log-based metric can declare that each measurement is a histogram of buckets:
 
 ```hcl
 resource "google_logging_metric" "sweep_refused" {
@@ -53,7 +53,7 @@ condition_threshold {
 
 Both blocks are well formed, `terraform validate` and `terraform plan` both pass, and the apply fails minutes in: a distribution has no single value to compare, and Cloud Monitoring wants an aligner such as `ALIGN_PERCENTILE_95` to reduce each window to one number first.
 
-The entries say that `value_type = "DISTRIBUTION"` means the measurements are a spread, that a `threshold_value` means the condition compares against a single number, and that the four percentile aligners are the ones that reduce a window to a number. `checkMetric` puts those together and reports the pair as a `boundaryShapeMismatch` at error severity, naming `aggregations.per_series_aligner` and the four values that would fix it.
+The entries say that `value_type = "DISTRIBUTION"` means the measurements are a histogram, that a `threshold_value` means the condition compares against a single number, and that the four percentile aligners are the ones that reduce a window to a number. `checkMetric` puts those together and reports the pair as a `boundaryShapeMismatch` at error severity, naming `aggregations.per_series_aligner` and the four values that would fix it.
 
 A condition that states one of the percentile aligners is left alone, as is a condition on a metric declared as `INT64` or `DOUBLE`.
 
