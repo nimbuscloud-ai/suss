@@ -2,10 +2,10 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 497,
-    "internal": 1961,
-    "consumers": 863,
-    "pairs": 856,
+    "exports": 505,
+    "internal": 1960,
+    "consumers": 865,
+    "pairs": 858,
     "unfollowedCalls": 199,
     "findingErrors": 0
   },
@@ -27,13 +27,13 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 655,
-      "consumers": 56,
+      "internal": 654,
+      "consumers": 57,
       "unfollowedCalls": 55
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 65,
+      "exports": 69,
       "internal": 19,
       "consumers": 4,
       "unfollowedCalls": 2
@@ -41,8 +41,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 35,
-      "internal": 186,
-      "consumers": 119,
+      "internal": 187,
+      "consumers": 120,
       "unfollowedCalls": 19
     },
     "packages/checker-intent": {
@@ -355,8 +355,8 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 53,
-      "internal": 15,
+      "exports": 57,
+      "internal": 14,
       "consumers": 0,
       "unfollowedCalls": 8
     },
