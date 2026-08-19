@@ -2,11 +2,11 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 496,
-    "internal": 1938,
-    "consumers": 855,
-    "pairs": 848,
-    "unfollowedCalls": 196
+    "exports": 497,
+    "internal": 1951,
+    "consumers": 861,
+    "pairs": 854,
+    "unfollowedCalls": 199
   },
   "packages": {
     "packages/adapter/python": {
@@ -26,13 +26,13 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 649,
+      "internal": 650,
       "consumers": 56,
       "unfollowedCalls": 55
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 64,
+      "exports": 65,
       "internal": 17,
       "consumers": 4,
       "unfollowedCalls": 2
@@ -40,9 +40,9 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 35,
-      "internal": 174,
-      "consumers": 116,
-      "unfollowedCalls": 16
+      "internal": 186,
+      "consumers": 119,
+      "unfollowedCalls": 19
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -69,14 +69,14 @@
       "name": "@suss/client-axios",
       "exports": 2,
       "internal": 2,
-      "consumers": 28,
+      "consumers": 29,
       "unfollowedCalls": 0
     },
     "packages/client/web": {
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 8,
+      "consumers": 10,
       "unfollowedCalls": 0
     },
     "packages/contract/appsync": {
