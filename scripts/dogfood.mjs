@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { evaluatePackHealth } from "../packages/adapter/typescript/dist/index.js";
-import { pairSummaries } from "../packages/checker/dist/index.js";
+import { checkAll, pairSummaries } from "../packages/checker/dist/index.js";
 import {
   declaredExports,
   librarySummariesBySurface,
@@ -330,6 +330,24 @@ for (const result of extractResults) {
 
 console.log("\n=== Cross-package pairing ===");
 const pairing = pairSummaries(allSummaries);
+
+// The checker itself runs over the union too. Extraction alone said
+// nothing about whether a finding pass still works, or whether one has
+// started reporting our own packages wrongly, and both belong in the
+// number a pull request is compared against.
+const checked = checkAll(allSummaries);
+const findingsBySeverity = { error: 0, warning: 0, info: 0 };
+for (const finding of checked.findings) {
+  findingsBySeverity[finding.severity] += 1;
+}
+console.log(
+  `  findings:            ${checked.findings.length} (${findingsBySeverity.error} error, ${findingsBySeverity.warning} warning, ${findingsBySeverity.info} info)`,
+);
+for (const finding of checked.findings) {
+  if (finding.severity === "error") {
+    console.log(`    [ERROR] ${finding.kind}: ${finding.description}`);
+  }
+}
 console.log(`  pairs:               ${pairing.pairs.length}`);
 console.log(`  unmatched providers: ${pairing.unmatched.providers.length}`);
 console.log(`  unmatched consumers: ${pairing.unmatched.consumers.length}`);
@@ -416,6 +434,9 @@ const baseline = {
     // something suss saw, so a drop is a regression, and this one is a
     // call it could not see through, so a rise is.
     unfollowedCalls: totalUnfollowedCalls,
+    // Errors run the same way: our own checker over our own packages
+    // says zero today, and a rise means a pass broke or the code did.
+    findingErrors: findingsBySeverity.error,
   },
   packages: Object.fromEntries(
     report.packages
