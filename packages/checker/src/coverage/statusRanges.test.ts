@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { branchStatusRanges } from "./statusRanges.js";
+import { branchStatusRanges, fallthroughGuards } from "./statusRanges.js";
 
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
 
@@ -44,7 +44,15 @@ const compareFlipped = (
 });
 
 const ranges = (conditions: Predicate[]) =>
-  branchStatusRanges(conditions, STATUS, SUCCESS);
+  branchStatusRanges(conditions, fallthroughGuards(STATUS, SUCCESS));
+
+/** The same conditions read as an arm the consumer wrote. */
+const armRanges = (conditions: Predicate[]) =>
+  branchStatusRanges(conditions, {
+    accessors: STATUS,
+    successAccessors: SUCCESS,
+    readsEquality: true,
+  });
 
 describe("branchStatusRanges", () => {
   it("says nothing when no condition mentions a status", () => {
@@ -52,8 +60,24 @@ describe("branchStatusRanges", () => {
     expect(ranges([])).toBeNull();
   });
 
-  it("says nothing about a comparison against one number", () => {
+  it("says nothing about a comparison against one number on the fall-through", () => {
     expect(ranges([compare(statusRef, "eq", 404)])).toBeNull();
+    expect(ranges([{ type: "negation", operand: compare(statusRef, "eq", 404) }])).toBeNull();
+  });
+
+  it("reads an arm's equality as the one status it names", () => {
+    expect(armRanges([compare(statusRef, "eq", 404)])).toEqual([
+      { min: 404, max: 404 },
+    ]);
+  });
+
+  it("reads an else arm as every status the guard left over", () => {
+    expect(
+      armRanges([{ type: "negation", operand: compare(statusRef, "eq", 404) }]),
+    ).toEqual([
+      { min: 100, max: 403 },
+      { min: 405, max: 599 },
+    ]);
   });
 
   it("reads each one-sided bound as the run it describes", () => {

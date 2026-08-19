@@ -6,9 +6,11 @@
 // consumer's expected shape.
 
 import {
+  bodyAccessorsFor,
   statusAccessorsFor,
   unwrapBodyField,
 } from "../contract/declaredContract.js";
+import { failureOnlyBodyFields } from "../coverage/contentDiscrimination.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
@@ -167,6 +169,23 @@ function unwrapOptional(shape: TypeShape): TypeShape {
 // Main check
 // ---------------------------------------------------------------------------
 
+/**
+ * The consumer's expected shape with `drop` taken off the top level.
+ * Two kinds of name go: a field the provider returns only when it
+ * refuses, which says which case came back, and the accessor the client
+ * reaches the body through, which is a method on the response rather
+ * than anything the body includes.
+ */
+function withoutFields(shape: TypeShape, drop: ReadonlySet<string>): TypeShape {
+  if (shape.type !== "record" || drop.size === 0) {
+    return shape;
+  }
+  const properties = Object.fromEntries(
+    Object.entries(shape.properties).filter(([key]) => !drop.has(key)),
+  );
+  return { ...shape, properties };
+}
+
 export function checkBodyCompatibility(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
@@ -174,6 +193,12 @@ export function checkBodyCompatibility(
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
   const statusAccessors = statusAccessorsFor(consumer);
+  const notAClaimAbout200 = new Set([
+    ...[...failureOnlyBodyFields(provider).values()].flatMap((fields) => [
+      ...fields,
+    ]),
+    ...bodyAccessorsFor(consumer),
+  ]);
 
   for (const ct of consumer.transitions) {
     const expectedInput = ct.expectedInput;
@@ -250,7 +275,10 @@ export function checkBodyCompatibility(
         if (pt.output.type !== "response" || pt.output.body === null) {
           continue;
         }
-        const consumerBodyShape = unwrapBodyField(expectedInput, consumer);
+        const consumerBodyShape = withoutFields(
+          unwrapBodyField(expectedInput, consumer),
+          notAClaimAbout200,
+        );
         const result = providerCoversConsumerFields(
           pt.output.body,
           consumerBodyShape,

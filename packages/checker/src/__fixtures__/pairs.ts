@@ -1,4 +1,5 @@
 import {
+  CATCH_ENTRY_TEXT,
   functionCallBinding,
   readHttpMetadata,
   withHttpMetadata,
@@ -71,6 +72,49 @@ export function successFlag(isNegated: boolean): Predicate {
       derivation: { type: "propertyAccess", property: "ok" },
     },
     negated: isNegated,
+  };
+}
+
+/** `res.error`, the guard a consumer writes to read the failure body. */
+export function bodyFieldTruthy(field: string): Predicate {
+  return {
+    type: "truthinessCheck",
+    subject: {
+      type: "derived",
+      from: responseValueRef,
+      derivation: { type: "propertyAccess", property: field },
+    },
+    negated: false,
+  };
+}
+
+/** What the path engine writes on a branch reached by an exception. */
+export function catchEntry(): Predicate {
+  return {
+    type: "opaque",
+    sourceText: CATCH_ENTRY_TEXT,
+    reason: "complexExpression",
+  };
+}
+
+/** A JSON body with these top-level fields and nothing said about their types. */
+export function recordBody(...fields: string[]): TypeShape {
+  return {
+    type: "record",
+    properties: Object.fromEntries(
+      fields.map((field) => [field, { type: "unknown" } as TypeShape]),
+    ),
+  };
+}
+
+/** A consumer whose client rejects on a non-2xx, the way axios does. */
+export function throwsOnFailure(summary: BehavioralSummary): BehavioralSummary {
+  return {
+    ...summary,
+    metadata: withHttpMetadata(summary.metadata, {
+      ...readHttpMetadata(summary),
+      failureDelivery: "exception",
+    }),
   };
 }
 

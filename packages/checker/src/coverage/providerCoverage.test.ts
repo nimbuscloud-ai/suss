@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  bodyFieldTruthy,
+  catchEntry,
   consumer,
   negated,
   opaqueResponse,
   provider,
+  recordBody,
   response,
   statusEq,
   statusInRange,
   successFlag,
+  throwsOnFailure,
   transition,
 } from "../__fixtures__/pairs.js";
 import { checkProviderCoverage } from "./providerCoverage.js";
@@ -89,6 +93,146 @@ describe("checkProviderCoverage", () => {
     const findings = checkProviderCoverage(p, c);
     expect(findings).toHaveLength(1);
     expect(findings[0].description).toContain("500");
+  });
+
+  it("reads an else arm as covering every status its guard left over", () => {
+    const p = provider("getUser", [
+      transition("t-404", { output: response(404) }),
+      transition("t-500", { output: response(500) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-404", {
+        conditions: [statusEq(404)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-else", {
+        conditions: [negated(statusEq(404))],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("does not read the path past a guard with no else as covering the rest", () => {
+    const p = provider("getUser", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-fallthrough", {
+        conditions: [negated(statusEq(200))],
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const findings = checkProviderCoverage(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("404");
+  });
+
+  it("counts a guard on a field only the failing body returns", () => {
+    const p = provider("banLink", [
+      transition("t-404", { output: response(404, recordBody("error")) }),
+      transition("t-200", {
+        output: response(200, recordBody("link")),
+        isDefault: true,
+      }),
+    ]);
+    const c = consumer("BanLink", [
+      transition("ct-error", {
+        conditions: [bodyFieldTruthy("error")],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("does not count a field both the failing and the succeeding body return", () => {
+    const p = provider("banLink", [
+      transition("t-404", { output: response(404, recordBody("message")) }),
+      transition("t-200", {
+        output: response(200, recordBody("message")),
+        isDefault: true,
+      }),
+    ]);
+    const c = consumer("BanLink", [
+      transition("ct-default", {
+        conditions: [bodyFieldTruthy("message")],
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const findings = checkProviderCoverage(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("404");
+  });
+
+  it("counts a catch when the client throws on a non-2xx", () => {
+    const p = provider("getUser", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = throwsOnFailure(
+      consumer("UserPage", [
+        transition("ct-catch", {
+          conditions: [catchEntry()],
+          output: { type: "return", value: null },
+        }),
+        transition("ct-default", {
+          output: { type: "return", value: null },
+          isDefault: true,
+        }),
+      ]),
+    );
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+
+  it("does not count a catch when the client returns the failing response", () => {
+    const p = provider("getUser", [
+      transition("t-404", { output: response(404) }),
+      transition("t-200", { output: response(200), isDefault: true }),
+    ]);
+    const c = consumer("UserPage", [
+      transition("ct-catch", {
+        conditions: [catchEntry()],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const findings = checkProviderCoverage(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("404");
+  });
+
+  it("still reports a consumer that reads nothing off the response", () => {
+    const p = provider("banLink", [
+      transition("t-404", { output: response(404, recordBody("error")) }),
+      transition("t-200", {
+        output: response(200, recordBody("link")),
+        isDefault: true,
+      }),
+    ]);
+    const c = consumer("handleBanLink", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const findings = checkProviderCoverage(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("404");
   });
 
   it("emits a lowConfidence finding for opaque provider statuses", () => {
