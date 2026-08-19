@@ -17,9 +17,10 @@ extract: $(OUT)
 contract: $(OUT)
 	$(SUSS) contract --from openapi petstore-openapi.json -o $(OUT)/provider.json
 
-# Cross-boundary check both files together.
+# Cross-boundary check both files together. The consumer's bugs are
+# warnings, so gate on warnings to fail the run on them.
 check: $(OUT)/consumer.json $(OUT)/provider.json
-	$(SUSS) check --dir $(OUT)
+	$(SUSS) check --dir $(OUT) --fail-on warning
 
 # Render the human-readable view of either side.
 inspect-consumer:
