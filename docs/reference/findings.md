@@ -219,6 +219,13 @@ The provider produces a status code (or a body case within a status) that no con
   boundary: ts-rest (http) GET /users/:id
 ```
 
+A provider response declared as a range (an OpenAPI `4XX`) is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member (a branch on 404, a `!res.ok` guard, a catch on a throwing client), and when nothing covers any member it reports once:
+
+```
+[WARNING] unhandledProviderCase
+  Provider produces statuses in the 4XX range but no consumer branch handles any of them
+```
+
 **Legitimate when:** the consumer truly doesn't care (it has a `try/catch`, or the throw path is correct).
 
 **Bug when:** the consumer silently ignores the status. Add a branch (e.g. `if (res.status === 404) return null`).
@@ -257,6 +264,8 @@ The branch never runs, and nothing misreads at runtime because of it, so no outc
 
 The consumer has a branch that reads a status the provider never produces. It usually comes from a consumer copy-pasted from another endpoint.
 
+A status inside a range the provider declares (404 against an OpenAPI `4XX`) is produced, and a provider with a `default` response produces any status, so neither makes a branch dead.
+
 **Fix:** delete the branch, or add the missing status to the provider contract.
 
 ### `providerContractViolation` *(shipped)*
@@ -278,6 +287,8 @@ Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap 
 No outcome can be stated against a contract alone: a branch for an undeclared status never runs, and a missing branch may be the intended fall-through. Which side is right, the branch or the contract, is a judgement.
 
 The consumer's expected statuses or body-field reads disagree with the contract. It handles a status the contract doesn't declare, fails to handle one the contract requires, or reads a body field the contract doesn't promise.
+
+A contract's range and `default` entries widen what is declared: a branch on 404 agrees with a declared `4XX`, and nothing is undeclared against a contract with a `default`. A declared range the consumer handles no member of reports once (`Contract declares 4XX responses but consumer handles none of them`).
 
 ### `contractDisagreement` *(shipped)*
 
