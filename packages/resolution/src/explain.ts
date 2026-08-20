@@ -151,10 +151,22 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
     };
   },
   "call result": ({ tuple, premises, describe, inline }) => {
-    const invoked = premises[0].tuple[1];
+    const invokes = premises[0];
+    const invoked = invokes.tuple[1];
+    // The callee's own chain is inside the `invokes` proof, which is
+    // itself no chain, so the walk premises under it are what to show.
+    const calleeWalks =
+      invokes.kind === "derived"
+        ? invokes.premises.filter(
+            (premise) =>
+              premise.kind === "derived" &&
+              (premise.relation === "comesTo" ||
+                premise.relation === "givesBack"),
+          )
+        : [];
     return {
       reason: `${describe(tuple[0])} runs ${describe(invoked)}, which returns ${describe(tuple[1])}`,
-      notes: inline(premises[0]),
+      notes: calleeWalks.flatMap((premise) => inline(premise)),
     };
   },
 };

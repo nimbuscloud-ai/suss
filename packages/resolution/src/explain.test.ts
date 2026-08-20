@@ -4,10 +4,18 @@
 
 import { describe, expect, it } from "vitest";
 
-import { Database, evaluate, proofOf, witnesses } from "@suss/datalog";
+import {
+  Database,
+  evaluate,
+  lit,
+  proofOf,
+  rule,
+  variable as v,
+  witnesses,
+} from "@suss/datalog";
 
 import { explainResolutionProof, renderExplanation } from "./explain.js";
-import { RESOLUTION_RULES } from "./index.js";
+import { RESOLUTION_RULES, VALUE_STEP } from "./index.js";
 
 import type { Atom } from "@suss/datalog";
 
@@ -145,5 +153,162 @@ describe("explainResolutionProof", () => {
     const proof = proofOf(db, "resolves", ["ghost", "f"]);
 
     expect(explainResolutionProof(proof, { describe: say })).toBeNull();
+  });
+
+  it("returns null for a relation whose proof is not a chain", () => {
+    const db = evaluated([["exportsAs", "lib", "n", "f"]]);
+    const proof = proofOf(db, "moduleExport", ["lib", "n", "f"]);
+
+    expect(explainResolutionProof(proof, { describe: say })).toBeNull();
+  });
+
+  it("says what a rewritten name ends up as", () => {
+    const db = evaluated([
+      ["func", "second"],
+      ["endsHolding", "x", "second"],
+    ]);
+
+    const proof = proofOf(db, "resolves", ["x", "second"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps[0].rule).toBe("last write");
+    expect(explained?.steps[0].reason).toBe(
+      "x is written more than once, and the last write leaves it as second",
+    );
+  });
+
+  it("says which call put a value in a parameter", () => {
+    const db = evaluated([
+      ["func", "wrapperFn"],
+      ["func", "innerFn"],
+      ["paramOf", "wrapperFn", "0", "p"],
+      ["binds", "wname", "wrapperFn"],
+      ["call", "r", "wname"],
+      ["callArg", "r", "0", "innerFn"],
+    ]);
+
+    const proof = proofOf(db, "resolves", ["p", "innerFn"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps[0].rule).toBe("argument");
+    expect(explained?.steps[0].reason).toBe(
+      "p is a parameter of wrapperFn, and a call passes it innerFn",
+    );
+  });
+
+  it("says which property an expression read, and off what", () => {
+    const db = evaluated([
+      ["func", "listFn"],
+      ["objectValue", "routesObj"],
+      ["holdsProperty", "routesObj", "list", "listFn"],
+      ["binds", "routes", "routesObj"],
+      ["readsProperty", "expr", "routes", "list"],
+    ]);
+
+    const proof = proofOf(db, "resolves", ["expr", "listFn"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps[0].rule).toBe("property read");
+    expect(explained?.steps[0].reason).toBe(
+      "expr reads list off routes, which contains listFn",
+    );
+  });
+
+  it("says a call makes an instance of its class", () => {
+    const db = evaluated([
+      ["objectValue", "clsObj"],
+      ["binds", "cname", "clsObj"],
+      ["call", "r", "cname"],
+      ["binds", "x", "r"],
+    ]);
+
+    const proof = proofOf(db, "comesTo", ["x", "clsObj"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    const instance = explained?.steps.find(
+      (step) => step.rule === "class instance",
+    );
+    expect(instance?.reason).toBe("r makes an instance of clsObj");
+    expect(instance?.notes).toContain("cname is declared as clsObj");
+  });
+
+  it("says what a call runs and what that returns", () => {
+    const db = evaluated([
+      ["func", "makerFn"],
+      ["func", "returnedFn"],
+      ["binds", "mk", "makerFn"],
+      ["call", "r", "mk"],
+      ["returnsValue", "makerFn", "returnedFn"],
+    ]);
+
+    const proof = proofOf(db, "givesBack", ["r", "returnedFn"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps[0].rule).toBe("call result");
+    expect(explained?.steps[0].reason).toBe(
+      "r runs makerFn, which returns returnedFn",
+    );
+    expect(explained?.steps[0].notes).toContain("mk is declared as makerFn");
+  });
+
+  it("ends a comesFrom chain at the import", () => {
+    const db = evaluated([
+      ["imports", "h", "some-lib", "handler"],
+      ["binds", "x", "h"],
+    ]);
+
+    const proof = proofOf(db, "comesFrom", ["x", "some-lib", "handler"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "alias",
+      "import",
+    ]);
+    expect(explained?.steps[1].reason).toBe(
+      "h is imported from some-lib under the name handler",
+    );
+
+    const direct = proofOf(db, "comesFrom", ["h", "some-lib", "handler"]);
+    const directExplained = explainResolutionProof(direct, { describe: say });
+    expect(directExplained?.steps.map((step) => step.rule)).toEqual(["import"]);
+  });
+
+  it("says a barrel forwards everything another module exports", () => {
+    const db = evaluated([
+      ["func", "daoFn"],
+      ["exportsAs", "inner", "dao", "daoFn"],
+      ["reExportsAll", "barrel", "inner"],
+      ["imports", "d", "barrel", "dao"],
+    ]);
+
+    const proof = proofOf(db, "resolves", ["d", "daoFn"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps[0].notes).toEqual([
+      "barrel forwards everything inner exports",
+    ]);
+    const lines = renderExplanation(explained!, say);
+    expect(lines).toContain("    barrel forwards everything inner exports");
+  });
+
+  it("renders a step rule it has no phrase for by its label", () => {
+    const custom = [
+      ...RESOLUTION_RULES,
+      rule(
+        "stepsTo",
+        [v("x"), v("y"), VALUE_STEP],
+        [lit("customHop", v("x"), v("y"))],
+        "custom hop",
+      ),
+    ];
+    const db = new Database();
+    db.add("func", ["target"]);
+    db.add("customHop", ["x", "target"]);
+    evaluate(db, custom, witnesses);
+
+    const proof = proofOf(db, "resolves", ["x", "target"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps[0].reason).toBe("x steps to target (custom hop)");
   });
 });
