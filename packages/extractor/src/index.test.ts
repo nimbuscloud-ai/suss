@@ -313,6 +313,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
         args: [],
         provenance: "derived",
       },
+      graphqlUnresolvedFragments: ["PetFields"],
       graphqlUnresolvedDocument: {
         reference: "SomeDocument",
         reason: "imported from a module the adapter could not resolve",
@@ -326,6 +327,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
         returnType: { type: "ref", name: "User" },
         provenance: "derived",
       },
+      unresolvedFragments: ["PetFields"],
       unresolvedDocument: { reference: "SomeDocument" },
     });
     expect(summary.transitions[0].output).toMatchObject({

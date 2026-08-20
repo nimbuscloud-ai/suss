@@ -118,6 +118,8 @@ export interface DiscoveredUnit {
     document?: string;
     variables: Array<{ name: string; type: string; required: boolean }>;
     rootFields: string[];
+    /** Spreads in `document` with no definition in it: read partially. */
+    unresolvedFragments?: string[];
     unresolved?: { reference: string; reason: string };
   };
   /**

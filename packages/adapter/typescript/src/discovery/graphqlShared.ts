@@ -11,6 +11,7 @@ import {
   type DocumentNode as GraphqlDocumentNode,
   Kind as GraphqlKind,
   type OperationDefinitionNode as GraphqlOperationDefinitionNode,
+  type SelectionSetNode as GraphqlSelectionSetNode,
   type TypeNode as GraphqlTypeNode,
   parse as graphqlParse,
   print as graphqlPrint,
@@ -133,15 +134,123 @@ function printGraphqlType(node: GraphqlTypeNode): string {
  */
 function innerTemplateText(template: Node): string {
   const raw = template.getText();
-  // Template literals are always wrapped in backticks; substring
-  // between them is the GraphQL document. For TemplateExpression
-  // with `${...}` substitutions we only need the head: interpolation
-  // can't live inside the operation-header, so the leading portion
-  // suffices for name extraction.
   if (raw.length >= 2 && raw.startsWith("`") && raw.endsWith("`")) {
     return raw.slice(1, -1);
   }
   return raw;
+}
+
+/**
+ * State carried through assembling one document out of a template and
+ * its `${...}` interpolations. An interpolated fragment can itself
+ * interpolate another, so assembly recurses; `seen` makes a document
+ * splice at most once, which also stops a cycle between two fragments
+ * that interpolate each other.
+ */
+interface DocumentAssembly {
+  resolution: ResolutionStore | undefined;
+  /** Tagged templates (or tag calls) already spliced into this document. */
+  seen: Set<Node>;
+  /** Written text of each `${...}` that resolved to no document. */
+  unresolvedInterpolations: string[];
+  /**
+   * Set when an unresolved `${...}` was written inside a selection
+   * set, where dropping it would change what the operation itself
+   * selects. At top level a dropped interpolation can only cost
+   * fragment definitions, and the spreads left dangling record
+   * exactly which.
+   */
+  unresolvedInsideSelection: boolean;
+}
+
+function startAssembly(
+  resolution: ResolutionStore | undefined,
+): DocumentAssembly {
+  return {
+    resolution,
+    seen: new Set(),
+    unresolvedInterpolations: [],
+    unresolvedInsideSelection: false,
+  };
+}
+
+/**
+ * The text a template literal gives once every `${...}` is spliced.
+ * A substitution that resolves to a document contributes its text in
+ * place; one that does not is dropped and recorded on the assembly, at
+ * top level as a lost fragment definition and inside a selection set
+ * as a lost selection.
+ */
+function assembledTemplateText(
+  template: Node,
+  assembly: DocumentAssembly,
+): string | null {
+  if (Node.isNoSubstitutionTemplateLiteral(template)) {
+    return innerTemplateText(template);
+  }
+  if (!Node.isTemplateExpression(template)) {
+    return null;
+  }
+  let text = template.getHead().getLiteralText();
+  for (const span of template.getTemplateSpans()) {
+    const spliced = interpolatedDocumentText(span.getExpression(), assembly);
+    if (spliced === null) {
+      assembly.unresolvedInterpolations.push(
+        singleLine(span.getExpression().getText()),
+      );
+      if (openBraceDepth(text) > 0) {
+        assembly.unresolvedInsideSelection = true;
+      }
+    } else {
+      text += `\n${spliced}\n`;
+    }
+    text += span.getLiteral().getLiteralText();
+  }
+  return text;
+}
+
+/**
+ * How many selection sets are open at the end of `text`. Counted over
+ * braces because at an interpolation point the document does not parse
+ * yet, and GraphQL gives braces no other role a gql template would use.
+ */
+function openBraceDepth(text: string): number {
+  let depth = 0;
+  for (const char of text) {
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+    }
+  }
+  return depth;
+}
+
+/**
+ * The document text an interpolated `${...}` expression contributes:
+ * an inline gql tag, a named document constant (same module, imported,
+ * or behind a barrel), a `.graphql` file import, or a generated
+ * TypedDocumentNode literal. Anything else returns null and the caller
+ * records the expression as unresolved rather than guessing.
+ */
+function interpolatedDocumentText(
+  expr: Node,
+  assembly: DocumentAssembly,
+): string | null {
+  const stripped = stripDocumentNodeCasts(expr);
+  const inline = documentTextFromExpression(stripped, assembly);
+  if (inline !== null) {
+    return inline;
+  }
+  const named = resolveGqlTemplateText(stripped, assembly);
+  if (named !== null) {
+    return named;
+  }
+  const objectDoc = resolveTypedDocumentSource(stripped);
+  if (objectDoc !== null) {
+    return objectDoc;
+  }
+  return resolveThroughFacts(stripped, assembly);
 }
 
 export type GraphqlOperationType = "query" | "mutation" | "subscription";
@@ -166,11 +275,20 @@ export interface DocumentResolution {
   document?: string;
   operationType?: GraphqlOperationType;
   operationName?: string;
+  /**
+   * Fragment spreads in `document` with no definition in it. Their
+   * selections went unread, so the document is partial rather than
+   * wrong, and the summary says so.
+   */
+  unresolvedFragments?: string[];
   unresolved?: { reference: string; reason: string };
 }
 
 /**
  * Resolve a hook / imperative call argument to a GraphQL document.
+ * A template's `${...}` interpolations resolve through the same ladder
+ * and splice in, which is how Apollo codebases compose fragments into
+ * operations.
  *
  * Tries, in order:
  *
@@ -205,39 +323,150 @@ export function resolveGraphqlDocument(
   arg: Node,
   resolution?: ResolutionStore,
 ): DocumentResolution | null {
+  const assembly = startAssembly(resolution);
   // Peel `FooDocument as DocumentNode` / parenthesization at the call
   // site so the underlying identifier or tagged template is reached.
   const stripped = stripDocumentNodeCasts(arg);
-  const inline = documentTextFromExpression(stripped);
-  if (inline !== null) {
-    return { document: inline };
-  }
-  const templateText = resolveGqlTemplateText(stripped);
-  if (templateText !== null) {
-    return { document: templateText };
-  }
-  const objectDoc = resolveTypedDocumentSource(stripped);
-  if (objectDoc !== null) {
-    return { document: objectDoc };
-  }
-  const throughFacts = resolveThroughFacts(stripped, resolution);
-  if (throughFacts !== null) {
-    return { document: throughFacts };
+  const text =
+    documentTextFromExpression(stripped, assembly) ??
+    resolveGqlTemplateText(stripped, assembly) ??
+    resolveTypedDocumentSource(stripped) ??
+    resolveThroughFacts(stripped, assembly);
+  if (text !== null) {
+    return assembledDocumentResolution(text, stripped, assembly);
   }
   return resolveTypedDocumentHeader(stripped);
 }
 
 /**
+ * Turn assembled document text into a resolution. An interpolation
+ * dropped inside a selection set means the operation's own selections
+ * are not all written, so no document is claimed and the boundary
+ * degrades to a header plus the reason. A document that parses keeps
+ * its dangling spreads beside it as `unresolvedFragments`.
+ */
+function assembledDocumentResolution(
+  text: string,
+  arg: Node,
+  assembly: DocumentAssembly,
+): DocumentResolution {
+  const interpolations = assembly.unresolvedInterpolations;
+  if (assembly.unresolvedInsideSelection) {
+    const header = parseGraphqlOperation(text);
+    return {
+      ...(header !== null ? { operationType: header.operationType } : {}),
+      ...(header?.operationName !== undefined
+        ? { operationName: header.operationName }
+        : {}),
+      unresolved: {
+        reference: singleLine(arg.getText()),
+        reason: `interpolated ${describeInterpolations(interpolations)} inside a selection set did not resolve to a GraphQL document, so what the operation selects is not statically written`,
+      },
+    };
+  }
+  const dangling = danglingFragmentSpreads(text);
+  if (dangling === null) {
+    if (interpolations.length === 0) {
+      // Unparseable text with nothing dropped is what the reader found;
+      // hand it through unchanged and let the caller's parse decide.
+      return { document: text };
+    }
+    return {
+      unresolved: {
+        reference: singleLine(arg.getText()),
+        reason: `the document did not parse after dropping interpolated ${describeInterpolations(interpolations)} that resolved to no GraphQL document`,
+      },
+    };
+  }
+  if (dangling.length > 0) {
+    return { document: text, unresolvedFragments: dangling };
+  }
+  if (interpolations.length > 0) {
+    return {
+      document: text,
+      unresolved: {
+        reference: singleLine(arg.getText()),
+        reason: `interpolated ${describeInterpolations(interpolations)} did not resolve to a GraphQL document, so whatever it contributes is not part of the stored document`,
+      },
+    };
+  }
+  return { document: text };
+}
+
+function describeInterpolations(interpolations: string[]): string {
+  const quoted = interpolations.map((text) => `\`${text}\``).join(", ");
+  return interpolations.length === 1
+    ? `expression ${quoted}`
+    : `expressions ${quoted}`;
+}
+
+/**
+ * Fragment spreads in `text` with no matching definition in it, or
+ * null when the text does not parse. Sorted so two runs agree.
+ */
+function danglingFragmentSpreads(text: string): string[] | null {
+  let doc: GraphqlDocumentNode;
+  try {
+    doc = graphqlParse(text);
+  } catch {
+    return null;
+  }
+  const defined = new Set<string>();
+  for (const def of doc.definitions) {
+    if (def.kind === GraphqlKind.FRAGMENT_DEFINITION) {
+      defined.add(def.name.value);
+    }
+  }
+  const dangling = new Set<string>();
+  for (const def of doc.definitions) {
+    if (
+      def.kind === GraphqlKind.OPERATION_DEFINITION ||
+      def.kind === GraphqlKind.FRAGMENT_DEFINITION
+    ) {
+      collectDanglingSpreads(def.selectionSet, defined, dangling);
+    }
+  }
+  return [...dangling].sort();
+}
+
+function collectDanglingSpreads(
+  selectionSet: GraphqlSelectionSetNode,
+  defined: ReadonlySet<string>,
+  dangling: Set<string>,
+): void {
+  for (const selection of selectionSet.selections) {
+    if (selection.kind === GraphqlKind.FRAGMENT_SPREAD) {
+      if (!defined.has(selection.name.value)) {
+        dangling.add(selection.name.value);
+      }
+      continue;
+    }
+    if (selection.selectionSet !== undefined) {
+      collectDanglingSpreads(selection.selectionSet, defined, dangling);
+    }
+  }
+}
+
+/**
  * The document text an expression gives when it is written out as a
  * tag: `gql\`...\`` or `gql(\`...\`)`. Returns null for anything else,
- * including a tag call whose argument is built rather than written.
+ * including a tag call whose argument is built rather than written. A
+ * document already spliced into this assembly contributes nothing more,
+ * so a fragment two operations both interpolate appears once.
  */
-function documentTextFromExpression(node: Node): string | null {
+function documentTextFromExpression(
+  node: Node,
+  assembly: DocumentAssembly,
+): string | null {
   if (Node.isTaggedTemplateExpression(node)) {
     if (!isDocumentTag(node.getTag())) {
       return null;
     }
-    return innerTemplateText(node.getTemplate());
+    if (assembly.seen.has(node)) {
+      return "";
+    }
+    assembly.seen.add(node);
+    return assembledTemplateText(node.getTemplate(), assembly);
   }
   if (!Node.isCallExpression(node)) {
     return null;
@@ -256,7 +485,11 @@ function documentTextFromExpression(node: Node): string | null {
   ) {
     return null;
   }
-  return innerTemplateText(template);
+  if (assembly.seen.has(node)) {
+    return "";
+  }
+  assembly.seen.add(node);
+  return assembledTemplateText(template, assembly);
 }
 
 /**
@@ -299,16 +532,16 @@ function isDocumentTag(tag: Node): boolean {
  */
 function resolveThroughFacts(
   arg: Node,
-  resolution: ResolutionStore | undefined,
+  assembly: DocumentAssembly,
 ): string | null {
-  if (resolution === undefined || !Node.isIdentifier(arg)) {
+  if (assembly.resolution === undefined || !Node.isIdentifier(arg)) {
     return null;
   }
-  const written = resolution.resolveWrittenValue(arg);
+  const written = assembly.resolution.resolveWrittenValue(arg);
   if (written === null) {
     return null;
   }
-  const text = documentTextFromExpression(written);
+  const text = documentTextFromExpression(written, assembly);
   if (text !== null) {
     return text;
   }
@@ -322,6 +555,8 @@ export interface ResolvedOperationInfo {
   document?: string;
   variables: Array<{ name: string; type: string; required: boolean }>;
   rootFields: string[];
+  /** Spreads in `document` with no definition in it: read partially. */
+  unresolvedFragments?: string[];
   unresolved?: { reference: string; reason: string };
 }
 
@@ -347,7 +582,17 @@ export function operationInfoFromResolution(
       operation.operationName !== undefined
         ? operation.operationType
         : callOperationType;
-    return { ...operation, operationType, document: resolution.document };
+    return {
+      ...operation,
+      operationType,
+      document: resolution.document,
+      ...(resolution.unresolvedFragments !== undefined
+        ? { unresolvedFragments: resolution.unresolvedFragments }
+        : {}),
+      ...(resolution.unresolved !== undefined
+        ? { unresolved: resolution.unresolved }
+        : {}),
+    };
   }
   return {
     operationType: resolution.operationType ?? callOperationType,
@@ -426,8 +671,11 @@ function importedVariableInitializers(identifier: Node): Node[] {
  * disk (common under `useInMemoryFileSystem` test projects) fall back
  * to null rather than throwing: discovery stays advisory, not punitive.
  */
-export function resolveGqlTemplateText(arg: Node): string | null {
-  const direct = documentTextFromExpression(arg);
+export function resolveGqlTemplateText(
+  arg: Node,
+  assembly: DocumentAssembly,
+): string | null {
+  const direct = documentTextFromExpression(arg, assembly);
   if (direct !== null) {
     return direct;
   }
@@ -452,7 +700,10 @@ export function resolveGqlTemplateText(arg: Node): string | null {
   // A tagged const in this module, or one reached through the import to
   // the defining module's declaration.
   for (const init of importedVariableInitializers(arg)) {
-    const text = documentTextFromExpression(stripDocumentNodeCasts(init));
+    const text = documentTextFromExpression(
+      stripDocumentNodeCasts(init),
+      assembly,
+    );
     if (text !== null) {
       return text;
     }

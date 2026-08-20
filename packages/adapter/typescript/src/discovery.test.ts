@@ -1907,6 +1907,176 @@ describe("graphqlHookCall discovery", () => {
     expect(units[0].operationInfo?.operationName).toBe("GetPet");
   });
 
+  it("splices an interpolated fragment constant into the document", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const PET_FIELDS = gql\`fragment PetFields on Pet { id name }\`;
+      const GET_PET = gql\`
+        query GetPet { pet { ...PetFields } }
+        \${PET_FIELDS}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.operationName).toBe("GetPet");
+    expect(units[0].operationInfo?.document).toContain(
+      "fragment PetFields on Pet",
+    );
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("splices a fragment interpolated before the operation", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const PET_FIELDS = gql\`fragment PetFields on Pet { id }\`;
+      const GET_PET = gql\`
+        \${PET_FIELDS}
+        query GetPet { pet { ...PetFields } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.document).toContain(
+      "fragment PetFields on Pet",
+    );
+  });
+
+  it("splices a fragment that itself interpolates another fragment, once", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const PET_BASE = gql\`fragment PetBase on Pet { id }\`;
+      const NAME_FIELDS = gql\`
+        fragment NameFields on Pet { ...PetBase name }
+        \${PET_BASE}
+      \`;
+      const TAG_FIELDS = gql\`
+        fragment TagFields on Pet { ...PetBase tag }
+        \${PET_BASE}
+      \`;
+      const GET_PET = gql\`
+        query GetPet { pet { ...NameFields ...TagFields } }
+        \${NAME_FIELDS}
+        \${TAG_FIELDS}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    const document = units[0].operationInfo?.document ?? "";
+    expect(document.match(/fragment NameFields/g)).toHaveLength(1);
+    expect(document.match(/fragment TagFields/g)).toHaveLength(1);
+    expect(document.match(/fragment PetBase/g)).toHaveLength(1);
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("records the spread a dropped top-level interpolation leaves dangling", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      declare const extraDefinitions: string;
+      const GET_PET = gql\`
+        query GetPet { pet { ...PetFields } }
+        \${extraDefinitions}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.unresolvedFragments).toEqual(["PetFields"]);
+    expect(units[0].operationInfo?.document).toContain("...PetFields");
+  });
+
+  it("withholds the document when a dynamic interpolation is inside a selection set", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      declare const extraFields: string;
+      const GET_PET = gql\`
+        query GetPet { pet { id \${extraFields} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.operationName).toBe("GetPet");
+    expect(units[0].operationInfo?.unresolved?.reason).toContain(
+      "selection set",
+    );
+  });
+
+  it("marks a dropped top-level interpolation that left no spread behind", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      declare const trailer: string;
+      const PING = gql\`
+        query Ping { ping }
+        \${trailer}
+      \`;
+      export function usePing() {
+        return useQuery(PING);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.document).toContain("query Ping");
+    expect(units[0].operationInfo?.unresolved?.reason).toContain("trailer");
+  });
+
+  it("degrades to unresolved when the text does not parse after a drop", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      declare const typeName: string;
+      const GET_PET = gql\`
+        query GetPet { pet { id } }
+        fragment F on \${typeName} { id }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reason).toContain(
+      "did not parse",
+    );
+  });
+
   it("resolves a TypedDocumentNode reference produced by GraphQL Code Generator", () => {
     // Codegen-shaped call sites pass a generated DocumentNode object
     // literal (not a `gql` template) to the hook. The discovery

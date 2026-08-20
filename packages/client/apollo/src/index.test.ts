@@ -40,8 +40,16 @@ async function runCodegenAdapter(): Promise<BehavioralSummary[]> {
 }
 
 async function runInMemory(source: string): Promise<BehavioralSummary[]> {
+  return await runInMemoryFiles({ "consumer.ts": source });
+}
+
+async function runInMemoryFiles(
+  files: Record<string, string>,
+): Promise<BehavioralSummary[]> {
   const project = createTestProject();
-  project.createSourceFile("consumer.ts", source);
+  for (const [name, source] of Object.entries(files)) {
+    project.createSourceFile(name, source);
+  }
   const adapter = createTypeScriptAdapter({
     project,
     frameworks: [apolloClientPack()],
@@ -118,10 +126,10 @@ describe("apolloClientPack — integration", () => {
   }, 90_000);
 
   it("discovers one client summary per hook or imperative call", async () => {
-    // Four hook calls (usePet, useCreatePet, useAnonPing, useTicks),
-    // two imperative calls (loadPetById, createPetImperative), and
-    // one hook using a .graphql file import (useUserFromFile).
-    expect(summaries).toHaveLength(7);
+    // Hooks: usePet, useCreatePet, useAnonPing, useTicks, plus
+    // useUserFromFile (.graphql import) and useOwner (interpolated
+    // fragment). Imperative: loadPetById, createPetImperative.
+    expect(summaries).toHaveLength(8);
     for (const s of summaries) {
       expect(s.kind).toBe("client");
     }
@@ -150,6 +158,16 @@ describe("apolloClientPack — integration", () => {
     expect(sem?.name === "graphql-operation" ? sem.operationName : null).toBe(
       "GetPet",
     );
+  });
+
+  it("reads a document composed from an interpolated fragment", async () => {
+    const owner = summaries.find(
+      (s) => s.identity.name === "useOwner.GetOwner",
+    );
+    expect(owner).toBeDefined();
+    const graphql = owner && readGraphqlMetadata(owner);
+    expect(graphql?.document).toContain("fragment OwnerFields on Owner");
+    expect(graphql?.unresolvedFragments).toBeUndefined();
   });
 
   it("handles inline gql`...` arguments (useMutation(gql`...`))", async () => {
@@ -440,6 +458,243 @@ describe("apolloClientPack — edge cases", () => {
       }
     `);
     expect(summaries).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fragments interpolated into the document (#461)
+// ---------------------------------------------------------------------------
+
+describe("apolloClientPack — interpolated fragments", () => {
+  const petFragment = `
+    const PET_FIELDS = gql\`
+      fragment PetFields on Pet {
+        id
+        name
+        deletedAt
+      }
+    \`;
+  `;
+
+  it("resolves a fragment interpolated after the operation", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      ${petFragment}
+      const GET_PET = gql\`
+        query GetPet($id: ID!) {
+          pet(id: $id) {
+            ...PetFields
+          }
+        }
+        \${PET_FIELDS}
+      \`;
+      export function usePet(id: string) {
+        return useQuery(GET_PET, { variables: { id } });
+      }
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["usePet.GetPet"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toContain("fragment PetFields on Pet");
+    expect(graphql?.unresolvedFragments).toBeUndefined();
+    expect(graphql?.unresolvedDocument).toBeUndefined();
+  });
+
+  it("resolves a fragment interpolated before the operation", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      ${petFragment}
+      const GET_PET = gql\`
+        \${PET_FIELDS}
+        query GetPet($id: ID!) {
+          pet(id: $id) {
+            ...PetFields
+          }
+        }
+      \`;
+      export function usePet(id: string) {
+        return useQuery(GET_PET, { variables: { id } });
+      }
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["usePet.GetPet"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toContain("fragment PetFields on Pet");
+    expect(graphql?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("resolves a fragment imported from another module", async () => {
+    const summaries = await runInMemoryFiles({
+      "fragments.ts": `
+        import { gql } from "@apollo/client";
+        export const PET_FIELDS = gql\`
+          fragment PetFields on Pet {
+            id
+            name
+          }
+        \`;
+      `,
+      "consumer.ts": `
+        import { gql, useQuery } from "@apollo/client";
+        import { PET_FIELDS } from "./fragments";
+        const GET_PET = gql\`
+          query GetPet {
+            pet {
+              ...PetFields
+            }
+          }
+          \${PET_FIELDS}
+        \`;
+        export function usePet() {
+          return useQuery(GET_PET);
+        }
+      `,
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual(["usePet.GetPet"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toContain("fragment PetFields on Pet");
+    expect(graphql?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("resolves a fragment that itself interpolates another fragment", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      const PET_BASE = gql\`
+        fragment PetBase on Pet {
+          id
+        }
+      \`;
+      const PET_FIELDS = gql\`
+        fragment PetFields on Pet {
+          ...PetBase
+          name
+        }
+        \${PET_BASE}
+      \`;
+      const GET_PET = gql\`
+        query GetPet {
+          pet {
+            ...PetFields
+          }
+        }
+        \${PET_FIELDS}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["usePet.GetPet"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toContain("fragment PetFields on Pet");
+    expect(graphql?.document).toContain("fragment PetBase on Pet");
+    expect(graphql?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("splices a fragment two paths reach only once", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      const PET_BASE = gql\`
+        fragment PetBase on Pet {
+          id
+        }
+      \`;
+      const NAME_FIELDS = gql\`
+        fragment NameFields on Pet {
+          ...PetBase
+          name
+        }
+        \${PET_BASE}
+      \`;
+      const TAG_FIELDS = gql\`
+        fragment TagFields on Pet {
+          ...PetBase
+          tag
+        }
+        \${PET_BASE}
+      \`;
+      const GET_PET = gql\`
+        query GetPet {
+          pet {
+            ...NameFields
+            ...TagFields
+          }
+        }
+        \${NAME_FIELDS}
+        \${TAG_FIELDS}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `);
+    expect(summaries).toHaveLength(1);
+    const document = readGraphqlMetadata(summaries[0])?.document ?? "";
+    expect(document.match(/fragment PetBase on Pet/g)).toHaveLength(1);
+    expect(readGraphqlMetadata(summaries[0])?.unresolvedFragments).toBe(
+      undefined,
+    );
+  });
+
+  it("records the spread a dynamic top-level interpolation leaves dangling", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      declare const extraDefinitions: string;
+      const GET_PET = gql\`
+        query GetPet {
+          pet {
+            ...PetFields
+          }
+        }
+        \${extraDefinitions}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["usePet.GetPet"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toContain("...PetFields");
+    expect(graphql?.unresolvedFragments).toEqual(["PetFields"]);
+  });
+
+  it("withholds the document when a dynamic interpolation is inside a selection set", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      declare const extraFields: string;
+      const GET_PET = gql\`
+        query GetPet {
+          pet {
+            id
+            \${extraFields}
+          }
+        }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["usePet.GetPet"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toBeUndefined();
+    expect(graphql?.unresolvedDocument?.reference).toBe("GET_PET");
+    expect(graphql?.unresolvedDocument?.reason).toContain("selection set");
+  });
+
+  it("marks a dropped top-level interpolation that left no spread behind", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      declare const trailer: string;
+      const PING = gql\`
+        query Ping {
+          ping
+        }
+        \${trailer}
+      \`;
+      export function usePing() {
+        return useQuery(PING);
+      }
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["usePing.Ping"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toContain("query Ping");
+    expect(graphql?.unresolvedDocument?.reason).toContain("trailer");
   });
 });
 

@@ -10,6 +10,10 @@
 // holding either (same module, imported, or behind a re-export barrel),
 // a `.graphql` / `.gql` file import, and a generated
 // `TypedDocumentNode` object literal from graphql-codegen client-preset.
+// A `${...}` interpolation resolves the same way and splices in, so a
+// fragment-composed operation reads whole. A spread whose definition
+// never resolves surfaces as `metadata.graphql.unresolvedFragments`
+// on a still-emitted summary.
 // A named constant is what most codebases write, and it resolves
 // through the fact layer rather than by walking one variable
 // declaration, so aliases and barrels do not hide the document.
