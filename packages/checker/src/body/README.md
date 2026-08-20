@@ -4,7 +4,7 @@ The body checks compare request and response body shapes between providers and c
 
 ## Place in the pipeline
 
-The `coverage/`, `contract/`, and `consumer/` checkers call these checks after they have grouped summaries into pairs by status code. The checks verify that the provider sends every field the consumer reads, and they flag fields the consumer depends on that the provider declares optional.
+The `coverage/`, `contract/`, and `consumer/` checkers call these checks after they have grouped summaries into pairs by status code. The checks flag fields the consumer depends on that the provider declares optional, and report where a comparison could not be finished. A read of a field a body provably lacks is `checkResponseMisread`'s finding, over in `coverage/`, which decides on its own which responses a consumer path runs on.
 
 ## Key files
 

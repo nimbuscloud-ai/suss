@@ -276,7 +276,7 @@ describe("check CLI command", () => {
       });
       expect(result.hasErrors).toBe(true);
       const errors = result.findings.filter((f) => f.severity === "error");
-      expect(errors.map((f) => f.kind)).toContain("unhandledProviderCase");
+      expect(errors.map((f) => f.kind)).toContain("misreadProviderResponse");
     });
   });
 
@@ -1740,7 +1740,7 @@ describe("the collapsed report", () => {
     mixedSeverities();
     const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
 
-    expect(output).toContain("[ERROR] unhandledProviderCase");
+    expect(output).toContain("[ERROR] misreadProviderResponse");
     expect(output).not.toContain("[WARNING]");
     expect(output).toContain("Not shown: 1 deadConsumerBranch (warning).");
     expect(output).toContain("--all to see it");
@@ -1752,7 +1752,7 @@ describe("the collapsed report", () => {
       checkDir({ dir: tmpDir, all: true }),
     );
 
-    expect(output).toContain("[ERROR] unhandledProviderCase");
+    expect(output).toContain("[ERROR] misreadProviderResponse");
     expect(output).toContain("[WARNING] deadConsumerBranch");
     expect(output).not.toContain("Not shown:");
   });

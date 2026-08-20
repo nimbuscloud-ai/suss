@@ -67,7 +67,7 @@ describe("checkBodyCompatibility", () => {
     expect(findings).toEqual([]);
   });
 
-  it("emits error when consumer reads field not in provider body", () => {
+  it("leaves the read of a provably missing field to checkResponseMisread", () => {
     const p = provider("api", [
       transition("t-200", {
         output: response(200, record({ name: text })),
@@ -91,14 +91,7 @@ describe("checkBodyCompatibility", () => {
       }),
     };
 
-    const findings = checkBodyCompatibility(p, c);
-    expect(findings).toHaveLength(1);
-    expect(findings[0].kind).toBe("unhandledProviderCase");
-    expect(findings[0].severity).toBe("error");
-    expect(findings[0].description).toContain("a 200 body");
-    expect(findings[0].description).toContain(
-      "the provider can send does not include",
-    );
+    expect(checkBodyCompatibility(p, c)).toEqual([]);
   });
 
   it("emits lowConfidence when provider body has unknown/ref shapes", () => {
@@ -127,7 +120,7 @@ describe("checkBodyCompatibility", () => {
     expect(findings[0].severity).toBe("info");
   });
 
-  it("checks multiple status codes independently", () => {
+  it("reports nothing when the only mismatch is a provably missing field", () => {
     const p = provider("api", [
       transition("t-200", {
         output: response(200, record({ data: text })),
@@ -161,11 +154,9 @@ describe("checkBodyCompatibility", () => {
       }),
     };
 
-    const findings = checkBodyCompatibility(p, c);
-    // Status 200: consumer reads "result" but provider has "data" → error
-    // Status 404: consumer reads "error" and provider has "error" → ok
-    expect(findings).toHaveLength(1);
-    expect(findings[0].description).toContain("a 200 body");
+    // The 200's missing "result" is checkResponseMisread's finding, and the
+    // 404's "error" is present, so nothing is reported here either way.
+    expect(checkBodyCompatibility(p, c)).toEqual([]);
   });
 
   it("handles consumer expectedInput without body wrapper", () => {
@@ -190,9 +181,7 @@ describe("checkBodyCompatibility", () => {
       }),
     };
 
-    const findings = checkBodyCompatibility(p, c);
-    expect(findings).toHaveLength(1);
-    expect(findings[0].kind).toBe("unhandledProviderCase");
+    expect(checkBodyCompatibility(p, c)).toEqual([]);
   });
 
   it("emits info when consumer reads a field the provider declares optional", () => {
@@ -340,7 +329,7 @@ describe("checkBodyCompatibility", () => {
       return c;
     };
 
-    it("emits a default-branch error when a 2xx provider body misses a consumer field", () => {
+    it("leaves a default-branch read of a missing field to checkResponseMisread", () => {
       const p = provider("api", [
         transition("t-201", {
           output: response(201, record({ name: text })),
@@ -348,12 +337,7 @@ describe("checkBodyCompatibility", () => {
       ]);
       const c = defaultConsumer(record({ email: { type: "unknown" } }));
 
-      const findings = checkBodyCompatibility(p, c);
-      expect(findings).toHaveLength(1);
-      expect(findings[0].kind).toBe("unhandledProviderCase");
-      expect(findings[0].severity).toBe("error");
-      expect(findings[0].description).toContain("default branch");
-      expect(findings[0].description).toContain("a 201 body");
+      expect(checkBodyCompatibility(p, c)).toEqual([]);
     });
 
     it("lets the default branch read a field only a failing body returns", () => {

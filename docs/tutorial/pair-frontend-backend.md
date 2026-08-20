@@ -192,6 +192,18 @@ Compared 1 boundary.
       provider: { transitionId: "get:response:404:afd032b" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
+[ERROR] misreadProviderResponse
+  The consumer's fall-through path reads "name", but the 200 body the provider sends does not include it, and neither does any other response. The read comes back undefined and no error says so.
+  provider: backend/src/server.ts::get (backend/src/server.ts:14)
+    also from: openapi:openapi.yaml::GET /users/{id}
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: express (http) GET /users/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: misreadProviderResponse
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:200:ddaf2ab" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
 [WARNING] consumerContractViolation
   Contract declares response 404 but consumer does not handle it
   provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
@@ -203,12 +215,11 @@ Compared 1 boundary.
   provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
   consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
   boundary: openapi (http) GET /users/{id}
-────────────────────────────────────────────────────────────
-[ERROR] unhandledProviderCase
-  Consumer's default branch reads fields that a 200 body the provider can send does not include
-  provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
-  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
-  boundary: openapi (http) GET /users/{id}
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: consumerContractViolation
+      boundary: "GET /users/{id}"
+      consumer: { transitionId: "loadUser:return:none:da39a3e" }
+      reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 4 findings: 1 error, 3 warning, 0 info
 ```

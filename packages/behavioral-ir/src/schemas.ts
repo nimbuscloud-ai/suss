@@ -70,6 +70,8 @@ export const OpaqueReasonSchema = z.enum([
 
 export const FindingKindSchema = z.enum([
   "unhandledProviderCase",
+  /** A consumer path reads a field a response it runs on does not include. */
+  "misreadProviderResponse",
   "deadConsumerBranch",
   "providerContractViolation",
   "consumerContractViolation",

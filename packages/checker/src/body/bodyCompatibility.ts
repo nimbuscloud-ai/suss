@@ -230,16 +230,9 @@ export function checkBodyCompatibility(
           consumerBodyShape,
         );
 
-        if (result === "nomatch") {
-          findings.push({
-            kind: "unhandledProviderCase",
-            boundary,
-            provider: makeSide(provider, pt.id),
-            consumer: makeSide(consumer, ct.id),
-            description: `Consumer reads fields that a ${status} body the provider can send does not include`,
-            severity: "error",
-          });
-        } else if (result === "unknown") {
+        // A read of a field the body provably lacks is checkResponseMisread's
+        // finding; this check reports only what it could not compare.
+        if (result === "unknown") {
           findings.push({
             kind: "lowConfidence",
             boundary,
@@ -279,20 +272,6 @@ export function checkBodyCompatibility(
           unwrapBodyField(expectedInput, consumer),
           notAClaimAbout200,
         );
-        const result = providerCoversConsumerFields(
-          pt.output.body,
-          consumerBodyShape,
-        );
-        if (result === "nomatch") {
-          findings.push({
-            kind: "unhandledProviderCase",
-            boundary,
-            provider: makeSide(provider, pt.id),
-            consumer: makeSide(consumer, ct.id),
-            description: `Consumer's default branch reads fields that a ${providerStatus} body the provider can send does not include`,
-            severity: "error",
-          });
-        }
 
         for (const path of findOptionalAccesses(
           pt.output.body,
