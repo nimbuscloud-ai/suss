@@ -1,0 +1,22 @@
+# The deployment for the Worker in src/. It declares three of the four
+# bindings the code reads; AUDIT_KV is deliberately missing, so the
+# check reports the read. Invented fixture.
+
+name = "edge-cache"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+[vars]
+GREETING = "hello"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "prod-sessions"
+
+[[r2_buckets]]
+binding = "ARCHIVE"
+bucket_name = "prod-archive"
+
+[[d1_databases]]
+binding = "LEDGER"
+database_name = "prod-ledger"

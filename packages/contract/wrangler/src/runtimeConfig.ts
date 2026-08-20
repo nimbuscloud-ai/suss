@@ -15,7 +15,7 @@
 import { withRuntimeContractMetadata } from "@suss/behavioral-ir";
 import { runtimeConfigBinding } from "@suss/ir-core";
 
-import { RECOGNITION } from "./bindings.js";
+import { BINDING_BLOCKS, bindingNames, RECOGNITION } from "./bindings.js";
 
 import type { BehavioralSummary, EnvVarSource } from "@suss/behavioral-ir";
 import type { WranglerDocument } from "./document.js";
@@ -73,18 +73,31 @@ export function environmentDocuments(document: WranglerDocument): Deployment[] {
 }
 
 /**
- * The variables an environment takes from the top-level document. An
- * environment that declares a `vars` block of its own replaces the
- * whole block, which is Wrangler's rule rather than a merge.
+ * The variables and bindings an environment takes from the top-level
+ * document. An environment that declares a block of its own replaces
+ * the whole block, which is Wrangler's rule rather than a merge.
  */
 function inheritedNames(
   document: WranglerDocument,
   overrides: WranglerDocument,
 ): Set<string> {
-  if (overrides.vars !== undefined) {
-    return new Set();
+  const names = new Set<string>();
+  if (overrides.vars === undefined) {
+    for (const name of Object.keys(varsOf(document))) {
+      names.add(name);
+    }
   }
-  return new Set(Object.keys(varsOf(document)));
+
+  const kept: Record<string, unknown> = {};
+  for (const block of BINDING_BLOCKS) {
+    if (overrides[block] === undefined) {
+      kept[block] = document[block];
+    }
+  }
+  for (const name of bindingNames(kept)) {
+    names.add(name);
+  }
+  return names;
 }
 
 function nameOf(document: WranglerDocument): string | null {
@@ -111,7 +124,12 @@ export function runtimeConfigSummary(
   context: RuntimeConfigContext,
 ): BehavioralSummary {
   const vars = varsOf(deployment.merged);
-  const names = Object.keys(vars).sort();
+  // A binding is a property of the same env object the vars arrive on,
+  // so the contract lists it too: a read of `env.SESSIONS` is supplied
+  // by the deployment exactly when the document declares the binding.
+  const names = [
+    ...new Set([...Object.keys(vars), ...bindingNames(deployment.merged)]),
+  ].sort();
   const sources: Record<string, EnvVarSource> = {};
   const values: Record<string, string> = {};
   for (const name of names) {

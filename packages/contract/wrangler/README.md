@@ -25,9 +25,13 @@ queue = "greeting-events"
 | --- | --- |
 | `name`, `main` | the deployable unit and the code it runs |
 | `[vars]` | the Worker's runtime configuration, names and values |
-| `[[kv_namespaces]]`, `[[r2_buckets]]`, `[[d1_databases]]` | one store each |
+| `[[kv_namespaces]]`, `[[r2_buckets]]`, `[[d1_databases]]` | one store each, under the binding name the code spells |
 | `[[queues.producers]]`, `[[queues.consumers]]` | one channel each, on `cloudflare-queues` |
 | `[env.<name>]` | the same Worker deployed again, with the top-level document as its default |
+
+A store's container is the binding name, `SESSIONS`, because that is what an access in the Worker spells (`env.SESSIONS.get(...)`), and `@suss/framework-cloudflare-workers` records the same name on the code side, so the storage check pairs the two. The resource's own name, the KV namespace id or the bucket name, goes on the summary as `physicalTable`, the same split a Prisma model has between the model and the table it maps to.
+
+Binding names are also listed on the runtime-config contract, beside the `[vars]` names: a binding is a property of the same `env` object, so a Worker that reads `env.AUDIT_KV` without a binding block for it gets the same finding as a read of a variable nobody set.
 
 ## The values, not only the names
 

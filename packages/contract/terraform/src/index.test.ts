@@ -297,6 +297,73 @@ describe("what a pack says, and which provider version it says it for", () => {
   });
 });
 
+describe("an entry gated on what an attribute says", () => {
+  const GATED: TerraformPack = {
+    name: "test-cache",
+    provider: "aws",
+    resources: [
+      {
+        resource: "aws_elasticache_cluster",
+        providerVersions: ">=4 <7",
+        appliesWhen: {
+          attribute: "engine",
+          equals: ["redis"],
+          whenUnset: "read",
+        },
+        boundary: {
+          kind: "storage",
+          storageSystem: "redis",
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
+      {
+        resource: "aws_memorydb_cluster",
+        providerVersions: ">=4 <7",
+        appliesWhen: { attribute: "engine", equals: ["redis"] },
+        boundary: { kind: "storage", storageSystem: "redis", fieldSet: "none" },
+      },
+    ],
+  };
+
+  function cluster(attributes: string, resource = "aws_elasticache_cluster") {
+    return terraformToSummaries(
+      `resource "${resource}" "sessions" {\n${attributes}\n}`,
+      "main.tf",
+      { packs: [GATED] },
+    );
+  }
+
+  it("reads the resource when the attribute says what the entry describes", () => {
+    expect(cluster('  engine = "redis"')).toHaveLength(1);
+  });
+
+  it("skips the resource when the attribute says something else", () => {
+    expect(cluster('  engine = "memcached"')).toEqual([]);
+  });
+
+  it("skips a value built at deploy time, which settles nothing", () => {
+    expect(cluster("  engine = var.engine")).toEqual([]);
+  });
+
+  it("reads an unset attribute only when the entry says to", () => {
+    expect(cluster("")).toHaveLength(1);
+    expect(cluster("", "aws_memorydb_cluster")).toEqual([]);
+  });
+
+  it("declares a store-level entry with no container name to pair on", () => {
+    const [summary] = cluster('  engine = "redis"');
+    expect(summary?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "storage",
+      container: null,
+    });
+    expect(
+      (summary?.metadata?.storageContract as { physicalTable?: string })
+        ?.physicalTable,
+    ).toBeUndefined();
+  });
+});
+
 describe("shapes a configuration writes that the reader has to take as they come", () => {
   it("marks a queue the provider is told to make FIFO", () => {
     const [queue] = terraformToSummaries(

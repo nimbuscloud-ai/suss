@@ -70,7 +70,7 @@ function envReadAt(node: Node): EnvRead | null {
 }
 
 /** Whether an identifier refers to the env argument of a trigger. */
-function isTriggerEnvArgument(subject: Node): boolean {
+export function isTriggerEnvArgument(subject: Node): boolean {
   for (const definition of subject.getSymbol()?.getDeclarations() ?? []) {
     if (
       N.isParameterDeclaration(definition) &&

@@ -1,5 +1,12 @@
 {
   "google": "Terraform: the provider these resources come from",
+  "google_storage_bucket": "Terraform Google provider: resource type, a Cloud Storage bucket",
+  "google_redis_instance": "Terraform Google provider: resource type, a Memorystore for Redis instance",
+  "gcs": "Google Cloud Storage, the store the bucket entry records",
+  "redis": "Memorystore's engine, the store suss records for it",
+  "storage": "suss: boundary kind for a store",
+  "none": "suss: a storage contract with no fields to compare against",
+  "store": "suss: a resource that says a store exists without stating its containers",
   "google_logging_metric": "Terraform Google provider: resource type, a log-based metric",
   "google_monitoring_alert_policy": "Terraform Google provider: resource type, an alert policy",
   "name": "Terraform Google provider: the attribute stating what a metric is called once deployed",

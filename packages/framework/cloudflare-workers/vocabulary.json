@@ -1,5 +1,15 @@
 {
   "addEventListener": "Cloudflare Workers: the service-worker form of trigger registration",
+  "get": "Cloudflare Workers: KV and R2 read of one key",
+  "getWithMetadata": "Cloudflare Workers: KV read of one key and its metadata",
+  "head": "Cloudflare Workers: R2 read of one object's metadata",
+  "put": "Cloudflare Workers: KV and R2 write of one key",
+  "delete": "Cloudflare Workers: KV and R2 delete of one key",
+  "prepare": "Cloudflare Workers: D1 call taking a statement as text",
+  "exec": "Cloudflare Workers: D1 call running statements as text",
+  "sqlite": "the dialect D1 speaks, for the SQL reader",
+  "read": "suss: access kind",
+  "write": "suss: access kind",
   "Response": "WHATWG Fetch: the class a Worker returns to serve a request",
   "status": "WHATWG Fetch: the ResponseInit property with the status code",
   "cloudflareWorkers": "suss: the metadata namespace this pack writes under",
@@ -14,5 +24,8 @@
   "context": "suss: input role for the argument a runtime's execution context arrives in",
   "typescript": "suss: language name",
   "javascript": "suss: language name",
-  "http": "suss: transport name"
+  "http": "suss: transport name",
+  "r2": "Cloudflare: the R2 object store",
+  "d1": "Cloudflare: the D1 SQL database",
+  "reference": "suss: what a reader says instead of a name when the name is somewhere else"
 }

@@ -153,7 +153,7 @@ function summariesForFiles(
     for (const [resourceType, label, body] of file.resources) {
       for (const pack of options.packs) {
         const pattern = patternFor(pack, resourceType, file.constraints);
-        if (pattern === undefined) {
+        if (pattern === undefined || !entryApplies(pattern, body)) {
           continue;
         }
         summaries.push(
@@ -253,6 +253,27 @@ function patternFor(
   });
 }
 
+/**
+ * Whether the entry's own gate lets it read this resource. A value the
+ * configuration builds at deploy time settles nothing, so the resource
+ * goes unread rather than read as something it may not be.
+ */
+function entryApplies(
+  pattern: TerraformResourcePattern,
+  body: Record<string, unknown>,
+): boolean {
+  const gate = pattern.appliesWhen;
+  if (gate === undefined) {
+    return true;
+  }
+  const value = body[gate.attribute];
+  if (value === undefined) {
+    return gate.whenUnset === "read";
+  }
+  const text = stringOf(value);
+  return text !== null && gate.equals.includes(text);
+}
+
 /** Where in the configuration one resource was written. */
 interface ResourceSite {
   label: string;
@@ -307,8 +328,12 @@ function storageSummary(
   // Two resource types may share a label, so the summary goes by the
   // address Terraform itself refers to a resource by.
   const address = `${opts.resourceType}.${label}`;
+  // A resource that only says the store exists gets no container name
+  // and no physical name: either one would claim accesses that spell
+  // the same text, and nothing the resource declares is a container.
+  const declaresContainer = boundary.declares !== "store";
   const physicalTable =
-    boundary.nameAttribute === undefined
+    !declaresContainer || boundary.nameAttribute === undefined
       ? null
       : namePattern(opts.body[boundary.nameAttribute], opts.scope);
 
@@ -330,7 +355,7 @@ function storageSummary(
           ? { transport: boundary.transport }
           : {}),
         scope: "default",
-        container: label,
+        container: declaresContainer ? label : null,
         accessPath: shape.accessPath,
       }),
     },

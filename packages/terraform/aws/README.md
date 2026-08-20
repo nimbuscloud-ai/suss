@@ -21,11 +21,19 @@ terraformFileToSummaries("infra/terraform/dynamodb", { packs: [awsTerraform()] }
 | --- | --- |
 | `aws_dynamodb_table` | a store, keyed by `hash_key` and `range_key`, with each `global_secondary_index` and `local_secondary_index` as its own way in |
 | `aws_s3_bucket` | a store whose objects have no fields to compare against |
+| `aws_elasticache_cluster` | a Redis store, when `engine` is `redis` or `valkey`; a Memcached cluster is skipped |
+| `aws_elasticache_replication_group` | a Redis store |
 | `aws_sqs_queue` | a channel |
 | `aws_sns_topic` | a channel |
 | `aws_cloudwatch_event_bus` | a channel |
 
 Everything else a configuration declares, a security group, a subnet, an IAM policy, is how the deployment is wired rather than something a caller addresses, so nothing reads it.
+
+## Why a Redis cluster pairs with nothing
+
+Code addresses Redis by key namespace: `@suss/framework-redis` reads `session:{id}` and records the container `session`. A cluster declares no namespaces; its `cluster_id` is a deployment name, and code never spells it. The two sides share no name either can state, so the entry says so: the summary declares the store exists, with no container name, and the storage check claims no access for it. A pair between a cluster called `session` and the `session` namespace would be a coincidence between a deployment name and a key prefix, so the entry refuses it rather than reporting it.
+
+What you get from the entry is visibility: `suss contract --from terraform` shows the cluster, and `suss check` reports it as a declared store nothing paired with. Namespace-level pairing stays between the code's own readers and writers of the same keys.
 
 ## Why every entry states a version range
 

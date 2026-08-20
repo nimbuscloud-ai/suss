@@ -1,4 +1,7 @@
 node_modules/
+# A fixture project's node_modules is stub type declarations for the
+# libraries its code imports, written by hand and meant to be committed.
+!fixtures/*/node_modules/
 dist/
 .turbo/
 *.tsbuildinfo

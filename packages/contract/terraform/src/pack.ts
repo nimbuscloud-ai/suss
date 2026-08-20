@@ -24,6 +24,17 @@ export interface StorageResource {
   storageSystem: string;
   /** How a caller reaches it, when that is not the store's own name. */
   transport?: string;
+  /**
+   * What the resource declares. The default, `"container"`, means the
+   * resource is the thing code addresses: code passes a bucket's name
+   * to `bucket()`, so the declared name and the accessed name meet.
+   * `"store"` means the resource only says the store exists. Code
+   * splits a Redis cluster into key namespaces, no attribute of the
+   * cluster lists them, so the summary gets no container name and
+   * claims no access. Any match on the cluster's own name would be a
+   * coincidence between a deployment name and a key prefix.
+   */
+  declares?: "container" | "store";
   /** The attribute that says what the resource is called once deployed. */
   nameAttribute?: string;
   /** Whether the fields it declares are every field an item has. */
@@ -123,6 +134,20 @@ export type TerraformResource =
 export interface TerraformResourcePattern {
   /** The resource type, spelled the way the provider spells it. */
   resource: string;
+  /**
+   * An attribute that decides whether the entry describes the resource
+   * at all. `aws_elasticache_cluster` deploys whichever engine its
+   * `engine` attribute picks, and only some engines are the store the
+   * entry describes. A value outside `equals`, or one built at deploy
+   * time, means the resource is not read, rather than read as
+   * something it may not be. `whenUnset` says what an absent attribute
+   * means; the default is not to read the resource.
+   */
+  appliesWhen?: {
+    attribute: string;
+    equals: string[];
+    whenUnset?: "read" | "skip";
+  };
   /**
    * Which provider versions this describes, as a semver range. A
    * configuration states its own constraint under `required_providers`,

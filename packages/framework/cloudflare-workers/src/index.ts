@@ -14,12 +14,14 @@
 
 import { cloudflareWorkersDiscovery } from "./discovery.js";
 import { envBindingRecognizer } from "./envBindings.js";
+import { storeBindingRecognizer } from "./storeBindings.js";
 
-import type { PatternPack } from "@suss/extractor";
+import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 
 export { cloudflareWorkersDiscovery, METADATA_NAMESPACE } from "./discovery.js";
 export { envBindingRecognizer } from "./envBindings.js";
 export { TRIGGERS, type TriggerShape } from "./handlers.js";
+export { storeBindingRecognizer } from "./storeBindings.js";
 
 export interface CloudflareWorkersPackOptions {
   /**
@@ -105,6 +107,9 @@ export function cloudflareWorkersFramework(
     },
 
     accessRecognizers: [envBindingRecognizer(options)],
+
+    // A store call on an env binding: `env.SESSIONS.get(key)`.
+    invocationRecognizers: [storeBindingRecognizer as InvocationRecognizer],
   };
 }
 

@@ -4,7 +4,7 @@ Says what Google Cloud's Terraform provider declares, for `@suss/contract-terraf
 
 ## What this package is
 
-A pack, and nothing but entries. Two of them say what a resource is, and what its own words mean in the terms suss compares boundaries in.
+A pack, and nothing but entries. Each one says what a resource is, and what its own words mean in the terms suss compares boundaries in.
 
 ```ts
 import { terraformFileToSummaries } from "@suss/contract-terraform";
@@ -21,10 +21,14 @@ const summaries = terraformFileToSummaries("infra/terraform/monitoring", {
 
 | Resource | Becomes |
 | --- | --- |
+| `google_storage_bucket` | a store whose objects have no fields to compare against, under the name code passes to `bucket()` |
+| `google_redis_instance` | a Redis store with no container to pair on; see below |
 | `google_logging_metric` | a metric, identified by the type Cloud Monitoring gives it, `logging.googleapis.com/user/<name>` |
 | `google_monitoring_alert_policy` | one consumer of a metric per `condition_threshold`, identified by the `metric.type` its filter states |
 
 Everything else a configuration declares is skipped.
+
+A bucket pairs by name: `@suss/framework-gcs` records the bucket an access reaches, and the `name` attribute is the same string, so `suss check` compares the two sides. A Memorystore instance does not: code addresses Redis by key namespace, no attribute of the instance declares one, and a match on the instance's own name would be a coincidence, so the summary declares the store with no container name and the storage check claims no access for it. The `@suss/terraform-aws` README walks through the same decision for ElastiCache.
 
 ## The pair the provider refuses
 

@@ -55,6 +55,28 @@ resource "aws_cloudwatch_event_bus" "orders" {
   name = "\${local.environment}-order-events"
 }
 
+resource "aws_elasticache_cluster" "sessions" {
+  cluster_id = "sessions-v1"
+  engine     = "redis"
+  node_type  = "cache.t3.micro"
+}
+
+resource "aws_elasticache_cluster" "fragments" {
+  cluster_id = "fragments-v1"
+  engine     = "memcached"
+  node_type  = "cache.t3.micro"
+}
+
+resource "aws_elasticache_cluster" "sessions_member" {
+  cluster_id           = "sessions-v1-002"
+  replication_group_id = "sessions-v1-group"
+}
+
+resource "aws_elasticache_replication_group" "editions" {
+  replication_group_id = "editions-v1"
+  description          = "edition cache"
+}
+
 resource "aws_iam_role" "runner" {
   name = "runner"
 }
@@ -133,6 +155,38 @@ describe("what the AWS entries read", () => {
         s.identity.boundaryBinding.semantics.messageBus === "eventbridge",
     );
     expect(bus?.identity.name).toBe("aws_cloudwatch_event_bus.orders");
+  });
+
+  it("reads a Redis cluster as a store with no container to pair on", () => {
+    const cluster = boundary("aws_elasticache_cluster.sessions");
+    expect(cluster.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "storage",
+      storageSystem: "redis",
+      container: null,
+    });
+    const contract = readStorageContractMetadata(cluster);
+    expect(contract?.fieldSet).toBe("none");
+    expect(contract?.physicalTable).toBeUndefined();
+  });
+
+  it("skips a Memcached cluster, which is not the store the entry describes", () => {
+    expect(read().some((s) => s.identity.name.includes("fragments"))).toBe(
+      false,
+    );
+  });
+
+  it("reads a cluster with no engine of its own, since it joins a replication group", () => {
+    expect(
+      boundary("aws_elasticache_cluster.sessions_member").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "redis" });
+  });
+
+  it("reads a replication group as the same kind of store", () => {
+    expect(
+      boundary("aws_elasticache_replication_group.editions").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "redis", container: null });
   });
 
   it("leaves everything that is deployment wiring alone", () => {

@@ -4,7 +4,10 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
+import {
+  readRuntimeContractMetadata,
+  readStorageContractMetadata,
+} from "@suss/behavioral-ir";
 
 import { isConfigurationFile, wranglerFileToSummaries } from "./index.js";
 
@@ -110,10 +113,23 @@ describe("wranglerFileToSummaries", () => {
   it("records what each variable is set to, and skips one that is not text", () => {
     const runtime = runtimeFor(read("greeting"), "greeting-router");
     const contract = readRuntimeContractMetadata(runtime as BehavioralSummary);
-    expect(contract?.envVars).toEqual(["GREETING_TABLE", "RETRY_LIMIT"]);
+    expect(contract?.envVars).toEqual([
+      "ARCHIVE",
+      "GREETING_TABLE",
+      "LEDGER",
+      "OUTBOUND",
+      "RETRY_LIMIT",
+      "SESSIONS",
+    ]);
     expect(contract?.envVarValues).toEqual({
       GREETING_TABLE: "prod-greetings-v2",
     });
+  });
+
+  it("lists a binding on the runtime contract, since it is a property of env", () => {
+    const runtime = runtimeFor(read("greeting"), "greeting-router");
+    const contract = readRuntimeContractMetadata(runtime as BehavioralSummary);
+    expect(contract?.envVarSources?.SESSIONS).toBe("template");
   });
 
   it("puts the Worker's code scope on the summary", () => {
@@ -137,10 +153,19 @@ describe("wranglerFileToSummaries", () => {
         return [semantics.storageSystem, semantics.container];
       }),
     ).toEqual([
-      ["cloudflare-kv", "prod-sessions"],
-      ["r2", "prod-archive"],
-      ["d1", "prod-ledger"],
+      ["cloudflare-kv", "SESSIONS"],
+      ["r2", "ARCHIVE"],
+      ["d1", "LEDGER"],
     ]);
+  });
+
+  it("keeps the resource's own name beside the binding it pairs on", () => {
+    const stores = read("greeting").filter(
+      (s) => s.identity.boundaryBinding?.semantics.name === "storage",
+    );
+    expect(
+      stores.map((s) => readStorageContractMetadata(s)?.physicalTable),
+    ).toEqual(["prod-sessions", "prod-archive", "prod-ledger"]);
   });
 
   it("emits the producer channel once and one consumer per deployment", () => {
@@ -172,6 +197,9 @@ describe("wranglerFileToSummaries", () => {
       GREETING_TABLE: "staging-greetings-v2",
     });
     expect(contract?.envVarSources?.GREETING_TABLE).toBe("template");
+    // The environment overrides no binding block, so its bindings come
+    // from the top-level document.
+    expect(contract?.envVarSources?.SESSIONS).toBe("globals");
   });
 
   it("marks a variable an environment inherits as a document-level default", () => {

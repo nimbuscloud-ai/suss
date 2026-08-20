@@ -60,6 +60,32 @@ export function googleTerraform(): TerraformPack {
     provider: "google",
     resources: [
       {
+        resource: "google_storage_bucket",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          storageSystem: "gcs",
+          // The name is what code passes to `bucket()`, so it is the
+          // identity both sides spell.
+          nameAttribute: "name",
+          // An object has no fields to compare a read against.
+          fieldSet: "none",
+        },
+      },
+      {
+        resource: "google_redis_instance",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          storageSystem: "redis",
+          // Code addresses key namespaces, which no attribute of the
+          // instance lists, so it declares the store and claims no
+          // access. The README says how the sides meet.
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
+      {
         resource: "google_logging_metric",
         providerVersions: CURRENT,
         boundary: {
