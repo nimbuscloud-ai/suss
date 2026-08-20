@@ -50,6 +50,10 @@ export type WitnessTag = Witness | "asserted" | "absent";
 export const witnesses: TagAlgebra<WitnessTag> = {
   asserted: "asserted",
   absent: "absent",
+  // A witness is built from the derivation alone, and saying so lets
+  // the evaluator skip the body-tag lookups, which were most of the
+  // tagged path's cost on a large sweep.
+  ignoresBodyTags: true,
   combine: (_bodyTags, derivation: Derivation) =>
     new Witness(derivation.rule, derivation.body),
   merge: (stored) => stored,
