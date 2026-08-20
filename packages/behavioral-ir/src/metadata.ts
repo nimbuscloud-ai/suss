@@ -573,6 +573,29 @@ const HttpDeclaredContractSchema = z.object({
       body: TypeShapeSchema.nullish(),
     }),
   ),
+  /**
+   * Responses a source declares by class rather than by one code, the
+   * way OpenAPI writes "4XX". Such an entry promises some status
+   * between `min` and `max`, without saying which, so a consumer branch
+   * on any member agrees with the contract.
+   */
+  responseRanges: z
+    .array(
+      z.object({
+        min: z.number(),
+        max: z.number(),
+        /** The spelling in the source ("2XX", "4xx"), for messages. */
+        spec: z.string(),
+        body: TypeShapeSchema.nullish(),
+      }),
+    )
+    .optional(),
+  /**
+   * A catch-all response for every status the entries above leave out,
+   * the way OpenAPI writes `default`. Its presence means no consumer
+   * status is undeclared.
+   */
+  defaultResponse: z.object({ body: TypeShapeSchema.nullish() }).optional(),
   provenance: HttpContractProvenanceSchema.default("independent"),
 });
 
