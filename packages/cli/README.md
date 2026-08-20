@@ -37,6 +37,7 @@ suss check --dir summaries/ --at 'dynamodb:editions#by-publication'
 # One question about one boundary, from summaries already on disk
 suss ask 'what can I project from dynamodb:editions#by-publication' --dir summaries/
 suss ask 'what reads dynamodb:editions' --dir summaries/
+suss ask 'why does getOrder reach dynamodb:orders' --dir summaries/
 
 # Generate summaries from a declared contract (no source extraction)
 suss contract --from openapi spec.yaml [-o provider.json]
@@ -71,8 +72,9 @@ Two measurements decided this. The unpaired lists are the bulk of a report on an
 The flag changes what is printed and nothing else. `--json` always includes every finding and every list, so a CI job that parses the JSON sees no difference. The exit code still comes from `--fail-on`, which defaults to `error`. `--at` prints in full whether or not `--all` is passed, because a reader who has narrowed the run to one file or one boundary has already said what they want to see.
 
 **`ask`**
-- Positional argument: the question, one of `what can I project from <boundary>`, `what reads <boundary>`, `what writes <boundary>`, `what does <unit> reach`
+- Positional argument: the question, one of `what can I project from <boundary>`, `what reads <boundary>`, `what writes <boundary>`, `what does <unit> reach`, `why does <unit> reach <boundary>`, `why does <name> at <file>:<line> resolve to <target>`
 - `--dir`: directory of summary JSON files, or pass one summaries file instead
+- `--project`: where the source is, for a why question (default: the working directory)
 - `--json`: emit the answer as JSON
 - `-o, --output`: write the answer to file instead of stdout
 

@@ -1,9 +1,9 @@
 /**
- * `suss ask`: one question about one boundary, answered from the
- * summaries already on disk.
+ * `suss ask`: one question, answered from the summaries already on
+ * disk, and for a why question from the source as well.
  *
- * Four shapes, and no parser behind them. A question that is not one of
- * the four gets the four printed back rather than a guess at what it
+ * Six shapes, and no parser behind them. A question that is not one of
+ * the six gets the six printed back rather than a guess at what it
  * meant, because a wrong answer to a question about a store is worse
  * than no answer.
  *
@@ -22,6 +22,8 @@ import {
   summaryIdentifier,
 } from "@suss/behavioral-ir";
 
+import { gapCaveats } from "./askCaveats.js";
+import { askWhy, WHY_SHAPES } from "./askWhy.js";
 import { boundariesTouchedBy, namesBoundary } from "./boundaryReach.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
@@ -29,8 +31,14 @@ import { collapseTouches, resolveTarget, type TargetTouch } from "./target.js";
 import { UsageError } from "./usageError.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { WhyShape } from "./askWhy.js";
 
-export type QuestionShape = "declares" | "reads" | "writes" | "reaches";
+export type QuestionShape =
+  | "declares"
+  | "reads"
+  | "writes"
+  | "reaches"
+  | WhyShape;
 
 export interface AskOptions {
   question: string;
@@ -38,6 +46,18 @@ export interface AskOptions {
   file?: string;
   json?: boolean;
   output?: string;
+  /** Where the source is, for a why question. Defaults to the cwd. */
+  project?: string;
+}
+
+/** A parsed question: the shape, and the words it was asked with. */
+export interface ParsedQuestion {
+  shape: QuestionShape;
+  subject: string;
+  /** The other half of a why question: a boundary, or a target. */
+  object?: string;
+  /** Where a why-resolve question points. */
+  at?: { file: string; line: number };
 }
 
 export interface AnswerItem {
@@ -57,9 +77,11 @@ export interface Answer {
   caveats: string[];
   /** False when the subject is not in these summaries at all. */
   found: boolean;
+  /** Structure only the JSON form prints: chains, hops, costs. */
+  detail?: Record<string, unknown>;
 }
 
-/** The four questions, and how each one is written. */
+/** The summary questions, and how each one is written. */
 const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "declares", pattern: /^what can i project from\s+(.+)$/i },
   { shape: "declares", pattern: /^what does\s+(.+?)\s+declare$/i },
@@ -68,12 +90,16 @@ const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "reaches", pattern: /^what does\s+(.+?)\s+reach$/i },
 ];
 
-const HOW_TO_ASK = `suss ask takes one of four questions:
+const HOW_TO_ASK = `suss ask takes one of six questions:
   suss ask 'what can I project from aws.dynamodb:editions#by-publication'
   suss ask 'what reads aws.dynamodb:editions'
   suss ask 'what writes aws.dynamodb:editions'
   suss ask 'what does src/editions/dao.ts reach'
-Add --dir to say which summaries to read, or pass one summaries file.`;
+  suss ask 'why does src/editions/dao.ts reach aws.dynamodb:editions'
+  suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
+Add --dir to say which summaries to read, or pass one summaries file.
+A why question reads the source too; --project says where it is when it
+is not the working directory.`;
 
 export function ask(options: AskOptions): number {
   const question = parseQuestion(options.question);
@@ -82,8 +108,10 @@ export function ask(options: AskOptions): number {
     return 1;
   }
 
-  const summaries = loadSummaries(options);
-  const answer = ANSWERS[question.shape](question.subject, summaries);
+  const answer =
+    question.shape === "whyReaches" || question.shape === "whyResolves"
+      ? askWhy(question, options, () => loadSummaries(options))
+      : ANSWERS[question.shape](question.subject, loadSummaries(options));
   const rendered = options.json
     ? `${JSON.stringify(asJson(options.question, answer), null, 2)}\n`
     : renderAnswer(answer);
@@ -91,10 +119,14 @@ export function ask(options: AskOptions): number {
   return answer.found ? 0 : 1;
 }
 
-export function parseQuestion(
-  raw: string,
-): { shape: QuestionShape; subject: string } | null {
+export function parseQuestion(raw: string): ParsedQuestion | null {
   const asked = raw.trim().replace(/\?$/, "").trim();
+  for (const { pattern, read } of WHY_SHAPES) {
+    const found = pattern.exec(asked);
+    if (found !== null) {
+      return read(found);
+    }
+  }
   for (const { shape, pattern } of SHAPES) {
     const found = pattern.exec(asked);
     if (found !== null) {
@@ -124,7 +156,7 @@ function loadSummaries(options: AskOptions): BehavioralSummary[] {
 // ---------------------------------------------------------------------------
 
 const ANSWERS: Record<
-  QuestionShape,
+  Exclude<QuestionShape, WhyShape>,
   (subject: string, summaries: BehavioralSummary[]) => Answer
 > = {
   declares: answerDeclares,
@@ -418,19 +450,6 @@ function declarationsOf(summary: BehavioralSummary): Declaration[] {
   return DECLARATION_READERS.flatMap((read) => read(summary));
 }
 
-function gapCaveats(summaries: ReadonlyArray<BehavioralSummary>): string[] {
-  const withGaps = [...new Set(summaries)].filter(
-    (summary) => summary.gaps.length > 0,
-  );
-  if (withGaps.length === 0) {
-    return [];
-  }
-  return withGaps.map(
-    (summary) =>
-      `${summaryIdentifier(summary)} records ${summary.gaps.length} thing${summary.gaps.length === 1 ? "" : "s"} suss could not read: ${summary.gaps.map((gap) => gap.description).join("; ")}`,
-  );
-}
-
 /**
  * A unit suss could not read all of could go through the boundary
  * without this run seeing it, which is worth saying whenever the answer
@@ -467,6 +486,7 @@ function asJson(question: string, answer: Answer): unknown {
     items: answer.items.map((item) => item.data),
     needs: answer.needs,
     caveats: answer.caveats,
+    ...(answer.detail ?? {}),
   };
 }
 

@@ -508,10 +508,10 @@ and invisible to TypeScript; autocomplete is the right answer to that and
 there is nowhere to put it, so the next best thing is being able to ask.
 
 ```
-suss ask "QUESTION" [--dir DIR | SUMMARIES.json] [--json] [-o OUTPUT]
+suss ask "QUESTION" [--dir DIR | SUMMARIES.json] [--project DIR] [--json] [-o OUTPUT]
 ```
 
-Four questions, in these words:
+Six questions, in these words:
 
 | Question | What comes back |
 |---|---|
@@ -519,6 +519,8 @@ Four questions, in these words:
 | `what reads <boundary>` | Every unit that reads it, with the file, the line, and the call. |
 | `what writes <boundary>` | The same, for writes. |
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads or writes each. |
+| `why does <unit> reach <boundary>` | The call chain from the unit to the boundary, with each hop's resolution proved from source. |
+| `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
 
 The boundary is spelled the way reports spell it, and a shorter spelling
 covers more, exactly as under [`--at`](#reporting-on-one-thing). A
@@ -553,16 +555,41 @@ No summary here provides dynamodb:editions#by-publication. Read the schema or de
 template that declares it: suss contract --from terraform <path> -o summaries/infra.json
 ```
 
+A why question is answered from two layers. The summaries say which
+unit calls which and where the boundary is touched. The chain under each
+hop is proved from source: the question re-reads the relevant files
+and re-evaluates the resolution rules under the witness algebra, when
+asked and never during a normal run. `--project` says where the source
+is when it is not the working directory.
+
+```
+$ suss ask 'why does getOrder reach aws.dynamodb' --dir .suss
+GetOrderFunction.getOrder reaches aws.dynamodb:{location.table}:
+  GetOrderFunction.getOrder -> readRow -> client.send
+  GetOrderFunction.getOrder (src/orders.ts:6) calls readRow, and that call runs readRow (src/orderStore.ts:14):
+    readRow (src/orders.ts:9) -> readRow (src/orders.ts:4) -> readRow (src/orderStore.ts:14)
+    readRow (src/orders.ts:9) is declared as readRow (src/orders.ts:4)
+    readRow (src/orders.ts:4) is imported from src/orderStore.ts under the name readRow
+  readRow reads aws.dynamodb:{location.table} through client.send (src/orderStore.ts:14)
+```
+
+A hop through a pack-declared wrapper says what it rests on, as
+`assuming a pack declares that withSentry from @sentry/serverless
+passes argument 0 through to its result`.
+
 An answer also says when a unit suss could not read all of could be
 missing from it. `--json` gives the same answer as `{ question, shape,
-subject, found, headline, items, needs, caveats }`.
+subject, found, headline, items, needs, caveats }`, and a why answer
+adds the chain, the hops with their resolution steps, and what the
+re-evaluation cost.
 
 ### Exit codes
 
-- `0`: the question was one of the four and its subject is in these
+- `0`: the question was one of the six and its subject is in these
   summaries, including when the answer is empty.
-- `1`: the question was not one of the four, or nothing here is at the
-  boundary it asked about.
+- `1`: the question was not one of the six, nothing here is at the
+  boundary it asked about, or a why question's chain is not one the
+  run contains.
 
 ## `suss inspect`
 
