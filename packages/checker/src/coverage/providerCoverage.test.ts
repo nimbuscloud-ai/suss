@@ -7,6 +7,7 @@ import {
   negated,
   opaqueResponse,
   provider,
+  rangeResponse,
   recordBody,
   response,
   statusEq,
@@ -546,6 +547,139 @@ describe("checkProviderCoverage — sub-case analysis", () => {
       transition("ct-200", {
         conditions: [statusEq(200)],
         output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(p, c)).toEqual([]);
+  });
+});
+
+describe("checkProviderCoverage — provider ranges", () => {
+  const rangeProvider = () =>
+    provider("getPet", [
+      transition("t-2xx", {
+        output: rangeResponse(),
+        range: { min: 200, max: 299, spec: "2XX" },
+      }),
+      transition("t-4xx", {
+        output: rangeResponse(),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+    ]);
+
+  it("counts a branch on one member as covering the range", () => {
+    const c = consumer("PetPage", [
+      transition("ct-404", {
+        conditions: [statusEq(404)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-else", {
+        conditions: [negated(statusEq(404))],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(rangeProvider(), c)).toEqual([]);
+  });
+
+  it("counts a `!res.ok` guard as covering a failure range", () => {
+    const c = consumer("PetPage", [
+      transition("ct-failed", {
+        conditions: [negated(statusInRange(200, 299))],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-ok", {
+        conditions: [negated(negated(statusInRange(200, 299)))],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkProviderCoverage(rangeProvider(), c)).toEqual([]);
+  });
+
+  it("counts a catch on a throwing client as covering a failure range", () => {
+    const c = throwsOnFailure(
+      consumer("PetPage", [
+        transition("ct-catch", {
+          conditions: [catchEntry()],
+          output: { type: "return", value: null },
+        }),
+        transition("ct-default", {
+          output: { type: "return", value: null },
+          isDefault: true,
+        }),
+      ]),
+    );
+    expect(checkProviderCoverage(rangeProvider(), c)).toEqual([]);
+  });
+
+  it("reports an uncovered range once, not per member", () => {
+    const c = consumer("PetPage", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const findings = checkProviderCoverage(rangeProvider(), c);
+    expect(findings.map((f) => f.description)).toEqual([
+      "Provider produces statuses in the 4XX range but no consumer branch handles any of them",
+    ]);
+    expect(findings[0].kind).toBe("unhandledProviderCase");
+    expect(findings[0].severity).toBe("warning");
+    expect(findings[0].provider.transitionId).toBe("t-4xx");
+  });
+
+  it("keeps the finding when the consumer reads a 2XX-only field on a path that admits 4XX", () => {
+    const p = provider("getPet", [
+      transition("t-2xx", {
+        output: rangeResponse(recordBody("name")),
+        range: { min: 200, max: 299, spec: "2XX" },
+      }),
+      transition("t-4xx", {
+        output: rangeResponse(),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+    ]);
+    const c = consumer("PetPage", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    c.transitions[0] = {
+      ...c.transitions[0],
+      expectedInput: {
+        type: "record",
+        properties: {
+          body: {
+            type: "record",
+            properties: { name: { type: "unknown" } },
+          },
+        },
+      },
+    };
+    const findings = checkProviderCoverage(p, c);
+    expect(findings.map((f) => f.description)).toEqual([
+      "Provider produces statuses in the 4XX range but no consumer branch handles any of them",
+    ]);
+  });
+
+  it("counts a guard on a field only the failure range's body returns", () => {
+    const p = provider("getPet", [
+      transition("t-2xx", {
+        output: rangeResponse(recordBody("name")),
+        range: { min: 200, max: 299, spec: "2XX" },
+      }),
+      transition("t-4xx", {
+        output: rangeResponse(recordBody("error")),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+    ]);
+    const c = consumer("PetPage", [
+      transition("ct-error", {
+        conditions: [bodyFieldTruthy("error")],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
       }),
     ]);
     expect(checkProviderCoverage(p, c)).toEqual([]);

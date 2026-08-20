@@ -219,6 +219,13 @@ The provider produces a status code (or a body case within a status) that no con
   boundary: ts-rest (http) GET /users/:id
 ```
 
+A provider response declared as a range (an OpenAPI `4XX`) is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member (a branch on 404, a `!res.ok` guard, a catch on a throwing client), and when nothing covers any member it reports once:
+
+```
+[WARNING] unhandledProviderCase
+  Provider produces statuses in the 4XX range but no consumer branch handles any of them
+```
+
 **Legitimate when:** the consumer truly doesn't care (it has a `try/catch`, or the throw path is correct).
 
 **Bug when:** the consumer silently ignores the status. Add a branch (e.g. `if (res.status === 404) return null`).
@@ -244,6 +251,7 @@ This is `unhandledProviderCase` restated as a behavior claim rather than a cover
 - A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is an answer, not a misread.
 - A body with spreads or an opaque shape claims nothing, and a status the provider returns with several bodies fires only when every one of them lacks the field.
 - The branch has to run on the response: a status guard, a range like `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
+- A response declared as a range (an OpenAPI `4XX`) is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body, and the finding says which (`the 4XX body the provider sends`).
 
 **Legitimate when:** the provider sends the field through a path suss could not read (a wrapper, a spread it flattened away). Suppress with `.sussignore`.
 
@@ -256,6 +264,8 @@ This is `unhandledProviderCase` restated as a behavior claim rather than a cover
 The branch never runs, and nothing misreads at runtime because of it, so no outcome sentence can be written. Whether to delete it or to fix the provider is a judgement.
 
 The consumer has a branch that reads a status the provider never produces. It usually comes from a consumer copy-pasted from another endpoint.
+
+A status inside a range the provider declares (404 against an OpenAPI `4XX`) is produced, and a provider with a `default` response produces any status, so neither makes a branch dead.
 
 **Fix:** delete the branch, or add the missing status to the provider contract.
 
@@ -278,6 +288,8 @@ Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap 
 No outcome can be stated against a contract alone: a branch for an undeclared status never runs, and a missing branch may be the intended fall-through. Which side is right, the branch or the contract, is a judgement.
 
 The consumer's expected statuses or body-field reads disagree with the contract. It handles a status the contract doesn't declare, fails to handle one the contract requires, or reads a body field the contract doesn't promise.
+
+A contract's range and `default` entries widen what is declared: a branch on 404 agrees with a declared `4XX`, and nothing is undeclared against a contract with a `default`. A declared range the consumer handles no member of reports once (`Contract declares 4XX responses but consumer handles none of them`).
 
 ### `contractDisagreement` *(shipped)*
 

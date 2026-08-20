@@ -17,7 +17,12 @@ import {
   readReactMetadata,
   safeParseSummaries,
 } from "@suss/behavioral-ir";
-import { pairSummaries, summaryWithDefinitionsInlined } from "@suss/checker";
+import {
+  contractDeclaresStatus,
+  pairSummaries,
+  readDeclaredContract,
+  summaryWithDefinitionsInlined,
+} from "@suss/checker";
 
 import { UsageError } from "./usageError.js";
 
@@ -331,7 +336,9 @@ type Leaf = {
   output: Output;
   effects: Effect[];
   isDefault: boolean;
-  declaredStatuses: Set<number> | null;
+  declares: ((status: number) => boolean) | null;
+  /** The range spec ("4XX") for a response declared by class. */
+  rangeSpec: string | null;
 };
 
 /**
@@ -459,14 +466,22 @@ type TreeNode =
  * into two sides. The slot keeps every distinct arrival rather than
  * whichever got there first, so no recorded outcome disappears (#133).
  */
+function leafKey(leaf: Leaf): string {
+  // The range spec is part of identity: a "2XX" and a "4XX" response
+  // have the same output shape and are different outcomes.
+  return JSON.stringify({
+    output: leaf.output,
+    effects: leaf.effects,
+    rangeSpec: leaf.rangeSpec,
+  });
+}
+
 function appendLeaf(
   node: { kind: "leaf"; leaves: Leaf[] },
   leaf: Leaf,
 ): TreeNode {
-  const key = JSON.stringify({ output: leaf.output, effects: leaf.effects });
-  const seen = node.leaves.some(
-    (l) => JSON.stringify({ output: l.output, effects: l.effects }) === key,
-  );
+  const key = leafKey(leaf);
+  const seen = node.leaves.some((l) => leafKey(l) === key);
   if (seen) {
     return node;
   }
@@ -591,7 +606,8 @@ function buildDecisionTree(transitions: Transition[]): TreeNode {
       output: t.output,
       effects: t.effects,
       isDefault: t.isDefault,
-      declaredStatuses: null, // filled by caller wrapper
+      declares: null, // filled by caller wrapper
+      rangeSpec: readHttpMetadata(t)?.statusRange?.spec ?? null,
     });
   }
   return root;
@@ -625,13 +641,22 @@ function renderLeaf(
     lines.push(...formatRenderNode(leaf.output.root, `${indent}  `));
   } else {
     let line = `${indent}-> ${formatOutput(leaf.output)}`;
-    if (leaf.declaredStatuses !== null && leaf.output.type === "response") {
+    // A response declared by class or as a catch-all has no status
+    // literal; say "4XX" or "default" rather than "???".
+    if (leaf.output.type === "response" && leaf.output.statusCode === null) {
+      const label = leaf.rangeSpec ?? (leaf.isDefault ? "default" : null);
+      if (label !== null) {
+        const body = formatBodyShape(leaf.output.body);
+        line = `${indent}-> ${label}${body ? ` ${body}` : ""}`;
+      }
+    }
+    if (leaf.declares !== null && leaf.output.type === "response") {
       const sc = leaf.output.statusCode;
       if (
         sc !== null &&
         sc.type === "literal" &&
         typeof sc.value === "number" &&
-        !leaf.declaredStatuses.has(sc.value)
+        !leaf.declares(sc.value)
       ) {
         line += "  !! undeclared";
       }
@@ -848,14 +873,14 @@ function renderThenSide(
 
 function renderTransitions(
   transitions: Transition[],
-  declaredStatuses: Set<number> | null,
+  declares: ((status: number) => boolean) | null,
   ctx: PerSummaryRenderCtx,
 ): string[] {
-  // Propagate declaredStatuses onto every leaf so the undeclared-status
-  // annotation can be emitted without re-threading the argument through
-  // the recursion.
+  // Propagate the declared-status test onto every leaf so the
+  // undeclared-status annotation can be emitted without re-threading
+  // the argument through the recursion.
   const tree = buildDecisionTree(transitions);
-  stampDeclaredStatuses(tree, declaredStatuses);
+  stampDeclaredStatuses(tree, declares);
   const baseIndent = "    ";
   if (tree.kind === "leaf") {
     return renderLeaves(tree.leaves, baseIndent, ctx);
@@ -868,17 +893,17 @@ function renderTransitions(
 
 function stampDeclaredStatuses(
   node: TreeNode,
-  declaredStatuses: Set<number> | null,
+  declares: ((status: number) => boolean) | null,
 ): void {
   if (node.kind === "leaf") {
     for (const leaf of node.leaves) {
-      leaf.declaredStatuses = declaredStatuses;
+      leaf.declares = declares;
     }
     return;
   }
   if (node.kind === "branch") {
-    stampDeclaredStatuses(node.thenBranch, declaredStatuses);
-    stampDeclaredStatuses(node.elseBranch, declaredStatuses);
+    stampDeclaredStatuses(node.thenBranch, declares);
+    stampDeclaredStatuses(node.elseBranch, declares);
   }
 }
 
@@ -953,20 +978,23 @@ function renderSummary(
 
   const bodyLines: string[] = [];
 
-  const contract = readHttpMetadata(summary)?.declaredContract;
-  let declaredStatuses: Set<number> | null = null;
-  if (contract !== undefined) {
-    const statuses = contract.responses
-      .map((r) => r.statusCode)
-      .sort((a, b) => a - b);
-    declaredStatuses = new Set(statuses);
-    bodyLines.push(`  Contract: ${statuses.join(", ")}`);
+  const contract = readDeclaredContract(summary);
+  let declares: ((status: number) => boolean) | null = null;
+  if (contract !== null) {
+    const parts = [
+      ...contract.responses
+        .map((r) => r.statusCode)
+        .sort((a, b) => a - b)
+        .map(String),
+      ...contract.responseRanges.map((r) => r.spec),
+      ...(contract.defaultResponse !== null ? ["default"] : []),
+    ];
+    declares = (status) => contractDeclaresStatus(contract, status);
+    bodyLines.push(`  Contract: ${parts.join(", ")}`);
   }
 
   if (summary.transitions.length > 0) {
-    bodyLines.push(
-      ...renderTransitions(summary.transitions, declaredStatuses, perCtx),
-    );
+    bodyLines.push(...renderTransitions(summary.transitions, declares, perCtx));
   }
 
   // Effects closure: everything this boundary transitively touches,

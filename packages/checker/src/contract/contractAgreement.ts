@@ -20,7 +20,10 @@ import { summaryRef } from "@suss/behavioral-ir";
 import { bodyShapesMatch } from "../body/bodyMatch.js";
 import { makeSide } from "../coverage/responseMatch.js";
 import { boundaryKey } from "../pairing/pairing.js";
-import { readDeclaredContract } from "./declaredContract.js";
+import {
+  contractDeclaresStatus,
+  readDeclaredContract,
+} from "./declaredContract.js";
 
 import type {
   BehavioralSummary,
@@ -101,23 +104,24 @@ function compareSources(
   const findings: Finding[] = [];
 
   // --- Status-set disagreements ------------------------------------------
-  // Build `status -> Set<sourceSummary>` so each status is attributed
-  // to exactly the sources that declared it. A disagreement exists iff
-  // the attribution set is a proper subset of all sources.
+  // A source declaring "4XX" or `default` also declares 404, since a
+  // range is a weaker statement about the same status.
   const statusAttribution = new Map<number, Set<string>>();
   const allSourceIds = sources.map((s) => s.summary.identity.name);
   const allSourceSet = new Set(allSourceIds);
 
-  for (const src of sources) {
-    const id = src.summary.identity.name;
-    for (const r of src.contract.responses) {
-      const set = statusAttribution.get(r.statusCode);
-      if (set === undefined) {
-        statusAttribution.set(r.statusCode, new Set([id]));
-      } else {
-        set.add(id);
-      }
-    }
+  const literalStatuses = new Set(
+    sources.flatMap((s) => s.contract.responses.map((r) => r.statusCode)),
+  );
+  for (const status of literalStatuses) {
+    statusAttribution.set(
+      status,
+      new Set(
+        sources
+          .filter((s) => contractDeclaresStatus(s.contract, status))
+          .map((s) => s.summary.identity.name),
+      ),
+    );
   }
 
   for (const [status, declaringSources] of statusAttribution) {

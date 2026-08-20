@@ -391,10 +391,22 @@ const DECLARATION_READERS: ReadonlyArray<
       name: field.name,
       ...(field.type !== undefined ? { detail: field.type } : {}),
     })),
-  (summary) =>
-    (readHttpMetadata(summary)?.declaredContract?.responses ?? []).map(
-      (response) => ({ what: "response", name: String(response.statusCode) }),
-    ),
+  (summary) => {
+    const contract = readHttpMetadata(summary)?.declaredContract;
+    return [
+      ...(contract?.responses ?? []).map((response) => ({
+        what: "response",
+        name: String(response.statusCode),
+      })),
+      ...(contract?.responseRanges ?? []).map((range) => ({
+        what: "response",
+        name: range.spec,
+      })),
+      ...(contract?.defaultResponse !== undefined
+        ? [{ what: "response", name: "default" }]
+        : []),
+    ];
+  },
   (summary) =>
     (readRuntimeContractMetadata(summary)?.envVars ?? []).map((name) => ({
       what: "env var",

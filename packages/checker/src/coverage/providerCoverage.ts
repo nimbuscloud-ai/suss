@@ -8,7 +8,9 @@ import {
 import { predicatesMatch } from "../match.js";
 import { consumerDiscriminatesByContent } from "./contentDiscrimination.js";
 import {
+  type DeclaredStatusRange,
   extractResponseStatus,
+  extractResponseStatusRange,
   hasOpaqueStatus,
   isSuccessStatus,
   makeBoundary,
@@ -92,6 +94,20 @@ export function checkProviderCoverage(
 
     const status = extractResponseStatus(pt);
     if (status == null) {
+      const range = extractResponseStatusRange(pt);
+      // A range declares one response the provider may send with any
+      // status in it, so it is covered when any member is, and
+      // uncovered as one thing rather than once per member.
+      if (range !== null && !rangeIsCovered(range, covers)) {
+        findings.push({
+          kind: "unhandledProviderCase",
+          boundary,
+          provider: makeSide(provider, pt.id),
+          consumer: makeSide(consumer),
+          description: `Provider produces statuses in the ${range.spec} range but no consumer branch handles any of them`,
+          severity: "warning",
+        });
+      }
       continue;
     }
 
@@ -217,6 +233,19 @@ export function checkProviderCoverage(
   }
 
   return findings;
+}
+
+/** Whether the consumer covers at least one status a declared range admits. */
+function rangeIsCovered(
+  range: DeclaredStatusRange,
+  covers: (status: number) => boolean,
+): boolean {
+  for (let status = range.min; status <= range.max; status++) {
+    if (covers(status)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

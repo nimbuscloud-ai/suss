@@ -17,6 +17,23 @@ export type ContractProvenance = "derived" | "independent";
 export interface DeclaredContract {
   responses: Array<{ statusCode: number; body: TypeShape | null }>;
   /**
+   * Responses declared by class ("4XX"): the source promises some
+   * status between `min` and `max` without saying which, so a consumer
+   * branch on any member agrees with the contract.
+   */
+  responseRanges: Array<{
+    min: number;
+    max: number;
+    spec: string;
+    body: TypeShape | null;
+  }>;
+  /**
+   * The catch-all for every status the entries above leave out, the way
+   * OpenAPI's `default` is, or null when the source declares none. With
+   * one present, a consumer status is never undeclared.
+   */
+  defaultResponse: { body: TypeShape | null } | null;
+  /**
    * "derived": the contract is extracted from the same source that
    *   drives this summary's `transitions[]` (e.g. an OpenAPI stub's
    *   contract and its transitions both come from the same operation's
@@ -56,7 +73,37 @@ export function readDeclaredContract(
       statusCode: r.statusCode,
       body: r.body ?? null,
     })),
+    responseRanges: (raw.responseRanges ?? []).map((r) => ({
+      min: r.min,
+      max: r.max,
+      spec: r.spec,
+      body: r.body ?? null,
+    })),
+    defaultResponse:
+      raw.defaultResponse === undefined
+        ? null
+        : { body: raw.defaultResponse.body ?? null },
   };
+}
+
+/**
+ * Whether a contract declares `status`: as a literal, inside a range,
+ * or through the catch-all default, which covers every status the
+ * other entries leave out.
+ */
+export function contractDeclaresStatus(
+  contract: DeclaredContract,
+  status: number,
+): boolean {
+  if (contract.defaultResponse !== null) {
+    return true;
+  }
+  if (contract.responses.some((r) => r.statusCode === status)) {
+    return true;
+  }
+  return contract.responseRanges.some(
+    (r) => status >= r.min && status <= r.max,
+  );
 }
 
 export function bodyAccessorsFor(consumer: BehavioralSummary): string[] {

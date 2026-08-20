@@ -8,6 +8,7 @@
 
 import { providerCoversConsumerFields } from "../body/bodyCompatibility.js";
 import {
+  type DeclaredContract,
   readDeclaredContract,
   statusAccessorsFor,
   unwrapBodyField,
@@ -37,15 +38,10 @@ export function checkConsumerContract(
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
 
-  // Build a map of declared body schemas by status code
-  const declaredBodies = new Map<number, TypeShape>();
-  for (const r of contract.responses) {
-    if (r.body !== null) {
-      declaredBodies.set(r.statusCode, r.body);
-    }
-  }
-
-  if (declaredBodies.size === 0) {
+  const anyDeclaredBody =
+    contract.responses.some((r) => r.body !== null) ||
+    contract.responseRanges.some((r) => r.body !== null);
+  if (!anyDeclaredBody) {
     return []; // No declared body schemas to compare against
   }
 
@@ -63,23 +59,18 @@ export function checkConsumerContract(
     }
 
     const statuses = consumerExpectedStatuses(ct, statusAccessors);
-    const statusesToCheck =
+    const toCheck =
       statuses.length > 0
-        ? statuses
+        ? statuses.flatMap((status) => {
+            const body = declaredBodyFor(contract, status);
+            return body === null ? [] : [{ label: String(status), body }];
+          })
         : ct.isDefault
-          ? [...declaredBodies.keys()].filter(isSuccessStatus)
+          ? declaredSuccessBodies(contract)
           : [];
 
-    for (const status of statusesToCheck) {
-      const declaredBody = declaredBodies.get(status);
-      if (declaredBody === undefined) {
-        continue; // No declared body for this status
-      }
-
-      const result = providerCoversConsumerFields(
-        declaredBody,
-        consumerBodyShape,
-      );
+    for (const { label, body } of toCheck) {
+      const result = providerCoversConsumerFields(body, consumerBodyShape);
 
       if (result === "nomatch") {
         findings.push({
@@ -87,7 +78,7 @@ export function checkConsumerContract(
           boundary,
           provider: makeSide(provider),
           consumer: makeSide(consumer, ct.id),
-          description: `Consumer reads fields on status ${status} that the declared contract does not promise, so it relies on something the provider never agreed to keep`,
+          description: `Consumer reads fields on status ${label} that the declared contract does not promise, so it relies on something the provider never agreed to keep`,
           severity: "warning",
         });
       } else if (result === "unknown") {
@@ -96,7 +87,7 @@ export function checkConsumerContract(
           boundary,
           provider: makeSide(provider),
           consumer: makeSide(consumer, ct.id),
-          description: `Cannot tell whether the fields the consumer reads on status ${status} are covered by the declared contract`,
+          description: `Cannot tell whether the fields the consumer reads on status ${label} are covered by the declared contract`,
           severity: "info",
         });
       }
@@ -104,4 +95,43 @@ export function checkConsumerContract(
   }
 
   return findings;
+}
+
+/**
+ * The body the contract declares for one status: its literal entry
+ * first, then a range containing it ("4XX" for 404), then the
+ * catch-all default.
+ */
+function declaredBodyFor(
+  contract: DeclaredContract,
+  status: number,
+): TypeShape | null {
+  const literal = contract.responses.find((r) => r.statusCode === status);
+  if (literal !== undefined) {
+    return literal.body;
+  }
+  const range = contract.responseRanges.find(
+    (r) => status >= r.min && status <= r.max,
+  );
+  if (range !== undefined) {
+    return range.body;
+  }
+  return contract.defaultResponse?.body ?? null;
+}
+
+/** The declared success bodies a consumer's default branch is read against. */
+function declaredSuccessBodies(
+  contract: DeclaredContract,
+): Array<{ label: string; body: TypeShape }> {
+  const literals = contract.responses.flatMap((r) =>
+    isSuccessStatus(r.statusCode) && r.body !== null
+      ? [{ label: String(r.statusCode), body: r.body }]
+      : [],
+  );
+  const ranges = contract.responseRanges.flatMap((r) =>
+    r.min >= 200 && r.max < 300 && r.body !== null
+      ? [{ label: r.spec, body: r.body }]
+      : [],
+  );
+  return [...literals, ...ranges];
 }

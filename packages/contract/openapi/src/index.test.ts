@@ -459,6 +459,97 @@ describe("openApiToSummaries — basic mapping", () => {
     ]);
   });
 
+  it("records range codes and default on the declared contract", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.0.3",
+      paths: {
+        "/x": {
+          get: {
+            operationId: "x",
+            responses: {
+              "200": { description: "ok" },
+              "4XX": {
+                description: "client error",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      properties: { error: { type: "string" } },
+                    },
+                  },
+                },
+              },
+              default: { description: "anything else" },
+            },
+          },
+        },
+      },
+    };
+    const contract = readHttpMetadata(
+      openApiToSummaries(spec)[0],
+    )?.declaredContract;
+    expect(contract?.responses).toEqual([{ statusCode: 200, body: null }]);
+    expect(contract?.responseRanges).toEqual([
+      {
+        min: 400,
+        max: 499,
+        spec: "4XX",
+        body: {
+          type: "record",
+          properties: {
+            error: {
+              type: "union",
+              variants: [{ type: "text" }, { type: "undefined" }],
+            },
+          },
+        },
+      },
+    ]);
+    expect(contract?.defaultResponse).toEqual({ body: null });
+  });
+
+  it("leaves responseRanges and defaultResponse off a literal-only contract", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.0.3",
+      paths: {
+        "/x": {
+          get: {
+            operationId: "x",
+            responses: { "200": { description: "ok" } },
+          },
+        },
+      },
+    };
+    const contract = readHttpMetadata(
+      openApiToSummaries(spec)[0],
+    )?.declaredContract;
+    expect(contract?.responses).toEqual([{ statusCode: 200, body: null }]);
+    expect(contract?.responseRanges).toBeUndefined();
+    expect(contract?.defaultResponse).toBeUndefined();
+  });
+
+  it("drops a response code that is neither a status, a range, nor default", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.0.3",
+      paths: {
+        "/x": {
+          get: {
+            operationId: "x",
+            responses: {
+              "200": { description: "ok" },
+              XXX: { description: "not a code" },
+            },
+          },
+        },
+      },
+    };
+    const summary = openApiToSummaries(spec)[0];
+    expect(summary.transitions).toHaveLength(1);
+    const contract = readHttpMetadata(summary)?.declaredContract;
+    expect(contract?.responses).toEqual([{ statusCode: 200, body: null }]);
+    expect(contract?.responseRanges).toBeUndefined();
+  });
+
   it("accepts lowercase range codes like 5xx", () => {
     const spec: OpenApiSpec = {
       openapi: "3.0.3",

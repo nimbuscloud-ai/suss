@@ -5,6 +5,7 @@ import {
   consumer,
   opaqueResponse,
   provider,
+  rangeResponse,
   response,
   statusEq,
   successFlag,
@@ -42,6 +43,102 @@ function reading(
     }),
   };
 }
+
+describe("checkResponseMisread — provider ranges", () => {
+  it("reports a branch on 404 that reads a field the 4XX body does not carry", () => {
+    const p = provider("api", [
+      transition("t-4xx", {
+        output: rangeResponse(record({ error: text })),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+      transition("t-200", {
+        output: response(200, record({ message: text })),
+      }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-404", { conditions: [statusEq(404)], fields: ["message"] }),
+    ]);
+
+    const findings = checkResponseMisread(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe("misreadProviderResponse");
+    expect(findings[0].severity).toBe("error");
+    expect(findings[0].provider.transitionId).toBe("t-4xx");
+    expect(findings[0].description).toContain('reads "message"');
+    expect(findings[0].description).toContain("the 4XX body");
+    expect(findings[0].description).toContain("apart from the 200");
+  });
+
+  it("reports a fall-through path against a 2XX range body", () => {
+    const p = provider("api", [
+      transition("t-2xx", {
+        output: rangeResponse(record({ name: text })),
+        range: { min: 200, max: 299, spec: "2XX" },
+      }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-default", { isDefault: true, fields: ["email"] }),
+    ]);
+
+    const findings = checkResponseMisread(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("the 2XX body");
+    expect(findings[0].description).toContain("neither does any other response");
+  });
+
+  it("says nothing when the range's body carries the field", () => {
+    const p = provider("api", [
+      transition("t-4xx", {
+        output: rangeResponse(record({ error: text })),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-404", { conditions: [statusEq(404)], fields: ["error"] }),
+    ]);
+
+    expect(checkResponseMisread(p, c)).toEqual([]);
+  });
+
+  it("treats a field a guard tests as a discriminator on a range body too", () => {
+    const p = provider("api", [
+      transition("t-2xx", {
+        output: rangeResponse(record({ link: text })),
+        range: { min: 200, max: 299, spec: "2XX" },
+      }),
+      transition("t-4xx", {
+        output: rangeResponse(record({ error: text })),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-error", {
+        conditions: [bodyFieldTruthy("error")],
+        fields: ["error"],
+      }),
+      reading("ct-default", { isDefault: true, fields: ["link"] }),
+    ]);
+
+    expect(checkResponseMisread(p, c)).toEqual([]);
+  });
+
+  it("claims an arrival once, under a literal before the range that also spans it", () => {
+    const p = provider("api", [
+      transition("t-404", { output: response(404, record({ error: text })) }),
+      transition("t-4xx", {
+        output: rangeResponse(record({ error: text })),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-404", { conditions: [statusEq(404)], fields: ["message"] }),
+    ]);
+
+    const findings = checkResponseMisread(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain("the 404 body");
+  });
+});
 
 describe("checkResponseMisread", () => {
   it("reports a branch that reads a field the status it runs on does not carry", () => {

@@ -18,6 +18,16 @@ Both take summaries, their declared contracts (parsed from `metadata.http.declar
 - `contractConsistency.ts:checkContractConsistency` compares a provider's transitions against its declared schema.
 - `contractAgreement.ts:checkContractAgreement` checks that the contracts from N sources agree on status sets and body shapes for the same boundary.
 
+## Ranges and `default`
+
+A contract may declare a response by class rather than by one code: OpenAPI's `4XX` comes through as an entry in `responseRanges`, and `default` as `defaultResponse`. A range promises some status between its ends without saying which, so the checks read it in two directions:
+
+- A consumer status inside a declared range is declared. `contractDeclaresStatus` is the one place that decides membership, and a contract with a `defaultResponse` declares every status, because `default` covers everything the other entries leave out.
+- A declared range is handled when the consumer handles any member (a branch on 404, a `!res.ok` guard, a default branch for a 2XX range). When no member is handled it reports once, as one unhandled response, not once per member.
+- Agreement reads a range the same way: a source declaring `4XX` agrees with another source's `404`. A range is a weaker statement about the same status, so only literal statuses can disagree.
+
+Nothing asks the consumer to cover the `default` bucket itself: it has no concrete status to state an outcome about.
+
 ## Non-obvious things
 
 - **Provenance gates self-comparison.** A contract marked `derived` came from the same source as the implementation (e.g. an OpenAPI stub generated from the same TS code). Comparing the two would prove nothing, so the check skips them. Only `independent` contracts (separate documents) get checked.
