@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   consumer,
   provider,
+  rangeResponse,
   response,
   statusEq,
   transition,
@@ -92,6 +93,65 @@ describe("checkBodyCompatibility", () => {
     };
 
     expect(checkBodyCompatibility(p, c)).toEqual([]);
+  });
+
+  it("leaves a read a 4XX range's body provably lacks to checkResponseMisread", () => {
+    const p = provider("api", [
+      transition("t-4xx", {
+        output: rangeResponse(record({ error: text })),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+      transition("t-200", {
+        output: response(200, record({ name: text })),
+        isDefault: true,
+      }),
+    ]);
+    const c = consumer("client", [
+      transition("ct-404", {
+        conditions: [statusEq(404)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    // Consumer reads body.message on 404, but a 4XX body only has error.
+    c.transitions[0] = {
+      ...c.transitions[0],
+      expectedInput: record({
+        body: record({ message: { type: "unknown" } }),
+      }),
+    };
+
+    expect(checkBodyCompatibility(p, c)).toEqual([]);
+  });
+
+  it("compares a branch on 404 against a 4XX range body for optional reads", () => {
+    const optionalError: TypeShape = {
+      type: "union",
+      variants: [text, { type: "undefined" }],
+    };
+    const p = provider("api", [
+      transition("t-4xx", {
+        output: rangeResponse(record({ error: optionalError })),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+    ]);
+    const c = consumer("client", [
+      transition("ct-404", {
+        conditions: [statusEq(404)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    c.transitions[0] = {
+      ...c.transitions[0],
+      expectedInput: record({
+        body: record({ error: { type: "unknown" } }),
+      }),
+    };
+
+    const findings = checkBodyCompatibility(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe("consumerContractViolation");
+    expect(findings[0].severity).toBe("info");
+    expect(findings[0].description).toContain("declares it optional");
   });
 
   it("emits lowConfidence when provider body has unknown/ref shapes", () => {

@@ -1,4 +1,4 @@
-import { summaryRef } from "@suss/behavioral-ir";
+import { readHttpMetadata, summaryRef } from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
@@ -18,6 +18,42 @@ export function extractResponseStatus(t: Transition): number | null {
     return sc.value;
   }
   return null;
+}
+
+/** A response declared by class ("4XX"): some status in the range, unsaid which. */
+export interface DeclaredStatusRange {
+  min: number;
+  max: number;
+  /** The spelling in the source, for finding descriptions. */
+  spec: string;
+}
+
+/**
+ * The status range a provider transition declares, from the
+ * `http.statusRange` a contract reader records when a document codes a
+ * response as "2XX" rather than as one status.
+ */
+export function extractResponseStatusRange(
+  t: Transition,
+): DeclaredStatusRange | null {
+  if (t.output.type !== "response") {
+    return null;
+  }
+  return readHttpMetadata(t)?.statusRange ?? null;
+}
+
+/**
+ * Whether a provider transition is a catch-all over every status the
+ * other transitions leave out, the way an OpenAPI `default` response
+ * is. A code-derived default branch has a literal status and stays out.
+ */
+export function isCatchAllResponse(t: Transition): boolean {
+  return (
+    t.isDefault &&
+    t.output.type === "response" &&
+    t.output.statusCode == null &&
+    extractResponseStatusRange(t) === null
+  );
 }
 
 /**

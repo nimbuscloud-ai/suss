@@ -14,6 +14,7 @@ import { failureOnlyBodyFields } from "../coverage/contentDiscrimination.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
+  extractResponseStatusRange,
   isSuccessStatus,
   makeBoundary,
   makeSide,
@@ -22,6 +23,7 @@ import {
 import type {
   BehavioralSummary,
   Finding,
+  Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
 import type { MatchResult } from "../match.js";
@@ -186,6 +188,23 @@ function withoutFields(shape: TypeShape, drop: ReadonlySet<string>): TypeShape {
   return { ...shape, properties };
 }
 
+/**
+ * How to say which success response a provider transition is in a
+ * finding ("200", or "2XX" for one declared as a range), or null when
+ * the transition is not a success response.
+ */
+function successResponseLabel(pt: Transition): string | null {
+  const status = extractResponseStatus(pt);
+  if (status !== null) {
+    return isSuccessStatus(status) ? String(status) : null;
+  }
+  const range = extractResponseStatusRange(pt);
+  if (range !== null && range.min >= 200 && range.max < 300) {
+    return range.spec;
+  }
+  return null;
+}
+
 export function checkBodyCompatibility(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
@@ -194,9 +213,7 @@ export function checkBodyCompatibility(
   const boundary = makeBoundary(provider, consumer);
   const statusAccessors = statusAccessorsFor(consumer);
   const notAClaimAbout200 = new Set([
-    ...[...failureOnlyBodyFields(provider).values()].flatMap((fields) => [
-      ...fields,
-    ]),
+    ...failureOnlyBodyFields(provider).flatMap((entry) => [...entry.fields]),
     ...bodyAccessorsFor(consumer),
   ]);
 
@@ -209,9 +226,15 @@ export function checkBodyCompatibility(
     const consumerStatuses = consumerExpectedStatuses(ct, statusAccessors);
 
     for (const status of consumerStatuses) {
+      // A range transition ("4XX") is the declared response for every
+      // member, so a branch on 404 is compared against its body.
       const matchingProviderTransitions = provider.transitions.filter((pt) => {
         const providerStatus = extractResponseStatus(pt);
-        return providerStatus === status;
+        if (providerStatus !== null) {
+          return providerStatus === status;
+        }
+        const range = extractResponseStatusRange(pt);
+        return range !== null && status >= range.min && status <= range.max;
       });
 
       for (const pt of matchingProviderTransitions) {
@@ -261,8 +284,8 @@ export function checkBodyCompatibility(
 
     if (consumerStatuses.length === 0 && ct.isDefault) {
       for (const pt of provider.transitions) {
-        const providerStatus = extractResponseStatus(pt);
-        if (providerStatus === null || !isSuccessStatus(providerStatus)) {
+        const successLabel = successResponseLabel(pt);
+        if (successLabel === null) {
           continue;
         }
         if (pt.output.type !== "response" || pt.output.body === null) {
@@ -272,7 +295,6 @@ export function checkBodyCompatibility(
           unwrapBodyField(expectedInput, consumer),
           notAClaimAbout200,
         );
-
         for (const path of findOptionalAccesses(
           pt.output.body,
           consumerBodyShape,
@@ -282,7 +304,7 @@ export function checkBodyCompatibility(
             boundary,
             provider: makeSide(provider, pt.id),
             consumer: makeSide(consumer, ct.id),
-            description: `Consumer reads "${path.join(".")}" on default branch (status ${providerStatus}), but the provider declares it optional`,
+            description: `Consumer reads "${path.join(".")}" on default branch (status ${successLabel}), but the provider declares it optional`,
             severity: "info",
           });
         }

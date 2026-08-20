@@ -13,6 +13,13 @@ function providerWithContract(
   contract: {
     provenance: "derived" | "independent";
     responses: Array<{ statusCode: number; body?: TypeShape | null }>;
+    responseRanges?: Array<{
+      min: number;
+      max: number;
+      spec: string;
+      body?: TypeShape | null;
+    }>;
+    defaultResponse?: { body?: TypeShape | null };
   },
 ): BehavioralSummary {
   return {
@@ -38,6 +45,12 @@ function providerWithContract(
           framework,
           provenance: contract.provenance,
           responses: contract.responses,
+          ...(contract.responseRanges !== undefined
+            ? { responseRanges: contract.responseRanges }
+            : {}),
+          ...(contract.defaultResponse !== undefined
+            ? { defaultResponse: contract.defaultResponse }
+            : {}),
         },
       },
     },
@@ -96,6 +109,32 @@ describe("checkContractAgreement", () => {
       "petstore.yaml::pet-openapi",
       "template.yaml::pet-cfn",
     ]);
+  });
+
+  it("reads a source's 4XX range as agreeing with another's 404", () => {
+    const a = providerWithContract("pet-openapi", "petstore.yaml", "openapi", {
+      provenance: "derived",
+      responses: [{ statusCode: 200 }],
+      responseRanges: [{ min: 400, max: 499, spec: "4XX" }],
+    });
+    const b = providerWithContract("pet-cfn", "template.yaml", "cfn", {
+      provenance: "independent",
+      responses: [{ statusCode: 200 }, { statusCode: 404 }],
+    });
+    expect(checkContractAgreement([a, b])).toEqual([]);
+  });
+
+  it("reads a source's default as agreeing with any literal another declares", () => {
+    const a = providerWithContract("pet-openapi", "petstore.yaml", "openapi", {
+      provenance: "derived",
+      responses: [{ statusCode: 200 }],
+      defaultResponse: {},
+    });
+    const b = providerWithContract("pet-cfn", "template.yaml", "cfn", {
+      provenance: "independent",
+      responses: [{ statusCode: 200 }, { statusCode: 500 }],
+    });
+    expect(checkContractAgreement([a, b])).toEqual([]);
   });
 
   it("emits one finding per status that isn't unanimous (not per pair)", () => {

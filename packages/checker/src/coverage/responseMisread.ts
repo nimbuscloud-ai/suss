@@ -25,6 +25,7 @@ import {
 } from "./contentDiscrimination.js";
 import {
   extractResponseStatus,
+  extractResponseStatusRange,
   isSuccessStatus,
   makeBoundary,
   makeSide,
@@ -40,8 +41,14 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 
+/**
+ * One response with a body. A literal status spans `[status, status]`,
+ * "4XX" spans its whole class, and the label is how a finding says which.
+ */
 interface ProviderResponse {
-  status: number;
+  min: number;
+  max: number;
+  label: string;
   body: TypeShape;
   transitionId: string;
 }
@@ -49,15 +56,40 @@ interface ProviderResponse {
 function providerResponses(provider: BehavioralSummary): ProviderResponse[] {
   const out: ProviderResponse[] = [];
   for (const t of provider.transitions) {
-    const status = extractResponseStatus(t);
-    if (status === null || t.output.type !== "response") {
+    if (t.output.type !== "response" || t.output.body === null) {
       continue;
     }
-    if (t.output.body !== null) {
-      out.push({ status, body: t.output.body, transitionId: t.id });
+    const status = extractResponseStatus(t);
+    if (status !== null) {
+      out.push({
+        min: status,
+        max: status,
+        label: String(status),
+        body: t.output.body,
+        transitionId: t.id,
+      });
+      continue;
+    }
+    const range = extractResponseStatusRange(t);
+    if (range !== null) {
+      out.push({
+        min: range.min,
+        max: range.max,
+        label: range.spec,
+        body: t.output.body,
+        transitionId: t.id,
+      });
     }
   }
   return out;
+}
+
+/** Statuses both spans admit exist. */
+function spansIntersect(
+  a: { min: number; max: number },
+  b: { min: number; max: number },
+): boolean {
+  return a.min <= b.max && a.max >= b.min;
 }
 
 /** The property name a reference reads last, or null for anything else. */
@@ -170,6 +202,21 @@ function branchAdmitsStatus(
   );
 }
 
+/** Whether the branch runs on any status the response's span admits. */
+function branchAdmitsResponse(
+  ct: Transition,
+  r: ProviderResponse,
+  statusAccessors: ReadonlySet<string>,
+  successAccessors: ReadonlySet<string>,
+): boolean {
+  for (let status = r.min; status <= r.max; status++) {
+    if (branchAdmitsStatus(ct, status, statusAccessors, successAccessors)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function pathNoun(ct: Transition): string {
   return ct.isDefault
     ? "The consumer's fall-through path"
@@ -179,14 +226,14 @@ function pathNoun(ct: Transition): string {
 function describeMisread(
   ct: Transition,
   field: string,
-  status: number,
-  carrier: number | null,
+  label: string,
+  carrier: string | null,
 ): string {
-  const opening = `${pathNoun(ct)} reads "${field}", but the ${status} body the provider sends does not include it`;
+  const opening = `${pathNoun(ct)} reads "${field}", but the ${label} body the provider sends does not include it`;
   if (carrier === null) {
     return `${opening}, and neither does any other response. The read comes back undefined and no error says so.`;
   }
-  return `${opening}, and nothing on the path tells the ${status} apart from the ${carrier} whose body does include it. On a ${status} the read comes back undefined and no error says so.`;
+  return `${opening}, and nothing on the path tells the ${label} apart from the ${carrier} whose body does include it. On a ${label} the read comes back undefined and no error says so.`;
 }
 
 export function checkResponseMisread(
@@ -205,9 +252,7 @@ export function checkResponseMisread(
   const accessors = new Set(bodyAccessorsFor(consumer));
   const tested = bodyFieldsConsumerTests(consumer);
   const failureOnly = new Set(
-    [...failureOnlyBodyFields(provider).values()].flatMap((fields) => [
-      ...fields,
-    ]),
+    failureOnlyBodyFields(provider).flatMap((entry) => [...entry.fields]),
   );
   const guardSkip = new Set([
     ...statusAccessors,
@@ -234,29 +279,46 @@ export function checkResponseMisread(
     const required = requiredBodyFields(ct.conditions, guardSkip);
     const admitted = responses.filter(
       (r) =>
-        branchAdmitsStatus(ct, r.status, statusAccessors, successAccessors) &&
+        branchAdmitsResponse(ct, r, statusAccessors, successAccessors) &&
         [...required].every((field) => carriesField(r.body, field)),
     );
 
-    const byStatus = new Map<number, ProviderResponse[]>();
+    const bySpan = new Map<string, ProviderResponse[]>();
     for (const r of admitted) {
-      byStatus.set(r.status, [...(byStatus.get(r.status) ?? []), r]);
+      const key = `${r.min}:${r.max}`;
+      bySpan.set(key, [...(bySpan.get(key) ?? []), r]);
     }
+    // Narrowest span first, so an arrival is claimed once, under the
+    // most specific label ("404" before "4XX").
+    const groups = [...bySpan.values()].sort(
+      (a, b) => a[0].max - a[0].min - (b[0].max - b[0].min),
+    );
 
-    for (const [status, group] of byStatus) {
+    const claimed = new Map<string, ProviderResponse[]>();
+    for (const group of groups) {
+      const span = group[0];
+      // The absence proof takes in every response the same status may
+      // arrive with: a declared 404 and a declared 4XX alike.
+      const arrivals = responses.filter((r) => spansIntersect(r, span));
       // A field a failure body marks the case with is not a claim
       // about the 2xx; the coverage README says why.
-      const claims = isSuccessStatus(status)
+      const success = span.min >= 200 && span.max < 300;
+      const claims = success
         ? reads.filter((field) => !failureOnly.has(field))
         : reads;
       for (const field of claims) {
-        if (!group.every((r) => fieldAbsent(r.body, field))) {
+        if (!arrivals.every((r) => fieldAbsent(r.body, field))) {
+          continue;
+        }
+        const already = claimed.get(field) ?? [];
+        if (already.some((prior) => spansIntersect(prior, span))) {
           continue;
         }
         const carrier =
           responses.find(
-            (r) => r.status !== status && carriesField(r.body, field),
-          )?.status ?? null;
+            (r) => !spansIntersect(r, span) && carriesField(r.body, field),
+          )?.label ?? null;
+        claimed.set(field, [...already, span]);
         findings.push({
           kind: "misreadProviderResponse",
           aspect: "read",
@@ -265,7 +327,7 @@ export function checkResponseMisread(
           consumer: makeSide(consumer, ct.id),
           // The path runs on an input the provider produces and reads a
           // value that is not there, which is the error sentence (#471).
-          description: describeMisread(ct, field, status, carrier),
+          description: describeMisread(ct, field, span.label, carrier),
           severity: "error",
         });
       }

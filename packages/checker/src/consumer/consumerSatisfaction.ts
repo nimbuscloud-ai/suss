@@ -2,13 +2,16 @@ import { statusAccessorsFor } from "../contract/declaredContract.js";
 import {
   consumerExpectedStatuses,
   extractResponseStatus,
+  extractResponseStatusRange,
   hasOpaqueStatus,
+  isCatchAllResponse,
   makeBoundary,
   makeSide,
   nothingWasRead,
 } from "../coverage/responseMatch.js";
 
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type { DeclaredStatusRange } from "../coverage/responseMatch.js";
 
 export function checkConsumerSatisfaction(
   provider: BehavioralSummary,
@@ -23,22 +26,42 @@ export function checkConsumerSatisfaction(
   const unread = nothingWasRead(provider);
 
   const providerStatuses = new Set<number>();
+  const providerRanges: DeclaredStatusRange[] = [];
+  // A catch-all response covers every status the other transitions
+  // leave out, so when one is present a consumer branch is never dead.
+  let providerHasCatchAll = false;
   let providerHasOpaqueStatus = false;
   for (const pt of provider.transitions) {
     const status = extractResponseStatus(pt);
     if (status !== null) {
       providerStatuses.add(status);
-    } else if (hasOpaqueStatus(pt)) {
+      continue;
+    }
+    const range = extractResponseStatusRange(pt);
+    if (range !== null) {
+      providerRanges.push(range);
+      continue;
+    }
+    if (isCatchAllResponse(pt)) {
+      providerHasCatchAll = true;
+      continue;
+    }
+    if (hasOpaqueStatus(pt)) {
       providerHasOpaqueStatus = true;
     }
   }
+
+  const producesStatus = (status: number): boolean =>
+    providerHasCatchAll ||
+    providerStatuses.has(status) ||
+    providerRanges.some((r) => status >= r.min && status <= r.max);
 
   const statusAccessors = statusAccessorsFor(consumer);
 
   for (const ct of consumer.transitions) {
     const expected = consumerExpectedStatuses(ct, statusAccessors);
     for (const status of expected) {
-      if (providerStatuses.has(status)) {
+      if (producesStatus(status)) {
         continue;
       }
       if (providerHasOpaqueStatus || unread) {

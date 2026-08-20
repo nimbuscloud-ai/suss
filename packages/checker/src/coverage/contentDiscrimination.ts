@@ -14,11 +14,15 @@ import {
   successAccessorsFor,
   unwrapBodyField,
 } from "../contract/declaredContract.js";
-import { extractResponseStatus, isSuccessStatus } from "./responseMatch.js";
+import {
+  extractResponseStatus,
+  extractResponseStatusRange,
+} from "./responseMatch.js";
 
 import type {
   BehavioralSummary,
   Predicate,
+  Transition,
   TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
@@ -40,50 +44,56 @@ function topLevelFields(shape: TypeShape | null): Set<string> {
   return shape.type === "record" ? new Set(Object.keys(shape.properties)) : new Set();
 }
 
-function bodyFieldsOf(summary: BehavioralSummary, status: number): Set<string> {
-  const out = new Set<string>();
-  for (const t of summary.transitions) {
-    if (t.output.type !== "response" || extractResponseStatus(t) !== status) {
-      continue;
-    }
-    for (const key of topLevelFields(t.output.body)) {
-      out.add(key);
-    }
+/** The statuses one failure response covers and the fields only it sends. */
+export interface FailureBodyFields {
+  min: number;
+  max: number;
+  fields: Set<string>;
+}
+
+/** The statuses a response transition covers: one for a literal, more for a range. */
+function responseStatusSpan(
+  t: Transition,
+): { min: number; max: number } | null {
+  const status = extractResponseStatus(t);
+  if (status !== null) {
+    return { min: status, max: status };
   }
-  return out;
+  return extractResponseStatusRange(t);
 }
 
 /**
- * Per status, the body fields the provider sends on it and on no 2xx.
- * A field both halves include tells the two apart for nobody.
+ * Per failure response, the body fields the provider sends on it and on
+ * no 2xx. A field both halves include tells the two apart for nobody.
+ * A response declared as a range ("4XX") counts for every status in it.
  */
 export function failureOnlyBodyFields(
   provider: BehavioralSummary,
-): Map<number, Set<string>> {
+): FailureBodyFields[] {
   const successFields = new Set<string>();
-  const failureStatuses = new Set<number>();
+  const failureEntries: FailureBodyFields[] = [];
   for (const t of provider.transitions) {
-    const status = extractResponseStatus(t);
-    if (status === null) {
+    if (t.output.type !== "response") {
       continue;
     }
-    if (isSuccessStatus(status)) {
-      for (const key of topLevelFields(t.output.type === "response" ? t.output.body : null)) {
+    const span = responseStatusSpan(t);
+    if (span === null) {
+      continue;
+    }
+    const fields = topLevelFields(t.output.body);
+    if (span.min >= 200 && span.max < 300) {
+      for (const key of fields) {
         successFields.add(key);
       }
       continue;
     }
-    failureStatuses.add(status);
+    failureEntries.push({ min: span.min, max: span.max, fields });
   }
 
-  const out = new Map<number, Set<string>>();
-  for (const status of failureStatuses) {
-    const own = new Set(
-      [...bodyFieldsOf(provider, status)].filter((f) => !successFields.has(f)),
-    );
-    out.set(status, own);
-  }
-  return out;
+  return failureEntries.map((entry) => ({
+    ...entry,
+    fields: new Set([...entry.fields].filter((f) => !successFields.has(f))),
+  }));
 }
 
 /** Every property name a value reference reads on its way to a value. */
@@ -196,8 +206,11 @@ export function consumerDiscriminatesByContent(
 ): (status: number) => boolean {
   const failureFields = failureOnlyBodyFields(provider);
   const read = bodyFieldsConsumerReads(consumer);
-  return (status) => {
-    const own = failureFields.get(status);
-    return own !== undefined && [...own].some((field) => read.has(field));
-  };
+  return (status) =>
+    failureFields.some(
+      (entry) =>
+        status >= entry.min &&
+        status <= entry.max &&
+        [...entry.fields].some((field) => read.has(field)),
+    );
 }

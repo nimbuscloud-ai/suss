@@ -8,6 +8,7 @@ import {
 } from "../coverage/responseMatch.js";
 import { consumerHandlesStatus } from "../coverage/statusRanges.js";
 import {
+  contractDeclaresStatus,
   readDeclaredContract,
   statusAccessorsFor,
 } from "./declaredContract.js";
@@ -93,8 +94,35 @@ export function checkContractConsistency(
     });
   }
 
+  // A declared range promises one response with some status in it, so
+  // it is handled when any member is, and unhandled as one thing.
+  for (const range of contract.responseRanges) {
+    const someMemberHandled = (): boolean => {
+      for (let status = range.min; status <= range.max; status++) {
+        if (consumerHandles(status)) {
+          return true;
+        }
+        if (consumerHasDefault && isSuccessStatus(status)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    if (someMemberHandled()) {
+      continue;
+    }
+    findings.push({
+      kind: "consumerContractViolation",
+      boundary,
+      provider: makeSide(provider),
+      consumer: makeSide(consumer),
+      description: `Contract declares ${range.spec} responses but consumer handles none of them`,
+      severity: "warning",
+    });
+  }
+
   for (const expected of consumerExplicit) {
-    if (declaredStatuses.has(expected)) {
+    if (contractDeclaresStatus(contract, expected)) {
       continue;
     }
     findings.push({

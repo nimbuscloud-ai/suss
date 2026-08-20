@@ -4,6 +4,7 @@ import {
   bodyFieldTruthy,
   consumer,
   provider,
+  rangeResponse,
   recordBody,
   response,
   transition,
@@ -34,7 +35,9 @@ describe("failureOnlyBodyFields", () => {
       transition("t-404", { output: response(404, recordBody("error")) }),
       transition("t-200", { output: response(200, recordBody("link")) }),
     ]);
-    expect(failureOnlyBodyFields(p)).toEqual(new Map([[404, new Set(["error"])]]));
+    expect(failureOnlyBodyFields(p)).toEqual([
+      { min: 404, max: 404, fields: new Set(["error"]) },
+    ]);
   });
 
   it("drops a field both bodies return", () => {
@@ -42,7 +45,9 @@ describe("failureOnlyBodyFields", () => {
       transition("t-404", { output: response(404, recordBody("message")) }),
       transition("t-200", { output: response(200, recordBody("message")) }),
     ]);
-    expect(failureOnlyBodyFields(p)).toEqual(new Map([[404, new Set()]]));
+    expect(failureOnlyBodyFields(p)).toEqual([
+      { min: 404, max: 404, fields: new Set() },
+    ]);
   });
 
   it("reads every variant when a body is a union of shapes", () => {
@@ -54,16 +59,32 @@ describe("failureOnlyBodyFields", () => {
       transition("t-400", { output: response(400, union) }),
       transition("t-200", { output: response(200, recordBody("ok")) }),
     ]);
-    expect(failureOnlyBodyFields(p).get(400)).toEqual(
-      new Set(["error", "code"]),
-    );
+    expect(failureOnlyBodyFields(p)).toEqual([
+      { min: 400, max: 400, fields: new Set(["error", "code"]) },
+    ]);
   });
 
   it("says nothing about a provider that only succeeds", () => {
     const p = provider("api", [
       transition("t-200", { output: response(200, recordBody("link")) }),
     ]);
-    expect(failureOnlyBodyFields(p).size).toBe(0);
+    expect(failureOnlyBodyFields(p)).toEqual([]);
+  });
+
+  it("covers every status a range response admits, minus the 2XX fields", () => {
+    const p = provider("api", [
+      transition("t-4xx", {
+        output: rangeResponse(recordBody("error", "shared")),
+        range: { min: 400, max: 499, spec: "4XX" },
+      }),
+      transition("t-2xx", {
+        output: rangeResponse(recordBody("shared", "link")),
+        range: { min: 200, max: 299, spec: "2XX" },
+      }),
+    ]);
+    expect(failureOnlyBodyFields(p)).toEqual([
+      { min: 400, max: 499, fields: new Set(["error"]) },
+    ]);
   });
 });
 

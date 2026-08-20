@@ -2,14 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   consumer,
+  negated,
   provider,
   response,
   statusEq,
+  statusInRange,
   transition,
   unhandledCaseGap,
   unreadOutcomeGap,
   withContract,
   withContractBodies,
+  withRangeContract,
 } from "../__fixtures__/pairs.js";
 import { checkContractConsistency } from "./contractConsistency.js";
 
@@ -159,6 +162,97 @@ describe("checkContractConsistency", () => {
         conditions: [statusEq(404)],
         output: { type: "return", value: null },
       }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    expect(checkContractConsistency(p, c)).toEqual([]);
+  });
+
+  it("does not call a status inside a declared range undeclared", () => {
+    const p = withRangeContract(provider("getPet", []), {
+      responses: [{ statusCode: 200 }],
+      responseRanges: [{ min: 400, max: 499, spec: "4XX" }],
+    });
+    const c = consumer("PetPage", [
+      transition("ct-404", {
+        conditions: [statusEq(404)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    expect(checkContractConsistency(p, c)).toEqual([]);
+  });
+
+  it("does not call any status undeclared when the contract has a default", () => {
+    const p = withRangeContract(provider("getPet", []), {
+      responses: [{ statusCode: 200 }],
+      defaultResponse: {},
+    });
+    const c = consumer("PetPage", [
+      transition("ct-418", {
+        conditions: [statusEq(418)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    expect(checkContractConsistency(p, c)).toEqual([]);
+  });
+
+  it("reports a declared range the consumer handles no member of, once", () => {
+    const p = withRangeContract(provider("getPet", []), {
+      responses: [{ statusCode: 200 }],
+      responseRanges: [{ min: 400, max: 499, spec: "4XX" }],
+    });
+    const c = consumer("PetPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const findings = checkContractConsistency(p, c);
+    expect(findings.map((f) => f.description)).toEqual([
+      "Contract declares 4XX responses but consumer handles none of them",
+    ]);
+    expect(findings[0].severity).toBe("warning");
+  });
+
+  it("counts a `!res.ok` guard as handling a declared failure range", () => {
+    const p = withRangeContract(provider("getPet", []), {
+      responseRanges: [
+        { min: 200, max: 299, spec: "2XX" },
+        { min: 400, max: 499, spec: "4XX" },
+      ],
+    });
+    const c = consumer("PetPage", [
+      transition("ct-failed", {
+        conditions: [negated(statusInRange(200, 299))],
+        output: { type: "return", value: null },
+      }),
+      transition("ct-ok", {
+        conditions: [negated(negated(statusInRange(200, 299)))],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    expect(checkContractConsistency(p, c)).toEqual([]);
+  });
+
+  it("treats a consumer default branch as handling a declared 2XX range", () => {
+    const p = withRangeContract(provider("getPet", []), {
+      responseRanges: [{ min: 200, max: 299, spec: "2XX" }],
+    });
+    const c = consumer("PetPage", [
       transition("ct-default", {
         output: { type: "return", value: null },
         isDefault: true,

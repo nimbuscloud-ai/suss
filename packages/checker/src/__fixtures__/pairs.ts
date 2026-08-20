@@ -139,12 +139,22 @@ export function opaqueResponse(): Output {
   };
 }
 
+/**
+ * A response with no status literal: what a contract reader emits for a
+ * range code (pass `range` on the transition) or for a catch-all
+ * `default` (mark the transition `isDefault`).
+ */
+export function rangeResponse(body: TypeShape | null = null): Output {
+  return { type: "response", statusCode: null, body, headers: {} };
+}
+
 export function transition(
   id: string,
   opts: {
     conditions?: Predicate[];
     output: Output;
     isDefault?: boolean;
+    range?: { min: number; max: number; spec: string };
   },
 ): Transition {
   return {
@@ -154,6 +164,9 @@ export function transition(
     effects: [],
     location: { start: 1, end: 10 },
     isDefault: opts.isDefault ?? false,
+    ...(opts.range !== undefined
+      ? { metadata: withHttpMetadata(undefined, { statusRange: opts.range }) }
+      : {}),
   };
 }
 
@@ -221,6 +234,39 @@ export function withContractBodies(
         framework: "ts-rest",
         provenance: "independent",
         responses,
+      },
+    }),
+  };
+}
+
+/** A contract with any mix of literal, range, and default responses. */
+export function withRangeContract(
+  summary: BehavioralSummary,
+  contract: {
+    responses?: Array<{ statusCode: number; body?: TypeShape | null }>;
+    responseRanges?: Array<{
+      min: number;
+      max: number;
+      spec: string;
+      body?: TypeShape | null;
+    }>;
+    defaultResponse?: { body?: TypeShape | null };
+  },
+): BehavioralSummary {
+  return {
+    ...summary,
+    metadata: withHttpMetadata(summary.metadata, {
+      ...readHttpMetadata(summary),
+      declaredContract: {
+        framework: "openapi",
+        provenance: "independent",
+        responses: contract.responses ?? [],
+        ...(contract.responseRanges !== undefined
+          ? { responseRanges: contract.responseRanges }
+          : {}),
+        ...(contract.defaultResponse !== undefined
+          ? { defaultResponse: contract.defaultResponse }
+          : {}),
       },
     }),
   };

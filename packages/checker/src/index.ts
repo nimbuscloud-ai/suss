@@ -61,6 +61,11 @@ export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 export { checkContractAgreement } from "./contract/contractAgreement.js";
 export { checkContractConsistency } from "./contract/contractConsistency.js";
 export {
+  contractDeclaresStatus,
+  type DeclaredContract,
+  readDeclaredContract,
+} from "./contract/declaredContract.js";
+export {
   type GraphqlContractProvenance,
   type GraphqlDeclaredContract,
   readGraphqlDeclaredContract,

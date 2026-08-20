@@ -111,10 +111,6 @@ const EXEMPT = new Map([
     "The API Gateway readers point a declared route at the code that implements it, for the correlation pass its comment describes. Nothing correlates them. #464.",
   ],
   [
-    "http.statusRange",
-    "The OpenAPI reader writes the range a 4XX response covers, and no pass compares a consumer branch against a range, so a range-coded spec reports correct branches as errors. #464 tracks the pass.",
-  ],
-  [
     "libraryEnvReads.module",
     "Which library a marker summary speaks for. The pairing matches on prefixes and names and never asks which library declared them, so a finding cannot say. #464.",
   ],

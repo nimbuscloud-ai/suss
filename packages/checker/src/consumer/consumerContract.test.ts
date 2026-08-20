@@ -7,6 +7,7 @@ import {
   statusEq,
   transition,
   withContractBodies,
+  withRangeContract,
 } from "../__fixtures__/pairs.js";
 import { checkConsumerContract } from "./consumerContract.js";
 
@@ -151,6 +152,43 @@ describe("checkConsumerContract", () => {
     const findings = checkConsumerContract(p, updated);
     expect(findings).toHaveLength(1);
     expect(findings[0].kind).toBe("consumerContractViolation");
+  });
+
+  it("checks a branch on 404 against the body a declared 4XX range promises", () => {
+    const p = withRangeContract(provider("getPet", []), {
+      responseRanges: [
+        { min: 400, max: 499, spec: "4XX", body: record({ error: text }) },
+      ],
+    });
+    // Consumer reads `message` on 404; the 4XX body only promises error.
+    const c = withExpectedInput(consumerWithFields("PetPage", 404, {}), 0, {
+      message: unknown,
+    });
+
+    const findings = checkConsumerContract(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe("consumerContractViolation");
+    expect(findings[0].description).toContain("status 404");
+  });
+
+  it("checks a default branch against the body a declared 2XX range promises", () => {
+    const p = withRangeContract(provider("getPet", []), {
+      responseRanges: [
+        { min: 200, max: 299, spec: "2XX", body: record({ name: text }) },
+      ],
+    });
+    const c = consumer("PetPage", [
+      transition("ct-default", {
+        output: { type: "return", value: null },
+        isDefault: true,
+      }),
+    ]);
+    const updated = withExpectedInput(c, 0, { email: unknown });
+
+    const findings = checkConsumerContract(p, updated);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe("consumerContractViolation");
+    expect(findings[0].description).toContain("status 2XX");
   });
 
   it("emits lowConfidence when declared body is opaque (ref type)", () => {
