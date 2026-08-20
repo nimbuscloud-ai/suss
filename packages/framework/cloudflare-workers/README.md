@@ -57,6 +57,22 @@ async fetch(request: Request, env: Env) {
 
 A read off that argument becomes a `config-read` interaction, the same one `@suss/runtime-node` records for `process.env.X`, so the runtime-config check pairs it against whatever declares the variable. The argument is found by resolving the identifier back to its declaration and asking whether that parameter belongs to a trigger, so a project that calls it something other than `env` is read the same way.
 
+## Store calls on a binding
+
+A call through a binding becomes a `storage-access` interaction as well:
+
+```ts
+async fetch(request: Request, env: Env) {
+  await env.SESSIONS.put(`session:${id}`, "started");   // cloudflare-kv
+  const report = await env.ARCHIVE.get("latest.csv");    // r2
+  await env.LEDGER.prepare("SELECT total FROM entries"); // d1
+}
+```
+
+The container is the binding name, which is the identity `wrangler.toml` declares for the same store, so the storage check pairs the two sides name-to-name. Which store a binding is comes from the type its `Env` declaration states: `KVNamespace`, `R2Bucket` or `D1Database`. Cloudflare defines those names, a project spells them on its own `Env` interface, and the type reference is readable whether or not `@cloudflare/workers-types` is installed. `get` alone does not say which store it reaches, so a Worker with no such type on the binding, a JavaScript Worker included, gets config reads and no storage accesses.
+
+KV and R2 record the key an operation addresses as the selector. A D1 call is judged by its SQL: `SELECT` is a read, anything else a write, and a statement the SQL reader cannot parse records nothing rather than a guessed kind.
+
 ## Out of scope for now
 
 - **A read one hop away from the trigger.** Most services hand `env` to a service class and read the bindings there. Only reads in the trigger's own body, or in a function the entrypoint exports as a trigger, come out as config reads.
@@ -66,4 +82,4 @@ A read off that argument becomes a `config-read` interaction, the same one `@sus
 
 ## Where it fits in suss
 
-Depends on `@suss/extractor` for the pack shape and `@suss/behavioral-ir` for the config-read binding. `@suss/contract-wrangler` declares the other side: the variables the Worker is given, the queues it produces to and consumes from, and the stores it is bound to.
+Depends on `@suss/extractor` for the pack shape, `@suss/behavioral-ir` for the bindings it writes, `@suss/adapter-typescript` for name reading, and `@suss/sql` for judging a D1 statement. `@suss/contract-wrangler` declares the other side: the variables the Worker is given, the queues it produces to and consumes from, and the stores it is bound to.
