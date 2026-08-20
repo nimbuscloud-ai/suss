@@ -2,18 +2,28 @@
   "targets": {
     "saleor-dashboard": {
       "pin": "0601672580f24b4a6353316d67605dabfe75bf99",
-      "summaries": 5879,
-      "boundaries": 5879
+      "summaries": 5900,
+      "boundaries": 5900
     },
     "saleor-storefront": {
       "pin": "8de1ae7320b97a012ade6d88001af49bfe32bfb4",
-      "summaries": 952,
-      "boundaries": 952
+      "summaries": 953,
+      "boundaries": 953
     },
     "directus-api": {
       "pin": "193a65a807a4b7557c7705e54b975eb0e1c53ecf",
-      "summaries": 665,
-      "boundaries": 665
+      "summaries": 662,
+      "boundaries": 662
+    },
+    "twenty-server": {
+      "pin": "0288021c9c0f76f0424e327dce984d1657271ef8",
+      "summaries": 4505,
+      "boundaries": 4473
+    },
+    "twenty-front": {
+      "pin": "0288021c9c0f76f0424e327dce984d1657271ef8",
+      "summaries": 7724,
+      "boundaries": 7724
     }
   }
 }
