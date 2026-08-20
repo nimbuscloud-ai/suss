@@ -2,10 +2,10 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 510,
-    "internal": 2012,
-    "consumers": 888,
-    "pairs": 881,
+    "exports": 512,
+    "internal": 2014,
+    "consumers": 894,
+    "pairs": 887,
     "unfollowedCalls": 224,
     "findingErrors": 0
   },
@@ -159,8 +159,8 @@
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "exports": 22,
-      "internal": 56,
+      "exports": 24,
+      "internal": 57,
       "consumers": 0,
       "unfollowedCalls": 9
     },
@@ -370,8 +370,8 @@
     "packages/resolution": {
       "name": "@suss/resolution",
       "exports": 1,
-      "internal": 3,
-      "consumers": 15,
+      "internal": 4,
+      "consumers": 21,
       "unfollowedCalls": 2
     },
     "packages/runtime/node": {

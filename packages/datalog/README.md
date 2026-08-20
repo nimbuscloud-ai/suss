@@ -98,6 +98,12 @@ evaluate(db, rules, cost);
 db.tagOf("reaches", ["a", "c"]); // the cheapest derivation's cost
 ```
 
+`combine` is also handed the derivation itself: the `Rule` that fired,
+and one entry per body literal saying which fact it matched, or which
+grounded tuple a negated literal checked and did not find. An algebra
+that only folds tags, like the cost above, ignores it; the witness
+algebra below is built out of it.
+
 Tags are stored beside the relation, keyed the same way as the facts,
 never in the tuple. A tuple is its own identity: were the tag part of it, an
 improved tag would read as a new fact and the fixpoint would never
@@ -122,6 +128,52 @@ over a database: a resumed run derives only from facts added since, so
 it tags only what those reach. And rules rewritten by `deriveOnDemand`
 refuse an algebra: tags would follow the demand-transformed rules
 rather than the ones you wrote, so `evaluate` throws instead.
+
+## Witnesses, and proofs on demand
+
+The `witnesses` algebra keeps one derivation per derived fact: the rule
+that fired and one entry per body literal. Its merge keeps whatever is
+already stored, so no fact ever re-enters the delta, the fixpoint
+behaves exactly as it does untagged, and the tag stays one small object
+per fact. `proofOf` then rebuilds the tree for one fact by walking
+those witnesses backward, without re-running any rule:
+
+```ts
+import { evaluate, proofOf, ruleLabel, witnesses } from "@suss/datalog";
+
+evaluate(db, rules, witnesses);
+const proof = proofOf(db, "reachable", ["util"]);
+// {
+//   kind: "derived",
+//   rule: <the Rule that fired>,
+//   premises: [
+//     { kind: "derived", ... },              // walked further down
+//     { kind: "fact", relation: "calls", tuple: ["helper", "util"] },
+//   ],
+// }
+```
+
+A proof node is one of four kinds. `derived` has the rule and one
+premise per body literal, in rule-body order. `fact` is a leaf with no
+witness: the caller asserted it, or it was derived without the
+algebra. `absence` is a leaf for a tuple missing from the database, at
+the root when you ask about a fact that was never derived, and under a
+derivation where a negated literal relied on the tuple being missing;
+that absence is recorded at derivation time, so a proof can say "and no
+handles(x) existed" without checking anything again. `truncated` is
+where the walk stopped, at the depth cap (`maxDepth`, 128 unless you
+say otherwise) or at a cycle.
+
+First-wins gives you *a* proof, not the shortest one. When nine
+derivations reach the same fact, the one stored is the one evaluation
+found first. A different merge, say keeping the witness with the
+smaller proof height, fits the same algebra interface without touching
+the walk.
+
+A proof shows each rule as `ruleLabel` renders it: the `name` you
+passed as `rule`'s fourth argument, or the head and body relations, as
+in `path :- path, !blocked`. The witness keeps the `Rule` object
+itself, so two rules that render alike stay distinct.
 
 ## Deriving only what somebody asked for
 
