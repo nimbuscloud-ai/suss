@@ -30,6 +30,7 @@ import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 import { extractCodeStructure } from "../adapter.js";
 import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
+import { createDependencySink, withDependencySink } from "../depTracking.js";
 import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
 import { exportedDeclarationsOf } from "../moduleExports.js";
 import {
@@ -394,6 +395,7 @@ export function expandReachableClosure(
   projectFileSet?: ReadonlySet<string>,
   facts?: ClosureFacts,
   recognizers: ClosureRecognizers = NO_RECOGNIZERS,
+  alreadySummarized: BehavioralSummary[] = [],
 ): BehavioralSummary[] {
   // One source-file enumeration and one per-file function index, shared
   // across every seed locate. Without them each seed re-scanned the
@@ -430,6 +432,19 @@ export function expandReachableClosure(
     }
   }
 
+  // Units whose summaries a partial run serves from the cache: still
+  // scanned through for reachability, but reaching one emits nothing,
+  // since its summary already exists with its gaps on it.
+  const knownKeys = new Set<string>();
+  for (const summary of alreadySummarized) {
+    const func = lookup.functionAt(summary.location);
+    if (func !== null) {
+      const key = nodeKey(func);
+      knownKeys.add(key);
+      facts?.unitKeyBySummary.set(summary, key);
+    }
+  }
+
   for (;;) {
     evaluate(db, REACHABLE_RULES);
     const frontier = db
@@ -452,7 +467,9 @@ export function expandReachableClosure(
           : { resolveCallable: recognizers.resolveCallable }),
         ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
       };
-      const { candidates, stops } = collectReachable(source.func, scan);
+      const { candidates, stops } = scanWithRecording(key, facts, () =>
+        collectReachable(source.func, scan),
+      );
       if (stops.length > 0) {
         stopsByKey.set(key, stops);
       }
@@ -474,7 +491,7 @@ export function expandReachableClosure(
   const reached: BehavioralSummary[] = [];
   for (const [keyAtom] of db.facts("reachable")) {
     const key = String(keyAtom);
-    if (seedKeys.has(key)) {
+    if (seedKeys.has(key) || knownKeys.has(key)) {
       continue;
     }
     const candidate = functionByKey.get(key);
@@ -495,7 +512,9 @@ export function expandReachableClosure(
         candidate.func.getSourceFile().getFilePath(),
       );
     }
-    const summary = extractReachableSummary(candidate, options, recognizers);
+    const summary = scanWithRecording(key, facts, () =>
+      extractReachableSummary(candidate, options, recognizers),
+    );
     facts?.unitKeyBySummary.set(summary, key);
     rememberSummary(summariesByKey, key, summary);
     reached.push(summary);
@@ -504,6 +523,30 @@ export function expandReachableClosure(
   recordStops(stopsByKey, summariesByKey, options);
 
   return [...seeds, ...reached];
+}
+
+/**
+ * Collect the files a scan read into the shared facts, per scanned
+ * function, when a caller asked for them. With nobody collecting, the
+ * scan runs bare and costs nothing extra.
+ */
+function scanWithRecording<T>(
+  key: string,
+  facts: ClosureFacts | undefined,
+  fn: () => T,
+): T {
+  const filesByKey = facts?.filesByKey;
+  if (filesByKey === undefined) {
+    return fn();
+  }
+  const sink = createDependencySink();
+  const result = withDependencySink(sink, fn);
+  const bucket = filesByKey.get(key) ?? new Set<string>();
+  for (const filePath of sink.files) {
+    bucket.add(filePath);
+  }
+  filesByKey.set(key, bucket);
+  return result;
 }
 
 function rememberSummary(

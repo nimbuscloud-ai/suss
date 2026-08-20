@@ -39,6 +39,12 @@ export interface MountPrefixIndex {
    * couldn't be resolved to a literal prefix and a concrete router.
    */
   effectivePrefixFor(routerNode: Node): string;
+  /**
+   * The same resolution by a router's node id, for callers replaying a
+   * recorded consumption without the node in hand (the per-file cache
+   * re-checks a stored prefix against a rebuilt index this way).
+   */
+  prefixForId?(childId: string): string;
 }
 
 /** One mount call this file states, before it's folded into the index. */
