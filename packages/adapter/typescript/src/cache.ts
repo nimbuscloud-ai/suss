@@ -71,6 +71,8 @@ export interface RootRecord {
 export interface CacheAttribution {
   roots: RootRecord[];
   owners: string[][];
+  /** The walked files' common directory, which naming spells ids from. */
+  projectRoot?: string;
 }
 
 interface StoredRootMeta {
@@ -94,6 +96,7 @@ interface Manifest {
   depPaths?: string[];
   /** Parallel to summaries: indices into roots, [] for run-level. */
   owners?: number[][];
+  projectRoot?: string;
 }
 
 /** Reported by `lookup`: what the cache decided, and why. */
@@ -130,6 +133,7 @@ export type CacheLookup =
   | {
       kind: "hit";
       summaries: BehavioralSummary[];
+      projectRoot?: string;
       diagnostic: CacheDiagnostic;
     }
   | { kind: "miss"; diagnostic: CacheDiagnostic };
@@ -149,6 +153,8 @@ export interface PartialPlan {
   roots: Map<string, RootRecord>;
   validRoots: Set<string>;
   rootsDeclined: number;
+  /** The root the entry was named from, null on entries without one. */
+  storedProjectRoot: string | null;
   reuse(valid: ReadonlySet<string>): {
     summaries: BehavioralSummary[];
     owners: string[][];
@@ -246,6 +252,9 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
       return {
         kind: "hit",
         summaries: manifest.summaries,
+        ...(manifest.projectRoot === undefined
+          ? {}
+          : { projectRoot: manifest.projectRoot }),
         diagnostic: { kind: "hit" },
       };
     },
@@ -382,6 +391,7 @@ async function buildPlan(
     roots,
     validRoots,
     rootsDeclined,
+    storedProjectRoot: manifest.projectRoot ?? null,
     reuse(valid: ReadonlySet<string>) {
       const summaries: BehavioralSummary[] = [];
       const reusedOwners: string[][] = [];
@@ -409,6 +419,9 @@ async function buildPlan(
             return p === undefined ? [] : [p];
           }),
         ),
+        ...(manifest.projectRoot === undefined
+          ? {}
+          : { projectRoot: manifest.projectRoot }),
       };
     },
   };
@@ -416,7 +429,10 @@ async function buildPlan(
 
 function encodeAttribution(
   attribution: CacheAttribution,
-): Pick<Manifest, "roots" | "rootMeta" | "depPaths" | "owners"> {
+): Pick<
+  Manifest,
+  "roots" | "rootMeta" | "depPaths" | "owners" | "projectRoot"
+> {
   const roots = attribution.roots.map((r) => r.path);
   const rootIndex = new Map(roots.map((p, i) => [p, i]));
   const depIndex = new Map<string, number>();
@@ -444,7 +460,15 @@ function encodeAttribution(
       return i === undefined ? [] : [i];
     }),
   );
-  return { roots, rootMeta, depPaths, owners };
+  return {
+    roots,
+    rootMeta,
+    depPaths,
+    owners,
+    ...(attribution.projectRoot === undefined
+      ? {}
+      : { projectRoot: attribution.projectRoot }),
+  };
 }
 
 /** Reuse the previous hash when the stamp did not move; hash the rest. */

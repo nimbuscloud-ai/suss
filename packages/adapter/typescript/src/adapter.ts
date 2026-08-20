@@ -1906,8 +1906,14 @@ function buildCallerSummary(
 function named(
   summaries: BehavioralSummary[],
   workspace: string | undefined,
+  storedProjectRoot?: string,
 ): BehavioralSummary[] {
-  const projectRoot = commonDirectoryOf(summaries.map((s) => s.location.file));
+  // The stored root wins: the walked files' common directory can sit
+  // above the summaries' own, and ids have to spell paths the same
+  // way a cold run of the same tree would.
+  const projectRoot =
+    storedProjectRoot ??
+    commonDirectoryOf(summaries.map((s) => s.location.file));
   nameSummaries(summaries, {
     workspace: workspace ?? workspaceNameFor(projectRoot),
     projectRoot,
@@ -2128,7 +2134,7 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(lookup.summaries, config.workspace);
+        return named(lookup.summaries, config.workspace, lookup.projectRoot);
       }
 
       // A files-changed miss can still reuse per file, when the entry
@@ -2155,7 +2161,11 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(plan.allSummaries(), config.workspace);
+        return named(
+          plan.allSummaries(),
+          config.workspace,
+          plan.storedProjectRoot ?? undefined,
+        );
       }
 
       let candidatePaths: string[] | null = null;
@@ -2412,6 +2422,10 @@ export function createTypeScriptAdapter(
         });
       }
 
+      const runProjectRoot = commonDirectoryOf(
+        sourceFiles.map((f) => f.getFilePath()),
+      );
+
       await timer.timeAsync("cache.write", async () => {
         // An empty result is never cached. Serving one would skip the
         // stages that fill the funnel, so a misconfigured project would
@@ -2435,6 +2449,7 @@ export function createTypeScriptAdapter(
             // Everything after the reused prefix, the passes' own
             // additions (markers, schema documents) included.
             fresh: enriched.slice(merged.reusedKept.length),
+            projectRoot: runProjectRoot,
           });
           await cache.write(cacheInput, enriched, attribution);
         } catch {
@@ -2677,6 +2692,7 @@ function buildCacheAttribution(args: {
   reusedKept: BehavioralSummary[];
   reusedOwners: string[][];
   fresh: BehavioralSummary[];
+  projectRoot: string | undefined;
 }): CacheAttribution {
   const references = createReferenceIndex(
     args.project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
@@ -2767,7 +2783,13 @@ function buildCacheAttribution(args: {
     ...reusedOwners,
     ...args.fresh.map((s) => [...(args.ownersBySummary.get(s) ?? [])]),
   ];
-  return { roots, owners };
+  return {
+    roots,
+    owners,
+    ...(args.projectRoot === undefined
+      ? {}
+      : { projectRoot: args.projectRoot }),
+  };
 }
 
 // One summary per callback a framework's runtime schedules out of a
