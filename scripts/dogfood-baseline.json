@@ -2,11 +2,11 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 507,
-    "internal": 1977,
-    "consumers": 875,
-    "pairs": 868,
-    "unfollowedCalls": 203,
+    "exports": 509,
+    "internal": 1985,
+    "consumers": 884,
+    "pairs": 877,
+    "unfollowedCalls": 206,
     "findingErrors": 0
   },
   "packages": {
@@ -40,10 +40,10 @@
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 36,
-      "internal": 197,
-      "consumers": 120,
-      "unfollowedCalls": 19
+      "exports": 38,
+      "internal": 205,
+      "consumers": 124,
+      "unfollowedCalls": 21
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -56,8 +56,8 @@
       "name": "@suss/cli",
       "exports": 13,
       "internal": 291,
-      "consumers": 181,
-      "unfollowedCalls": 33
+      "consumers": 183,
+      "unfollowedCalls": 34
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -119,7 +119,7 @@
       "name": "@suss/contract-openapi",
       "exports": 2,
       "internal": 19,
-      "consumers": 5,
+      "consumers": 8,
       "unfollowedCalls": 0
     },
     "packages/contract/prisma": {
