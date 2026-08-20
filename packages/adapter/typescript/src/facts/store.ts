@@ -22,10 +22,12 @@ import {
   evaluate,
   lit,
   type OnDemandRules,
+  proofOf,
   rule,
   tupleKey,
   tupleKeyParts,
   variable as v,
+  witnesses,
 } from "@suss/datalog";
 import {
   ANSWER_RELATIONS,
@@ -51,6 +53,7 @@ import {
   namesAnyPackage,
 } from "./moduleGraph.js";
 
+import type { Atom, Proof } from "@suss/datalog";
 import type { TransparentWrapper } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 
@@ -61,6 +64,7 @@ const JS_RULES = [
     "stepsTo",
     [v("r"), v("t"), VALUE_STEP],
     [lit("bindCall", v("r"), v("t"))],
+    "bind",
   ),
 ];
 
@@ -80,6 +84,24 @@ const RESOLUTION_PROGRAM: OnDemandRules =
         ANSWER_RELATIONS,
       );
 
+/**
+ * What a why-question re-evaluates: the rules as written, with no
+ * demand transform. Witnesses must record the original rules, and
+ * `deriveOnDemand` refuses algebras, so the proof pass is exhaustive
+ * over the base facts the demand walk extracted.
+ */
+const WITNESS_RULES = [...SHARED_RULES, ...JS_RULES];
+
+/** Every relation some variant of the program derives, or asks with. */
+const NOT_BASE_FACTS = new Set([
+  ...[...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS].map(
+    (r) => r.head.relation,
+  ),
+  ...RESOLUTION_PROGRAM.rules.map((r) => r.head.relation),
+  "wanted",
+  "wantedOrigin",
+]);
+
 type Question = "wanted" | "wantedOrigin";
 
 /**
@@ -94,6 +116,31 @@ const QUERY_FACTS: readonly string[] =
 
 /** Deep enough for barrels of barrels, bounded so a wide graph stays cheap. */
 const MAX_MODULE_HOPS = 6;
+
+export interface ExplainCallableOptions {
+  /** A second file to walk out from; see `resolveCallable`. */
+  alsoFrom?: SourceFile;
+  /** How many derived nodes deep the proof walk goes; see `proofOf`. */
+  maxDepth?: number;
+}
+
+/** What one witness re-evaluation cost, said rather than hidden. */
+export interface ExplainStats {
+  /** Facts the demand walk had extracted, which the proof pass reran. */
+  baseFacts: number;
+  /** Facts the exhaustive pass derived on top of those. */
+  derivedFacts: number;
+  evaluateMs: number;
+}
+
+export interface ExplainedResolution {
+  /** The node the value comes down to. */
+  target: Node;
+  proof: Proof;
+  /** The source node behind a proof atom, when the atom is a node id. */
+  nodeFor: (atom: Atom) => Node | undefined;
+  stats: ExplainStats;
+}
 
 export class ResolutionStore {
   private readonly db = new Database();
@@ -133,6 +180,57 @@ export class ResolutionStore {
       () => this.lookup(target),
       alsoFrom,
     );
+  }
+
+  /**
+   * The witness proof behind `resolveCallable`'s answer. Resolves the
+   * value first, which walks files and extracts facts in the usual
+   * waves, then re-evaluates the rules over those base facts under the
+   * witness algebra and rebuilds the proof of the answer. Null when
+   * the value does not resolve at all.
+   */
+  explainCallable(
+    value: Node,
+    options: ExplainCallableOptions = {},
+  ): ExplainedResolution | null {
+    const resolved = this.resolveCallable(value, options.alsoFrom);
+    if (resolved === null) {
+      return null;
+    }
+
+    const proofDb = new Database();
+    let baseFacts = 0;
+    for (const relation of this.db.relationNames()) {
+      if (NOT_BASE_FACTS.has(relation)) {
+        continue;
+      }
+      for (const tuple of this.db.facts(relation)) {
+        proofDb.add(relation, tuple);
+        baseFacts++;
+      }
+    }
+
+    const started = performance.now();
+    evaluate(proofDb, WITNESS_RULES, witnesses);
+    const evaluateMs = performance.now() - started;
+    const derivedFacts =
+      proofDb
+        .relationNames()
+        .reduce((count, relation) => count + proofDb.size(relation), 0) -
+      baseFacts;
+
+    const proof = proofOf(
+      proofDb,
+      "resolves",
+      [nodeId(factKeyOf(value)), nodeId(resolved)],
+      options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth },
+    );
+    return {
+      target: resolved,
+      proof,
+      nodeFor: (atom) => this.table.byId.get(String(atom)),
+      stats: { baseFacts, derivedFacts, evaluateMs },
+    };
   }
 
   resolveObject(value: Node): Node | null {
