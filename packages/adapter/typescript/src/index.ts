@@ -35,6 +35,7 @@ export { type ReadNameOptions, readName } from "./resolve/readName.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
+export { workspaceRootFor } from "./summaryIdentity.js";
 export { findTerminals } from "./terminals/index.js";
 export {
   ADAPTER_VERSION,

@@ -24,6 +24,24 @@ import {
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 /**
+ * The one root a run measures its file paths from: the nearest
+ * directory at or above the run's anchor whose package.json has a
+ * name. The anchor is the tsconfig's directory, or the directory a
+ * run without one was pointed at. When no package.json declares a
+ * name above the anchor, the anchor itself is the root.
+ *
+ * The same directory supplies the workspace segment of an id, so both
+ * parts of an id are measured from one place. The walk starts from the
+ * run's configuration, not from whichever files the run loaded, so a
+ * run over one nested tsconfig spells a file the same way a run over
+ * the whole workspace does, and the same command spells it the same
+ * way twice.
+ */
+export function workspaceRootFor(anchor: string): string {
+  return namedPackageDirAbove(anchor) ?? path.resolve(anchor);
+}
+
+/**
  * What a project calls itself.
  *
  * Its package.json name is what a person would say and what a sibling
@@ -34,20 +52,22 @@ export function workspaceNameFor(root: string | undefined): string | null {
   if (root === undefined) {
     return null;
   }
-  // The files a run reads are usually under `src`, and the project is
-  // whatever declares itself above them. Looking only in the directory
-  // the files are in named every package `src`.
-  let at = path.resolve(root);
+  const dir = namedPackageDirAbove(root);
+  if (dir !== null) {
+    return packageNameAt(dir);
+  }
+  const folder = path.basename(path.resolve(root));
+  return folder.length > 0 ? folder : null;
+}
+
+// The files a run reads are usually under `src`, and the project is
+// whatever declares itself above them. Looking only in the directory
+// the files are in named every package `src`.
+function namedPackageDirAbove(start: string): string | null {
+  let at = path.resolve(start);
   for (let up = 0; up < 12; up += 1) {
-    try {
-      const manifest = JSON.parse(
-        fs.readFileSync(path.join(at, "package.json"), "utf8"),
-      ) as { name?: unknown };
-      if (typeof manifest.name === "string" && manifest.name.length > 0) {
-        return manifest.name;
-      }
-    } catch {
-      // Nothing here, or nothing readable. Keep going up.
+    if (packageNameAt(at) !== null) {
+      return at;
     }
     const parent = path.dirname(at);
     if (parent === at) {
@@ -55,8 +75,21 @@ export function workspaceNameFor(root: string | undefined): string | null {
     }
     at = parent;
   }
-  const folder = path.basename(path.resolve(root));
-  return folder.length > 0 ? folder : null;
+  return null;
+}
+
+function packageNameAt(dir: string): string | null {
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(dir, "package.json"), "utf8"),
+    ) as { name?: unknown };
+    if (typeof manifest.name === "string" && manifest.name.length > 0) {
+      return manifest.name;
+    }
+  } catch {
+    // Nothing here, or nothing readable.
+  }
+  return null;
 }
 
 /**
