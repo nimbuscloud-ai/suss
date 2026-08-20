@@ -828,6 +828,22 @@ describe("inspect", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it("says 2XX, 4XX, and default for a range-coded provider", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-range-"));
+    const file = path.join(dir, "summaries.json");
+    fs.writeFileSync(file, JSON.stringify([rangeCodedProviderSummary()]));
+
+    const output = captureInspect(() => inspect({ file }));
+    expect(output).toContain("Contract: 2XX, 4XX, default");
+    expect(output).toContain("-> 2XX");
+    expect(output).toContain("-> 4XX");
+    expect(output).toContain("-> default");
+    expect(output).not.toContain("???");
+    expect(output).not.toContain("!! undeclared");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it("throws on nonexistent file", () => {
     expect(() => inspect({ file: "/nonexistent/file.json" })).toThrow(
       "File not found",
@@ -1196,6 +1212,65 @@ function counterSummary(opts: { effectSummary?: string }): unknown {
     ],
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+/** What the OpenAPI reader emits for an operation coded 2XX / 4XX / default. */
+function rangeCodedProviderSummary(): unknown {
+  const rangeTransition = (spec: string, min: number, max: number) => ({
+    id: `getPet:response:${spec}:stub`,
+    conditions: [],
+    output: { type: "response", statusCode: null, body: null, headers: {} },
+    effects: [],
+    location: { start: 0, end: 0 },
+    isDefault: false,
+    metadata: { http: { statusRange: { min, max, spec } } },
+  });
+  return {
+    kind: "handler",
+    location: {
+      file: "openapi:pets",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name: "getPet",
+      exportPath: null,
+      boundaryBinding: {
+        transport: "http",
+        semantics: { name: "rest", method: "GET", path: "/pets/{id}" },
+        recognition: "openapi",
+      },
+    },
+    inputs: [],
+    transitions: [
+      rangeTransition("2XX", 200, 299),
+      rangeTransition("4XX", 400, 499),
+      {
+        id: "getPet:response:default:stub",
+        conditions: [],
+        output: { type: "response", statusCode: null, body: null, headers: {} },
+        effects: [],
+        location: { start: 0, end: 0 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "derived", level: "high" },
+    metadata: {
+      http: {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: [],
+          responseRanges: [
+            { min: 200, max: 299, spec: "2XX" },
+            { min: 400, max: 499, spec: "4XX" },
+          ],
+          defaultResponse: {},
+        },
+      },
+    },
   };
 }
 

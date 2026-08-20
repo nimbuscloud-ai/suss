@@ -528,6 +528,28 @@ describe("openApiToSummaries — basic mapping", () => {
     expect(contract?.defaultResponse).toBeUndefined();
   });
 
+  it("drops a response code that is neither a status, a range, nor default", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.0.3",
+      paths: {
+        "/x": {
+          get: {
+            operationId: "x",
+            responses: {
+              "200": { description: "ok" },
+              XXX: { description: "not a code" },
+            },
+          },
+        },
+      },
+    };
+    const summary = openApiToSummaries(spec)[0];
+    expect(summary.transitions).toHaveLength(1);
+    const contract = readHttpMetadata(summary)?.declaredContract;
+    expect(contract?.responses).toEqual([{ statusCode: 200, body: null }]);
+    expect(contract?.responseRanges).toBeUndefined();
+  });
+
   it("accepts lowercase range codes like 5xx", () => {
     const spec: OpenApiSpec = {
       openapi: "3.0.3",
