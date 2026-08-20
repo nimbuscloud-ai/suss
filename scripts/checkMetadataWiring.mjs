@@ -119,18 +119,6 @@ const EXEMPT = new Map([
     "What one measurement covers, written by terraform-gcp. checkMetric compares `values` only, so a GAUGE compared as a DELTA goes unchecked. #464.",
   ],
   [
-    "react.elementTag",
-    "The React pack writes the element a handler hangs off, and ReactMetadataSchema does not declare it, so every read drops it. #464 decides between declaring it and dropping it.",
-  ],
-  [
-    "react.propName",
-    "Written beside elementTag, undeclared for the same reason. #464.",
-  ],
-  [
-    "react.localName",
-    "Written beside elementTag, undeclared for the same reason. #464.",
-  ],
-  [
     "component.storybook.provenance",
     "Whether a story's args are an independent statement about the component. The story agreement check treats every story alike. #464.",
   ],
