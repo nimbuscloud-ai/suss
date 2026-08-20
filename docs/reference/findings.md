@@ -251,6 +251,7 @@ This is `unhandledProviderCase` restated as a behavior claim rather than a cover
 - A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is an answer, not a misread.
 - A body with spreads or an opaque shape claims nothing, and a status the provider returns with several bodies fires only when every one of them lacks the field.
 - The branch has to run on the response: a status guard, a range like `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
+- A response declared as a range (an OpenAPI `4XX`) is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body, and the finding says which (`the 4XX body the provider sends`).
 
 **Legitimate when:** the provider sends the field through a path suss could not read (a wrapper, a spread it flattened away). Suppress with `.sussignore`.
 
