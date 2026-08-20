@@ -458,9 +458,19 @@ describe("per-file plan", () => {
     expect(plan?.removed.size).toBe(0);
   });
 
+  it("catches a same-size edit once the mtime moves", async () => {
+    const { cache, input, dir } = await writeTwoFileEntry();
+    // Wait a bit (mtime resolution is ms; some FS round to seconds)
+    await new Promise((r) => setTimeout(r, 20));
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 7;");
+
+    const plan = await cache.plan(input);
+    expect(plan?.changed).toEqual(new Set([path.join(dir, "b.ts")]));
+  });
+
   it("keeps the file that did not change and drops the one that did", async () => {
     const { cache, input, dir } = await writeTwoFileEntry();
-    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3;");
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
 
     const plan = await cache.plan(input);
     expect(plan?.changed).toEqual(new Set([path.join(dir, "b.ts")]));
@@ -470,7 +480,7 @@ describe("per-file plan", () => {
 
   it("invalidates the reader when a recorded dependency changes", async () => {
     const { cache, input, dir } = await writeTwoFileEntry();
-    await fs.writeFile(path.join(dir, "a.ts"), "export const a = 9;");
+    await fs.writeFile(path.join(dir, "a.ts"), "export const a = 9000;");
 
     const plan = await cache.plan(input);
     expect(plan?.validRoots).toEqual(new Set([path.join(dir, "b.ts")]));
@@ -509,7 +519,7 @@ describe("per-file plan", () => {
         [{ file: "a.ts", cacheable: false }, { file: "b.ts" }],
       ),
     );
-    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3;");
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
 
     const plan = await cache.plan(input);
     expect(plan?.rootsDeclined).toBe(1);
@@ -539,7 +549,7 @@ describe("per-file plan", () => {
         [{ file: "a.ts" }, { file: "b.ts" }],
       ),
     );
-    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3;");
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
 
     const plan = await cache.plan(input);
     const reuse = plan?.reuse(plan.validRoots);
@@ -569,7 +579,7 @@ describe("per-file plan", () => {
         ],
       ),
     );
-    await fs.writeFile(path.join(dir, "a.ts"), "export const a = 9;");
+    await fs.writeFile(path.join(dir, "a.ts"), "export const a = 9000;");
 
     const plan = await cache.plan(input);
     const reuse = plan?.reuse(plan.validRoots);
@@ -614,7 +624,7 @@ describe("per-file plan", () => {
     expect(again?.roots.get(path.join(dir, "a.ts"))?.deps).toEqual([
       path.join(dir, "b.ts"),
     ]);
-    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3;");
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
     const after = await cache.plan(input);
     expect(after?.validRoots).toEqual(new Set());
   });
