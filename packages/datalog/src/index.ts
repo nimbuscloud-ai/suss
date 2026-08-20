@@ -31,6 +31,15 @@ export {
   type RuleCost,
 } from "./profile.js";
 export { tupleKey, tupleKeyParts } from "./tupleKey.js";
+export {
+  type Proof,
+  type ProofDerived,
+  type ProofOptions,
+  proofOf,
+  Witness,
+  type WitnessTag,
+  witnesses,
+} from "./witness.js";
 
 /** Tuple values. Callers intern richer identities (AST nodes, summaries) to atoms. */
 export type Atom = string | number;
@@ -73,13 +82,32 @@ export const notLit = (relation: string, ...terms: Term[]): Literal => ({
 export interface Rule {
   head: { relation: string; terms: Term[] };
   body: Literal[];
+  /** The name a proof shows for this rule. `ruleLabel` renders a default without it. */
+  name?: string;
 }
 
 export const rule = (
   relation: string,
   terms: Term[],
   body: Literal[],
-): Rule => ({ head: { relation, terms }, body });
+  name?: string,
+): Rule =>
+  name === undefined
+    ? { head: { relation, terms }, body }
+    : { head: { relation, terms }, body, name };
+
+const literalName = (literal: Literal): string =>
+  literal.negated ? `!${literal.relation}` : literal.relation;
+
+/**
+ * The label a proof prints for a rule: the name the caller gave it, or
+ * the head and body relations, as in `path :- path, !blocked`. Two
+ * rules over the same relations get the same default label, which is
+ * why a witness keeps the `Rule` object itself and renders it only
+ * when asked.
+ */
+export const ruleLabel = (r: Rule): string =>
+  r.name ?? `${r.head.relation} :- ${r.body.map(literalName).join(", ")}`;
 
 // ---------------------------------------------------------------------------
 // Tuple store
@@ -301,9 +329,28 @@ export interface TagAlgebra<Tag> {
   /** What a matched negated literal contributes: there is no fact to read. */
   absent: Tag;
   /** The head's tag from the body's, in rule-body order, once per derivation. */
-  combine(bodyTags: readonly Tag[]): Tag;
+  combine(bodyTags: readonly Tag[], derivation: Derivation): Tag;
   /** The tag to store when a fact is derived again; see the merge contract above. */
   merge(stored: Tag, incoming: Tag): Tag;
+}
+
+/**
+ * How one body literal was satisfied: the fact a positive literal
+ * matched, or the grounded tuple that was not in the database when a
+ * negated literal checked, kept so a proof can point at the absence.
+ */
+export type BodyMatch =
+  | { kind: "fact"; relation: string; tuple: Tuple }
+  | { kind: "absence"; relation: string; tuple: Tuple };
+
+/**
+ * One rule firing, handed to `combine` beside the body tags: the rule
+ * as the caller wrote it, and one `BodyMatch` per body literal in
+ * rule-body order. An algebra that only folds tags ignores it.
+ */
+export interface Derivation {
+  rule: Rule;
+  body: readonly BodyMatch[];
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +562,7 @@ function evaluateRuleTagged<Tag>(
 ): TaggedDerivation<Tag>[] {
   const results: TaggedDerivation<Tag>[] = [];
   const bodyTags: Tag[] = [];
+  const bodyMatches: BodyMatch[] = [];
 
   const step = (
     literalIndex: number,
@@ -524,17 +572,27 @@ function evaluateRuleTagged<Tag>(
     if (literalIndex === r.body.length) {
       results.push({
         tuple: headTuple(r.head, bindings),
-        tag: algebra.combine(bodyTags.slice()),
+        tag: algebra.combine(bodyTags.slice(), {
+          rule: r,
+          body: bodyMatches.slice(),
+        }),
       });
       return;
     }
     const literal = r.body[literalIndex];
 
     if (literal.negated) {
-      if (!db.has(literal.relation, groundNegated(literal, bindings))) {
+      const grounded = groundNegated(literal, bindings);
+      if (!db.has(literal.relation, grounded)) {
         bodyTags.push(algebra.absent);
+        bodyMatches.push({
+          kind: "absence",
+          relation: literal.relation,
+          tuple: grounded,
+        });
         step(literalIndex + 1, positiveIndex, bindings);
         bodyTags.pop();
+        bodyMatches.pop();
       }
       return;
     }
@@ -550,8 +608,14 @@ function evaluateRuleTagged<Tag>(
         bodyTags.push(
           stored === undefined ? algebra.asserted : (stored as Tag),
         );
+        bodyMatches.push({
+          kind: "fact",
+          relation: literal.relation,
+          tuple,
+        });
         step(literalIndex + 1, positiveIndex + 1, next);
         bodyTags.pop();
+        bodyMatches.pop();
       }
     }
   };
@@ -937,7 +1001,7 @@ function runRules<Tag>(
       chargeRule(
         ruleSetName,
         r.head.relation,
-        r.body.map((l) => (l.negated ? `!${l.relation}` : l.relation)),
+        r.body.map(literalName),
         performance.now() - startedAt,
         db.size(r.head.relation) - before,
       );
