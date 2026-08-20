@@ -18,6 +18,8 @@ import {
   type Symbol as TsSymbol,
 } from "ts-morph";
 
+import { recordFileDependency } from "../depTracking.js";
+
 import type { Gap } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "../conditions.js";
 
@@ -175,6 +177,13 @@ export function declarationsBehind(symbol: TsSymbol | undefined): Node[] {
 export function classifyStop(declarations: readonly Node[]): UnfollowedReason {
   if (declarations.length === 0) {
     return "noDeclaration";
+  }
+  // A stop still read the project files it stopped at: a change there
+  // can make the call followable, which changes the gap.
+  for (const declaration of declarations) {
+    if (!isInExternalCode(declaration.getSourceFile())) {
+      recordFileDependency(declaration.getSourceFile().getFilePath());
+    }
   }
   if (declarations.every(isExternalDeclaration)) {
     return "outsideRun";

@@ -77,11 +77,21 @@ import {
   type SourceFileLookup,
 } from "./bootstrap/sourceFileLookup.js";
 import {
+  type CacheAttribution,
   type CacheDiagnostic,
   type CacheLayer,
   createCacheLayer,
+  type PartialPlan,
+  type RootRecord,
 } from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
+import {
+  createDependencySink,
+  type DependencySink,
+  recordFileDependency,
+  recordUnitClaim,
+  withDependencySink,
+} from "./depTracking.js";
 import {
   buildExtractionReport,
   commonDirectoryOf,
@@ -113,6 +123,7 @@ import {
   warmExportChains,
 } from "./moduleExports.js";
 import { moduleInitSummary } from "./moduleInit.js";
+import { createReferenceIndex } from "./referencedFiles.js";
 import {
   type ClosureFacts,
   deriveBoundaryEffects,
@@ -1187,12 +1198,27 @@ function extractFromSourceFile(
         ) {
           tally.selfCollisions += 1;
         }
+        if (claimant.file !== sourceFile.getFilePath()) {
+          // The other file's claim decided what this walk skipped, so a
+          // change there has to re-extract this file.
+          recordFileDependency(claimant.file);
+        }
         continue;
       }
       claimed.set(claimKey, {
         pack: pack.name,
         file: sourceFile.getFilePath(),
       });
+      recordUnitClaim(claimKey, pack.name);
+      const declaringFile = unit.func?.getSourceFile().getFilePath();
+      if (
+        declaringFile !== undefined &&
+        declaringFile !== sourceFile.getFilePath()
+      ) {
+        // Discovery walked this file and landed on a function written
+        // in another one, whose body is what the summary reads.
+        recordFileDependency(declaringFile);
+      }
       unitsWalkedHere += 1;
       if (tally !== undefined) {
         tally.unitsClaimed += 1;
@@ -1880,8 +1906,14 @@ function buildCallerSummary(
 function named(
   summaries: BehavioralSummary[],
   workspace: string | undefined,
+  storedProjectRoot?: string,
 ): BehavioralSummary[] {
-  const projectRoot = commonDirectoryOf(summaries.map((s) => s.location.file));
+  // The stored root wins: the walked files' common directory can sit
+  // above the summaries' own, and ids have to spell paths the same
+  // way a cold run of the same tree would.
+  const projectRoot =
+    storedProjectRoot ??
+    commonDirectoryOf(summaries.map((s) => s.location.file));
   nameSummaries(summaries, {
     workspace: workspace ?? workspaceNameFor(projectRoot),
     projectRoot,
@@ -2102,7 +2134,38 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(lookup.summaries, config.workspace);
+        return named(lookup.summaries, config.workspace, lookup.projectRoot);
+      }
+
+      // A files-changed miss can still reuse per file, when the entry
+      // recorded which file each summary came from.
+      const plan =
+        lookup.diagnostic.missReason === "files-changed"
+          ? await timer.timeAsync("cache.plan", () => cache.plan(cacheInput))
+          : null;
+      if (plan !== null && plan.changed.size === 0 && plan.removed.size === 0) {
+        // Stamps moved but every content hash matched: a touch, not an
+        // edit. Refresh the stamps so the next run hits on stats alone.
+        try {
+          await cache.write(
+            cacheInput,
+            plan.allSummaries(),
+            plan.attribution(),
+          );
+        } catch {
+          // A failed refresh costs the next run a rehash, nothing more.
+        }
+        if (config.onCacheDiagnostic !== undefined) {
+          config.onCacheDiagnostic({ kind: "hit" });
+        }
+        if (config.onTiming !== undefined) {
+          config.onTiming(timer.report());
+        }
+        return named(
+          plan.allSummaries(),
+          config.workspace,
+          plan.storedProjectRoot ?? undefined,
+        );
       }
 
       let candidatePaths: string[] | null = null;
@@ -2139,9 +2202,68 @@ export function createTypeScriptAdapter(
         buildMountPrefixIndex(packsByFile, resolution),
       );
 
+      const caching = cacheDir !== null;
+
+      // Which stored files survive: their own hash and their recorded
+      // dependencies unchanged, every consumed mount prefix resolving
+      // the same against this run's index, and the same packs applying.
+      const validRoots = new Set<string>();
+      if (plan !== null) {
+        const packNamesByPath = new Map<string, string>();
+        for (const [sf, packs] of packsByFile) {
+          packNamesByPath.set(
+            sf.getFilePath(),
+            packs
+              .map((p) => p.name)
+              .sort()
+              .join(","),
+          );
+        }
+        for (const rootPath of plan.validRoots) {
+          const record = plan.roots.get(rootPath);
+          if (record === undefined) {
+            continue;
+          }
+          if (!mountAssumptionsAgree(record, mountPrefixes)) {
+            continue;
+          }
+          const stored = [...record.packs].sort().join(",");
+          if ((packNamesByPath.get(rootPath) ?? "") !== stored) {
+            continue;
+          }
+          validRoots.add(rootPath);
+        }
+      }
+      const reused =
+        plan !== null && validRoots.size > 0 ? plan.reuse(validRoots) : null;
+
       const claimedUnits = new Map<string, ClaimedUnit>();
+      if (reused !== null && plan !== null) {
+        // Replay the claims the reused walks made, so a re-walked file
+        // skips the units a reused file's walk already owns.
+        for (const rootPath of validRoots) {
+          for (const claim of plan.roots.get(rootPath)?.claims ?? []) {
+            claimedUnits.set(claim.key, { pack: claim.pack, file: rootPath });
+          }
+        }
+      }
+
+      const walkList =
+        reused === null
+          ? sourceFiles
+          : sourceFiles.filter((sf) => !validRoots.has(sf.getFilePath()));
+
+      const sinkByRoot = new Map<string, DependencySink>();
+      const ownersBySummary = new Map<BehavioralSummary, Set<string>>();
       timer.time("extract per-file", () => {
-        for (const sourceFile of sourceFiles) {
+        for (const sourceFile of walkList) {
+          const rootPath = sourceFile.getFilePath();
+          const sink = createDependencySink();
+          if (caching) {
+            // Recorded even for a gated-out file: an empty record still
+            // says the walk read nothing beyond the file itself.
+            sinkByRoot.set(rootPath, sink);
+          }
           const applicablePacks = packsByFile.get(sourceFile);
           if (applicablePacks === undefined) {
             continue;
@@ -2149,8 +2271,8 @@ export function createTypeScriptAdapter(
           // A module graph too deep for the checker takes the stack down
           // with it. Reporting the one file costs less than the run.
           try {
-            summaries.push(
-              ...extractFromSourceFile(
+            const walked = withDependencySink(sink, () =>
+              extractFromSourceFile(
                 sourceFile,
                 applicablePacks,
                 claimedUnits,
@@ -2160,6 +2282,10 @@ export function createTypeScriptAdapter(
                 mountPrefixes,
               ),
             );
+            for (const summary of walked) {
+              ownersBySummary.set(summary, new Set([rootPath]));
+            }
+            summaries.push(...walked);
           } catch (error) {
             if (!(error instanceof RangeError)) {
               throw error;
@@ -2169,16 +2295,31 @@ export function createTypeScriptAdapter(
         }
       });
 
+      // Reused wrapper summaries still seed caller expansion: derived
+      // callers are recomputed every run rather than cached, so a new
+      // caller in an edited file is found either way.
+      const wrapperInput =
+        reused === null ? summaries : [...summaries, ...reused.summaries];
       const withWrappers = timer.time("expandWrapperCallers", () =>
-        expandWrapperCallers(summaries, project, config.extractorOptions),
+        expandWrapperCallers(wrapperInput, project, config.extractorOptions),
       );
+      const pipeline =
+        reused === null
+          ? withWrappers
+          : [...summaries, ...withWrappers.slice(wrapperInput.length)];
       const withSubUnits = timer.time("synthesizeSubUnits", () =>
         synthesizeSubUnits(
-          withWrappers,
+          pipeline,
           project,
           config.frameworks,
           config.extractorOptions,
           tallies,
+          (created, parent) => {
+            const parentOwners = ownersBySummary.get(parent);
+            if (parentOwners !== undefined) {
+              ownersBySummary.set(created, new Set(parentOwners));
+            }
+          },
         ),
       );
       // Closure needs `projectFileSet` to lazy-add a callee's file as it
@@ -2187,6 +2328,7 @@ export function createTypeScriptAdapter(
       const closureFacts: ClosureFacts = {
         db: new Database(),
         unitKeyBySummary: new Map(),
+        ...(caching ? { filesByKey: new Map<string, Set<string>>() } : {}),
       };
       const withClosure =
         config.includeReachable !== false
@@ -2208,14 +2350,38 @@ export function createTypeScriptAdapter(
                   resolveCallable: (value, alsoFrom) =>
                     resolution.resolveCallable(value, alsoFrom),
                 },
+                // Reached units the cache already serves emit nothing,
+                // the way a cold run's seeds do not.
+                reused?.summaries ?? [],
               ),
             )
           : withSubUnits;
 
+      // Attribute each reached library summary to the walked files
+      // whose seeds reach it, before merge decides what survives.
+      const closureOwnership =
+        caching && config.includeReachable !== false
+          ? timer.time("cache.attributeClosure", () =>
+              attributeReachedSummaries(
+                withSubUnits,
+                withClosure.slice(withSubUnits.length),
+                closureFacts,
+                ownersBySummary,
+              ),
+            )
+          : null;
+
+      // The passes below read across the whole summary set, so reused
+      // summaries join before them. What they recompute on a reused
+      // summary is the same function of the same unchanged subtree.
+      const merged = timer.time("cache.merge", () =>
+        mergeWithReused(reused, withClosure, ownersBySummary),
+      );
+
       // Runs after the closure, so that every callee's throw terminals
       // exist to read a rethrow's possible sources from.
       const enriched = timer.time("enrichRethrows", () =>
-        enrichRethrows(withClosure, project, closureFacts),
+        enrichRethrows(merged.summaries, project, closureFacts),
       );
 
       if (config.includeReachable !== false) {
@@ -2242,15 +2408,50 @@ export function createTypeScriptAdapter(
         ),
       );
 
+      if (config.onCacheDiagnostic !== undefined && plan !== null) {
+        config.onCacheDiagnostic({
+          kind: "partial",
+          partial: {
+            filesChanged: plan.changed.size,
+            filesRemoved: plan.removed.size,
+            rootsReused: validRoots.size,
+            rootsReextracted: walkList.length,
+            rootsDeclined: plan.rootsDeclined,
+            summariesReused: merged.reusedKept.length,
+          },
+        });
+      }
+
+      const runProjectRoot = commonDirectoryOf(
+        sourceFiles.map((f) => f.getFilePath()),
+      );
+
       await timer.timeAsync("cache.write", async () => {
         // An empty result is never cached. Serving one would skip the
         // stages that fill the funnel, so a misconfigured project would
         // get "0 summaries" with no explanation ever after.
-        if (enriched.length === 0) {
+        if (!caching || enriched.length === 0) {
           return;
         }
         try {
-          await cache.write(cacheInput, enriched);
+          const attribution = buildCacheAttribution({
+            project,
+            plan,
+            validRoots,
+            sinkByRoot,
+            ownersBySummary,
+            closureOwnership,
+            unitKeyBySummary: closureFacts.unitKeyBySummary,
+            filesByKey: closureFacts.filesByKey,
+            packsByFile,
+            reusedKept: merged.reusedKept,
+            reusedOwners: merged.reusedOwners,
+            // Everything after the reused prefix, the passes' own
+            // additions (markers, schema documents) included.
+            fresh: enriched.slice(merged.reusedKept.length),
+            projectRoot: runProjectRoot,
+          });
+          await cache.write(cacheInput, enriched, attribution);
         } catch {
           // A failed cache write must not fail the extract.
         }
@@ -2266,7 +2467,7 @@ export function createTypeScriptAdapter(
             packs: config.frameworks,
             tallies,
             filesInProject: tsconfigFileList?.length ?? null,
-            filesWalked: sourceFiles.length,
+            filesWalked: walkList.length,
             summaries: enriched,
             tsConfigFilePath: config.tsConfigFilePath,
             projectRoot: commonDirectoryOf(
@@ -2293,6 +2494,304 @@ export function createTypeScriptAdapter(
   };
 }
 
+/**
+ * Whether every mount prefix a stored walk consumed still resolves to
+ * the same value against this run's index. A mount added, removed or
+ * changed lands here, because the consuming file's own content never
+ * mentions it and no recorded dependency would catch it.
+ */
+function mountAssumptionsAgree(
+  record: RootRecord,
+  index: MountPrefixIndex,
+): boolean {
+  return Object.entries(record.mountPrefixes).every(
+    ([childId, prefix]) => (index.prefixForId?.(childId) ?? "") === prefix,
+  );
+}
+
+/**
+ * Give each closure-reached summary the owners of every walked file
+ * whose seeds reach its function, and return the reachable key set per
+ * walked file for dependency recording. A helper two files share ends
+ * up owned by both, so either file's reuse keeps it alive.
+ */
+interface ClosureOwnership {
+  /** Reachable unit keys per walked file, for dependency recording. */
+  reachableByRoot: Map<string, Set<string>>;
+  /** Walked files reaching each unit key, for reused-owner updates. */
+  rootsByKey: Map<string, Set<string>>;
+}
+
+function attributeReachedSummaries(
+  seeds: BehavioralSummary[],
+  reached: BehavioralSummary[],
+  facts: ClosureFacts,
+  owners: Map<BehavioralSummary, Set<string>>,
+): ClosureOwnership {
+  const adjacency = new Map<string, string[]>();
+  for (const [from, to] of facts.db.facts("calls")) {
+    const key = String(from);
+    const bucket = adjacency.get(key) ?? [];
+    bucket.push(String(to));
+    adjacency.set(key, bucket);
+  }
+
+  const seedKeysByRoot = new Map<string, string[]>();
+  for (const seed of seeds) {
+    const key = facts.unitKeyBySummary.get(seed);
+    if (key === undefined) {
+      continue;
+    }
+    for (const root of owners.get(seed) ?? []) {
+      const bucket = seedKeysByRoot.get(root) ?? [];
+      bucket.push(key);
+      seedKeysByRoot.set(root, bucket);
+    }
+  }
+
+  const reachableByRoot = new Map<string, Set<string>>();
+  const rootsByKey = new Map<string, Set<string>>();
+  for (const [root, seedKeys] of seedKeysByRoot) {
+    const seen = new Set<string>(seedKeys);
+    const queue = [...seedKeys];
+    while (queue.length > 0) {
+      const key = queue.pop();
+      if (key === undefined) {
+        continue;
+      }
+      for (const next of adjacency.get(key) ?? []) {
+        if (!seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+      const keyRoots = rootsByKey.get(key) ?? new Set<string>();
+      keyRoots.add(root);
+      rootsByKey.set(key, keyRoots);
+    }
+    reachableByRoot.set(root, seen);
+  }
+
+  for (const summary of reached) {
+    const key = facts.unitKeyBySummary.get(summary);
+    if (key === undefined) {
+      continue;
+    }
+    const keyRoots = rootsByKey.get(key);
+    if (keyRoots !== undefined && keyRoots.size > 0) {
+      owners.set(summary, new Set(keyRoots));
+    }
+  }
+  return { reachableByRoot, rootsByKey };
+}
+
+/**
+ * A unit key is `file:start-end`; everything before the last colon is
+ * the file. Null for a key with no colon, which no walk produces.
+ */
+function fileOfNodeKey(key: string): string | null {
+  const cut = key.lastIndexOf(":");
+  return cut <= 0 ? null : key.slice(0, cut);
+}
+
+/**
+ * The unit a summary describes, spelled from fields that survive the
+ * round trip through the manifest. Two runs over an unchanged file
+ * spell the same unit the same way, which is what merge dedup needs.
+ */
+function summaryMergeKey(summary: BehavioralSummary): string {
+  return JSON.stringify([
+    summary.location.file,
+    summary.location.range.start,
+    summary.location.range.end,
+    summary.kind,
+    summary.identity.name,
+    summary.identity.exportPath,
+    summary.identity.boundaryBinding,
+  ]);
+}
+
+/**
+ * Combine reused summaries with this run's. A fresh copy supersedes a
+ * reused one for the same unit (a shared helper reached from both a
+ * reused and a re-walked file), and the reused copy's owners fold into
+ * the fresh one so the other file's later edits keep it alive.
+ */
+function mergeWithReused(
+  reused: { summaries: BehavioralSummary[]; owners: string[][] } | null,
+  fresh: BehavioralSummary[],
+  ownersBySummary: Map<BehavioralSummary, Set<string>>,
+): {
+  summaries: BehavioralSummary[];
+  reusedKept: BehavioralSummary[];
+  reusedOwners: string[][];
+} {
+  if (reused === null) {
+    return { summaries: fresh, reusedKept: [], reusedOwners: [] };
+  }
+  const freshByKey = new Map<string, BehavioralSummary>();
+  for (const summary of fresh) {
+    freshByKey.set(summaryMergeKey(summary), summary);
+  }
+  const reusedKept: BehavioralSummary[] = [];
+  const reusedOwners: string[][] = [];
+  reused.summaries.forEach((summary, i) => {
+    const owners = reused.owners[i] ?? [];
+    const supersededBy = freshByKey.get(summaryMergeKey(summary));
+    if (supersededBy !== undefined) {
+      const freshOwners =
+        ownersBySummary.get(supersededBy) ?? new Set<string>();
+      for (const owner of owners) {
+        freshOwners.add(owner);
+      }
+      ownersBySummary.set(supersededBy, freshOwners);
+      return;
+    }
+    reusedKept.push(summary);
+    reusedOwners.push(owners);
+  });
+  return { summaries: [...reusedKept, ...fresh], reusedKept, reusedOwners };
+}
+
+/**
+ * Whether a summary's content comes partly from run-level joins the
+ * cache does not model per file. Two joins exist: schema lifting moves
+ * SDL between summaries sharing a document label, and client stamping
+ * writes the project-wide sole client onto every operation. A file
+ * that produced a joined summary is re-extracted on every partial run
+ * rather than served stale. A code-first resolver joins with nothing,
+ * so it stays cacheable.
+ */
+function readsRunLevelJoins(summary: BehavioralSummary): boolean {
+  if (readSourceDocumentMetadata(summary) !== undefined) {
+    return true;
+  }
+  if (readGraphqlMetadata(summary)?.client !== undefined) {
+    return true;
+  }
+  const semantics = summary.identity.boundaryBinding?.semantics;
+  return semantics !== undefined && "operationType" in semantics;
+}
+
+/**
+ * The per-file record a write stores: which files were walked, what
+ * each walk read, which summaries each file owns. Reused files keep
+ * their stored records verbatim; re-walked files get fresh ones from
+ * their sinks, the reference closure and the reachable set.
+ */
+function buildCacheAttribution(args: {
+  project: Project;
+  plan: PartialPlan | null;
+  validRoots: Set<string>;
+  sinkByRoot: Map<string, DependencySink>;
+  ownersBySummary: Map<BehavioralSummary, Set<string>>;
+  closureOwnership: ClosureOwnership | null;
+  unitKeyBySummary: Map<BehavioralSummary, string>;
+  filesByKey: Map<string, Set<string>> | undefined;
+  packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>;
+  reusedKept: BehavioralSummary[];
+  reusedOwners: string[][];
+  fresh: BehavioralSummary[];
+  projectRoot: string | undefined;
+}): CacheAttribution {
+  const references = createReferenceIndex(
+    args.project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
+  );
+  const packNamesByPath = new Map<string, string[]>();
+  for (const [sf, packs] of args.packsByFile) {
+    packNamesByPath.set(
+      sf.getFilePath(),
+      packs.map((p) => p.name),
+    );
+  }
+
+  const summariesByRoot = new Map<string, BehavioralSummary[]>();
+  for (const summary of args.fresh) {
+    for (const root of args.ownersBySummary.get(summary) ?? []) {
+      const bucket = summariesByRoot.get(root) ?? [];
+      bucket.push(summary);
+      summariesByRoot.set(root, bucket);
+    }
+  }
+
+  const roots: RootRecord[] = [];
+  for (const [rootPath, sink] of args.sinkByRoot) {
+    // Direct references only: deeper reads arrive through the sink,
+    // the claims and the reachable set, so an edit far up a barrel
+    // chain does not invalidate every file below it.
+    const deps = new Set<string>(sink.files);
+    for (const dep of references.directOf(rootPath)) {
+      deps.add(dep);
+    }
+    let cacheable = true;
+    for (const summary of summariesByRoot.get(rootPath) ?? []) {
+      deps.add(summary.location.file);
+      if (readsRunLevelJoins(summary)) {
+        cacheable = false;
+      }
+    }
+    const reachable =
+      args.closureOwnership?.reachableByRoot.get(rootPath) ?? [];
+    for (const key of reachable) {
+      const keyFile = fileOfNodeKey(key);
+      if (keyFile !== null) {
+        deps.add(keyFile);
+        // One hop past a reached file covers the types and helpers its
+        // body reads without pulling in its whole import closure.
+        for (const hop of references.directOf(keyFile)) {
+          deps.add(hop);
+        }
+      }
+      for (const filePath of args.filesByKey?.get(key) ?? []) {
+        deps.add(filePath);
+      }
+    }
+    deps.delete(rootPath);
+    roots.push({
+      path: rootPath,
+      cacheable,
+      deps: [...deps].sort(),
+      claims: sink.claims,
+      mountPrefixes: Object.fromEntries(sink.mountPrefixes),
+      packs: packNamesByPath.get(rootPath) ?? [],
+    });
+  }
+
+  if (args.plan !== null) {
+    for (const rootPath of args.validRoots) {
+      const record = args.plan.roots.get(rootPath);
+      if (record !== undefined) {
+        roots.push(record);
+      }
+    }
+  }
+
+  // A reused summary a fresh walk also reaches gains the fresh owners,
+  // so a later edit to either side still re-extracts or serves it.
+  const reusedOwners = args.reusedKept.map((summary, i) => {
+    const combined = new Set(args.reusedOwners[i] ?? []);
+    const key = args.unitKeyBySummary.get(summary);
+    if (key !== undefined) {
+      for (const root of args.closureOwnership?.rootsByKey.get(key) ?? []) {
+        combined.add(root);
+      }
+    }
+    return [...combined];
+  });
+
+  const owners: string[][] = [
+    ...reusedOwners,
+    ...args.fresh.map((s) => [...(args.ownersBySummary.get(s) ?? [])]),
+  ];
+  return {
+    roots,
+    owners,
+    ...(args.projectRoot === undefined
+      ? {}
+      : { projectRoot: args.projectRoot }),
+  };
+}
+
 // One summary per callback a framework's runtime schedules out of a
 // single source construct, such as a React component's event handlers.
 // A pack picks them out through its `subUnits` hook.
@@ -2302,6 +2801,7 @@ function synthesizeSubUnits(
   frameworks: PatternPack[],
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
+  onCreated?: (created: BehavioralSummary, parent: BehavioralSummary) => void,
 ): BehavioralSummary[] {
   const packByRecognition = new Map<string, PatternPack>();
   for (const pack of frameworks) {
@@ -2351,6 +2851,7 @@ function synthesizeSubUnits(
       );
       if (summary !== null) {
         synthesized.push(summary);
+        onCreated?.(summary, parent);
       }
     }
   }

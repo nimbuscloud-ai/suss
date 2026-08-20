@@ -15,6 +15,7 @@
 // Built once per extraction, over every file a pack's own gate already
 // applies to, so a project with no mountable pack pays nothing extra.
 
+import { recordMountPrefix } from "../depTracking.js";
 import { nodeId } from "../facts/extract.js";
 import {
   discoverMountEdges,
@@ -35,7 +36,15 @@ interface MountEdge {
   prefix: string;
 }
 
-const NO_MOUNTS: MountPrefixIndex = { effectivePrefixFor: () => "" };
+const NO_MOUNTS: MountPrefixIndex = {
+  // Recorded even with no mounts anywhere: a mount added later in some
+  // other file changes this router's prefix without touching its file.
+  effectivePrefixFor: (routerNode) => {
+    recordMountPrefix(nodeId(routerNode), "");
+    return "";
+  },
+  prefixForId: () => "",
+};
 
 type RegistrationMatch = Extract<
   DiscoveryPattern["match"],
@@ -135,12 +144,16 @@ export function buildMountPrefixIndex(
   }
 
   const memo = new Map<string, string | null>();
+  const byId = (childId: string): string =>
+    resolvePrefix(edgesByChild, memo, childId, new Set()) ?? "";
   return {
     effectivePrefixFor(routerNode: Node): string {
-      return (
-        resolvePrefix(edgesByChild, memo, nodeId(routerNode), new Set()) ?? ""
-      );
+      const childId = nodeId(routerNode);
+      const prefix = byId(childId);
+      recordMountPrefix(childId, prefix);
+      return prefix;
     },
+    prefixForId: byId,
   };
 }
 

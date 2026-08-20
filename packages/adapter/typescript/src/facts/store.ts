@@ -34,6 +34,7 @@ import {
   VALUE_STEP,
 } from "@suss/resolution";
 
+import { recordFileDependency } from "../depTracking.js";
 import { isFunctionRoot } from "../discovery/shared.js";
 import {
   createNodeTable,
@@ -99,7 +100,12 @@ export class ResolutionStore {
   private readonly table: NodeTable = createNodeTable();
   private readonly fullyExtracted = new Set<string>();
   private readonly seededValues = new Set<string>();
-  private readonly importedNames = new Map<string, string[]>();
+  private readonly importedNames = new Map<
+    string,
+    { names: string[]; walked: string[] }
+  >();
+  /** Files the most recent wave walk entered, for the memo to keep. */
+  private lastQueryWalked: string[] = [];
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
 
@@ -163,14 +169,22 @@ export class ResolutionStore {
     const declaration = `${nodeId(refersTo)}|${modules.join(",")}`;
     const cached = this.importedNames.get(declaration);
     if (cached !== undefined) {
-      return cached;
+      // A memo hit walks nothing, but whoever is collecting file
+      // dependencies still read those files through it.
+      for (const walkedPath of cached.walked) {
+        recordFileDependency(walkedPath);
+      }
+      return cached.names;
     }
     const target = factKeyOf(value);
     const found =
       this.resolveByWaves(target, "wantedOrigin", () =>
         this.lookupImportedNames(target, modules),
       ) ?? [];
-    this.importedNames.set(declaration, found);
+    this.importedNames.set(declaration, {
+      names: found,
+      walked: [...this.lastQueryWalked],
+    });
     return found;
   }
 
@@ -225,6 +239,7 @@ export class ResolutionStore {
     // still has to be walked through, or the frontier collapses and this
     // query comes back null.
     const walked = new Set<string>();
+    this.lastQueryWalked = [];
     let frontier =
       alsoFrom === undefined
         ? [value.getSourceFile()]
@@ -237,6 +252,11 @@ export class ResolutionStore {
           continue;
         }
         walked.add(sourceFile.getFilePath());
+        this.lastQueryWalked.push(sourceFile.getFilePath());
+        // Even a null answer read these files: their content decided
+        // there was nothing to find, so a change to any of them can
+        // change the answer.
+        recordFileDependency(sourceFile.getFilePath());
         this.extractFile(sourceFile);
         next.push(...this.graph.importedFilesOf(sourceFile));
       }

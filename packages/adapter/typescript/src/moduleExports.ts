@@ -4,6 +4,7 @@ import {
   importedFilePathsOf,
   loadImportGraphDepthFirst,
 } from "./bootstrap/lazyProjectInit.js";
+import { recordFileDependency } from "./depTracking.js";
 import { createPerFileCache } from "./perFileCache.js";
 
 import type {
@@ -24,6 +25,9 @@ type ExportedDeclarationMap = ReturnType<SourceFile["getExportedDeclarations"]>;
 export function exportedDeclarationsOf(
   sourceFile: SourceFile,
 ): ExportedDeclarationMap {
+  // Reading another module's export table is a cross-file read whether
+  // or not the memo already has it.
+  recordFileDependency(sourceFile.getFilePath());
   const cached = exportsByFile.get(sourceFile);
   if (cached !== undefined) {
     return cached;
@@ -47,7 +51,16 @@ export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
   }
 
   try {
-    return symbol.getAliasedSymbol();
+    const aliased = symbol.getAliasedSymbol();
+    // Whoever is collecting file dependencies read the file the alias
+    // lands in, not only the file the import is written in.
+    for (const declaration of aliased?.getDeclarations() ?? []) {
+      const file = declaration.getSourceFile();
+      if (!file.isInNodeModules()) {
+        recordFileDependency(file.getFilePath());
+      }
+    }
+    return aliased;
   } catch (error) {
     if (!(error instanceof RangeError)) {
       throw error;

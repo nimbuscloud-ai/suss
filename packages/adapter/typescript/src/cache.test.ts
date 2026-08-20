@@ -8,7 +8,11 @@ import { describe, expect, it } from "vitest";
 import { testCompilerOptions } from "@suss/test-project";
 
 import { extractionConfigStamp } from "./adapter.js";
-import { createCacheLayer, MAX_ENTRIES } from "./cache.js";
+import {
+  type CacheAttribution,
+  createCacheLayer,
+  MAX_ENTRIES,
+} from "./cache.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -368,6 +372,261 @@ describe("createCacheLayer", () => {
       expect(result.kind).toBe("miss");
       expect(result.diagnostic.missReason).toBe("key-changed");
     });
+  });
+});
+
+describe("per-file plan", () => {
+  function summaryIn(file: string, name: string): BehavioralSummary {
+    return {
+      ...fakeSummary,
+      location: { ...fakeSummary.location, file },
+      identity: { ...fakeSummary.identity, name },
+    };
+  }
+
+  function attributionFor(
+    dir: string,
+    summaries: { summary: BehavioralSummary; owners: string[] }[],
+    roots: {
+      file: string;
+      deps?: string[];
+      cacheable?: boolean;
+      claims?: { key: string; pack: string }[];
+    }[],
+  ): CacheAttribution {
+    return {
+      roots: roots.map((r) => ({
+        path: path.join(dir, r.file),
+        cacheable: r.cacheable ?? true,
+        deps: (r.deps ?? []).map((d) => path.join(dir, d)),
+        claims: r.claims ?? [],
+        mountPrefixes: {},
+        packs: [],
+      })),
+      owners: summaries.map((s) => s.owners.map((o) => path.join(dir, o))),
+    };
+  }
+
+  async function writeTwoFileEntry(files?: Record<string, string>) {
+    const cacheDir = await makeTempDir();
+    const { project, dir } = await makeProjectWith(
+      files ?? {
+        "a.ts": "export const a = 1;",
+        "b.ts": "export const b = 2;",
+      },
+    );
+    const cache = createCacheLayer(cacheDir);
+    const input = { project, adapterPacksDigest: "test@1" };
+    const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
+    const summaryB = summaryIn(path.join(dir, "b.ts"), "summaryB");
+    await cache.write(
+      input,
+      [summaryA, summaryB],
+      attributionFor(
+        dir,
+        [
+          { summary: summaryA, owners: ["a.ts"] },
+          { summary: summaryB, owners: ["b.ts"] },
+        ],
+        // a.ts's walk read b.ts; b.ts read only itself.
+        [{ file: "a.ts", deps: ["b.ts"] }, { file: "b.ts" }],
+      ),
+    );
+    return { cache, input, dir, summaryA, summaryB };
+  }
+
+  it("returns null for an entry written without attribution", async () => {
+    const cacheDir = await makeTempDir();
+    const { project } = await makeProjectWith({
+      "a.ts": "export const a = 1;",
+    });
+    const cache = createCacheLayer(cacheDir);
+    const input = { project, adapterPacksDigest: "test@1" };
+    await cache.write(input, [fakeSummary]);
+
+    expect(await cache.plan(input)).toBeNull();
+  });
+
+  it("counts a touched file as unchanged once its hash matches", async () => {
+    const { cache, input, dir } = await writeTwoFileEntry();
+    await new Promise((r) => setTimeout(r, 20));
+    await fs.writeFile(path.join(dir, "a.ts"), "export const a = 1;");
+
+    const plan = await cache.plan(input);
+    expect(plan).not.toBeNull();
+    expect(plan?.changed.size).toBe(0);
+    expect(plan?.removed.size).toBe(0);
+  });
+
+  it("catches a same-size edit once the mtime moves", async () => {
+    const { cache, input, dir } = await writeTwoFileEntry();
+    // Wait a bit (mtime resolution is ms; some FS round to seconds)
+    await new Promise((r) => setTimeout(r, 20));
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 7;");
+
+    const plan = await cache.plan(input);
+    expect(plan?.changed).toEqual(new Set([path.join(dir, "b.ts")]));
+  });
+
+  it("keeps the file that did not change and drops the one that did", async () => {
+    const { cache, input, dir } = await writeTwoFileEntry();
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+
+    const plan = await cache.plan(input);
+    expect(plan?.changed).toEqual(new Set([path.join(dir, "b.ts")]));
+    // a.ts itself is untouched, but its walk read b.ts.
+    expect(plan?.validRoots).toEqual(new Set());
+  });
+
+  it("invalidates the reader when a recorded dependency changes", async () => {
+    const { cache, input, dir } = await writeTwoFileEntry();
+    await fs.writeFile(path.join(dir, "a.ts"), "export const a = 9000;");
+
+    const plan = await cache.plan(input);
+    expect(plan?.validRoots).toEqual(new Set([path.join(dir, "b.ts")]));
+    const reuse = plan?.reuse(plan.validRoots);
+    expect(reuse?.summaries.map((s) => s.identity.name)).toEqual(["summaryB"]);
+  });
+
+  it("invalidates the reader when a recorded dependency is deleted", async () => {
+    const { cache, input, dir } = await writeTwoFileEntry();
+    const { project } = input as { project: Project };
+    project.removeSourceFile(
+      project.getSourceFileOrThrow(path.join(dir, "b.ts")),
+    );
+    await fs.unlink(path.join(dir, "b.ts"));
+
+    const plan = await cache.plan(input);
+    expect(plan?.removed).toEqual(new Set([path.join(dir, "b.ts")]));
+    expect(plan?.validRoots).toEqual(new Set());
+  });
+
+  it("never reuses a file that declined caching", async () => {
+    const cacheDir = await makeTempDir();
+    const { project, dir } = await makeProjectWith({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const cache = createCacheLayer(cacheDir);
+    const input = { project, adapterPacksDigest: "test@1" };
+    const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
+    await cache.write(
+      input,
+      [summaryA],
+      attributionFor(
+        dir,
+        [{ summary: summaryA, owners: ["a.ts"] }],
+        [{ file: "a.ts", cacheable: false }, { file: "b.ts" }],
+      ),
+    );
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+
+    const plan = await cache.plan(input);
+    expect(plan?.rootsDeclined).toBe(1);
+    expect(plan?.validRoots).toEqual(new Set());
+  });
+
+  it("never reuses a run-level summary on a partial plan", async () => {
+    const cacheDir = await makeTempDir();
+    const { project, dir } = await makeProjectWith({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+    });
+    const cache = createCacheLayer(cacheDir);
+    const input = { project, adapterPacksDigest: "test@1" };
+    const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
+    const marker = summaryIn(path.join(dir, "a.ts"), "marker");
+    await cache.write(
+      input,
+      [summaryA, marker],
+      attributionFor(
+        dir,
+        [
+          { summary: summaryA, owners: ["a.ts"] },
+          // Run-level: recomputed by every partial run.
+          { summary: marker, owners: [] },
+        ],
+        [{ file: "a.ts" }, { file: "b.ts" }],
+      ),
+    );
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+
+    const plan = await cache.plan(input);
+    const reuse = plan?.reuse(plan.validRoots);
+    expect(reuse?.summaries.map((s) => s.identity.name)).toEqual(["summaryA"]);
+  });
+
+  it("keeps a shared summary alive while any owner survives", async () => {
+    const cacheDir = await makeTempDir();
+    const { project, dir } = await makeProjectWith({
+      "a.ts": "export const a = 1;",
+      "b.ts": "export const b = 2;",
+      "shared.ts": "export const s = 3;",
+    });
+    const cache = createCacheLayer(cacheDir);
+    const input = { project, adapterPacksDigest: "test@1" };
+    const shared = summaryIn(path.join(dir, "shared.ts"), "shared");
+    await cache.write(
+      input,
+      [shared],
+      attributionFor(
+        dir,
+        [{ summary: shared, owners: ["a.ts", "b.ts"] }],
+        [
+          { file: "a.ts", deps: ["shared.ts"] },
+          { file: "b.ts", deps: ["shared.ts"] },
+          { file: "shared.ts" },
+        ],
+      ),
+    );
+    await fs.writeFile(path.join(dir, "a.ts"), "export const a = 9000;");
+
+    const plan = await cache.plan(input);
+    const reuse = plan?.reuse(plan.validRoots);
+    expect(reuse?.summaries.map((s) => s.identity.name)).toEqual(["shared"]);
+    // Only the surviving owner remains on the reused record.
+    expect(reuse?.owners).toEqual([[path.join(dir, "b.ts")]]);
+  });
+
+  it("hands back stored claims through the plan's records", async () => {
+    const cacheDir = await makeTempDir();
+    const { project, dir } = await makeProjectWith({
+      "a.ts": "export const a = 1;",
+    });
+    const cache = createCacheLayer(cacheDir);
+    const input = { project, adapterPacksDigest: "test@1" };
+    const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
+    const claims = [{ key: "a.ts:0-10-handler", pack: "test-pack" }];
+    await cache.write(
+      input,
+      [summaryA],
+      attributionFor(
+        dir,
+        [{ summary: summaryA, owners: ["a.ts"] }],
+        [{ file: "a.ts", claims }],
+      ),
+    );
+
+    const plan = await cache.plan(input);
+    expect(plan?.roots.get(path.join(dir, "a.ts"))?.claims).toEqual(claims);
+  });
+
+  it("round-trips attribution, so a touch refresh keeps the layer", async () => {
+    const { cache, input, dir } = await writeTwoFileEntry();
+    const plan = await cache.plan(input);
+    expect(plan).not.toBeNull();
+    if (plan === null) {
+      return;
+    }
+    await cache.write(input, plan.allSummaries(), plan.attribution());
+
+    const again = await cache.plan(input);
+    expect(again?.roots.get(path.join(dir, "a.ts"))?.deps).toEqual([
+      path.join(dir, "b.ts"),
+    ]);
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+    const after = await cache.plan(input);
+    expect(after?.validRoots).toEqual(new Set());
   });
 });
 

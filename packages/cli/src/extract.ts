@@ -1025,6 +1025,17 @@ export function formatCacheDiagnostic(diag: CacheDiagnostic): string {
   if (diag.kind === "hit") {
     return "  cache: hit (returned all summaries from manifest)\n";
   }
+  if (diag.kind === "partial") {
+    const partial = diag.partial;
+    if (partial === undefined) {
+      return "  cache: partial\n";
+    }
+    const declined =
+      partial.rootsDeclined > 0
+        ? `, ${partial.rootsDeclined} never cached`
+        : "";
+    return `  cache: partial (${partial.rootsReused} files reused, ${partial.rootsReextracted} re-extracted after ${partial.filesChanged} changed, ${partial.summariesReused} summaries reused${declined})\n`;
+  }
   return `  cache: miss (${diag.missReason ?? "unknown"})\n`;
 }
 
