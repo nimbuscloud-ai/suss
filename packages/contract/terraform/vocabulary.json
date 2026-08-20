@@ -13,6 +13,8 @@
   "open": "filter grammar: the parenthesis a group starts with",
   "operator": "filter grammar: the comparison between a key and a value",
   "or": "filter grammar: what this reader calls an OR once it has read one",
+  "read": "suss: what an unset gate attribute means when the entry says to read it anyway",
+  "store": "suss: a resource that says a store exists without stating its containers",
   "term": "filter grammar: one comparison, the leaf of what a filter reads as",
   "terraform": "reader name, HashiCorp Terraform",
   "word": "filter grammar: a bare run of text, a key or an unquoted value"

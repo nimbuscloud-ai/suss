@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   readMetricContractMetadata,
   readMetricReadingMetadata,
+  readStorageContractMetadata,
 } from "@suss/behavioral-ir";
 import { checkMetric } from "@suss/checker";
 import { terraformToSummaries } from "@suss/contract-terraform";
@@ -115,6 +116,44 @@ describe("what the Google entries read", () => {
   it("says nothing about a resource no entry describes", () => {
     const names = read(REFUSED).map((s) => s.identity.name);
     expect(names).toHaveLength(2);
+  });
+});
+
+const STORES = `
+resource "google_storage_bucket" "uploads" {
+  name     = "acme-uploads"
+  location = "US"
+}
+
+resource "google_redis_instance" "sessions" {
+  name           = "sessions-v1"
+  memory_size_gb = 1
+}
+`;
+
+describe("what the storage entries read", () => {
+  it("reads a bucket under the name code passes to bucket()", () => {
+    const bucket = boundary(STORES, "google_storage_bucket.uploads");
+    expect(bucket.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "storage",
+      storageSystem: "gcs",
+      container: "uploads",
+    });
+    const contract = readStorageContractMetadata(bucket);
+    expect(contract?.fieldSet).toBe("none");
+    expect(contract?.physicalTable).toBe("acme-uploads");
+  });
+
+  it("reads a Memorystore instance as a store with no container to pair on", () => {
+    const instance = boundary(STORES, "google_redis_instance.sessions");
+    expect(instance.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "storage",
+      storageSystem: "redis",
+      container: null,
+    });
+    expect(
+      readStorageContractMetadata(instance)?.physicalTable,
+    ).toBeUndefined();
   });
 });
 

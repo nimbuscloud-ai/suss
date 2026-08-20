@@ -60,6 +60,37 @@ export function awsTerraform(): TerraformPack {
         },
       },
       {
+        resource: "aws_elasticache_cluster",
+        providerVersions: CURRENT,
+        // A cluster with no engine of its own joins a replication
+        // group, which always runs one of the two Redis-protocol
+        // engines, so an unset engine is read.
+        appliesWhen: {
+          attribute: "engine",
+          equals: ["redis", "valkey"],
+          whenUnset: "read",
+        },
+        boundary: {
+          kind: "storage",
+          storageSystem: "redis",
+          // Code addresses key namespaces, which no attribute of a
+          // cluster lists, so the cluster declares the store and
+          // claims no access. The README says how the sides meet.
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
+      {
+        resource: "aws_elasticache_replication_group",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          storageSystem: "redis",
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
+      {
         resource: "aws_sqs_queue",
         providerVersions: CURRENT,
         boundary: {
