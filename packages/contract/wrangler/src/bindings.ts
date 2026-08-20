@@ -3,10 +3,11 @@
  *
  * Every binding block in a Wrangler document has the same two halves:
  * `binding`, the name the code reads it under, and a key giving the
- * resource's own name. The code says the first, the deployment declares the
- * second, so a summary keeps both: the container is the resource's own
- * name, which is what another manifest declaring that resource spells,
- * and `physicalTable` records it again for a reader.
+ * resource's own name. The code says the first, the deployment declares
+ * the second, so a summary keeps both: the container is the binding
+ * name, which is what an access in the Worker spells (`env.SESSIONS`),
+ * and `physicalTable` is the resource's own name, the same split a
+ * Prisma model has between the model and the table it maps to.
  */
 
 import { messageBusBinding, storageBinding } from "@suss/behavioral-ir";
@@ -85,9 +86,9 @@ function storeSummary(
   entry: WranglerRecord,
   context: BindingContext,
 ): BehavioralSummary | null {
-  const container = stringOf(entry[store.nameKey]);
+  const resourceName = stringOf(entry[store.nameKey]);
   const boundAs = stringOf(entry.binding);
-  if (container === null) {
+  if (resourceName === null) {
     return null;
   }
   return {
@@ -98,13 +99,15 @@ function storeSummary(
       exportName: null,
     },
     identity: {
-      name: `${store.block}.${boundAs ?? container}`,
+      name: `${store.block}.${boundAs ?? resourceName}`,
       exportPath: null,
       boundaryBinding: storageBinding({
         recognition: RECOGNITION,
         storageSystem: store.storageSystem,
         scope: "default",
-        container,
+        // The binding name is what an access in the Worker spells, so
+        // it is the name the storage check pairs on.
+        container: boundAs ?? resourceName,
         accessPath: null,
       }),
     },
@@ -113,10 +116,53 @@ function storeSummary(
     gaps: [],
     confidence: { source: "declared", level: "high" },
     metadata: {
-      storageContract: { fieldSet: store.fieldSet, physicalTable: container },
+      storageContract: {
+        fieldSet: store.fieldSet,
+        physicalTable: resourceName,
+      },
       ...(boundAs === null ? {} : { wrangler: { binding: boundAs } }),
     },
   };
+}
+
+/**
+ * The properties the binding blocks add to the env object at runtime.
+ * A Worker reads `env.SESSIONS` the same way it reads
+ * `env.RETRY_LIMIT`, so the runtime contract lists both, and a read of
+ * a binding nobody declared is judged like a read of an unset variable.
+ */
+export const BINDING_BLOCKS = [
+  "kv_namespaces",
+  "r2_buckets",
+  "d1_databases",
+  "queues",
+] as const;
+
+export function bindingNames(document: Record<string, unknown>): string[] {
+  const names: string[] = [];
+  for (const store of STORES) {
+    for (const entry of blockEntries(document[store.block])) {
+      const boundAs = stringOf(entry.binding);
+      if (boundAs !== null) {
+        names.push(boundAs);
+      }
+    }
+  }
+  const queues = asRecord(document.queues);
+  for (const entry of blockEntries(queues?.producers)) {
+    const boundAs = stringOf(entry.binding);
+    if (boundAs !== null) {
+      names.push(boundAs);
+    }
+  }
+  return names;
+}
+
+/** A record, or null for a value that is not one. */
+function asRecord(raw: unknown): Record<string, unknown> | null {
+  return raw !== null && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : null;
 }
 
 /**

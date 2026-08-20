@@ -22,5 +22,6 @@
   "declared": "suss: confidence source for a fact a manifest states",
   "high": "suss: confidence level",
   "partial": "suss: a storage contract that declares some of an item's fields",
-  "none": "suss: a storage contract that declares none of an item's fields"
+  "none": "suss: a storage contract that declares none of an item's fields",
+  "queues": "Wrangler: the block declaring the queues a Worker sends on and drains"
 }
