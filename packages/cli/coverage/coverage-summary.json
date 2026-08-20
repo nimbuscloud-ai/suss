@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 3222,
-      "covered": 2963,
+      "total": 3224,
+      "covered": 2965,
       "skipped": 0,
       "pct": 91.96
     },
     "statements": {
-      "total": 3307,
-      "covered": 3043,
+      "total": 3309,
+      "covered": 3045,
       "skipped": 0,
-      "pct": 92.01
+      "pct": 92.02
     },
     "functions": {
       "total": 684,
@@ -189,10 +189,10 @@
   },
   "src/corroborateCommand.ts": {
     "lines": {
-      "total": 66,
-      "covered": 53,
+      "total": 67,
+      "covered": 54,
       "skipped": 0,
-      "pct": 80.3
+      "pct": 80.59
     },
     "functions": {
       "total": 7,
@@ -201,10 +201,10 @@
       "pct": 100
     },
     "statements": {
-      "total": 68,
-      "covered": 55,
+      "total": 69,
+      "covered": 56,
       "skipped": 0,
-      "pct": 80.88
+      "pct": 81.15
     },
     "branches": {
       "total": 56,
@@ -267,10 +267,10 @@
   },
   "src/extract.ts": {
     "lines": {
-      "total": 297,
-      "covered": 282,
+      "total": 298,
+      "covered": 283,
       "skipped": 0,
-      "pct": 94.94
+      "pct": 94.96
     },
     "functions": {
       "total": 74,
@@ -279,10 +279,10 @@
       "pct": 95.94
     },
     "statements": {
-      "total": 308,
-      "covered": 292,
+      "total": 309,
+      "covered": 293,
       "skipped": 0,
-      "pct": 94.8
+      "pct": 94.82
     },
     "branches": {
       "total": 227,
