@@ -145,13 +145,12 @@ function disambiguateHandlers(
       kind: "handler",
       name,
       inputMapping: EVENT_HANDLER_INPUT,
+      // The element and prop a handler hangs off already shape the
+      // summary name; no reader consumes them as metadata (#462).
       metadata: {
         react: {
           kind: "handler",
           component: componentName,
-          elementTag: m.tag,
-          propName: m.propName,
-          ...(m.localName !== null ? { localName: m.localName } : {}),
         },
       },
     };

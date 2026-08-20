@@ -108,6 +108,8 @@ export const FindingKindSchema = z.enum([
   "messageBusConsumerOrphan",
   /** A declared queue or topic nothing produces to or consumes from. */
   "messageBusUnused",
+  /** A subscription deploys switched off, so its target receives nothing. */
+  "messageBusConsumerDisabled",
   /** A pack marked a boundary it cannot summarise, so nothing will pair. */
   "unsupportedSemantics",
   /** Too many predicates were opaque to pair on. Reported per pair, unlike `lowConfidence`. */

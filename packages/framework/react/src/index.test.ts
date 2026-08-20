@@ -356,19 +356,15 @@ describe("reactFramework: integration", () => {
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
     const meta = handler.metadata?.react as
-      | {
-          kind: string;
-          component: string;
-          elementTag: string;
-          propName: string;
-          localName?: string;
-        }
+      | { kind: string; component: string }
       | undefined;
     expect(meta).toBeDefined();
+    expect(meta?.kind).toBe("handler");
     expect(meta?.component).toBe("Counter");
-    expect(meta?.elementTag).toBe("button");
-    expect(meta?.propName).toBe("onClick");
-    expect(meta?.localName).toBeUndefined();
+    // The element and prop live in the summary name; the metadata
+    // contains only what ReactMetadataSchema declares (#462).
+    expect(meta).not.toHaveProperty("elementTag");
+    expect(meta).not.toHaveProperty("propName");
   });
 
   it("Form's named handler uses the declaration's identifier", () => {
@@ -378,11 +374,11 @@ describe("reactFramework: integration", () => {
     expect(handler).toBeDefined();
     expect(handler?.kind).toBe("handler");
     const meta = handler.metadata?.react as
-      | { propName: string; elementTag: string; localName?: string }
+      | { kind: string; component: string }
       | undefined;
-    expect(meta?.propName).toBe("onSubmit");
-    expect(meta?.elementTag).toBe("form");
-    expect(meta?.localName).toBe("handleSubmit");
+    expect(meta?.kind).toBe("handler");
+    expect(meta?.component).toBe("Form");
+    expect(meta).not.toHaveProperty("localName");
   });
 
   it("Form disambiguates two inline onClick handlers on <button>", () => {

@@ -11,7 +11,7 @@ This check pairs queue and topic providers (CloudFormation / SAM / similar) agai
 - Runtime-config providers with `envVarTargets` metadata, used to resolve channels.
 - Code summaries scoped under each consumer's CodeUri.
 
-It emits `messageBusProducerOrphan`, `messageBusConsumerOrphan`, `messageBusUnused`, and `boundaryFieldUnknown` (aspect: receive) findings.
+It emits `messageBusProducerOrphan`, `messageBusConsumerOrphan`, `messageBusUnused`, `messageBusConsumerDisabled`, and `boundaryFieldUnknown` (aspect: receive) findings.
 
 ## Key files
 
@@ -26,6 +26,7 @@ It emits `messageBusProducerOrphan`, `messageBusConsumerOrphan`, `messageBusUnus
 - **This pass owns every message-bus finding; the generic pairing pass owns the pair list.** `boundaryKey` gives a message-bus binding a key, so `suss check` now reports which handler matches a declared subscriber. Those pairs skip `checkPair`, and message-bus summaries that paired with nothing stay out of the unmatched lists, because `messageBusUnused` and the orphan findings here already report it with a severity.
 - **Channel resolution is two-phase.** Producer code emits a `message-send` effect with `channel = ORDERS_QUEUE_URL` (the env-var name). Pairing first looks for an exact match against a declared queue's logical id. If that fails, runtime-config metadata (when it is in scope) maps the env-var to its declared resource id, and pairing tries again. When neither one resolves, an orphan is what you should expect.
 - **Body-shape comparison is opt-in by shape.** Only `kind = "object"` bodies (the ones with extracted `fields`) get compared. An argument that is a bare identifier (`send(payload)`, where payload is a variable), an argument that is a call (`send(buildPayload())`), and a missing body are all skipped without a word. False positives on bodies we cannot see into are worse than findings we miss.
+- **A disabled subscription is treated as absent (#460).** A rule deployed `State: DISABLED` invokes nothing, so the pass reads `metadata.messageBus.enabled` and takes the subscription out of pairing entirely: it gets one `messageBusConsumerDisabled` info finding, it is never a consumer orphan, it does not answer a producer or keep a channel off the unused list, and its handler's bodies are not compared. The check is channel-wise: a second, enabled rule routing the same channel keeps the channel active. A rule routing only to a queue has no consumer summary for `enabled` to land on, so its provider stays active.
 - **Consumer code scope comes from metadata.** The consumer's `metadata.codeScope.kind === "codeUri"` (a Lambda CodeUri or a container path) decides which code summaries are in scope for extracting the receive-side body. Without a scope, the body-shape comparison can't run.
 - **Platform-injected env vars are tagged.** AWS injects `AWS_REGION`, `LAMBDA_TASK_ROOT`, and others by itself. The runtime-config provider marks these as `source: "platform"` in `envVarSources`, and the check uses that to suppress `envVarUnused` warnings for variables the platform set, even when no code reads them.
 

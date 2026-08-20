@@ -63,10 +63,6 @@ const EXEMPT = new Map([
     "The SAM event name a subscription was declared under, for a finding that could point at the declaration. No finding does. #464.",
   ],
   [
-    "messageBus.enabled",
-    "The CloudFormation reader records a rule deployed switched off (#207), and the orphan pass still reports it as an active subscriber. #464 tracks the read.",
-  ],
-  [
     "messageBus.deliveredThrough",
     "Marks an SNS subscription that delivers through a queue rather than invoking the function directly. The pairing treats both paths the same way. #464.",
   ],
@@ -121,18 +117,6 @@ const EXEMPT = new Map([
   [
     "metricContract.accumulates",
     "What one measurement covers, written by terraform-gcp. checkMetric compares `values` only, so a GAUGE compared as a DELTA goes unchecked. #464.",
-  ],
-  [
-    "react.elementTag",
-    "The React pack writes the element a handler hangs off, and ReactMetadataSchema does not declare it, so every read drops it. #464 decides between declaring it and dropping it.",
-  ],
-  [
-    "react.propName",
-    "Written beside elementTag, undeclared for the same reason. #464.",
-  ],
-  [
-    "react.localName",
-    "Written beside elementTag, undeclared for the same reason. #464.",
   ],
   [
     "component.storybook.provenance",

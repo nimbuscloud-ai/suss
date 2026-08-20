@@ -81,7 +81,15 @@ export function checkMessageBus(
   // A schedule has no producer by design, so it is dropped rather than
   // reported as an orphan.
   const consumers: BehavioralSummary[] = [];
+  const disabledConsumers: BehavioralSummary[] = [];
   for (const consumer of allConsumers) {
+    // Disabled wins over unresolvable: the pattern does not matter
+    // while the rule is off.
+    if (readMessageBusMetadata(consumer)?.enabled === false) {
+      disabledConsumers.push(consumer);
+      findings.push(makeDisabledConsumerFinding(consumer));
+      continue;
+    }
     const resolution = readPatternResolution(consumer);
     if (resolution === "unresolvable") {
       findings.push(makeUnresolvableRuleFinding(consumer));
@@ -104,11 +112,16 @@ export function checkMessageBus(
   const providerChannels: ChannelSet = createChannelSet();
   const consumerChannels: ChannelSet = createChannelSet();
   const producerChannels: ChannelSet = createChannelSet();
+  const disabledChannels: ChannelSet = createChannelSet();
 
-  for (const p of queueProviders) {
-    const ch = channelOf(p);
+  for (const c of disabledConsumers) {
+    const ch = channelOf(c);
     if (ch !== null) {
-      addChannel(providerChannels, ch, summaryIdentifier(p));
+      addChannel(disabledChannels, ch, summaryIdentifier(c));
+    }
+    const queue = consumedQueueOf(c);
+    if (queue !== null) {
+      addChannel(disabledChannels, queue, summaryIdentifier(c));
     }
   }
   for (const c of consumers) {
@@ -128,6 +141,19 @@ export function checkMessageBus(
     if (ch !== null) {
       addChannel(consumerChannels, ch, summaryIdentifier(r));
     }
+  }
+  for (const p of queueProviders) {
+    const ch = channelOf(p);
+    if (ch === null) {
+      continue;
+    }
+    // messageBusProducerOrphan: a channel whose every subscription is
+    // disabled has no one behind it, so it does not satisfy "someone
+    // consumes this channel" and a producer sending to it is an orphan.
+    if (declaredOnlyDisabled(ch, disabledChannels, consumerChannels)) {
+      continue;
+    }
+    addChannel(providerChannels, ch, summaryIdentifier(p));
   }
   for (const p of producers) {
     const ch = effectiveChannel(p);
@@ -153,7 +179,11 @@ export function checkMessageBus(
       ...pairingOwners(consumerChannels, ch),
     ];
     if (declarers.length === 0) {
-      findings.push(makeOrphanProducerFinding(p, semantics, ch));
+      findings.push(
+        makeOrphanProducerFinding(p, semantics, ch, {
+          onlySubscriberDisabled: hasPair(disabledChannels, ch),
+        }),
+      );
       continue;
     }
     recordCompared(compared, semantics.messageBus, ch, declarers, [
@@ -193,6 +223,18 @@ export function checkMessageBus(
     if (semantics?.name !== "message-bus" || semantics.channel === null) {
       continue;
     }
+    // messageBusUnused: a channel routed only by disabled subscriptions
+    // is switched off on purpose, not left over, and the disabled
+    // finding on its consumer already says why nothing moves here.
+    if (
+      declaredOnlyDisabled(
+        semantics.channel,
+        disabledChannels,
+        consumerChannels,
+      )
+    ) {
+      continue;
+    }
     const drainers = pairingOwners(consumerChannels, semantics.channel);
     if (hasPair(producerChannels, semantics.channel) || drainers.length > 0) {
       recordCompared(
@@ -213,6 +255,9 @@ export function checkMessageBus(
     );
   }
 
+  // boundaryFieldUnknown: disabled subscriptions are not in `consumers`,
+  // so their handlers' bodies are not compared. No message crosses a
+  // disabled rule, so there is no drift to report on that path.
   findings.push(
     ...checkBodyShapes({
       cfnConsumers: consumers,
@@ -258,6 +303,21 @@ function recordCompared(
 function channelOf(s: BehavioralSummary): string | null {
   const sem = s.identity.boundaryBinding?.semantics;
   return sem?.name === "message-bus" ? sem.channel : null;
+}
+
+/**
+ * Whether every subscription on this channel is deployed disabled. Two
+ * rules can route one channel, so a disabled rule only takes the
+ * channel out of pairing when no enabled consumer is on it too.
+ */
+function declaredOnlyDisabled(
+  channel: string,
+  disabledChannels: ChannelSet,
+  consumerChannels: ChannelSet,
+): boolean {
+  return (
+    hasPair(disabledChannels, channel) && !hasPair(consumerChannels, channel)
+  );
 }
 
 /**
@@ -415,6 +475,7 @@ function makeOrphanProducerFinding(
   producer: ProducerRecord,
   semantics: MessageBusSemantics,
   effectiveCh: string,
+  opts: { onlySubscriberDisabled: boolean },
 ): Finding {
   // Showing both channels lets a reader tell a failed env-var resolution
   // apart from a missing provider.
@@ -423,12 +484,15 @@ function makeOrphanProducerFinding(
     effectiveCh === original
       ? `"${original}"`
       : `"${effectiveCh}" (resolved from env var "${original}")`;
+  const description = opts.onlySubscriberDisabled
+    ? `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay}, and the only subscription on this channel is deployed disabled, so nothing receives what it sends until someone switches the subscription on.`
+    : `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay} but nothing in the analysed scope declares this channel, and no handler answers it. Likely cases: (a) the queue is declared in another stack we don't analyse (multi-repo); (b) work-in-progress before infra is wired up; (c) a real misconfiguration. Severity is warning rather than error because (a) and (b) are common false-positive sources.`;
   return {
     kind: "messageBusProducerOrphan",
     boundary: producer.effect.binding,
     provider: makeSide(producer.summary, producer.transitionId),
     consumer: makeSide(producer.summary, producer.transitionId),
-    description: `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay} but nothing in the analysed scope declares this channel, and no handler answers it. Likely cases: (a) the queue is declared in another stack we don't analyse (multi-repo); (b) work-in-progress before infra is wired up; (c) a real misconfiguration. Severity is warning rather than error because (a) and (b) are common false-positive sources.`,
+    description,
     severity: "warning",
   };
 }
@@ -445,6 +509,35 @@ function makeOrphanConsumerFinding(
     consumer: makeSide(consumer),
     description: `${consumer.identity.name} is wired to receive messages from ${semantics.messageBus} channel "${semantics.channel}" but no code in the project sends to this channel. Either dead infra or the producer lives outside this repo.`,
     severity: "warning",
+  };
+}
+
+/**
+ * A subscription deployed switched off, `State: DISABLED` (#460). It
+ * invokes nothing until someone turns it on, so the pass treats it as
+ * absent wherever it would count as a consumer, and this one info
+ * finding says why. Per finding kind:
+ * - messageBusConsumerOrphan: not emitted for it; "nothing sends here"
+ *   and "this is switched off" are different statements.
+ * - messageBusProducerOrphan: it does not satisfy "someone consumes
+ *   this channel", so a producer with only disabled subscribers is an
+ *   orphan, and that finding says the subscription is disabled.
+ * - messageBusUnused: skipped; switched off on purpose is not left over.
+ * - boundaryFieldUnknown: its handler's bodies are not compared; no
+ *   message crosses a disabled rule.
+ */
+function makeDisabledConsumerFinding(consumer: BehavioralSummary): Finding {
+  const binding = consumer.identity.boundaryBinding as BoundaryBinding;
+  const semantics = binding.semantics as MessageBusSemantics;
+  const meta = readMessageBusMetadata(consumer);
+  const rule = meta?.rule ?? consumer.identity.name;
+  return {
+    kind: "messageBusConsumerDisabled",
+    boundary: binding,
+    provider: makeSide(consumer),
+    consumer: makeSide(consumer),
+    description: `${consumer.identity.name} is wired to ${semantics.messageBus} channel "${semantics.channel}" through "${rule}", which is deployed disabled. It receives nothing until someone switches it on, so it is not counted as a consumer of the channel.`,
+    severity: "info",
   };
 }
 
