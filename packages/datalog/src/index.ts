@@ -330,6 +330,13 @@ export interface TagAlgebra<Tag> {
   absent: Tag;
   /** The head's tag from the body's, in rule-body order, once per derivation. */
   combine(bodyTags: readonly Tag[], derivation: Derivation): Tag;
+  /**
+   * Set when `combine` never reads `bodyTags`, and the evaluator then
+   * skips looking each body fact's stored tag up. A witness is built
+   * from the derivation alone, and on a large sweep the lookups were
+   * three quarters of the tagged path's cost.
+   */
+  ignoresBodyTags?: boolean;
   /** The tag to store when a fact is derived again; see the merge contract above. */
   merge(stored: Tag, incoming: Tag): Tag;
 }
@@ -553,6 +560,8 @@ interface TaggedDerivation<Tag> {
  * flag on the shared one, so evaluation without an algebra keeps its
  * inner loop free of per-tuple checks.
  */
+const EMPTY_TAGS: readonly never[] = [];
+
 function evaluateRuleTagged<Tag>(
   db: Database,
   deltas: Map<string, readonly Tuple[]>,
@@ -563,6 +572,7 @@ function evaluateRuleTagged<Tag>(
   const results: TaggedDerivation<Tag>[] = [];
   const bodyTags: Tag[] = [];
   const bodyMatches: BodyMatch[] = [];
+  const readsTags = algebra.ignoresBodyTags !== true;
 
   const step = (
     literalIndex: number,
@@ -572,7 +582,7 @@ function evaluateRuleTagged<Tag>(
     if (literalIndex === r.body.length) {
       results.push({
         tuple: headTuple(r.head, bindings),
-        tag: algebra.combine(bodyTags.slice(), {
+        tag: algebra.combine(readsTags ? bodyTags.slice() : EMPTY_TAGS, {
           rule: r,
           body: bodyMatches.slice(),
         }),
@@ -584,14 +594,18 @@ function evaluateRuleTagged<Tag>(
     if (literal.negated) {
       const grounded = groundNegated(literal, bindings);
       if (!db.has(literal.relation, grounded)) {
-        bodyTags.push(algebra.absent);
+        if (readsTags) {
+          bodyTags.push(algebra.absent);
+        }
         bodyMatches.push({
           kind: "absence",
           relation: literal.relation,
           tuple: grounded,
         });
         step(literalIndex + 1, positiveIndex, bindings);
-        bodyTags.pop();
+        if (readsTags) {
+          bodyTags.pop();
+        }
         bodyMatches.pop();
       }
       return;
@@ -604,17 +618,21 @@ function evaluateRuleTagged<Tag>(
     for (const tuple of source) {
       const next = unify(literal, tuple, bindings);
       if (next !== null) {
-        const stored = db.tagOf(literal.relation, tuple);
-        bodyTags.push(
-          stored === undefined ? algebra.asserted : (stored as Tag),
-        );
+        if (readsTags) {
+          const stored = db.tagOf(literal.relation, tuple);
+          bodyTags.push(
+            stored === undefined ? algebra.asserted : (stored as Tag),
+          );
+        }
         bodyMatches.push({
           kind: "fact",
           relation: literal.relation,
           tuple,
         });
         step(literalIndex + 1, positiveIndex + 1, next);
-        bodyTags.pop();
+        if (readsTags) {
+          bodyTags.pop();
+        }
         bodyMatches.pop();
       }
     }
