@@ -59,10 +59,10 @@ describe("check code against the stores a Terraform module declares", () => {
 
     expect(check.stdout).toContain("gcs:uploads");
     expect(check.stdout).toContain(
-      "main.tf::google_storage_bucket.uploads <-> suss::reportStore.ts::readReport",
+      "main.tf::google_storage_bucket.uploads <-> terraform-stores::src/reportStore.ts::readReport",
     );
     expect(check.stdout).toContain(
-      "main.tf::google_storage_bucket.uploads <-> suss::reportStore.ts::publishReport",
+      "main.tf::google_storage_bucket.uploads <-> terraform-stores::src/reportStore.ts::publishReport",
     );
   });
 
@@ -71,7 +71,7 @@ describe("check code against the stores a Terraform module declares", () => {
 
     expect(check.stdout).toContain("s3:archive");
     expect(check.stdout).toContain(
-      "main.tf::aws_s3_bucket.archive <-> suss::orderArchive.ts::archiveOrder",
+      "main.tf::aws_s3_bucket.archive <-> terraform-stores::src/orderArchive.ts::archiveOrder",
     );
   });
 
@@ -83,6 +83,8 @@ describe("check code against the stores a Terraform module declares", () => {
     // declares, so a pair here would only ever be a name coincidence.
     expect(check.stdout).toContain("main.tf::aws_elasticache_cluster.sessions");
     expect(check.stdout).not.toContain("aws_elasticache_cluster.sessions <->");
-    expect(check.stdout).toContain("suss::sessionCache.ts::touchSession");
+    expect(check.stdout).toContain(
+      "terraform-stores::src/sessionCache.ts::touchSession",
+    );
   });
 });

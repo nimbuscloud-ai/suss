@@ -35,7 +35,7 @@ describe("pair a TypeScript client against a Python provider", () => {
     const check = runSuss(["check", "--dir", summaries, "--all"]);
 
     expect(check.stdout).toContain(
-      "  GET /health\n    shop/main.py::health <-> suss::consumer.ts::getHealth",
+      "  GET /health\n    shop/main.py::health <-> web-client::consumer.ts::getHealth",
     );
   });
 

@@ -47,13 +47,13 @@ describe("check a Worker against the stores wrangler.toml binds", () => {
     const check = runSuss(["check", "--dir", summaries, "--all"]);
 
     expect(check.stdout).toContain(
-      "cloudflare-kv:SESSIONS\n    wrangler:fixtures/cloudflare-worker-stores/wrangler.toml::kv_namespaces.SESSIONS <-> suss::index.ts::fetch",
+      "cloudflare-kv:SESSIONS\n    wrangler:fixtures/cloudflare-worker-stores/wrangler.toml::kv_namespaces.SESSIONS <-> cloudflare-worker-stores::src/index.ts::fetch",
     );
     expect(check.stdout).toContain(
-      "r2:ARCHIVE\n    wrangler:fixtures/cloudflare-worker-stores/wrangler.toml::r2_buckets.ARCHIVE <-> suss::index.ts::fetch",
+      "r2:ARCHIVE\n    wrangler:fixtures/cloudflare-worker-stores/wrangler.toml::r2_buckets.ARCHIVE <-> cloudflare-worker-stores::src/index.ts::fetch",
     );
     expect(check.stdout).toContain(
-      "d1:LEDGER\n    wrangler:fixtures/cloudflare-worker-stores/wrangler.toml::d1_databases.LEDGER <-> suss::index.ts::fetch",
+      "d1:LEDGER\n    wrangler:fixtures/cloudflare-worker-stores/wrangler.toml::d1_databases.LEDGER <-> cloudflare-worker-stores::src/index.ts::fetch",
     );
   });
 

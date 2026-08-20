@@ -61,7 +61,7 @@ describe("check a storage layer that is told which table to read", () => {
     const check = runSuss(["check", "--dir", summaries, "--all"]);
 
     expect(check.stdout).toContain(
-      "aws.dynamodb:OrdersTable\n    cloudformation:fixtures/storage-wrapper/template.yaml::OrdersTable <-> suss::orderStore.ts::readRow",
+      "aws.dynamodb:OrdersTable\n    cloudformation:fixtures/storage-wrapper/template.yaml::OrdersTable <-> storage-wrapper::src/orderStore.ts::readRow",
     );
   });
 
