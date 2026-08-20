@@ -166,7 +166,7 @@ export class ModuleGraph {
   }
 
   private assert(relation: string, tuple: [string, string]): void {
-    if (this.db.add(relation, tuple)) {
+    if (this.db.add(relation, tuple) === "added") {
       this.stale = true;
     }
   }

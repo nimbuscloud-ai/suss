@@ -12,6 +12,7 @@
  * positions, which suits the thousands of tuples extraction produces.
  */
 
+import { isDemandRewritten } from "./onDemand.js";
 import {
   chargeEvaluation,
   chargeRelationSizes,
@@ -90,12 +91,26 @@ interface Relation {
   keys: Set<string>;
   tuples: Tuple[];
   /**
+   * Tags, keyed like `keys`. The key is the tuple's own text, so a tag
+   * cannot live in the tuple: an improved tag would read as a new fact
+   * and the fixpoint would never close. Stays undefined until a caller
+   * stores a tag, so evaluation without an algebra never allocates it.
+   */
+  tags: Map<string, unknown> | undefined;
+  /**
    * Column position, then value, then the tuples with that value. The value
    * is the atom itself: a Map already tells 1 from "1", so encoding it first
    * would build a string out of every node id on every lookup and buy
    * nothing. `tupleKey` is for a key built out of several values.
    */
   indexes: Map<number, Map<Atom, Tuple[]>>;
+}
+
+function tagSlots(relation: Relation): Map<string, unknown> {
+  if (relation.tags === undefined) {
+    relation.tags = new Map();
+  }
+  return relation.tags;
 }
 
 function addToBucket(index: Map<Atom, Tuple[]>, key: Atom, tuple: Tuple): void {
@@ -106,6 +121,9 @@ function addToBucket(index: Map<Atom, Tuple[]>, key: Atom, tuple: Tuple): void {
     bucket.push(tuple);
   }
 }
+
+/** What `add` did: a new fact, a better tag on an existing one, or nothing. */
+export type AddOutcome = "added" | "improved" | "unchanged";
 
 /** A set of facts per relation, with O(1) membership. */
 export class Database {
@@ -119,34 +137,63 @@ export class Database {
     const created: Relation = {
       keys: new Set<string>(),
       tuples: [],
+      tags: undefined,
       indexes: new Map(),
     };
     this.store.set(name, created);
     return created;
   }
 
-  /** Add a fact; returns true when the tuple is new. */
-  add(relationName: string, tuple: Tuple): boolean {
+  /**
+   * Add a fact, or merge a tag into one already present. A new fact
+   * stores `tag` when one is given. For a fact already present,
+   * `merge` gets the stored tag (undefined when there is none) and the
+   * incoming one; returning anything but the stored value stores the
+   * result and reports "improved".
+   */
+  add(
+    relationName: string,
+    tuple: Tuple,
+    tag?: unknown,
+    merge?: (stored: unknown, incoming: unknown) => unknown,
+  ): AddOutcome {
     const relation = this.relation(relationName);
     const key = keyOf(tuple);
     if (relation.keys.has(key)) {
+      let outcome: AddOutcome = "unchanged";
+      if (merge !== undefined) {
+        const stored = relation.tags?.get(key);
+        const merged = merge(stored, tag);
+        if (merged !== stored) {
+          tagSlots(relation).set(key, merged);
+          outcome = "improved";
+        }
+      }
       // The caller now owns a fact it asserted, even one evaluation had
       // already derived, so retracting conclusions later must leave this
       // one alone. A rule deriving the same fact twice changes nothing.
       if (!isDeriving(this)) {
         claimFact(this, relationName, key);
       }
-      return false;
+      return outcome;
     }
     relation.keys.add(key);
     relation.tuples.push(tuple);
+    if (tag !== undefined) {
+      tagSlots(relation).set(key, tag);
+    }
     for (const [column, index] of relation.indexes) {
       const value = tuple[column];
       if (value !== undefined) {
         addToBucket(index, value, tuple);
       }
     }
-    return true;
+    return "added";
+  }
+
+  /** The tag stored for this fact, or undefined when there is none. */
+  tagOf(relationName: string, tuple: Tuple): unknown {
+    return this.store.get(relationName)?.tags?.get(keyOf(tuple));
   }
 
   has(relationName: string, tuple: Tuple): boolean {
@@ -209,6 +256,7 @@ export class Database {
     }
     for (const key of going) {
       relation.keys.delete(key);
+      relation.tags?.delete(key);
     }
     relation.tuples = relation.tuples.filter(
       (tuple) => !going.has(keyOf(tuple)),
@@ -227,6 +275,35 @@ export class Database {
   relationNames(): string[] {
     return [...this.store.keys()];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Tag algebra
+// ---------------------------------------------------------------------------
+
+/**
+ * A provenance semiring (Green, Karvounarakis, Tannen 2007): every
+ * fact may have a tag, a rule firing combines its body facts' tags
+ * into a tag for its conclusion, and a conclusion reached a second
+ * time merges the new tag into the stored one. An algebra is an
+ * optional argument to `evaluate`; rules never mention tags, and
+ * without an algebra the evaluator never touches them.
+ *
+ * `merge` must return the stored tag itself when the new derivation
+ * does not improve on it; any other result is stored and the fact
+ * re-enters the delta. For recursive rule sets merge must be a
+ * bounded meet, or evaluation will not terminate; the engine does
+ * not check this. `undefined` is not a valid tag.
+ */
+export interface TagAlgebra<Tag> {
+  /** What a fact nobody tagged contributes, i.e. every caller-asserted fact. */
+  asserted: Tag;
+  /** What a matched negated literal contributes: there is no fact to read. */
+  absent: Tag;
+  /** The head's tag from the body's, in rule-body order, once per derivation. */
+  combine(bodyTags: readonly Tag[]): Tag;
+  /** The tag to store when a fact is derived again; see the merge contract above. */
+  merge(stored: Tag, incoming: Tag): Tag;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +495,71 @@ function boundSource(
   return db.facts(literal.relation);
 }
 
+/** One derived head tuple and the tag its derivation combined to. */
+interface TaggedDerivation<Tag> {
+  tuple: Tuple;
+  tag: Tag;
+}
+
+/**
+ * `evaluateRule` with tag collection. A separate walk rather than a
+ * flag on the shared one, so evaluation without an algebra keeps its
+ * inner loop free of per-tuple checks.
+ */
+function evaluateRuleTagged<Tag>(
+  db: Database,
+  deltas: Map<string, readonly Tuple[]>,
+  r: Rule,
+  deltaIndex: number,
+  algebra: TagAlgebra<Tag>,
+): TaggedDerivation<Tag>[] {
+  const results: TaggedDerivation<Tag>[] = [];
+  const bodyTags: Tag[] = [];
+
+  const step = (
+    literalIndex: number,
+    positiveIndex: number,
+    bindings: Bindings,
+  ): void => {
+    if (literalIndex === r.body.length) {
+      results.push({
+        tuple: headTuple(r.head, bindings),
+        tag: algebra.combine(bodyTags.slice()),
+      });
+      return;
+    }
+    const literal = r.body[literalIndex];
+
+    if (literal.negated) {
+      if (!db.has(literal.relation, groundNegated(literal, bindings))) {
+        bodyTags.push(algebra.absent);
+        step(literalIndex + 1, positiveIndex, bindings);
+        bodyTags.pop();
+      }
+      return;
+    }
+
+    const source =
+      positiveIndex === deltaIndex
+        ? (deltas.get(literal.relation) ?? [])
+        : boundSource(db, literal, bindings);
+    for (const tuple of source) {
+      const next = unify(literal, tuple, bindings);
+      if (next !== null) {
+        const stored = db.tagOf(literal.relation, tuple);
+        bodyTags.push(
+          stored === undefined ? algebra.asserted : (stored as Tag),
+        );
+        step(literalIndex + 1, positiveIndex + 1, next);
+        bodyTags.pop();
+      }
+    }
+  };
+
+  step(0, 0, new Map());
+  return results;
+}
+
 // ---------------------------------------------------------------------------
 // Incremental re-evaluation
 // ---------------------------------------------------------------------------
@@ -551,11 +693,26 @@ function currentMarks(db: Database): Map<string, number> {
  * place. Rules are stratified first; within a stratum, semi-naïve
  * iteration joins each rule against the last round's delta so work is
  * proportional to new facts, not all facts.
+ *
+ * With an `algebra`, every derivation also tags its conclusion (see
+ * `TagAlgebra`). Supply the same algebra on every evaluation of a rule
+ * set over a database: a resumed run derives only from the new facts,
+ * so it tags only what those reach.
  */
-export function evaluate(db: Database, rules: Rule[]): Database {
+export function evaluate<Tag = never>(
+  db: Database,
+  rules: Rule[],
+  algebra?: TagAlgebra<Tag>,
+): Database {
+  if (algebra !== undefined && isDemandRewritten(rules)) {
+    throw new Error(
+      "cannot evaluate demand-rewritten rules with a tag algebra: tags would " +
+        "follow the demand-transformed rules rather than the ones the caller wrote",
+    );
+  }
   deriving.set(db, (deriving.get(db) ?? 0) + 1);
   try {
-    return runRules(db, rules);
+    return runRules(db, rules, algebra);
   } finally {
     const depth = (deriving.get(db) ?? 1) - 1;
     if (depth === 0) {
@@ -648,7 +805,31 @@ function couldProduce(db: Database, rule: Rule): boolean {
   );
 }
 
-function runRules(db: Database, rules: Rule[]): Database {
+/**
+ * `add`'s merge callback for one algebra. An untagged fact reads as
+ * `asserted`, so a merge that lands back on `asserted` for a fact with
+ * no stored tag returns the stored undefined: nothing is written, and
+ * nothing re-enters the delta for a round that would change nothing.
+ */
+function storedMergeFor<Tag>(
+  algebra: TagAlgebra<Tag>,
+): (stored: unknown, incoming: unknown) => unknown {
+  return (stored, incoming) => {
+    const merged = algebra.merge(
+      (stored === undefined ? algebra.asserted : stored) as Tag,
+      incoming as Tag,
+    );
+    return stored === undefined && merged === algebra.asserted
+      ? undefined
+      : merged;
+  };
+}
+
+function runRules<Tag>(
+  db: Database,
+  rules: Rule[],
+  algebra?: TagAlgebra<Tag>,
+): Database {
   const {
     signature,
     name: ruleSetName,
@@ -674,6 +855,16 @@ function runRules(db: Database, rules: Rule[]): Database {
   }
 
   const derived = state.derived;
+  const noteDerived = (relation: string, tuple: Tuple): void => {
+    let ledger = derived.get(relation);
+    if (ledger === undefined) {
+      ledger = new Map();
+      derived.set(relation, ledger);
+    }
+    ledger.set(keyOf(tuple), tuple);
+  };
+  const mergeStored =
+    algebra === undefined ? undefined : storedMergeFor(algebra);
   // Taken before any stratum runs, so a later stratum's seed picks up
   // what the strata below it just derived.
   const marks = canResume(rules, state) ? state.marks : undefined;
@@ -683,14 +874,48 @@ function runRules(db: Database, rules: Rule[]): Database {
     const derivedHere = new Set(stratum.map((r) => r.head.relation));
 
     const record = (relation: string, tuple: Tuple): void => {
-      if (db.add(relation, tuple)) {
+      if (db.add(relation, tuple) === "added") {
         addTo(delta, relation, tuple);
-        let ledger = derived.get(relation);
-        if (ledger === undefined) {
-          ledger = new Map();
-          derived.set(relation, ledger);
+        noteDerived(relation, tuple);
+      }
+    };
+
+    // An improved tag re-enters the delta so downstream conclusions
+    // recompute with it, but the fact itself is already owned, so only
+    // "added" goes in the ledger.
+    const recordTagged =
+      mergeStored === undefined
+        ? undefined
+        : (relation: string, tuple: Tuple, tag: unknown): void => {
+            const outcome = db.add(relation, tuple, tag, mergeStored);
+            if (outcome === "unchanged") {
+              return;
+            }
+            addTo(delta, relation, tuple);
+            if (outcome === "added") {
+              noteDerived(relation, tuple);
+            }
+          };
+
+    const deriveInto = (
+      r: Rule,
+      seed: Map<string, readonly Tuple[]>,
+      deltaIndex: number,
+    ): void => {
+      if (algebra !== undefined && recordTagged !== undefined) {
+        for (const found of evaluateRuleTagged(
+          db,
+          seed,
+          r,
+          deltaIndex,
+          algebra,
+        )) {
+          recordTagged(r.head.relation, found.tuple, found.tag);
         }
-        ledger.set(keyOf(tuple), tuple);
+        return;
+      }
+      for (const tuple of evaluateRule(db, seed, r, deltaIndex)) {
+        record(r.head.relation, tuple);
       }
     };
 
@@ -703,16 +928,12 @@ function runRules(db: Database, rules: Rule[]): Database {
       deltaIndex: number,
     ): void => {
       if (!isProfiling()) {
-        for (const tuple of evaluateRule(db, seed, r, deltaIndex)) {
-          record(r.head.relation, tuple);
-        }
+        deriveInto(r, seed, deltaIndex);
         return;
       }
       const startedAt = performance.now();
       const before = db.size(r.head.relation);
-      for (const tuple of evaluateRule(db, seed, r, deltaIndex)) {
-        record(r.head.relation, tuple);
-      }
+      deriveInto(r, seed, deltaIndex);
       chargeRule(
         ruleSetName,
         r.head.relation,

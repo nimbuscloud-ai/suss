@@ -21,9 +21,9 @@ const sorted = (tuples: readonly (readonly (string | number)[])[]): string[] =>
 describe("Database", () => {
   it("deduplicates facts and distinguishes value types", () => {
     const db = new Database();
-    expect(db.add("r", ["a", 1])).toBe(true);
-    expect(db.add("r", ["a", 1])).toBe(false);
-    expect(db.add("r", ["a", "1"])).toBe(true);
+    expect(db.add("r", ["a", 1])).toBe("added");
+    expect(db.add("r", ["a", 1])).toBe("unchanged");
+    expect(db.add("r", ["a", "1"])).toBe("added");
     expect(db.size("r")).toBe(2);
     expect(db.has("r", ["a", 1])).toBe(true);
     expect(db.has("missing", ["a"])).toBe(false);
@@ -43,7 +43,7 @@ describe("Database", () => {
       ["1", "x"],
     ];
     for (const pair of pairs) {
-      expect(db.add("r", pair)).toBe(true);
+      expect(db.add("r", pair)).toBe("added");
     }
 
     expect(db.size("r")).toBe(pairs.length);
