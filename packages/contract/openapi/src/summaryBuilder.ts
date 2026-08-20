@@ -120,28 +120,63 @@ function buildSummary(
   };
 }
 
+/**
+ * The operation's `responses` block, keeping every form the document
+ * may use: a literal code, a range code ("4XX" promises some status
+ * between 400 and 499), and `default`, which covers every status the
+ * other entries leave out. The README says how the checker reads each.
+ */
 function buildDeclaredContract(
   op: OpenApiOperation,
   ctx: ReturnType<typeof newContext>,
 ): HttpDeclaredContract & { provenance: "derived" } {
   const responses: Array<{ statusCode: number; body: TypeShape | null }> = [];
+  const responseRanges: Array<{
+    min: number;
+    max: number;
+    spec: string;
+    body: TypeShape | null;
+  }> = [];
+  let defaultResponse: { body: TypeShape | null } | undefined;
+
   for (const [code, response] of Object.entries(op.responses ?? {})) {
-    if (response === undefined || code === "default") {
+    if (response === undefined) {
       continue;
     }
-    if (!/^\d{3}$/.test(code)) {
-      // Range codes (1XX-5XX) can't be represented as a single
-      // statusCode in the declared-contract shape, skip. The
-      // transition records the range via metadata.http.statusRange
-      // and downstream checks can still reason about it there.
+
+    if (code === "default") {
+      defaultResponse = { body: bodyShape(response, ctx) };
       continue;
     }
-    responses.push({
-      statusCode: Number.parseInt(code, 10),
+
+    const parsed = parseStatusCode(code);
+    if (parsed === null) {
+      continue;
+    }
+
+    if (parsed.kind === "literal") {
+      responses.push({
+        statusCode: parsed.value,
+        body: bodyShape(response, ctx),
+      });
+      continue;
+    }
+
+    responseRanges.push({
+      min: parsed.min,
+      max: parsed.max,
+      spec: code,
       body: bodyShape(response, ctx),
     });
   }
-  return { framework: "openapi", provenance: "derived", responses };
+
+  return {
+    framework: "openapi",
+    provenance: "derived",
+    responses,
+    ...(responseRanges.length > 0 ? { responseRanges } : {}),
+    ...(defaultResponse !== undefined ? { defaultResponse } : {}),
+  };
 }
 
 function mergeParameters(
@@ -230,8 +265,9 @@ function buildTransitions(
     const body = bodyShape(response, ctx);
 
     if (code === "default") {
-      // Default response: emit as the default transition with no status
-      // literal. The checker can match it against any unhandled status.
+      // `default` covers every status the other entries leave out, so it
+      // becomes the isDefault transition and the checker reads it as
+      // "the provider may return any status". The README says why.
       transitions.push({
         id: stubTransitionId(op, "default"),
         conditions: [],
@@ -265,13 +301,9 @@ function buildTransitions(
       continue;
     }
 
-    // Range code ("2XX", "4XX", …). The IR statusCode field is either a
-    // literal ValueRef or null; there is no built-in "range" variant.
-    // Emit a transition with statusCode: null and attach the range as
-    // per-transition metadata under http.statusRange so consumers that
-    // care (inspect, a future range-aware checker pass) can reason
-    // about it. The transition stays isDefault: false. It's a specific
-    // bucket, not the catch-all "default" response.
+    // A range code has no literal for the IR's statusCode field, so it
+    // is recorded on the transition as http.statusRange, which the
+    // coverage pass reads. Not isDefault: it is one bucket.
     transitions.push({
       id: stubTransitionId(op, code),
       conditions: [],
