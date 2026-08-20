@@ -2,11 +2,11 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 509,
-    "internal": 1985,
-    "consumers": 884,
-    "pairs": 877,
-    "unfollowedCalls": 206,
+    "exports": 497,
+    "internal": 1980,
+    "consumers": 865,
+    "pairs": 858,
+    "unfollowedCalls": 211,
     "findingErrors": 0
   },
   "packages": {
@@ -27,23 +27,23 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 654,
-      "consumers": 57,
-      "unfollowedCalls": 55
+      "internal": 674,
+      "consumers": 58,
+      "unfollowedCalls": 67
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 69,
+      "exports": 65,
       "internal": 19,
       "consumers": 4,
       "unfollowedCalls": 2
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 38,
-      "internal": 205,
-      "consumers": 124,
-      "unfollowedCalls": 21
+      "exports": 35,
+      "internal": 186,
+      "consumers": 119,
+      "unfollowedCalls": 19
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -56,8 +56,8 @@
       "name": "@suss/cli",
       "exports": 13,
       "internal": 291,
-      "consumers": 183,
-      "unfollowedCalls": 34
+      "consumers": 181,
+      "unfollowedCalls": 33
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -119,7 +119,7 @@
       "name": "@suss/contract-openapi",
       "exports": 2,
       "internal": 19,
-      "consumers": 8,
+      "consumers": 5,
       "unfollowedCalls": 0
     },
     "packages/contract/prisma": {
@@ -146,15 +146,15 @@
     "packages/contract/terraform": {
       "name": "@suss/contract-terraform",
       "exports": 6,
-      "internal": 38,
+      "internal": 37,
       "consumers": 18,
       "unfollowedCalls": 2
     },
     "packages/contract/wrangler": {
       "name": "@suss/contract-wrangler",
       "exports": 6,
-      "internal": 12,
-      "consumers": 12,
+      "internal": 10,
+      "consumers": 10,
       "unfollowedCalls": 0
     },
     "packages/datalog": {
@@ -222,10 +222,10 @@
     },
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",
-      "exports": 5,
-      "internal": 27,
-      "consumers": 8,
-      "unfollowedCalls": 5
+      "exports": 4,
+      "internal": 23,
+      "consumers": 3,
+      "unfollowedCalls": 1
     },
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
@@ -355,8 +355,8 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 57,
-      "internal": 14,
+      "exports": 53,
+      "internal": 15,
       "consumers": 0,
       "unfollowedCalls": 8
     },
@@ -392,14 +392,14 @@
       "name": "@suss/terraform-aws",
       "exports": 2,
       "internal": 1,
-      "consumers": 7,
+      "consumers": 6,
       "unfollowedCalls": 0
     },
     "packages/terraform/gcp": {
       "name": "@suss/terraform-gcp",
       "exports": 2,
       "internal": 2,
-      "consumers": 15,
+      "consumers": 13,
       "unfollowedCalls": 0
     }
   }
