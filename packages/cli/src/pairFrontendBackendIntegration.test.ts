@@ -153,8 +153,8 @@ async function extractAll(): Promise<BehavioralSummary[]> {
 function providerBodyMismatch(findings: Finding[]): Finding | undefined {
   return findings.find(
     (f) =>
-      f.kind === "unhandledProviderCase" &&
-      f.description.includes("the provider can send does not include"),
+      f.kind === "misreadProviderResponse" &&
+      f.description.includes('reads "name"'),
   );
 }
 

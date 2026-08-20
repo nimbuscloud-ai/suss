@@ -608,7 +608,7 @@ describe("runCli check", () => {
       [
         "version: 1",
         "rules:",
-        "  - kind: unhandledProviderCase",
+        "  - kind: misreadProviderResponse",
         '    boundary: "GET /x"',
         "    reason: the field is optional in the UI, absent means blank",
         "    effect: hide",

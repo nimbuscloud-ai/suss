@@ -205,11 +205,11 @@ A contract that does not state `metadata.storageContract.identifies` claims noth
 
 ### `unhandledProviderCase` *(shipped)*
 
-**Severity:** warning for an uncovered status, error for a misread body • **Emitted by:** `checkProviderCoverage`, `checkBodyCompatibility`, `checkSemanticBridging`
+**Severity:** warning • **Emitted by:** `checkProviderCoverage`, `checkSemanticBridging`
 
-The two severities split on the outcome test. A consumer branch that reads fields a body the provider can send does not include misreads that response every time it arrives, so the body-field form is an error. An uncovered status has no such sentence: the fall-through may be the intended handling, and over the pinned corpus the uncovered-status form was wrong far more often than right, so it is a warning.
+No outcome sentence can be written: the fall-through may be the intended handling, and over the pinned corpus the uncovered-status form was wrong far more often than right. The error-worthy core of the old kind, a path that will actually misread a response, is `misreadProviderResponse` below.
 
-The provider produces a status code (or a body field on a status) that no consumer branch reads. The consumer hits its fall-through path, throwing, returning undefined, or silently ignoring, when the provider returns that status.
+The provider produces a status code (or a body case within a status) that no consumer branch tells apart. The consumer hits its fall-through path, throwing, returning undefined, or silently ignoring, when the provider returns that status.
 
 ```
 [WARNING] unhandledProviderCase
@@ -222,6 +222,32 @@ The provider produces a status code (or a body field on a status) that no consum
 **Legitimate when:** the consumer truly doesn't care (it has a `try/catch`, or the throw path is correct).
 
 **Bug when:** the consumer silently ignores the status. Add a branch (e.g. `if (res.status === 404) return null`).
+
+### `misreadProviderResponse` *(shipped)*
+
+**Severity:** error • **Emitted by:** `checkResponseMisread`
+
+The path runs on a response the provider sends, reads a field that response's body does not include, and nothing on the path tells that response apart from one that does include it. The read comes back undefined, no error says so, and whatever the path does with the value runs on undefined.
+
+```
+[ERROR] misreadProviderResponse (aspect: read)
+  The consumer's fall-through path reads "name", but the 200 body the
+  provider sends does not include it, and neither does any other
+  response. The read comes back undefined and no error says so.
+  provider: backend/src/server.ts::get
+  consumer: frontend/src/loadUser.ts::loadUser
+  boundary: express (http) GET /users/:id
+```
+
+This is `unhandledProviderCase` restated as a behavior claim rather than a coverage claim, and it is the same question the storage and GraphQL read checks ask: does the code read something the other side does not supply. It stays narrow on purpose:
+
+- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is an answer, not a misread.
+- A body with spreads or an opaque shape claims nothing, and a status the provider returns with several bodies fires only when every one of them lacks the field.
+- The branch has to run on the response: a status guard, a range like `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
+
+**Legitimate when:** the provider sends the field through a path suss could not read (a wrapper, a spread it flattened away). Suppress with `.sussignore`.
+
+**Bug when:** a rename or a copy-paste left the consumer reading a field this endpoint never sends. Fix the read, or the provider.
 
 ### `deadConsumerBranch` *(shipped)*
 

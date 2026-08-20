@@ -8,7 +8,12 @@
  * be one only a failure body includes.
  */
 
-import { bodyAccessorsFor, unwrapBodyField } from "../contract/declaredContract.js";
+import {
+  bodyAccessorsFor,
+  statusAccessorsFor,
+  successAccessorsFor,
+  unwrapBodyField,
+} from "../contract/declaredContract.js";
 import { extractResponseStatus, isSuccessStatus } from "./responseMatch.js";
 
 import type {
@@ -151,6 +156,32 @@ export function bodyFieldsConsumerReads(
   // The wrapper a client returns the body in is not a body field.
   for (const accessor of accessors) {
     out.delete(accessor);
+  }
+  return out;
+}
+
+/**
+ * The body fields the consumer's guards test, on any of its branches.
+ * A tested field is how the consumer tells cases apart, so its absence
+ * from a body is an answer rather than a misread. Collected across the
+ * whole consumer because the extractor attributes a read inside a
+ * callback to every path through it.
+ */
+export function bodyFieldsConsumerTests(
+  consumer: BehavioralSummary,
+): Set<string> {
+  const out = new Set<string>();
+  for (const t of consumer.transitions) {
+    for (const condition of t.conditions) {
+      fieldsInPredicate(condition, out);
+    }
+  }
+  for (const name of [
+    ...statusAccessorsFor(consumer),
+    ...successAccessorsFor(consumer),
+    ...bodyAccessorsFor(consumer),
+  ]) {
+    out.delete(name);
   }
   return out;
 }

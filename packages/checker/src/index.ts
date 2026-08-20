@@ -13,6 +13,7 @@ import { checkContractCompleteness } from "./contract/contractCompleteness.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
 import { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
+import { checkResponseMisread } from "./coverage/responseMisread.js";
 import { dedupeFindings } from "./dedupe.js";
 import { buildInteractionIndex } from "./interactions/dispatcher.js";
 import { checkMessageBus } from "./message-bus/messageBusPairing.js";
@@ -66,6 +67,7 @@ export {
 } from "./contract/graphqlContract.js";
 export { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 export { checkProviderCoverage } from "./coverage/providerCoverage.js";
+export { checkResponseMisread } from "./coverage/responseMisread.js";
 export { dedupeFindings } from "./dedupe.js";
 export {
   buildFlowChains,
@@ -155,6 +157,7 @@ function checkSpelledOutPair(
 ): Finding[] {
   return [
     ...checkProviderCoverage(provider, consumer),
+    ...checkResponseMisread(provider, consumer),
     ...checkConsumerSatisfaction(provider, consumer),
     ...checkContractConsistency(provider, consumer),
     ...checkConsumerContract(provider, consumer),
