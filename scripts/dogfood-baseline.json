@@ -2,11 +2,11 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 509,
-    "internal": 2005,
+    "exports": 510,
+    "internal": 2012,
     "consumers": 888,
     "pairs": 881,
-    "unfollowedCalls": 218,
+    "unfollowedCalls": 224,
     "findingErrors": 0
   },
   "packages": {
@@ -159,10 +159,10 @@
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "exports": 21,
-      "internal": 49,
+      "exports": 22,
+      "internal": 56,
       "consumers": 0,
-      "unfollowedCalls": 3
+      "unfollowedCalls": 9
     },
     "packages/extractor": {
       "name": "@suss/extractor",

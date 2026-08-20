@@ -286,7 +286,7 @@ export class ResolutionStore {
   }
 
   private wantValue(question: Question, value: Node): void {
-    if (this.db.add(question, [nodeId(value)])) {
+    if (this.db.add(question, [nodeId(value)]) === "added") {
       this.stale = true;
     }
   }

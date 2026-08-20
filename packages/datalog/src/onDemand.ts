@@ -61,6 +61,16 @@ const positiveLiteral = (relation: string, terms: Term[]): Literal => ({
   negated: false,
 });
 
+const demandRewrites = new WeakSet<Rule[]>();
+
+/**
+ * Whether `deriveOnDemand` produced this rule array. The evaluator
+ * refuses to tag such rules: tags would follow the rewritten rules
+ * rather than the ones the caller wrote.
+ */
+export const isDemandRewritten = (rules: Rule[]): boolean =>
+  demandRewrites.has(rules);
+
 /** A rewritten rule set, and which of its relations demand restricts. */
 export interface OnDemandRules {
   /** The rewritten rules, ready to evaluate. */
@@ -222,6 +232,7 @@ export function deriveOnDemand(
     }
   }
 
+  demandRewrites.add(rewritten);
   return { rules: rewritten, demandDriven: [...demandDriven] };
 }
 

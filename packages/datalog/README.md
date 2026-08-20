@@ -76,6 +76,53 @@ you re-run with negated rules, the engine throws away what the previous
 pass derived and works the answer out again from the base facts. Either
 way, the database ends up with the answer for the facts it has now.
 
+## Tagging derivations
+
+A fact is normally there or not there. Pass `evaluate` a `TagAlgebra`
+and every derived fact also gets a tag: `combine` turns the body's
+tags into the head's, and `merge` decides what to keep when the same
+fact is derived a second time. This is a provenance semiring in the
+sense of Green, Karvounarakis, and Tannen (2007); Soufflé's provenance
+mode stores a minimal proof height with the same two operations. Rules
+never mention tags, and a call without an algebra runs as before.
+
+```ts
+const cost: TagAlgebra<number> = {
+  asserted: 0, // what an untagged fact contributes
+  absent: 0, // what a matched negated literal contributes
+  combine: (tags) => tags.reduce((sum, tag) => sum + tag, 1),
+  merge: (stored, incoming) => (incoming < stored ? incoming : stored),
+};
+
+evaluate(db, rules, cost);
+db.tagOf("reaches", ["a", "c"]); // the cheapest derivation's cost
+```
+
+Tags are stored beside the relation, keyed the same way as the facts,
+never in the tuple. A tuple is its own identity: were the tag part of it, an
+improved tag would read as a new fact and the fixpoint would never
+close. `Database.add` reports "added", "improved", or "unchanged", and
+an improved fact re-enters the delta so conclusions built on it
+recompute with the better tag.
+
+The contract on `merge`:
+
+- Return the stored tag itself, the same value by `===`, when the new
+  derivation does not improve on it. Anything else is stored and
+  re-derives downstream.
+- For recursive rule sets, merge must be a bounded meet: repeated
+  merges must stop improving after finitely many steps, the way `min`
+  over numbers does. The engine does not check this; an algebra that
+  keeps improving keeps evaluating.
+- `undefined` is not a valid tag. The store uses it to mean "no tag",
+  and `tagOf` returns it for untagged facts.
+
+Two caveats. Supply the same algebra on every evaluation of a rule set
+over a database: a resumed run derives only from facts added since, so
+it tags only what those reach. And rules rewritten by `deriveOnDemand`
+refuse an algebra: tags would follow the demand-transformed rules
+rather than the ones you wrote, so `evaluate` throws instead.
+
 ## Deriving only what somebody asked for
 
 A rule set written for a whole program derives every conclusion its
