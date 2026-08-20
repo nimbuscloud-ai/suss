@@ -2,6 +2,10 @@ export {
   checkFactContract,
   FACT_CONTRACT_CASES,
 } from "./contract.js";
+export {
+  explainResolutionProof,
+  renderExplanation,
+} from "./explain.js";
 
 export type {
   CaseFiles,
@@ -9,6 +13,14 @@ export type {
   ContractOptions,
   FactsOf,
 } from "./contract.js";
+export type {
+  DescribeAtom,
+  ExplainOptions,
+  ResolutionExplanation,
+  ResolutionStep,
+  StepContext,
+  StepPhrase,
+} from "./explain.js";
 
 // @suss/resolution - following a value to the function it comes down to.
 //
@@ -80,7 +92,12 @@ export const RESOLUTION_RULES = [
   // Aliasing: const x = y, or an identifier referencing a declaration.
   // A language with a hop of its own, like JavaScript's `.bind`, states
   // it as a step too, or every question but `comesTo` misses it.
-  rule("stepsTo", [v("x"), v("y"), VALUE_STEP], [lit("binds", v("x"), v("y"))]),
+  rule(
+    "stepsTo",
+    [v("x"), v("y"), VALUE_STEP],
+    [lit("binds", v("x"), v("y"))],
+    "alias",
+  ),
 
   // A name written more than once has the value the last write left
   // there. The adapter works out which write that is and stays quiet
@@ -89,6 +106,7 @@ export const RESOLUTION_RULES = [
     "stepsTo",
     [v("x"), v("y"), VALUE_STEP],
     [lit("endsHolding", v("x"), v("y"))],
+    "last write",
   ),
 
   // An import steps to what the module exports under that name.
@@ -99,6 +117,7 @@ export const RESOLUTION_RULES = [
       lit("imports", v("x"), v("m"), v("n")),
       lit("moduleExport", v("m"), v("n"), v("value")),
     ],
+    "import",
   ),
 
   // A parameter steps to what a call passes it. A function called from
@@ -108,6 +127,7 @@ export const RESOLUTION_RULES = [
     "stepsTo",
     [v("p"), v("a"), VALUE_STEP],
     [lit("passesArgument", v("r"), v("p"), v("a"))],
+    "argument",
   ),
 
   // Reading a property steps to what the object contains under that
@@ -121,6 +141,7 @@ export const RESOLUTION_RULES = [
       lit("objectOf", v("o"), v("obj")),
       lit("contains", v("obj"), v("n"), v("held")),
     ],
+    "property read",
   ),
 
   // Calling a class makes one of it, so the call steps to the class and
@@ -134,6 +155,7 @@ export const RESOLUTION_RULES = [
       lit("comesTo", v("c"), v("cls")),
       lit("objectValue", v("cls")),
     ],
+    "class instance",
   ),
 
   // Wrapper transparency, derived: calling a factory that returns a
@@ -147,6 +169,7 @@ export const RESOLUTION_RULES = [
       lit("unwraps", v("f"), v("k")),
       lit("callArg", v("r"), v("k"), v("a")),
     ],
+    "factory unwrap",
   ),
 
   // Wrapper transparency, declared: a pack says this callee wraps
@@ -162,6 +185,7 @@ export const RESOLUTION_RULES = [
       lit("calleeOrigin", v("r"), v("m")),
       lit("callArg", v("r"), v("k"), v("a")),
     ],
+    "declared wrapper",
   ),
 
   // The one step that runs a function forwards: a call steps to what
@@ -170,6 +194,7 @@ export const RESOLUTION_RULES = [
     "stepsTo",
     [v("r"), v("ret"), RESULT_STEP],
     [lit("invokes", v("r"), v("f")), lit("returnsValue", v("f"), v("ret"))],
+    "call result",
   ),
 
   // Where a walk gets to, and whether it ran a call on the way. A value
@@ -292,6 +317,7 @@ export const RESOLUTION_RULES = [
     "moduleExport",
     [v("m"), v("n"), v("value")],
     [lit("exportsAs", v("m"), v("n"), v("value"))],
+    "export",
   ),
   rule(
     "moduleExport",
@@ -300,6 +326,7 @@ export const RESOLUTION_RULES = [
       lit("reExports", v("m"), v("n"), v("m2"), v("n2")),
       lit("moduleExport", v("m2"), v("n2"), v("value")),
     ],
+    "re-export",
   ),
   rule(
     "moduleExport",
@@ -308,6 +335,7 @@ export const RESOLUTION_RULES = [
       lit("reExportsAll", v("m"), v("m2")),
       lit("moduleExport", v("m2"), v("n"), v("value")),
     ],
+    "re-export all",
   ),
 
   // The function a call runs, written from the call's side because a
