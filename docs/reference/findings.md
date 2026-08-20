@@ -234,7 +234,7 @@ A provider response declared as a range (an OpenAPI `4XX`) is one declared respo
 
 **Severity:** error • **Emitted by:** `checkResponseMisread`
 
-The path runs on a response the provider sends, reads a field that response's body does not include, and nothing on the path tells that response apart from one that does include it. The read comes back undefined, no error says so, and whatever the path does with the value runs on undefined.
+The path runs on a response the provider sends, reads a field that response's body does not include, and nothing on the path tells that response apart from one that does include it. Whatever the path does with the value runs on undefined.
 
 ```
 [ERROR] misreadProviderResponse (aspect: read)
