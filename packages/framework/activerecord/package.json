@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-activerecord",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "description": "Pattern pack that says which ActiveRecord calls a Ruby body makes against the database.",
   "keywords": [
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.9.0"
+    "@suss/adapter-ruby": "0.10.0"
   },
   "devDependencies": {
     "@suss/checker": "*",
