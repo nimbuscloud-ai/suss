@@ -12,6 +12,7 @@ import {
   evaluatePackHealth,
   findNearestTsconfig,
   formatPackHealth,
+  workspaceRootFor,
 } from "@suss/adapter-typescript";
 import { SUMMARY_SCHEMA_VERSION } from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
@@ -451,6 +452,9 @@ async function runTypeScript(
 ): Promise<LanguageRun> {
   const { options } = runOptions;
   const source = resolveSource(options);
+  // Ids and the written summaries' paths are both relative to this
+  // root, so a reader can rebuild an id from a summary's own fields.
+  const runRoot = workspaceRootFor(source.root);
   const packs = await Promise.all(options.frameworks.map(resolveFramework));
 
   const extractorOptions =
@@ -464,6 +468,7 @@ async function runTypeScript(
     ...(source.kind === "tsconfig"
       ? { tsConfigFilePath: source.path }
       : { project: createProjectWithoutTsconfig(source.root).project }),
+    projectRoot: runRoot,
     frameworks: packs,
     ...(extractorOptions !== undefined ? { extractorOptions } : {}),
     ...(options.noCache === true ? { cacheDir: null } : {}),
@@ -487,7 +492,7 @@ async function runTypeScript(
 
   return {
     summaries,
-    root: source.root,
+    root: runRoot,
     filesRead: (extractionReport as ExtractionReport | null)?.filesWalked ?? 0,
     timingReport,
     cacheDiagnostic,

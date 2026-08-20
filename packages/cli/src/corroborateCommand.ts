@@ -13,6 +13,7 @@ import path from "node:path";
 import {
   createProjectWithoutTsconfig,
   createTypeScriptAdapter,
+  workspaceRootFor,
 } from "@suss/adapter-typescript";
 
 import { corroborateSummary } from "./corroborate.js";
@@ -161,12 +162,14 @@ export async function corroborate(
   options: CorroborateCommandOptions,
 ): Promise<CorroborateResult> {
   const source = resolveSource(options);
+  const runRoot = workspaceRootFor(source.root);
   const packs = await Promise.all(options.frameworks.map(resolveFramework));
 
   const adapter = createTypeScriptAdapter({
     ...(source.kind === "tsconfig"
       ? { tsConfigFilePath: source.path }
       : { project: createProjectWithoutTsconfig(source.root).project }),
+    projectRoot: runRoot,
     frameworks: packs,
     // Corroboration re-runs extraction to keep the Project and the
     // summaries in the same session; a cache hit would skip the file
@@ -194,7 +197,7 @@ export async function corroborate(
 
   // Match extract's portability rule: relative paths in anything written.
   for (const summary of summaries) {
-    summary.location.file = path.relative(source.root, summary.location.file);
+    summary.location.file = path.relative(runRoot, summary.location.file);
   }
 
   process.stdout.write(formatReport(reports, summaries.length));

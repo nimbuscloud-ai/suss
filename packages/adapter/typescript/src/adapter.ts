@@ -137,7 +137,11 @@ import {
   createTsSubUnitContext,
   type TsSubUnitContext,
 } from "./subUnitContext.js";
-import { nameSummaries, workspaceNameFor } from "./summaryIdentity.js";
+import {
+  nameSummaries,
+  workspaceNameFor,
+  workspaceRootFor,
+} from "./summaryIdentity.js";
 import { createTimer, type Timer, type TimingReport } from "./timing.js";
 import { adapterCodeStamp, computeAdapterPacksDigest } from "./version.js";
 import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
@@ -1901,19 +1905,16 @@ function buildCallerSummary(
   return summary;
 }
 
-// The project root comes from the summaries rather than the loaded
-// files, because a cached run loaded none and still has to name them.
+// A run without a settled root (a caller-supplied Project and no
+// projectRoot) falls back to the summaries' common directory, which
+// at least spells every id in the run from one place.
 function named(
   summaries: BehavioralSummary[],
   workspace: string | undefined,
-  storedProjectRoot?: string,
+  runRoot: string | undefined,
 ): BehavioralSummary[] {
-  // The stored root wins: the walked files' common directory can sit
-  // above the summaries' own, and ids have to spell paths the same
-  // way a cold run of the same tree would.
   const projectRoot =
-    storedProjectRoot ??
-    commonDirectoryOf(summaries.map((s) => s.location.file));
+    runRoot ?? commonDirectoryOf(summaries.map((s) => s.location.file));
   nameSummaries(summaries, {
     workspace: workspace ?? workspaceNameFor(projectRoot),
     projectRoot,
@@ -1923,6 +1924,11 @@ function named(
 
 export interface TypeScriptAdapterConfig {
   tsConfigFilePath?: string;
+  /**
+   * Absolute. Every id's file path is relative to this directory. When
+   * absent, settled by workspaceRootFor from the tsconfig's directory.
+   */
+  projectRoot?: string;
   /** Separates two services in one repository whose file names match. */
   workspace?: string;
   project?: Project;
@@ -2024,6 +2030,14 @@ export function createTypeScriptAdapter(
         : { skipAddingFilesFromTsConfig: true },
     );
 
+  // Settled once, before any file loads, so a cached run and a cold
+  // run of the same command measure their ids from the same directory.
+  const runRoot =
+    config.projectRoot ??
+    (config.tsConfigFilePath !== undefined
+      ? workspaceRootFor(path.dirname(config.tsConfigFilePath))
+      : undefined);
+
   let lazyBootstrapped = false;
   // The whole tsconfig include set, which bounds what closure expansion
   // may lazy-add, so a run never pulls in `node_modules`.
@@ -2083,7 +2097,7 @@ export function createTypeScriptAdapter(
         );
       }
 
-      return named(summaries, config.workspace);
+      return named(summaries, config.workspace, runRoot);
     },
 
     async extractAll(): Promise<BehavioralSummary[]> {
@@ -2134,7 +2148,7 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(lookup.summaries, config.workspace, lookup.projectRoot);
+        return named(lookup.summaries, config.workspace, runRoot);
       }
 
       // A files-changed miss can still reuse per file, when the entry
@@ -2161,11 +2175,7 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(
-          plan.allSummaries(),
-          config.workspace,
-          plan.storedProjectRoot ?? undefined,
-        );
+        return named(plan.allSummaries(), config.workspace, runRoot);
       }
 
       let candidatePaths: string[] | null = null;
@@ -2422,10 +2432,6 @@ export function createTypeScriptAdapter(
         });
       }
 
-      const runProjectRoot = commonDirectoryOf(
-        sourceFiles.map((f) => f.getFilePath()),
-      );
-
       await timer.timeAsync("cache.write", async () => {
         // An empty result is never cached. Serving one would skip the
         // stages that fill the funnel, so a misconfigured project would
@@ -2449,7 +2455,6 @@ export function createTypeScriptAdapter(
             // Everything after the reused prefix, the passes' own
             // additions (markers, schema documents) included.
             fresh: enriched.slice(merged.reusedKept.length),
-            projectRoot: runProjectRoot,
           });
           await cache.write(cacheInput, enriched, attribution);
         } catch {
@@ -2480,16 +2485,11 @@ export function createTypeScriptAdapter(
 
       // Naming runs last, so a call can point at anything the run
       // produced.
-      nameSummaries(enriched, {
-        workspace:
-          config.workspace ??
-          workspaceNameFor(
-            commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
-          ),
-        projectRoot: commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
-      });
-
-      return enriched;
+      return named(
+        enriched,
+        config.workspace,
+        runRoot ?? commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
+      );
     },
   };
 }
@@ -2692,7 +2692,6 @@ function buildCacheAttribution(args: {
   reusedKept: BehavioralSummary[];
   reusedOwners: string[][];
   fresh: BehavioralSummary[];
-  projectRoot: string | undefined;
 }): CacheAttribution {
   const references = createReferenceIndex(
     args.project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
@@ -2783,13 +2782,7 @@ function buildCacheAttribution(args: {
     ...reusedOwners,
     ...args.fresh.map((s) => [...(args.ownersBySummary.get(s) ?? [])]),
   ];
-  return {
-    roots,
-    owners,
-    ...(args.projectRoot === undefined
-      ? {}
-      : { projectRoot: args.projectRoot }),
-  };
+  return { roots, owners };
 }
 
 // One summary per callback a framework's runtime schedules out of a
