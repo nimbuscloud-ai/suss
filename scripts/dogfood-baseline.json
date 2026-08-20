@@ -2,11 +2,11 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 497,
-    "internal": 1980,
-    "consumers": 865,
-    "pairs": 858,
-    "unfollowedCalls": 211,
+    "exports": 507,
+    "internal": 1996,
+    "consumers": 877,
+    "pairs": 870,
+    "unfollowedCalls": 215,
     "findingErrors": 0
   },
   "packages": {
@@ -27,22 +27,22 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 35,
-      "internal": 674,
-      "consumers": 58,
+      "internal": 673,
+      "consumers": 59,
       "unfollowedCalls": 67
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 65,
+      "exports": 69,
       "internal": 19,
       "consumers": 4,
       "unfollowedCalls": 2
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 35,
-      "internal": 186,
-      "consumers": 119,
+      "exports": 36,
+      "internal": 197,
+      "consumers": 120,
       "unfollowedCalls": 19
     },
     "packages/checker-intent": {
@@ -146,15 +146,15 @@
     "packages/contract/terraform": {
       "name": "@suss/contract-terraform",
       "exports": 6,
-      "internal": 37,
+      "internal": 38,
       "consumers": 18,
       "unfollowedCalls": 2
     },
     "packages/contract/wrangler": {
       "name": "@suss/contract-wrangler",
       "exports": 6,
-      "internal": 10,
-      "consumers": 10,
+      "internal": 12,
+      "consumers": 12,
       "unfollowedCalls": 0
     },
     "packages/datalog": {
@@ -222,10 +222,10 @@
     },
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",
-      "exports": 4,
-      "internal": 23,
-      "consumers": 3,
-      "unfollowedCalls": 1
+      "exports": 5,
+      "internal": 27,
+      "consumers": 8,
+      "unfollowedCalls": 5
     },
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
@@ -355,8 +355,8 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 53,
-      "internal": 15,
+      "exports": 57,
+      "internal": 14,
       "consumers": 0,
       "unfollowedCalls": 8
     },
@@ -392,14 +392,14 @@
       "name": "@suss/terraform-aws",
       "exports": 2,
       "internal": 1,
-      "consumers": 6,
+      "consumers": 7,
       "unfollowedCalls": 0
     },
     "packages/terraform/gcp": {
       "name": "@suss/terraform-gcp",
       "exports": 2,
       "internal": 2,
-      "consumers": 13,
+      "consumers": 15,
       "unfollowedCalls": 0
     }
   }
