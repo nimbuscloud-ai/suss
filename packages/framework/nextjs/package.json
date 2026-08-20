@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-nextjs",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from Next.js route handlers and pages.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/extractor": "0.9.0"
+    "@suss/extractor": "0.10.0"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
