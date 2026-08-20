@@ -94,6 +94,11 @@ export function pairGraphqlOperations(
     if (doc === null) {
       continue;
     }
+    const unresolvedFragments =
+      readGraphqlMetadata(operation)?.unresolvedFragments ?? [];
+    if (unresolvedFragments.length > 0) {
+      findings.push(unresolvedFragmentsFinding(operation, unresolvedFragments));
+    }
     pairOneOperation(operation, doc, resolverIndex, schemas, pairs, findings);
   }
 
@@ -643,6 +648,37 @@ function ambiguousProviderFinding(
     },
     description: `GraphQL operation "${operation.identity.name}" selects "${doc.rootTypeName}.${fieldName}", which ${resolvers.length} resolvers implement across ${workspaces.length} services (${named.join(", ")}). The pairing key has no endpoint identity, so this operation pairs with all of them and some of those pairs are wrong.`,
     severity: "warning",
+  };
+}
+
+/**
+ * The document reader marked this operation partial: these spreads had
+ * no definition it could find, so the fields selected through them were
+ * never walked. Without this finding a partial pass would look like a
+ * checked one.
+ */
+function unresolvedFragmentsFinding(
+  operation: BehavioralSummary,
+  fragmentNames: string[],
+): Finding {
+  const binding = operation.identity.boundaryBinding;
+  if (binding === null) {
+    throw new Error("expected graphql-operation boundary binding");
+  }
+  const spreads = fragmentNames.map((name) => `"...${name}"`).join(", ");
+  return {
+    kind: "lowConfidence",
+    boundary: binding,
+    provider: {
+      summary: `${fragmentNames.join(", ")} (unresolved fragments)`,
+      location: operation.location,
+    },
+    consumer: {
+      summary: summaryRef(operation),
+      location: operation.location,
+    },
+    description: `GraphQL operation "${operation.identity.name}" spreads ${spreads} but no fragment definition with that name was found, so the fields selected through it were not checked.`,
+    severity: "info",
   };
 }
 

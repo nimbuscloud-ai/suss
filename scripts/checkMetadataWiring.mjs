@@ -95,12 +95,8 @@ const EXEMPT = new Map([
     "The field a resolver serves. Same as rootType: the binding already says. #464.",
   ],
   [
-    "graphql.unresolvedFragments",
-    "Fragment spreads the document reader could not expand, for a finding that would say a selection went unchecked. That finding is unwritten. #464.",
-  ],
-  [
     "graphql.unresolvedDocument",
-    "Why an operation's document could not be assembled. Same missing finding as unresolvedFragments. #464.",
+    "Why an operation's document could not be assembled. unresolvedFragments has its unchecked-selection finding now; nothing reports the assembly failure itself yet. #464.",
   ],
   [
     "http.implementingHandler",

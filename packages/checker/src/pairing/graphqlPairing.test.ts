@@ -519,6 +519,50 @@ describe("pairGraphqlOperations — meta-fields and fragments", () => {
     expect(result.pairs).toHaveLength(1);
   });
 
+  it("reports selections through an unresolved fragment as unchecked", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields } }`,
+    );
+    op.metadata = {
+      graphql: {
+        document: `query GetPet { pet(id: "1") { ...PetFields } }`,
+        unresolvedFragments: ["PetFields"],
+      },
+    };
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    const unchecked = result.findings.filter(
+      (finding) => finding.kind === "lowConfidence",
+    );
+    expect(unchecked).toHaveLength(1);
+    expect(unchecked[0].severity).toBe("info");
+    expect(unchecked[0].description).toContain('"...PetFields"');
+    expect(unchecked[0].description).toContain("were not checked");
+  });
+
+  it("stays quiet about fragments the document itself defines", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields } }
+       fragment PetFields on Pet { id name }`,
+    );
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(
+      result.findings.filter((finding) => finding.kind === "lowConfidence"),
+    ).toEqual([]);
+  });
+
   it("survives a fragment cycle without recursing forever", () => {
     const petResolver = resolver("Query", "pet", "apollo", {
       schemaSdl: petSchemaSdl,
