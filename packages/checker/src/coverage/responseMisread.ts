@@ -231,9 +231,9 @@ function describeMisread(
 ): string {
   const opening = `${pathNoun(ct)} reads "${field}", but the ${label} body the provider sends does not include it`;
   if (carrier === null) {
-    return `${opening}, and neither does any other response. The read comes back undefined and no error says so.`;
+    return `${opening}, and neither does any other response.`;
   }
-  return `${opening}, and nothing on the path tells the ${label} apart from the ${carrier} whose body does include it. On a ${label} the read comes back undefined and no error says so.`;
+  return `${opening}, and nothing on the path tells the ${label} apart from the ${carrier} whose body does include it.`;
 }
 
 export function checkResponseMisread(

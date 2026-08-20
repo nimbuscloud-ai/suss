@@ -158,7 +158,7 @@ describe("checkResponseMisread", () => {
     expect(findings[0].consumer.transitionId).toBe("ct-200");
     expect(findings[0].description).toContain('reads "email"');
     expect(findings[0].description).toContain("the 200 body");
-    expect(findings[0].description).toContain("comes back undefined");
+    expect(findings[0].description).toContain("does not include it");
   });
 
   it("checks each status a consumer branches on independently", () => {
