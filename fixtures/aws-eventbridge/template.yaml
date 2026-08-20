@@ -11,6 +11,11 @@ Description: |
        EventBridgeRule matches a detail-type prefix, which v0 can't
        reduce to exact detail-types → surfaced as unpaired-unresolvable.
     4. Schedule: DigestFunction is time-triggered, no message producer.
+    5. Disabled rule (#460): IdleRule deploys State: DISABLED, so its
+       consumer is reported disabled (info) rather than orphaned. The
+       producer publishes OrderCancelled, whose only subscriber is that
+       disabled rule → producer orphan. OrderArchived has no producer at
+       all → no finding beyond the disabled info.
 
 Resources:
   OrderEventBus:
@@ -73,6 +78,31 @@ Resources:
                 - orders.service
               detail-type:
                 - prefix: Order
+
+  # Rule 3 (raw AWS::Events::Rule, State: DISABLED): routes
+  # OrderCancelled + OrderArchived to IdleConsumer, but deploys switched
+  # off, so it invokes nothing until someone enables it.
+  IdleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref OrderEventBus
+      State: DISABLED
+      EventPattern:
+        source:
+          - orders.service
+        detail-type:
+          - OrderCancelled
+          - OrderArchived
+      Targets:
+        - Arn: !GetAtt IdleConsumer.Arn
+          Id: IdleConsumerTarget
+
+  IdleConsumer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/idle-consumer/
+      Handler: index.handler
+      Runtime: nodejs20.x
 
   # Schedule (SAM Events Type: Schedule): time-triggered, no producer.
   DigestFunction:

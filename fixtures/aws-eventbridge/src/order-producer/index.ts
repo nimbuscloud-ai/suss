@@ -1,10 +1,11 @@
-// Lambda producer that publishes OrderPlaced events to the bus named by
-// ORDER_EVENT_BUS_NAME (which the SAM template Refs to OrderEventBus).
-//
-// The Detail payload uses an inline object literal so the recognizer can
-// extract the producer-side field set. Only OrderPlaced is published;
-// the OrderShipped detail-type the same rule routes has no producer, so
-// it surfaces as a consumer-orphan in the pairing check.
+/**
+ * Lambda producer that publishes OrderPlaced and OrderCancelled to the
+ * bus named by ORDER_EVENT_BUS_NAME (which the SAM template Refs to
+ * OrderEventBus). The Detail payload uses an inline object literal so
+ * the recognizer can extract the producer-side field set. OrderShipped
+ * has no producer, so it surfaces as a consumer-orphan; OrderCancelled
+ * is routed only by the disabled IdleRule, so it is a producer orphan.
+ */
 
 import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
 
@@ -28,6 +29,20 @@ export async function handler(event: { order: Order }): Promise<{
           Detail: JSON.stringify({
             id: event.order.id,
             total: event.order.total,
+          }),
+        },
+      ],
+    }),
+  );
+  await eventBridge.send(
+    new PutEventsCommand({
+      Entries: [
+        {
+          EventBusName: process.env.ORDER_EVENT_BUS_NAME,
+          Source: "orders.service",
+          DetailType: "OrderCancelled",
+          Detail: JSON.stringify({
+            id: event.order.id,
           }),
         },
       ],

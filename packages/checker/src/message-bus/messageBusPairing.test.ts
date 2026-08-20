@@ -394,6 +394,7 @@ function eventBridgeConsumer(opts: {
   rule?: string;
   eventBus?: string;
   unresolvableReason?: string;
+  enabled?: boolean;
 }): BehavioralSummary {
   return {
     kind: "consumer",
@@ -427,6 +428,7 @@ function eventBridgeConsumer(opts: {
         ...(opts.unresolvableReason !== undefined
           ? { unresolvableReason: opts.unresolvableReason }
           : {}),
+        ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
       },
     },
   };
@@ -634,6 +636,99 @@ describe("eventbridge pairing", () => {
     expect(findings.filter((f) => f.kind === "unsupportedSemantics")).toEqual(
       [],
     );
+  });
+});
+
+describe("disabled subscriptions", () => {
+  it("reports a disabled rule as disabled (info), not as a waiting consumer orphan", () => {
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderCancelled"),
+      eventBridgeConsumer({
+        name: "IdleConsumer#OrderCancelled",
+        channel: "OrderEventBus#OrderCancelled",
+        patternResolution: "exact",
+        rule: "IdleRule",
+        enabled: false,
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const disabled = findings.find(
+      (f) => f.kind === "messageBusConsumerDisabled",
+    );
+    expect(disabled).toBeDefined();
+    expect(disabled?.severity).toBe("info");
+    expect(disabled?.description).toContain("IdleRule");
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerOrphan"),
+    ).toEqual([]);
+  });
+
+  it("orphans a producer whose only subscriber is disabled, and says the subscription is off", () => {
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderCancelled"),
+      eventBridgeConsumer({
+        name: "IdleConsumer#OrderCancelled",
+        channel: "OrderEventBus#OrderCancelled",
+        patternResolution: "exact",
+        rule: "IdleRule",
+        enabled: false,
+      }),
+      eventBridgeProducer({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrderEventBus#OrderCancelled",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    const orphan = findings.find((f) => f.kind === "messageBusProducerOrphan");
+    expect(orphan).toBeDefined();
+    expect(orphan?.description).toContain("deployed disabled");
+  });
+
+  it("does not report a channel routed only by a disabled rule as unused", () => {
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderCancelled"),
+      eventBridgeConsumer({
+        name: "IdleConsumer#OrderCancelled",
+        channel: "OrderEventBus#OrderCancelled",
+        patternResolution: "exact",
+        rule: "IdleRule",
+        enabled: false,
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(findings.filter((f) => f.kind === "messageBusUnused")).toEqual([]);
+  });
+
+  it("keeps pairing a channel that an enabled rule routes beside a disabled one", () => {
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderPlaced"),
+      eventBridgeConsumer({
+        name: "IdleConsumer#OrderPlaced",
+        channel: "OrderEventBus#OrderPlaced",
+        patternResolution: "exact",
+        rule: "IdleRule",
+        enabled: false,
+      }),
+      eventBridgeConsumer({
+        name: "OrderConsumer#OrderPlaced",
+        channel: "OrderEventBus#OrderPlaced",
+        patternResolution: "exact",
+        rule: "OrderEventsRule",
+      }),
+      eventBridgeProducer({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrderEventBus#OrderPlaced",
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toEqual([]);
+    expect(
+      findings.filter((f) => f.kind === "messageBusConsumerDisabled"),
+    ).toHaveLength(1);
   });
 });
 

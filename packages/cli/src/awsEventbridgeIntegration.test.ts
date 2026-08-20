@@ -18,6 +18,9 @@
 //   - AuditConsumer: SAM EventBridgeRule with a detail-type prefix
 //     filter → unresolvable → unsupportedSemantics (info).
 //   - DigestFunction: SAM Type Schedule → time-triggered, no orphan.
+//   - IdleRule (State: DISABLED, #460): consumer reported disabled
+//     (info); the OrderCancelled send it alone routes is a producer
+//     orphan; OrderArchived is not reported unused.
 
 import path from "node:path";
 
@@ -70,10 +73,12 @@ describe("aws-eventbridge integration", () => {
     findings = checkAll([...codeSummaries, ...stub]).findings;
   }, 60000);
 
-  it("emits one message-send interaction keyed on env-var bus + detailType", () => {
+  it("emits a message-send interaction per publish, keyed on env-var bus + detailType", () => {
     const sends = collectSendEffects(codeSummaries);
-    expect(sends).toHaveLength(1);
-    expect(readChannel(sends[0])).toBe("ORDER_EVENT_BUS_NAME#OrderPlaced");
+    expect(sends.map(readChannel).sort()).toEqual([
+      "ORDER_EVENT_BUS_NAME#OrderCancelled",
+      "ORDER_EVENT_BUS_NAME#OrderPlaced",
+    ]);
   });
 
   it("CFN walker emits a rule provider per routed (bus, detailType)", () => {
@@ -84,6 +89,8 @@ describe("aws-eventbridge integration", () => {
         s.identity.boundaryBinding.semantics.messageBus === "eventbridge",
     );
     expect(providers.map((p) => p.identity.name).sort()).toEqual([
+      "OrderEventBus#OrderArchived",
+      "OrderEventBus#OrderCancelled",
       "OrderEventBus#OrderPlaced",
       "OrderEventBus#OrderShipped",
     ]);
@@ -102,6 +109,8 @@ describe("aws-eventbridge integration", () => {
         .map((c) => c.identity.name)
         .sort();
     expect(byResolution("exact")).toEqual([
+      "IdleConsumer#OrderArchived",
+      "IdleConsumer#OrderCancelled",
       "OrderConsumer#OrderPlaced",
       "OrderConsumer#OrderShipped",
     ]);
@@ -109,11 +118,49 @@ describe("aws-eventbridge integration", () => {
     expect(byResolution("schedule")).toHaveLength(1);
   });
 
-  it("does NOT flag the producer as orphan (chain-collapse resolves the bus)", () => {
+  it("does NOT flag the OrderPlaced producer as orphan (chain-collapse resolves the bus)", () => {
     const producerOrphans = findings.filter(
-      (f) => f.kind === "messageBusProducerOrphan",
+      (f) =>
+        f.kind === "messageBusProducerOrphan" &&
+        f.description.includes("OrderPlaced"),
     );
     expect(producerOrphans).toEqual([]);
+  });
+
+  it("orphans the OrderCancelled send, whose only subscriber deploys disabled", () => {
+    const orphan = findings.find(
+      (f) =>
+        f.kind === "messageBusProducerOrphan" &&
+        f.description.includes("OrderCancelled"),
+    );
+    expect(orphan).toBeDefined();
+    expect(orphan?.severity).toBe("warning");
+    expect(orphan?.description).toContain("deployed disabled");
+  });
+
+  it("reports the disabled IdleRule consumers as disabled (info), never as consumer orphans", () => {
+    const disabled = findings.filter(
+      (f) => f.kind === "messageBusConsumerDisabled",
+    );
+    expect(disabled.map((f) => f.severity)).toEqual(["info", "info"]);
+    expect(disabled.every((f) => f.description.includes("IdleRule"))).toBe(
+      true,
+    );
+    const idleOrphans = findings.filter(
+      (f) =>
+        f.kind === "messageBusConsumerOrphan" &&
+        f.description.includes("IdleConsumer"),
+    );
+    expect(idleOrphans).toEqual([]);
+  });
+
+  it("does not report OrderArchived, routed only by the disabled rule, as unused", () => {
+    const unused = findings.filter(
+      (f) =>
+        f.kind === "messageBusUnused" &&
+        f.description.includes("OrderArchived"),
+    );
+    expect(unused).toEqual([]);
   });
 
   it("flags messageBusConsumerOrphan for OrderShipped (routed but never published)", () => {

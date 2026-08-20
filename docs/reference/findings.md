@@ -364,6 +364,12 @@ A consumer Lambda is wired to receive from a channel but no code in the project 
 
 A queue / topic is declared in infrastructure but neither produced to nor consumed from anywhere in the project. Nothing breaks at runtime; it is probably an orphan resource left over from a removed feature, and removing it is a judgement.
 
+### `messageBusConsumerDisabled` *(shipped)*
+
+**Severity:** info • **Emitted by:** `checkMessageBus`
+
+A rule or subscription deploys switched off (`State: DISABLED`), so its target receives nothing until someone enables it. The subscription is not counted as a consumer anywhere in the pass: a producer whose only subscriber is disabled is reported as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused` (switched off on purpose is not left over).
+
 ---
 
 ## Runtime-config findings
