@@ -135,6 +135,10 @@ export default defineConfig({
           { text: "Extraction algorithm", link: "/extraction-algorithm" },
           { text: "Facts and rules", link: "/internal/facts-and-rules" },
           {
+            text: "Protocol assumptions",
+            link: "/internal/protocol-assumptions",
+          },
+          {
             text: "Differential fuzzing",
             link: "/internal/differential-fuzzing",
           },
