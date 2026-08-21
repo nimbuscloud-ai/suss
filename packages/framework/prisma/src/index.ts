@@ -23,8 +23,9 @@
 //
 // Field extraction from the call's first arg (always an object literal
 // for typed Prisma calls):
-//   read:   union of `select` keys + `include` keys; falls back to
-//           ["*"] (default-shape) when neither is present.
+//   read:   `select` keys, plus `include` keys when a select says which
+//           fields to return. A query with no `select` reads the whole
+//           record, `include` or not, so it comes back as ["*"].
 //   write:  union of `data`, `create`, `update` keys (an upsert can pass
 //           both create and update). Falls back to ["*"] for shape-
 //           less writes (rare; createMany with a dynamic body).
@@ -255,14 +256,17 @@ function extractFields(
   if (kind === "read") {
     const select = readObjectArg(optionsArg.fields.select);
     const include = readObjectArg(optionsArg.fields.include);
-    if (select === null && include === null) {
+    if (select === null) {
+      // `include` asks for relations beside the record, and Prisma
+      // still returns every column of the record itself. Prisma
+      // refuses a query carrying both, so a query with an include has
+      // no select and reads the whole shape. Recording the relations it
+      // asks for, and nothing else, reported every column as unread.
       return ["*"];
     }
     const out = new Set<string>();
-    if (select !== null) {
-      for (const k of Object.keys(select.fields)) {
-        out.add(k);
-      }
+    for (const k of Object.keys(select.fields)) {
+      out.add(k);
     }
     if (include !== null) {
       for (const k of Object.keys(include.fields)) {

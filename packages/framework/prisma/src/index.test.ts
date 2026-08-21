@@ -219,6 +219,28 @@ describe("prisma recognizer: happy path", () => {
     });
   });
 
+  it("records the whole record when a query includes a relation", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function getArticle(slug: string) {
+        return await db.article.findUnique({
+          where: { slug },
+          include: { author: true, tagList: true },
+        });
+      }
+    `);
+    const access =
+      storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
+    // Prisma returns every column of the article beside the relations,
+    // so the columns are read even though nothing asks for them by name.
+    expect(access.interaction).toMatchObject({
+      kind: "read",
+      fields: ["*"],
+      selector: ["slug"],
+    });
+  });
+
   it("records default-shape when the call takes no arguments (count)", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
