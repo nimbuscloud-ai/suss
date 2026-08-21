@@ -1,3 +1,4 @@
+import { constants as BUFFER } from "node:buffer";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -56,27 +57,37 @@ describe("jsonPieces", () => {
     expect(joined(value, 2)).toBe(JSON.stringify(value, null, 2));
   });
 
-  it("splits a document that no single string could hold", () => {
-    // Each element is well under V8's cap; the array is not. Joining the
-    // pieces would rebuild the same oversized string, so this asserts on
-    // the seams instead: the count and the framing.
-    const element = { pad: "x".repeat(1024 * 1024) };
-    const values = Array.from({ length: 600 }, () => element);
-    let first = "";
-    let last = "";
-    let commas = 0;
-    let total = 0;
-    for (const piece of jsonPieces(values, 2)) {
-      first = first === "" ? piece : first;
-      last = piece;
-      commas += piece === ",\n  " ? 1 : 0;
-      total += piece.length;
-    }
-    expect(first).toBe("[\n  ");
-    expect(last).toBe("\n]");
-    expect(commas).toBe(599);
-    expect(total).toBeGreaterThan(600 * 1024 * 1024);
-  });
+  // Rendering more text than one string can contain is the point of
+  // this one, so it moves half a gigabyte and takes a few seconds. The
+  // default timeout fails it whenever the machine is busy.
+  it(
+    "splits a document that no single string could hold",
+    { timeout: 60_000 },
+    () => {
+      // Each element is well under V8's cap; enough of them together are
+      // over it. Joining the pieces would rebuild the same oversized
+      // string, so this asserts on the seams instead: the count and the
+      // framing.
+      const pad = 1024 * 1024;
+      const element = { pad: "x".repeat(pad) };
+      const count = Math.ceil(BUFFER.MAX_STRING_LENGTH / pad) + 1;
+      const values = Array.from({ length: count }, () => element);
+      let first = "";
+      let last = "";
+      let commas = 0;
+      let total = 0;
+      for (const piece of jsonPieces(values, 2)) {
+        first = first === "" ? piece : first;
+        last = piece;
+        commas += piece === ",\n  " ? 1 : 0;
+        total += piece.length;
+      }
+      expect(first).toBe("[\n  ");
+      expect(last).toBe("\n]");
+      expect(commas).toBe(count - 1);
+      expect(total).toBeGreaterThan(BUFFER.MAX_STRING_LENGTH);
+    },
+  );
 
   // Everything above is small enough to render in one `JSON.stringify`
   // call, which is the path that does not differ. These force the split.
