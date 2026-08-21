@@ -241,6 +241,119 @@ describe("prisma recognizer: happy path", () => {
     });
   });
 
+  it("reads the model a nested select points at, through the relation", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function getComments(slug: string) {
+        return await db.article.findUnique({
+          where: { slug },
+          include: {
+            comments: { select: { id: true, body: true } },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses).toHaveLength(2);
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "read",
+      fields: ["id", "body"],
+      relationPath: ["comments"],
+      operation: "findUnique",
+    });
+    // The relation says which field, and the contract says which model,
+    // so the binding stays on the model the query addressed.
+    expect(accesses[1]?.binding.semantics).toMatchObject({
+      container: "Article",
+    });
+  });
+
+  it("reads a relation asked for through another relation", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function getComments(slug: string) {
+        return await db.article.findUnique({
+          where: { slug },
+          include: {
+            comments: {
+              select: {
+                body: true,
+                author: { select: { username: true } },
+              },
+            },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses.map((a) => a.interaction.relationPath)).toEqual([
+      undefined,
+      ["comments"],
+      ["comments", "author"],
+    ]);
+    expect(accesses[2]?.interaction.fields).toEqual(["username"]);
+  });
+
+  it("reads the whole related record when an include asks for no fields", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function getArticle(slug: string) {
+        return await db.article.findUnique({
+          where: { slug },
+          include: { comments: true },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses).toHaveLength(2);
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "read",
+      fields: ["*"],
+      relationPath: ["comments"],
+    });
+  });
+
+  it("leaves a column asked for by name out of the relations", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function getUser(id: number) {
+        return await db.user.findUnique({
+          where: { id },
+          select: { id: true, email: true },
+        });
+      }
+    `);
+    expect(storageEffectsOf(recognizeAll(file))).toHaveLength(1);
+  });
+
+  it("reads the relation a write asks for back", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function addComment(body: string) {
+        return await db.comment.create({
+          data: { body },
+          include: { author: { select: { username: true } } },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses).toHaveLength(2);
+    expect(accesses[0]?.interaction).toMatchObject({
+      kind: "write",
+      fields: ["body"],
+    });
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "read",
+      fields: ["username"],
+      relationPath: ["author"],
+    });
+  });
+
   it("records default-shape when the call takes no arguments (count)", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";

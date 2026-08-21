@@ -20,6 +20,12 @@
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
 //
+// A read written under a relation, the select inside a Prisma
+// `include`, arrives keyed to the container the query addressed and
+// carrying `relationPath`. `withNestedReadsPlaced` walks that path over
+// the contracts and moves the read to the container it arrives at,
+// before any of it is claimed.
+//
 // Two containers can be declared under names that both cover what one
 // access reached, since a name built at deploy time has a hole in it.
 // The access pairs with the more specific of the two, and with neither
@@ -87,8 +93,13 @@ export function checkStorage(
   const idx = index ?? buildInteractionIndex(summaries);
   const grounding = groundReferences(summaries);
   const containers = declaredContainers(providersOf(idx, "storage"));
-  const accesses = accessRecords(idx);
-  const claimed = claimAccesses(containers, accesses, reachedBy(grounding));
+  const reachedFor = reachedBy(grounding);
+  const accesses = withNestedReadsPlaced(
+    containers,
+    accessRecords(idx),
+    reachedFor,
+  );
+  const claimed = claimAccesses(containers, accesses, reachedFor);
   findings.push(...claimed.findings);
 
   for (const container of containers) {
@@ -338,14 +349,7 @@ function claimAccesses(
   const links: ClaimLink[] = [];
   for (const access of accesses) {
     for (const reached of reachedFor(access)) {
-      const candidates: NameCandidate<DeclaredContainer>[] = [];
-      for (const container of containers) {
-        const name = nameCovering(container, access, reached.name);
-        if (name !== null) {
-          candidates.push({ subject: container, name });
-        }
-      }
-      const choice = mostSpecificName(candidates);
+      const choice = claimantsOf(containers, access, reached.name);
       if (choice.tied.length > 0) {
         findings.push(
           makeAmbiguousContainerFinding(access, reached.name, choice),
@@ -359,6 +363,135 @@ function claimAccesses(
     }
   }
   return { byContainer, findings, links };
+}
+
+/**
+ * The containers that could claim what one access reached, with the
+ * even contest reported rather than settled.
+ */
+function claimantsOf(
+  containers: DeclaredContainer[],
+  access: StorageAccessRecord,
+  reached: string,
+): NameChoice<DeclaredContainer> {
+  const candidates: NameCandidate<DeclaredContainer>[] = [];
+  for (const container of containers) {
+    const name = nameCovering(container, access, reached);
+    if (name !== null) {
+      candidates.push({ subject: container, name });
+    }
+  }
+  return mostSpecificName(candidates);
+}
+
+/**
+ * Accesses, with every read written under a relation moved to the
+ * container that relation arrives at. A query states the relation it
+ * asked for and never the container behind it, so the walk happens
+ * here, over the contract of the container the query itself pairs
+ * with. A relation nothing in the run declares drops the read: leaving
+ * it on the container the query addressed would count a field as read
+ * on the wrong store.
+ */
+function withNestedReadsPlaced(
+  containers: DeclaredContainer[],
+  accesses: StorageAccessRecord[],
+  reachedFor: (access: StorageAccessRecord) => ReachedName[],
+): StorageAccessRecord[] {
+  const placed: StorageAccessRecord[] = [];
+  for (const access of accesses) {
+    const path = access.effect.interaction.relationPath ?? [];
+    if (path.length === 0) {
+      placed.push(access);
+      continue;
+    }
+    for (const target of relationTargets(
+      containers,
+      access,
+      reachedFor(access),
+      path,
+    )) {
+      placed.push(movedTo(access, target));
+    }
+  }
+  return placed;
+}
+
+/** Where a relation path arrives, from each container that claims the query. */
+function relationTargets(
+  containers: DeclaredContainer[],
+  access: StorageAccessRecord,
+  reached: ReachedName[],
+  path: string[],
+): string[] {
+  const targets = new Set<string>();
+  for (const name of reached) {
+    for (const start of claimantsOf(containers, access, name.name).chosen) {
+      const arrived = followRelations(containers, start, path);
+      if (arrived !== null) {
+        targets.add(arrived);
+      }
+    }
+  }
+  return [...targets];
+}
+
+/**
+ * The container a relation path arrives at, one hop per relation, or
+ * null when a hop is a field the contract leaves out, or a field whose
+ * type is a container nothing in the run declares.
+ */
+function followRelations(
+  containers: DeclaredContainer[],
+  start: DeclaredContainer,
+  path: string[],
+): string | null {
+  let current = start;
+  let arrived: string | null = null;
+  for (const hop of path) {
+    const type = relationTypeOf(current, hop);
+    if (type === null) {
+      return null;
+    }
+    const next = containers.find((container) => container.names.includes(type));
+    if (next === undefined) {
+      return null;
+    }
+    current = next;
+    arrived = type;
+  }
+  return arrived;
+}
+
+/** The container a relation field points at, list suffix stripped. */
+function relationTypeOf(
+  container: DeclaredContainer,
+  field: string,
+): string | null {
+  const declared = (container.contract.fields ?? []).find(
+    (candidate) => candidate.name === field,
+  );
+  const type = declared?.type;
+  if (type === undefined) {
+    return null;
+  }
+  return type.endsWith("[]") ? type.slice(0, -2) : type;
+}
+
+/** The same access, addressed to the container its relation reached. */
+function movedTo(
+  access: StorageAccessRecord,
+  container: string,
+): StorageAccessRecord {
+  const semantics: StorageSemantics = { ...access.semantics, container };
+  return {
+    ...access,
+    semantics,
+    effect: {
+      ...access.effect,
+      binding: { ...access.effect.binding, semantics },
+    },
+  };
 }
 
 /**
@@ -410,8 +543,12 @@ export function groundStorageAccesses(
   const idx = buildInteractionIndex(summaries);
   const grounding = groundReferences(summaries);
   const containers = declaredContainers(providersOf(idx, "storage"));
-  const accesses = accessRecords(idx);
   const reachedFor = reachedBy(grounding);
+  const accesses = withNestedReadsPlaced(
+    containers,
+    accessRecords(idx),
+    reachedFor,
+  );
   const claimed = claimAccesses(containers, accesses, reachedFor);
 
   const providersFor = new Map<StorageAccessRecord, BehavioralSummary[]>();

@@ -3,10 +3,10 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 526,
-    "internal": 2089,
-    "consumers": 970,
-    "pairs": 962,
-    "unfollowedCalls": 239,
+    "internal": 2099,
+    "consumers": 971,
+    "pairs": 963,
+    "unfollowedCalls": 240,
     "findingErrors": 0
   },
   "packages": {
@@ -41,9 +41,9 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 39,
-      "internal": 210,
+      "internal": 216,
       "consumers": 133,
-      "unfollowedCalls": 24
+      "unfollowedCalls": 25
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 13,
-      "internal": 327,
-      "consumers": 202,
+      "internal": 328,
+      "consumers": 203,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
@@ -307,7 +307,7 @@
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
       "exports": 2,
-      "internal": 9,
+      "internal": 12,
       "consumers": 4,
       "unfollowedCalls": 4
     },

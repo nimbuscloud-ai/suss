@@ -471,6 +471,18 @@ export const EffectSchema = z.discriminatedUnion("type", [
         fields: z.array(z.string()),
         selector: z.array(z.string()).optional(),
         operation: z.string().optional(),
+        /**
+         * The relation fields this access travelled through, starting
+         * from the container in the binding. A query that asks for a
+         * related record alongside its own gets one access per
+         * relation, and `fields` on each are the fields asked of the
+         * container that relation points at. Only the provider's
+         * contract says which container that is, so the pairing pass
+         * resolves the path there and moves the access to the
+         * container it arrives at. Absent means the access is on the
+         * container in the binding.
+         */
+        relationPath: z.array(z.string()).optional(),
       }),
       z.object({
         class: z.literal("service-call"),

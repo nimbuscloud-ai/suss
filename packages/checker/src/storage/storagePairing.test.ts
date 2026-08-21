@@ -82,6 +82,7 @@ function makeAccessSummary(opts: {
     fields: string[];
     selector?: string[];
     operation?: string;
+    relationPath?: string[];
   }>;
 }): BehavioralSummary {
   const transition: Transition = {
@@ -104,6 +105,9 @@ function makeAccessSummary(opts: {
           fields: a.fields,
           ...(a.selector !== undefined ? { selector: a.selector } : {}),
           ...(a.operation !== undefined ? { operation: a.operation } : {}),
+          ...(a.relationPath !== undefined
+            ? { relationPath: a.relationPath }
+            : {}),
         },
       }),
     ),
@@ -1146,6 +1150,168 @@ describe("a run with a contract and no code against it", () => {
 
     expect(unused).toHaveLength(1);
     expect(unused[0]?.description).toContain("email");
+  });
+});
+
+describe("a read written under another table's query", () => {
+  /** An article, with the relation a comment query is written under. */
+  function article(): BehavioralSummary {
+    return makeProvider({
+      container: "Article",
+      fields: [
+        { name: "id" },
+        { name: "slug" },
+        { name: "comments", type: "Comment[]", derived: true },
+      ],
+    });
+  }
+
+  function comment(): BehavioralSummary {
+    return makeProvider({
+      container: "Comment",
+      fields: [
+        { name: "id" },
+        { name: "body" },
+        { name: "authorId" },
+        { name: "author", type: "User", derived: true },
+      ],
+    });
+  }
+
+  function unusedOf(summaries: BehavioralSummary[]): string[] {
+    return checkStorage(summaries)
+      .filter((f) => f.kind === "boundaryFieldUnused")
+      .map((f) => f.description);
+  }
+
+  it("counts the fields against the table the relation reaches", () => {
+    const reader = makeAccessSummary({
+      name: "getComments",
+      file: "src/article.service.ts",
+      accesses: [
+        { container: "Article", kind: "read", fields: ["*"] },
+        {
+          container: "Article",
+          kind: "read",
+          fields: ["id", "body"],
+          relationPath: ["comments"],
+        },
+      ],
+    });
+    const unused = unusedOf([article(), comment(), reader]);
+
+    expect(unused).toHaveLength(1);
+    expect(unused[0]).toContain("authorId");
+    expect(unused[0]).not.toContain('"body"');
+  });
+
+  it("says nothing is unknown about the table the query was written on", () => {
+    const reader = makeAccessSummary({
+      name: "getComments",
+      file: "src/article.service.ts",
+      accesses: [
+        {
+          container: "Article",
+          kind: "read",
+          fields: ["body"],
+          relationPath: ["comments"],
+        },
+      ],
+    });
+
+    expect(
+      checkStorage([article(), comment(), reader]).filter(
+        (f) => f.kind === "boundaryFieldUnknown",
+      ),
+    ).toEqual([]);
+  });
+
+  it("follows a relation asked for through another relation", () => {
+    const user = makeProvider({
+      container: "User",
+      fields: [{ name: "id" }, { name: "username" }],
+    });
+    const reader = makeAccessSummary({
+      name: "getComments",
+      file: "src/article.service.ts",
+      accesses: [
+        {
+          container: "Article",
+          kind: "read",
+          fields: ["username"],
+          relationPath: ["comments", "author"],
+        },
+      ],
+    });
+    const unused = unusedOf([article(), comment(), user, reader]);
+
+    expect(unused).toHaveLength(1);
+    expect(unused[0]).toContain('"id"');
+    expect(unused[0]).toContain("User");
+  });
+
+  it("reads every field of the related record when the query asks for no field", () => {
+    const reader = makeAccessSummary({
+      name: "getArticle",
+      file: "src/article.service.ts",
+      accesses: [
+        {
+          container: "Article",
+          kind: "read",
+          fields: ["*"],
+          relationPath: ["comments"],
+        },
+      ],
+    });
+
+    expect(unusedOf([article(), comment(), reader])).toEqual([]);
+  });
+
+  it("leaves the read out when the contract declares no such relation", () => {
+    // `_count` is a Prisma aggregate rather than a column, and putting
+    // its fields on the table the query addressed would call them read
+    // there.
+    const reader = makeAccessSummary({
+      name: "getArticle",
+      file: "src/article.service.ts",
+      accesses: [
+        { container: "Article", kind: "read", fields: ["id"] },
+        {
+          container: "Article",
+          kind: "read",
+          fields: ["comments"],
+          relationPath: ["_count"],
+        },
+      ],
+    });
+    const findings = checkStorage([article(), reader]);
+
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+    expect(
+      findings
+        .filter((f) => f.kind === "boundaryFieldUnused")
+        .map((f) => f.description)
+        .join(" "),
+    ).toContain("slug");
+  });
+
+  it("leaves the read out when the run has no contract for the table", () => {
+    const reader = makeAccessSummary({
+      name: "getComments",
+      file: "src/article.service.ts",
+      accesses: [
+        {
+          container: "Article",
+          kind: "read",
+          fields: ["id", "body"],
+          relationPath: ["comments"],
+        },
+      ],
+    });
+
+    expect(checkStorage([comment(), reader])).toEqual([]);
   });
 });
 

@@ -1091,6 +1091,12 @@
                               },
                               "operation": {
                                 "type": "string"
+                              },
+                              "relationPath": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": ["class", "kind", "fields"],
