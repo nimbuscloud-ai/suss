@@ -173,12 +173,26 @@ export class ResolutionStore {
    * the walk never reaches on its own.
    */
   resolveCallable(value: Node, alsoFrom?: SourceFile): Node | null {
+    const sources = this.resolveCallableSources(value, alsoFrom);
+    const only = sources[0];
+    return sources.length === 1 && only !== undefined ? only : null;
+  }
+
+  /**
+   * Every function the value comes down to. One is the answer
+   * `resolveCallable` gives; several is a value with more than one
+   * possible source, which a caller says at the site rather than
+   * folding into the same nothing as a chain that went nowhere.
+   */
+  resolveCallableSources(value: Node, alsoFrom?: SourceFile): Node[] {
     const target = factKeyOf(value);
-    return this.resolveByWaves(
-      target,
-      "wanted",
-      () => this.lookup(target),
-      alsoFrom,
+    return (
+      this.resolveByWaves(
+        target,
+        "wanted",
+        () => this.lookupSources(target),
+        alsoFrom,
+      ) ?? []
     );
   }
 
@@ -459,10 +473,12 @@ export class ResolutionStore {
   }
 
   /**
-   * Two candidates give null. Picking whichever arrived first would make
-   * the result depend on the order the facts came in.
+   * Null keeps the wave walk widening; any candidate at all ends it,
+   * since more files can only add candidates, never take one away. The
+   * single-answer policy stays with the callers: picking one of two
+   * would make the result depend on the order the facts came in.
    */
-  private lookup(value: Node): Node | null {
+  private lookupSources(value: Node): Node[] | null {
     this.derive();
 
     const candidates = new Set<Node>();
@@ -476,10 +492,7 @@ export class ResolutionStore {
       }
     }
 
-    if (candidates.size !== 1) {
-      return null;
-    }
-    return [...candidates][0] as Node;
+    return candidates.size === 0 ? null : [...candidates];
   }
 
   private derive(): void {

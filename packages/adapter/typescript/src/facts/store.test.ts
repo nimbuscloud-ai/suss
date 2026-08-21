@@ -1079,6 +1079,21 @@ describe("a value written as a fallback", () => {
     );
     expect(written?.getText()).toBe('"orders-prod"');
   });
+
+  it("gives every source and no single answer when both branches resolve", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        const primary: (() => string) | undefined = () => "primary";
+        const secondary = () => "secondary";
+        export const handler = primary || secondary;
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const value = exportValue(project, "/mod.ts", "handler");
+    expect(store.resolveCallableSources(value)).toHaveLength(2);
+    expect(store.resolveCallable(value)).toBeNull();
+  });
 });
 
 describe("a binding written more than once", () => {

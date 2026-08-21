@@ -2361,8 +2361,8 @@ export function createTypeScriptAdapter(
                   access: collectAccessRecognizers(config.frameworks, tallies),
                   resolveWrittenValue: (value) =>
                     resolution.resolveWrittenValue(value),
-                  resolveCallable: (value, alsoFrom) =>
-                    resolution.resolveCallable(value, alsoFrom),
+                  resolveCallableSources: (value, alsoFrom) =>
+                    resolution.resolveCallableSources(value, alsoFrom),
                 },
                 // Reached units the cache already serves emit nothing,
                 // the way a cold run's seeds do not.

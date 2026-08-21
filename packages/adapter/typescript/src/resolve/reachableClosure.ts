@@ -204,16 +204,23 @@ function resolveCallee(
   // A call landing on an interface the project declares has no body to
   // walk into: the field was handed a class, or a factory built one.
   // Resolution says which, for the price of a module-graph walk.
-  const resolveCallable = scan.resolveCallable;
+  const resolveSources = scan.resolveCallableSources;
   if (
-    resolveCallable !== undefined &&
+    resolveSources !== undefined &&
     Node.isPropertyAccessExpression(callee) &&
     declarations.some(isDeclaredShape)
   ) {
-    const value = resolveCallable(callee, scan.reachedFrom);
-    const resolved = value === null ? null : resolveDecl(value, calleeName);
+    const sources = resolveSources(callee, scan.reachedFrom);
+    const only = sources.length === 1 ? sources[0] : undefined;
+    const resolved = only === undefined ? null : resolveDecl(only, calleeName);
     if (resolved !== null) {
       return { kind: "followed", candidate: resolved };
+    }
+    if (sources.length > 1) {
+      return {
+        kind: "stopped",
+        stop: { callee: calleeName, reason: "multipleSources" },
+      };
     }
   }
 
@@ -244,7 +251,7 @@ function resolveCallee(
  * it was handed was constructed.
  */
 interface ScanContext {
-  resolveCallable?: (value: Node, alsoFrom?: SourceFile) => Node | null;
+  resolveCallableSources?: (value: Node, alsoFrom?: SourceFile) => Node[];
   reachedFrom?: SourceFile;
 }
 
@@ -377,11 +384,13 @@ export interface ClosureRecognizers {
    */
   resolveWrittenValue?: (value: Node) => Node | null;
   /**
-   * Which function a callee comes down to, for a call the type checker
-   * only takes as far as an interface. `alsoFrom` is the file the walk
-   * came in from, which is where the dependency was constructed.
+   * Every function a callee comes down to, for a call the type checker
+   * only takes as far as an interface. One is followed; several is a
+   * value with more than one possible source, said as a gap at the call
+   * site. `alsoFrom` is the file the walk came in from, which is where
+   * the dependency was constructed.
    */
-  resolveCallable?: (value: Node, alsoFrom?: SourceFile) => Node | null;
+  resolveCallableSources?: (value: Node, alsoFrom?: SourceFile) => Node[];
   invocation: InvocationRecognizer[];
   access: AccessRecognizer[];
 }
@@ -462,9 +471,9 @@ export function expandReachableClosure(
       }
       const cameFrom = reachedFrom.get(key);
       const scan: ScanContext = {
-        ...(recognizers.resolveCallable === undefined
+        ...(recognizers.resolveCallableSources === undefined
           ? {}
-          : { resolveCallable: recognizers.resolveCallable }),
+          : { resolveCallableSources: recognizers.resolveCallableSources }),
         ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
       };
       const { candidates, stops } = scanWithRecording(key, facts, () =>
