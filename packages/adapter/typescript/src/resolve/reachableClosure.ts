@@ -32,7 +32,6 @@ import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { createDependencySink, withDependencySink } from "../depTracking.js";
 import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
-import { exportedDeclarationsOf } from "../moduleExports.js";
 import {
   classifyStop,
   declarationsBehind,
@@ -128,24 +127,6 @@ function resolveDecl(
     }
     return null;
   }
-  if (Node.isImportSpecifier(decl)) {
-    const importDecl = decl.getImportDeclaration();
-    const sf = importDecl.getModuleSpecifierSourceFile();
-    if (sf === undefined || isInExternalCode(sf)) {
-      return null;
-    }
-    const exported = exportedDeclarationsOf(sf).get(decl.getName());
-    if (exported === undefined) {
-      return null;
-    }
-    for (const ed of exported) {
-      const resolved = resolveDecl(ed, calleeName);
-      if (resolved !== null) {
-        return resolved;
-      }
-    }
-    return null;
-  }
   return null;
 }
 
@@ -193,7 +174,11 @@ function resolveCallee(
   }
   const callee = call.getExpression();
   const symbol = callee.getSymbol();
-  const declarations = symbol?.getDeclarations() ?? [];
+  // The same declarations the stop classifier reads, so a call the
+  // walk refuses and a call it describes as unfollowed are the same
+  // call. An imported name's own declaration says only that something
+  // was imported.
+  const declarations = declarationsBehind(symbol);
   for (const decl of declarations) {
     const resolved = resolveDecl(decl, calleeName);
     if (resolved !== null) {
