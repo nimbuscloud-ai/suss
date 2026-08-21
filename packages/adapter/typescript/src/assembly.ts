@@ -290,11 +290,20 @@ export function extractRawBranches(
       const terminalLines = new Set(
         distinctBranches.map((b) => b.terminal.location.start),
       );
+      // A call the terminal reader itself matched, `res.json(body)`,
+      // is the terminal and would otherwise count twice. A call whose
+      // result a terminal describes, `return toView(row)`, is a
+      // different node and stays.
+      const terminalNodes = new Set(terminals.map(({ node }) => node));
       // Container-building calls (spread / array-element composition)
       // are never themselves terminals, so they skip the terminal-line
       // dedup that catches `res.json(body)`-as-both-terminal-and-call.
       defaultBranch.effects = invocations
-        .filter((i) => i.neverTerminal || !terminalLines.has(i.line))
+        .filter((i) =>
+          i.node !== undefined
+            ? !terminalNodes.has(i.node)
+            : i.neverTerminal || !terminalLines.has(i.line),
+        )
         .map((i) => i.effect);
     }
   }

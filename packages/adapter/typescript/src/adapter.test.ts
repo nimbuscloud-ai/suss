@@ -8,6 +8,7 @@ import {
   readHttpMetadata,
   readSourceDocumentMetadata,
   storageBinding,
+  summaryIdentifier,
 } from "@suss/behavioral-ir";
 import { assembleSummary } from "@suss/extractor";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
@@ -1916,6 +1917,63 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     ).toBe(true);
   });
 
+  it("records the call a return hands back, so callers can be found", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "mapper.ts",
+      `
+      export function toView(row: { id: string }) {
+        return { id: row.id };
+      }
+    `,
+    );
+    project.createSourceFile(
+      "service.ts",
+      `
+      import { toView } from "./mapper";
+      export function present(row: { id: string }) {
+        return toView(row);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { present } from "./service";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        show: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: present({ id: params.id }) };
+        },
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const present = summaries.find(
+      (summary) => summary.identity.name === "present",
+    );
+    const toView = summaries.find(
+      (summary) => summary.identity.name === "toView",
+    );
+    expect(toView).toBeDefined();
+
+    const calls = (present?.transitions ?? [])
+      .flatMap((transition) => transition.effects)
+      .filter((effect) => effect.type === "invocation");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      callee: "toView",
+      summary: summaryIdentifier(toView as BehavioralSummary),
+    });
+  });
+
   it("leaves a gap where a method on an injected interface has nothing wiring it up", async () => {
     const project = createTestProject();
     project.createSourceFile(
@@ -1963,9 +2021,18 @@ describe("createTypeScriptAdapter: reachable closure", () => {
       (summary) => summary.identity.name === "listForPublication",
     );
     expect(service).toBeDefined();
-    expect(
-      (service?.transitions ?? []).flatMap((transition) => transition.effects),
-    ).toEqual([]);
+    // The call is recorded, since it happens, and it reaches no
+    // summary, since nothing here says which class the field was
+    // given.
+    const effects = (service?.transitions ?? []).flatMap(
+      (transition) => transition.effects,
+    );
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toMatchObject({
+      type: "invocation",
+      callee: "this.dao.getEditions",
+    });
+    expect((effects[0] as { summary?: string }).summary).toBeUndefined();
 
     const unfollowed = (service?.gaps ?? []).filter(
       (gap) => gap.type === "unfollowedCall",
