@@ -441,6 +441,17 @@ export const GraphqlMetadataSchema = z.object({
    */
   unresolvedFragments: z.array(z.string()).optional(),
   /**
+   * Whether the project's client constructions install a fragment
+   * registry, the one runtime mechanism that can supply a definition
+   * for a spread the shipped document lacks. "absent" means every
+   * construction was read and none installs one, so a dangling spread
+   * throws when the query runs. "configured" means at least one does.
+   * "unknown" means a construction could not be read, or none was
+   * found. Written only beside `unresolvedFragments`, the gap it
+   * settles.
+   */
+  fragmentRegistry: z.enum(["configured", "absent", "unknown"]).optional(),
+  /**
    * Set when a consumer's document reference was recognized (an
    * imported `TypedDocumentNode`, say) but its body couldn't be read
    * statically. The boundary is still recorded; this says what

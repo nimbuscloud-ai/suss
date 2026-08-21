@@ -42,6 +42,7 @@
   "Subscription": "GraphQL spec: operation root type",
   "query": "GraphQL spec: operation type",
   "JSON": "JavaScript built-in namespace object",
+  "cache": "suss: the adapter's on-disk cache directory name; client packs declare their library's cache option under the same spelling",
   "brackets": "suss: filename dynamic-segment style",
   "handler": "suss: code-unit kind",
   "resolver": "suss: code-unit kind",

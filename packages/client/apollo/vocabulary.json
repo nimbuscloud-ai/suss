@@ -14,5 +14,8 @@
   "subscription": "@apollo/client: document key on the subscribe options",
   "uri": "@apollo/client: the endpoint option on ApolloClient and its HTTP links",
   "HttpLink": "@apollo/client: the HTTP transport link class, constructed with a uri",
-  "createHttpLink": "@apollo/client: factory form of HttpLink, same options"
+  "createHttpLink": "@apollo/client: factory form of HttpLink, same options",
+  "cache": "@apollo/client: the normalized-cache option on ApolloClient",
+  "InMemoryCache": "@apollo/client: the normalized cache constructor",
+  "fragments": "@apollo/client: the InMemoryCache option that installs a fragment registry"
 }

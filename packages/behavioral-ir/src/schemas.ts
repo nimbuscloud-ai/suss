@@ -82,6 +82,8 @@ export const FindingKindSchema = z.enum([
   "contractOperationUnimplemented",
   /** A REST consumer calls a method and path no provider exposes. */
   "restMethodOnUnknownPath",
+  /** The shipped document spreads a fragment nothing defines, so the query throws when it runs. */
+  "graphqlUnknownFragment",
   /** The provider requires authentication the consumer's call lacks. */
   "authPolicyMismatch",
   /** No declared scenario exercises a branch a component takes on a prop. */

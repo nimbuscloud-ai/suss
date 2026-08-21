@@ -27,6 +27,14 @@ const clientPack: PatternPack = {
       importModule: "@apollo/client",
       importName: "ApolloClient",
       uriProperty: "uri",
+      fragmentRegistry: {
+        cacheProperty: "cache",
+        cacheConstructor: {
+          importModule: "@apollo/client",
+          importName: "InMemoryCache",
+        },
+        registryProperty: "fragments",
+      },
     },
     {
       importModule: "@apollo/client",
@@ -65,6 +73,18 @@ function operationSummary(): BehavioralSummary {
     confidence: { source: "inferred_static", level: "high" },
     metadata: { graphql: { document: "query GetPet { pet { id } }" } },
   };
+}
+
+/** An operation whose shipped document spreads a fragment nothing defines. */
+function danglingSpreadSummary(): BehavioralSummary {
+  const summary = operationSummary();
+  summary.metadata = {
+    graphql: {
+      document: "query GetPet { pet { ...PetFields } }",
+      unresolvedFragments: ["PetFields"],
+    },
+  };
+  return summary;
 }
 
 describe("collectGraphqlClientRefs", () => {
@@ -288,6 +308,151 @@ describe("stampGraphqlClientRefs", () => {
     );
     expect(readGraphqlMetadata(adminOp)?.client?.workspace).toBe("nextgen");
     expect(readGraphqlMetadata(memberOp)?.client?.workspace).toBe("rails-app");
+  });
+
+  it("stamps fragmentRegistry absent when every construction reads registry-free", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient, InMemoryCache } from "@apollo/client";
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache: new InMemoryCache({ typePolicies: {} }),
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("absent");
+  });
+
+  it("reads a cache bound to a local and passed as shorthand", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient, InMemoryCache } from "@apollo/client";
+      const cache = new InMemoryCache();
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache,
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("absent");
+  });
+
+  it("stamps fragmentRegistry configured when the cache installs one", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient, InMemoryCache } from "@apollo/client";
+      import { createFragmentRegistry } from "@apollo/client/cache";
+      import { gql } from "@apollo/client";
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache: new InMemoryCache({
+          fragments: createFragmentRegistry(gql\`fragment Invoice on Invoice { id }\`),
+        }),
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("configured");
+  });
+
+  it("stamps fragmentRegistry unknown when no construction is in the read set", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/page.ts",
+      "export const nothing = 1;",
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("unknown");
+  });
+
+  it("stamps fragmentRegistry unknown when a helper builds the cache", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      import { buildCache } from "./cache-factory";
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache: buildCache(),
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("unknown");
+  });
+
+  it("stamps fragmentRegistry unknown when the cache options contain a spread", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient, InMemoryCache } from "@apollo/client";
+      import { baseOptions } from "./cache-options";
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache: new InMemoryCache({ ...baseOptions }),
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("unknown");
+  });
+
+  it("lets one configured construction outweigh registry-free ones", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient, InMemoryCache } from "@apollo/client";
+      import { createFragmentRegistry } from "@apollo/client/cache";
+      import { gql } from "@apollo/client";
+      export const plain = new ApolloClient({
+        uri: "https://one.example.com",
+        cache: new InMemoryCache(),
+      });
+      export const registered = new ApolloClient({
+        uri: "https://two.example.com",
+        cache: new InMemoryCache({
+          fragments: createFragmentRegistry(gql\`fragment F on T { id }\`),
+        }),
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("configured");
+  });
+
+  it("leaves fragmentRegistry off an operation with no dangling spread", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient, InMemoryCache } from "@apollo/client";
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache: new InMemoryCache(),
+      });
+    `,
+    );
+    const summary = operationSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBeUndefined();
   });
 
   it("leaves summaries alone when two clients exist", () => {

@@ -157,6 +157,17 @@ export function apolloClientPack(
         importModule: "@apollo/client",
         importName: "ApolloClient",
         uriProperty: "uri",
+        // `createFragmentRegistry` hands the registry to the cache's
+        // `fragments` option; a document can then spread a fragment it
+        // does not define and the client fills it in at run time.
+        fragmentRegistry: {
+          cacheProperty: "cache",
+          cacheConstructor: {
+            importModule: "@apollo/client",
+            importName: "InMemoryCache",
+          },
+          registryProperty: "fragments",
+        },
       },
       {
         importModule: "@apollo/client",

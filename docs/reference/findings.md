@@ -326,6 +326,37 @@ A contract source (an OpenAPI document, a CFN template) declares an operation an
 
 ---
 
+## GraphQL findings
+
+Most GraphQL failure modes surface through the generic kinds (`boundaryFieldUnknown` with a `graphql-resolver` boundary, `ambiguousProvider` across two services). This kind is specific to how GraphQL clients ship documents.
+
+### `graphqlUnknownFragment` *(shipped)*
+
+**Severity:** error • **Emitted by:** `pairGraphqlOperations`
+
+This operation ships a document spreading a fragment with no definition, and no fragment registry is configured, so the query throws `Unknown fragment` when it runs.
+
+```
+[ERROR] graphqlUnknownFragment
+  GraphQL operation "<anon>.CheckOrderInvoicesStatus" ships a document
+  spreading "...Invoice" with no definition, and no fragment registry is
+  configured, so the query throws `Unknown fragment: Invoice` when it runs.
+  consumer: src/containers/BackgroundTasks/BackgroundTasksProvider.tsx::<anon>.CheckOrderInvoicesStatus
+  boundary: apollo-client (http)
+```
+
+Three readings line up before it fires:
+
+- The document that reaches the call site is the one with the dangling spread. A codegen-composed version that defines the fragment never fires it, because the finding attaches to the document that is used.
+- Every client construction in the project was read and none installs a fragment registry (`createFragmentRegistry` on the cache's `fragments` option), the one runtime mechanism that could supply the definition. A client the pack cannot see the construction of counts as unknown, and unknown means the info-level `lowConfidence` finding instead, never this one.
+- The spread has no definition anywhere in the shipped document.
+
+**Legitimate when:** the call site never runs (dead code behind a disabled flag). Suppress with `.sussignore`, or delete the code.
+
+**Bug when:** the import points at the raw source document instead of the codegen output, which is the shape that produced the kind. Import the composed document, or register the fragment on the cache.
+
+---
+
 ## React / Storybook findings
 
 ### `scenarioCoverageGap` *(shipped)*

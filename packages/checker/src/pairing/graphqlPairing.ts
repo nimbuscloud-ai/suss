@@ -94,10 +94,16 @@ export function pairGraphqlOperations(
     if (doc === null) {
       continue;
     }
-    const unresolvedFragments =
-      readGraphqlMetadata(operation)?.unresolvedFragments ?? [];
+    const meta = readGraphqlMetadata(operation);
+    const unresolvedFragments = meta?.unresolvedFragments ?? [];
     if (unresolvedFragments.length > 0) {
-      findings.push(unresolvedFragmentsFinding(operation, unresolvedFragments));
+      findings.push(
+        danglingSpreadFinding(
+          operation,
+          unresolvedFragments,
+          meta?.fragmentRegistry,
+        ),
+      );
     }
     pairOneOperation(operation, doc, resolverIndex, schemas, pairs, findings);
   }
@@ -648,6 +654,59 @@ function ambiguousProviderFinding(
     },
     description: `GraphQL operation "${operation.identity.name}" selects "${doc.rootTypeName}.${fieldName}", which ${resolvers.length} resolvers implement across ${workspaces.length} services (${named.join(", ")}). The pairing key has no endpoint identity, so this operation pairs with all of them and some of those pairs are wrong.`,
     severity: "warning",
+  };
+}
+
+/**
+ * Which finding a dangling spread gets depends on the fragment
+ * registry, the one runtime mechanism that can still supply the
+ * definition. When the adapter read every client construction and none
+ * installs a registry ("absent"), the document that reaches the call
+ * site throws `Unknown fragment` the moment the query runs, and that
+ * outcome is the error finding. Any other value keeps the info
+ * finding: "configured" means the registry can fill the spread in,
+ * and "unknown" (or no value, on an older artifact) means a client
+ * construction could not be read, so the throw cannot be claimed.
+ */
+function danglingSpreadFinding(
+  operation: BehavioralSummary,
+  fragmentNames: string[],
+  registry: "configured" | "absent" | "unknown" | undefined,
+): Finding {
+  if (registry === "absent") {
+    return unknownFragmentFinding(operation, fragmentNames);
+  }
+  return unresolvedFragmentsFinding(operation, fragmentNames);
+}
+
+/**
+ * The error form: the shipped document is the one with the spread and
+ * nothing at run time supplies the definition, so the operation fails
+ * whenever it runs. The description quotes the message Apollo throws.
+ */
+function unknownFragmentFinding(
+  operation: BehavioralSummary,
+  fragmentNames: string[],
+): Finding {
+  const binding = operation.identity.boundaryBinding;
+  if (binding === null) {
+    throw new Error("expected graphql-operation boundary binding");
+  }
+  const spreads = fragmentNames.map((name) => `"...${name}"`).join(", ");
+  const thrown = fragmentNames[0] as string;
+  return {
+    kind: "graphqlUnknownFragment",
+    boundary: binding,
+    provider: {
+      summary: `${fragmentNames.join(", ")} (undefined fragments)`,
+      location: operation.location,
+    },
+    consumer: {
+      summary: summaryRef(operation),
+      location: operation.location,
+    },
+    description: `GraphQL operation "${operation.identity.name}" ships a document spreading ${spreads} with no definition, and no fragment registry is configured, so the query throws \`Unknown fragment: ${thrown}\` when it runs.`,
+    severity: "error",
   };
 }
 
