@@ -22,6 +22,11 @@ import {
 } from "./profile.js";
 import { tupleKey } from "./tupleKey.js";
 
+export {
+  type ConfidenceLevel,
+  confidence,
+  confidenceWith,
+} from "./confidence.js";
 export { deriveOnDemand, type OnDemandRules } from "./onDemand.js";
 export {
   type EvaluationProfile,
