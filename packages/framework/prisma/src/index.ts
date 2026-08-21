@@ -31,9 +31,15 @@
 //           less writes (rare; createMany with a dynamic body).
 //   selector: keys of `where` (when present).
 //
+// A relation asked for beside the record is a read of another model,
+// and the call says which relation without ever saying which model. So
+// each one comes back as a second effect carrying `relationPath`, the
+// relation fields it was written under, and the checker resolves that
+// path against the model's contract to find the table it belongs to.
+// A write does this too: a `create` with an `include` hands the
+// relation back the way a query does.
+//
 // Out of scope for v0:
-//   - Nested select walking (a User select that includes Order should
-//     emit a second effect for Order; deferred to keep the MVP focused).
 //   - findUniqueOrThrow and findFirstOrThrow, which would be easy to add.
 
 import {
@@ -163,17 +169,19 @@ function recognizePrismaCall(
   const optionsArg = readObjectArg(argsShape[0]);
   const fields = extractFields(optionsArg, kind);
   const selector = extractSelector(optionsArg);
+  const binding = storageBinding({
+    recognition: "@suss/framework-prisma",
+    storageSystem,
+    scope,
+    container: tableName,
+  });
+  const callee = callNode.getExpression().getText();
 
   return [
     {
       type: "interaction",
-      binding: storageBinding({
-        recognition: "@suss/framework-prisma",
-        storageSystem,
-        scope,
-        container: tableName,
-      }),
-      callee: callNode.getExpression().getText(),
+      binding,
+      callee,
       interaction: {
         class: "storage-access",
         kind,
@@ -182,7 +190,88 @@ function recognizePrismaCall(
         operation: method,
       },
     },
+    ...nestedReads(optionsArg).map(
+      (nested): Effect => ({
+        type: "interaction",
+        binding,
+        callee,
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: nested.fields,
+          relationPath: nested.relationPath,
+          operation: method,
+        },
+      }),
+    ),
   ];
+}
+
+/** Fields a query asks for through a relation, and the relation. */
+interface NestedRead {
+  relationPath: string[];
+  fields: string[];
+}
+
+/**
+ * Every relation a query asks for alongside the record itself, at any
+ * depth. The pack can see the relation and never the model behind it,
+ * so each read travels with the path it was written under and the
+ * checker resolves that path on the model's contract.
+ */
+function nestedReads(optionsArg: ObjectArg | null): NestedRead[] {
+  if (optionsArg === null) {
+    return [];
+  }
+  const found: NestedRead[] = [];
+  collectRelations(optionsArg, [], found);
+  return found;
+}
+
+/**
+ * `include` takes relations and nothing else, so every key under it is
+ * one. `select` takes columns as `true` and relations as an object, so
+ * only the objects are relations.
+ */
+function collectRelations(
+  shape: ObjectArg,
+  path: string[],
+  found: NestedRead[],
+): void {
+  const select = readObjectArg(shape.fields.select);
+  if (select !== null) {
+    for (const [name, value] of Object.entries(select.fields)) {
+      const nested = readObjectArg(value);
+      if (nested === null) {
+        continue;
+      }
+      recordRelation(name, nested, path, found);
+    }
+  }
+  const include = readObjectArg(shape.fields.include);
+  if (include === null) {
+    return;
+  }
+  for (const [name, value] of Object.entries(include.fields)) {
+    const nested = readObjectArg(value);
+    if (nested === null) {
+      // `include: { comments: true }` hands back whole records.
+      found.push({ relationPath: [...path, name], fields: ["*"] });
+      continue;
+    }
+    recordRelation(name, nested, path, found);
+  }
+}
+
+function recordRelation(
+  name: string,
+  nested: ObjectArg,
+  path: string[],
+  found: NestedRead[],
+): void {
+  const relationPath = [...path, name];
+  found.push({ relationPath, fields: extractFields(nested, "read") });
+  collectRelations(nested, relationPath, found);
 }
 
 /**
