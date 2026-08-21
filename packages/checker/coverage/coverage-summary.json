@@ -1,22 +1,22 @@
 {
   "total": {
     "lines": {
-      "total": 2741,
-      "covered": 2552,
+      "total": 2742,
+      "covered": 2553,
       "skipped": 0,
       "pct": 93.1
     },
     "statements": {
-      "total": 2804,
-      "covered": 2614,
+      "total": 2805,
+      "covered": 2615,
       "skipped": 0,
       "pct": 93.22
     },
     "functions": {
-      "total": 547,
-      "covered": 513,
+      "total": 548,
+      "covered": 514,
       "skipped": 0,
-      "pct": 93.78
+      "pct": 93.79
     },
     "branches": {
       "total": 1848,
@@ -1021,22 +1021,22 @@
   },
   "src/storage/storagePairing.ts": {
     "lines": {
-      "total": 173,
-      "covered": 164,
+      "total": 174,
+      "covered": 165,
       "skipped": 0,
-      "pct": 94.79
+      "pct": 94.82
     },
     "functions": {
-      "total": 36,
-      "covered": 31,
+      "total": 37,
+      "covered": 32,
       "skipped": 0,
-      "pct": 86.11
+      "pct": 86.48
     },
     "statements": {
-      "total": 178,
-      "covered": 169,
+      "total": 179,
+      "covered": 170,
       "skipped": 0,
-      "pct": 94.94
+      "pct": 94.97
     },
     "branches": {
       "total": 104,
