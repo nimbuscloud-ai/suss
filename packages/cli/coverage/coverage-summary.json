@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3560,
-      "covered": 3276,
+      "total": 3586,
+      "covered": 3301,
       "skipped": 0,
-      "pct": 92.02
+      "pct": 92.05
     },
     "statements": {
-      "total": 3657,
-      "covered": 3368,
+      "total": 3684,
+      "covered": 3394,
       "skipped": 0,
-      "pct": 92.09
+      "pct": 92.12
     },
     "functions": {
-      "total": 760,
-      "covered": 707,
+      "total": 765,
+      "covered": 712,
       "skipped": 0,
-      "pct": 93.02
+      "pct": 93.07
     },
     "branches": {
-      "total": 2436,
-      "covered": 1966,
+      "total": 2452,
+      "covered": 1982,
       "skipped": 0,
-      "pct": 80.7
+      "pct": 80.83
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/ask.ts": {
     "lines": {
-      "total": 123,
-      "covered": 119,
+      "total": 149,
+      "covered": 143,
       "skipped": 0,
-      "pct": 96.74
+      "pct": 95.97
     },
     "functions": {
-      "total": 46,
-      "covered": 43,
+      "total": 51,
+      "covered": 48,
       "skipped": 0,
-      "pct": 93.47
+      "pct": 94.11
     },
     "statements": {
-      "total": 129,
-      "covered": 125,
+      "total": 156,
+      "covered": 150,
       "skipped": 0,
-      "pct": 96.89
+      "pct": 96.15
     },
     "branches": {
-      "total": 113,
-      "covered": 98,
+      "total": 127,
+      "covered": 111,
       "skipped": 0,
-      "pct": 86.72
+      "pct": 87.4
     }
   },
   "src/askCalls.ts": {
@@ -164,9 +164,9 @@
   "src/askWhy.ts": {
     "lines": {
       "total": 130,
-      "covered": 113,
+      "covered": 114,
       "skipped": 0,
-      "pct": 86.92
+      "pct": 87.69
     },
     "functions": {
       "total": 30,
@@ -176,15 +176,15 @@
     },
     "statements": {
       "total": 132,
-      "covered": 115,
+      "covered": 116,
       "skipped": 0,
-      "pct": 87.12
+      "pct": 87.87
     },
     "branches": {
       "total": 77,
-      "covered": 52,
+      "covered": 53,
       "skipped": 0,
-      "pct": 67.53
+      "pct": 68.83
     }
   },
   "src/boundaryReach.ts": {
@@ -753,10 +753,10 @@
       "pct": 97.24
     },
     "branches": {
-      "total": 64,
-      "covered": 56,
+      "total": 66,
+      "covered": 58,
       "skipped": 0,
-      "pct": 87.5
+      "pct": 87.87
     }
   },
   "src/updateNotice.ts": {
