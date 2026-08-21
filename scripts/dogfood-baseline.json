@@ -3,9 +3,9 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 520,
-    "internal": 2046,
-    "consumers": 943,
-    "pairs": 936,
+    "internal": 2057,
+    "consumers": 952,
+    "pairs": 945,
     "unfollowedCalls": 231,
     "findingErrors": 0
   },
@@ -27,8 +27,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 41,
-      "internal": 688,
-      "consumers": 66,
+      "internal": 698,
+      "consumers": 74,
       "unfollowedCalls": 67
     },
     "packages/behavioral-ir": {
@@ -41,8 +41,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 38,
-      "internal": 206,
-      "consumers": 128,
+      "internal": 207,
+      "consumers": 129,
       "unfollowedCalls": 21
     },
     "packages/checker-intent": {
