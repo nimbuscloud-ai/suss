@@ -157,6 +157,13 @@ export function relationsOf(interaction: Interaction): Relation[] {
   return handler(interaction);
 }
 
+function goesThroughRelation(interaction: Interaction): boolean {
+  return (
+    interaction.class === "storage-access" &&
+    interaction.relationPath !== undefined
+  );
+}
+
 /** What a unit does at the boundary its own identity is bound to. */
 const OWN_BINDING: Record<BoundaryRole, Relation[]> = {
   provider: ["provides"],
@@ -197,6 +204,11 @@ export function boundariesTouchedBy(
     }
     for (const effect of transition.effects) {
       if (effect.type !== "interaction") {
+        continue;
+      }
+      // Which container a read written under a relation touches comes
+      // from the provider's contract, and this walk has one summary.
+      if (goesThroughRelation(effect.interaction)) {
         continue;
       }
       for (const relation of relationsOf(effect.interaction)) {
