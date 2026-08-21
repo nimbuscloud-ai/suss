@@ -43,6 +43,13 @@ describe("parseQuestion", () => {
     });
   });
 
+  it("reads the calls shape", () => {
+    expect(parseQuestion("what calls src/orderStore.ts")).toEqual({
+      shape: "calls",
+      subject: "src/orderStore.ts",
+    });
+  });
+
   it("reads the two why shapes", () => {
     expect(
       parseQuestion("why does getOrder reach aws.dynamodb:orders"),
@@ -181,11 +188,11 @@ describe("suss ask", () => {
     expect(output).toContain("then ask again");
   });
 
-  it("prints the six shapes back when the question is not one of them", () => {
+  it("prints the seven shapes back when the question is not one of them", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of six questions");
+    expect(output).toContain("suss ask takes one of seven questions");
   });
 
   it("writes JSON an agent can read", () => {
@@ -472,5 +479,182 @@ describe("suss ask why", () => {
     expect(code).toBe(0);
     expect(output).toContain("getOrder -> readRow -> client.send");
     expect(output).toContain("without their resolution steps");
+  });
+});
+
+describe("suss ask what calls", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  /** The storage layer somebody asks about the callers of. */
+  const wrapper: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/orderStore.ts",
+      range: { start: 14, end: 25 },
+      exportName: "readRow",
+    },
+    identity: {
+      name: "readRow",
+      exportPath: ["readRow"],
+      boundaryBinding: null,
+      id: "repo::src/orderStore.ts::readRow",
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** The one unit whose call the run resolved to the wrapper. */
+  const handler: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/orders.ts",
+      range: { start: 6, end: 17 },
+      exportName: "getOrder",
+    },
+    identity: {
+      name: "getOrder",
+      exportPath: ["getOrder"],
+      boundaryBinding: null,
+      id: "repo::src/orders.ts::getOrder",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "getOrder:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "readRow",
+            summary: "repo::src/orderStore.ts::readRow",
+            args: [],
+            async: true,
+          },
+        ],
+        location: { start: 8, end: 16 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** A unit whose walk stopped at a call it could not resolve. */
+  const stopped: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/report.ts",
+      range: { start: 1, end: 10 },
+      exportName: "buildReport",
+    },
+    identity: {
+      name: "buildReport",
+      exportPath: ["buildReport"],
+      boundaryBinding: null,
+      id: "repo::src/report.ts::buildReport",
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [
+      {
+        type: "unfollowedCall",
+        conditions: [],
+        consequence: "unknown",
+        description: "suss could not settle which function load is.",
+      },
+    ],
+    confidence: CONFIDENT,
+  };
+
+  function askCalls(
+    question: string,
+    summaries: BehavioralSummary[],
+    options: { json?: boolean } = {},
+  ): { output: string; code: number } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-calls-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir, ...options });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("lists the callers with the file, the line, and the call", () => {
+    const { output, code } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      handler,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain("1 unit calls repo::src/orderStore.ts::readRow:");
+    expect(output).toContain(
+      "repo::src/orders.ts::getOrder (src/orders.ts:6) calls readRow",
+    );
+  });
+
+  it("writes the callers as JSON", () => {
+    const { output } = askCalls(
+      "what calls src/orderStore.ts",
+      [wrapper, handler],
+      { json: true },
+    );
+    const parsed = JSON.parse(output) as {
+      found: boolean;
+      items: Array<{ unit: string; file: string; line: number; call: string }>;
+    };
+
+    expect(parsed.found).toBe(true);
+    expect(parsed.items).toEqual([
+      {
+        unit: "repo::src/orders.ts::getOrder",
+        file: "src/orders.ts",
+        line: 6,
+        call: "readRow",
+      },
+    ]);
+  });
+
+  it("says nothing calls a unit, plainly, when every call was followed", () => {
+    const { output, code } = askCalls("what calls src/orders.ts", [
+      wrapper,
+      handler,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain(
+      "Nothing in these summaries calls repo::src/orders.ts::getOrder.",
+    );
+    expect(output).not.toContain("could be hiding");
+  });
+
+  it("says a caller could be hiding behind an unfollowed call", () => {
+    const { output, code } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      stopped,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain("Nothing in these summaries calls");
+    expect(output).toContain("suss met a call it could not follow in one unit");
+    expect(output).toContain("could be hiding there");
+  });
+
+  it("exits 1 for a unit no summary spells", () => {
+    const { output, code } = askCalls("what calls src/nowhere.ts", [wrapper]);
+
+    expect(code).toBe(1);
+    expect(output).toContain("No summary here is src/nowhere.ts");
   });
 });

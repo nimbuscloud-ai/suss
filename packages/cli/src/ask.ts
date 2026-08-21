@@ -2,10 +2,9 @@
  * `suss ask`: one question, answered from the summaries already on
  * disk, and for a why question from the source as well.
  *
- * Six shapes, and no parser behind them. A question that is not one of
- * the six gets the six printed back rather than a guess at what it
- * meant, because a wrong answer to a question about a store is worse
- * than no answer.
+ * Seven shapes, and no parser behind them. A question that is not one
+ * of the seven gets the seven printed back rather than a guess at what
+ * it meant: a wrong answer about a store is worse than no answer.
  *
  * An answer says what it is missing. Nothing on disk declares what most
  * stores serve until somebody reads the deploy template in, and a list
@@ -22,6 +21,7 @@ import {
   summaryIdentifier,
 } from "@suss/behavioral-ir";
 
+import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { askWhy, WHY_SHAPES } from "./askWhy.js";
 import { boundariesTouchedBy, namesBoundary } from "./boundaryReach.js";
@@ -37,6 +37,7 @@ export type QuestionShape =
   | "declares"
   | "reads"
   | "writes"
+  | "calls"
   | "reaches"
   | WhyShape;
 
@@ -87,13 +88,15 @@ const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "declares", pattern: /^what does\s+(.+?)\s+declare$/i },
   { shape: "reads", pattern: /^what reads\s+(.+)$/i },
   { shape: "writes", pattern: /^what writes\s+(.+)$/i },
+  { shape: "calls", pattern: /^what calls\s+(.+)$/i },
   { shape: "reaches", pattern: /^what does\s+(.+?)\s+reach$/i },
 ];
 
-const HOW_TO_ASK = `suss ask takes one of six questions:
+const HOW_TO_ASK = `suss ask takes one of seven questions:
   suss ask 'what can I project from aws.dynamodb:editions#by-publication'
   suss ask 'what reads aws.dynamodb:editions'
   suss ask 'what writes aws.dynamodb:editions'
+  suss ask 'what calls src/editions/dao.ts'
   suss ask 'what does src/editions/dao.ts reach'
   suss ask 'why does src/editions/dao.ts reach aws.dynamodb:editions'
   suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
@@ -152,7 +155,7 @@ function loadSummaries(options: AskOptions): BehavioralSummary[] {
 }
 
 // ---------------------------------------------------------------------------
-// The four answers
+// The five summary answers
 // ---------------------------------------------------------------------------
 
 const ANSWERS: Record<
@@ -162,6 +165,7 @@ const ANSWERS: Record<
   declares: answerDeclares,
   reads: (subject, summaries) => answerDirection("reads", subject, summaries),
   writes: (subject, summaries) => answerDirection("writes", subject, summaries),
+  calls: answerCalls,
   reaches: answerReaches,
 };
 

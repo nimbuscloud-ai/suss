@@ -511,13 +511,14 @@ there is nowhere to put it, so the next best thing is being able to ask.
 suss ask "QUESTION" [--dir DIR | SUMMARIES.json] [--project DIR] [--json] [-o OUTPUT]
 ```
 
-Six questions, in these words:
+Seven questions, in these words:
 
 | Question | What comes back |
 |---|---|
 | `what can I project from <boundary>` | What the boundary declares: the fields a store serves, the statuses a contract declares, the env vars a runtime takes. Also written `what does <boundary> declare`. |
 | `what reads <boundary>` | Every unit that reads it, with the file, the line, and the call. |
 | `what writes <boundary>` | The same, for writes. |
+| `what calls <unit>` | Every unit whose calls the run resolved to it, with the file, the line, and the call. The unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. |
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads or writes each. |
 | `why does <unit> reach <boundary>` | The call chain from the unit to the boundary, with each hop's resolution proved from source. |
 | `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
@@ -526,6 +527,17 @@ The boundary is spelled the way reports spell it, and a shorter spelling
 covers more, exactly as under [`--at`](#reporting-on-one-thing). A
 service call counts as both a read and a write, since a request sends a
 body out and gets a response back.
+
+A calls question takes the reverse direction of `reach`: which units'
+calls arrive at this one. An empty answer distinguishes "nothing calls
+this" from "a call suss could not follow could reach it", from the
+unfollowed-call gaps the summaries record:
+
+```
+$ suss ask 'what calls src/orderStore.ts' --dir .suss
+1 unit calls storage-wrapper::src/orderStore.ts::readRow:
+  storage-wrapper::src/orders.ts::GetOrderFunction.getOrder (src/orders.ts:6) calls readRow
+```
 
 ```
 $ suss ask 'what can I project from dynamodb:editions#by-publication' --dir .suss
@@ -585,9 +597,9 @@ re-evaluation cost.
 
 ### Exit codes
 
-- `0`: the question was one of the six and its subject is in these
+- `0`: the question was one of the seven and its subject is in these
   summaries, including when the answer is empty.
-- `1`: the question was not one of the six, nothing here is at the
+- `1`: the question was not one of the seven, nothing here is at the
   boundary it asked about, or a why question's chain is not one the
   run contains.
 
