@@ -1862,6 +1862,60 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     });
   });
 
+  it("follows a default-imported project function the way it follows a named one", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "mapper.ts",
+      `
+      declare const audit: { log: (m: string) => void };
+      const toView = (id: string) => {
+        audit.log(id);
+        return { id };
+      };
+      export default toView;
+    `,
+    );
+    project.createSourceFile(
+      "service.ts",
+      `
+      import toView from "./mapper";
+      export function present(id: string) {
+        return toView(id);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { present } from "./service";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        show: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: present(params.id) };
+        },
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const present = summaries.find(
+      (summary) => summary.identity.name === "present",
+    );
+    expect(present).toBeDefined();
+    expect(
+      (present?.gaps ?? []).filter((gap) => gap.type === "unfollowedCall"),
+    ).toEqual([]);
+    expect(
+      summaries.some((summary) => summary.identity.name === "toView"),
+    ).toBe(true);
+  });
+
   it("leaves a gap where a method on an injected interface has nothing wiring it up", async () => {
     const project = createTestProject();
     project.createSourceFile(
