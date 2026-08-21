@@ -36,6 +36,21 @@ const VERSION = JSON.parse(
   fs.readFileSync(path.join(ROOT, "package.json"), "utf8"),
 ).version;
 
+/**
+ * The packages that install ts-morph rather than asking for one. The
+ * adapter parses, and the CLI builds the project it parses from, so
+ * both need a copy in hand; everything else works on nodes they made.
+ */
+const OWNS_TS_MORPH = ["@suss/adapter-typescript", "@suss/cli"];
+
+/** The one ts-morph every pack has to agree with: the adapter's. */
+const TS_MORPH_RANGE = JSON.parse(
+  fs.readFileSync(
+    path.join(PACKAGES_DIR, "adapter", "typescript", "package.json"),
+    "utf8",
+  ),
+).dependencies["ts-morph"];
+
 /** Rewrite one manifest. Returns the list of what it changed. */
 function prepare(manifest, { write }) {
   const raw = fs.readFileSync(manifest, "utf8");
@@ -88,6 +103,30 @@ function prepare(manifest, { write }) {
         deps[name] = want;
       }
     }
+  }
+
+  // A pack calls ts-morph's type guards on nodes the adapter's parser
+  // made. Those guards compare a kind number against the SyntaxKind of
+  // whichever copy the pack imported, and the numbers move between
+  // TypeScript versions, so a second copy says no to every question and
+  // every recognizer quietly matches nothing. One copy is the only
+  // arrangement that works, and a peer range equal to the adapter's is
+  // how npm is told to install one.
+  const tsMorph = pkg.peerDependencies?.["ts-morph"];
+  if (tsMorph !== undefined && tsMorph !== TS_MORPH_RANGE) {
+    changes.push(`peerDependencies.ts-morph ${tsMorph} -> ${TS_MORPH_RANGE}`);
+    if (write) {
+      pkg.peerDependencies["ts-morph"] = TS_MORPH_RANGE;
+    }
+  }
+
+  if (
+    pkg.dependencies?.["ts-morph"] !== undefined &&
+    !OWNS_TS_MORPH.includes(pkg.name)
+  ) {
+    changes.push(
+      `dependencies.ts-morph installs a second copy; declare it as a peer at ${TS_MORPH_RANGE}`,
+    );
   }
 
   if (write && changes.length > 0) {

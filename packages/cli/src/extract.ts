@@ -25,6 +25,7 @@ import {
 } from "./gitSubmodules.js";
 import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
+import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
 import { UsageError } from "./usageError.js";
 
 import type { PythonPack } from "@suss/adapter-python";
@@ -253,6 +254,21 @@ interface LoadedFactory {
   specifier: string;
 }
 
+/**
+ * What each pack this process loaded was imported from. The ts-morph
+ * check reads it to ask what each pack resolves, which is a fact about
+ * this run rather than about any pack, so it is recorded where the
+ * imports happen.
+ */
+const loadedFrom = new Map<string, string>();
+
+export function packsLoadedSoFar(): Array<{
+  name: string;
+  specifier: string;
+}> {
+  return [...loadedFrom].map(([name, specifier]) => ({ name, specifier }));
+}
+
 async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   const { name, options, configFile } = parseFrameworkSpec(spec);
   const handedOver = optionsForFactory(options, configFile);
@@ -260,6 +276,7 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   const builtin = BUILTIN_FRAMEWORKS[name];
   if (builtin !== undefined) {
     const mod = (await import(builtin)) as { default: PackFactory };
+    loadedFrom.set(name, builtin);
     return {
       name,
       options,
@@ -275,6 +292,7 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   for (const specifier of candidates) {
     const mod = await importPack(specifier);
     if (mod !== null) {
+      loadedFrom.set(name, specifier);
       return { name, options, handedOver, factory: mod.default, specifier };
     }
   }
@@ -456,6 +474,7 @@ async function runTypeScript(
   // root, so a reader can rebuild an id from a summary's own fields.
   const runRoot = workspaceRootFor(source.root);
   const packs = await Promise.all(options.frameworks.map(resolveFramework));
+  process.stderr.write(formatSecondCopies(checkOneTsMorph(packsLoadedSoFar())));
 
   const extractorOptions =
     options.gaps !== undefined ? { gapHandling: options.gaps } : undefined;

@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "ts-morph": ">=20"
+    "ts-morph": "^23.0.0"
   },
   "dependencies": {
     "@suss/adapter-typescript": "0.11.0",
