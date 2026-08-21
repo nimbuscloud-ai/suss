@@ -25,7 +25,7 @@ import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
-import { askWhy, WHY_SHAPES } from "./askWhy.js";
+import { askWhy, invocationEdges, WHY_SHAPES } from "./askWhy.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import {
@@ -375,12 +375,71 @@ function answerDirection(
  * question is about the units serving it, so what they touch has to be
  * gathered from them rather than from what the spelling picked out.
  */
-function reachedFrom(target: ResolvedTarget): TargetTouch[] {
-  const touches =
-    target.kind === "boundary"
-      ? touchesOfUnits(unitsServing(target))
-      : target.touches;
-  return touches.filter((touch) => !servesItself(touch));
+function reachedFrom(
+  target: ResolvedTarget,
+  summaries: BehavioralSummary[],
+): ReachedTouch[] {
+  const start =
+    target.kind === "boundary" ? unitsServing(target) : target.summaries;
+  const direct = (
+    target.kind === "boundary" ? touchesOfUnits(start) : target.touches
+  ).filter((touch) => !servesItself(touch));
+  return [...direct, ...throughCalls(start, direct, summaries)];
+}
+
+/** A touch, and the calls between it and the unit somebody asked about. */
+interface ReachedTouch extends TargetTouch {
+  through?: string[];
+}
+
+/**
+ * What the units a target picked out reach through the calls they
+ * make. A route handler calling a service that reads a table does
+ * reach that table, and an answer built from the handler's own body
+ * says it reaches nothing while a why question proves it does.
+ */
+function throughCalls(
+  start: readonly BehavioralSummary[],
+  direct: readonly TargetTouch[],
+  summaries: BehavioralSummary[],
+): ReachedTouch[] {
+  const byId = new Map(
+    summaries.map((summary) => [summaryIdentifier(summary), summary]),
+  );
+  const seen = new Set<BehavioralSummary>(start);
+  const already = new Set(direct.map((touch) => touchKey(touch)));
+  const found: ReachedTouch[] = [];
+  let frontier = start.map((summary) => ({
+    at: summary,
+    through: [] as string[],
+  }));
+
+  while (frontier.length > 0) {
+    const next: Array<{ at: BehavioralSummary; through: string[] }> = [];
+    for (const { at, through } of frontier) {
+      for (const edge of invocationEdges(at, byId)) {
+        if (seen.has(edge.to)) {
+          continue;
+        }
+        seen.add(edge.to);
+        const path = [...through, edge.callee];
+        for (const touch of touchesOfUnits([edge.to])) {
+          if (servesItself(touch) || already.has(touchKey(touch))) {
+            continue;
+          }
+          already.add(touchKey(touch));
+          found.push({ ...touch, through: path });
+        }
+        next.push({ at: edge.to, through: path });
+      }
+    }
+    frontier = next;
+  }
+  return found;
+}
+
+function touchKey(touch: TargetTouch): string {
+  return `${touch.touched.label} ${touch.touched.relation}`;
 }
 
 /**
@@ -425,14 +484,19 @@ function answerReaches(
   const target = resolution.target;
   const seen = new Set<string>();
   const items: AnswerItem[] = [];
-  for (const touch of collapseTouches(reachedFrom(target))) {
+  for (const touch of collapseTouches(reachedFrom(target, summaries))) {
     const data = {
       boundary: touch.boundary,
       relations: touch.relations,
       unit: touch.unit,
       ...(touch.callee !== undefined ? { via: touch.callee } : {}),
+      ...(touch.through !== undefined ? { through: touch.through } : {}),
     };
-    const text = `${touch.relations.join(" and ")} ${touch.boundary}${touch.callee === undefined ? "" : `  through ${touch.callee}`}`;
+    const hops =
+      touch.through === undefined || touch.through.length === 0
+        ? ""
+        : `, by calling ${touch.through.join(", then ")}`;
+    const text = `${touch.relations.join(" and ")} ${touch.boundary}${touch.callee === undefined ? "" : `  through ${touch.callee}`}${hops}`;
     if (!seen.has(text)) {
       seen.add(text);
       items.push({ text, data });
