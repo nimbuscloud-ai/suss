@@ -1122,6 +1122,22 @@ export interface PatternPack {
     importModule: string;
     importName: string;
     uriProperty: string;
+    /**
+     * How this constructor's cache option installs a fragment
+     * registry, for the library whose client can supply fragment
+     * definitions at run time. `cacheProperty` is the construction
+     * option the cache is passed in, `cacheConstructor` the cache
+     * class, and `registryProperty` the cache option that installs
+     * the registry. The adapter reads every construction and records
+     * whether a registry is configured, absent, or unreadable; a
+     * construction it cannot read counts as unreadable, never as
+     * absent.
+     */
+    fragmentRegistry?: {
+      cacheProperty: string;
+      cacheConstructor: { importModule: string; importName: string };
+      registryProperty: string;
+    };
   }>;
   /**
    * Which service a client talks to, keyed by the endpoint the
