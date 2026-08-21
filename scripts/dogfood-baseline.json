@@ -3,7 +3,7 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 525,
-    "internal": 2079,
+    "internal": 2080,
     "consumers": 967,
     "pairs": 959,
     "unfollowedCalls": 239,
@@ -125,7 +125,7 @@
     "packages/contract/prisma": {
       "name": "@suss/contract-prisma",
       "exports": 2,
-      "internal": 6,
+      "internal": 7,
       "consumers": 1,
       "unfollowedCalls": 0
     },

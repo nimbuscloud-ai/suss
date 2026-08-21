@@ -22,5 +22,7 @@
   "field": "suss: shape element kind",
   "attribute": "suss: shape element kind",
   "library": "suss: marker for a value a library states",
-  "exhaustive": "suss: a storage contract that declares every field"
+  "exhaustive": "suss: a storage contract that declares every field",
+  "_count": "Prisma client: the relation counts a query can ask for",
+  "PrismaCount": "suss: the type this pack gives the _count field"
 }
