@@ -10,7 +10,7 @@ import {
   storageBinding,
 } from "@suss/behavioral-ir";
 
-import { check, checkDir } from "./check.js";
+import { check, checkDir, checkDirectory } from "./check.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -1231,6 +1231,43 @@ describe("checkDir", () => {
     expect(output).toContain("Nothing was compared");
     expect(output).toContain("getUser");
     expect(output).toContain("OrgPage");
+  });
+
+  it("checks the summaries beside a file that is not summaries", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "summaries.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(path.join(tmpDir, "report.json"), "not json{");
+
+    const errors: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      errors.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    let summaries = 0;
+    try {
+      summaries = checkDirectory({ dir: tmpDir }).summaries.length;
+    } finally {
+      process.stderr.write = original;
+    }
+
+    expect(summaries).toBe(1);
+    expect(errors.join("")).toContain("report.json");
+    expect(errors.join("")).toContain("not JSON suss can read");
+  });
+
+  it("turns down a folder where nothing is summaries", () => {
+    fs.writeFileSync(path.join(tmpDir, "report.json"), "not json{");
+
+    expect(() => checkDirectory({ dir: tmpDir })).toThrow(
+      /Nothing in .* is a summaries file/,
+    );
   });
 
   it("says a run with only one side has no other side once, not twice", () => {
