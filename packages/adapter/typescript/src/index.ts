@@ -17,7 +17,18 @@ export { createTsDiscoveryContext } from "./discoveryContext.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
 // Exported so a pack's test harness can give recognizers the same
 // resolution the adapter threads through at extraction time.
-export { ResolutionStore } from "./facts/store.js";
+export {
+  type ExplainCallableOptions,
+  type ExplainedResolution,
+  type ExplainStats,
+  ResolutionStore,
+} from "./facts/store.js";
+export {
+  type ValueLocation,
+  type WhyExplained,
+  WhySession,
+  type WhySessionOptions,
+} from "./facts/why.js";
 // Reading a module's exports and following an import to its source are
 // the adapter's job rather than each pack's: both walk re-export chains
 // that overflow the checker when asked naively.

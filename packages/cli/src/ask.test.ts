@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { storageBinding } from "@suss/behavioral-ir";
+
 import {
   dao,
   dashboard,
@@ -12,6 +14,8 @@ import {
   routeClient,
 } from "./__fixtures__/oneThing.js";
 import { ask, parseQuestion } from "./ask.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 describe("parseQuestion", () => {
   it("reads each of the four shapes, whatever the case", () => {
@@ -36,6 +40,26 @@ describe("parseQuestion", () => {
     expect(parseQuestion("what does src/dao.ts reach")).toEqual({
       shape: "reaches",
       subject: "src/dao.ts",
+    });
+  });
+
+  it("reads the two why shapes", () => {
+    expect(
+      parseQuestion("why does getOrder reach aws.dynamodb:orders"),
+    ).toEqual({
+      shape: "whyReaches",
+      subject: "getOrder",
+      object: "aws.dynamodb:orders",
+    });
+    expect(
+      parseQuestion(
+        "Why does handler at src/app.ts:12 resolve to createHandler?",
+      ),
+    ).toEqual({
+      shape: "whyResolves",
+      subject: "handler",
+      at: { file: "src/app.ts", line: 12 },
+      object: "createHandler",
     });
   });
 
@@ -157,11 +181,11 @@ describe("suss ask", () => {
     expect(output).toContain("then ask again");
   });
 
-  it("prints the four shapes back when the question is not one of them", () => {
+  it("prints the six shapes back when the question is not one of them", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of four questions");
+    expect(output).toContain("suss ask takes one of six questions");
   });
 
   it("writes JSON an agent can read", () => {
@@ -214,5 +238,239 @@ describe("suss ask", () => {
     expect(() => ask({ question: "what reads aws.dynamodb:editions" })).toThrow(
       /ask needs summaries to read/,
     );
+  });
+});
+
+describe("suss ask why", () => {
+  let summariesDir: string;
+  let projectDir: string;
+
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  /** The caller, whose one call the run resolved to the helper below. */
+  const caller: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/orders.ts",
+      range: { start: 3, end: 6 },
+      exportName: "getOrder",
+    },
+    identity: {
+      name: "getOrder",
+      exportPath: ["getOrder"],
+      boundaryBinding: null,
+      id: "test::src/orders.ts::getOrder",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "getOrder:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "readRow",
+            args: [],
+            async: true,
+            summary: "test::src/orderStore.ts::readRow",
+          },
+        ],
+        location: { start: 4, end: 5 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** The helper, which is where the storage access is written. */
+  const helper: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/orderStore.ts",
+      range: { start: 1, end: 3 },
+      exportName: "readRow",
+    },
+    identity: {
+      name: "readRow",
+      exportPath: ["readRow"],
+      boundaryBinding: null,
+      id: "test::src/orderStore.ts::readRow",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "readRow:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: storageBinding({
+              recognition: "aws-dynamodb",
+              storageSystem: "aws.dynamodb",
+              scope: "default",
+              container: "orders",
+              accessPath: null,
+            }),
+            callee: "client.send",
+            interaction: {
+              class: "storage-access",
+              kind: "read",
+              fields: [],
+              operation: "get",
+            },
+          },
+        ],
+        location: { start: 1, end: 3 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  beforeEach(() => {
+    summariesDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-why-s-"));
+    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-why-p-"));
+    fs.writeFileSync(
+      path.join(summariesDir, "code.json"),
+      JSON.stringify([caller, helper]),
+    );
+    fs.mkdirSync(path.join(projectDir, "src"));
+    fs.writeFileSync(
+      path.join(projectDir, "src", "orderStore.ts"),
+      [
+        "export async function readRow(location: { table: string }) {",
+        "  return { Item: location.table };",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(projectDir, "src", "orders.ts"),
+      [
+        'import { readRow } from "./orderStore.js";',
+        "",
+        "export const getOrder = async () => {",
+        '  const row = await readRow({ table: "orders" });',
+        "  return row;",
+        "};",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(summariesDir, { recursive: true, force: true });
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  function answerWhy(
+    question: string,
+    options: { json?: boolean } = {},
+  ): { output: string; code: number } {
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({
+        question,
+        dir: summariesDir,
+        project: projectDir,
+        ...options,
+      });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+    }
+  }
+
+  it("prints the chain from the unit to the boundary, with each hop's resolution", () => {
+    const { output, code } = answerWhy(
+      "why does getOrder reach aws.dynamodb:orders",
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("getOrder reaches aws.dynamodb:orders");
+    expect(output).toContain("getOrder -> readRow -> client.send");
+    expect(output).toContain("calls readRow, and that call runs readRow");
+    expect(output).toContain(
+      "is imported from src/orderStore.ts under the name readRow",
+    );
+    expect(output).toContain("reads aws.dynamodb:orders through client.send");
+  });
+
+  it("writes the chain, the hops, and the cost as JSON", () => {
+    const { output, code } = answerWhy(
+      "why does getOrder reach aws.dynamodb:orders",
+      { json: true },
+    );
+
+    expect(code).toBe(0);
+    const parsed = JSON.parse(output) as {
+      found: boolean;
+      chain: string[];
+      hops: Array<{
+        callee: string;
+        resolution?: {
+          steps: Array<{ rule: string }>;
+          cost: { evaluateMs: number; baseFacts: number };
+        };
+      }>;
+    };
+    expect(parsed.found).toBe(true);
+    expect(parsed.chain).toEqual(["getOrder", "readRow", "client.send"]);
+    expect(parsed.hops).toHaveLength(1);
+    const rules = parsed.hops[0].resolution?.steps.map((step) => step.rule);
+    expect(rules).toContain("import");
+    expect(parsed.hops[0].resolution?.cost.baseFacts).toBeGreaterThan(0);
+  });
+
+  it("says so and exits 1 when the run does not contain the boundary", () => {
+    const { output, code } = answerWhy("why does getOrder reach kafka:orders");
+
+    expect(code).toBe(1);
+    expect(output).toContain(
+      "Nothing in these summaries goes through kafka:orders",
+    );
+  });
+
+  it("explains what a written name resolves to, and why", () => {
+    const { output, code } = answerWhy(
+      "why does readRow at src/orders.ts:4 resolve to readRow",
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("resolves to readRow (src/orderStore.ts:1)");
+    expect(output).toContain("is declared as");
+    expect(output).toContain(
+      "is imported from src/orderStore.ts under the name readRow",
+    );
+  });
+
+  it("says what the name does resolve to when the asked target is wrong", () => {
+    const { output, code } = answerWhy(
+      "why does readRow at src/orders.ts:4 resolve to somethingElse",
+    );
+
+    expect(code).toBe(1);
+    expect(output).toContain("not somethingElse");
+    expect(output).toContain("resolves to readRow (src/orderStore.ts:1)");
+  });
+
+  it("still prints the unit chain when the source is missing", () => {
+    fs.rmSync(path.join(projectDir, "src"), { recursive: true, force: true });
+    const { output, code } = answerWhy(
+      "why does getOrder reach aws.dynamodb:orders",
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("getOrder -> readRow -> client.send");
+    expect(output).toContain("without their resolution steps");
   });
 });

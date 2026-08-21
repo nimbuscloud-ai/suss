@@ -159,6 +159,30 @@ than a copy of every other. It differs from `callsFunction`, which
 starts from the function because a caller asking for call sites has the
 function in hand.
 
+## Explaining an answer
+
+Evaluate the same rules under `@suss/datalog`'s `witnesses` algebra and
+every derived fact keeps the rule that fired and the facts it consumed,
+so `proofOf` can rebuild the derivation tree of any answer on demand.
+`explainResolutionProof` flattens that tree into the chain a person
+reads: the step rules are the hops, `reaches` is the glue between them,
+and the base cases ("x is already a function") end a chain without
+adding to it. Each hop comes back with one sentence saying why it is
+true, written from the rule's own name: `alias`, `import`, `argument`,
+`factory unwrap`, and so on.
+
+Two kinds of detail ride under a hop rather than beside it. A barrel
+chain under an `import` hop lists which files forwarded the name. A
+`declared wrapper` hop rests on a pack's word rather than on source, so
+it surfaces as an assumption: "a pack declares that withSentry from
+@sentry/serverless passes argument 0 through to its result". A proof
+cut short by the depth cap says so instead of trailing off.
+
+Atoms in a proof are whatever node ids the adapter interned, so both
+functions take a `describe` callback that says an atom in source terms.
+`renderExplanation` turns the flattened chain into printable lines;
+`suss ask 'why does … reach …'` is this pipeline end to end.
+
 ## Why rules and not a walker
 
 Each rule describes one hop. The chains people write are longer than

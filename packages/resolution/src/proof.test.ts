@@ -70,8 +70,8 @@ describe("a comesTo answer explains itself", () => {
     const proof = proofOf(db, "comesTo", ["x", "handlerFn"]);
     const fired = rulesOf(proof);
     expect(fired[0]).toBe("comesTo :- reaches, func");
-    expect(fired).toContain("stepsTo :- binds");
-    expect(fired).toContain("stepsTo :- imports, moduleExport");
-    expect(fired).toContain("moduleExport :- exportsAs");
+    expect(fired).toContain("alias");
+    expect(fired).toContain("import");
+    expect(fired).toContain("export");
   });
 });

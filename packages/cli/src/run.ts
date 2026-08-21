@@ -125,15 +125,21 @@ Options (check):
   --no-suppressions  Report every finding, ignoring any .sussignore
 
 Options (ask):
-  The question is one of four, in these words:
+  The question is one of six, in these words:
     what can I project from <boundary>   what the boundary declares
     what reads <boundary>                which units read it
     what writes <boundary>               which units write it
     what does <unit> reach               which boundaries a file or
                                          summary goes through
+    why does <unit> reach <boundary>     the call chain that gets there,
+                                         with each hop's resolution
+    why does <name> at <file>:<line> resolve to <target>
+                                         the chain from a written name
+                                         to the function it comes to
   A boundary is written the way reports write it, and a shorter spelling
   matches more: "dynamodb:editions" covers every index on that table.
   --dir            Folder of summary files to read, instead of one file
+  --project        Where the source is, for a why question (default: cwd)
   --json           Write the answer as JSON instead of prose
   -o, --output     Write the answer to a file instead of stdout
 
@@ -518,6 +524,7 @@ function runAsk(args: string[]): number {
     args,
     options: {
       dir: { type: "string" },
+      project: { type: "string" },
       json: { type: "boolean" },
       output: { type: "string", short: "o" },
     },
@@ -538,6 +545,7 @@ function runAsk(args: string[]): number {
   return ask({
     question,
     ...(values.dir !== undefined ? { dir: values.dir } : {}),
+    ...(values.project !== undefined ? { project: values.project } : {}),
     ...(file !== undefined ? { file } : {}),
     ...(values.json === true ? { json: true } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),
