@@ -18,6 +18,7 @@ import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
 import {
   boundariesTouchedBy,
   namesBoundary,
+  namesBoundaryExactly,
   type Relation,
   type TouchedBoundary,
 } from "./boundaryReach.js";
@@ -83,6 +84,14 @@ export function resolveTarget(
 
   if (filesMatching(spec, summaries).length > 0) {
     return fileTarget(spec, summaries);
+  }
+
+  // A handler can be pointed at by its function name as well as by its
+  // route, since a report prints both and either one is what somebody
+  // has in hand.
+  const asSummary = summaryTarget(spec, summaries);
+  if (asSummary.matched) {
+    return asSummary;
   }
 
   return boundaryTarget(spec, summaries);
@@ -188,18 +197,56 @@ function lineTarget(
   };
 }
 
+/**
+ * The touches at the one boundary a spelling meant, or null when it
+ * meant several. Words that name a boundary exactly beat words that
+ * are only part of its name, so `POST /articles` picks the collection
+ * route and leaves the comments route under it alone. Without an exact
+ * one, several boundaries matching the same words is a question nobody
+ * can settle, and picking one of them silently is how a report ends up
+ * about a boundary the code never touches.
+ */
+function narrowedToOne(
+  spec: string,
+  matching: readonly TargetTouch[],
+): TargetTouch[] | null {
+  const labels = new Set(matching.map((touch) => touch.touched.label));
+  if (labels.size === 1) {
+    return [...matching];
+  }
+  const exact = matching.filter((touch) =>
+    namesBoundaryExactly(spec, touch.touched.binding),
+  );
+  const exactLabels = new Set(exact.map((touch) => touch.touched.label));
+  return exactLabels.size === 1 ? exact : null;
+}
+
 function boundaryTarget(
   spec: string,
   summaries: ReadonlyArray<BehavioralSummary>,
 ): TargetResolution {
-  const touches = touchesOf(summaries).filter((touch) =>
+  const matching = touchesOf(summaries).filter((touch) =>
     namesBoundary(spec, touch.touched.binding),
   );
-  if (touches.length === 0) {
+  if (matching.length === 0) {
     return {
       matched: false,
       spelledAs: spec,
       message: `Nothing here is at ${spec}. ${spelledLike(boundariesHere(summaries))}`,
+    };
+  }
+
+  const touches = narrowedToOne(spec, matching);
+  if (touches === null) {
+    const candidates = [
+      ...new Set(matching.map((touch) => touch.touched.label)),
+    ].sort();
+    const shown = candidates.slice(0, 6);
+    const rest = candidates.length - shown.length;
+    return {
+      matched: false,
+      spelledAs: spec,
+      message: `${spec} could mean ${candidates.length} boundaries here: ${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}. Ask about one of them.`,
     };
   }
 
@@ -298,6 +345,18 @@ export function collapseTouches(
     }
   }
   return [...byPair.values()];
+}
+
+/**
+ * What the units behind a target do at every boundary, which is not
+ * the same as what the target picked out: a boundary target picks out
+ * the units serving it, and what those units go on to touch is a
+ * separate list.
+ */
+export function touchesOfUnits(
+  summaries: ReadonlyArray<BehavioralSummary>,
+): TargetTouch[] {
+  return touchesOf(summaries);
 }
 
 function touchesOf(

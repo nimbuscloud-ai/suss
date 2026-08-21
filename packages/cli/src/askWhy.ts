@@ -19,6 +19,7 @@ import { WhySession } from "@suss/adapter-typescript";
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { gapCaveats } from "./askCaveats.js";
+import { groundedTouchesAt } from "./askGrounding.js";
 import { boundariesTouchedBy, namesBoundary } from "./boundaryReach.js";
 import { resolveTarget } from "./target.js";
 
@@ -236,12 +237,9 @@ function answerWhyReaches(
     );
   }
 
+  const goesThrough = crossesBoundary(boundarySpec, summaries);
   const touching = summaries.filter((summary) =>
-    boundariesTouchedBy(summary).some(
-      (touch) =>
-        touch.relation !== "provides" &&
-        namesBoundary(boundarySpec, touch.binding),
-    ),
+    boundariesTouchedBy(summary).some((touch) => goesThrough(summary, touch)),
   );
   if (touching.length === 0) {
     return miss(
@@ -252,7 +250,7 @@ function answerWhyReaches(
     );
   }
 
-  const found = pathToBoundary(units, boundarySpec, summaries);
+  const found = pathToBoundary(units, goesThrough, summaries);
   if (found === null) {
     return miss(
       "whyReaches",
@@ -324,9 +322,34 @@ function invocationEdges(
  * the shortest one the summaries state. The path is summary-level; the
  * resolution proof under each hop comes later, from source.
  */
+/**
+ * Whether one unit goes through the boundary somebody asked about.
+ * A why question takes the same spellings a `what reads` question
+ * takes, deployed names included, so one store cannot be reachable by
+ * one question and absent from the other.
+ */
+type CrossesBoundary = (
+  summary: BehavioralSummary,
+  touch: TouchedBoundary,
+) => boolean;
+
+function crossesBoundary(
+  boundarySpec: string,
+  summaries: BehavioralSummary[],
+): CrossesBoundary {
+  const grounded = new Set(
+    groundedTouchesAt(boundarySpec, summaries).touches.map(
+      (touch) => touch.touched.binding,
+    ),
+  );
+  return (_summary, touch) =>
+    touch.relation !== "provides" &&
+    (namesBoundary(boundarySpec, touch.binding) || grounded.has(touch.binding));
+}
+
 function pathToBoundary(
   starts: BehavioralSummary[],
-  boundarySpec: string,
+  goesThrough: CrossesBoundary,
   summaries: BehavioralSummary[],
 ): BoundaryPath | null {
   const byId = new Map(
@@ -346,10 +369,8 @@ function pathToBoundary(
     }
     visited.add(entry.at);
 
-    const touch = boundariesTouchedBy(entry.at).find(
-      (candidate) =>
-        candidate.relation !== "provides" &&
-        namesBoundary(boundarySpec, candidate.binding),
+    const touch = boundariesTouchedBy(entry.at).find((candidate) =>
+      goesThrough(entry.at, candidate),
     );
     if (touch !== undefined) {
       return { start: entry.start, hops: entry.hops, touch };

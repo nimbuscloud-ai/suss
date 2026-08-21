@@ -80,6 +80,26 @@ export function bindingTokens(binding: BoundaryBinding): Set<string> {
   return tokens;
 }
 
+/**
+ * Whether what somebody typed is the whole of this boundary's name
+ * rather than part of it. `POST /articles` is exactly the collection
+ * route and only part of `POST /articles/{slug}/comments`.
+ */
+export function namesBoundaryExactly(
+  subject: string,
+  binding: BoundaryBinding,
+): boolean {
+  const wanted = new Set(spellingTokens(subject));
+  if (wanted.size === 0) {
+    return false;
+  }
+  const spelled = new Set(spellingTokens(boundarySpelling(binding)));
+  if (spelled.size !== wanted.size) {
+    return false;
+  }
+  return [...spelled].every((token) => wanted.has(token));
+}
+
 /** Whether what somebody typed picks out this boundary. */
 export function namesBoundary(
   subject: string,

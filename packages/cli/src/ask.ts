@@ -24,10 +24,17 @@ import {
 import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
+import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
 import { askWhy, WHY_SHAPES } from "./askWhy.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
-import { collapseTouches, resolveTarget, type TargetTouch } from "./target.js";
+import {
+  collapseTouches,
+  type ResolvedTarget,
+  resolveTarget,
+  type TargetTouch,
+  touchesOfUnits,
+} from "./target.js";
 import { UsageError } from "./usageError.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -101,6 +108,8 @@ const HOW_TO_ASK = `suss ask takes one of seven questions:
   suss ask 'what does src/editions/dao.ts reach'
   suss ask 'why does src/editions/dao.ts reach aws.dynamodb:editions'
   suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
+The same five, in symbols: '<- <unit>', '<unit> ->',
+'<unit> -> <boundary> ?', 'r<- <boundary>', 'w<- <boundary>'.
 Add --dir to say which summaries to read, or pass one summaries file.
 A why question reads the source too; --project says where it is when it
 is not the working directory.`;
@@ -124,7 +133,13 @@ export function ask(options: AskOptions): number {
 }
 
 export function parseQuestion(raw: string): ParsedQuestion | null {
-  const asked = raw.trim().replace(/\?$/, "").trim();
+  // Symbols first, since the shorthand ends in a `?` that the written
+  // form treats as punctuation and cuts.
+  const written = looksLikeShorthand(raw) ? expandShorthand(raw) : null;
+  if (looksLikeShorthand(raw) && written === null) {
+    return null;
+  }
+  const asked = (written ?? raw).trim().replace(/\?$/, "").trim();
   for (const { pattern, read } of WHY_SHAPES) {
     const found = pattern.exec(asked);
     if (found !== null) {
@@ -353,6 +368,43 @@ function answerDirection(
   };
 }
 
+/**
+ * The boundaries a target goes on to touch. A unit does not reach the
+ * boundary it serves, it is that boundary, and being told a route
+ * serves itself buries what it calls. Asked about a boundary, the
+ * question is about the units serving it, so what they touch has to be
+ * gathered from them rather than from what the spelling picked out.
+ */
+function reachedFrom(target: ResolvedTarget): TargetTouch[] {
+  const touches =
+    target.kind === "boundary"
+      ? touchesOfUnits(unitsServing(target))
+      : target.touches;
+  return touches.filter((touch) => !servesItself(touch));
+}
+
+/**
+ * The units serving a boundary, which are the ones whose downstream a
+ * question about it is asking after. A client of the boundary reaches
+ * it rather than through it, so its calls belong to its own answer.
+ */
+function unitsServing(target: ResolvedTarget): BehavioralSummary[] {
+  return [
+    ...new Set(
+      target.touches
+        .filter((touch) => touch.touched.relation === "provides")
+        .map((touch) => touch.summary),
+    ),
+  ];
+}
+
+function servesItself(touch: TargetTouch): boolean {
+  return (
+    touch.touched.relation === "provides" &&
+    touch.touched.binding === touch.summary.identity.boundaryBinding
+  );
+}
+
 function answerReaches(
   subject: string,
   summaries: BehavioralSummary[],
@@ -373,7 +425,7 @@ function answerReaches(
   const target = resolution.target;
   const seen = new Set<string>();
   const items: AnswerItem[] = [];
-  for (const touch of collapseTouches(target.touches)) {
+  for (const touch of collapseTouches(reachedFrom(target))) {
     const data = {
       boundary: touch.boundary,
       relations: touch.relations,
@@ -388,13 +440,19 @@ function answerReaches(
   }
 
   if (items.length === 0) {
+    const noProvider =
+      target.kind === "boundary" && unitsServing(target).length === 0;
     return {
       shape: "reaches",
       subject,
-      headline: `${subject} crosses no boundary this run knows how to read.`,
+      headline: noProvider
+        ? `Nothing in these summaries serves ${subject}, so there is nothing here that goes on from it.`
+        : `${subject} crosses no boundary this run knows how to read.`,
       items: [],
       needs: [
-        "A pack that reads the library this code calls would say more. suss extract -f <pack> lists what is built in.",
+        noProvider
+          ? `Extract the code serving ${subject} into the same folder, then ask again.`
+          : "A pack that reads the library this code calls would say more. suss extract -f <pack> lists what is built in.",
       ],
       caveats: gapCaveats(target.summaries),
       found: true,
