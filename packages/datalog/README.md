@@ -175,6 +175,31 @@ passed as `rule`'s fourth argument, or the head and body relations, as
 in `path :- path, !blocked`. The witness keeps the `Rule` object
 itself, so two rules that render alike stay distinct.
 
+## Confidence levels
+
+The `confidence` algebra propagates how sure the run is of each fact,
+as one of `"high"`, `"medium"`, or `"low"`. A rule firing takes the
+minimum level across its body, so a conclusion is only as sure as its
+weakest premise, and a fact derived twice keeps the better level. An
+asserted fact without a tag counts as high; to say less, assert it
+with a level:
+
+```ts
+import { confidence, evaluate } from "@suss/datalog";
+
+db.add("edge", ["a", "b"]);            // high: read from source
+db.add("edge", ["b", "c"], "medium");  // a guess somebody should check
+evaluate(db, rules, confidence);
+db.tagOf("path", ["a", "c"]); // "medium"
+```
+
+A rule can be a heuristic itself, and then its conclusions should not
+outrank it. `confidenceWith` takes a level per rule and folds it into
+the minimum; rules the callback returns `undefined` for count as
+exact. Both operations are idempotent, so ten medium steps come out
+medium, and a matched negation counts as high, because negation here
+is exact over the database as computed.
+
 ## Deriving only what somebody asked for
 
 A rule set written for a whole program derives every conclusion its
