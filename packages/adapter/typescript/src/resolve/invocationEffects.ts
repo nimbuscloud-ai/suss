@@ -50,6 +50,13 @@ import type {
 export interface InvocationEffectLocation {
   effect: RawEffect;
   /**
+   * The call this came from, so the assembly pass can tell a call
+   * apart from a terminal on the same line. A terminal built from a
+   * call, `res.json(body)`, is that same node; a call whose result the
+   * terminal describes, `return toView(row)`, is a different one.
+   */
+  node?: Node;
+  /**
    * Start line of the containing statement (expression statement or
    * the statement enclosing a container-building call). Used by the
    * assembly pass to assign effects to the right branch.
@@ -335,6 +342,34 @@ export function extractInvocationEffects(
             neverTerminal: true,
           });
         }
+      }
+      return;
+    }
+
+    // Case 4: the call a return hands back: `return toView(row)`.
+    // The terminal reader describes what comes out of it, and nothing
+    // recorded that the call happened, so nothing knew this unit calls
+    // that one.
+    if (Node.isReturnStatement(node)) {
+      const returned = node.getExpression();
+      const { call, async } =
+        returned === undefined
+          ? { call: null, async: false }
+          : unwrapCall(returned);
+      if (call !== null) {
+        const preconditions = collectPreconditions(node, func);
+        results.push({
+          effect: {
+            type: "invocation",
+            callee: call.getExpression().getText(),
+            args: extractArgs(call),
+            async,
+            ...(preconditions.length > 0 ? { preconditions } : {}),
+          },
+          line: startLineOf(node),
+          neverTerminal: false,
+          node: call,
+        });
       }
       return;
     }
