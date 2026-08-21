@@ -1315,6 +1315,10 @@ function extractFromSourceFile(
         if (unit.operationInfo.document !== undefined) {
           raw.graphqlDocument = unit.operationInfo.document;
         }
+        if (unit.operationInfo.unresolvedFragments !== undefined) {
+          raw.graphqlUnresolvedFragments =
+            unit.operationInfo.unresolvedFragments;
+        }
         if (unit.operationInfo.unresolved !== undefined) {
           raw.graphqlUnresolvedDocument = unit.operationInfo.unresolved;
         }

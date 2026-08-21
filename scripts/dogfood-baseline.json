@@ -3,9 +3,9 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 513,
-    "internal": 2016,
-    "consumers": 896,
-    "pairs": 889,
+    "internal": 2025,
+    "consumers": 907,
+    "pairs": 900,
     "unfollowedCalls": 224,
     "findingErrors": 0
   },
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 36,
-      "internal": 675,
+      "internal": 683,
       "consumers": 59,
       "unfollowedCalls": 67
     },
@@ -42,7 +42,7 @@
       "name": "@suss/checker",
       "exports": 38,
       "internal": 206,
-      "consumers": 126,
+      "consumers": 128,
       "unfollowedCalls": 21
     },
     "packages/checker-intent": {
@@ -62,8 +62,8 @@
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
       "exports": 2,
-      "internal": 0,
-      "consumers": 12,
+      "internal": 1,
+      "consumers": 21,
       "unfollowedCalls": 0
     },
     "packages/client/axios": {

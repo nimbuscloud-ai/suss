@@ -316,6 +316,9 @@ export interface RawCodeStructure {
   /** The extractor cannot derive this. An adapter that has the SDL and knows
    * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
+  /** Fragment spreads in `graphqlDocument` with no definition in it, so a
+   * partially read document is marked rather than passed off as whole. */
+  graphqlUnresolvedFragments?: string[];
   /** Set when a document reference was recognized but its body could not be
    * read, so an unreadable document is accounted for instead of dropped. */
   graphqlUnresolvedDocument?: { reference: string; reason: string };
@@ -628,6 +631,9 @@ function buildGraphqlMetadataValue(
   }
   if (raw.graphqlDeclaredContract !== undefined) {
     graphql.declaredContract = raw.graphqlDeclaredContract;
+  }
+  if (raw.graphqlUnresolvedFragments !== undefined) {
+    graphql.unresolvedFragments = raw.graphqlUnresolvedFragments;
   }
   if (raw.graphqlUnresolvedDocument !== undefined) {
     graphql.unresolvedDocument = raw.graphqlUnresolvedDocument;
