@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 7 consumers unpaired, plus the
+The run leaves 134 providers and 8 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -196,8 +196,9 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 7 unmatched consumers ask for a method or a property on a
+**The 8 unmatched consumers ask for a method or a property on a
 value a package returned.** They are `checkAll(...).findings`,
+`groundStorageAccesses(...).accesses`,
 `SuppressionFileSchema.safeParse(...)`, `IntentDocSchema.parse(...)`,
 and `evaluate(...).facts`. The consumer records the member as part of
 its export path, so it asks for `@suss/checker::checkAll.findings`,

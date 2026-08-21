@@ -23,14 +23,15 @@ import {
 
 import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
+import { groundedTouchesAt } from "./askGrounding.js";
 import { askWhy, WHY_SHAPES } from "./askWhy.js";
-import { boundariesTouchedBy, namesBoundary } from "./boundaryReach.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import { collapseTouches, resolveTarget, type TargetTouch } from "./target.js";
 import { UsageError } from "./usageError.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
 
 export type QuestionShape =
@@ -169,18 +170,6 @@ const ANSWERS: Record<
   reaches: answerReaches,
 };
 
-/** Every unit that does something at the boundary somebody asked about. */
-function touchesAt(
-  subject: string,
-  summaries: ReadonlyArray<BehavioralSummary>,
-): TargetTouch[] {
-  return summaries.flatMap((summary) =>
-    boundariesTouchedBy(summary)
-      .filter((touched) => namesBoundary(subject, touched.binding))
-      .map((touched) => ({ summary, touched })),
-  );
-}
-
 /**
  * What to call the boundary in the answer. A subject that picked out
  * one boundary is answered in that boundary's own spelling; one that
@@ -201,15 +190,33 @@ const PLURAL_VERB: Record<"reads" | "writes", string> = {
   writes: "write",
 };
 
-function notHere(shape: QuestionShape, subject: string): Answer {
+/** ", which grounds to prod-x via wrangler.toml", or nothing. */
+function groundsClause(grounding: GroundingNote[] | undefined): string {
+  if (grounding === undefined) {
+    return "";
+  }
+  const spelled = grounding
+    .map((note) => `${note.to} via ${note.by}`)
+    .join(" and ");
+  return `, which grounds to ${spelled}`;
+}
+
+function notHere(
+  shape: QuestionShape,
+  subject: string,
+  hints: string[],
+): Answer {
   return {
     shape,
     subject,
     headline: `Nothing in these summaries is at ${subject}.`,
     items: [],
-    needs: [
-      `Extract the code that goes through ${subject}, or read its deploy template in with suss contract, then ask again.`,
-    ],
+    needs:
+      hints.length > 0
+        ? hints
+        : [
+            `Extract the code that goes through ${subject}, or read its deploy template in with suss contract, then ask again.`,
+          ],
     caveats: [],
     found: false,
   };
@@ -219,9 +226,9 @@ function answerDeclares(
   subject: string,
   summaries: BehavioralSummary[],
 ): Answer {
-  const touches = touchesAt(subject, summaries);
+  const { touches, hints } = groundedTouchesAt(subject, summaries);
   if (touches.length === 0) {
-    return notHere("declares", subject);
+    return notHere("declares", subject, hints);
   }
 
   const label = boundaryLabelFor(subject, touches);
@@ -290,20 +297,21 @@ function answerDirection(
   subject: string,
   summaries: BehavioralSummary[],
 ): Answer {
-  const touches = touchesAt(subject, summaries);
+  const { touches, hints } = groundedTouchesAt(subject, summaries);
   if (touches.length === 0) {
-    return notHere(shape, subject);
+    return notHere(shape, subject, hints);
   }
 
   const label = boundaryLabelFor(subject, touches);
   const matching = touches.filter((touch) => touch.touched.relation === shape);
-  const items = matching.map(({ summary, touched }) => ({
-    text: `${summaryIdentifier(summary)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}`,
+  const items = matching.map(({ summary, touched, grounding }) => ({
+    text: `${summaryIdentifier(summary)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}`,
     data: {
       unit: summaryIdentifier(summary),
       file: summary.location.file,
       line: summary.location.range.start,
       ...(touched.callee !== undefined ? { via: touched.callee } : {}),
+      ...(grounding !== undefined ? { grounding } : {}),
     },
   }));
 
@@ -321,7 +329,7 @@ function answerDirection(
       subject,
       headline: `Nothing in these summaries ${shape} ${label}.`,
       items: [],
-      needs: servedBy,
+      needs: [...servedBy, ...hints],
       caveats: runCaveats(summaries),
       found: true,
     };
@@ -334,6 +342,7 @@ function answerDirection(
     items,
     needs: servedBy,
     caveats: [
+      ...hints,
       ...gapCaveats(matching.map((touch) => touch.summary)),
       ...runCaveats(
         summaries,

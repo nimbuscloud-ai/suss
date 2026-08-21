@@ -27,6 +27,8 @@ describe("check a Worker against the stores wrangler.toml binds", () => {
       fixture("cloudflare-worker-stores"),
       "-f",
       `cloudflare-workers=${packConfig}`,
+      "-f",
+      "aws-dynamodb",
       "-o",
       path.join(summaries, "code.json"),
     ]);
@@ -64,5 +66,28 @@ describe("check a Worker against the stores wrangler.toml binds", () => {
     expect(check.stdout).toContain(
       "env.AUDIT_KV read by fetch (worker/edge-cache scope) but edge-cache declares no AUDIT_KV in its environment.",
     );
+  });
+
+  it("answers a writes question the same in either spelling of the table", () => {
+    const deployed = runSuss([
+      "ask",
+      "what writes aws.dynamodb:prod-subscribers-v1",
+      "--dir",
+      summaries,
+    ]);
+    const reference = runSuss([
+      "ask",
+      "what writes aws.dynamodb:{env.SUBSCRIBERS_TABLE}",
+      "--dir",
+      summaries,
+    ]);
+
+    expect(deployed.status, deployed.stderr).toBe(0);
+    for (const answer of [deployed.stdout, reference.stdout]) {
+      expect(answer).toContain("cloudflare-worker-stores::src/index.ts::fetch");
+      expect(answer).toContain(
+        "which grounds to prod-subscribers-v1 via wrangler:",
+      );
+    }
   });
 });

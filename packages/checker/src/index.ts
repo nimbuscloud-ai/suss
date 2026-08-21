@@ -132,6 +132,11 @@ import { summaryWithDefinitionsInlined } from "./spelledOut.js";
 export { summaryWithDefinitionsInlined } from "./spelledOut.js";
 export {
   checkStorage,
+  type GroundedBy,
+  type GroundedStorage,
+  type GroundedStorageAccess,
+  type GroundedStorageProvider,
+  groundStorageAccesses,
   storageBoundaryKey,
 } from "./storage/storagePairing.js";
 export { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
@@ -144,6 +149,8 @@ export {
   SuppressionRuleSchema,
   validateRule,
 } from "./suppressions.js";
+
+export type { GroundedName, Grounding } from "./storage/grounding.js";
 
 /** Named types go back into the shapes first, because comparing two
  * refs only compares their names. */

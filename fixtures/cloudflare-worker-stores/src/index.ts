@@ -1,6 +1,10 @@
-// A Worker that touches every store wrangler.toml binds, plus one it
-// forgot to declare: AUDIT_KV has no binding block, so `env.AUDIT_KV`
-// is undefined the moment this deploys.
+// A Worker that touches every store wrangler.toml binds, one it
+// forgot to declare (AUDIT_KV has no binding block), and a DynamoDB
+// table that only the manifest's [vars] value gives a name to.
+
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+
+declare const dynamo: DynamoDBClient;
 
 interface Env {
   SESSIONS: KVNamespace;
@@ -8,6 +12,7 @@ interface Env {
   LEDGER: D1Database;
   AUDIT_KV: KVNamespace;
   GREETING: string;
+  SUBSCRIBERS_TABLE: string;
 }
 
 export default {
@@ -24,6 +29,13 @@ export default {
       .all();
 
     await env.AUDIT_KV.put("audit:latest", "seen");
+
+    await dynamo.send(
+      new PutItemCommand({
+        TableName: env.SUBSCRIBERS_TABLE,
+        Item: { email: { S: "reader@example.com" } },
+      }),
+    );
 
     return Response.json({
       greeting: env.GREETING,

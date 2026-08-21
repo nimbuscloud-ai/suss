@@ -658,3 +658,196 @@ describe("suss ask what calls", () => {
     expect(output).toContain("No summary here is src/nowhere.ts");
   });
 });
+
+describe("suss ask across a grounded name", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  /** A wrapper whose access says only where the table name comes from. */
+  const wrapper: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/orderStore.ts",
+      range: { start: 14, end: 25 },
+      exportName: "putRow",
+    },
+    identity: {
+      name: "putRow",
+      exportPath: ["putRow"],
+      boundaryBinding: null,
+      id: "repo::src/orderStore.ts::putRow",
+    },
+    inputs: [
+      {
+        type: "parameter",
+        name: "location",
+        position: 0,
+        role: null,
+        shape: null,
+      },
+    ],
+    transitions: [
+      {
+        id: "putRow:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: storageBinding({
+              recognition: "aws-dynamodb",
+              storageSystem: "aws.dynamodb",
+              scope: "default",
+              container: "{location.table}",
+              accessPath: null,
+            }),
+            callee: "client.send",
+            interaction: {
+              class: "storage-access",
+              kind: "write",
+              fields: ["email"],
+              operation: "put",
+            },
+          },
+        ],
+        location: { start: 15, end: 24 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** The caller that says which table, as a literal argument. */
+  const handler: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/orders.ts",
+      range: { start: 6, end: 17 },
+      exportName: "subscribe",
+    },
+    identity: {
+      name: "subscribe",
+      exportPath: ["subscribe"],
+      boundaryBinding: null,
+      id: "repo::src/orders.ts::subscribe",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "subscribe:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "putRow",
+            summary: "repo::src/orderStore.ts::putRow",
+            args: [
+              {
+                kind: "object",
+                fields: {
+                  table: { kind: "string", value: "prod-subscribers-v1" },
+                },
+              },
+            ],
+            async: true,
+          },
+        ],
+        location: { start: 8, end: 16 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** The table as the deployment declares it. */
+  const provider: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "infra/tables.tf",
+      range: { start: 1, end: 10 },
+      exportName: null,
+    },
+    identity: {
+      name: "aws_dynamodb_table.subscribers",
+      exportPath: null,
+      boundaryBinding: storageBinding({
+        recognition: "terraform",
+        storageSystem: "aws.dynamodb",
+        scope: "default",
+        container: "prod-subscribers-v1",
+        accessPath: null,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      storageContract: { fieldSet: "partial", fields: [{ name: "email" }] },
+    },
+  };
+
+  function askGrounded(
+    question: string,
+    summaries: BehavioralSummary[],
+  ): { output: string; code: number } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-ground-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("finds the writer under the deployed name and says how", () => {
+    const { output, code } = askGrounded(
+      "what writes aws.dynamodb:prod-subscribers-v1",
+      [wrapper, handler, provider],
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("repo::src/orderStore.ts::putRow");
+    expect(output).toContain(
+      "which grounds to prod-subscribers-v1 via repo::src/orders.ts::subscribe",
+    );
+    expect(output).toContain("is provided by");
+  });
+
+  it("finds the same pair asked by the reference spelling", () => {
+    const { output, code } = askGrounded(
+      "what writes aws.dynamodb:{location.table}",
+      [wrapper, handler, provider],
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("repo::src/orderStore.ts::putRow");
+    expect(output).toContain(
+      "which grounds to prod-subscribers-v1 via repo::src/orders.ts::subscribe",
+    );
+    expect(output).toContain("is provided by");
+  });
+
+  it("says which input would connect a deployed name nothing grounds", () => {
+    const { output, code } = askGrounded(
+      "what writes aws.dynamodb:prod-subscribers-v1",
+      [wrapper],
+    );
+
+    expect(code).toBe(1);
+    expect(output).toContain("Nothing in these summaries is at");
+    expect(output).toContain(
+      "the name is whatever its caller passes. No caller in these summaries settles it",
+    );
+  });
+});

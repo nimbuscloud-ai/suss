@@ -17,6 +17,7 @@
 import {
   namePatternFromSub,
   readRuntimeContractMetadata,
+  summaryIdentifier,
 } from "@suss/behavioral-ir";
 
 import { placeRuntimes } from "../runtime-config/placement.js";
@@ -35,6 +36,18 @@ type Argument =
   | { kind: string; [key: string]: unknown }
   | null;
 
+/** A name a reference reaches, and the summary that supplied it. */
+export interface GroundedName {
+  name: string;
+  /**
+   * The runtime whose configuration sets the variable, or the caller
+   * that passed the value.
+   */
+  source: BehavioralSummary;
+  /** Which of the two the source is. */
+  role: "runtime" | "caller";
+}
+
 export interface Grounding {
   /**
    * The names an access reaches, for an access whose container says
@@ -43,6 +56,25 @@ export interface Grounding {
    * itself is null because a part of it was missing.
    */
   namesFor(summary: BehavioralSummary, reference: Reference | null): string[];
+  /** The same names, each with the summary that supplied it. */
+  groundedNamesFor(
+    summary: BehavioralSummary,
+    reference: Reference | null,
+  ): GroundedName[];
+  /**
+   * What would ground a reference: the variable whose deployed value
+   * settles it, or null when a caller's argument would.
+   */
+  variableFor(
+    summary: BehavioralSummary,
+    reference: Reference | null,
+  ): string | null;
+}
+
+/** One call a summary received, and who made it. */
+interface ReceivedCall {
+  caller: BehavioralSummary;
+  args: Argument[];
 }
 
 /**
@@ -51,7 +83,7 @@ export interface Grounding {
  */
 export function groundReferences(summaries: BehavioralSummary[]): Grounding {
   const configured = configuredNames(summaries);
-  const callsInto = new Map<string, Argument[][]>();
+  const callsInto = new Map<string, ReceivedCall[]>();
   for (const summary of summaries) {
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
@@ -60,22 +92,49 @@ export function groundReferences(summaries: BehavioralSummary[]): Grounding {
           continue;
         }
         const found = callsInto.get(call.summary) ?? [];
-        found.push(call.args);
+        found.push({ caller: summary, args: call.args });
         callsInto.set(call.summary, found);
       }
     }
   }
 
+  const groundedNamesFor = (
+    summary: BehavioralSummary,
+    reference: Reference | null,
+  ): GroundedName[] => {
+    if (reference === null) {
+      return [];
+    }
+    const found: GroundedName[] = [];
+    const seen = new Set<string>();
+    for (const grounded of [
+      ...configured(summary, reference),
+      ...callerNames(summary, reference, callsInto),
+    ]) {
+      const key = `${grounded.name}\u0000${summaryIdentifier(grounded.source)}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      found.push(grounded);
+    }
+    return found;
+  };
+
   return {
+    groundedNamesFor,
     namesFor(summary, reference) {
+      return [
+        ...new Set(
+          groundedNamesFor(summary, reference).map((grounded) => grounded.name),
+        ),
+      ];
+    },
+    variableFor(summary, reference) {
       if (reference === null) {
-        return [];
+        return null;
       }
-      const names = new Set(configured(summary, reference));
-      for (const name of callerNames(summary, reference, callsInto)) {
-        names.add(name);
-      }
-      return [...names];
+      return variableAsked(summary, reference);
     },
   };
 }
@@ -84,8 +143,8 @@ export function groundReferences(summaries: BehavioralSummary[]): Grounding {
 function callerNames(
   summary: BehavioralSummary,
   reference: Reference,
-  callsInto: ReadonlyMap<string, Argument[][]>,
-): string[] {
+  callsInto: ReadonlyMap<string, ReceivedCall[]>,
+): GroundedName[] {
   const id = summary.identity.id;
   if (id === undefined) {
     return [];
@@ -94,12 +153,15 @@ function callerNames(
   if (parameter === null) {
     return [];
   }
-  const names: string[] = [];
-  for (const args of callsInto.get(id) ?? []) {
-    const passed = valueAt(args[parameter.position] ?? null, reference.fields);
+  const names: GroundedName[] = [];
+  for (const call of callsInto.get(id) ?? []) {
+    const passed = valueAt(
+      call.args[parameter.position] ?? null,
+      reference.fields,
+    );
     const name = passed === null ? null : nameOf(passed);
     if (name !== null) {
-      names.push(name);
+      names.push({ name, source: call.caller, role: "caller" });
     }
   }
   return names;
@@ -114,7 +176,7 @@ function callerNames(
  */
 function configuredNames(
   summaries: BehavioralSummary[],
-): (summary: BehavioralSummary, reference: Reference) => string[] {
+): (summary: BehavioralSummary, reference: Reference) => GroundedName[] {
   const { placed } = placeRuntimes(summaries);
   if (placed.length === 0) {
     return () => [];
@@ -122,6 +184,7 @@ function configuredNames(
   const byFile = unitsByFile(summaries);
   const values = placed.map((runtime) => ({
     scope: runtime.scope,
+    source: runtime.runtime,
     set: readRuntimeContractMetadata(runtime.runtime)?.envVarValues ?? {},
   }));
 
@@ -130,11 +193,11 @@ function configuredNames(
     if (variable === null) {
       return [];
     }
-    const names: string[] = [];
-    for (const { scope, set } of values) {
+    const names: GroundedName[] = [];
+    for (const { scope, source, set } of values) {
       const value = set[variable];
       if (value !== undefined && runsIn(summary, scope, byFile)) {
-        names.push(value);
+        names.push({ name: value, source, role: "runtime" });
       }
     }
     return names;

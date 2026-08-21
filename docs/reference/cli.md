@@ -528,6 +528,22 @@ covers more, exactly as under [`--at`](#reporting-on-one-thing). A
 service call counts as both a read and a write, since a request sends a
 body out and gets a response back.
 
+A store has two spellings when its name is filled in at deploy time:
+the reference the code states (`aws.dynamodb:{SUBSCRIBER_TABLE}`) and
+the deployed name (`aws.dynamodb:prod-subscribers-v1`). When the
+summaries contain what grounds one to the other, a wrangler `[vars]`
+value or the argument a caller passed, either spelling finds the same
+pairs, and the answer says how the two connect:
+
+```
+$ suss ask 'what writes aws.dynamodb:prod-subscribers-v1' --dir .suss
+1 unit writes aws.dynamodb:{env.SUBSCRIBERS_TABLE}:
+  src/index.ts::fetch (src/index.ts:11) through dynamo.send, which grounds to prod-subscribers-v1 via wrangler:wrangler.toml
+```
+
+When the grounding input is missing, the answer says which input would
+connect the two spellings, in place of an empty list.
+
 A calls question takes the reverse direction of `reach`: which units'
 calls arrive at this one. An empty answer distinguishes "nothing calls
 this" from "a call suss could not follow could reach it", from the
