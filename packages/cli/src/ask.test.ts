@@ -10,6 +10,7 @@ import {
   dao,
   dashboard,
   indexContract,
+  nestedRoute,
   route,
   routeClient,
 } from "./__fixtures__/oneThing.js";
@@ -87,7 +88,7 @@ describe("suss ask", () => {
     );
     fs.writeFileSync(
       path.join(dir, "app.json"),
-      JSON.stringify([dao, dashboard, route, routeClient]),
+      JSON.stringify([dao, dashboard, route, nestedRoute, routeClient]),
     );
   });
 
@@ -245,6 +246,155 @@ describe("suss ask", () => {
     expect(() => ask({ question: "what reads aws.dynamodb:editions" })).toThrow(
       /ask needs summaries to read/,
     );
+  });
+});
+
+describe("suss ask, pointing at one thing", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-one-"));
+    fs.writeFileSync(
+      path.join(dir, "app.json"),
+      JSON.stringify([dao, dashboard, route, nestedRoute, routeClient]),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function answer(question: string): { output: string; code: number } {
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+    }
+  }
+
+  it("says a spelling could mean several boundaries, and which", () => {
+    const { output, code } = answer("what does editions reach");
+
+    expect(code).toBe(1);
+    expect(output).toContain("could mean");
+    expect(output).toContain("GET /editions");
+    expect(output).toContain("GET /editions/{id}/comments");
+  });
+
+  it("takes the route it spells exactly over the one it is part of", () => {
+    const { output, code } = answer("what does GET /editions reach");
+
+    expect(code).toBe(0);
+    expect(output).not.toContain("could mean");
+    expect(output).not.toContain("comments");
+  });
+
+  it("leaves out the boundary a unit provides when asked what it reaches", () => {
+    const { output } = answer("what does GET /editions reach");
+
+    expect(output).not.toContain("provides GET /editions");
+  });
+
+  it("takes a handler by its function name as well as its route", () => {
+    const byName = answer("what does listEditions reach");
+    const byRoute = answer("what does GET /editions reach");
+
+    expect(byName.code).toBe(0);
+    // Each answer says back what it was asked about; the rest matches.
+    expect(byName.output.replace("listEditions", "GET /editions")).toBe(
+      byRoute.output,
+    );
+  });
+});
+
+describe("suss ask in symbols", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-short-"));
+    fs.writeFileSync(
+      path.join(dir, "app.json"),
+      JSON.stringify([dao, dashboard, route, routeClient]),
+    );
+    fs.writeFileSync(
+      path.join(dir, "infra.json"),
+      JSON.stringify([indexContract]),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function answer(
+    question: string,
+    options: { json?: boolean } = {},
+  ): { output: string; code: number } {
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir, ...options });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+    }
+  }
+
+  it("reads each symbol form as the question it stands for", () => {
+    expect(parseQuestion("<- src/editions/dao.ts")).toEqual(
+      parseQuestion("what calls src/editions/dao.ts"),
+    );
+    expect(parseQuestion("src/editions/dao.ts ->")).toEqual(
+      parseQuestion("what does src/editions/dao.ts reach"),
+    );
+    expect(parseQuestion("r<- aws.dynamodb:editions")).toEqual(
+      parseQuestion("what reads aws.dynamodb:editions"),
+    );
+    expect(parseQuestion("w<- aws.dynamodb:editions")).toEqual(
+      parseQuestion("what writes aws.dynamodb:editions"),
+    );
+    expect(parseQuestion("getOrder -> aws.dynamodb:orders ?")).toEqual(
+      parseQuestion("why does getOrder reach aws.dynamodb:orders"),
+    );
+  });
+
+  it("answers the same thing either way, in text and in JSON", () => {
+    const short = answer("r<- aws.dynamodb:editions");
+    const written = answer("what reads aws.dynamodb:editions");
+
+    expect(short.code).toBe(written.code);
+    expect(short.output).toBe(written.output);
+
+    const shortJson = JSON.parse(
+      answer("r<- aws.dynamodb:editions", { json: true }).output,
+    ) as Record<string, unknown>;
+    const writtenJson = JSON.parse(
+      answer("what reads aws.dynamodb:editions", { json: true }).output,
+    ) as Record<string, unknown>;
+
+    // Every field but the question as typed, which each one echoes.
+    expect({ ...shortJson, question: null }).toEqual({
+      ...writtenJson,
+      question: null,
+    });
+  });
+
+  it("turns down a symbol question it cannot read", () => {
+    expect(parseQuestion("<-")).toBeNull();
+    expect(parseQuestion("<- a b")).toBeNull();
+    expect(parseQuestion("a -> b")).toBeNull();
+    expect(parseQuestion("-> src/dao.ts")).toBeNull();
   });
 });
 

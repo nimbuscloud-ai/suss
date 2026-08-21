@@ -195,6 +195,47 @@ export const route: BehavioralSummary = {
   confidence: CONFIDENT,
 };
 
+/**
+ * A route whose path starts with the collection route's path, so a
+ * spelling that covers one covers the other unless the exact one wins.
+ */
+export const nestedRoute: BehavioralSummary = {
+  kind: "handler",
+  location: {
+    file: "src/editions/routes.ts",
+    range: { start: 50, end: 70 },
+    exportName: "listComments",
+  },
+  identity: {
+    name: "listComments",
+    exportPath: ["listComments"],
+    boundaryBinding: restBinding({
+      transport: "http",
+      recognition: "express",
+      method: "GET",
+      path: "/editions/{id}/comments",
+    }),
+  },
+  inputs: [],
+  transitions: [
+    {
+      id: "listComments:200",
+      conditions: [],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: null,
+        headers: {},
+      },
+      effects: [],
+      location: { start: 52, end: 60 },
+      isDefault: true,
+    },
+  ],
+  gaps: [],
+  confidence: CONFIDENT,
+};
+
 export const routeClient: BehavioralSummary = {
   kind: "client",
   location: {

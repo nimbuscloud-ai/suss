@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { indexContract } from "./__fixtures__/oneThing.js";
 import { runCli, USAGE } from "./run.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -508,6 +509,25 @@ describe("runCli inspect", () => {
     const { exit, io } = await capture(() => runCli(["inspect"]));
     expect(exit).toBe(1);
     expect(io.stderr).toContain("summaries file");
+  });
+
+  it("prints what a store is called and what it serves", async () => {
+    const file = writeJson("infra.json", [indexContract]);
+    const { exit, io } = await capture(() => runCli(["inspect", file]));
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain("keyed by publicationId");
+    expect(io.stdout).toContain("Serves: publicationId (S), editionId (S)");
+  });
+
+  it("turns down a flag inspect does not take, and says where to go", async () => {
+    const file = writeJson("summaries.json", [minimalSummary]);
+    const { exit, io } = await capture(() =>
+      runCli(["inspect", file, "--json"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("does not take --json");
+    expect(io.stderr).toContain("suss ask --json");
+    expect(io.stdout).toBe("");
   });
 
   it("inspect --diff requires before AND after paths", async () => {

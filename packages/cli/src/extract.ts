@@ -682,6 +682,12 @@ export async function extract(
     process.stderr.write(formatCacheDiagnostic(cacheDiagnostic));
   }
 
+  if (extractionReport === null && options.explain === true) {
+    process.stderr.write(
+      "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n",
+    );
+  }
+
   if (extractionReport !== null) {
     const report = extractionReport as ExtractionReport;
     if (options.explain === true || report.summaries === 0) {

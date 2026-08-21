@@ -526,7 +526,34 @@ Seven questions, in these words:
 The boundary is spelled the way reports spell it, and a shorter spelling
 covers more, exactly as under [`--at`](#reporting-on-one-thing). A
 service call counts as both a read and a write, since a request sends a
-body out and gets a response back.
+body out and gets a response back. When a spelling covers several
+boundaries at once, suss says which ones rather than picking one, and a
+spelling that is exactly one boundary's name takes that one:
+`GET /articles` is the collection route, not the comments route under
+it.
+
+### The same questions in symbols
+
+Five of the questions have a symbol form, for somebody asking the same
+thing often. The arrows point the way the calls go:
+
+| Symbols | The question it means |
+|---|---|
+| `<- <unit>` | `what calls <unit>` |
+| `<unit> ->` | `what does <unit> reach` |
+| `<unit> -> <boundary> ?` | `why does <unit> reach <boundary>` |
+| `r<- <boundary>` | `what reads <boundary>` |
+| `w<- <boundary>` | `what writes <boundary>` |
+
+```
+$ suss ask '<- src/orderStore.ts' --dir .suss
+$ suss ask 'getOrder -> aws.dynamodb:orders-v1 ?' --dir .suss
+```
+
+The words are the documentation and the symbols are an alias for them,
+so both take the same spellings and both give the same answer, in text
+and under `--json`. The parts separate on spaces, since `<-`, `->` and
+a trailing `?` are characters no key, id, or path contains.
 
 A store has two spellings when its name is filled in at deploy time:
 the reference the code states (`aws.dynamodb:{SUBSCRIBER_TABLE}`) and
