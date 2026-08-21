@@ -182,11 +182,34 @@ export function checkDirectory(options: {
   // Which file each summary came from, so a caller can report a
   // boundary two different files both claim to provide.
   const sourceFile = new Map<BehavioralSummary, string>();
+  const skipped: string[] = [];
   for (const file of files) {
-    for (const summary of readSummaries(path.join(resolved, file))) {
+    let read: BehavioralSummary[];
+    try {
+      read = readSummaries(path.join(resolved, file));
+    } catch (error) {
+      // A folder of summaries picks up files that are not summaries,
+      // most often a report written back where they were read from.
+      // Say which one and check the rest.
+      skipped.push(`${file}: ${firstLineOf(error)}`);
+      continue;
+    }
+    for (const summary of read) {
       summaries.push(summary);
       sourceFile.set(summary, file);
     }
+  }
+
+  if (skipped.length === files.length) {
+    throw new UsageError(
+      `Nothing in ${resolved} is a summaries file:\n${listOfSkipped(skipped)}`,
+    );
+  }
+
+  if (skipped.length > 0) {
+    process.stderr.write(
+      `Skipped ${skipped.length} file${skipped.length === 1 ? "" : "s"} in ${resolved} that suss could not read as summaries:\n${listOfSkipped(skipped)}\n`,
+    );
   }
 
   const rawResult = checkAll(summaries);
@@ -443,12 +466,29 @@ export function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
   );
 }
 
+function listOfSkipped(skipped: readonly string[]): string {
+  return skipped.map((line) => `  - ${line}`).join("\n");
+}
+
+function firstLineOf(error: unknown): string {
+  return error instanceof Error
+    ? (error.message.split("\n")[0] as string)
+    : String(error);
+}
+
 function readSummaries(file: string): BehavioralSummary[] {
   const resolved = path.resolve(file);
   if (!fs.existsSync(resolved)) {
     throw new UsageError(`No file at ${resolved}.`);
   }
-  const parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
+  } catch (error) {
+    throw new UsageError(
+      `${resolved} is not JSON suss can read: ${firstLineOf(error)}`,
+    );
+  }
   const result = safeParseSummaries(parsed);
   if (!result.success) {
     throw new UsageError(

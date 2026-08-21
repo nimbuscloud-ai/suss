@@ -1616,19 +1616,50 @@ export function readSummariesFromDir(dir: string): BehavioralSummary[] {
   }
 
   const all: BehavioralSummary[] = [];
+  const skipped: string[] = [];
   for (const file of files) {
     const filePath = path.join(resolved, file);
     const content = fs.readFileSync(filePath, "utf-8");
-    all.push(...parseSummaryFile(filePath, content));
+    try {
+      all.push(...parseSummaryFile(filePath, content));
+    } catch (error) {
+      // A folder of summaries can pick up a file that is not one, most
+      // often a report written back to where the summaries were read
+      // from. Say which file and carry on with the rest.
+      skipped.push(`${file}: ${messageOf(error)}`);
+    }
+  }
+
+  if (skipped.length === files.length) {
+    throw new UsageError(
+      `Nothing in ${resolved} is a summaries file:\n${skipped.map((line) => `  - ${line}`).join("\n")}`,
+    );
+  }
+
+  if (skipped.length > 0) {
+    process.stderr.write(
+      `Skipped ${skipped.length} file${skipped.length === 1 ? "" : "s"} in ${resolved} that ${skipped.length === 1 ? "is not summaries" : "are not summaries"}:\n${skipped.map((line) => `  - ${line}`).join("\n")}\n`,
+    );
   }
   return all;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message.split("\n")[0] : String(error);
 }
 
 export function parseSummaryFile(
   filePath: string,
   content: string,
 ): BehavioralSummary[] {
-  const json = JSON.parse(content) as unknown;
+  let json: unknown;
+  try {
+    json = JSON.parse(content) as unknown;
+  } catch (error) {
+    throw new UsageError(
+      `${filePath} is not JSON suss can read: ${messageOf(error)}`,
+    );
+  }
   const result = safeParseSummaries(json);
   if (!result.success) {
     const issues = result.error.issues
