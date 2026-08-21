@@ -74,6 +74,24 @@ function stagesOf(funnel: PackFunnel): Array<{
   const gateSaysSomething =
     funnel.gates.length > 0 && funnel.unresolvedGates.length === 0;
 
+  // A pack that recognises calls had its chance the moment some pack
+  // walked a body in a file its gate selected. Matching nothing there
+  // means either the library is installed and not usable yet, the way
+  // a Prisma client is before it is generated, or the code calls it in
+  // a shape the pack does not describe. The count only means something
+  // when the gate resolved, since an unresolved gate has its own copy.
+  if (funnel.recognizes && !funnel.discovers && gateSaysSomething) {
+    stages.push({
+      from: {
+        name: "unit bodies to look inside",
+        count: funnel.unitsInGatedFiles,
+      },
+      to: { name: "effects recognized", count: funnel.effectsRecognized },
+      meaning:
+        "its import gate found the library and it matched nothing in the bodies it saw",
+    });
+  }
+
   if (funnel.discovers && gateSaysSomething) {
     stages.push({
       from: { name: "candidate files", count: funnel.candidateFiles },
