@@ -790,6 +790,13 @@ const StorageContractMetadataSchema = z.object({
         nullable: z.boolean().optional(),
         primary: z.boolean().optional(),
         unique: z.boolean().optional(),
+        /**
+         * Set when the boundary serves this field without storing it:
+         * a Prisma relation, which is read through its foreign key, or
+         * a count the client works out. Nothing writes one, so the
+         * unused and write-only checks leave it alone.
+         */
+        derived: z.boolean().optional(),
       }),
     )
     .optional(),

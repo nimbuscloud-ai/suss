@@ -194,7 +194,7 @@ model Post {
     expect(role?.type).toBe("Role");
   });
 
-  it("skips relation fields and relation-array fields", () => {
+  it("declares a relation field by the model it points at", () => {
     const summaries = prismaSchemaToSummaries(postgresSchema);
     const user =
       summaries.find((s) => s.identity.name === "User") ??
@@ -202,10 +202,22 @@ model Post {
     const post =
       summaries.find((s) => s.identity.name === "Post") ??
       raise("Post summary not found");
-    expect(fieldsOf(user).find((c) => c.name === "posts")).toBeUndefined();
-    expect(fieldsOf(post).find((c) => c.name === "author")).toBeUndefined();
-    // FK columns ARE captured.
+    // The client takes either of these in an `include`, so a contract
+    // that calls itself exhaustive has to declare them.
+    expect(fieldsOf(user).find((c) => c.name === "posts")?.type).toBe("Post[]");
+    expect(fieldsOf(post).find((c) => c.name === "author")?.type).toBe("User");
+    // FK columns are still captured.
     expect(fieldsOf(post).find((c) => c.name === "authorId")).toBeDefined();
+  });
+
+  it("declares _count on a model with a relation", () => {
+    const summaries = prismaSchemaToSummaries(postgresSchema);
+    const user =
+      summaries.find((s) => s.identity.name === "User") ??
+      raise("User summary not found");
+    // Prisma serves `_count` on a model with relations, and nothing in
+    // the schema writes it down.
+    expect(fieldsOf(user).find((c) => c.name === "_count")).toBeDefined();
   });
 
   it("captures @@index and @@unique block attributes", () => {

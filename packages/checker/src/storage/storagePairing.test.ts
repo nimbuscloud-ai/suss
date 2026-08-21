@@ -22,7 +22,12 @@ function makeProvider(opts: {
   storageSystem?: string;
   scope?: string;
   accessPath?: string | null;
-  fields: Array<{ name: string; type?: string; nullable?: boolean }>;
+  fields: Array<{
+    name: string;
+    type?: string;
+    nullable?: boolean;
+    derived?: boolean;
+  }>;
   physicalTable?: string;
   /** A SQL schema declares every field, so that is the default here. */
   fieldSet?: "exhaustive" | "partial" | "none";
@@ -508,6 +513,30 @@ describe("checkStorage", () => {
     expect(unused).toHaveLength(1);
     expect(unused[0].description).toContain("deletedAt");
     expect(unused[0].severity).toBe("warning");
+  });
+
+  it("leaves a field the store serves without keeping it out of both checks", () => {
+    const findings = checkStorage([
+      makeProvider({
+        container: "User",
+        fields: [
+          { name: "id" },
+          { name: "email" },
+          { name: "posts", derived: true },
+        ],
+      }),
+      makeAccessSummary({
+        name: "h",
+        file: "src/h.ts",
+        accesses: [
+          { container: "User", kind: "read", fields: ["id", "email"] },
+        ],
+      }),
+    ]);
+
+    expect(
+      findings.filter((f) => f.description.includes("posts")),
+    ).toHaveLength(0);
   });
 
   it("emits storageWriteOnlyField when a field is written but never read", () => {

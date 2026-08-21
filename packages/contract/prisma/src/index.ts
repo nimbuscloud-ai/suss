@@ -201,16 +201,23 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
     nullable: boolean;
     primary?: boolean;
     unique?: boolean;
+    derived?: boolean;
   }> = [];
   const indexes: Array<{ fields: string[]; unique: boolean }> = [];
   const physicalTable = physicalTableOf(opts.model);
 
+  let hasRelation = false;
   for (const property of opts.model.properties) {
     if ((property as { type: string }).type === "field") {
       const field = property as PrismaField;
       const column = fieldToColumn(field, opts.modelNames, opts.enumNames);
       if (column !== null) {
         columns.push(column);
+      }
+      const related = relationField(field, opts.modelNames);
+      if (related !== null) {
+        hasRelation = true;
+        columns.push(related);
       }
     } else if ((property as { type: string }).type === "attribute") {
       const attr = property as PrismaAttribute;
@@ -219,6 +226,15 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
         indexes.push(index);
       }
     }
+  }
+
+  if (hasRelation) {
+    columns.push({
+      name: "_count",
+      type: "PrismaCount",
+      nullable: false,
+      derived: true,
+    });
   }
 
   return {
@@ -254,6 +270,32 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
           : {}),
       },
     },
+  };
+}
+
+/**
+ * A field whose type is another model. The client takes it in an
+ * `include` or a `select` even though no column of that name exists.
+ * Leaving it out of a contract that calls itself exhaustive reports
+ * working code as reading a field nobody declared.
+ */
+function relationField(
+  field: PrismaField,
+  modelNames: Set<string>,
+): {
+  name: string;
+  type: string;
+  nullable: boolean;
+  derived: true;
+} | null {
+  if (!modelNames.has(field.fieldType)) {
+    return null;
+  }
+  return {
+    name: field.name,
+    type: field.array === true ? `${field.fieldType}[]` : field.fieldType,
+    nullable: field.optional === true,
+    derived: true,
   };
 }
 

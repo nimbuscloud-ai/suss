@@ -190,6 +190,12 @@ export function checkStorage(
     // would mean what the words say.
     if (!anyDefaultShapeRead && inScope.length > 0) {
       for (const field of contract.fields ?? []) {
+        // A field the store serves without keeping it has nobody to
+        // write it, so both checks below would be about the wrong
+        // thing.
+        if (field.derived === true) {
+          continue;
+        }
         const isRead = readNames.has(field.name);
         const isWritten = writtenNames.has(field.name);
         if (!isRead && !isWritten) {
