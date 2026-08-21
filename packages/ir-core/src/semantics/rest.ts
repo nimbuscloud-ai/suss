@@ -63,6 +63,17 @@ export function normalizePath(path: string): string {
 }
 
 /**
+ * A path with every parameter reduced to its position. `/users/{id}`
+ * and `/users/:userId` both come out `/users/{}`, which is the set of
+ * requests each one serves, and what deciding whether two sides
+ * describe one endpoint rests on. The name a parameter is written
+ * under is worth keeping in a report and worth nothing in a comparison.
+ */
+export function pathShape(path: string): string {
+  return normalizePath(path).replace(/\{[^}]*\}/g, "{}");
+}
+
+/**
  * Whether two REST methods mean the same thing. Equal methods agree,
  * and `"*"` agrees with any stated method, because a handler that
  * responds to every method responds to this one. A null method was never
@@ -141,12 +152,17 @@ export const restSemantics = defineBoundarySemantics({
      * settles it inside the bucket. The identity key stays what a reader
      * sees and a suppression targets ("GET /users", "* /users"), and
      * this key groups what a reader still tells apart.
+     *
+     * A parameter's name goes too. A spec written by hand says
+     * `{userId}` where the Express route that serves it says `:id`, and
+     * both match the same requests, so pairing on the name gave two
+     * boundaries that never met and a run with nothing to report.
      */
     pairingKey(semantics) {
       if (semantics.method === null || semantics.path === null) {
         return null;
       }
-      return `rest ${normalizePath(semantics.path)}`;
+      return `rest ${pathShape(semantics.path)}`;
     },
     sidesAgree(a, b) {
       return methodsAgree(a.method, b.method);

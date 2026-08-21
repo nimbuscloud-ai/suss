@@ -147,6 +147,7 @@ export { type DispatchTable, dispatchByType } from "./dispatch.js";
 export {
   methodsAgree,
   normalizePath,
+  pathShape,
   routePathAdmits,
 } from "./semantics/rest.js";
 export {
