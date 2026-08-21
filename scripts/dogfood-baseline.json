@@ -3,7 +3,7 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 525,
-    "internal": 2088,
+    "internal": 2089,
     "consumers": 970,
     "pairs": 962,
     "unfollowedCalls": 239,
@@ -41,7 +41,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 39,
-      "internal": 209,
+      "internal": 210,
       "consumers": 133,
       "unfollowedCalls": 24
     },

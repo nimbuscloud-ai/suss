@@ -107,18 +107,21 @@ The provider declares a field that no consumer references. Per-domain instances:
 - **Storage** (no aspect = "no reader and no writer")
   ```
   [WARNING] boundaryFieldUnused
-    User declares column "deletedAt" but no code in the project reads
-    or writes it.
+    User declares "deletedAt", and no query here asks for it or
+    writes it. A field the code takes off a record a query returned
+    never counts as a read here, so look for one before treating the
+    field as dead.
     boundary: prisma (in-process) storage:postgresql:default:User
   ```
-  suss suppresses this when ANY caller uses default-shape (`["*"]`) reads on the table, because then we can't tell whether default-shape consumers actually use the column.
+  suss suppresses this when ANY caller uses default-shape (`["*"]`) reads on the table, because then we can't tell whether default-shape consumers actually use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for.
 
 - **Storage write-only** (aspect `read` = "the read aspect of this field is unused, but writers exist")
   ```
   [WARNING] boundaryFieldUnused (aspect: read)
-    User declares column "lastWriteAt" and code writes it, but no code
-    in the project reads it. Likely useless data. The application
-    stores values nothing downstream consumes.
+    User declares "lastWriteAt" and code here writes it, but no
+    query asks for it back. A field the code takes off a record a query
+    returned never counts as a read here, so look for one before
+    treating the write as pointless.
   ```
 
 - **Runtime config** (no aspect)
