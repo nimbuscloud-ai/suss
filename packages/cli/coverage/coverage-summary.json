@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3224,
-      "covered": 2965,
+      "total": 3353,
+      "covered": 3077,
       "skipped": 0,
-      "pct": 91.96
+      "pct": 91.76
     },
     "statements": {
-      "total": 3309,
-      "covered": 3045,
+      "total": 3439,
+      "covered": 3158,
       "skipped": 0,
-      "pct": 92.02
+      "pct": 91.82
     },
     "functions": {
-      "total": 684,
-      "covered": 632,
+      "total": 711,
+      "covered": 658,
       "skipped": 0,
-      "pct": 92.39
+      "pct": 92.54
     },
     "branches": {
-      "total": 2185,
-      "covered": 1760,
+      "total": 2273,
+      "covered": 1822,
       "skipped": 0,
-      "pct": 80.54
+      "pct": 80.15
     },
     "branchesTrue": {
       "total": 0,
@@ -33,36 +33,88 @@
   },
   "src/ask.ts": {
     "lines": {
-      "total": 114,
-      "covered": 108,
+      "total": 112,
+      "covered": 106,
       "skipped": 0,
-      "pct": 94.73
+      "pct": 94.64
     },
     "functions": {
-      "total": 45,
-      "covered": 42,
+      "total": 42,
+      "covered": 39,
       "skipped": 0,
-      "pct": 93.33
+      "pct": 92.85
     },
     "statements": {
-      "total": 120,
-      "covered": 114,
+      "total": 117,
+      "covered": 111,
       "skipped": 0,
-      "pct": 95
+      "pct": 94.87
     },
     "branches": {
-      "total": 85,
-      "covered": 68,
+      "total": 89,
+      "covered": 73,
       "skipped": 0,
-      "pct": 80
+      "pct": 82.02
+    }
+  },
+  "src/askCaveats.ts": {
+    "lines": {
+      "total": 6,
+      "covered": 6,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 7,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 4,
+      "covered": 3,
+      "skipped": 0,
+      "pct": 75
+    }
+  },
+  "src/askWhy.ts": {
+    "lines": {
+      "total": 125,
+      "covered": 107,
+      "skipped": 0,
+      "pct": 85.6
+    },
+    "functions": {
+      "total": 26,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 96.15
+    },
+    "statements": {
+      "total": 126,
+      "covered": 108,
+      "skipped": 0,
+      "pct": 85.71
+    },
+    "branches": {
+      "total": 78,
+      "covered": 52,
+      "skipped": 0,
+      "pct": 66.66
     }
   },
   "src/boundaryReach.ts": {
     "lines": {
       "total": 49,
-      "covered": 42,
+      "covered": 43,
       "skipped": 0,
-      "pct": 85.71
+      "pct": 87.75
     },
     "functions": {
       "total": 14,
@@ -72,15 +124,15 @@
     },
     "statements": {
       "total": 50,
-      "covered": 43,
+      "covered": 44,
       "skipped": 0,
-      "pct": 86
+      "pct": 88
     },
     "branches": {
       "total": 18,
-      "covered": 15,
+      "covered": 16,
       "skipped": 0,
-      "pct": 83.33
+      "pct": 88.88
     }
   },
   "src/check.ts": {
@@ -545,10 +597,10 @@
       "pct": 94.67
     },
     "branches": {
-      "total": 226,
-      "covered": 196,
+      "total": 228,
+      "covered": 197,
       "skipped": 0,
-      "pct": 86.72
+      "pct": 86.4
     }
   },
   "src/style.ts": {
