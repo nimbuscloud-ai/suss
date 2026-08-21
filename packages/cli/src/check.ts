@@ -837,7 +837,17 @@ function renderDirHuman(
       : `${noBoundary.length} other summar${noBoundary.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBoundary.length === 1 ? "it" : "them"}.`;
 
   if (!all) {
-    const counts = unpairedCounts(providers, consumers, nothingToCompare);
+    // When one side of the run is empty, the block above already gave
+    // that count in a sentence, and repeating it reads as a second
+    // problem rather than the same one.
+    const oneSided =
+      comparedByBoundary.size === 0 &&
+      (providers.length === 0 || consumers.length === 0);
+    const counts = unpairedCounts(
+      oneSided ? [] : providers,
+      oneSided ? [] : consumers,
+      nothingToCompare,
+    );
     if (counts.length > 0) {
       lines.push("");
       for (const count of counts) {

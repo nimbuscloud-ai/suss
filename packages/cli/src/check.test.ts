@@ -1233,6 +1233,22 @@ describe("checkDir", () => {
     expect(output).toContain("OrgPage");
   });
 
+  it("says a run with only one side has no other side once, not twice", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "summaries.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+
+    const output = captureStdout(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("none on the client side");
+    expect(output).not.toContain("no client to compare against.");
+  });
+
   it("counts the unmatched two instead of naming them, without --all", () => {
     fs.writeFileSync(
       path.join(tmpDir, "summaries.json"),

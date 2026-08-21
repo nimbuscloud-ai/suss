@@ -15,6 +15,7 @@ import {
   displayLabel,
   readHttpMetadata,
   readReactMetadata,
+  readStorageContractMetadata,
   safeParseSummaries,
 } from "@suss/behavioral-ir";
 import {
@@ -961,6 +962,48 @@ const STANDALONE_LAYOUT: SummaryLayout = {
   inFileGroup: false,
 };
 
+/**
+ * What a store says it is, for a provider that declares one. Somebody
+ * reading a table's summary wants the name it has when it is deployed
+ * and the fields a query may ask for, and both were in the JSON with
+ * nowhere to read them.
+ */
+function storeLines(summary: BehavioralSummary): string[] {
+  const store = readStorageContractMetadata(summary);
+  if (store === undefined) {
+    return [];
+  }
+  const lines: string[] = [];
+  const identifies = store.identifies;
+  const keyed =
+    identifies !== undefined && identifies.kind === "keyFields"
+      ? `, keyed by ${identifies.fields.join(" and ")}`
+      : "";
+  if (store.physicalTable !== undefined && store.physicalTable !== null) {
+    lines.push(`  Table: ${store.physicalTable}${keyed}`);
+  } else if (keyed !== "") {
+    lines.push(`  Table${keyed}`);
+  }
+
+  const fields = store.fields ?? [];
+  if (fields.length > 0) {
+    const shown = fields
+      .slice(0, STORE_FIELD_LIMIT)
+      .map((field) =>
+        field.type === undefined ? field.name : `${field.name} (${field.type})`,
+      );
+    const rest = fields.length - shown.length;
+    const all = store.fieldSet === "exhaustive" ? "Serves" : "Serves at least";
+    lines.push(
+      `  ${all}: ${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}`,
+    );
+  }
+  return lines;
+}
+
+/** A screenful of fields, then a count, the way the rest of inspect prints. */
+const STORE_FIELD_LIMIT = 12;
+
 function renderSummary(
   summary: BehavioralSummary,
   ctx: RenderCtx,
@@ -992,6 +1035,8 @@ function renderSummary(
     declares = (status) => contractDeclaresStatus(contract, status);
     bodyLines.push(`  Contract: ${parts.join(", ")}`);
   }
+
+  bodyLines.push(...storeLines(summary));
 
   if (summary.transitions.length > 0) {
     bodyLines.push(...renderTransitions(summary.transitions, declares, perCtx));

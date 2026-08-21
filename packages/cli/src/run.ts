@@ -347,6 +347,22 @@ async function runExtract(args: string[]): Promise<number> {
   return process.exitCode === 1 ? 1 : 0;
 }
 
+/** What plain `inspect` takes. `--flow` is handled before this. */
+const INSPECT_FLAGS = new Set(["--dir", "--diff", "--flow"]);
+
+/**
+ * A flag inspect does not take, said rather than dropped. `--json` is
+ * the one people try, so it gets pointed somewhere: the summaries file
+ * is already JSON, and ask gives an answer in JSON.
+ */
+function inspectFlagMessage(flag: string): string {
+  const where =
+    flag === "--json"
+      ? "inspect prints for people. The summaries file it reads is already JSON, suss ask --json gives an answer in JSON, and suss inspect --flow takes --json.\n"
+      : "";
+  return `inspect does not take ${flag}. It takes --dir, --diff, --types, and --flow.\n${where}`;
+}
+
 async function runInspect(argv: string[]): Promise<number> {
   if (argv.includes("--flow")) {
     return await runFlow(argv);
@@ -354,6 +370,11 @@ async function runInspect(argv: string[]): Promise<number> {
 
   const types = argv.includes("--types");
   const args = argv.filter((a) => a !== "--types");
+  const unknown = args.find((a) => a.startsWith("--") && !INSPECT_FLAGS.has(a));
+  if (unknown !== undefined) {
+    process.stderr.write(inspectFlagMessage(unknown));
+    return 1;
+  }
   if (args[0] === "--diff") {
     const before = args[1];
     const after = args[2];
