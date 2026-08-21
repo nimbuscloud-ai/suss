@@ -51,6 +51,26 @@ describe("a name written where it is used", () => {
     ).toBe("orders-prod");
   });
 
+  it("reads the resolvable branch of a fallback kept in a const", () => {
+    expect(
+      nameOf(`
+        const table = process.env.TABLE ?? "orders-prod";
+        export const subject = table;
+      `),
+    ).toBe("orders-prod");
+  });
+
+  it("keeps the hole for a fallback const inside a longer name", () => {
+    // A deployment sets STAGE, so the part stays a hole the same as a
+    // fallback written inside the template would.
+    expect(
+      nameOf(`
+        const stage = process.env.STAGE || "staging";
+        export const subject = \`\${stage}-orders\`;
+      `),
+    ).toBe("{stage}-orders");
+  });
+
   it("joins the two sides of a concatenation", () => {
     expect(
       nameOf(`

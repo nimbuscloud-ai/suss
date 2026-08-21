@@ -108,6 +108,9 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
   "last write": ({ tuple, describe }) => ({
     reason: `${describe(tuple[0])} is written more than once, and the last write leaves it as ${describe(tuple[1])}`,
   }),
+  fallback: ({ tuple, describe }) => ({
+    reason: `${describe(tuple[0])} is a fallback expression, and ${describe(tuple[1])} is the branch that resolves`,
+  }),
   import: ({ tuple, premises, describe }) => {
     const [, module, name] = premises[0].tuple;
     return {

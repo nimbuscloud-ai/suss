@@ -1018,6 +1018,69 @@ describe("resolveWrittenValue", () => {
   });
 });
 
+describe("a value written as a fallback", () => {
+  function usedAs(project: Project, file: string, name: string): Node {
+    const sourceFile = project.getSourceFileOrThrow(file);
+    const found = sourceFile
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .flatMap((call) => call.getArguments())
+      .find((arg) => arg.getText() === name);
+    if (found === undefined) {
+      throw new Error(`No use of ${name} in ${file}`);
+    }
+    return found;
+  }
+
+  it("resolves the branch that resolves when the other is a global cache", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        export const handler = (globalThis as any).cached || (async () => "built");
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+    ).toContain('"built"');
+  });
+
+  it("answers with the construction a client singleton falls back to", () => {
+    const project = projectOf({
+      "/client.ts": `
+        import { Client } from "client-lib";
+        export const client = (globalThis as any).cachedClient || new Client();
+      `,
+      "/mod.ts": `
+        import { client } from "./client.js";
+        declare function run(c: unknown): void;
+        export function go() { run(client); }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      usedAs(project, "/mod.ts", "client"),
+    );
+    expect(written?.getText()).toBe("new Client()");
+  });
+
+  it("answers with the default a config read falls back to", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare function run(name: string): void;
+        const TABLE = process.env.TABLE ?? "orders-prod";
+        export function go() { run(TABLE); }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      usedAs(project, "/mod.ts", "TABLE"),
+    );
+    expect(written?.getText()).toBe('"orders-prod"');
+  });
+});
+
 describe("a binding written more than once", () => {
   function bindingOf(project: Project, file: string, name: string): Node {
     return project

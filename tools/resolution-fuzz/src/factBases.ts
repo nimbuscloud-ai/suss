@@ -141,6 +141,20 @@ function readProperty(p: Program, rnd: Random): void {
 }
 
 /**
+ * A fallback, `cached || build()`. Half the time one branch is a node
+ * nothing states facts about, which is the global-cache shape the
+ * fallback rule exists for; the rest of the time both branches draw
+ * from the pool, so two resolvable branches come up too.
+ */
+function fallbackValue(p: Program, rnd: Random): void {
+  const x = id(p, "or");
+  const left = rnd.chance(0.5) ? id(p, "dead") : rnd.pickRecent(p.values);
+  say(p, "fallbackBranch", x, left);
+  say(p, "fallbackBranch", x, rnd.pickRecent(p.values));
+  asValue(p, x);
+}
+
+/**
  * A call site. The call is a written value because the fact contract
  * says an adapter has to say so: a chain ending at a call derives
  * nothing through `isWrittenAs` otherwise.
@@ -377,6 +391,7 @@ const CONSTRUCTS: Record<string, Construct> = {
   declareWritten,
   bindName,
   reassign,
+  fallbackValue,
   readProperty,
   callSite,
   callKnownFunction,
@@ -404,6 +419,7 @@ const WEIGHTS: Record<keyof typeof CONSTRUCTS, number> = {
   declareWritten: 2,
   bindName: 5,
   reassign: 2,
+  fallbackValue: 2,
   readProperty: 4,
   callSite: 4,
   callKnownFunction: 5,
@@ -442,6 +458,7 @@ export const STATED_RELATIONS: readonly string[] = [
   "endsHolding",
   "exportsAs",
   "extends",
+  "fallbackBranch",
   "func",
   "holdsProperty",
   "imports",

@@ -22,6 +22,8 @@ function conformingFacts(): Database {
   db.add("callArg", ["call:1", "0", "f#source"]);
   db.add("exportsAs", ["f.py", "build", "fn:a"]);
   db.add("imports", ["f.py#renamed", "source.py", "value"]);
+  db.add("fallbackBranch", ["or:1", "f#cached"]);
+  db.add("fallbackBranch", ["or:1", "call:1"]);
   return db;
 }
 
@@ -186,6 +188,30 @@ describe("the fact contract", () => {
       return db;
     });
     expect(failures).toEqual([]);
+  });
+
+  it("catches a fallback whose branch is not the value node itself", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("fallbackBranch", [["or:1", "call:1"]]);
+      db.add("fallbackBranch", ["or:1", "f#build()"]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "cannot continue into the branch",
+    );
+  });
+
+  it("catches a fallback whose branches are keyed apart", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("fallbackBranch", [["or:1", "f#cached"]]);
+      db.add("fallbackBranch", ["or:2", "f#cached"]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "keyed under different expressions",
+    );
   });
 
   it("says which case has no source rather than passing it", async () => {

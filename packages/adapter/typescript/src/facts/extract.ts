@@ -36,6 +36,7 @@ import {
 
 import type { Database } from "@suss/datalog";
 import type {
+  BinaryExpression,
   ClassDeclaration,
   ParameterDeclaration,
   PropertyDeclaration,
@@ -267,6 +268,18 @@ function literalIndexOf(index: Expression | undefined): string | null {
   return null;
 }
 
+/** `a || b` or `a ?? b`: an expression that is one of its branches. */
+function asFallbackExpression(expression: Expression): BinaryExpression | null {
+  if (!Node.isBinaryExpression(expression)) {
+    return null;
+  }
+  const operator = expression.getOperatorToken().getKind();
+  return operator === SyntaxKind.BarBarToken ||
+    operator === SyntaxKind.QuestionQuestionToken
+    ? expression
+    : null;
+}
+
 /** Peel await, parentheses, satisfies, and as-casts. */
 function unwrapExpression(expression: Expression): Expression {
   let current = expression;
@@ -414,6 +427,15 @@ export function emitValue(
         fact(db, "holdsProperty", id, property.getName(), methodId);
       }
     }
+    return id;
+  }
+
+  // `a || b` and `a ?? b` say the value is one of the branches, so each
+  // branch is written down and the rules take whichever one resolves.
+  const fallback = asFallbackExpression(expression);
+  if (fallback !== null) {
+    fact(db, "fallbackBranch", id, emitValue(db, table, fallback.getLeft()));
+    fact(db, "fallbackBranch", id, emitValue(db, table, fallback.getRight()));
     return id;
   }
 

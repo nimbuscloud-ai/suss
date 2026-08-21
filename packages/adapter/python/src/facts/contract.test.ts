@@ -46,6 +46,9 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a name declared as a fallback": {
+    "f.py": "client = cached or build()\n",
+  },
   "a value another file declares": {
     "source.py": "value = 1\n",
     "f.py": "from source import value as renamed\n",
@@ -59,6 +62,8 @@ const SOURCES: Record<string, CaseFiles> = {
 const KNOWN_GAPS: Record<string, string> = {
   "a class constructed with an argument":
     "the parameters are keyed on __init__ rather than on the class",
+  "a name declared as a fallback":
+    "an `or` expression is not written down as fallbackBranch facts yet",
 };
 
 describe("the Python adapter satisfies the fact contract", () => {

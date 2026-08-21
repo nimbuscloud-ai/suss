@@ -117,7 +117,7 @@ export function redisRecognizer(call: unknown, ctx: unknown): Effect[] | null {
   }
   const method = callee.getName();
   const command = COMMANDS[method.toLowerCase()];
-  if (command === undefined || !fromClientLibrary(callee)) {
+  if (command === undefined || !fromClientLibrary(callee, resolve)) {
     return null;
   }
 
@@ -174,8 +174,13 @@ function namespaceOf(keys: string[]): string | null {
 }
 
 /** Whether a client library declares this command. */
-function fromClientLibrary(callee: Node): boolean {
-  return CLIENT_MODULES.some((module) => methodDeclaredIn(callee, module));
+function fromClientLibrary(
+  callee: Node,
+  resolve: (value: Node) => Node | null,
+): boolean {
+  return CLIENT_MODULES.some((module) =>
+    methodDeclaredIn(callee, module, resolve),
+  );
 }
 
 /**

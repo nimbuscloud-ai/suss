@@ -157,6 +157,30 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
+    name: "a name declared as a fallback",
+    requires:
+      "a module-level name declared as a fallback between a property read and a call, `cached || build()` say",
+    // The fallback expression states its branches; each branch has to be
+    // keyed as the value node itself, or the chain stops at the fallback
+    // instead of continuing into whichever branch resolves.
+    check: (facts) => {
+      const branches = facts("fallbackBranch");
+      if (branches.length < 2) {
+        return `expected a fallback with two branches, found ${branches.length}`;
+      }
+      if (distinct(branches.map((row) => row[0] ?? "")) !== 1) {
+        return "the two branches are keyed under different expressions, so nothing says they are alternatives for one value";
+      }
+      const call = facts("call")[0]?.[0];
+      if (call === undefined) {
+        return "the call branch is not written down as a call, so the branch that resolves has nothing behind it";
+      }
+      return branches.some((row) => row[1] === call)
+        ? null
+        : "no branch is the call node itself, so the chain cannot continue into the branch that resolves";
+    },
+  },
+  {
     name: "a value another file declares",
     requires:
       "two files, one declaring a value and the other reading it by name",
