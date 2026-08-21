@@ -346,6 +346,54 @@ describe("suss ask, pointing at one thing", () => {
   });
 });
 
+describe("suss ask over a folder holding a file that is not summaries", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-mixed-"));
+    fs.writeFileSync(path.join(dir, "app.json"), JSON.stringify([dao]));
+    fs.writeFileSync(path.join(dir, "report.json"), "not json{");
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reads the summaries and says which file it skipped", () => {
+    const out: string[] = [];
+    const errors: string[] = [];
+    const stdout = process.stdout.write.bind(process.stdout);
+    const stderr = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: string) => {
+      out.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string) => {
+      errors.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    let code: number;
+    try {
+      code = ask({ question: "what reads aws.dynamodb:editions", dir });
+    } finally {
+      process.stdout.write = stdout;
+      process.stderr.write = stderr;
+    }
+
+    expect(code).toBe(0);
+    expect(out.join("")).toContain("byPublication");
+    expect(errors.join("")).toContain("report.json");
+  });
+
+  it("turns down a folder where nothing is summaries", () => {
+    fs.rmSync(path.join(dir, "app.json"));
+
+    expect(() =>
+      ask({ question: "what reads aws.dynamodb:editions", dir }),
+    ).toThrow(/Nothing in .* is a summaries file/);
+  });
+});
+
 describe("suss ask in symbols", () => {
   let dir: string;
 
