@@ -165,6 +165,31 @@ describe("methodDeclaredIn", () => {
     expect(methodDeclaredIn(callee, "redis")).toBe(false);
   });
 
+  it("reads the receiver's written form when the method has no symbol", () => {
+    // The client singleton cached on an untyped global types as any,
+    // so the method resolves to nothing and the store's answer is what
+    // says which library it is.
+    const callee = calleeOf(`
+      import Redis from "ioredis";
+      const client = (globalThis as any).cached || new Redis();
+      export const read = () => client.get("k");
+    `);
+    const receiver = (
+      callee as unknown as { getExpression(): Node }
+    ).getExpression();
+    const construction = receiver
+      .getSourceFile()
+      .getDescendants()
+      .find((node: Node) => node.getKindName() === "NewExpression");
+
+    expect(methodDeclaredIn(callee, "ioredis")).toBe(false);
+    expect(
+      methodDeclaredIn(callee, "ioredis", () => construction ?? null),
+    ).toBe(true);
+    expect(methodDeclaredIn(callee, "ioredis", () => null)).toBe(false);
+    expect(methodDeclaredIn(callee, "ioredis", () => receiver)).toBe(false);
+  });
+
   it("leaves a same-named method on something else alone", () => {
     const callee = calleeOf(`
       declare const cache: { get(key: string): Promise<string> };

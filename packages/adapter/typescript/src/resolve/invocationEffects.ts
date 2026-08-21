@@ -210,7 +210,7 @@ export function methodDeclaredIn(
   return made !== null && isImportedFrom(rootIdentifier(made), expectedModule);
 }
 
-/** The callee of a construction or call, which is what says the library. */
+/** The callee of a construction or call, which says which library it is. */
 function maker(written: Node | null): Node | null {
   if (written === null) {
     return null;
