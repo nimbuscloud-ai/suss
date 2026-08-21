@@ -180,6 +180,27 @@ describe("what the pass declines to judge", () => {
   });
 });
 
+describe("what metric pairing takes for granted", () => {
+  it("treats the system and the type string as the whole identity", () => {
+    const findings = checkMetric([
+      declares({ values: "histogram" }),
+      declares({ values: "number" }),
+      reads({ comparesTo: "number" }),
+    ]);
+
+    expect(findings).toEqual([]);
+  });
+
+  it("compares what a series measures and not how it accumulates", () => {
+    expect(
+      checkMetric([
+        declares({ values: "number", accumulates: "cumulative" }),
+        reads({ comparesTo: "number" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("the pair reaching the report", () => {
   it("is recorded by the generic pairing pass, not by this one", () => {
     const summaries = [

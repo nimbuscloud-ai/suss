@@ -912,3 +912,78 @@ describe("checkAll — graphql pairing integration", () => {
     expect(result.findings).toEqual([]);
   });
 });
+
+describe("what GraphQL pairing takes for granted", () => {
+  it("stops at a union field and reports nothing about the selection under it", () => {
+    const sdl = `
+      type Pet { id: ID!  name: String! }
+      type Failure { message: String! }
+      union PetResult = Pet | Failure
+      type Query { pet(id: ID!): PetResult }
+    `;
+    const petResolver = resolver("Query", "pet", "apollo", { schemaSdl: sdl });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { nickname } }`,
+    );
+
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("stops at a fragment condition the schema never declares", () => {
+    const sdl = `
+      type Pet { id: ID!  name: String! }
+      type Query { pet(id: ID!): Pet }
+    `;
+    const petResolver = resolver("Query", "pet", "apollo", { schemaSdl: sdl });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ... on Doge { nickname } } }`,
+    );
+
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reads only the first operation a document defines", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { id } }
+       query GetStale { pet(id: "1") { nickname } }`,
+    );
+
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("takes a schema's root types to be named Query, Mutation and Subscription", () => {
+    const sdl = `
+      schema { query: RootQuery }
+      type Pet { id: ID! }
+      type RootQuery { pet(id: ID!): Pet }
+    `;
+    const petResolver = resolver("Query", "pet", "apollo", { schemaSdl: sdl });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { nickname } }`,
+    );
+
+    const result = pairGraphqlOperations([petResolver, op]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.findings).toEqual([]);
+  });
+});

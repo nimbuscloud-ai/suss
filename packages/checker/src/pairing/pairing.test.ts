@@ -542,3 +542,43 @@ describe("pairSummaries", () => {
     expect(result.pairs).toHaveLength(0);
   });
 });
+
+describe("what REST pairing takes for granted", () => {
+  it("treats a method and a path as one endpoint across the whole run", () => {
+    const billing = {
+      ...providerWithPath("getUser", "GET", "/users/:id"),
+      location: {
+        file: "services/billing/src/getUser.ts",
+        range: { start: 1, end: 50 },
+        exportName: "getUser",
+        workspace: "billing",
+      },
+    };
+    const identity = {
+      ...consumerWithPath("UserPage", "GET", "/users/:id"),
+      location: {
+        file: "services/identity/src/UserPage.ts",
+        range: { start: 1, end: 30 },
+        exportName: "UserPage",
+        workspace: "identity",
+      },
+    };
+
+    const result = pairSummaries([billing, identity]);
+    expect(result.pairs).toHaveLength(1);
+  });
+
+  it("reads the consumer's path as a route template, not as a URL it built", () => {
+    const p = providerWithPath("getUser", "GET", "/users/:id");
+    const c = consumerWithPath("UserPage", "GET", "/users/123");
+
+    expect(pairSummaries([p, c]).pairs).toHaveLength(0);
+  });
+
+  it("lets a wildcard route serve whichever method the caller sends", () => {
+    const p = providerWithPath("anyMethod", "*", "/api/users");
+    const del = consumerWithPath("DeleteButton", "DELETE", "/api/users");
+
+    expect(pairSummaries([p, del]).pairs).toHaveLength(1);
+  });
+});

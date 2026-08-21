@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   runtimeConfigBinding,
+  storageBinding,
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
@@ -917,5 +918,62 @@ describe("a runtime whose code reads its configuration off an argument", () => {
 
     const unused = findings.find((f) => f.kind === "boundaryFieldUnused");
     expect(unused?.description).toContain("reads env.GREETING_TABLE");
+  });
+});
+
+describe("what runtime-config pairing takes for granted", () => {
+  it("reads every config-read effect as an environment variable, whatever protocol its binding states", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "checkout",
+      envVars: [],
+      codeScope: { kind: "codeUri", path: "src/checkout/" },
+    });
+    const code = makeCodeSummary({
+      name: "checkoutHandler",
+      file: "src/checkout/index.ts",
+      envReads: ["SECRETS_MANAGER_KEY"],
+    });
+    const [transition] = code.transitions;
+    code.transitions = [
+      {
+        ...transition,
+        effects: transition.effects.map((effect) =>
+          effect.type === "interaction"
+            ? {
+                ...effect,
+                binding: storageBinding({
+                  recognition: "test",
+                  storageSystem: "aws.secretsmanager",
+                  scope: "default",
+                  container: "app/secrets",
+                  accessPath: null,
+                }),
+              }
+            : effect,
+        ),
+      },
+    ];
+
+    const unprovided = checkRuntimeConfig([runtime, code]).filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+    expect(unprovided).toHaveLength(1);
+    expect(unprovided[0]?.severity).toBe("error");
+    expect(unprovided[0]?.description).toContain("SECRETS_MANAGER_KEY");
+  });
+
+  it("compares a variable by its name and never by the value behind it", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "checkout",
+      envVars: ["DATABASE_URL"],
+      codeScope: { kind: "codeUri", path: "src/checkout/" },
+    });
+    const code = makeCodeSummary({
+      name: "checkoutHandler",
+      file: "src/checkout/index.ts",
+      envReads: ["DATABASE_URL"],
+    });
+
+    expect(checkRuntimeConfig([runtime, code])).toEqual([]);
   });
 });

@@ -1719,3 +1719,98 @@ describe("a name two declared tables could both be", () => {
     ]);
   });
 });
+
+describe("what storage pairing takes for granted", () => {
+  it("reads a summary that states no workspace as a single-project run", () => {
+    const declaring = {
+      ...makeProvider({ container: "users", fields: [{ name: "id" }] }),
+      location: {
+        file: "billing/schema.prisma",
+        range: { start: 1, end: 10 },
+        exportName: null,
+        workspace: "billing",
+      },
+    };
+    const querying = makeAccessSummary({
+      name: "readProfile",
+      file: "shared/src/handler.ts",
+      accesses: [{ container: "users", kind: "read", fields: ["email"] }],
+    });
+
+    const unknown = checkStorage([declaring, querying]).filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]?.description).toContain("email");
+  });
+
+  it("compares the name a query selects against the name the schema declares, letter for letter", () => {
+    const unknown = checkStorage([
+      makeProvider({ container: "users", fields: [{ name: "created_at" }] }),
+      makeAccessSummary({
+        name: "listUsers",
+        file: "src/listUsers.ts",
+        accesses: [{ container: "users", kind: "read", fields: ["createdAt"] }],
+      }),
+    ]).filter((f) => f.kind === "boundaryFieldUnknown");
+
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]?.severity).toBe("error");
+    expect(unknown[0]?.description).toContain("createdAt");
+  });
+
+  it("reads any secondary access path as one that copies part of an item", () => {
+    const unknown = checkStorage([
+      makeProvider({
+        container: "users",
+        storageSystem: "postgresql",
+        accessPath: "users_by_email_idx",
+        fields: [{ name: "email" }],
+      }),
+      makeAccessSummary({
+        name: "findByEmail",
+        file: "src/findByEmail.ts",
+        accesses: [
+          {
+            container: "users",
+            storageSystem: "postgresql",
+            accessPath: "users_by_email_idx",
+            kind: "read",
+            fields: ["*"],
+          },
+        ],
+      }),
+    ]).filter((f) => f.kind === "boundaryFieldUnknown");
+
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]?.severity).toBe("error");
+  });
+
+  it("says a store refuses a selector that is not a key, whichever store it is", () => {
+    const mismatch = checkStorage([
+      makeProvider({
+        container: "users",
+        storageSystem: "postgresql",
+        keyFields: ["id"],
+        fields: [{ name: "id" }, { name: "email" }],
+      }),
+      makeAccessSummary({
+        name: "findByEmail",
+        file: "src/findByEmail.ts",
+        accesses: [
+          {
+            container: "users",
+            storageSystem: "postgresql",
+            kind: "read",
+            fields: ["id"],
+            selector: ["email"],
+          },
+        ],
+      }),
+    ]).filter((f) => f.kind === "boundarySelectorMismatch");
+
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0]?.severity).toBe("error");
+    expect(mismatch[0]?.description).toContain("postgresql");
+  });
+});

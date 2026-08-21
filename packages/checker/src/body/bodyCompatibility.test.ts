@@ -572,3 +572,51 @@ describe("findOptionalAccesses", () => {
     expect(findOptionalAccesses(provider, consumer)).toEqual([["profile"]]);
   });
 });
+
+describe("what body comparison takes for granted", () => {
+  const readsUserId = (): BehavioralSummary => {
+    const c = consumer("client", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+    c.transitions[0] = {
+      ...c.transitions[0],
+      expectedInput: record({ body: record({ id: { type: "unknown" } }) }),
+    };
+    return c;
+  };
+
+  const returns = (body: TypeShape): BehavioralSummary =>
+    provider("api", [
+      transition("t-200", { output: response(200, body), isDefault: true }),
+    ]);
+
+  it("agrees whatever type the provider gives a field the consumer reads", () => {
+    expect(
+      checkBodyCompatibility(returns(record({ id: num })), readsUserId()),
+    ).toEqual([]);
+    expect(
+      checkBodyCompatibility(returns(record({ id: text })), readsUserId()),
+    ).toEqual([]);
+  });
+
+  it("agrees on a field the provider only ever sends as null", () => {
+    expect(
+      checkBodyCompatibility(
+        returns(record({ id: { type: "null" } })),
+        readsUserId(),
+      ),
+    ).toEqual([]);
+  });
+
+  it("counts a field as present when a dictionary could supply any key", () => {
+    expect(
+      checkBodyCompatibility(
+        returns({ type: "dictionary", values: { type: "unknown" } }),
+        readsUserId(),
+      ),
+    ).toEqual([]);
+  });
+});
