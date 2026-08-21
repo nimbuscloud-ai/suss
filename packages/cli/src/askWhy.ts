@@ -209,7 +209,7 @@ function resolutionJson(explained: WhyExplained): Record<string, unknown> {
 // Why a unit reaches a boundary
 // ---------------------------------------------------------------------------
 
-interface UnitHop {
+export interface UnitHop {
   from: BehavioralSummary;
   /** The call as the caller writes it. */
   callee: string;
@@ -295,7 +295,7 @@ export function unitsSpelled(
 }
 
 /** The call edges out of one unit, to the units this run resolved them to. */
-function invocationEdges(
+export function invocationEdges(
   summary: BehavioralSummary,
   byId: ReadonlyMap<string, BehavioralSummary>,
 ): UnitHop[] {

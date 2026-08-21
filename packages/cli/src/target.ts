@@ -31,6 +31,12 @@ export type TargetKind = "summary" | "file" | "line" | "boundary";
 export interface TargetTouch {
   summary: BehavioralSummary;
   touched: TouchedBoundary;
+  /**
+   * The calls between the unit somebody asked about and this one, when
+   * the touch was found by following calls rather than in the asked
+   * unit's own body.
+   */
+  through?: string[];
 }
 
 export interface ResolvedTarget {
@@ -315,6 +321,8 @@ export interface CollapsedTouch {
   unit: string;
   relations: Relation[];
   callee: string | undefined;
+  /** The calls between the asked unit and this one, when there were any. */
+  through?: string[];
 }
 
 /**
@@ -326,7 +334,7 @@ export function collapseTouches(
   touches: ReadonlyArray<TargetTouch>,
 ): CollapsedTouch[] {
   const byPair = new Map<string, CollapsedTouch>();
-  for (const { summary, touched } of touches) {
+  for (const { summary, touched, through } of touches) {
     const unit = summaryIdentifier(summary);
     const key = `${touched.label}\u0000${unit}\u0000${touched.callee ?? ""}`;
     const seen = byPair.get(key);
@@ -336,6 +344,7 @@ export function collapseTouches(
         unit,
         relations: [touched.relation],
         callee: touched.callee,
+        ...(through !== undefined ? { through } : {}),
       });
       continue;
     }

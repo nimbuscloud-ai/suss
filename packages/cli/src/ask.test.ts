@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { storageBinding } from "@suss/behavioral-ir";
+import { storageBinding, summaryIdentifier } from "@suss/behavioral-ir";
 
 import {
   dao,
@@ -300,6 +300,38 @@ describe("suss ask, pointing at one thing", () => {
     const { output } = answer("what does GET /editions reach");
 
     expect(output).not.toContain("provides GET /editions");
+  });
+
+  it("reaches what a unit's calls reach, and says which call got there", () => {
+    const calling: BehavioralSummary = {
+      ...route,
+      transitions: route.transitions.map((transition, index) =>
+        index === 0
+          ? {
+              ...transition,
+              effects: [
+                {
+                  type: "invocation",
+                  callee: "byPublication",
+                  args: [],
+                  async: true,
+                  summary: summaryIdentifier(dao),
+                },
+              ],
+            }
+          : transition,
+      ),
+    };
+    fs.writeFileSync(
+      path.join(dir, "app.json"),
+      JSON.stringify([calling, dao]),
+    );
+
+    const { output, code } = answer("what does GET /editions reach");
+
+    expect(code).toBe(0);
+    expect(output).toContain("aws.dynamodb:editions");
+    expect(output).toContain("by calling byPublication");
   });
 
   it("takes a handler by its function name as well as its route", () => {
