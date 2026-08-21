@@ -1,22 +1,22 @@
 {
   "total": {
     "lines": {
-      "total": 402,
-      "covered": 368,
+      "total": 403,
+      "covered": 369,
       "skipped": 0,
-      "pct": 91.54
+      "pct": 91.56
     },
     "statements": {
-      "total": 410,
-      "covered": 376,
+      "total": 411,
+      "covered": 377,
       "skipped": 0,
-      "pct": 91.7
+      "pct": 91.72
     },
     "functions": {
-      "total": 121,
-      "covered": 112,
+      "total": 122,
+      "covered": 113,
       "skipped": 0,
-      "pct": 92.56
+      "pct": 92.62
     },
     "branches": {
       "total": 346,
@@ -527,22 +527,22 @@
   },
   "src/semantics/rest.ts": {
     "lines": {
-      "total": 41,
-      "covered": 40,
+      "total": 42,
+      "covered": 41,
       "skipped": 0,
-      "pct": 97.56
+      "pct": 97.61
     },
     "functions": {
-      "total": 13,
-      "covered": 12,
+      "total": 14,
+      "covered": 13,
       "skipped": 0,
-      "pct": 92.3
+      "pct": 92.85
     },
     "statements": {
-      "total": 41,
-      "covered": 40,
+      "total": 42,
+      "covered": 41,
       "skipped": 0,
-      "pct": 97.56
+      "pct": 97.61
     },
     "branches": {
       "total": 43,

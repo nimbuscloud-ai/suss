@@ -335,6 +335,40 @@ describe("pairSummaries", () => {
     expect(result.unmatched.unpairable).toHaveLength(0);
   });
 
+  it("pairs two sides that spell the same parameter differently", () => {
+    // A hand-written spec says {userId} where the route serving it says
+    // :id, and both serve the same requests.
+    const p = providerWithPath("getUser", "GET", "/users/{userId}");
+    const c = consumerWithPath("UserPage", "GET", "/users/:id");
+
+    const result = pairSummaries([p, c]);
+
+    expect(result.pairs).toHaveLength(1);
+    // The pair reports the consumer's identity, for the reason
+    // pairKeyFor gives, so the name it shows is the caller's.
+    expect(result.pairs[0].key).toBe("GET /users/{id}");
+    expect(result.unmatched.providers).toHaveLength(0);
+    expect(result.unmatched.consumers).toHaveLength(0);
+  });
+
+  it("keeps two endpoints apart when a static segment differs", () => {
+    const p = providerWithPath("getUser", "GET", "/users/{id}");
+    const c = consumerWithPath("OrgPage", "GET", "/orgs/{id}");
+
+    const result = pairSummaries([p, c]);
+
+    expect(result.pairs).toHaveLength(0);
+  });
+
+  it("keeps a parameter apart from a static segment in the same place", () => {
+    const p = providerWithPath("getMe", "GET", "/users/me");
+    const c = consumerWithPath("UserPage", "GET", "/users/{id}");
+
+    const result = pairSummaries([p, c]);
+
+    expect(result.pairs).toHaveLength(0);
+  });
+
   it("pairs across param syntax styles (:id vs {id})", () => {
     const p = providerWithPath("getUser", "GET", "/users/:id");
     const c = consumerWithPath("UserPage", "GET", "/users/{id}");

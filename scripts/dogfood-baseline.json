@@ -2,7 +2,7 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 525,
+    "exports": 526,
     "internal": 2089,
     "consumers": 970,
     "pairs": 962,
@@ -355,7 +355,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 57,
+      "exports": 58,
       "internal": 14,
       "consumers": 0,
       "unfollowedCalls": 8
