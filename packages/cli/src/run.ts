@@ -125,10 +125,11 @@ Options (check):
   --no-suppressions  Report every finding, ignoring any .sussignore
 
 Options (ask):
-  The question is one of six, in these words:
+  The question is one of seven, in these words:
     what can I project from <boundary>   what the boundary declares
     what reads <boundary>                which units read it
     what writes <boundary>               which units write it
+    what calls <unit>                    which units call it
     what does <unit> reach               which boundaries a file or
                                          summary goes through
     why does <unit> reach <boundary>     the call chain that gets there,

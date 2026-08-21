@@ -2,11 +2,11 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 523,
-    "internal": 2057,
-    "consumers": 952,
-    "pairs": 945,
-    "unfollowedCalls": 233,
+    "exports": 524,
+    "internal": 2068,
+    "consumers": 965,
+    "pairs": 957,
+    "unfollowedCalls": 236,
     "findingErrors": 0
   },
   "packages": {
@@ -40,10 +40,10 @@
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 38,
-      "internal": 207,
-      "consumers": 129,
-      "unfollowedCalls": 21
+      "exports": 39,
+      "internal": 209,
+      "consumers": 133,
+      "unfollowedCalls": 24
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 13,
-      "internal": 304,
-      "consumers": 190,
+      "internal": 313,
+      "consumers": 199,
       "unfollowedCalls": 36
     },
     "packages/client/apollo": {

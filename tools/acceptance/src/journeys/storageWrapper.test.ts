@@ -73,4 +73,21 @@ describe("check a storage layer that is told which table to read", () => {
       'readRow picks items on OrdersTable by "customerId", which is not one of its key attributes (orderId).',
     );
   });
+
+  it("lists the handler as the caller of the storage layer", () => {
+    const asked = runSuss([
+      "ask",
+      "what calls src/orderStore.ts",
+      "--dir",
+      summaries,
+    ]);
+
+    expect(asked.status, asked.stderr).toBe(0);
+    expect(asked.stdout).toContain(
+      "1 unit calls storage-wrapper::src/orderStore.ts::readRow:",
+    );
+    expect(asked.stdout).toContain(
+      "storage-wrapper::src/orders.ts::GetOrderFunction.getOrder (src/orders.ts:6) calls readRow",
+    );
+  });
 });

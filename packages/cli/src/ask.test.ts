@@ -43,6 +43,13 @@ describe("parseQuestion", () => {
     });
   });
 
+  it("reads the calls shape", () => {
+    expect(parseQuestion("what calls src/orderStore.ts")).toEqual({
+      shape: "calls",
+      subject: "src/orderStore.ts",
+    });
+  });
+
   it("reads the two why shapes", () => {
     expect(
       parseQuestion("why does getOrder reach aws.dynamodb:orders"),
@@ -181,11 +188,11 @@ describe("suss ask", () => {
     expect(output).toContain("then ask again");
   });
 
-  it("prints the six shapes back when the question is not one of them", () => {
+  it("prints the seven shapes back when the question is not one of them", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of six questions");
+    expect(output).toContain("suss ask takes one of seven questions");
   });
 
   it("writes JSON an agent can read", () => {
@@ -472,5 +479,375 @@ describe("suss ask why", () => {
     expect(code).toBe(0);
     expect(output).toContain("getOrder -> readRow -> client.send");
     expect(output).toContain("without their resolution steps");
+  });
+});
+
+describe("suss ask what calls", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  /** The storage layer somebody asks about the callers of. */
+  const wrapper: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/orderStore.ts",
+      range: { start: 14, end: 25 },
+      exportName: "readRow",
+    },
+    identity: {
+      name: "readRow",
+      exportPath: ["readRow"],
+      boundaryBinding: null,
+      id: "repo::src/orderStore.ts::readRow",
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** The one unit whose call the run resolved to the wrapper. */
+  const handler: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/orders.ts",
+      range: { start: 6, end: 17 },
+      exportName: "getOrder",
+    },
+    identity: {
+      name: "getOrder",
+      exportPath: ["getOrder"],
+      boundaryBinding: null,
+      id: "repo::src/orders.ts::getOrder",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "getOrder:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "readRow",
+            summary: "repo::src/orderStore.ts::readRow",
+            args: [],
+            async: true,
+          },
+        ],
+        location: { start: 8, end: 16 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** A unit whose walk stopped at a call it could not resolve. */
+  const stopped: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/report.ts",
+      range: { start: 1, end: 10 },
+      exportName: "buildReport",
+    },
+    identity: {
+      name: "buildReport",
+      exportPath: ["buildReport"],
+      boundaryBinding: null,
+      id: "repo::src/report.ts::buildReport",
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [
+      {
+        type: "unfollowedCall",
+        conditions: [],
+        consequence: "unknown",
+        description: "suss could not settle which function load is.",
+      },
+    ],
+    confidence: CONFIDENT,
+  };
+
+  function askCalls(
+    question: string,
+    summaries: BehavioralSummary[],
+    options: { json?: boolean } = {},
+  ): { output: string; code: number } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-calls-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir, ...options });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("lists the callers with the file, the line, and the call", () => {
+    const { output, code } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      handler,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain("1 unit calls repo::src/orderStore.ts::readRow:");
+    expect(output).toContain(
+      "repo::src/orders.ts::getOrder (src/orders.ts:6) calls readRow",
+    );
+  });
+
+  it("writes the callers as JSON", () => {
+    const { output } = askCalls(
+      "what calls src/orderStore.ts",
+      [wrapper, handler],
+      { json: true },
+    );
+    const parsed = JSON.parse(output) as {
+      found: boolean;
+      items: Array<{ unit: string; file: string; line: number; call: string }>;
+    };
+
+    expect(parsed.found).toBe(true);
+    expect(parsed.items).toEqual([
+      {
+        unit: "repo::src/orders.ts::getOrder",
+        file: "src/orders.ts",
+        line: 6,
+        call: "readRow",
+      },
+    ]);
+  });
+
+  it("says nothing calls a unit, plainly, when every call was followed", () => {
+    const { output, code } = askCalls("what calls src/orders.ts", [
+      wrapper,
+      handler,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain(
+      "Nothing in these summaries calls repo::src/orders.ts::getOrder.",
+    );
+    expect(output).not.toContain("could be hiding");
+  });
+
+  it("says a caller could be hiding behind an unfollowed call", () => {
+    const { output, code } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      stopped,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain("Nothing in these summaries calls");
+    expect(output).toContain("suss met a call it could not follow in one unit");
+    expect(output).toContain("could be hiding there");
+  });
+
+  it("exits 1 for a unit no summary spells", () => {
+    const { output, code } = askCalls("what calls src/nowhere.ts", [wrapper]);
+
+    expect(code).toBe(1);
+    expect(output).toContain("No summary here is src/nowhere.ts");
+  });
+});
+
+describe("suss ask across a grounded name", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  /** A wrapper whose access says only where the table name comes from. */
+  const wrapper: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/orderStore.ts",
+      range: { start: 14, end: 25 },
+      exportName: "putRow",
+    },
+    identity: {
+      name: "putRow",
+      exportPath: ["putRow"],
+      boundaryBinding: null,
+      id: "repo::src/orderStore.ts::putRow",
+    },
+    inputs: [
+      {
+        type: "parameter",
+        name: "location",
+        position: 0,
+        role: null,
+        shape: null,
+      },
+    ],
+    transitions: [
+      {
+        id: "putRow:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: storageBinding({
+              recognition: "aws-dynamodb",
+              storageSystem: "aws.dynamodb",
+              scope: "default",
+              container: "{location.table}",
+              accessPath: null,
+            }),
+            callee: "client.send",
+            interaction: {
+              class: "storage-access",
+              kind: "write",
+              fields: ["email"],
+              operation: "put",
+            },
+          },
+        ],
+        location: { start: 15, end: 24 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** The caller that says which table, as a literal argument. */
+  const handler: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/orders.ts",
+      range: { start: 6, end: 17 },
+      exportName: "subscribe",
+    },
+    identity: {
+      name: "subscribe",
+      exportPath: ["subscribe"],
+      boundaryBinding: null,
+      id: "repo::src/orders.ts::subscribe",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "subscribe:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "putRow",
+            summary: "repo::src/orderStore.ts::putRow",
+            args: [
+              {
+                kind: "object",
+                fields: {
+                  table: { kind: "string", value: "prod-subscribers-v1" },
+                },
+              },
+            ],
+            async: true,
+          },
+        ],
+        location: { start: 8, end: 16 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** The table as the deployment declares it. */
+  const provider: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "infra/tables.tf",
+      range: { start: 1, end: 10 },
+      exportName: null,
+    },
+    identity: {
+      name: "aws_dynamodb_table.subscribers",
+      exportPath: null,
+      boundaryBinding: storageBinding({
+        recognition: "terraform",
+        storageSystem: "aws.dynamodb",
+        scope: "default",
+        container: "prod-subscribers-v1",
+        accessPath: null,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      storageContract: { fieldSet: "partial", fields: [{ name: "email" }] },
+    },
+  };
+
+  function askGrounded(
+    question: string,
+    summaries: BehavioralSummary[],
+  ): { output: string; code: number } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-ground-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("finds the writer under the deployed name and says how", () => {
+    const { output, code } = askGrounded(
+      "what writes aws.dynamodb:prod-subscribers-v1",
+      [wrapper, handler, provider],
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("repo::src/orderStore.ts::putRow");
+    expect(output).toContain(
+      "which grounds to prod-subscribers-v1 via repo::src/orders.ts::subscribe",
+    );
+    expect(output).toContain("is provided by");
+  });
+
+  it("finds the same pair asked by the reference spelling", () => {
+    const { output, code } = askGrounded(
+      "what writes aws.dynamodb:{location.table}",
+      [wrapper, handler, provider],
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("repo::src/orderStore.ts::putRow");
+    expect(output).toContain(
+      "which grounds to prod-subscribers-v1 via repo::src/orders.ts::subscribe",
+    );
+    expect(output).toContain("is provided by");
+  });
+
+  it("says which input would connect a deployed name nothing grounds", () => {
+    const { output, code } = askGrounded(
+      "what writes aws.dynamodb:prod-subscribers-v1",
+      [wrapper],
+    );
+
+    expect(code).toBe(1);
+    expect(output).toContain("Nothing in these summaries is at");
+    expect(output).toContain(
+      "the name is whatever its caller passes. No caller in these summaries settles it",
+    );
   });
 });

@@ -232,7 +232,7 @@ function answerWhyReaches(
     return miss(
       "whyReaches",
       question.subject,
-      `No summary here is ${question.subject}. Spell the unit as a file, a summary id, or its function name.`,
+      noUnitSpelled(question.subject),
     );
   }
 
@@ -271,12 +271,17 @@ function answerWhyReaches(
   return reachAnswer(question.subject, found, options);
 }
 
+/** What to print when nothing in the summaries is the spelled unit. */
+export function noUnitSpelled(spec: string): string {
+  return `No summary here is ${spec}. Spell the unit as a file, a summary id, or its function name.`;
+}
+
 /**
  * The units somebody spelled: whatever the `--at` spellings resolve
  * to, and failing those, the units whose function name is what was
  * typed, so `getOrder` works without its file.
  */
-function unitsSpelled(
+export function unitsSpelled(
   spec: string,
   summaries: BehavioralSummary[],
 ): BehavioralSummary[] {

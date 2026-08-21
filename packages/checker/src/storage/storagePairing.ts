@@ -45,7 +45,7 @@ import {
   providersOf,
 } from "../interactions/dispatcher.js";
 import { mostSpecificName } from "../pairing/mostSpecificName.js";
-import { groundReferences } from "./grounding.js";
+import { type Grounding, groundReferences } from "./grounding.js";
 
 import type {
   BehavioralSummary,
@@ -86,39 +86,9 @@ export function checkStorage(
   const findings: Finding[] = [];
   const idx = index ?? buildInteractionIndex(summaries);
   const grounding = groundReferences(summaries);
-
-  /**
-   * The names one access reaches. A container that says only where to
-   * look is asked about the callers, and an access nobody calls reaches
-   * nothing rather than everything.
-   */
-  const namesReached = (access: StorageAccessRecord): string[] => {
-    const container = access.semantics.container;
-    if (container === null) {
-      return [];
-    }
-    return dispatchByType<BoundaryName, string[]>(
-      {
-        literal: () => [container],
-        pattern: () => [container],
-        reference: (name) =>
-          grounding.namesFor(access.summary, referenceOf(name)),
-      },
-      parseBoundaryName(container),
-    );
-  };
-
   const containers = declaredContainers(providersOf(idx, "storage"));
-  const accesses: StorageAccessRecord[] = interactionsOf(
-    idx,
-    "storage-access",
-    "storage",
-  ).map((record) => ({
-    ...record,
-    semantics: record.effect.binding.semantics as StorageSemantics,
-  }));
-
-  const claimed = claimAccesses(containers, accesses, namesReached);
+  const accesses = accessRecords(idx);
+  const claimed = claimAccesses(containers, accesses, reachedBy(grounding));
   findings.push(...claimed.findings);
 
   for (const container of containers) {
@@ -248,9 +218,77 @@ interface DeclaredContainer {
   names: string[];
 }
 
+/** Who supplied a grounded name, and which side of grounding it is. */
+export interface GroundedBy {
+  summary: BehavioralSummary;
+  role: "runtime" | "caller";
+}
+
+/** A name an access reached, and who supplied it when grounding did. */
+export interface ReachedName {
+  name: string;
+  groundedBy: GroundedBy | null;
+}
+
 interface Claims {
   byContainer: Map<DeclaredContainer, StorageAccessRecord[]>;
   findings: Finding[];
+  links: ClaimLink[];
+}
+
+/** One provider claiming one access, and the name that matched. */
+interface ClaimLink {
+  container: DeclaredContainer;
+  access: StorageAccessRecord;
+  reached: ReachedName;
+}
+
+function accessRecords(idx: InteractionIndex): StorageAccessRecord[] {
+  return interactionsOf(idx, "storage-access", "storage").map((record) => ({
+    ...record,
+    semantics: record.effect.binding.semantics as StorageSemantics,
+  }));
+}
+
+/**
+ * The names one access reaches. A container that says only where to
+ * look is asked about the callers and the runtime's configuration, and
+ * an access nobody grounds reaches nothing rather than everything.
+ */
+function reachedBy(
+  grounding: Grounding,
+): (access: StorageAccessRecord) => ReachedName[] {
+  return (access) => {
+    const container = access.semantics.container;
+    if (container === null) {
+      return [];
+    }
+    return dispatchByType<BoundaryName, ReachedName[]>(
+      {
+        literal: () => [{ name: container, groundedBy: null }],
+        pattern: () => [{ name: container, groundedBy: null }],
+        reference: (name) => {
+          const seen = new Set<string>();
+          const reached: ReachedName[] = [];
+          for (const grounded of grounding.groundedNamesFor(
+            access.summary,
+            referenceOf(name),
+          )) {
+            if (seen.has(grounded.name)) {
+              continue;
+            }
+            seen.add(grounded.name);
+            reached.push({
+              name: grounded.name,
+              groundedBy: { summary: grounded.source, role: grounded.role },
+            });
+          }
+          return reached;
+        },
+      },
+      parseBoundaryName(container),
+    );
+  };
 }
 
 function declaredContainers(
@@ -287,30 +325,140 @@ function declaredContainers(
 function claimAccesses(
   containers: DeclaredContainer[],
   accesses: StorageAccessRecord[],
-  namesReached: (access: StorageAccessRecord) => string[],
+  reachedFor: (access: StorageAccessRecord) => ReachedName[],
 ): Claims {
   const byContainer = new Map<DeclaredContainer, StorageAccessRecord[]>();
   const findings: Finding[] = [];
+  const links: ClaimLink[] = [];
   for (const access of accesses) {
-    for (const reached of namesReached(access)) {
+    for (const reached of reachedFor(access)) {
       const candidates: NameCandidate<DeclaredContainer>[] = [];
       for (const container of containers) {
-        const name = nameCovering(container, access, reached);
+        const name = nameCovering(container, access, reached.name);
         if (name !== null) {
           candidates.push({ subject: container, name });
         }
       }
       const choice = mostSpecificName(candidates);
       if (choice.tied.length > 0) {
-        findings.push(makeAmbiguousContainerFinding(access, reached, choice));
+        findings.push(
+          makeAmbiguousContainerFinding(access, reached.name, choice),
+        );
         continue;
       }
       for (const container of choice.chosen) {
         claim(byContainer, container, access);
+        links.push({ container, access, reached });
       }
     }
   }
-  return { byContainer, findings };
+  return { byContainer, findings, links };
+}
+
+/**
+ * Every storage access in a run, with the names it reaches and the
+ * providers that claim it, attributed exactly as `checkStorage`
+ * attributes findings. `suss ask` answers a question asked in a
+ * deployed name from this, so the two never disagree on a pair.
+ */
+export interface GroundedStorageAccess {
+  /** The unit the access is written in. */
+  summary: BehavioralSummary;
+  /** The access's binding, the same object the summary's effect has. */
+  binding: BoundaryBinding;
+  /** The container as the access writes it. */
+  container: string;
+  /**
+   * The names the access reaches. `groundedBy` is the summary that
+   * supplied a name the container does not state itself: the runtime
+   * whose configuration sets the variable, or the caller that passed
+   * the value.
+   */
+  reached: ReachedName[];
+  /** The providers that claim this access. */
+  providers: BehavioralSummary[];
+  /**
+   * Present when the container is a reference nothing here grounds:
+   * the variable whose deployed value would ground it, or null when a
+   * caller's argument would.
+   */
+  ungrounded?: { variable: string | null };
+}
+
+/** A declared store, and every name it is declared under. */
+export interface GroundedStorageProvider {
+  summary: BehavioralSummary;
+  binding: BoundaryBinding;
+  /** Its container, and the resource name its contract declares. */
+  names: string[];
+}
+
+export interface GroundedStorage {
+  accesses: GroundedStorageAccess[];
+  providers: GroundedStorageProvider[];
+}
+
+export function groundStorageAccesses(
+  summaries: BehavioralSummary[],
+): GroundedStorage {
+  const idx = buildInteractionIndex(summaries);
+  const grounding = groundReferences(summaries);
+  const containers = declaredContainers(providersOf(idx, "storage"));
+  const accesses = accessRecords(idx);
+  const reachedFor = reachedBy(grounding);
+  const claimed = claimAccesses(containers, accesses, reachedFor);
+
+  const providersFor = new Map<StorageAccessRecord, BehavioralSummary[]>();
+  for (const link of claimed.links) {
+    const found = providersFor.get(link.access) ?? [];
+    if (!found.includes(link.container.summary)) {
+      found.push(link.container.summary);
+    }
+    providersFor.set(link.access, found);
+  }
+
+  const grounded = accesses.flatMap((access): GroundedStorageAccess[] => {
+    const container = access.semantics.container;
+    if (container === null) {
+      return [];
+    }
+    const reached = reachedFor(access);
+    const ungrounded =
+      reached.length > 0
+        ? undefined
+        : dispatchByType<BoundaryName, { variable: string | null } | undefined>(
+            {
+              literal: () => undefined,
+              pattern: () => undefined,
+              reference: (name) => ({
+                variable: grounding.variableFor(
+                  access.summary,
+                  referenceOf(name),
+                ),
+              }),
+            },
+            parseBoundaryName(container),
+          );
+    return [
+      {
+        summary: access.summary,
+        binding: access.effect.binding,
+        container,
+        reached,
+        providers: providersFor.get(access) ?? [],
+        ...(ungrounded === undefined ? {} : { ungrounded }),
+      },
+    ];
+  });
+
+  return {
+    accesses: grounded,
+    providers: containers.map((container) => ({
+      summary: container.summary,
+      binding: container.binding,
+      names: container.names,
+    })),
+  };
 }
 
 /**

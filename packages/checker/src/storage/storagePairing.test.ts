@@ -6,7 +6,8 @@ import {
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
-import { checkStorage } from "./storagePairing.js";
+import { groundReferences } from "./grounding.js";
+import { checkStorage, groundStorageAccesses } from "./storagePairing.js";
 
 import type {
   BehavioralSummary,
@@ -798,6 +799,121 @@ describe("an access whose unit was told which store to reach", () => {
       ),
     ).toEqual([]);
   });
+
+  it("reports the grounded pair with the caller that supplied the name", () => {
+    const provider = makeProvider({
+      container: "users",
+      fields: [{ name: "id" }],
+    });
+    const grounded = groundStorageAccesses([
+      provider,
+      wrapper(),
+      caller({ kind: "string", value: "users" }),
+    ]);
+    const access = grounded.accesses.find(
+      (record) => record.container === "{location.table}",
+    );
+
+    expect(access?.reached).toHaveLength(1);
+    expect(access?.reached[0]?.name).toBe("users");
+    expect(access?.reached[0]?.groundedBy?.role).toBe("caller");
+    expect(access?.reached[0]?.groundedBy?.summary.identity.name).toBe(
+      "listUsers",
+    );
+    expect(access?.providers.map((p) => p.identity.name)).toEqual(["users"]);
+  });
+
+  it("says a caller's argument would ground a reference nobody settles", () => {
+    const grounded = groundStorageAccesses([wrapper()]).accesses;
+
+    expect(grounded).toHaveLength(1);
+    expect(grounded[0]?.reached).toEqual([]);
+    expect(grounded[0]?.ungrounded).toEqual({ variable: null });
+  });
+
+  it("reaches one name when two callers pass the same table", () => {
+    const second = caller({ kind: "string", value: "users" });
+    second.identity = { ...second.identity, name: "countUsers" };
+    second.location = { ...second.location, file: "src/report.ts" };
+    const grounded = groundStorageAccesses([
+      wrapper(),
+      caller({ kind: "string", value: "users" }),
+      second,
+    ]).accesses;
+
+    expect(grounded[0]?.reached.map((r) => r.name)).toEqual(["users"]);
+  });
+
+  it("skips an access whose container nobody could read", () => {
+    const grounded = groundStorageAccesses([
+      makeAccessSummary({
+        name: "readSomething",
+        file: "src/somewhere.ts",
+        accesses: [{ container: null, kind: "read", fields: [] }],
+      }),
+    ]);
+
+    expect(grounded.accesses).toEqual([]);
+  });
+
+  it("grounds nothing for a null reference, and no variable either", () => {
+    const unit = wrapper();
+    const grounding = groundReferences([unit]);
+
+    expect(grounding.groundedNamesFor(unit, null)).toEqual([]);
+    expect(grounding.namesFor(unit, null)).toEqual([]);
+    expect(grounding.variableFor(unit, null)).toBeNull();
+  });
+
+  it("keeps namesFor unique when one caller says the table twice", () => {
+    const unit = wrapper();
+    const once = caller({ kind: "string", value: "users" });
+    const twice = {
+      ...once,
+      transitions: [once.transitions[0], { ...once.transitions[0], id: "t1" }],
+    };
+    const grounding = groundReferences([unit, twice]);
+    const reference = { root: "location", fields: ["table"] };
+
+    expect(grounding.groundedNamesFor(unit, reference)).toHaveLength(1);
+    expect(grounding.namesFor(unit, reference)).toEqual(["users"]);
+  });
+
+  it("leaves a reference alone whose root is no parameter of the unit", () => {
+    const unit = wrapper();
+    const grounding = groundReferences([
+      unit,
+      caller({ kind: "string", value: "users" }),
+    ]);
+
+    expect(
+      grounding.namesFor(unit, { root: "settings", fields: ["table"] }),
+    ).toEqual([]);
+  });
+
+  it("gets nothing from a caller that passes one string for the location", () => {
+    const unit = wrapper();
+    const flat = caller({ kind: "string", value: "users" });
+    flat.transitions = [
+      {
+        ...flat.transitions[0],
+        effects: [
+          {
+            type: "invocation",
+            callee: "readRow",
+            summary: "repo::src/storage.ts::readRow",
+            args: [{ kind: "string", value: "users" }],
+            async: true,
+          },
+        ],
+      },
+    ];
+    const grounding = groundReferences([unit, flat]);
+
+    expect(
+      grounding.namesFor(unit, { root: "location", fields: ["table"] }),
+    ).toEqual([]);
+  });
 });
 
 describe("an index that copies part of an item", () => {
@@ -1151,6 +1267,54 @@ describe("an access whose store the deployment sets a variable to", () => {
       .map((f) => f.description);
     expect(containers.join("\n")).toContain("prod-orders-v2");
     expect(containers.join("\n")).toContain("staging-orders-v2");
+  });
+
+  it("reports the runtime that supplied the variable's value", () => {
+    const grounded = groundStorageAccesses([
+      runtime({
+        instanceName: "order-router",
+        codeScope: "services/orders",
+        values: { ORDER_TABLE: "prod-orders-v2" },
+      }),
+      makeAccessSummary({
+        name: "listOrders",
+        file: "services/orders/src/dao.ts",
+        accesses: [
+          {
+            container: "{ORDER_TABLE}",
+            storageSystem: "aws.dynamodb",
+            kind: "read",
+            fields: ["id"],
+          },
+        ],
+      }),
+    ]).accesses;
+
+    expect(grounded).toHaveLength(1);
+    expect(grounded[0]?.reached[0]?.name).toBe("prod-orders-v2");
+    expect(grounded[0]?.reached[0]?.groundedBy?.role).toBe("runtime");
+    expect(grounded[0]?.reached[0]?.groundedBy?.summary.identity.name).toBe(
+      "order-router",
+    );
+  });
+
+  it("says which variable would ground an access nothing sets", () => {
+    const grounded = groundStorageAccesses([
+      makeAccessSummary({
+        name: "listOrders",
+        file: "services/orders/src/dao.ts",
+        accesses: [
+          {
+            container: "{ORDER_TABLE}",
+            storageSystem: "aws.dynamodb",
+            kind: "read",
+            fields: ["id"],
+          },
+        ],
+      }),
+    ]).accesses;
+
+    expect(grounded[0]?.ungrounded).toEqual({ variable: "ORDER_TABLE" });
   });
 
   it("pairs an access that reads the variable off its config argument", () => {
