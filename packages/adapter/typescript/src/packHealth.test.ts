@@ -70,6 +70,46 @@ describe("the funnel-drop check", () => {
     expect(found[0]?.detail).toContain("discovery matched nothing");
   });
 
+  it("fires when a recogniser saw bodies and matched nothing in them", () => {
+    const found = drops([
+      funnel({
+        discovers: false,
+        recognizes: true,
+        unitsDiscovered: 0,
+        unitsInGatedFiles: 20,
+        effectsRecognized: 0,
+        unitsClaimed: 0,
+        summariesProduced: 0,
+        summariesBound: 0,
+        providerSummaries: 0,
+        summariesWithBehavior: 0,
+      }),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.detail).toContain("matched nothing in the bodies it saw");
+  });
+
+  it("says nothing about a recogniser whose library is not installed", () => {
+    const found = drops([
+      funnel({
+        discovers: false,
+        recognizes: true,
+        unresolvedGates: ["@scope/lib"],
+        unitsDiscovered: 0,
+        unitsInGatedFiles: 20,
+        effectsRecognized: 0,
+        unitsClaimed: 0,
+        summariesProduced: 0,
+        summariesBound: 0,
+        providerSummaries: 0,
+        summariesWithBehavior: 0,
+      }),
+    ]);
+    // The empty-run diagnosis says the dependencies are missing, and
+    // saying it twice in one run reads as two problems.
+    expect(found).toEqual([]);
+  });
+
   it("says nothing about a pack made only of recognisers", () => {
     const found = drops([
       funnel({
