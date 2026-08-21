@@ -1,10 +1,10 @@
 {
   "total": {
     "lines": {
-      "total": 31,
-      "covered": 30,
+      "total": 32,
+      "covered": 31,
       "skipped": 0,
-      "pct": 96.77
+      "pct": 96.87
     },
     "statements": {
       "total": 33,
@@ -33,10 +33,10 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 31,
-      "covered": 30,
+      "total": 32,
+      "covered": 31,
       "skipped": 0,
-      "pct": 96.77
+      "pct": 96.87
     },
     "functions": {
       "total": 11,
