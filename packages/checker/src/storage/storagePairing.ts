@@ -6,8 +6,8 @@
 // boundaryField* enum so cross-domain tooling sees one vocabulary:
 //   boundaryFieldUnknown  aspect=read   error    code reads X, schema doesn't declare X
 //   boundaryFieldUnknown  aspect=write  error    code writes X, schema doesn't declare X
-//   boundaryFieldUnused   (no aspect)   warning  schema declares X, no code reads or writes
-//   boundaryFieldUnused   aspect=read   warning  schema declares X, code writes but never reads
+//   boundaryFieldUnused   (no aspect)   warning  schema declares X, no query asks for or writes X
+//   boundaryFieldUnused   aspect=read   warning  schema declares X, code writes X, no query asks for it
 //
 // Future-reserved value-constraint findings (storage type / nullable
 // / length / enum / selector-index) will use boundaryShapeMismatch
@@ -676,6 +676,14 @@ function makeSelectorMismatchFinding(
   };
 }
 
+/**
+ * Both unused findings rest on a query asking for the field, which is
+ * the only read either of them can see.
+ */
+function askedForNote(verdict: string): string {
+  return `A field the code takes off a record a query returned never counts as a read here, so look for one ${verdict}.`;
+}
+
 function makeFieldUnusedFinding(
   provider: BehavioralSummary,
   binding: BoundaryBinding,
@@ -687,7 +695,7 @@ function makeFieldUnusedFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares "${field}" but no code in the project reads or writes it. Likely dead config left over from a removed feature, or a field the contract still declares under its old name.`,
+    description: `${containerLabel(semantics)} declares "${field}", and no query here asks for it or writes it. ${askedForNote("before treating the field as dead")}`,
     severity: "warning",
   };
 }
@@ -704,7 +712,7 @@ function makeWriteOnlyFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares "${field}" and code writes it, but no code in the project reads it. Likely useless data. The application stores values nothing downstream consumes.`,
+    description: `${containerLabel(semantics)} declares "${field}" and code here writes it, but no query asks for it back. ${askedForNote("before treating the write as pointless")}`,
     severity: "warning",
   };
 }

@@ -512,6 +512,9 @@ describe("checkStorage", () => {
     );
     expect(unused).toHaveLength(1);
     expect(unused[0].description).toContain("deletedAt");
+    expect(unused[0].description).toContain(
+      "A field the code takes off a record a query returned never counts as a read here",
+    );
     expect(unused[0].severity).toBe("warning");
   });
 
@@ -563,6 +566,10 @@ describe("checkStorage", () => {
     );
     expect(writeOnly).toHaveLength(1);
     expect(writeOnly[0].description).toContain("lastLoginAt");
+    expect(writeOnly[0].description).toContain("no query asks for it back");
+    expect(writeOnly[0].description).toContain(
+      "before treating the write as pointless",
+    );
   });
 
   it("suppresses unused-column checks when ANY caller uses default-shape reads", () => {
