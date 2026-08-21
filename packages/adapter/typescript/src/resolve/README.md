@@ -38,6 +38,7 @@ dependency's function would look like project code.
 | --- | --- | --- |
 | `noBody` | A declaration the project wrote that states a signature and leaves the body to whoever implements it: a method on an interface, an abstract method, an ambient declaration. | yes |
 | `unsettledValue` | The project declares the callee as something other than a function: a parameter, a field, a variable whose initializer is a call. | yes |
+| `multipleSources` | The resolution store followed the callee to two different functions, a fallback whose branches both resolve, or a field two construction sites fill differently. No single body can be followed, and the gap says so at the call rather than folding into a plain could-not-settle. | yes |
 | `outsideRun` | Every declaration is in a dependency, or inside `declare module "name"`. | no |
 | `noDeclaration` | Nothing declares the callee, which is what a call on an untyped value comes to. | no |
 

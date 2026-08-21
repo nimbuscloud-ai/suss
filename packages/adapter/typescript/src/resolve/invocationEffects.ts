@@ -175,16 +175,23 @@ export function isImportedFrom(
  * asks this when the receiver came from somewhere the source does not
  * spell out: `const redis = await this.getClient()` says nothing about
  * ioredis, and the type of `redis.get` says everything.
+ *
+ * A client cached on an untyped global, `global.x || new Redis()`,
+ * types as `any`, so the method has no symbol. With `resolve` supplied,
+ * what the receiver was written as still says which library: the value
+ * comes down to a construction or a factory call of something imported
+ * from it.
  */
 export function methodDeclaredIn(
   callee: Node,
   expectedModule: string,
+  resolve?: (value: Node) => Node | null,
 ): boolean {
   if (!Node.isPropertyAccessExpression(callee)) {
     return false;
   }
   const declarations = callee.getNameNode().getSymbol()?.getDeclarations();
-  return (
+  if (
     declarations !== undefined &&
     declarations.some((declaration) =>
       declaration
@@ -192,7 +199,35 @@ export function methodDeclaredIn(
         .getFilePath()
         .includes(`/node_modules/${expectedModule}/`),
     )
-  );
+  ) {
+    return true;
+  }
+  if (resolve === undefined) {
+    return false;
+  }
+  const written = resolve(callee.getExpression());
+  const made = maker(written);
+  return made !== null && isImportedFrom(rootIdentifier(made), expectedModule);
+}
+
+/** The callee of a construction or call, which says which library it is. */
+function maker(written: Node | null): Node | null {
+  if (written === null) {
+    return null;
+  }
+  if (Node.isNewExpression(written) || Node.isCallExpression(written)) {
+    return written.getExpression();
+  }
+  return null;
+}
+
+/** `AWS.S3` and `S3` both come down to the identifier that was imported. */
+function rootIdentifier(expression: Node): Node {
+  let root = expression;
+  while (Node.isPropertyAccessExpression(root)) {
+    root = root.getExpression();
+  }
+  return root;
 }
 
 /** Whether an import-shaped declaration imports from `expectedModule`. */

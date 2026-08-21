@@ -47,6 +47,8 @@ export type {
 //   binds(x, y)                 the name x is declared as y
 //   endsHolding(x, y)           the name x is written more than once
 //                               and holds y once the writes have run
+//   fallbackBranch(x, b)        x is a fallback expression and b is
+//                               one of its branches
 //   paramOf(f, k, p)            p is f's parameter at position k
 //   paramNamed(f, n, p)         p is f's parameter called n
 //   extends(c, b)               class c is written as extending b
@@ -107,6 +109,16 @@ export const RESOLUTION_RULES = [
     [v("x"), v("y"), VALUE_STEP],
     [lit("endsHolding", v("x"), v("y"))],
     "last write",
+  ),
+
+  // A fallback says the value is one of its branches, so each branch is
+  // a step. A branch that resolves to nothing makes no claim, and two
+  // branches resolving to different things fail the single-answer policy.
+  rule(
+    "stepsTo",
+    [v("x"), v("b"), VALUE_STEP],
+    [lit("fallbackBranch", v("x"), v("b"))],
+    "fallback",
   ),
 
   // An import steps to what the module exports under that name.

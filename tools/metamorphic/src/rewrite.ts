@@ -343,6 +343,20 @@ export async function handler(event: { id: string }) {
     }),
   },
   {
+    name: "the client cached on a global with a construction fallback",
+    program: (seed) => ({
+      "/app/index.ts": `
+${seed.importLine}
+
+const client = (globalThis as any).cachedClient || ${seed.newClient};
+
+export async function handler(event: { id: string }) {
+  return ${seed.access("client", "event.id")};
+}
+`,
+    }),
+  },
+  {
     name: "the call behind a conditional that always runs",
     program: (seed) => ({
       "/app/index.ts": `

@@ -810,6 +810,134 @@ describe("a name written more than once", () => {
   });
 });
 
+describe("a value written as a fallback", () => {
+  // The client singleton: `const client = global.client || new Client()`.
+  // The global read resolves to nothing, so the construction is the only
+  // claim the source makes.
+  const singleton: Array<[string, ...string[]]> = [
+    ["binds", "client", "fallback"],
+    ["fallbackBranch", "fallback", "globalRead"],
+    ["readsProperty", "globalRead", "globalObj", "client"],
+    ["fallbackBranch", "fallback", "construction"],
+    ["call", "construction", "clsRef"],
+    ["writtenValue", "construction"],
+  ];
+
+  it("is written as the branch that resolves when the other makes no claim", () => {
+    expect(writtenAsOf(singleton, "client")).toEqual(["construction"]);
+  });
+
+  it("comes to the function a resolvable branch reaches", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "handler"],
+          ["binds", "picked", "fallback"],
+          ["fallbackBranch", "fallback", "globalRead"],
+          ["readsProperty", "globalRead", "globalObj", "cached"],
+          ["fallbackBranch", "fallback", "handlerRef"],
+          ["binds", "handlerRef", "handler"],
+        ],
+        "picked",
+      ),
+    ).toEqual(["handler"]);
+  });
+
+  it("derives both answers when both branches resolve, for the caller to refuse", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "primary"],
+          ["func", "secondary"],
+          ["binds", "picked", "fallback"],
+          ["fallbackBranch", "fallback", "primaryRef"],
+          ["binds", "primaryRef", "primary"],
+          ["fallbackBranch", "fallback", "secondaryRef"],
+          ["binds", "secondaryRef", "secondary"],
+        ],
+        "picked",
+      ),
+    ).toEqual(["primary", "secondary"]);
+  });
+
+  it("comes to the class a construction branch makes one of", () => {
+    expect(
+      derive(
+        [
+          ["objectValue", "Cls"],
+          ["binds", "clsRef", "Cls"],
+          ["binds", "client", "fallback"],
+          ["fallbackBranch", "fallback", "globalRead"],
+          ["readsProperty", "globalRead", "globalObj", "client"],
+          ["fallbackBranch", "fallback", "construction"],
+          ["call", "construction", "clsRef"],
+          ["writtenValue", "construction"],
+        ],
+        "comesTo",
+        "client",
+      ).map((t) => String(t[1])),
+    ).toEqual(["Cls"]);
+  });
+
+  it("gives back through a fallback whose branch is a factory call", () => {
+    expect(
+      resultsOf(
+        [
+          ["func", "makeClient"],
+          ["func", "made"],
+          ["returnsValue", "makeClient", "made"],
+          ["binds", "factoryRef", "makeClient"],
+          ["binds", "client", "fallback"],
+          ["fallbackBranch", "fallback", "globalRead"],
+          ["readsProperty", "globalRead", "globalObj", "client"],
+          ["fallbackBranch", "fallback", "factoryCall"],
+          ["call", "factoryCall", "factoryRef"],
+          ["writtenValue", "factoryCall"],
+        ],
+        "client",
+      ),
+    ).toEqual(["made"]);
+  });
+
+  it("reaches a method off the instance a fallback's construction makes", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["objectValue", "Cls"],
+          ["func", "load"],
+          ["holdsProperty", "Cls", "load", "load"],
+          ["binds", "clsRef", "Cls"],
+          ["binds", "client", "fallback"],
+          ["fallbackBranch", "fallback", "globalRead"],
+          ["readsProperty", "globalRead", "globalObj", "client"],
+          ["fallbackBranch", "fallback", "construction"],
+          ["call", "construction", "clsRef"],
+          ["writtenValue", "construction"],
+          ["readsProperty", "methodRead", "client", "load"],
+        ],
+        "methodRead",
+      ),
+    ).toEqual(["load"]);
+  });
+
+  it("follows a nested fallback branch by branch", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "f"],
+          ["binds", "picked", "outer"],
+          ["fallbackBranch", "outer", "inner"],
+          ["fallbackBranch", "outer", "deadRight"],
+          ["fallbackBranch", "inner", "deadLeft"],
+          ["fallbackBranch", "inner", "fRef"],
+          ["binds", "fRef", "f"],
+        ],
+        "picked",
+      ),
+    ).toEqual(["f"]);
+  });
+});
+
 describe("the same steps, whichever question is asked", () => {
   it("reads a name handed to a constructor back off the field", () => {
     // new Dao("orders-v1"), and the class reads this.table.

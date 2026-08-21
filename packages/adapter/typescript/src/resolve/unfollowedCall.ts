@@ -30,14 +30,17 @@ import type { FunctionRoot } from "../conditions.js";
  * nothing else: a method on an interface, an abstract method, an ambient
  * declaration. `unsettledValue` is a callee the project declares as
  * something other than a function, a parameter or a field with something
- * in it that could not be read. `outsideRun` is a declaration in a
- * dependency, whose source this run never read. `noDeclaration` is a
- * callee nothing declares, which is what a call on an untyped value
- * comes to.
+ * in it that could not be read. `multipleSources` is a callee whose
+ * chain reaches two different functions, a fallback whose branches both
+ * resolve say, so no single body can be followed. `outsideRun` is a
+ * declaration in a dependency, whose source this run never read.
+ * `noDeclaration` is a callee nothing declares, which is what a call on
+ * an untyped value comes to.
  */
 export type UnfollowedReason =
   | "noBody"
   | "unsettledValue"
+  | "multipleSources"
   | "outsideRun"
   | "noDeclaration";
 
@@ -204,6 +207,7 @@ export function classifyStop(declarations: readonly Node[]): UnfollowedReason {
 const RECORDED: Record<UnfollowedReason, boolean> = {
   noBody: true,
   unsettledValue: true,
+  multipleSources: true,
   outsideRun: false,
   noDeclaration: false,
 };
@@ -221,6 +225,8 @@ const STOP_SENTENCE: Record<UnfollowedReason, (callee: string) => string> = {
     `The call to ${callee} lands on a declaration with no body, so whatever runs there is missing from this summary`,
   unsettledValue: (callee) =>
     `The call to ${callee} goes through a value this run could not settle, so whatever runs there is missing from this summary`,
+  multipleSources: (callee) =>
+    `The call to ${callee} reaches a value with more than one possible source, so whatever runs there is missing from this summary`,
   outsideRun: (callee) =>
     `The call to ${callee} lands in a package whose source is not in this run, so whatever runs there is missing from this summary`,
   noDeclaration: (callee) =>

@@ -55,6 +55,26 @@ describe("explainResolutionProof", () => {
     expect(explained?.truncated).toBe(false);
   });
 
+  it("says a fallback hop as the branch that resolves", () => {
+    const db = evaluated([
+      ["func", "builtFn"],
+      ["binds", "client", "orExpr"],
+      ["fallbackBranch", "orExpr", "globalRead"],
+      ["fallbackBranch", "orExpr", "builtFn"],
+    ]);
+
+    const proof = proofOf(db, "resolves", ["client", "builtFn"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "alias",
+      "fallback",
+    ]);
+    expect(explained?.steps[1].reason).toBe(
+      "orExpr is a fallback expression, and builtFn is the branch that resolves",
+    );
+  });
+
   it("says which barrels forwarded a re-exported name", () => {
     const db = evaluated([
       ["func", "daoFn"],

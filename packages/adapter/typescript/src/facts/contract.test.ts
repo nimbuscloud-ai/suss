@@ -43,6 +43,14 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a name declared as a fallback": {
+    "/f.ts": [
+      "declare const globalCache: { client?: unknown };",
+      "declare function build(): unknown;",
+      "export const client = globalCache.client || build();",
+      "",
+    ].join("\n"),
+  },
   "a value another file declares": {
     "/source.ts": "export const value = 1;\n",
     "/f.ts":

@@ -28,6 +28,8 @@ readsProperty(x, o, n)      x is the expression o.n
 binds(x, y)                 the name x is declared as y
 endsHolding(x, y)           the name x is written more than once and
                             holds y once the writes have run
+fallbackBranch(x, b)        x is a fallback expression and b is one
+                            of its branches
 paramOf(f, k, p)            p is f's parameter at position k
 paramNamed(f, n, p)         p is f's parameter called n
 extends(c, b)               class c is written as extending b
@@ -78,6 +80,18 @@ the answers that stop at a value.
 A language with a hop of its own states it as a step too. JavaScript's
 `.bind` and Ruby's `Const.new` are each one rule, and every question
 below picks them up without being told.
+
+A fallback expression (`a || b`, `a ?? b`, Python's `a or b`) says its
+value is one of its branches, so each branch is a value step. That is
+the whole rule. When one branch is something no static reader can
+settle, a global cache or a parameter, that branch derives nothing, and
+the branch that does resolve is the only claim the source makes. The
+idiomatic client singleton, `global.prisma || new PrismaClient()`, is
+exactly this: the global read makes no claim, so the construction is
+the answer. When both branches resolve to different things, both
+derive, and the caller's single-answer policy refuses the pair. That is
+the same refusal every other two-candidate chain gets, because a value
+that is one of two different things is not one thing.
 
 Each question is that one closure with its own stopping condition. So
 adding a construct is one step and every question gets it, and adding a

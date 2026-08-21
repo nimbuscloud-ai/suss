@@ -2,8 +2,8 @@
   "totals": {
     "packages": 56,
     "packagesWithExports": 56,
-    "exports": 524,
-    "internal": 2068,
+    "exports": 525,
+    "internal": 2073,
     "consumers": 965,
     "pairs": 957,
     "unfollowedCalls": 236,
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 41,
-      "internal": 698,
+      "exports": 42,
+      "internal": 703,
       "consumers": 74,
       "unfollowedCalls": 67
     },

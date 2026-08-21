@@ -164,7 +164,32 @@ function read(expr: Node, ctx: Context): string | null {
     }
   }
   const written = ctx.resolve(expr);
-  return written === null || written === expr ? null : read(written, inner);
+  if (written === null || written === expr) {
+    return null;
+  }
+  // The store hands back the one branch of a fallback that resolves.
+  // Inside a longer name that part stays a hole, the same as a
+  // fallback written in place, since a deployment can set it.
+  if (ctx.insideHole && isFallbackBranch(written)) {
+    return null;
+  }
+  return read(written, inner);
+}
+
+/** Whether a resolved node is written as one branch of `||` or `??`. */
+function isFallbackBranch(node: Node): boolean {
+  let step: Node | undefined = node.getParent();
+  while (step !== undefined && Node.isParenthesizedExpression(step)) {
+    step = step.getParent();
+  }
+  if (step === undefined || !Node.isBinaryExpression(step)) {
+    return false;
+  }
+  const operator = step.getOperatorToken().getKind();
+  return (
+    operator === SyntaxKind.BarBarToken ||
+    operator === SyntaxKind.QuestionQuestionToken
+  );
 }
 
 function fromTemplate(expr: Node, ctx: Context): string | null {

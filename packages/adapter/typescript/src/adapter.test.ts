@@ -1920,6 +1920,75 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     expect(unfollowed[0]?.description).toContain("this.dao.getEditions");
     expect(unfollowed[0]?.description).toContain("no body");
   });
+
+  it("says a value has more than one possible source when two wirings reach the same call", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "dao.ts",
+      `
+      export interface Reader {
+        load(id: string): Promise<string[]>;
+      }
+      export class FileReader implements Reader {
+        async load(id: string) { return [id]; }
+      }
+      export class HttpReader implements Reader {
+        async load(id: string) { return [id, id]; }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "service.ts",
+      `
+      import type { Reader } from "./dao";
+      export class Service {
+        constructor(private readonly reader: Reader) {}
+        run(id: string) {
+          return this.reader.load(id);
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { FileReader, HttpReader } from "./dao";
+      import { Service } from "./service";
+      const fromFiles = new Service(new FileReader());
+      const fromHttp = new Service(new HttpReader());
+      const s = initServer();
+      export const router = s.router({} as any, {
+        listEditions: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: await fromFiles.run(params.id) };
+        },
+        listLegacy: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: await fromHttp.run(params.id) };
+        },
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const service = summaries.find(
+      (summary) => summary.identity.name === "run",
+    );
+    expect(service).toBeDefined();
+
+    const unfollowed = (service?.gaps ?? []).filter(
+      (gap) => gap.type === "unfollowedCall",
+    );
+    expect(unfollowed).toHaveLength(1);
+    expect(unfollowed[0]?.description).toContain("this.reader.load");
+    expect(unfollowed[0]?.description).toContain(
+      "more than one possible source",
+    );
+  });
 });
 
 describe("createTypeScriptAdapter: boundary effects closure", () => {
