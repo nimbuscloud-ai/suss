@@ -91,4 +91,25 @@ describe("boundariesTouchedBy", () => {
 
     expect(touched).toEqual([]);
   });
+
+  it("says nothing about a write written under a relation", () => {
+    const touched = boundariesTouchedBy(
+      summaryWith([
+        {
+          type: "interaction",
+          binding: commentBinding(),
+          callee: "prisma.article.create",
+          interaction: {
+            class: "storage-access",
+            kind: "write",
+            fields: ["name"],
+            relationPath: ["tagList"],
+            operation: "connectOrCreate",
+          },
+        },
+      ]),
+    );
+
+    expect(touched).toEqual([]);
+  });
 });

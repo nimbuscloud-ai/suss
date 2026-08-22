@@ -206,8 +206,9 @@ export function boundariesTouchedBy(
       if (effect.type !== "interaction") {
         continue;
       }
-      // Which container a read written under a relation touches comes
-      // from the provider's contract, and this walk has one summary.
+      // Which container an access written under a relation touches
+      // comes from the provider's contract, and this walk has one
+      // summary.
       if (goesThroughRelation(effect.interaction)) {
         continue;
       }

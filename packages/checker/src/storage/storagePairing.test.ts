@@ -1315,6 +1315,100 @@ describe("a read written under another table's query", () => {
   });
 });
 
+describe("a write written under another table's data", () => {
+  /** An article, with the relation a nested tag write is written under. */
+  function article(): BehavioralSummary {
+    return makeProvider({
+      container: "Article",
+      fields: [
+        { name: "id" },
+        { name: "title" },
+        { name: "tagList", type: "Tag[]", derived: true },
+      ],
+    });
+  }
+
+  function tag(): BehavioralSummary {
+    return makeProvider({
+      container: "Tag",
+      fields: [{ name: "id" }, { name: "name" }],
+    });
+  }
+
+  function writer(fields: string[], relationPath: string[]): BehavioralSummary {
+    return makeAccessSummary({
+      name: "createArticle",
+      file: "src/article.service.ts",
+      accesses: [
+        { container: "Article", kind: "write", fields: ["title", "tagList"] },
+        {
+          container: "Article",
+          kind: "write",
+          fields,
+          relationPath,
+          operation: "connectOrCreate",
+        },
+      ],
+    });
+  }
+
+  it("counts the fields against the table the relation reaches", () => {
+    const findings = checkStorage([
+      article(),
+      tag(),
+      writer(["name"], ["tagList"]),
+    ]);
+    const descriptions = findings.map((f) => f.description);
+
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+    expect(descriptions.join(" ")).toContain('Tag declares "name" and code');
+    expect(descriptions.join(" ")).not.toContain('Article declares "name"');
+  });
+
+  it("counts every column as written when the payload was built elsewhere", () => {
+    const descriptions = checkStorage([
+      article(),
+      tag(),
+      writer(["*"], ["tagList"]),
+    ]).map((f) => f.description);
+
+    expect(descriptions.join(" ")).toContain('Tag declares "id" and code');
+    expect(descriptions.join(" ")).toContain('Tag declares "name" and code');
+  });
+
+  it("leaves the write out when the contract declares no such relation", () => {
+    const findings = checkStorage([
+      article(),
+      tag(),
+      writer(["name"], ["meta"]),
+    ]);
+
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+    expect(
+      findings.map((f) => f.description).filter((d) => d.includes("Tag")),
+    ).toEqual([]);
+  });
+
+  it("puts a grounded access on the table the relation reaches", () => {
+    const { accesses } = groundStorageAccesses([
+      article(),
+      tag(),
+      writer(["name"], ["tagList"]),
+    ]);
+
+    expect(
+      accesses
+        .filter((a) => a.kind === "write")
+        .map((a) => a.container)
+        .sort(),
+    ).toEqual(["Article", "Tag"]);
+  });
+});
+
 describe("an access whose store the deployment sets a variable to", () => {
   /** A Worker's runtime, with the variable its code addresses a store through. */
   function runtime(opts: {
