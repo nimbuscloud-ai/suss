@@ -1,6 +1,6 @@
 # Analysis levels (L0 to L6)
 
-Internal roadmap. The cross-boundary checker's comparisons compose in layers, each one building on the previous. The ladder below tracks how deep the comparison goes so far and what each level unlocks. The user-facing summary of what's checked today is in [`cross-boundary-checking.md`](../cross-boundary-checking.md). Levels 0 to 5 are implemented, and Level 6 is independent and in progress.
+Internal roadmap. The cross-boundary checker's comparisons compose in layers, each one building on the previous. The ladder below tracks how deep the comparison goes so far and what each level unlocks. The user-facing summary of what's checked today is in [`cross-boundary-checking.md`](../docs/cross-boundary-checking.md). Levels 0 to 5 are implemented, and Level 6 is independent and in progress.
 
 ## Level 0: Status-code coverage (done)
 

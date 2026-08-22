@@ -112,7 +112,7 @@ same body-less outcome.
 
 ### 5. The proposal's worked examples don't match the shipped schema (`fix-now`)
 
-`docs/internal/proposals/intent-layer-examples/fastify-users/users-lookup.system.yaml`
+`design/proposals/intent-layer-examples/fastify-users/users-lookup.system.yaml`
 uses `output:` under each transition; the shipped schema uses `response:` /
 `returns:` / `throws:`, so the file fails the "exactly one outcome" refine
 and won't load. The sibling `user-profile-lookup.prd.yaml` uses `then:`

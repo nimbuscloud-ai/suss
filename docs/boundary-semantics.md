@@ -59,8 +59,10 @@ checking actually cares about.
   (inputs=dependency array, outputs=side-effects + optional cleanup).
   The discriminator is the unit kind, and the payload is the tree or the
   effect it produces.
-  Pairing key: `(component identity, unit kind, unit name?)`. See
-  [`roadmap-react.md`](internal/roadmap-react.md) for the multi-unit framing.
+  Pairing key: `(component identity, unit kind, unit name?)`. The
+  multi-unit framing comes from a design record, [the React
+  roadmap](https://github.com/nimbuscloud-ai/suss/blob/main/design/roadmap-react.md), which plans work rather than
+  describing what ships.
 - **gRPC unary call**: discriminated by gRPC status enum (its own code
   space, not HTTP status); payload is the response message. Pairing
   key: `(service, method)`.
@@ -481,9 +483,12 @@ Deferred:
 
 See also:
 
-- [`docs/internal/status.md`](internal/status.md), decisions #18 (pack-aware checker via
-  summary metadata), #22 (`BOUNDARY_ROLE`), #24 (pack-driven status
-  accessors), #25 (this doc).
+- Four decisions built the model on this page: the checker reads pack
+  metadata rather than hardcoding frameworks, a summary states its
+  `BOUNDARY_ROLE`, packs supply the accessor that reads a status off a
+  response, and the three layers below got written down. The
+  [status design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/status.md) keeps the log, and it is a
+  working record rather than documentation.
 - [`docs/architecture.md`](architecture.md), the current package
   dependency graph and protocol assumptions.
 - [`docs/reference/pack-patterns.md`](reference/pack-patterns.md), how

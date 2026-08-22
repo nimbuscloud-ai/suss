@@ -1,7 +1,7 @@
 // contract.ts: the cases every language adapter's facts have to satisfy.
 // The rules say what a fact means; these say how one has to be keyed, which
 // is what an adapter author otherwise reads out of another adapter's source.
-// docs/internal/proposals/adapter-fact-contract.md says why this exists.
+// design/proposals/adapter-fact-contract.md says why this exists.
 
 import type { Database } from "@suss/datalog";
 

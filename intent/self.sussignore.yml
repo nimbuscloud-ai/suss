@@ -19,4 +19,4 @@ rules:
       function-call boundary without package + exportPath (see
       @suss/ir-core boundaryKey), so this spec is a valid
       declared-ahead-of-capability state. Tracked in
-      docs/internal/dogfood-intent-notes.md (module-level keying gap).
+      design/dogfood-intent-notes.md (module-level keying gap).

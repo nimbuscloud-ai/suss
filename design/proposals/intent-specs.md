@@ -7,7 +7,7 @@ intent layer that pairs against the derived side, delivered in the order
 `v0.1` … `v0.4`.
 
 Worked examples live under
-`docs/internal/proposals/intent-layer-examples/`. The Fastify
+`design/proposals/intent-layer-examples/`. The Fastify
 `users-lookup` example exercises v0.1; the aws-sqs `order-intake`
 example exercises v0.2. Both target fixtures that today's checkers
 already analyse.
@@ -142,7 +142,7 @@ finding.
    The purpose it serves, the state it owns, the actions it exposes,
    and the canonical scenario that demonstrates the purpose. The
    long-form mapping to Daniel Jackson's concept-design vocabulary
-   lives in [`concept-design.md`](../concept-design.md), and this
+   lives in [`concept-design.md`](../../docs/internal/concept-design.md), and this
    proposal points there rather than arguing it again. v0.3 ships this.
 
 Outcome intent (PRDs) is a level above all three: a PRD's scenarios link to
@@ -727,7 +727,7 @@ The Fastify worked example is also the v0.1 integration test:
 
 1. Place the PRD + system intent files in
    `fixtures/fastify/intent/` (move from
-   `docs/internal/proposals/intent-layer-examples/fastify-users/`).
+   `design/proposals/intent-layer-examples/fastify-users/`).
 2. Add `fastifyIntentIntegration.test.ts` to the CLI package that:
    - Extracts handler summaries from `fixtures/fastify/handlers.ts`
    - Reads the intent files via `@suss/contract-intent`
@@ -748,7 +748,7 @@ The Fastify worked example is also the v0.1 integration test:
   the split between PM-authored and engineer-authored intent.
 - Updated: `docs/internal/concept-design.md`. The PRD section links
   to this proposal, and says what has shipped once v0.1 ships.
-- Updated: `docs/internal/backlog.md`. `#intent-specs` moves to
+- Updated: `design/backlog.md`. `#intent-specs` moves to
   "in flight" with the v0.x sequencing.
 
 ## Cost estimate (v0.1 completion only)

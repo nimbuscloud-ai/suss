@@ -14,7 +14,7 @@
 // Unlike the other contract readers, intent does NOT produce
 // BehavioralSummary: intent is a separate citizen with its own type
 // (IntentSummary) and its own checker. The full design lives in
-// docs/internal/proposals/intent-specs.md.
+// design/proposals/intent-specs.md.
 
 import fs from "node:fs";
 import path from "node:path";

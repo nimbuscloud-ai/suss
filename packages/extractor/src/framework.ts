@@ -332,7 +332,7 @@ export type DiscoveryMatch =
        * bound to a `const` one hop away, gets expanded. Cross-file and
        * computed iterables are outside v0.
        *
-       * Pack-author docs: `docs/internal/proposals/dynamic-registration.md`.
+       * Pack-author docs: `design/proposals/dynamic-registration.md`.
        */
       type: "registrationLoop";
       elementShape: {
@@ -361,7 +361,7 @@ export type DiscoveryMatch =
        * one specific module, which helps when two packages happen to export
        * a function with the same name.
        *
-       * Pack-author docs: `docs/internal/proposals/dynamic-registration.md`.
+       * Pack-author docs: `design/proposals/dynamic-registration.md`.
        */
       type: "registrationTemplate";
       helperName: string;

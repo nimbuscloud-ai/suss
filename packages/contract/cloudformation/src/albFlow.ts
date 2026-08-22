@@ -1,5 +1,5 @@
 // albFlow.ts: read an Application Load Balancer's routing chain as
-// the edges docs/internal/proposals/flow-reachability.md names:
+// the edges design/proposals/flow-reachability.md names:
 //
 //   routesTo(router, target, matchId)   a listener rule, or a
 //                                       listener's own forward default

@@ -17,7 +17,7 @@ Depends only on `@suss/adapter-ruby` (for the `RubyPack` type and the Ruby-langu
 
 ## v0 scope
 
-The pack reads only what a class declares: a resolver's transitions are always empty (`branches: []`), and confidence is pinned low, per [`docs/internal/proposals/language-adapters.md`](../../../docs/internal/proposals/language-adapters.md). `routes.rb` is a separate, much larger macro-expansion problem, which the same document costs out, and it stays out of scope here.
+The pack reads only what a class declares: a resolver's transitions are always empty (`branches: []`), and confidence is pinned low, per [`design/proposals/language-adapters.md`](../../../design/proposals/language-adapters.md). `routes.rb` is a separate, much larger macro-expansion problem, which the same document costs out, and it stays out of scope here.
 
 ## Configuration
 

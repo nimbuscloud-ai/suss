@@ -2,8 +2,8 @@
 
 Items flagged as "think about later". None of them is
 scheduled, but the theory docs
-([`concept-design.md`](concept-design.md),
-[`quality.md`](quality.md)) refer to them as aspirational arcs
+([`concept-design.md`](../docs/internal/concept-design.md),
+[`quality.md`](../docs/internal/quality.md)) refer to them as aspirational arcs
 the shipped design should leave room for, and they point here
 when they do.
 
@@ -137,7 +137,7 @@ shares a database with another.
 ## Dogfooding extensions
 
 The main dogfooding arc has shipped (see
-[`dogfooding.md`](dogfooding.md)). The remaining extensions are
+[`dogfooding.md`](../docs/internal/dogfooding.md)). The remaining extensions are
 all tracked as Phase 9 deferred items in `status.md`:
 
 - **Factory-return follow-through**: `createAdapter().extractAll()`-style
@@ -151,8 +151,8 @@ all tracked as Phase 9 deferred items in `status.md`:
 ## The Jackson arc (aspirational, framework-grounded)
 
 The items below trace back to
-[`concept-design.md`](concept-design.md) and
-[`quality.md`](quality.md). They form one coherent arc rather
+[`concept-design.md`](../docs/internal/concept-design.md) and
+[`quality.md`](../docs/internal/quality.md). They form one coherent arc rather
 than independent features, so treat them that way when you
 schedule them.
 
@@ -166,7 +166,7 @@ code do what the spec says?), and against observations (do the
 tests cover the intent?).
 
 Jackson gives another way to look at this (see
-[`concept-design.md`](concept-design.md#prds-and-intent-specifications)):
+[`concept-design.md`](../docs/internal/concept-design.md#prds-and-intent-specifications)):
 a PRD or intent spec is a *top-down concept declaration indexed
 to an audience*. It states a purpose, an operational principle,
 state, actions, and a role. The same well-formedness failure
@@ -176,7 +176,7 @@ spec), backward (spec vs derive), and lateral (spec vs spec for
 different audiences) are three distinct analyses over one data
 shape.
 
-[`quality.md`](quality.md) extends this: an intent spec that
+[`quality.md`](../docs/internal/quality.md) extends this: an intent spec that
 says only what the feature *does* captures half the contract. A
 fuller one says *how well*: error budget, acceptable latency,
 edge-case handling, observability obligations. PRD-as-data
@@ -200,9 +200,9 @@ operator-only CLI, internal SDK package); others have to be
 declared from outside. This unblocks a multi-audience feature
 taxonomy and the "same behaviour, different OPs per audience"
 case from
-[`concept-design.md`](concept-design.md#audience-indexing). It
+[`concept-design.md`](../docs/internal/concept-design.md#audience-indexing). It
 also doubles as the index axis for
-[`quality.md`](quality.md#audience).
+[`quality.md`](../docs/internal/quality.md#audience).
 
 ### Sync-chain identification / feature assembly {#sync-chains}
 
@@ -212,15 +212,15 @@ chains, treat each chain as a candidate feature, and check it
 against intent specs and Arazzo workflows. That is a direct
 precursor to feature-level checking and to composite-quality
 analysis, specifically the
-[*how*-at-workflow-level facet](quality.md#layer-1--impedance-quality-user-determined)
-and [feature-level quality](quality.md#aspirational-implications)
+[*how*-at-workflow-level facet](../docs/internal/quality.md#layer-1--impedance-quality-user-determined)
+and [feature-level quality](../docs/internal/quality.md#aspirational-implications)
 in the quality doc.
 
 ### Failure-mode detection {#failure-modes}
 
 Heuristics over the shared-state graph for smeared / fused /
 phantom concepts (see
-[`concept-design.md`](concept-design.md#failure-modes-of-bottom-up-derivation)):
+[`concept-design.md`](../docs/internal/concept-design.md#failure-modes-of-bottom-up-derivation)):
 
 - Smeared → many units sharing state lineage without a pairing
   binding between them.
@@ -240,11 +240,11 @@ piece of work is that the IR has no notion of time, and pairing
 on an event name works differently from the pairing suss has
 shipped for in-process, HTTP, and GraphQL. This closes the reach
 gap listed in
-[`concept-design.md`](concept-design.md#what-suss-can-and-cant-reach-yet).
+[`concept-design.md`](../docs/internal/concept-design.md#what-suss-can-and-cant-reach-yet).
 
 ### L2-shaped pattern packs {#l2-patterns}
 
-From [`quality.md`](quality.md#aspirational-implications):
+From [`quality.md`](../docs/internal/quality.md#aspirational-implications):
 recognise common resilience patterns (`retry`, `circuitBreaker`,
 `withTimeout`, `fallback`) as framework-pack terminal or effect
 matches, through the same interface as HTTP-status extraction.
@@ -260,7 +260,7 @@ A stub that reads traces or production logs and emits
 boundaries. It lets `contractDisagreement`-style checks run
 across spec / derivation / observation triples. It is the
 foundation for the full epistemic split at the quality layer
-(see [`quality.md`](quality.md#epistemic)), not capabilities
+(see [`quality.md`](../docs/internal/quality.md#epistemic)), not capabilities
 alone.
 
 ### Trade-off annotations {#tradeoff-annotations}
@@ -269,7 +269,7 @@ A declared metadata layer ("this concept takes the consistency
 side of the consistency/latency surface") that can be compared
 against derived behaviour and observed behaviour. The hard part
 is that the taxonomy of trade-off surfaces (see
-[`quality.md`](quality.md#trade-offs-as-named-surfaces)) has to be
+[`quality.md`](../docs/internal/quality.md#trade-offs-as-named-surfaces)) has to be
 stable and extensible before the annotations become useful.
 
 ## How to apply

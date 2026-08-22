@@ -110,9 +110,9 @@ read a summary.
   to promote the construct to the sound tier and flip its corpus
   entries to `clean`. The nested-guard and loop-return tiers went
   through that whole lifecycle. The fuzzer rediscovered them
-  mechanically, then the CFG path engine closed them (status.md
-  decision #56), and at that point the milestones on both boundaries
-  flipped together and the constructs joined the sound tier.
+  mechanically, then the CFG path engine closed them, and at that
+  point the milestones on both boundaries flipped together and the
+  constructs joined the sound tier.
   `arbNestedGuard` and `arbLoopGuard` now run as "promoted constructs
   stay sound" properties. Since that cutover there are **no open gap
   tiers**.
@@ -132,9 +132,9 @@ mechanically, in seconds. 6,000 random sound-tier programs ran without
 a finding. And the fuzzer turned up one **new** bug: the extractor was
 encoding a dynamic element-access index (`obj[key]`) as a static read
 (`indexAccess("key")`). We fixed that the same day in the adapter's
-`subjects.ts` (decision #54 in [`status.md`](status.md)). One session
-later the CFG path engine closed both written-down gaps (decision #56)
-and the corpus lifecycle finished its first full cycle: find → pin as
+`subjects.ts`, which now distinguishes a dynamic index from a static
+one. One session later the CFG path engine closed both written-down
+gaps and the corpus lifecycle finished its first full cycle: find → pin as
 `gap:*` → fix → flip to `fixed:*` regression.
 
 ## Extending to another HTTP pack

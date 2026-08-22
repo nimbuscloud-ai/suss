@@ -105,7 +105,7 @@ Response bodies and return values are extracted into `TypeShape` (see `ir-refere
 
 ## Steps 2+3: CFG path conditions
 
-Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`), the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each with its own true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps (see decisions #56 through #59 in `internal/status.md`):
+Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`), the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each with its own true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps. The engine replaced a set of hand-written condition collectors that were unsound on exactly the shapes they still served, and those collectors have since been deleted, so there is one condition engine and no fallback:
 
 - `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]`, never a fabricated `¬a ∧ ¬b` or an empty list;
 - sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);

@@ -11,7 +11,7 @@
 // whatever units other packs (Express handlers, AWS SQS consumers,
 // etc.) have already discovered.
 //
-// See `docs/internal/proposals/runtime-node.md` for the design.
+// See `design/proposals/runtime-node.md` for the design.
 
 import { envVarRecognizer } from "./envVars.js";
 import {

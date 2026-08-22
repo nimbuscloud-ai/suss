@@ -115,4 +115,8 @@ The checker already emits `lowConfidence` findings when opaque predicates preven
 ## See also
 
 - [`docs/cross-boundary-checking.md`](cross-boundary-checking.md), the findings taxonomy you'll suppress
-- `docs/status.md` decision #30, the design rationale for this first version
+- Suppression rules deliberately have no expiry date. A date nobody
+  revisits does not stop suppression rot, and the required `reason`
+  field is what does the work instead. The
+  [status design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/status.md) has the rest of the
+  reasoning, as a working record rather than documentation.

@@ -10,7 +10,7 @@ This is the same call as the standing "no native binaries in the npm-shipped cor
 
 ## What the architecture already settled
 
-The facts-and-rules layer ([`facts-and-rules.md`](facts-and-rules.md)) is the language-independent half, built and in production. All we ask of a second adapter is that it discover units, emit summaries in the shared IR, and emit the same facts (`entry`, `calls`, `unitEffect`, `throwsDirect`, and the rest). Everything above that layer comes along unchanged: reachability, effect closures, exception flow, cross-boundary checking, the CLI.
+The facts-and-rules layer ([`facts-and-rules.md`](../docs/internal/facts-and-rules.md)) is the language-independent half, built and in production. All we ask of a second adapter is that it discover units, emit summaries in the shared IR, and emit the same facts (`entry`, `calls`, `unitEffect`, `throwsDirect`, and the rest). Everything above that layer comes along unchanged: reachability, effect closures, exception flow, cross-boundary checking, the CLI.
 
 What someone has to build for a new language is its Layer 1, the per-function extractor. There are four pieces.
 
@@ -42,7 +42,7 @@ Nothing in the IR needs types to be correct; `shape` fields degrade to opaque or
 
 ### 4. Adjudication: the fuzzer decides "good enough"
 
-The differential fuzzer is how we know the resolver and path lowering meet the bar without trusting anyone's judgment. It follows the same protocol as [`differential-fuzzing.md`](differential-fuzzing.md): generate programs in the target language from a small DSL, extract through the full pipeline, execute, compare. A condition fabricated by bad name resolution is a `falseClaim`, which fails the build. Abstention shows up as a measurable unknown rate, never as a failure. The gap corpus, and promoting a case once it is fixed, carry over unchanged.
+The differential fuzzer is how we know the resolver and path lowering meet the bar without trusting anyone's judgment. It follows the same protocol as [`differential-fuzzing.md`](../docs/internal/differential-fuzzing.md): generate programs in the target language from a small DSL, extract through the full pipeline, execute, compare. A condition fabricated by bad name resolution is a `falseClaim`, which fails the build. Abstention shows up as a measurable unknown rate, never as a failure. The gap corpus, and promoting a case once it is fixed, carry over unchanged.
 
 ## What about stack graphs and SCIP?
 

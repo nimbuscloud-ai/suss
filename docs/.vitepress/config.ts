@@ -61,7 +61,8 @@ export default defineConfig({
     //   How-to: task recipes for users who know what they need
     //   Reference: dry, complete factual information (CLI, findings, IR)
     //   Explanation: why the tool is shaped this way
-    //   Internal: ADR log, style guide, roadmaps (de-emphasized at the bottom)
+    //   Internals: how the pieces are built, for contributors
+    //     (de-emphasized at the bottom)
     //
     // See diataxis.fr for the framework; mixing modes on one page is
     // the most common docs anti-pattern and this structure keeps them
@@ -124,7 +125,10 @@ export default defineConfig({
       },
       {
         // Contributor / maintainer material, how the pieces are built,
-        // not what a user needs to run suss.
+        // not what a user needs to run suss. Design records live in
+        // design/ at the repository root instead, because everything
+        // under docs/ is a published page whether the sidebar lists it
+        // or not.
         text: "Internals",
         collapsed: true,
         items: [
@@ -144,22 +148,9 @@ export default defineConfig({
             link: "/internal/differential-fuzzing",
           },
           { text: "Contract sources", link: "/contract-sources" },
-        ],
-      },
-      {
-        text: "Internal",
-        collapsed: true,
-        items: [
-          { text: "Status & decisions", link: "/internal/status" },
-          { text: "Style guide", link: "/internal/style" },
           { text: "Concept design", link: "/internal/concept-design" },
           { text: "Quality", link: "/internal/quality" },
-          { text: "Forward-looking backlog", link: "/internal/backlog" },
-          { text: "React roadmap", link: "/internal/roadmap-react" },
-          {
-            text: "Second-language roadmap",
-            link: "/internal/roadmap-second-language",
-          },
+          { text: "Style guide", link: "/internal/style" },
           { text: "Dogfooding", link: "/internal/dogfooding" },
           { text: "Releasing", link: "/internal/releasing" },
         ],

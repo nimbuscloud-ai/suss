@@ -20,4 +20,4 @@ generated summaries directory because `suss check` auto-discovers
 suppressions there.
 
 Authoring friction and open gaps are logged in
-[`docs/internal/dogfood-intent-notes.md`](../docs/internal/dogfood-intent-notes.md).
+[`design/dogfood-intent-notes.md`](../design/dogfood-intent-notes.md).

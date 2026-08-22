@@ -9,7 +9,7 @@
 // The CLI's `suss extract` has no built-in framework for a package's
 // export surface, so extraction is driven here through the adapter with
 // a synthesized packageExports pack; the check step is the real CLI
-// (`runCli(["check", ...])`). See docs/internal/dogfood-intent-notes.md
+// (`runCli(["check", ...])`). See design/dogfood-intent-notes.md
 // for the friction this surfaced.
 
 import fs from "node:fs";
