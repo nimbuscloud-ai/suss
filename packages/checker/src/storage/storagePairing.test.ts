@@ -27,6 +27,7 @@ function makeProvider(opts: {
     type?: string;
     nullable?: boolean;
     derived?: boolean;
+    relationKey?: string[];
   }>;
   physicalTable?: string;
   /** A SQL schema declares every field, so that is the default here. */
@@ -83,6 +84,7 @@ function makeAccessSummary(opts: {
     selector?: string[];
     operation?: string;
     relationPath?: string[];
+    relationKey?: true;
   }>;
 }): BehavioralSummary {
   const transition: Transition = {
@@ -108,6 +110,7 @@ function makeAccessSummary(opts: {
           ...(a.relationPath !== undefined
             ? { relationPath: a.relationPath }
             : {}),
+          ...(a.relationKey === true ? { relationKey: true } : {}),
         },
       }),
     ),
@@ -1406,6 +1409,175 @@ describe("a write written under another table's data", () => {
         .map((a) => a.container)
         .sort(),
     ).toEqual(["Article", "Tag"]);
+  });
+});
+
+describe("a write that moves which row a relation joins", () => {
+  /** A comment, which declares the foreign keys of both its relations. */
+  function comment(): BehavioralSummary {
+    return makeProvider({
+      container: "Comment",
+      fields: [
+        { name: "id" },
+        { name: "body" },
+        { name: "articleId" },
+        {
+          name: "article",
+          type: "Article",
+          derived: true,
+          relationKey: ["articleId"],
+        },
+      ],
+    });
+  }
+
+  /** An article, whose side of the same relation declares no key. */
+  function article(): BehavioralSummary {
+    return makeProvider({
+      container: "Article",
+      fields: [
+        { name: "id" },
+        { name: "title" },
+        { name: "comments", type: "Comment[]", derived: true },
+        { name: "favoritedBy", type: "User[]", derived: true },
+      ],
+    });
+  }
+
+  function user(): BehavioralSummary {
+    return makeProvider({
+      container: "User",
+      fields: [{ name: "id" }],
+    });
+  }
+
+  function connects(
+    container: string,
+    relationPath: string[],
+  ): BehavioralSummary {
+    return makeAccessSummary({
+      name: "addComment",
+      file: "src/article.service.ts",
+      accesses: [
+        // A payload stating a relation and nothing else writes no
+        // column the call itself could name.
+        { container, kind: "write", fields: [] },
+        {
+          container,
+          kind: "write",
+          fields: [],
+          relationPath,
+          relationKey: true,
+          operation: "connect",
+        },
+      ],
+    });
+  }
+
+  function writtenOn(summaries: BehavioralSummary[], container: string) {
+    return groundStorageAccesses(summaries)
+      .accesses.filter(
+        (access) => access.kind === "write" && access.container === container,
+      )
+      .flatMap((access) => access.binding.semantics);
+  }
+
+  it("writes the foreign key on the model that declares the relation", () => {
+    const findings = checkStorage([
+      article(),
+      comment(),
+      connects("Comment", ["article"]),
+    ]);
+    const descriptions = findings.map((f) => f.description).join(" ");
+
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+    expect(descriptions).toContain('Comment declares "articleId" and code');
+    expect(descriptions).not.toContain('Article declares "articleId"');
+  });
+
+  it("counts nothing when the key of that relation lives elsewhere", () => {
+    const findings = checkStorage([
+      article(),
+      user(),
+      connects("Article", ["favoritedBy"]),
+    ]);
+
+    const descriptions = findings.map((f) => f.description).join(" ");
+
+    expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+      [],
+    );
+    expect(descriptions).not.toContain("code here writes it");
+    expect(descriptions).toContain('Article declares "id", and no query here');
+  });
+
+  it("reads the key off the model the rest of the path arrives at", () => {
+    const writer = makeAccessSummary({
+      name: "createArticle",
+      file: "src/article.service.ts",
+      accesses: [
+        { container: "Article", kind: "write", fields: ["title"] },
+        {
+          container: "Article",
+          kind: "write",
+          fields: [],
+          relationPath: ["comments", "article"],
+          relationKey: true,
+          operation: "connect",
+        },
+      ],
+    });
+    const descriptions = checkStorage([article(), comment(), writer])
+      .map((f) => f.description)
+      .join(" ");
+
+    expect(descriptions).toContain('Comment declares "articleId" and code');
+  });
+
+  it("takes a name the contract does not call a relation as a column", () => {
+    const findings = checkStorage([
+      article(),
+      comment(),
+      connects("Comment", ["nickname"]),
+    ]);
+
+    expect(
+      findings
+        .filter((f) => f.kind === "boundaryFieldUnknown")
+        .map((f) => f.description)
+        .join(" "),
+    ).toContain("nickname");
+  });
+
+  it("takes a declared column written the long way as that column", () => {
+    // Prisma spells a plain column update `{ body: { set: "x" } }`, and
+    // only the contract tells that from a relation.
+    const descriptions = checkStorage([
+      article(),
+      comment(),
+      connects("Comment", ["body"]),
+    ])
+      .map((f) => f.description)
+      .join(" ");
+
+    expect(descriptions).toContain('Comment declares "body" and code');
+  });
+
+  it("leaves the write on the model the call addressed", () => {
+    expect(
+      writtenOn(
+        [article(), comment(), connects("Comment", ["article"])],
+        "Comment",
+      ),
+    ).toHaveLength(2);
+    expect(
+      writtenOn(
+        [article(), comment(), connects("Comment", ["article"])],
+        "Article",
+      ),
+    ).toEqual([]);
   });
 });
 

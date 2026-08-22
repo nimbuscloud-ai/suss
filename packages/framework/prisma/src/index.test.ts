@@ -376,7 +376,7 @@ describe("prisma recognizer: happy path", () => {
       }
     `);
     const accesses = storageEffectsOf(recognizeAll(file));
-    expect(accesses).toHaveLength(2);
+    expect(accesses).toHaveLength(3);
     expect(accesses[1]?.interaction).toMatchObject({
       kind: "write",
       fields: ["name"],
@@ -385,6 +385,99 @@ describe("prisma recognizer: happy path", () => {
     });
     expect(accesses[1]?.binding.semantics).toMatchObject({
       container: "Article",
+    });
+  });
+
+  it("keeps a relation out of the columns the call itself writes", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function addComment(body: string, articleId: number) {
+        return await db.comment.create({
+          data: { body, article: { connect: { id: articleId } } },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[0]?.interaction).toMatchObject({
+      kind: "write",
+      fields: ["body"],
+      operation: "create",
+    });
+  });
+
+  it("writes a relation's key, unnamed, for an operation that moves a join", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function favorite(slug: string, id: number) {
+        await db.article.update({
+          where: { slug },
+          data: { favoritedBy: { connect: { id } } },
+        });
+        await db.article.update({
+          where: { slug },
+          data: { favoritedBy: { disconnect: { id } } },
+        });
+        await db.article.update({
+          where: { slug },
+          data: { tagList: { set: [] } },
+        });
+      }
+    `);
+    const moves = storageEffectsOf(recognizeAll(file)).filter(
+      (access) => access.interaction.relationPath !== undefined,
+    );
+    expect(moves.map((access) => access.interaction)).toEqual([
+      {
+        class: "storage-access",
+        kind: "write",
+        fields: [],
+        relationPath: ["favoritedBy"],
+        relationKey: true,
+        operation: "connect",
+      },
+      {
+        class: "storage-access",
+        kind: "write",
+        fields: [],
+        relationPath: ["favoritedBy"],
+        relationKey: true,
+        operation: "disconnect",
+      },
+      {
+        class: "storage-access",
+        kind: "write",
+        fields: [],
+        relationPath: ["tagList"],
+        relationKey: true,
+        operation: "set",
+      },
+    ]);
+  });
+
+  it("writes both the row a connectOrCreate inserts and the key it sets", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function createArticle(title: string) {
+        return await db.article.create({
+          data: {
+            title,
+            tagList: {
+              connectOrCreate: [{ create: { name: "ts" }, where: { name: "ts" } }],
+            },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[2]?.interaction).toMatchObject({
+      kind: "write",
+      fields: [],
+      relationPath: ["tagList"],
+      relationKey: true,
+      operation: "connectOrCreate",
     });
   });
 
@@ -414,31 +507,40 @@ describe("prisma recognizer: happy path", () => {
     });
   });
 
-  it("records nothing for a nested operation that moves a join", () => {
+  it("leaves a scalar written the long way to the contract as well", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
       const db = new PrismaClient();
-      async function favorite(slug: string, id: number) {
+      async function retitle(id: number) {
         await db.article.update({
-          where: { slug },
-          data: { favoritedBy: { connect: { id } } },
-        });
-        await db.article.update({
-          where: { slug },
-          data: { favoritedBy: { disconnect: { id } } },
-        });
-        await db.article.update({
-          where: { slug },
-          data: { tagList: { set: [] } },
+          where: { id },
+          data: { title: { set: "new" } },
         });
       }
     `);
     const accesses = storageEffectsOf(recognizeAll(file));
-    expect(accesses.map((a) => a.interaction.relationPath)).toEqual([
-      undefined,
-      undefined,
-      undefined,
-    ]);
+    expect(accesses[0]?.interaction.fields).toEqual([]);
+    expect(accesses[1]?.interaction).toMatchObject({
+      fields: [],
+      relationPath: ["title"],
+      relationKey: true,
+      operation: "set",
+    });
+  });
+
+  it("keeps a write whose payload nobody could read as the whole row", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function createArticle(payload: any) {
+        return await db.article.create({ data: payload });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[0]?.interaction).toMatchObject({
+      kind: "write",
+      fields: ["*"],
+    });
   });
 
   it("writes a model reached through two nested creates", () => {

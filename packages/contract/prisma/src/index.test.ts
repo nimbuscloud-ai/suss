@@ -36,6 +36,7 @@ function fieldsOf(summary: BehavioralSummary): Array<{
   nullable: boolean;
   primary?: boolean;
   unique?: boolean;
+  relationKey?: string[];
 }> {
   const meta = summary.metadata as
     | { storageContract?: { fields: unknown[] } }
@@ -46,6 +47,7 @@ function fieldsOf(summary: BehavioralSummary): Array<{
     nullable: boolean;
     primary?: boolean;
     unique?: boolean;
+    relationKey?: string[];
   }>;
 }
 
@@ -208,6 +210,76 @@ model Post {
     expect(fieldsOf(post).find((c) => c.name === "author")?.type).toBe("User");
     // FK columns are still captured.
     expect(fieldsOf(post).find((c) => c.name === "authorId")).toBeDefined();
+  });
+
+  it("gives the side declaring the foreign key the columns it sets", () => {
+    const summaries = prismaSchemaToSummaries(postgresSchema);
+    const user =
+      summaries.find((s) => s.identity.name === "User") ??
+      raise("User summary not found");
+    const post =
+      summaries.find((s) => s.identity.name === "Post") ??
+      raise("Post summary not found");
+    expect(
+      fieldsOf(post).find((c) => c.name === "author")?.relationKey,
+    ).toEqual(["authorId"]);
+    expect(
+      fieldsOf(user).find((c) => c.name === "posts")?.relationKey,
+    ).toBeUndefined();
+  });
+
+  it("finds the fields argument whatever order the relation states it in", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Article {
+  id       Int    @id
+  author   User   @relation("UserArticles", onDelete: Cascade, references: [id], fields: [authorId])
+  authorId Int
+}
+
+model User {
+  id       Int       @id
+  articles Article[] @relation("UserArticles")
+}
+`);
+    const article =
+      summaries.find((s) => s.identity.name === "Article") ??
+      raise("Article summary not found");
+    expect(
+      fieldsOf(article).find((c) => c.name === "author")?.relationKey,
+    ).toEqual(["authorId"]);
+  });
+
+  it("gives a compound foreign key every column it names", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Membership {
+  id      Int  @id
+  team    Team @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  teamId  Int
+  tenantId Int
+}
+
+model Team {
+  id       Int          @id
+  tenantId Int
+  members  Membership[]
+}
+`);
+    const membership =
+      summaries.find((s) => s.identity.name === "Membership") ??
+      raise("Membership summary not found");
+    expect(
+      fieldsOf(membership).find((c) => c.name === "team")?.relationKey,
+    ).toEqual(["teamId", "tenantId"]);
   });
 
   it("declares _count on a model with a relation", () => {

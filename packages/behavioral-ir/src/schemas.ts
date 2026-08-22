@@ -483,6 +483,18 @@ export const EffectSchema = z.discriminatedUnion("type", [
          * container in the binding.
          */
         relationPath: z.array(z.string()).optional(),
+        /**
+         * Set when the columns this access fills are the ones the
+         * contract declares for the last name in `relationPath`,
+         * rather than columns the call states. A Prisma `connect`
+         * sets the foreign key of the model that declares the
+         * relation, and the call gives the relation's name and never
+         * the column's. So `fields` arrives empty, the pairing pass
+         * looks the name up on the container the rest of the path
+         * arrives at, and the access counts against that container
+         * rather than the one the relation points to.
+         */
+        relationKey: z.boolean().optional(),
       }),
       z.object({
         class: z.literal("service-call"),
