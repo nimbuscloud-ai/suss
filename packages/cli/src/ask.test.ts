@@ -1081,3 +1081,128 @@ describe("suss ask across a grounded name", () => {
     );
   });
 });
+
+describe("suss ask about a table one call writes several ways", () => {
+  const commentBinding = () =>
+    storageBinding({
+      recognition: "prisma",
+      storageSystem: "postgresql",
+      scope: "default",
+      container: "Comment",
+      accessPath: null,
+    });
+
+  /** A comment table, whose relation to Article declares the foreign key. */
+  const commentTable: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "schema.prisma",
+      range: { start: 1, end: 10 },
+      exportName: null,
+    },
+    identity: {
+      name: "Comment",
+      exportPath: null,
+      boundaryBinding: commentBinding(),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      storageContract: {
+        fieldSet: "exhaustive",
+        fields: [
+          { name: "body" },
+          { name: "articleId" },
+          {
+            name: "article",
+            type: "Article",
+            derived: true,
+            relationKey: ["articleId"],
+          },
+        ],
+      },
+    },
+  };
+
+  /** The create itself, and the foreign key its nested connect sets. */
+  const writeEffects = [
+    {
+      type: "interaction" as const,
+      binding: commentBinding(),
+      callee: "prisma.comment.create",
+      interaction: {
+        class: "storage-access" as const,
+        kind: "write" as const,
+        fields: ["body"],
+        operation: "create",
+      },
+    },
+    {
+      type: "interaction" as const,
+      binding: commentBinding(),
+      callee: "prisma.comment.create",
+      interaction: {
+        class: "storage-access" as const,
+        kind: "write" as const,
+        fields: [],
+        relationPath: ["article"],
+        relationKey: true,
+        operation: "connect",
+      },
+    },
+  ];
+
+  const addComment: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/article.service.ts",
+      range: { start: 473, end: 500 },
+      exportName: "addComment",
+    },
+    identity: {
+      name: "addComment",
+      exportPath: ["addComment"],
+      boundaryBinding: null,
+      id: "repo::src/article.service.ts::addComment",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "addComment:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: writeEffects,
+        location: { start: 474, end: 499 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+
+  it("says the unit once, however many accesses reach the table", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-once-"));
+    fs.writeFileSync(
+      path.join(dir, "code.json"),
+      JSON.stringify([commentTable, addComment]),
+    );
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      ask({ question: "what writes postgresql:Comment", dir });
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    const output = chunks.join("");
+
+    expect(output).toContain("1 unit writes postgresql:Comment");
+    expect(output.match(/addComment/g)).toHaveLength(1);
+  });
+});
