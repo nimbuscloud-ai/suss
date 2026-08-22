@@ -474,6 +474,52 @@ describe("pairGraphqlOperations — meta-fields and fragments", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("takes a field an extend interface block adds", () => {
+    const extended = `
+      interface Node { id: ID! }
+      extend interface Node { createdAt: String! }
+      type Pet implements Node { id: ID!  createdAt: String!  name: String! }
+      type Query { node(id: ID!): Node }
+    `;
+    const nodeResolver = resolver("Query", "node", "apollo", {
+      schemaSdl: extended,
+    });
+    const op = operation(
+      "useNode",
+      "GetNode",
+      "query",
+      `query GetNode { node(id: "1") { id createdAt } }`,
+    );
+
+    const result = pairGraphqlOperations([nodeResolver, op]);
+
+    expect(result.pairs).toHaveLength(1);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("still flags a field no interface or extension declares", () => {
+    const extended = `
+      interface Node { id: ID! }
+      extend interface Node { createdAt: String! }
+      type Query { node(id: ID!): Node }
+    `;
+    const nodeResolver = resolver("Query", "node", "apollo", {
+      schemaSdl: extended,
+    });
+    const op = operation(
+      "useNode",
+      "GetNode",
+      "query",
+      `query GetNode { node(id: "1") { id deletedAt } }`,
+    );
+
+    const result = pairGraphqlOperations([nodeResolver, op]);
+
+    expect(
+      result.findings.filter((f) => f.description.includes("deletedAt")),
+    ).toHaveLength(1);
+  });
+
   it("flags an undeclared field inside a fragment spread against the fragment's type", () => {
     const petResolver = resolver("Query", "pet", "apollo", {
       schemaSdl: petSchemaSdl,
