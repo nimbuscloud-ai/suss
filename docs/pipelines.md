@@ -1,6 +1,6 @@
 # Pipelines
 
-A run gave you something you did not expect: a summary with no branches in it, a route that paired with nothing, a status you are sure the handler never sends. The cause is nearly always in one step between your files and the output, and working out which step should not need a trip through the source. Each command below is traced end to end, with a run at each stage to compare yours against.
+A run gave you something you did not expect: a summary with no branches in it, or a route that paired with nothing. The cause is nearly always one step between your files and the output, and working out which step should not need a trip through the source. Each command below is traced end to end, with a run at each stage to compare yours against.
 
 For the static package picture, see [`architecture.md`](architecture.md). For what a finding means, see [`cross-boundary-checking.md`](cross-boundary-checking.md).
 
@@ -8,9 +8,11 @@ For the static package picture, see [`architecture.md`](architecture.md). For wh
 
 Turns a project into `BehavioralSummary[]`.
 
-The CLI parses the flags and hands off. `@suss/adapter-typescript` builds a ts-morph `Project` from the given `tsconfig`, walks the source files, and for each pack it was given looks for discovery matches. A discovery match identifies one code unit: a handler, a client call site, a loader. For each matched unit the adapter runs the five extraction steps in [`extraction-algorithm.md`](extraction-algorithm.md), finding the terminals, enumerating the paths to each one, reading the conditions along each path, turning those conditions into predicates, and assembling a branch, plus contract reading if the pack declares one. What comes out per unit is a `RawCodeStructure`: plain data with no AST references, ready to be serialized or tested against a fixture.
+The CLI parses the flags and hands off. `@suss/adapter-typescript` builds a ts-morph `Project` from the given `tsconfig`, walks the source files, and looks for discovery matches from each pack it was given. A discovery match identifies one code unit: a handler, a client call site, a loader.
 
-`@suss/extractor.assembleSummary` then normalizes each `RawCodeStructure` into a `BehavioralSummary`. It wraps un-decomposed conditions as `opaque`, records gaps where the contract and the code disagree or where a return matched no terminal pattern, assesses confidence, and assembles the summary. The CLI collects the array, parses it back through the IR validator as a sanity check, and writes it to disk.
+Each matched unit then goes through the five extraction steps in [`extraction-algorithm.md`](extraction-algorithm.md). The adapter finds the terminals, enumerates the paths that reach each one, reads the conditions along each path, turns those conditions into predicates, and assembles a branch. It reads the contract too, when the pack declares one. What comes out per unit is a `RawCodeStructure`: plain data with no AST references, ready to be serialized or tested against a fixture.
+
+`@suss/extractor.assembleSummary` then normalizes each `RawCodeStructure` into a `BehavioralSummary`. It wraps un-decomposed conditions as `opaque` and records a gap wherever the contract and the code disagree, or wherever a return matched no terminal pattern. Then it assesses confidence and assembles the summary. The CLI collects the array, parses it back through the IR validator as a sanity check, and writes it to disk.
 
 Python and Ruby take the same route through `@suss/adapter-python` and `@suss/adapter-ruby`, which parse with tree-sitter instead of ts-morph and emit the same `RawCodeStructure`. `--lang` says which one to use, and when you leave the flag off suss works it out from what the directory contains.
 
@@ -343,7 +345,7 @@ Each step is small, pure over `RawCodeStructure`, and independently testable, wh
 
 Before `suss check --dir` runs `checkPair`, it has to work out which summaries face each other. `pairSummaries` does that in three passes.
 
-1. Bucket each summary. A summary with no boundary binding lands in `unmatched.unpairable` with reason `noBoundary`. `pairingKey(binding)` gives the bucket, and a binding whose semantics declares no key lands in `unpairable` with reason `unnamedBoundary` rather than being forced through a REST-style key. `BOUNDARY_ROLE[summary.kind]` then says provider (handler, loader, action, middleware, resolver, worker, component, hook) or consumer (client, consumer), and an unrecognized kind lands in `unpairable` with reason `unknownKind` rather than crashing. That runtime guard stays until the zod IR migration makes it unreachable.
+1. Bucket each summary. `pairingKey(binding)` gives the bucket. A summary with no boundary binding at all goes to `unmatched.unpairable` with the reason `noBoundary`. A binding whose semantics declares no key goes there too, with `unnamedBoundary`, rather than being forced through a REST-style key. `BOUNDARY_ROLE[summary.kind]` then says which side it is on: provider for a handler, loader, action, middleware, resolver, worker, component or hook, and consumer for a client or a consumer. An unrecognized kind goes to `unpairable` with `unknownKind` rather than crashing, and that guard stays until the zod IR migration makes it unreachable.
 
 2. Within a bucket, settle the rest. Sharing a key is not enough on its own: two REST sides can share a normalized path and use different methods, and two message-bus sides can share a subject and use different buses. `semanticsAgree` decides that, per semantics variant. A consumer that several services all serve produces an `ambiguousProvider` finding and no pair, because pairing it with one of them would compare a caller against a handler it may never reach.
 

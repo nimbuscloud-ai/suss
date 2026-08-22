@@ -2,11 +2,11 @@
 
 You added a branch to a handler last Tuesday. Admins now get an extra field, and a 404 goes out for a user who is not there. The pull request was three lines, the tests passed, and nobody on the web team was on the review.
 
-That review had a question in it nobody could settle by reading: does what the handler now does still match what its callers expect? Given behavioral summaries for the two sides of the boundary, the handler that produces a response and the call site that reads it, a machine can settle it.
+The review needed one question answered, and nobody could get it by reading: does what the handler now does still match what its callers expect? A machine can answer that, given a behavioral summary for each side of the boundary, one for the handler that produces the response and one for the call site that reads it.
 
 For the contract taxonomy these comparisons rest on, the three kinds of truth and the three contracts at every boundary, see [`contracts.md`](contracts.md). For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md). For how a summary gets built in the first place, see [`architecture.md`](architecture.md).
 
-**Shipping scope: HTTP (REST), GraphQL resolver ↔ operation, and in-process function calls through package exports.** REST is the dispatch-dominant case: the status code discriminates the outcome, the response body is the payload, and `(method, normalizedPath)` is the pairing key. GraphQL resolvers pair by `(typeName, fieldName)`. In-process `function-call` pairs by `fn:<package>::<exportPath>`, which arrived with the `packageExports` and `packageImport` discovery variants so a library's provider summaries pair with every caller that imports from it. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model and [`reference/pack-patterns.md`](reference/pack-patterns.md) for the discovery variants.
+Three kinds of boundary are checked today: HTTP REST, a GraphQL resolver against an operation, and an in-process function call through a package's exports. REST is the case the design leans on hardest. The status code says which outcome happened, the body is the payload, and the two sides pair by `(method, normalizedPath)`. GraphQL resolvers pair by `(typeName, fieldName)`. An in-process `function-call` pairs by `fn:<package>::<exportPath>`, which arrived with the `packageExports` and `packageImport` discovery variants, so a library's provider summaries pair with every caller that imports from it. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model and [`reference/pack-patterns.md`](reference/pack-patterns.md) for the discovery variants.
 
 ## What that Tuesday change looks like
 
@@ -171,11 +171,11 @@ The checker compares:
 - **Collapsed sub-cases.** A consumer that treats two provider outcomes sharing a status code as one, which is the second finding in the run above.
 - **Body fields.** What the consumer reads against what the provider produces, and against the declared contract.
 - **Subjects through intermediate variables.** A condition on `const data = result.body` still resolves back to the response.
-- **Semantic conditions.** When a provider puts `admin: true` in a 200 body on the `user.role === "admin"` branch and the consumer never tests `admin`, the sub-case flows through undistinguished and the checker reports it. This is the comparison that catches the motivating case, a 200 whose meaning changed.
+- **Semantic conditions.** A provider puts `admin: true` in a 200 body on the `user.role === "admin"` branch, and the consumer never tests `admin`. Both 200s land in the same branch of the caller, and the checker says so. This is the comparison that catches a 200 whose meaning changed.
 
 Some layers are still in progress: local-function inlining, complement reasoning on negated conditions, and body accessors beyond `.body` and `.json()`.
 
-Each of those comparisons takes a position on how the protocol behaves. Reporting an unhandled 404 treats the status the handler wrote as the status the caller receives, and a middleware or an API gateway can make that false. [`internal/protocol-assumptions.md`](internal/protocol-assumptions.md) lists those claims per protocol, says what a finding means once one of them stops being true, and points at the test that pins today's behaviour.
+Each of those comparisons takes a position on how the protocol behaves. Reporting an unhandled 404 treats the status the handler wrote as the status the caller receives, and a middleware or an API gateway can make that false. [`internal/protocol-assumptions.md`](internal/protocol-assumptions.md) lists those claims per protocol. It says what a finding means once one of them stops being true, and points at the test that pins today's behaviour.
 
 ## How the IR supports comparison
 
@@ -183,7 +183,7 @@ Each of those comparisons takes a position on how the protocol behaves. Reportin
 
 **Predicates are structural rather than textual.** A predicate is `{ subject, test }`, not a source string. Structured predicates can be compared across a boundary where the same idea is written two different ways.
 
-**Subjects have identity.** `ValueRef` records where a value came from, a parameter, a dependency call, a derived property access, as a traversable DAG. On the provider side `user.deletedAt` resolves to `derived(dependency("db.findById"), propertyAccess("deletedAt"))`. On the consumer side `result.body.status` resolves to `derived(derived(dependency("client.getUser"), propertyAccess("body")), propertyAccess("status"))`. Semantic bridging works by matching the provider's output body field paths against the consumer's subject derivation chains.
+**Subjects have identity.** `ValueRef` records where a value came from as a graph you can walk: a parameter, a call to a dependency, or a property read off one of those. On the provider side `user.deletedAt` resolves to `derived(dependency("db.findById"), propertyAccess("deletedAt"))`. On the consumer side `result.body.status` resolves to `derived(derived(dependency("client.getUser"), propertyAccess("body")), propertyAccess("status"))`. Semantic bridging works by matching the provider's output body field paths against the consumer's subject derivation chains.
 
 **`expectedInput` records what the consumer reads.** Each client transition has an optional `expectedInput: TypeShape` for the response body fields the consumer touches inside that branch. It comes from the property access chains on the response variable, with nothing to annotate.
 
@@ -212,11 +212,13 @@ Findings are JSON-serializable. The CLI exits non-zero when any `error`-severity
 
 **Accepted findings.** When a finding is true and you have decided to tolerate it, say because this consumer does not need to handle a 500, a `.sussignore.yml` file at the project root or beside the summaries can `mark`, `downgrade` or `hide` it. `mark` keeps the finding visible and takes it out of the exit code, `downgrade` drops its severity one level, and `hide` removes it. See [`suppressions.md`](suppressions.md) for the format. The `Finding.suppressed` field on output records the rule's reason and effect, so a downstream tool can tell an accepted finding from one that was silently dropped.
 
-**Cross-source contract agreement.** When several providers describe the same boundary, say an OpenAPI contract and a CloudFormation contract for one endpoint, each arrives with its own declared contract. `checkContractAgreement`, which `checkAll` invokes for you, compares those contracts to each other and emits `contractDisagreement` when they differ: "sources disagree on whether status 500 exists at `GET /pet/:id`". It runs at the contract level only, over `{statusCode, body}` tuples and independent of transitions, so three or more sources produce one finding per non-unanimous status instead of an N-way pairwise explosion. `checkContractConsistency` still handles the separate question of whether each provider agrees with its own contract. The `declaredContract.provenance` field, "derived" or "independent", tells it whether a provider's transitions and its contract came from the same source. OpenAPI contracts are derived, so the self-comparison is skipped. CFN contracts, and extracted handlers with an authored contract, are independent.
+**Cross-source contract agreement.** Sometimes several providers describe the same boundary, say an OpenAPI contract and a CloudFormation contract for one endpoint. Each arrives with its own declared contract. `checkContractAgreement`, which `checkAll` invokes for you, compares those contracts against each other and emits `contractDisagreement` when they differ: "sources disagree on whether status 500 exists at `GET /pet/:id`". It works at the contract level only, over `{statusCode, body}` tuples, and never looks at transitions. That is what keeps three or more sources to one finding per disputed status instead of an N-way pairwise explosion.
+
+`checkContractConsistency` still handles the separate question of whether each provider agrees with its own contract. The `declaredContract.provenance` field, "derived" or "independent", tells it whether a provider's transitions and its contract came from the same source. OpenAPI contracts are derived, so the self-comparison is skipped. CFN contracts, and extracted handlers with an authored contract, are independent.
 
 **Confidence is informational.** Each summary includes `ConfidenceInfo`, high, medium or low plus a source, which reflects how well the extractor decomposed the source: how many opaque predicates it fell back to, and whether wrapper expansion inferred the summary indirectly.
 
-The checker does **not** downgrade a severity based on it. Summary confidence measures analysis quality on one side, and how certain a finding is has its own mechanism, the `lowConfidence` finding kind. Folding one into the other would hide both.
+The checker does **not** downgrade a severity based on it. Summary confidence measures how well the analysis went on one side of a pair. How certain a finding is has its own mechanism, the `lowConfidence` finding kind. Folding one into the other would hide both.
 
 Reviewers still see it. The human `suss check` output appends `(confidence: medium|low)` after any side below `high`, and a downstream tool can read `summary.confidence` from the JSON and apply its own policy.
 
@@ -224,7 +226,7 @@ Reviewers still see it. The human `suss check` output appends `(confidence: medi
 
 ### In scope (OSS)
 
-- The `suss check <provider.json> <consumer.json>` command, pairwise, local, stateless.
+- The `suss check <provider.json> <consumer.json>` command. It compares one pair at a time, runs locally, and keeps no state between runs.
 - Deterministic findings output, JSON or human-readable.
 - The comparisons described above: status-code coverage, sub-case detection, field presence, consumer against declared contract, subject resolution, and semantic bridging.
 - A library API so other tools can call the checker programmatically.
@@ -233,4 +235,4 @@ Reviewers still see it. The human `suss check` output appends `(confidence: medi
 
 The checker compares two summaries at a time. Every analysis layer above that is a separate concern: aggregating summaries across an organization, tracking boundaries over commits, alerting on behavioral regressions, working out which pull requests break which consumers. Those layers take `BehavioralSummary[]` and pairwise findings as their input.
 
-The OSS scope stops at producing summaries and running local checks. Aggregation layers are straightforward to build on top, because summaries are stable JSON and findings are structured, and this repository does not include them.
+The OSS scope stops at producing summaries and running local checks. This repository has no aggregation layer in it. Building one on top should be straightforward, because summaries are stable JSON and findings are structured.

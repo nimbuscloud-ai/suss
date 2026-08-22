@@ -4,7 +4,7 @@ Your API document says `GET /invoices/:id` returns 200, 404 or 500. The handler 
 
 Every one of those is true on its own. The trouble shows up only when you put two of them side by side, and nothing in a normal pipeline does that.
 
-"Contract" is the most overloaded word in suss, and this page is its one home. Three questions run through it: what kind of truth an artifact about code can tell you, which three contracts exist at every boundary, and what shapes those contracts arrive in. What a finding means, and how bad it is, follows from the first.
+"Contract" is the most overloaded word in suss, and this page is where it gets pinned down. It works through what kind of truth an artifact about code can tell you, then the three contracts that exist at every boundary, then the shapes those contracts arrive in. How bad a finding is follows from the first of those.
 
 Related: [`cross-boundary-checking.md`](cross-boundary-checking.md) for the checker mechanics, [`contract-sources.md`](contract-sources.md) for the readers that turn a declared artifact into summaries, [`boundary-semantics.md`](boundary-semantics.md) for how boundaries themselves vary.
 
@@ -111,7 +111,7 @@ src/db.ts
 3 summaries.
 ```
 
-All three contracts are in that output. `Contract: 200, 404, 500` is the declaration. The branches under the handler are what the handler does. The branches under the client are what the panel depends on. Comparing them pairwise is what `check` does:
+All three contracts are in that output. `Contract: 200, 404, 500` is the declaration, read off the router. Under the handler are the branches it actually takes, and under the client are the ones the panel depends on. `check` compares them pairwise:
 
 ```bash
 suss check --dir summaries/
@@ -135,11 +135,11 @@ Compared 1 boundary.
 Not shown: 4 unhandledProviderCase (warning), 2 consumerContractViolation (warning). Run the same command with --all to see them.
 ```
 
-Why that one is an error and the other six are warnings comes down to what kind of truth each side of the comparison is.
+Why the 500 is an error while the other six findings are warnings depends on what each side of the comparison is: a specification, an observation, or a derivation.
 
 ## Three kinds of truth
 
-An artifact about code can only answer a certain sort of question, and which sort it is decides everything downstream.
+An artifact about code can only answer one sort of question, and which sort decides everything that follows.
 
 | Kind of truth | What it tells you | Examples | Completeness |
 |---|---|---|---|
@@ -261,9 +261,9 @@ The comparison checkers in `@suss/checker` work per protocol: HTTP schema agains
 
 Three shapes have no reader yet:
 
-- **Observation shapes.** No reader ingests Jest snapshots, Playwright traces or production observability data. The one observation that does reach a summary comes from running the code: `suss corroborate --experimental` generates inputs satisfying a claim's own conditions, runs the handler, and records `confidence.corroboration` as `observed`, as `refuted` with the counterexample that disagreed, or as `untested`. `ConfidenceSource` has no `observation` value, because corroboration adds evidence to a derivation instead of standing beside it as an artifact of its own.
+- **Observation shapes.** No reader ingests Jest snapshots, Playwright traces or production observability data. One observation does reach a summary, and it comes from running the code. `suss corroborate --experimental` generates inputs that satisfy a claim's own conditions and runs the handler on them. The verdict goes in `confidence.corroboration`: `observed` when every run agreed, `refuted` with the input that disagreed, or `untested` when nothing produced a verdict. `ConfidenceSource` has no `observation` value, because corroboration adds evidence to a derivation instead of being an artifact of its own.
 - **Test shapes.** The same gap. RSpec, supertest and RTL assertions are not a source.
-- **Design shapes.** Figma and design-token integration is deferred on purpose. Design files rarely live in the repo, and the API integration costs more than the signal is worth. The taxonomy keeps design listed because intent is a distinct kind of truth, and no artifact pipeline is planned.
+- **Design shapes.** Figma and design-token integration is deferred on purpose. Design files rarely live in the repo, and the API integration costs more than the signal is worth. Design stays in the taxonomy because intent is a kind of truth the others do not cover, and no reader for it is planned.
 
 ## Intent
 
@@ -274,7 +274,7 @@ Team-authored intent specs (`*.intent` and `*.prd`, read by `@suss/contract-inte
 - **System intent** (`*.intent`), the contract a boundary should satisfy, structural and machine-comparable: "`POST /auth/login` returns 429 with `{ error, retryAfter }`".
 - **Outcome intent** (`*.prd`), what should happen for the user, scenario-shaped: "a rate-limited request gets a friendly rejection", with scenarios that can link to system-intent outcomes.
 
-Third-party schemas express some intent, but an OpenAPI document was authored as a wire contract and a Prisma schema as a data model, not as a statement of what the team wanted. That is why intent docs are **open** specifications: they declare what must exist, the floor, rather than a closed list. Code that exceeds intent is possibly-missing intent, reported as info rather than as a violation. Boundary-level intent checks ship today, and PRD scenario coverage ships alongside them.
+Third-party schemas express some intent, but an OpenAPI document was authored as a wire contract and a Prisma schema as a data model, not as a statement of what the team wanted. That is why intent docs are **open** specifications. They set a floor, what must exist, rather than a closed list of everything allowed. Code that exceeds intent is possibly-missing intent, reported as info rather than as a violation. Boundary-level intent checks ship today, and PRD scenario coverage ships alongside them.
 
 ## Severity follows the kind of truth
 
@@ -283,7 +283,7 @@ Severity comes from the kinds of truth being compared, not from the format the c
 - Derivation violates a specification → `error`. The code has drifted from what it promised. That is the `providerContractViolation` in the invoice run: the router promises a 500 and no branch produces one.
 - Observation violates a specification → `warning`. Something happened that the spec said could not.
 - Observation missing for a specification case → `info`. A coverage gap rather than a bug.
-- Two specifications disagree → `warning`. Somebody has to reconcile them; this is the `contractDisagreement` finding.
+- Two specifications disagree → `warning`. Somebody has to reconcile them. This is the `contractDisagreement` finding.
 
 Two derivations disagreeing with each other is a warning, which is why the other six findings in the invoice run are warnings. Whether an uncovered status is a defect depends on intent the code does not state, so the run reports it and leaves the call to you.
 
@@ -301,7 +301,7 @@ A declaration lives under the protocol it describes, whichever pipeline produced
 
 A new protocol adds its own `metadata.<protocol>.*` namespace rather than nesting by source. The checker reads the namespace it understands and downstream tooling ignores the rest.
 
-`metadata.sourceDocument` is the exception to protocol scoping, because it says nothing about a protocol. One document declares many boundaries and states things every one of them relies on. A GraphQL schema is the case that ships: the reader emits one summary standing for the schema document, puts the SDL on it at `metadata.graphql.schemaSdl`, and gives every summary read out of that document the same label. The checker walks from a resolver to its document to read the schema, so the schema is stated once instead of on all 222 root fields of a large schema. An OpenAPI document's `components.schemas` and a CloudFormation template's parameters have the same shape and are not read this way yet.
+`metadata.sourceDocument` is the exception to protocol scoping, because it says nothing about a protocol. One document declares many boundaries and states things every one of them relies on. A GraphQL schema is the case that ships: the reader emits one summary standing for the schema document, puts the SDL on it at `metadata.graphql.schemaSdl`, and gives every summary read out of that document the same label. The checker walks from a resolver to its document to read the schema, so the schema is written down once instead of being repeated on every one of a large schema's hundreds of root fields. An OpenAPI document's `components.schemas` and a CloudFormation template's parameters have the same shape and are not read this way yet.
 
 ## How new domains get added
 

@@ -4,7 +4,7 @@ You have a stack that already type-checks, lints, tests and traces. Most of what
 
 ## What is suss, in one sentence?
 
-Static analysis that works out every path through every function in your code, then pairs those descriptions across boundaries, HTTP, GraphQL, queues, storage, in-process calls, and reports where the two sides disagree.
+suss works out every path through every function in your code, pairs those descriptions across the places where two units meet (an HTTP call, a GraphQL field, a queue, a table, a function call), and reports where the two sides disagree.
 
 ## What does it look like when it finds something?
 
@@ -37,7 +37,7 @@ Both files typecheck, both sides pass their tests, and the two 200s mean differe
 
 ## How is this different from a linter?
 
-A linter matches syntactic patterns: a forbidden call, a missing `await`, an unused variable. It never models what a function produces, so it cannot compare what one function sends with what another expects. A suss finding points at a specific path on one side that disagrees with a specific path on the other, and gives you both file-and-line pairs, as the output above does.
+A linter matches syntactic patterns: a forbidden call, a missing `await`, an unused variable. It never models what a function produces, so it cannot compare what one function sends with what another expects. A suss finding points at one path on the provider side that disagrees with one path on the consumer side, and gives you a file and a line for each, the way the output above does.
 
 ## How is this different from TypeScript?
 
@@ -72,7 +72,7 @@ If you have an OpenAPI document, run `suss contract --from openapi` and check it
 
 ## How is this different from tests?
 
-Tests record what happened on the inputs the author thought of. suss records what happens on every reachable path whether or not anyone wrote a test for it. Tests verify behavior with concrete data; suss enumerates the structure of behavior and finds the cases the test set never reaches.
+Tests record what happened on the inputs the author thought of. suss records what happens on every reachable path whether or not anyone wrote a test for it. Tests verify behavior with concrete data. suss enumerates the structure of behavior and finds the cases the test set never reaches.
 
 ## How is this different from observability?
 
@@ -88,13 +88,13 @@ Two pieces of code, or one piece of code and one declared contract, that used to
 
 ## Does it require annotations or changes to my code?
 
-No. suss reads your source as it is today: no decorators, no JSDoc tags, no comments to add, no rewrites. It wants your `tsconfig.json`, so that type resolution matches what your compiler sees, and the packs for your stack.
+No. suss reads your source as it is today, with no decorators, no JSDoc tags, no comments to add and no rewrites. It does want two things from you: your `tsconfig.json`, so type resolution matches what your compiler sees, and the packs for your stack.
 
 ## What languages does it support?
 
-TypeScript and JavaScript through `@suss/adapter-typescript`, which uses ts-morph. Python through `@suss/adapter-python` and Ruby through `@suss/adapter-ruby`, both of which parse with tree-sitter compiled to WASM, so neither needs an installed interpreter. `suss extract --lang python` and `--lang ruby` reach them, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag.
+suss reads TypeScript and JavaScript through `@suss/adapter-typescript`, which uses ts-morph. It reads Python through `@suss/adapter-python` and Ruby through `@suss/adapter-ruby`, and those two parse with tree-sitter compiled to WASM, so neither needs an installed interpreter. `suss extract --lang python` and `--lang ruby` pick them, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag.
 
-Python reads FastAPI and flask-restx routes and SQLAlchemy queries. Ruby reads graphql-ruby's class-based `field` DSL and ActiveRecord queries. Over this repository's own `fixtures/python-webapp`:
+On the Python side it reads FastAPI and flask-restx routes and SQLAlchemy queries. On the Ruby side it reads graphql-ruby's class-based `field` DSL and ActiveRecord queries. Over this repository's own `fixtures/python-webapp`:
 
 ```
 myapp/fastapi_app.py
@@ -127,7 +127,7 @@ There the provider is a Prisma model and the consumers are the queries against i
 
 suss reads HTTP through Express, Hono, Fastify, NestJS REST, Next.js route handlers, ts-rest, AWS Lambda and Cloudflare Workers, and it reads the calling side through `fetch` and axios. It reads GraphQL through Apollo Server, NestJS GraphQL, AppSync and graphql-ruby, with Apollo Client on the calling side. On the front end it reads React components, event handlers and `useEffect` bodies, plus React Router loaders and actions. For storage it reads Prisma, Drizzle, Mongoose, DynamoDB, S3, GCS, Redis, SQLAlchemy and ActiveRecord. For the message bus it reads SQS and EventBridge producers, and takes the consumer side from CloudFormation event-source mappings. It reads runtime configuration from `process.env` and from the `Environment` blocks that supply it.
 
-The contract readers turn a declared artifact into the same summaries: OpenAPI 3.x, CloudFormation and SAM, Serverless Framework, AppSync, Terraform, wrangler, GraphQL SDL and operation documents, Storybook CSF3, and Prisma schemas. A new boundary is an additive pack. See [Packs](/packs) for the model and [Packages](/reference/packages) for the current list.
+The contract readers turn a declared artifact into the same summaries: OpenAPI 3.x, CloudFormation and SAM, Serverless Framework, AppSync, Terraform, wrangler, GraphQL SDL and operation documents, Storybook CSF3, and Prisma schemas. Adding a boundary means adding a pack, and nothing around it changes. See [Packs](/packs) for the model and [Packages](/reference/packages) for the current list.
 
 ## Does it work in monorepos?
 
@@ -147,11 +147,11 @@ Alongside those, a run says how much of the code it could not follow:
 suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
 ```
 
-Findings are graded `error | warning | info`, and `--fail-on` sets the CI gate. A false positive in the strict sense, a finding about something the code does not do, does happen. The usual cause is a pack that does not know about a wrapper or a recognition pattern, and adding the pattern to the pack is the fix.
+Findings are graded `error | warning | info`, and `--fail-on` sets the CI gate. You will also get outright false positives sometimes, findings about something the code does not do. The usual cause is a pack that does not know about a wrapper or a recognition pattern, and adding the pattern to the pack is the fix.
 
 ## What is the difference between `suss extract` and `suss contract`?
 
-`extract` reads source and derives summaries from the implementation. `contract` reads a declared artifact, an OpenAPI document, a CloudFormation template, a Serverless service file, a Prisma schema, a GraphQL SDL or operation document, a Storybook CSF3 file, and emits summaries in the same form. Both feed `suss check`, which pairs them.
+`extract` reads source and derives summaries from the implementation. `contract` reads a declared artifact and emits summaries in the same form: an OpenAPI document, a CloudFormation template, a Serverless service file, a Prisma schema, a GraphQL SDL or operation document, or a Storybook CSF3 file. Both feed `suss check`, which pairs them.
 
 Sometimes `contract` tells you something no handler does. Running it over a SAM template:
 
@@ -183,7 +183,7 @@ No, it reads them. Each of those is a specification or an observation, and suss 
 
 - Cross-service aggregation, dashboards and historical drift tracking. Those consume summaries rather than producing them.
 - Continuous monitoring. suss runs on demand, locally or in CI, and never as a daemon.
-- Authorial intent, mostly. suss derives what the code does rather than what it should do. Declared contracts express some intent and the checker compares them against derivation, and team-authored [intent docs](/contracts#intent) are their own stream.
+- Authorial intent, mostly. suss derives what the code does rather than what it should do. Declared contracts express some of it, and the checker compares them against derivation. Team-authored [intent docs](/contracts#intent) are their own stream.
 - Runtime instrumentation. Nothing suss reads comes from your running system: no agents, no sampling, no production data. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim rather than in place of it.
 
 ## How do I add a new framework?
