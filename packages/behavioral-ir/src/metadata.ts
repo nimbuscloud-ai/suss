@@ -253,7 +253,7 @@ const UnresolvedRoutingRefSchema = z.object({
 
 /**
  * What the ALB flow contract reader records beside a summary's
- * identity: one row per routing edge `docs/internal/proposals/
+ * identity: one row per routing edge `design/proposals/
  * flow-reachability.md` describes. `edge` says which relation this
  * summary states; the other fields contain that relation's own data. One
  * summary states exactly one edge, the same way one CFN resource states

@@ -37,7 +37,7 @@ This package depends on `@suss/intent-ir` (the intent shapes and
 `bodyShapesMatch`) that it has to agree on with the behavioral checker.
 It does **not** depend on
 `@suss/checker`. The full design is in
-[`docs/internal/proposals/intent-specs.md`](../../docs/internal/proposals/intent-specs.md).
+[`design/proposals/intent-specs.md`](../../design/proposals/intent-specs.md).
 
 ## Coverage
 

@@ -19,7 +19,7 @@ export const IntentFindingKindSchema = z.enum([
   "unkeyableBoundary", // intent boundary can't be keyed, so it can't be checked
   // Outcome intent (kind: prd), scenario link coverage against system
   // intent. These concretise the proposal's "scenario not linked /
-  // dangling / ambiguous" set (docs/internal/proposals/intent-specs.md);
+  // dangling / ambiguous" set (design/proposals/intent-specs.md);
   // the proposal deferred concrete names to implementation time.
   "unlinkedScenario", // scenario carries no structured link (info — a valid pending state)
   "danglingScenarioLink", // link names an intent / outcome no boundary intent declares

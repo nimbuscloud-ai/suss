@@ -5,7 +5,7 @@
 // binding lives in the adapter (docs/architecture.md, "Adapter vs pack
 // ownership"). In `expr.then(cb)` the first parameter of `cb` is the
 // resolved value of `expr`. The proposal
-// (docs/internal/proposals/adapter-ecmascript-spec.md) describes a
+// (design/proposals/adapter-ecmascript-spec.md) describes a
 // `derivedFrom: { kind: "promise.then", upstream }` annotation that
 // multiple consumers follow. This module materializes that link once so
 // both consumers read the same structural facts:

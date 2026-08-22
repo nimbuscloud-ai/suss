@@ -428,7 +428,7 @@ describe("resolveSubject: intermediate variable assignments", () => {
 
 // ---------------------------------------------------------------------------
 // Promise `.then` / `.catch` parameter binding
-// (docs/internal/proposals/adapter-ecmascript-spec.md)
+// (design/proposals/adapter-ecmascript-spec.md)
 // ---------------------------------------------------------------------------
 
 describe("Promise .then parameter binding", () => {

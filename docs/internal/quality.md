@@ -11,7 +11,9 @@ Scope note: this is internal and aspirational, like
 [`concept-design.md`](concept-design.md). The production framing
 of the "what's a contract" question lives in
 [`contracts.md`](/contracts), and this doc covers the separate
-"what's quality" axis.
+"what's quality" axis. Links below that leave for GitHub go to design
+records under `design/`, which are proposals and working notes rather
+than documentation.
 
 ## Why correspondence isn't enough
 
@@ -265,7 +267,7 @@ A map of reach, same format as
 
 - **L1-*whether*.** suss has no concept of "the task isn't
   here." It would require [intent
-  specs](backlog.md#intent-specs) or PRD-as-data (which extends
+  specs](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#intent-specs) or PRD-as-data (which extends
   the same backlog item into a full PRD spec), plus some form of
   existence check.
 - **L2 operational** as a whole. suss is static, and
@@ -324,13 +326,13 @@ to the aspirational section of
    feature does captures half the contract. A fuller one says
    *how well*: error budget, acceptable latency, edge-case
    handling, observability obligations. This expands the scope
-   of [intent specs](backlog.md#intent-specs) from "capability
+   of [intent specs](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#intent-specs) from "capability
    spec" to "full PRD spec."
 6. **Feature-level quality.** Sync chains compose into features,
    and features have quality properties (end-to-end latency,
    all-or-nothing resilience, compensating-action availability)
    that individual actions don't. It depends on [sync-chain
-   identification](backlog.md#sync-chains), and it extends
+   identification](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#sync-chains), and it extends
    naturally to feature-scoped quality findings.
 
 ## Open threads
@@ -366,14 +368,14 @@ Cross-references within suss:
   that split at the quality axis.
 - [`cross-boundary-checking.md`](/cross-boundary-checking): the
   shipped subset of L1-*what*.
-- [`backlog.md`](backlog.md): forward-looking items that unblock
-  pieces of the quality layers: [intent specs](backlog.md#intent-specs),
-  [sync-chain identification](backlog.md#sync-chains),
-  [event/temporal/absence sync packs](backlog.md#non-call-syncs),
-  [L2-shaped pattern packs](backlog.md#l2-patterns),
-  [observation adapters](backlog.md#observation-adapters),
-  [trade-off annotations](backlog.md#tradeoff-annotations),
-  [audience annotation](backlog.md#audience-annotation).
+- [The backlog design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md): forward-looking items
+  that unblock pieces of the quality layers: [intent specs](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#intent-specs),
+  [sync-chain identification](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#sync-chains),
+  [event/temporal/absence sync packs](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#non-call-syncs),
+  [L2-shaped pattern packs](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#l2-patterns),
+  [observation adapters](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#observation-adapters),
+  [trade-off annotations](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#tradeoff-annotations),
+  [audience annotation](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#audience-annotation).
 
 External groundings:
 

@@ -10,7 +10,7 @@
 // unmodeled-shape degradation) is `enumerateStructuredPaths` in
 // @suss/extractor, operating on the StructuredStatement `lowering.ts`
 // produces from this function's ts-morph AST. See
-// docs/internal/roadmap-second-language.md, "Path engine: abstract it
+// design/roadmap-second-language.md, "Path engine: abstract it
 // once".
 //
 // Replaces the legacy `collectEarlyReturns` + `collectAncestorBranches`

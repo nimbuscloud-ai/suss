@@ -131,7 +131,7 @@ Recognizers already handle opacity. The new annotation either gives them a resol
 - `docs/architecture.md`: the "Adapter vs pack ownership" section already states the principle; add a sentence giving walker descent and Promise binding as the concrete examples.
 - `docs/packs.md`: cross-reference in the "what belongs in a pack" section.
 - `docs/guides/writing-a-pack.md`: the runtime-node anatomy needs an update saying that body-walking is no longer the pack's concern.
-- `docs/internal/proposals/runtime-node.md`: add a note saying that body-walking moved to the adapter.
+- `design/proposals/runtime-node.md`: add a note saying that body-walking moved to the adapter.
 
 ## Cost estimate
 

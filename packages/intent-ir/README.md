@@ -18,7 +18,7 @@ const summary = intentDocToSummary(doc); // normalised, checker-ready
 
 `schema.ts` is the authoring surface (friendly to write); `summary.ts` is the normalized form the checker consumes (boundaries as `ir-core` `BoundaryBinding`s, bodies as `TypeShape`s, one flat outcome list) plus the transform between them. `source` provenance (`author` / `inferred` / `inferred, curated`) travels along with it for the inference path.
 
-The design is documented in [`docs/internal/proposals/intent-specs.md`](../../docs/internal/proposals/intent-specs.md).
+The design is documented in [`design/proposals/intent-specs.md`](../../design/proposals/intent-specs.md).
 
 ## Where it fits in suss
 

@@ -17,7 +17,9 @@ scaffolding and work we aspire to, not behaviour we ship. The
 production-facing version of these ideas is in
 [`contracts.md`](/contracts) (contract plurality) and
 [`boundary-semantics.md`](/boundary-semantics) (the structural
-model).
+model). Links below that leave for GitHub go to design records under
+`design/`, which are proposals and working notes rather than
+documentation.
 
 ## The core framework
 
@@ -245,7 +247,8 @@ Maps fully:
   up to depth 8.
 - **Cross-boundary syncs**: HTTP, GraphQL, function-call, React
   render. Shipped (React is still being filled in; see
-  [`status.md`](status.md), Phase 9 and the React phases).
+  the [status design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/status.md), Phase 9 and the React
+  phases).
 
 Maps partially or not at all:
 
@@ -310,11 +313,11 @@ relate to each other in both directions:
 
 suss has none of this today. The nearest thing on the backlog is
 [intent specs as a structured data
-interface](backlog.md#intent-specs). Under the Jackson mapping,
+interface](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#intent-specs). Under the Jackson mapping,
 an intent spec is a concept declaration, and you can evaluate it
 under the same OP test that classifies derived summaries.
 
-See also: [Arazzo workflows](backlog.md#arazzo-workflows).
+See also: [Arazzo workflows](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#arazzo-workflows).
 Arazzo describes multi-step API workflows as declared
 artifacts. In this framing, an Arazzo workflow is a **feature
 specification**: a declared chain of syncs across concepts. It's
@@ -408,7 +411,7 @@ Internal cross-references:
 - [`boundary-semantics.md`](/boundary-semantics): the three-layer
   transport / semantics / recognition model (structural
   counterpart to sync semantics).
-- [`backlog.md`](backlog.md): forward-looking items grounded in
+- [The backlog design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md): forward-looking items grounded in
   this framework (intent specs, Arazzo workflows, audience
   annotation, sync-chain identification, failure-mode detection,
   non-call sync packs).
