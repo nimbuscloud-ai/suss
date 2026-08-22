@@ -111,6 +111,7 @@ export const dao: BehavioralSummary = {
       consequence: "unknown",
       description:
         "suss met a call to loadCursor and could not settle which function it is, so whatever it does is missing from this summary.",
+      callee: "loadCursor",
     },
   ],
   confidence: CONFIDENT,

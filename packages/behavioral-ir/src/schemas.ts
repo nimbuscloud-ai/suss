@@ -580,6 +580,13 @@ export const GapSchema = z.object({
     "unknown",
   ]),
   description: z.string(),
+  /**
+   * The call the walk stopped at, as the source writes it, for an
+   * `unfollowedCall`. A reader deciding whether a gap could affect the
+   * question they asked needs to see which call it was, and the
+   * sentence says so in prose that nothing should be parsing.
+   */
+  callee: z.string().optional(),
 });
 
 export const BehavioralSummarySchema = z.object({

@@ -1350,6 +1350,9 @@
             },
             "description": {
               "type": "string"
+            },
+            "callee": {
+              "type": "string"
             }
           },
           "required": ["type", "conditions", "consequence", "description"],

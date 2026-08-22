@@ -198,6 +198,7 @@ describe("extract: ts-rest", () => {
         conditions: [],
         consequence: "unknown",
         description: expect.stringContaining("db.findById"),
+        callee: "db.findById",
       },
     ]);
 

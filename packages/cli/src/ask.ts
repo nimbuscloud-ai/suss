@@ -602,9 +602,42 @@ function runCaveats(
   if (withGaps.length === 0) {
     return [];
   }
+  const stops = unfollowedCalls(withGaps);
   return [
-    `suss met a call it could not follow in ${withGaps.length === 1 ? "one unit" : `${withGaps.length} units`}, of ${summaries.length}, so a reader could be hiding in ${withGaps.length === 1 ? "it" : "one of them"}.`,
+    `suss could not follow ${stops.text}, so a reader could be hiding behind ${stops.count === 1 ? "it" : "one of them"}.`,
   ];
+}
+
+/**
+ * The calls a run stopped at, said by name. A count of units reads the
+ * same whatever the question was, so it stops being a warning and turns
+ * into a footer. The names let a reader decide whether any of them
+ * could reach what they asked about.
+ */
+export function unfollowedCalls(summaries: ReadonlyArray<BehavioralSummary>): {
+  text: string;
+  count: number;
+} {
+  const names = new Set<string>();
+  for (const summary of summaries) {
+    for (const gap of summary.gaps) {
+      if (gap.type === "unfollowedCall" && gap.callee !== undefined) {
+        names.add(gap.callee);
+      }
+    }
+  }
+  const shown = [...names].sort().slice(0, 3);
+  const rest = names.size - shown.length;
+  if (shown.length === 0) {
+    return {
+      text: `a call in ${summaries.length} ${summaries.length === 1 ? "unit" : "units"}`,
+      count: 1,
+    };
+  }
+  return {
+    text: `${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}`,
+    count: names.size,
+  };
 }
 
 // ---------------------------------------------------------------------------
