@@ -159,13 +159,24 @@ rule(
 ```
 
 Read that as `stepsTo(x, y, value) :- binds(x, y)`. The fourth
-argument is what a proof calls the rule.
+argument is the rule's name. Nothing in the evaluation uses that name; it
+is there so that when suss explains an answer it can say which rule
+took each hop, and this one prints as `alias`.
 
 The `kind` column separates two sorts of hop. A value step goes to what
 `x` is written as. A result step runs the call `x` is and goes to what
-that call handed back. Four rules take the transitive closure into
-`reaches(x, z, kind)`, and a walk counts as a result walk as soon as it
-has run a call anywhere along it.
+that call handed back. Four more rules turn those single hops into
+`reaches(x, z, kind)`, which is true when you can get from `x` to `z` by
+taking one hop after another, however many that takes. A walk counts as
+a result walk as soon as it has run a call anywhere along it.
+
+Applying the rules over and over until nothing new appears is the whole
+of what the engine does. It matches every rule against everything known
+so far, adds whatever comes out, and goes again. Eventually a pass adds
+nothing, because each rule can only produce facts from facts and there
+are finitely many values in the file. That point is the fixpoint, and
+the answer is whatever is in the database when the engine arrives at
+it.
 
 Every construct states its hops once. Adding a language construct means
 writing one `stepsTo` rule, and every question picks it up. Adding a
@@ -357,13 +368,35 @@ every question. They differ in how much never gets computed.
 
 ## Every derived fact keeps a witness
 
-Evaluate under the `witnesses` algebra in
-`packages/datalog/src/witness.ts` and every derived fact stores the rule
-that fired and one entry per body literal. The merge keeps whatever is
-already there, so a fact derived nine ways keeps its first derivation
-and the fixpoint behaves exactly as it does untagged. `proofOf` walks
-those stored entries backward into a tree when somebody asks, and never
-re-runs a rule.
+A Datalog engine normally hands back a set of facts and nothing else.
+`resolves(createUser@16, createUser@38)` is either in the database or
+it is not. Once the fixpoint has been reached the engine cannot say
+which rule put it there or which facts that rule matched, because it
+never wrote any of that down.
+
+A witness is that missing record. Give a derived fact a witness and the
+fact contains the rule that produced it and the facts that rule
+matched. Each of those is a derived fact with a witness of its own, so
+following them down arrives at the facts the adapter emitted from
+source. The database then contains its own reasoning alongside its
+conclusions.
+
+What to record is a choice, so the engine takes it as a parameter. You
+define a tag algebra by saying three things: what tag a base fact starts
+with,
+how to combine the tags of a rule's body into a tag for its head, and
+what to do when two derivations produce the same fact.
+`packages/datalog/src/witness.ts` supplies one where the tag is the
+derivation itself. `confidence.ts` supplies another where the tag is
+how far to trust the fact, combining as the weakest link along a rule
+body and the strongest across competing derivations. The evaluator
+cannot tell the two apart.
+
+Under the witness algebra the merge keeps whichever derivation arrived
+first, so a fact derived nine ways records one of them rather than
+nine, and the engine reaches the same set of facts it reaches untagged.
+`proofOf` walks the stored records backward into a tree when somebody
+asks for one, without re-running a rule.
 
 `suss ask why` is that walk. It re-reads the relevant files, evaluates
 the rules under the witness algebra, and rebuilds the proof of the one
