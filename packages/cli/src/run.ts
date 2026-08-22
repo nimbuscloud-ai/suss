@@ -209,7 +209,12 @@ function asSentence(err: unknown): string | null {
 }
 
 async function dispatch(args: string[]): Promise<number> {
-  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+  // Asking any command for help prints the usage. Without this, every
+  // command that parses flags strictly rejects `--help` as unknown,
+  // and `init` treats it as neither a flag it knows nor a directory
+  // and starts scanning the repository instead.
+  const flags = args.slice(0, endOfFlags(args));
+  if (args.length === 0 || flags.some((a) => a === "--help" || a === "-h")) {
     process.stdout.write(`${USAGE}\n`);
     return 0;
   }
@@ -243,6 +248,12 @@ async function dispatch(args: string[]): Promise<number> {
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
+}
+
+/** Where `--` ends the flags, or the end of the arguments. */
+function endOfFlags(args: string[]): number {
+  const separator = args.indexOf("--");
+  return separator === -1 ? args.length : separator;
 }
 
 async function runInit(args: string[]): Promise<number> {
