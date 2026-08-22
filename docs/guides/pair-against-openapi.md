@@ -1,12 +1,15 @@
 # Pair your code against an OpenAPI spec
 
-A common situation: you consume a third-party API (Stripe, an
-internal team, anything with an OpenAPI 3.x spec). You want to
-know whether your client code correctly handles every status the
-spec declares, and you want to be told when the spec changes and
-your code drifts from it.
+You call an API somebody else owns and you have its OpenAPI 3.x
+document. Find out which statuses it declares that your client never
+handles, and get told when the vendor publishes a new version and your
+code drifts away from it.
 
-## The two artifacts
+You don't have the vendor's source, so `extract` has nothing to read.
+`contract` reads the spec instead and produces summaries in the same
+format, which `check` then compares against your call sites.
+
+## What gets compared
 
 <svg class="suss-diagram" viewBox="0 0 660 268" role="img" aria-labelledby="openapi-title openapi-desc">
   <title id="openapi-title">A vendor's spec and your code, read into the same shape</title>

@@ -1,83 +1,93 @@
-# Add suss to an existing project
+# Add suss to a project
 
-You will need a TypeScript project with at least one boundary suss
-recognises: an HTTP handler, a GraphQL resolver, a React component
-tree, a queue producer, a Prisma call, or a `process.env` access. For a
-Python or Ruby project, start at
-[Read a Python or Ruby project](/guides/python-and-ruby) instead, which
-covers the same ground for those two languages.
+Point suss at a repo you already have and get something you can act on
+out of the first run: which of your queries disagree with the schema
+they run against, which of your callers miss a status their provider
+returns. You annotate nothing first and you start nothing, and the only
+thing written to disk is a folder of summary files.
 
-## What you're setting up
+For a Python or Ruby project, start at
+[Read a Python or Ruby project](/guides/python-and-ruby), which covers
+the same ground for those two languages.
 
-Three pieces, in order:
-
-1. **Framework / runtime / contract packs.** A pack is a declarative
-   description of how a given framework expresses its boundaries: where
-   handlers register, how status codes attach to responses, what counts
-   as a storage call, how an env var resolves to a CFN resource. You
-   need one pack per framework, runtime, and contract source you want
-   covered. Without a pack, suss has nothing to discover.
-2. **Extraction.** `suss extract` walks your source and emits the
-   structured summaries. Static analysis only, nothing runs.
-3. **Pairing.** `suss check` compares summaries across boundaries:
-   provider against consumer, contract against handler, story against
-   component, producer against consumer, schema against query call.
-
-The output of (2) is a JSON file. The input to (3) is one or more JSON
-files. (2) is useful on its own if all you want is a structured
-description of what your handlers do.
-
-## Let suss set it up
+## The first run
 
 ```bash
 npx @suss/cli init
 ```
 
-It reads your `package.json`, looks for schemas and templates on disk,
-and offers to do the rest:
+`init` reads your `package.json`, looks for schemas and deploy
+templates on disk, and offers to install the packs for what it found.
+Here it is on
+[gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app):
 
 ```
-┌  suss init
-│
-◇  Found ────────────────────────────────────────────╮
-│                                                    │
-│  aws-sqs          @aws-sdk/client-sqs in deps      │
-│  aws-lambda       @types/aws-lambda in devDeps     │
-│  cloudformation   a SAM template at template.yaml  │
-│                                                    │
-├────────────────────────────────────────────────────╯
-│
-◇  Install 4 packages as devDependencies?
-│  ● Yes / ○ No
-│
-◇  Installed 4 packages
-│
-◇  Read the code now and compare what it finds?
-│  ● Yes / ○ No
-│
-◇  suss extract -f aws-sqs -f aws-lambda -o summaries/code.json
-◇  suss contract --from cloudformation template.yaml -o summaries/cloudformation.json
-◇  suss check --dir summaries/
-│
-◆  Add a .sussignore for findings you decide to accept?
-│  ○ Yes / ● No
-│
-◆  Add a GitHub Actions workflow that runs this on every pull request?
-│  ○ Yes / ● No
-│
-└  Done. Re-run `suss check --dir summaries/` whenever code changes.
+✓ Found 4 things to read in node-express-realworld-example-app
+
+  Your code
+    express          express in dependencies
+    axios            axios in dependencies
+
+  What your code reaches
+    prisma           @prisma/client in dependencies
+
+  Declared contracts
+    prisma           a Prisma schema at src/prisma/schema.prisma
 ```
 
-Installing defaults to yes. Writing `.sussignore` and the CI workflow
-both default to no, and nothing reaches disk unless you accept it. If
-the install fails, it stops there, prints what npm said, and leaves you
-the command to run rather than carrying on.
+Then it walks you through the rest, one question at a time:
+
+- **Install N packages as devDependencies?** Defaults to yes. If npm
+  fails, it stops there, prints what npm said, and leaves you the
+  command to run.
+- **Read the code now and compare what it finds?** Defaults to yes, and
+  runs the `extract`, `contract`, and `check` commands for you.
+- **Add a `.sussignore` for findings you decide to accept?** Defaults to
+  no.
+- **Add a GitHub Actions workflow that runs this on every pull
+  request?** Defaults to no.
+
+Nothing reaches disk unless you accept it.
+
+Run piped, in CI, or with `--plain`, `init` prints the commands instead
+of asking:
+
+```bash
+npx @suss/cli init --plain
+```
+
+```
+1. Install the packs
+
+   npm install --save-dev @suss/cli @suss/framework-prisma @suss/client-axios @suss/framework-express @suss/contract-prisma
+
+2. Read each side into one folder
+
+   suss extract -f express -f axios -f prisma -o summaries/code.json
+   suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json
+
+3. Compare them
+
+   suss check --dir summaries/
+```
+
+On this repo those commands produce 46 summaries from the source, 4
+from the Prisma schema, and three warnings about fields the schema
+declares that no query ever asks for. The
+[Get started walkthrough](/tutorial/get-started) goes through that
+output line by line.
+
+Three pieces, in order: a **pack** per library you want read, an
+**extract** that writes down what each unit does, and a **check** that
+compares the summaries on either side of each boundary. Extract is
+useful on its own if all you want is a description of what your
+handlers do.
 
 ### In a monorepo
 
-At a repo root it reads the workspace declaration, from `package.json`
-workspaces, `pnpm-workspace.yaml`, `lerna.json`, or `turbo.json`, and
-then asks which packages to set up:
+At a repo root, `init` reads the workspace declaration, from
+`package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json`, or
+`turbo.json`, and then asks which packages to set up:
 
 ```
 ◆  Which should suss set up?
@@ -91,21 +101,141 @@ HTTP boundaries apart by method and path alone, so two services that
 both serve `GET /users` look like a single boundary. See
 [Compatibility](/reference/compatibility#several-services-in-one-folder).
 
-### Without a terminal
+## When the first run turns up nothing
 
-When it runs piped, or in CI, or with `--plain`, it prints the commands
-instead of asking:
+Every command that comes up empty says where it stopped. These four
+cover most first runs.
 
-```bash
-npx @suss/cli init --plain
+### That tsconfig matched no source files
+
+```
+No summaries to write in 0.00s.
+  That tsconfig matched no source files.
+  Check its `include` and `files` patterns against where your source actually lives.
+
+  Where it stopped:
+    0  files in the tsconfig
+    0  files read
 ```
 
-The rest of this page is the same thing done by hand.
+suss took the nearest `tsconfig.json`, and that one covers no source.
+Nx, project references, and solution-style configs all do this: the
+root config lists `"files": []` and points at the configs that do the
+work. Pass the one that covers your source:
 
-## Install the pieces you need
+```bash
+npx suss extract -p tsconfig.app.json -f express -o summaries/code.json
+```
 
-suss ships as discrete packages. You install one pack per framework
-your code uses, plus the CLI. Pick from:
+### No file imports anything the pack looks for
+
+```
+No summaries to write in 0.02s.
+  No file imports anything hono looks for.
+  Either this project does not use it, or your code reaches it through a local wrapper module. suss only recognizes direct imports today.
+
+  Where it stopped:
+    26  files in the tsconfig
+     0  files read
+     0  files importing hono and @hono/zod-openapi
+```
+
+The tsconfig is right and the pack is wrong for this project. Re-run
+`init` to see which packs match your dependencies. If the library is in
+`package.json` but your code imports a wrapper module of your own
+rather than the library directly, suss stops at the wrapper.
+
+### A pack found the library and matched nothing
+
+```
+Wrote 46 summaries to summaries/code.json in 0.60s
+
+Pack health:
+  a pack dropped everything it was holding
+    prisma: its import gate found the library and it matched nothing in the bodies it saw (20 unit bodies to look inside, 0 effects recognized)
+```
+
+The run succeeded and one pack contributed nothing to it. The usual
+cause is a library that is installed but not yet in a usable state.
+Prisma is the common one: `@prisma/client` is in `node_modules`, but
+until `npx prisma generate` runs, the package exports no model types,
+so every `prisma.article.findUnique` call reads as a call on an opaque
+value and the pack classifies none of them.
+
+```bash
+npx prisma generate
+npx suss extract -p tsconfig.app.json -f express -f prisma -o summaries/code.json
+```
+
+Anything with a codegen step behaves the same way: run the generator
+first, then extract. The pack-health block appears whenever a pack you
+asked for contributes nothing, so it is the line to read before you
+conclude that suss cannot see your storage layer.
+
+### Nothing was compared
+
+```
+Nothing was compared.
+
+  These summaries cover 20 boundaries on the provider side and none on the client side, so there was no other side to compare against.
+  Extract both sides of the boundary into the same folder, then check them together:
+    suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json
+    suss check --dir summaries/
+
+  26 boundaries had nothing to pair with, so nothing was checked across them.
+```
+
+`check` compares two sides, so one side on its own gives it nothing to
+do. Twenty Express routes with no `fetch` or axios call sites beside
+them means the callers were never extracted, either because they live
+in a separate repository or because the pack that reads them was left
+off the command.
+
+Extract the other side into the same folder and check them together:
+
+```bash
+npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
+npx suss check --dir summaries/
+```
+
+Where the other side is a schema or a spec rather than code, `contract`
+produces it in the same format. A Prisma schema becomes the provider
+for your query call sites, an OpenAPI document becomes the provider for
+your client:
+
+```bash
+npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
+npx suss check --dir summaries/
+```
+
+Where the front end really does live in another repository, extract it
+there and copy its summary file in. Summaries are portable JSON, and
+`check --dir` pairs whatever it reads in a folder regardless of which
+run produced it.
+
+## Reading a run that did compare something
+
+`check --dir` prints a count of what it left out as well as what it
+found:
+
+```
+Compared 4 boundaries.
+
+  20 provider-side boundaries have no client to compare against.
+  5 boundaries had nothing to pair with, so nothing was checked across them.
+  Run the same command with --all to list them.
+```
+
+`--all` lists every pair it made and every boundary it skipped, which
+is how you find out whether "no findings" means agreement or means
+nothing got compared. `--at src/dao.ts:43` narrows a run to one file,
+line, boundary, or summary.
+
+## Which packs to install
+
+suss ships as discrete packages. You install one pack per library you
+want read, plus the CLI. `init` picks these for you; the table is for
+when you want to choose by hand.
 
 | Pack | What it handles | Install |
 |---|---|---|
@@ -144,7 +274,7 @@ Plus the CLI once:
 npm install -D @suss/cli
 ```
 
-You don't have to install everything. Common combinations:
+Common combinations:
 
 - **ts-rest full-stack:** `@suss/framework-ts-rest` (provider + client through the contract).
 - **Express API + fetch client:** `@suss/framework-express @suss/client-web`.
