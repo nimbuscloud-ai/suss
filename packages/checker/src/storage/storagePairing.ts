@@ -516,6 +516,10 @@ export interface GroundedStorageAccess {
   reached: ReachedName[];
   /** The providers that claim this access. */
   providers: BehavioralSummary[];
+  /** Whether the access reads the container or writes it. */
+  kind: "read" | "write";
+  /** The call as the source writes it, when the effect recorded one. */
+  callee: string | undefined;
   /**
    * Present when the container is a reference nothing here grounds:
    * the variable whose deployed value would ground it, or null when a
@@ -589,6 +593,8 @@ export function groundStorageAccesses(
         container,
         reached,
         providers: providersFor.get(access) ?? [],
+        kind: access.effect.interaction.kind === "read" ? "read" : "write",
+        callee: access.effect.callee,
         ...(ungrounded === undefined ? {} : { ungrounded }),
       },
     ];

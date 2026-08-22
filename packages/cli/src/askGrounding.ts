@@ -18,6 +18,7 @@ import { groundStorageAccesses } from "@suss/checker";
 
 import {
   boundariesTouchedBy,
+  boundarySpelling,
   namesBoundary,
   spellingTokens,
 } from "./boundaryReach.js";
@@ -28,6 +29,7 @@ import type {
   GroundedStorageAccess,
   GroundedStorageProvider,
 } from "@suss/checker";
+import type { TouchedBoundary } from "./boundaryReach.js";
 import type { TargetTouch } from "./target.js";
 
 /** One deployed name an access grounds to, and who supplied it. */
@@ -82,8 +84,39 @@ export function groundedTouchesAt(
   closeOverClaims(accesses, matchedBindings, matchedProviders);
 
   const touches: GroundedTouch[] = [];
+
+  // Storage comes from the grounded accesses rather than from the
+  // effects, because only these say which table a read written under a
+  // relation arrives at. Walking the effects here would put that read
+  // on the table the query addressed, which is the table `check` says
+  // it does not touch.
+  for (const record of accesses) {
+    if (!matchedBindings.has(record.binding)) {
+      continue;
+    }
+    const notes = groundingNotes(record);
+    touches.push({
+      summary: record.summary,
+      touched: {
+        label: boundarySpelling(record.binding),
+        binding: record.binding,
+        relation: record.kind === "read" ? "reads" : "writes",
+        callee: record.callee,
+        transitionId: undefined,
+      },
+      ...(notes.length > 0 ? { grounding: notes } : {}),
+    });
+  }
+
+  // What the grounded pass answered for, so the walk below adds the
+  // boundaries it says nothing about rather than a second copy of these.
+  const answered = new Set(touches.map(asTouchKey));
+
   for (const summary of summaries) {
     for (const touched of boundariesTouchedBy(summary)) {
+      if (answered.has(asTouchKey({ summary, touched }))) {
+        continue;
+      }
       const included =
         namesBoundary(subject, touched.binding) ||
         matchedBindings.has(touched.binding) ||
@@ -104,6 +137,19 @@ export function groundedTouchesAt(
     touches,
     hints: ungroundedHints(subject, accesses, matchedBindings),
   };
+}
+
+/** One unit doing one thing at one boundary. */
+function asTouchKey(touch: {
+  summary: BehavioralSummary;
+  touched: TouchedBoundary;
+}): string {
+  return [
+    summaryIdentifier(touch.summary),
+    touch.touched.label,
+    touch.touched.relation,
+    touch.touched.callee ?? "",
+  ].join("\u0000");
 }
 
 /**
