@@ -130,13 +130,14 @@ declared as something. `fallbackBranch` says `a || b` is one of its two
 branches, without saying which. `readsProperty` says an expression is
 `o.n`. None of them says what anything resolves to.
 
-The rules read 25 relations they never derive themselves. The
-TypeScript adapter emits 23 relations from source: 21 of those 25, plus
-`bindCall` for the JavaScript-only `.bind` rule and `importsModule` for
-walking module edges. The two it leaves out, `extends` and
-`callKeywordArg`, come from the Python and Ruby adapters instead. The
-last two, `unwrapsByName` and `wrapperModule`, come from a pack's
-wrapper declarations rather than from any file.
+The rules read 25 relations that no rule derives, so something has to
+supply them. The TypeScript adapter supplies 21 of the 25 by reading
+source, and emits two more of its own on top: `bindCall`, for the
+JavaScript `.bind` rule, and `importsModule`, for walking module edges.
+That leaves four it never emits. `extends` and `callKeywordArg` come
+from the Python and Ruby adapters. `unwrapsByName` and `wrapperModule`
+come from a pack's wrapper declarations, so no source file contains
+them at all.
 
 `packages/resolution/README.md` lists the vocabulary with a line of
 explanation each.
@@ -158,13 +159,24 @@ rule(
 ```
 
 Read that as `stepsTo(x, y, value) :- binds(x, y)`. The fourth
-argument is what a proof calls the rule.
+argument is the rule's name. Nothing in the evaluation uses that name; it
+is there so that when suss explains an answer it can say which rule
+took each hop, and this one prints as `alias`.
 
 The `kind` column separates two sorts of hop. A value step goes to what
 `x` is written as. A result step runs the call `x` is and goes to what
-that call handed back. Four rules take the transitive closure into
-`reaches(x, z, kind)`, and a walk counts as a result walk as soon as it
-has run a call anywhere along it.
+that call handed back. Four more rules turn those single hops into
+`reaches(x, z, kind)`, which is true when you can get from `x` to `z` by
+taking one hop after another, however many that takes. A walk counts as
+a result walk as soon as it has run a call anywhere along it.
+
+Applying the rules over and over until nothing new appears is the whole
+of what the engine does. It matches every rule against everything known
+so far, adds whatever comes out, and goes again. Eventually a pass adds
+nothing, because each rule can only produce facts from facts and there
+are finitely many values in the file. That point is the fixpoint, and
+the answer is whatever is in the database when the engine arrives at
+it.
 
 Every construct states its hops once. Adding a language construct means
 writing one `stepsTo` rule, and every question picks it up. Adding a
@@ -269,8 +281,8 @@ The chain either leaves the source suss can read, or more than one value can end
 `new PrismaClient()` is a construction. It is not a function and it is
 not an object literal, so a question that stops only at those two walks
 past it and off the end. A question that stops at anything written out
-in source lands on it. Same closure, different stopping condition,
-different outcome.
+in source lands on it. Both questions walked the same edges to the
+same place. Only one of them had a reason to stop there.
 
 ## Most edges come out of a join
 
@@ -317,11 +329,11 @@ sites told apart asks `paramAt`, which keeps the call in the tuple.
 
 ## The graph forms around the question
 
-Deriving every conclusion the facts support is affordable on a fixture
-and not on a repository. Profiles of these rules showed a rule attempted
-a hundred and fifty times to produce fourteen tuples, and the tuples
-nobody reads outnumbering the ones somebody does by more than ten to
-one.
+Deriving every conclusion the facts support is fine on a fixture. On a
+project it is not. Profiling these rules turned up one rule attempting
+a hundred and fifty joins to produce fourteen tuples, and for every
+tuple a question went on to read, roughly ten more were derived that
+nobody looked at.
 
 So `deriveOnDemand` in `packages/datalog/src/onDemand.ts` rewrites the
 program before it ever runs. This is the magic sets transform. Each
@@ -335,9 +347,10 @@ at all.
 
 The 59 rules that `RESOLUTION_RULES` and `RESOLUTION_QUESTIONS` contain
 become 125 rewritten rules over 44 demand-restricted relations. Demand
-arrives as an ordinary fact, `wanted(x)`, which means asking a new
-question is a fact arriving rather than a fresh fixpoint, and it means a
-caller can take a question back once it has read the answer.
+is an ordinary fact, `wanted(x)`. Asking something new adds one more
+fact to the set, so the engine continues from where it was instead of
+starting the fixpoint over, and a caller that has read its answer can
+retract the question again.
 
 What that saves, measured on the `createUser` question in the next
 section, over the same base facts and with the same one answer coming
@@ -355,13 +368,35 @@ every question. They differ in how much never gets computed.
 
 ## Every derived fact keeps a witness
 
-Evaluate under the `witnesses` algebra in
-`packages/datalog/src/witness.ts` and every derived fact stores the rule
-that fired and one entry per body literal. The merge keeps whatever is
-already there, so a fact derived nine ways keeps its first derivation
-and the fixpoint behaves exactly as it does untagged. `proofOf` walks
-those stored entries backward into a tree when somebody asks, and never
-re-runs a rule.
+A Datalog engine normally hands back a set of facts and nothing else.
+`resolves(createUser@16, createUser@38)` is either in the database or
+it is not. Once the fixpoint has been reached the engine cannot say
+which rule put it there or which facts that rule matched, because it
+never wrote any of that down.
+
+A witness is that missing record. Give a derived fact a witness and the
+fact contains the rule that produced it and the facts that rule
+matched. Each of those is a derived fact with a witness of its own, so
+following them down arrives at the facts the adapter emitted from
+source. The database then contains its own reasoning alongside its
+conclusions.
+
+What to record is a choice, so the engine takes it as a parameter. You
+define a tag algebra by saying three things: what tag a base fact starts
+with,
+how to combine the tags of a rule's body into a tag for its head, and
+what to do when two derivations produce the same fact.
+`packages/datalog/src/witness.ts` supplies one where the tag is the
+derivation itself. `confidence.ts` supplies another where the tag is
+how far to trust the fact, combining as the weakest link along a rule
+body and the strongest across competing derivations. The evaluator
+cannot tell the two apart.
+
+Under the witness algebra the merge keeps whichever derivation arrived
+first, so a fact derived nine ways records one of them rather than
+nine, and the engine reaches the same set of facts it reaches untagged.
+`proofOf` walks the stored records backward into a tree when somebody
+asks for one, without re-running a rule.
 
 `suss ask why` is that walk. It re-reads the relevant files, evaluates
 the rules under the witness algebra, and rebuilds the proof of the one
@@ -476,8 +511,8 @@ Underneath, the proof is the whole derivation, fifteen nodes of it.
 </svg>
 
 The three highlighted rows are the `stepsTo` nodes, and they are the
-three lines the command printed. Everything else is the closure and its
-stopping condition doing their work.
+three lines the command printed. The other twelve are the joins that
+produced those hops and the facts they rest on.
 
 A proof node marked `fact` is a leaf: nobody derived it, the adapter
 emitted it. That is the property that makes an answer checkable. Follow
