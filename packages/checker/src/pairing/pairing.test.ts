@@ -335,6 +335,72 @@ describe("pairSummaries", () => {
     expect(result.unmatched.unpairable).toHaveLength(0);
   });
 
+  const inService = (
+    summary: BehavioralSummary,
+    workspace: string,
+  ): BehavioralSummary => ({
+    ...summary,
+    location: { ...summary.location, workspace },
+  });
+
+  it("refuses to choose when two services serve the path a caller uses", () => {
+    const billing = inService(
+      providerWithPath("getUser", "GET", "/users/{id}"),
+      "billing",
+    );
+    const identity = inService(
+      providerWithPath("getUser", "GET", "/users/{id}"),
+      "identity",
+    );
+    const client = inService(
+      consumerWithPath("UserPage", "GET", "/users/{id}"),
+      "web",
+    );
+
+    const result = pairSummaries([billing, identity, client]);
+
+    expect(result.pairs).toHaveLength(0);
+    expect(result.ambiguous).toHaveLength(1);
+    expect(result.ambiguous[0]?.services).toEqual(["billing", "identity"]);
+  });
+
+  it("takes the provider in the caller's own service over a stranger's", () => {
+    const mine = inService(
+      providerWithPath("getUser", "GET", "/users/{id}"),
+      "billing",
+    );
+    const theirs = inService(
+      providerWithPath("getUser", "GET", "/users/{id}"),
+      "identity",
+    );
+    const client = inService(
+      consumerWithPath("UserPage", "GET", "/users/{id}"),
+      "billing",
+    );
+
+    const result = pairSummaries([mine, theirs, client]);
+
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0]?.provider).toBe(mine);
+    expect(result.ambiguous).toHaveLength(0);
+  });
+
+  it("still pairs a caller with the one other service that serves it", () => {
+    const provider = inService(
+      providerWithPath("getUser", "GET", "/users/{id}"),
+      "identity",
+    );
+    const client = inService(
+      consumerWithPath("UserPage", "GET", "/users/{id}"),
+      "web",
+    );
+
+    const result = pairSummaries([provider, client]);
+
+    expect(result.pairs).toHaveLength(1);
+    expect(result.ambiguous).toHaveLength(0);
+  });
+
   it("pairs two sides that spell the same parameter differently", () => {
     // A hand-written spec says {userId} where the route serving it says
     // :id, and both serve the same requests.

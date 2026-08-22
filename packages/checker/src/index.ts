@@ -1,4 +1,4 @@
-import { summaryIdentifier } from "@suss/behavioral-ir";
+import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
 import {
   displayLabel,
   exchangesHttpResponses,
@@ -31,7 +31,11 @@ import type {
   Finding,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "./pairing/comparedPair.js";
-import type { SummaryPair, UnpairableReason } from "./pairing/pairing.js";
+import type {
+  AmbiguousPairing,
+  SummaryPair,
+  UnpairableReason,
+} from "./pairing/pairing.js";
 
 function describeBinding(binding: BoundaryBinding): string {
   return displayLabel(binding);
@@ -195,16 +199,44 @@ export interface CheckAllResult {
 }
 
 /**
+ * A consumer whose path several services serve. Pairing it with any one
+ * of them compares a caller against a handler it may never reach, so
+ * the run says who serves the path and leaves the choice to a reader.
+ */
+function twoServicesServeIt(ambiguous: AmbiguousPairing): Finding {
+  const { consumer, providers, services } = ambiguous;
+  const first = providers[0] as BehavioralSummary;
+  const binding = consumer.identity.boundaryBinding as BoundaryBinding;
+  const named = services.map((service) =>
+    service === "" ? "(unnamed)" : service,
+  );
+  return {
+    kind: "ambiguousProvider",
+    boundary: binding,
+    provider: { summary: summaryRef(first), location: first.location },
+    consumer: { summary: summaryRef(consumer), location: consumer.location },
+    description: `${summaryIdentifier(consumer)} calls ${describeBinding(binding)}, and ${services.length} services serve it (${named.join(", ")}). Nothing here says which one it reaches, so no pair was checked. Give the client the base URL it calls, or check one service at a time.`,
+    severity: "warning",
+  };
+}
+
+/**
  * Pairs every provider with every consumer and checks each pair. Two
  * providers describing one boundary produce one finding between them,
  * with `sources` set; `checkPair` on its own does no such collapsing.
  */
 export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
-  const { pairs: restPairs, unmatched: restUnmatched } =
-    pairSummaries(summaries);
+  const {
+    pairs: restPairs,
+    unmatched: restUnmatched,
+    ambiguous: restAmbiguous,
+  } = pairSummaries(summaries);
   const graphql = pairGraphqlOperations(summaries);
 
-  const findings: Finding[] = [...graphql.findings];
+  const findings: Finding[] = [
+    ...graphql.findings,
+    ...restAmbiguous.map(twoServicesServeIt),
+  ];
   const pairInfo: CheckAllResult["pairs"] = [];
 
   // A pair that no check here judges is still reported, so a reader can

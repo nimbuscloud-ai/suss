@@ -27,6 +27,13 @@ export interface UnpairableSummary {
   reason: UnpairableReason;
 }
 
+/** One consumer, and the services that all serve what it calls. */
+export interface AmbiguousPairing {
+  consumer: BehavioralSummary;
+  providers: BehavioralSummary[];
+  services: string[];
+}
+
 export interface PairingResult {
   pairs: SummaryPair[];
   unmatched: {
@@ -42,6 +49,13 @@ export interface PairingResult {
      */
     unpairable: UnpairableSummary[];
   };
+  /**
+   * Consumers whose path is served by more than one service, with
+   * nothing saying which one they call. Pairing any of them would
+   * compare a caller against a stranger's handler, so the run reports
+   * the question instead.
+   */
+  ambiguous: AmbiguousPairing[];
 }
 
 /**
@@ -91,6 +105,56 @@ function pairKeyFor(
   const providerKey =
     providerBinding === null ? null : boundaryKey(providerBinding);
   return providerKey ?? bucketKey;
+}
+
+/**
+ * The providers a consumer's calls actually reach, out of the ones that
+ * agree with it. Null when the run cannot tell, which is a question
+ * rather than a pair.
+ *
+ * One service's client calling another service's API is the case this
+ * check exists for, so a provider elsewhere is a fine answer. Two
+ * services serving the same path is the case that used to invent one:
+ * every consumer paired with every provider, and a client that calls
+ * its own service was compared against a stranger's handler, which
+ * reported a status nobody returns and a field nobody sends.
+ *
+ * So a provider in the consumer's own service wins outright, since a
+ * caller reaches its own service's route before anybody else's. With no
+ * provider at home, one service serving the path is the answer, and
+ * more than one is the question.
+ */
+function servedBy(
+  consumer: BehavioralSummary,
+  agreeing: BehavioralSummary[],
+): BehavioralSummary[] | null {
+  if (agreeing.length === 0) {
+    return [];
+  }
+  const home = consumer.location.workspace;
+  if (home !== undefined) {
+    const athome = agreeing.filter(
+      (provider) => provider.location.workspace === home,
+    );
+    if (athome.length > 0) {
+      return athome;
+    }
+  }
+  return servicesOf(agreeing).length > 1 ? null : agreeing;
+}
+
+/**
+ * The services a set of summaries states it came from. A summary that
+ * states none is left out rather than counted as a service of its own:
+ * a spec file describes an endpoint without saying who serves it, and
+ * a single-project run labels nothing at all. Neither is a rival to
+ * choose between.
+ */
+function servicesOf(summaries: readonly BehavioralSummary[]): string[] {
+  const stated = summaries
+    .map((summary) => summary.location.workspace)
+    .filter((workspace): workspace is string => workspace !== undefined);
+  return [...new Set(stated)].sort();
 }
 
 /**
@@ -148,17 +212,29 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
   const matchedProviders = new Set<BehavioralSummary>();
   const matchedConsumers = new Set<BehavioralSummary>();
 
+  const ambiguous: AmbiguousPairing[] = [];
+
   for (const [key, providers] of providersByKey) {
     const consumers = consumersByKey.get(key);
     if (consumers === undefined) {
       continue;
     }
 
-    for (const provider of providers) {
-      for (const consumer of consumers) {
-        if (!bindingsPair(provider, consumer)) {
-          continue;
-        }
+    for (const consumer of consumers) {
+      const agreeing = providers.filter((provider) =>
+        bindingsPair(provider, consumer),
+      );
+      const chosen = servedBy(consumer, agreeing);
+      if (chosen === null) {
+        ambiguous.push({
+          consumer,
+          providers: agreeing,
+          services: servicesOf(agreeing),
+        });
+        continue;
+      }
+
+      for (const provider of chosen) {
         pairs.push({
           provider,
           consumer,
@@ -195,5 +271,6 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       consumers: unmatchedConsumers,
       unpairable,
     },
+    ambiguous,
   };
 }
