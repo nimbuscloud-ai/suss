@@ -94,6 +94,7 @@
     "@suss/framework-gcs": "0.11.0",
     "@suss/framework-graphql-ruby": "0.11.0",
     "@suss/framework-hono": "0.11.0",
+    "@suss/framework-mongoose": "0.11.0",
     "@suss/framework-nestjs-graphql": "0.11.0",
     "@suss/framework-nestjs-rest": "0.11.0",
     "@suss/framework-nextjs": "0.11.0",

@@ -41,6 +41,7 @@ export const coveragePackages = [
   ["packages/framework/prisma", "prisma"],
   ["packages/framework/redis", "redis"],
   ["packages/framework/drizzle", "drizzle"],
+  ["packages/framework/mongoose", "mongoose"],
   ["packages/sql", "sql"],
   ["packages/contract/terraform", "contract-terraform"],
   ["packages/terraform/aws", "terraform-aws"],

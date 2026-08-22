@@ -159,6 +159,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "cloudflare-workers": "@suss/framework-cloudflare-workers",
   prisma: "@suss/framework-prisma",
   drizzle: "@suss/framework-drizzle",
+  mongoose: "@suss/framework-mongoose",
   "aws-sqs": "@suss/framework-aws-sqs",
   "aws-eventbridge": "@suss/framework-aws-eventbridge",
   "aws-dynamodb": "@suss/framework-aws-dynamodb",
