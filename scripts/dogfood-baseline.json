@@ -1,12 +1,12 @@
 {
   "totals": {
-    "packages": 58,
-    "packagesWithExports": 58,
-    "exports": 543,
-    "internal": 2147,
-    "consumers": 988,
-    "pairs": 980,
-    "unfollowedCalls": 254,
+    "packages": 57,
+    "packagesWithExports": 57,
+    "exports": 541,
+    "internal": 2128,
+    "consumers": 980,
+    "pairs": 972,
+    "unfollowedCalls": 252,
     "findingErrors": 0
   },
   "packages": {
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 49,
-      "internal": 709,
+      "internal": 710,
       "consumers": 76,
       "unfollowedCalls": 68
     },
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 13,
       "internal": 328,
-      "consumers": 208,
+      "consumers": 205,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
@@ -282,13 +282,6 @@
       "internal": 0,
       "consumers": 11,
       "unfollowedCalls": 0
-    },
-    "packages/framework/mongoose": {
-      "name": "@suss/framework-mongoose",
-      "exports": 2,
-      "internal": 20,
-      "consumers": 5,
-      "unfollowedCalls": 2
     },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",

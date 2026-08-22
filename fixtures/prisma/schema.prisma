@@ -17,7 +17,25 @@ model User {
 }
 
 model Post {
-  id       Int    @id @default(autoincrement())
+  id       Int     @id @default(autoincrement())
   title    String
   authorId Int
+  tags     Tag[]
+  labels   Label[]
+}
+
+// The database fills `id`, and a write built by a map callback says
+// which single column it sets, so nothing claims `id` was written.
+model Tag {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  posts Post[]
+}
+
+// The same write behind a callback passed by name. Its columns stay
+// unknown, so every one of them counts as written.
+model Label {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  posts Post[]
 }
