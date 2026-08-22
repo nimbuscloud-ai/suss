@@ -130,13 +130,14 @@ declared as something. `fallbackBranch` says `a || b` is one of its two
 branches, without saying which. `readsProperty` says an expression is
 `o.n`. None of them says what anything resolves to.
 
-The rules read 25 relations they never derive themselves. The
-TypeScript adapter emits 23 relations from source: 21 of those 25, plus
-`bindCall` for the JavaScript-only `.bind` rule and `importsModule` for
-walking module edges. The two it leaves out, `extends` and
-`callKeywordArg`, come from the Python and Ruby adapters instead. The
-last two, `unwrapsByName` and `wrapperModule`, come from a pack's
-wrapper declarations rather than from any file.
+The rules read 25 relations that no rule derives, so something has to
+supply them. The TypeScript adapter supplies 21 of the 25 by reading
+source, and emits two more of its own on top: `bindCall`, for the
+JavaScript `.bind` rule, and `importsModule`, for walking module edges.
+That leaves four it never emits. `extends` and `callKeywordArg` come
+from the Python and Ruby adapters. `unwrapsByName` and `wrapperModule`
+come from a pack's wrapper declarations, so no source file contains
+them at all.
 
 `packages/resolution/README.md` lists the vocabulary with a line of
 explanation each.
@@ -269,8 +270,8 @@ The chain either leaves the source suss can read, or more than one value can end
 `new PrismaClient()` is a construction. It is not a function and it is
 not an object literal, so a question that stops only at those two walks
 past it and off the end. A question that stops at anything written out
-in source lands on it. Same closure, different stopping condition,
-different outcome.
+in source lands on it. Both questions walked the same edges to the
+same place. Only one of them had a reason to stop there.
 
 ## Most edges come out of a join
 
@@ -317,11 +318,11 @@ sites told apart asks `paramAt`, which keeps the call in the tuple.
 
 ## The graph forms around the question
 
-Deriving every conclusion the facts support is affordable on a fixture
-and not on a repository. Profiles of these rules showed a rule attempted
-a hundred and fifty times to produce fourteen tuples, and the tuples
-nobody reads outnumbering the ones somebody does by more than ten to
-one.
+Deriving every conclusion the facts support is fine on a fixture. On a
+project it is not. Profiling these rules turned up one rule attempting
+a hundred and fifty joins to produce fourteen tuples, and for every
+tuple a question went on to read, roughly ten more were derived that
+nobody looked at.
 
 So `deriveOnDemand` in `packages/datalog/src/onDemand.ts` rewrites the
 program before it ever runs. This is the magic sets transform. Each
@@ -335,9 +336,10 @@ at all.
 
 The 59 rules that `RESOLUTION_RULES` and `RESOLUTION_QUESTIONS` contain
 become 125 rewritten rules over 44 demand-restricted relations. Demand
-arrives as an ordinary fact, `wanted(x)`, which means asking a new
-question is a fact arriving rather than a fresh fixpoint, and it means a
-caller can take a question back once it has read the answer.
+is an ordinary fact, `wanted(x)`. Asking something new adds one more
+fact to the set, so the engine continues from where it was instead of
+starting the fixpoint over, and a caller that has read its answer can
+retract the question again.
 
 What that saves, measured on the `createUser` question in the next
 section, over the same base facts and with the same one answer coming
@@ -476,8 +478,8 @@ Underneath, the proof is the whole derivation, fifteen nodes of it.
 </svg>
 
 The three highlighted rows are the `stepsTo` nodes, and they are the
-three lines the command printed. Everything else is the closure and its
-stopping condition doing their work.
+three lines the command printed. The other twelve are the joins that
+produced those hops and the facts they rest on.
 
 A proof node marked `fact` is a leaf: nobody derived it, the adapter
 emitted it. That is the property that makes an answer checkable. Follow
