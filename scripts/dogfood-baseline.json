@@ -2,11 +2,11 @@
   "totals": {
     "packages": 57,
     "packagesWithExports": 57,
-    "exports": 541,
-    "internal": 2127,
-    "consumers": 980,
-    "pairs": 972,
-    "unfollowedCalls": 252,
+    "exports": 528,
+    "internal": 2133,
+    "consumers": 987,
+    "pairs": 979,
+    "unfollowedCalls": 243,
     "findingErrors": 0
   },
   "packages": {
@@ -26,10 +26,10 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 49,
-      "internal": 709,
+      "exports": 42,
+      "internal": 703,
       "consumers": 76,
-      "unfollowedCalls": 68
+      "unfollowedCalls": 67
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 13,
       "internal": 328,
-      "consumers": 205,
+      "consumers": 208,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
@@ -283,6 +283,13 @@
       "consumers": 11,
       "unfollowedCalls": 0
     },
+    "packages/framework/mongoose": {
+      "name": "@suss/framework-mongoose",
+      "exports": 2,
+      "internal": 20,
+      "consumers": 5,
+      "unfollowedCalls": 2
+    },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",
       "exports": 2,
@@ -327,10 +334,10 @@
     },
     "packages/framework/redis": {
       "name": "@suss/framework-redis",
-      "exports": 2,
+      "exports": 3,
       "internal": 2,
       "consumers": 5,
-      "unfollowedCalls": 2
+      "unfollowedCalls": 0
     },
     "packages/framework/sqlalchemy": {
       "name": "@suss/framework-sqlalchemy",
@@ -366,13 +373,6 @@
       "internal": 25,
       "consumers": 1,
       "unfollowedCalls": 1
-    },
-    "packages/recognize": {
-      "name": "@suss/recognize",
-      "exports": 9,
-      "internal": 8,
-      "consumers": 1,
-      "unfollowedCalls": 8
     },
     "packages/resolution": {
       "name": "@suss/resolution",
