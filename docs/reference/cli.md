@@ -677,7 +677,7 @@ suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
 
 | Flag | Description |
 |---|---|
-| `--dir PATH` | Render every summary in a directory, grouped by boundary with pair-discovery annotations. |
+| `--dir PATH` | Report how the summaries in a directory pair up, boundary by boundary, and which ones found nothing to pair with. It does not render the summaries themselves. |
 | `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. |
 | `--types` | Spell out the named types a summary references instead of printing their names. It applies to a single file and to `--dir`; a `--diff` run ignores it. |
 | `--flow "METHOD URL"` | Work out who serves one request, hop by hop. See [below](#suss-inspect-flow). |

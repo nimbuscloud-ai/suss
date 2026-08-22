@@ -79,10 +79,13 @@ steps:
     findings: findings.json
 ```
 
-The JSON is the IR's `Finding[]`, the same types the checker
-exports. Downstream tools that consume it can validate via
-`@suss/behavioral-ir`'s exported schema or the generated
-JSON Schema (`packages/behavioral-ir/schema/behavioral-summary.schema.json`).
+`check --json` writes one object, not a bare array. `findings` is the
+IR's `Finding[]`, the same type the checker exports, and the other
+keys describe the run around it: `pairs`, `unmatched`,
+`runtimeNamedCrossings`, `summariesWithGaps` and `collisions`. A
+downstream tool wants `.findings`. It can validate against
+`@suss/behavioral-ir`'s exported schema or the generated JSON Schema
+(`packages/behavioral-ir/schema/behavioral-summary.schema.json`).
 
 ## Suppressing known-accepted findings
 

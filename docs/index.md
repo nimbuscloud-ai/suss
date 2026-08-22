@@ -43,28 +43,39 @@ features:
     linkText: FAQ
 ---
 
-## Two commands on your own project
+## Three commands on your own project
 
 ```bash
 npx @suss/cli init          # works out which packs your project needs
-npx @suss/cli extract -o summaries/api.json
+npx @suss/cli extract -f express -f prisma -o summaries/api.json
 npx @suss/cli check --dir summaries/
 ```
 
-`init` reads your dependencies and sets up the packs for your stack. `extract` writes down what each unit does. `check` compares the pieces that meet and reports where they disagree.
+`init` reads your dependencies and sets up the packs for your stack. `extract` writes down what each unit does, and `-f` says which packs to read with, the ones `init` picked. `check` compares the pieces that meet and reports where they disagree.
 
 ## What it tells you
 
-Running the three commands above on [gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app), an Express and Prisma app of about fifty units:
+Running those on [gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app), an Express and Prisma app of about fifty units. It needs `-p tsconfig.app.json` on the extract as well, because its root tsconfig lists no files of its own:
 
 ```
 $ suss check --dir summaries/
 Compared 4 boundaries.
 
-3 findings: 0 error, 3 warning, 0 info
+  20 provider-side boundaries have no client to compare against.
+  5 boundaries had nothing to pair with, so nothing was checked across them.
+  Run the same command with --all to list them.
 
+19 findings: 0 error, 3 warning, 16 info
+```
+
+`--all` prints them. One of the three warnings:
+
+```
 [WARNING] boundaryFieldUnused
-  Tag declares "id", and no query here asks for it or writes it.
+  Comment declares "articleId" and code here writes it, but no query asks for it back. A field the code takes off a record a query returned never counts as a read here, so look for one before treating the write as pointless.
+  provider: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
 ```
 
 Ask about a table before you change it:
