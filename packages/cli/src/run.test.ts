@@ -519,6 +519,37 @@ describe("runCli inspect", () => {
     expect(io.stdout).toContain("Serves: publicationId (S), editionId (S)");
   });
 
+  it("says a returned object spreads a value it never read", async () => {
+    const spreading: BehavioralSummary = {
+      ...minimalSummary,
+      transitions: [
+        {
+          ...(minimalSummary
+            .transitions[0] as (typeof minimalSummary.transitions)[number]),
+          output: {
+            type: "response",
+            statusCode: { type: "literal", value: 200 },
+            body: {
+              type: "record",
+              properties: { favorited: { type: "boolean" } },
+              spreads: [{ sourceText: "article" }],
+            },
+            headers: {},
+          },
+        },
+      ],
+    };
+    const file = writeJson("spread.json", [spreading]);
+
+    const { exit, io } = await capture(() => runCli(["inspect", file]));
+
+    expect(exit).toBe(0);
+    // Without this a reader takes "favorited" for the whole response,
+    // and everything the spread brings along goes unmentioned.
+    expect(io.stdout).toContain("...article");
+    expect(io.stdout).toContain("favorited");
+  });
+
   it("turns down a flag inspect does not take, and says where to go", async () => {
     const file = writeJson("summaries.json", [minimalSummary]);
     const { exit, io } = await capture(() =>
