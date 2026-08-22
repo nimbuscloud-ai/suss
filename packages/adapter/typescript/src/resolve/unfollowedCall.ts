@@ -239,5 +239,6 @@ export function unfollowedCallGap(stop: UnfollowedCall): Gap {
     conditions: [],
     consequence: "unknown",
     description: STOP_SENTENCE[stop.reason](stop.callee),
+    callee: stop.callee,
   };
 }

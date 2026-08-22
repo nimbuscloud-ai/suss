@@ -144,10 +144,13 @@ describe("suss ask", () => {
     expect(output).toContain("is provided by");
   });
 
-  it("warns that a unit it could not read might be missing from the answer", () => {
+  it("says which call it could not follow, so a reader can judge the gap", () => {
     const { output } = answer("what writes aws.dynamodb:editions");
 
-    expect(output).toContain("so a reader could be hiding in it");
+    // The name is the point: a count of units reads the same whatever
+    // was asked, and stops working as a warning.
+    expect(output).toContain("suss could not follow loadCursor");
+    expect(output).toContain("could be hiding behind it");
   });
 
   it("lists the boundaries a file reaches", () => {
@@ -877,8 +880,8 @@ describe("suss ask what calls", () => {
 
     expect(code).toBe(0);
     expect(output).toContain("Nothing in these summaries calls");
-    expect(output).toContain("suss met a call it could not follow in one unit");
-    expect(output).toContain("could be hiding there");
+    expect(output).toContain("suss could not follow");
+    expect(output).toContain("could be hiding behind");
   });
 
   it("exits 1 for a unit no summary spells", () => {

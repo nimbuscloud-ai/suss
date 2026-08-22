@@ -10,6 +10,7 @@
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
+import { unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
 import { noUnitSpelled, unitsSpelled } from "./askWhy.js";
 
@@ -128,7 +129,8 @@ function unfollowedCaveat(
   if (stopped.length === 0) {
     return [];
   }
+  const stops = unfollowedCalls(stopped);
   return [
-    `suss met a call it could not follow in ${stopped.length === 1 ? "one unit" : `${stopped.length} units`}, so a caller of ${label} could be hiding there. suss inspect says which calls.`,
+    `suss could not follow ${stops.text}, so a caller of ${label} could be hiding behind ${stops.count === 1 ? "it" : "one of them"}.`,
   ];
 }
