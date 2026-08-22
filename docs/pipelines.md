@@ -23,7 +23,6 @@ suss extract -p tsconfig.app.json -f express -f axios -f prisma --explain -o sum
 ```
 
 ```
-Wrote 46 summaries to summaries/code.json in 0.85s
   Where these came from:
     26  files in the tsconfig
     13  files read
@@ -40,23 +39,41 @@ Wrote 46 summaries to summaries/code.json in 0.85s
     79  effects prisma recognized
 ```
 
-Read that as a funnel. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes because this repository lists axios in its `package.json` and never calls it, which is what a pack that found nothing looks like. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
+Above that, `extract` prints one success line, `Wrote 46 summaries to <path> in 0.88s`, with the absolute path of the file it wrote and an elapsed time that moves from run to run.
 
-`--timing` says where the time went:
+Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes because this repository lists axios in its `package.json` and never calls it, which is what a pack that found nothing looks like. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
+
+`--timing` says where the time went, one row per phase, ordered by cost. The numbers move a little from run to run, so treat these as proportions:
 
 ```
 Timing:
-     349ms   41.6%  preFilter
-     339ms   40.3%  extract per-file
-      88ms   10.5%  expandReachableClosure
-      33ms    3.9%  loadImportGraphs
-      16ms    1.9%  lazyProjectInit
-       6ms    0.8%  mountPrefix
-       3ms    0.4%  enrichRethrows
-     ...
-     840ms  100.0%  total
+     369ms   41.4%  preFilter
+     366ms   41.0%  extract per-file
+      84ms    9.4%  expandReachableClosure
+      35ms    4.0%  loadImportGraphs
+      17ms    1.9%  lazyProjectInit
+       6ms    0.7%  mountPrefix
+       5ms    0.6%  enrichRethrows
+       4ms    0.5%  stampGraphqlClientRefs
+       2ms    0.2%  deriveBoundaryEffects
+       2ms    0.2%  readTsconfigFileList
+       1ms    0.1%  stampModuleImports
+       0ms    0.0%  liftSchemasOntoDocuments
+       0ms    0.0%  synthesizeSubUnits
+       0ms    0.0%  project.getSourceFiles
+       0ms    0.0%  cache.write
+       0ms    0.0%  cache.merge
+       0ms    0.0%  expandWrapperCallers
+       0ms    0.0%  emitLibraryEnvReadMarkers
+       0ms    0.0%  warmExportChains
+       0ms    0.0%  cache.lookup
+     892ms  100.0%  total
   cache: miss (no-manifest)
 ```
+
+Deciding which files a pack could match costs as much as extracting from the ones that survive, which is why the pre-filter exists at all. The last line says whether the run reused a previous one; `--no-cache` forces the miss shown here.
+
+The same run as a sketch, from the command down to the file it writes:
 
 ```
 User
@@ -92,7 +109,7 @@ The adapter and extractor split is the invariant this pipeline is built on: the 
 
 Renders summaries in a form meant for people.
 
-`suss inspect summaries.json` loads the file, runs it through `safeParseSummaries` so any malformed JSON fails with a path-pointed error before anything renders, then formats each summary as a tree of transitions with their conditions, outputs and gaps:
+`suss inspect summaries.json` loads the file, runs it through `safeParseSummaries` so any malformed JSON fails with a path-pointed error before anything renders, then formats each summary as a tree of transitions with their conditions, outputs and gaps. One summary out of a three-summary file, with the other two cut:
 
 ```
 src/handler.ts
@@ -112,12 +129,19 @@ src/handler.ts
        !! Declared response 500 is never produced by the handler
 ```
 
+Three things in that block are notation rather than content, and they come up in every rendering.
+
+A line starting `+` is an **effect**: something the branch does besides producing its output. `+ src/db.findInvoice →` says this branch calls `findInvoice`, and the arrow says that callee has a summary of its own in the same run, so you can go and read it. The name comes with a path when the callee lives in another file, which is why this one reads `src/db.findInvoice` rather than plain `findInvoice`.
+
+**Reaches** collects the same effects for the whole unit, so you can see everything a handler touches without reading down its branches.
+
+A line starting `!!` is a **gap**: something suss could not settle, written down instead of dropped. This one is the contract promising a 500 that no branch produces. A gap in the output is the difference between "there is nothing here" and "suss could not tell", and keeping them apart is why an empty answer never reads as an all-clear.
+
 `suss inspect --diff before.json after.json` and `suss inspect --dir summaries/` are variants over the same load-and-parse plumbing. The first uses `diffSummaries` to compute added, removed and changed transitions per summary pair. The second uses `pairSummaries` to show which summaries face which, and which ones matched nothing.
 
-`--diff` is the mode a pull request wants. Adding one branch to an Express route, so admins get an extra field:
+`--diff` is the mode a pull request wants. Add one branch to an Express route so admins get an extra field, read the route again into `after/api.json`, then compare it against the file from before the change:
 
 ```bash
-suss extract -f express --files src/routes.ts -o after/api.json
 suss inspect --diff before/api.json after/api.json
 ```
 
@@ -152,10 +176,9 @@ Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows not
 
 `suss check --dir summaries/` is the same flow with a step in front. `pairSummaries` groups every summary by its boundary key and by its role from `BOUNDARY_ROLE[kind]`, and produces matched pairs plus buckets of unmatched providers, unmatched consumers, and summaries that took no part. `checkPair` runs on each matched pair.
 
-Over the same Express and Prisma API:
+Over the same Express and Prisma API, with the schema read into the same folder by `suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json`:
 
 ```bash
-suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json
 suss check --dir summaries/
 ```
 
@@ -227,7 +250,7 @@ The grouping in `pairSummaries` only knows the method and the path, so a store, 
   <text class="label" x="220" y="352" text-anchor="middle">Findings</text>
 </svg>
 
-Pairing dispatches through the semantics registry, so every shipped variant pairs the same way: a binding's semantics declares its own key and its own agreement rules. See [`boundary-semantics.md`](boundary-semantics.md).
+A boundary's **semantics** is what kind of meeting point it is: a REST route, a GraphQL field, a queue subject, a database table. Each kind knows two things about itself. It knows what key its two sides pair by, and it knows what counts as those two sides agreeing. Pairing asks the semantics for both rather than branching on the protocol, which is why adding a kind of boundary never touches the pairing code. See [`boundary-semantics.md`](boundary-semantics.md).
 
 ## `suss contract --from openapi`
 
@@ -235,12 +258,13 @@ Turns an OpenAPI 3.x document into `BehavioralSummary[]` marked `confidence.sour
 
 `@suss/contract-openapi` walks every `(path, operation)` in the document. For each operation it emits one handler summary with one transition per declared response, the status code plus the body schema converted to a `TypeShape`, `metadata.http.declaredContract` populated so `checkContractConsistency` can cross-check a provider you extract later, and `confidence.source: "derived"` so a downstream reader knows where it came from.
 
-Over the Petstore document in `examples/petstore-axios-openapi`:
+Over the Petstore document in `examples/petstore-axios-openapi`, `suss contract --from openapi petstore-openapi.json -o out/provider.json` writes 19 summaries, one per operation. Reading them back:
 
 ```bash
-suss contract --from openapi petstore-openapi.json -o out/provider.json
 suss inspect out/provider.json
 ```
+
+The first two of the nineteen, with the rest cut:
 
 ```
 openapi:petstore-openapi.json
@@ -260,13 +284,15 @@ openapi:petstore-openapi.json
 │      -> default
 ```
 
+The run ends with `19 summaries.`, which is the count to check against your own document's operation count when a route goes missing.
+
 The lines with no shape after the status are the responses Petstore declares with no schema. They still become transitions, because a caller has to handle a 400 whether or not anybody wrote down what is in it. These summaries came out of a document rather than out of source, so there is no line in a source file to point at and the location reads `line 0`.
 
 The CLI writes the result to disk after round-tripping it through `safeParseSummaries`, to catch any drift in the structure.
 
 ## `suss contract --from cloudformation`
 
-The most layered contract reader. One physical API can be written several ways in CloudFormation, and all of them should produce the same summaries.
+This is the most layered of the contract readers, because one physical API can be written several ways in CloudFormation and all of them should produce the same summaries.
 
 Three layers, separated on purpose. Parsing the raw template, turning a file on disk into plain data and resolving CloudFormation's intrinsic YAML tags, lives in `@suss/manifest-aws`, shared with the manifest-driven framework packs. On top of it, the **manifest-reader** layer in `@suss/contract-cloudformation` walks the parsed tree and builds normalized `RestApiConfig` and `HttpApiConfig` values: which API this is, which endpoints, which authorizer, CORS, throttle, and integration config. That happens in `buildRestApiConfigs`, `buildHttpApiConfigs`, `readSamApiEvents`, `readSamHttpApiEvents` and `readCors`, and it is pure grouping. It handles `AWS::ApiGateway::RestApi` plus `AWS::ApiGateway::Method`, `AWS::ApiGatewayV2::Api` plus `Route` plus `Integration`, the SAM `AWS::Serverless::Api` and `AWS::Serverless::HttpApi` shorthand, and SAM `Events.Api` and `Events.HttpApi` blocks. It also handles an inline OpenAPI body on a RestApi.
 
@@ -279,6 +305,8 @@ suss contract --from cloudformation fixtures/aws-lambda/template.yaml -o cfn.jso
 suss inspect cfn.json
 ```
 
+That template gives 32 summaries, and `inspect` prints all of them, about a hundred lines. Six are routes, and each looks like this:
+
 ```
 cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
 └─ GET /widgets  (apigateway handler | line 0)
@@ -290,6 +318,29 @@ cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
 ```
 
 Neither status is in the Lambda. API Gateway produces the 504 on an integration timeout and the 502 on an integration failure, and a caller receives both the same as any other response. The template is the only place they are written down, which is the whole reason this reader exists. `Contract:` is empty because this route declares no responses of its own, and `!! undeclared` on each line says the same thing from the other side: the status is one the declaration never mentions.
+
+The other 26 are the template's own resources, printed as one tree under the template's name. Here is where that tree starts:
+
+```
+cloudformation:fixtures/aws-lambda/template.yaml
+├─ ConfirmTokenFunction  (cloudformation library | line 1)
+│
+├─ ListWidgetsFunction  (cloudformation library | line 1)
+│
+├─ WidgetItemFunction  (cloudformation library | line 1)
+```
+
+and where it ends:
+
+```
+├─ ScheduledSyncFunction.Nightly → eventbridge schedule:ScheduledSyncFunction.Nightly  (cloudformation consumer | line 1)
+│
+└─ MixedTriggerFunction.Sweep → eventbridge schedule:MixedTriggerFunction.Sweep  (cloudformation consumer | line 1)
+
+32 summaries.
+```
+
+A Lambda becomes a `library` summary and a queue becomes one too. The wiring between them becomes a `consumer` summary that says which function reads which queue, and one of those reads `OrderIndexerFunction.Orders → aws_sqs default#order.placed`: the template routes that EventBridge subject into a queue, and that queue feeds that Lambda, so the reader followed the rule to the queue to the function. The `32 summaries.` line at the end is the count to check when a resource you expected goes missing.
 
 The three layers, and why each one is separate:
 
@@ -337,7 +388,13 @@ See [`contract-sources.md`](contract-sources.md) for the doctrine behind this sp
 
 One level below `suss extract`: what `assembleSummary` does.
 
-It reads the raw branches and produces one `Transition` per branch. Structured predicates pass through and un-decomposed conditions get wrapped as `opaque`. The transition ID is minted from `(function, terminal kind, status, conditionHash)`, so it survives a branch being reordered and changes when the condition changes, which is what the `--diff` above shows. It reads the raw declared contract and cross-references it against the statuses produced, emitting an `unhandledCase` gap in each direction, declared-but-not-produced and produced-but-not-declared. A return that matched no terminal pattern in the pack becomes an `unreadOutcome` gap instead, and that one also forces confidence to `low`. Otherwise it counts the ratio of opaque to structured predicates and assigns a confidence level from that. Finally it assembles the summary object, nesting any HTTP-scoped metadata under `metadata.http.*` per the [boundary-semantics](boundary-semantics.md) namespacing convention.
+It reads the raw branches and produces one `Transition` per branch. Structured predicates pass through, and a condition it could not take apart is wrapped as `opaque`, which keeps the source text and marks the branch as one suss read but did not understand.
+
+Each transition gets an ID minted from `(function, terminal kind, status, conditionHash)`. Hashing the condition into the ID is what makes reordering two branches a no-op and rewriting one condition a change, which is the behaviour the `--diff` above shows.
+
+Then it looks for gaps, and there are two kinds worth telling apart. An `unhandledCase` gap means the contract and the code disagree, in either direction: a declared response the handler never produces, or a produced response the contract never declared. That is a fact about the code, and the checker reports it as an error. An `unreadOutcome` gap means a `return` matched none of the pack's terminal patterns, so suss could not tell what that path produces. That is a fact about suss, it forces confidence to `low`, and the checker reports it as info, because failing a build over what the analyzer could not read would punish working code.
+
+With no `unreadOutcome` gap, confidence comes from the ratio of opaque predicates to structured ones. Finally it assembles the summary object, nesting any HTTP-scoped metadata under `metadata.http.*` per the [boundary-semantics](boundary-semantics.md) namespacing convention.
 
 Each step is small, pure over `RawCodeStructure`, and independently testable, which is why the extractor test suite runs in milliseconds and takes no compiler dependency.
 

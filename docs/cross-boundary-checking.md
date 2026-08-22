@@ -51,10 +51,9 @@ export async function getUser(id: string) {
 }
 ```
 
-Both files typecheck, and they will keep typechecking however many branches the handler grows. `response.data` is `any`, and each of the handler's three replies is valid Express. Read both sides and compare them:
+Both files typecheck, and they will keep typechecking however many branches the handler grows. `response.data` is `any`, and each of the handler's three replies is valid Express. Read both sides with `suss extract -f express -f axios -o summaries/all.json`, then compare them:
 
 ```bash
-suss extract -f express -f axios -o summaries/all.json
 suss check --dir summaries/ --all
 ```
 

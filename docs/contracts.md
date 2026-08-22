@@ -66,10 +66,9 @@ export async function loadInvoice(id: string) {
 }
 ```
 
-Read both sides and print them:
+Read both sides with `suss extract -f ts-rest -f fetch -o summaries/all.json`, which writes three summaries, then print them:
 
 ```bash
-suss extract -f ts-rest -f fetch -o summaries/all.json
 suss inspect summaries/all.json
 ```
 
@@ -133,6 +132,8 @@ Compared 1 boundary.
 7 findings: 1 error, 6 warning, 0 info
 
 Not shown: 4 unhandledProviderCase (warning), 2 consumerContractViolation (warning). Run the same command with --all to see them.
+
+suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
 ```
 
 Why the 500 is an error while the other six findings are warnings depends on what each side of the comparison is: a specification, an observation, or a derivation.
@@ -231,6 +232,8 @@ suss contract --from cloudformation fixtures/aws-lambda/template.yaml -o cfn.jso
 suss inspect cfn.json
 ```
 
+That template declares 32 summaries, six of them routes. One route, with the other 31 cut:
+
 ```
 cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
 └─ GET /widgets  (apigateway handler | line 0)
@@ -241,7 +244,7 @@ cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
          -> 502  !! undeclared
 ```
 
-Those two statuses are not in anybody's handler. API Gateway produces them itself, on an integration timeout and an integration failure, and a caller receives them the same as any other response. The template is the only place they are written down.
+Those two statuses are not in anybody's handler. API Gateway produces them itself, on an integration timeout and an integration failure, and a caller receives them the same as any other response. The template is the only place they are written down. [`pipelines.md`](pipelines.md) shows the whole run and what the other 26 summaries are.
 
 The readers that ship:
 

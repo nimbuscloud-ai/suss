@@ -22,8 +22,10 @@ res.json(user);
 
 ```bash
 suss extract -f express -f axios -o summaries/all.json
-suss check --dir summaries/
+suss check --dir summaries/ --all
 ```
+
+That run reports three findings. This is the second of them:
 
 ```
 [WARNING] unhandledProviderCase
@@ -31,9 +33,14 @@ suss check --dir summaries/
   provider: src/routes.ts::get (src/routes.ts:5)
   consumer: src/userCard.ts::getUser (src/userCard.ts:5)
   boundary: express (http) GET /users/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:200:24f5fd8" }
+      reason: TODO say why you accept this
 ```
 
-Both files typecheck, both sides pass their tests, and the two 200s mean different things. [Cross-boundary checking](/cross-boundary-checking) walks that run through in full.
+Both files typecheck, both sides pass their tests, and the two 200s mean different things. [Cross-boundary checking](/cross-boundary-checking) shows all three findings and the code behind them.
 
 ## How is this different from a linter?
 
@@ -43,7 +50,7 @@ A linter matches syntactic patterns: a forbidden call, a missing `await`, an unu
 
 TypeScript checks the structure of the data. `User` is still `User` whether the user is active, soft-deleted or shadow-banned, and `Response<200, User>` type-checks the same whichever branch of the handler produced it.
 
-Here is a handler where the type is constant and the behavior is not:
+Here is `suss inspect` on a handler where the type is constant and the behavior is not. It is one summary out of three in the file, and the effects and gaps under it are cut:
 
 ```
 src/handler.ts
@@ -55,17 +62,21 @@ src/handler.ts
          -> 200 { id, total, state }
        else
          -> 200 { id, total, state }
+           + src/db.findInvoice →
 ```
 
 Both 200 branches satisfy the same declared type. One of them sends `total: 0` and `state: "void"`. suss models which branch produced what and under what condition, which is a fact about values rather than about types.
 
 ## How is this different from OpenAPI, ts-rest or tRPC?
 
-Those are specifications: somebody wrote down what the API should accept and return. suss is derivation: an extracted description of what the implementation does. They complement each other, and `suss check` pairs them and reports the drift. In the run above, the router declares 500 and no branch produces one:
+Those are specifications: somebody wrote down what the API should accept and return. suss is derivation: an extracted description of what the implementation does. They complement each other, and `suss check` pairs them and reports the drift. Checking that handler against its router gives seven findings, and this is the only error among them:
 
 ```
 [ERROR] providerContractViolation
   Declared response 500 is never produced by the handler
+  provider: src/handler.ts::getInvoice (src/handler.ts:8)
+  consumer: src/invoicePanel.ts::loadInvoice (src/invoicePanel.ts:1)
+  boundary: ts-rest (http) GET /invoices/:id
 ```
 
 If you have an OpenAPI document, run `suss contract --from openapi` and check it against your handlers' summaries. [Pair against OpenAPI](/guides/pair-against-openapi) walks that through.
@@ -94,7 +105,7 @@ No. suss reads your source as it is today, with no decorators, no JSDoc tags, no
 
 suss reads TypeScript and JavaScript through `@suss/adapter-typescript`, which uses ts-morph. It reads Python through `@suss/adapter-python` and Ruby through `@suss/adapter-ruby`, and those two parse with tree-sitter compiled to WASM, so neither needs an installed interpreter. `suss extract --lang python` and `--lang ruby` pick them, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag.
 
-On the Python side it reads FastAPI and flask-restx routes and SQLAlchemy queries. On the Ruby side it reads graphql-ruby's class-based `field` DSL and ActiveRecord queries. Over this repository's own `fixtures/python-webapp`:
+On the Python side it reads FastAPI and flask-restx routes and SQLAlchemy queries. On the Ruby side it reads graphql-ruby's class-based `field` DSL and ActiveRecord queries. Over this repository's own `fixtures/python-webapp`, `suss extract --dir fixtures/python-webapp -f fastapi -f flask-restx` finds eight routes. Two of them, with the other six cut:
 
 ```
 myapp/fastapi_app.py
@@ -111,7 +122,7 @@ The IR (`@suss/behavioral-ir`) and the checker (`@suss/checker`) know nothing ab
 
 Any place where two units of code meet across a contract: an HTTP request going from a client to a handler, a function exported from one module and called from another, a SQL query running against a database schema, a message put on a queue and read by a consumer, a React parent rendering a child with props. The contract can be implicit, a function signature, or explicit, an OpenAPI document or a Prisma schema.
 
-Every boundary has a *provider* side, which produces the output, and a *consumer* side, which acts on it, even when both live in the same process. `suss check --all` prints which summaries it paired at each one:
+Every boundary has a *provider* side, which produces the output, and a *consumer* side, which acts on it, even when both live in the same process. `suss check --all` opens by printing which summaries it paired at each one. On an Express and Prisma API, the first three of the eleven pairs at one boundary:
 
 ```
 Compared 4 boundaries:
@@ -121,7 +132,7 @@ Compared 4 boundaries:
     src/prisma/schema.prisma::Article <-> @api/source::src/app/routes/article/article.service.ts::createArticle
 ```
 
-There the provider is a Prisma model and the consumers are the queries against it.
+There the provider is a Prisma model and the consumers are the queries against it. The full run lists all four boundaries with every pair under them, then the findings.
 
 ## What boundaries are modelled?
 
@@ -141,7 +152,7 @@ Sometimes, and it says out loud where it is unsure. Three things show up in the 
 - **Unresolved subjects.** When a value's origin cannot be traced, the subject is labeled `unresolved` instead of being dropped.
 - **Confidence.** Every summary includes a `confidence` block recording how well the extractor did.
 
-Alongside those, a run says how much of the code it could not follow:
+Alongside those, every `check` run ends with a line saying how much of the code it could not follow:
 
 ```
 suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
@@ -153,7 +164,7 @@ Findings are graded `error | warning | info`, and `--fail-on` sets the CI gate. 
 
 `extract` reads source and derives summaries from the implementation. `contract` reads a declared artifact and emits summaries in the same form: an OpenAPI document, a CloudFormation template, a Serverless service file, a Prisma schema, a GraphQL SDL or operation document, or a Storybook CSF3 file. Both feed `suss check`, which pairs them.
 
-Sometimes `contract` tells you something no handler does. Running it over a SAM template:
+Sometimes `contract` tells you something no handler does. Reading a SAM template gives 32 summaries, six of them routes. Here is one route, with the other 31 cut:
 
 ```
 cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
