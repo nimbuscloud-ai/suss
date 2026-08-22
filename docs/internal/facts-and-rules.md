@@ -2,6 +2,8 @@
 
 How extraction's whole-program analyses are structured, for anyone adding or changing one. The short version: they are Datalog rules over a shared fact database, and a strict three-layer boundary keeps them auditable.
 
+Value resolution is the largest rule set over this engine and has a page of its own: [How suss follows a value](../resolving-values.md) covers the fact vocabulary, the closure the rules build over it, and the proof `suss ask why` prints.
+
 ## Why rules
 
 Every whole-program analysis in extraction works the same way underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability, re-throw resolution, and effect propagation all work that way. Rules state it once, and you get four properties from that:

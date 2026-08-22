@@ -616,6 +616,8 @@ hop is proved from source: the question re-reads the relevant files
 and re-evaluates the resolution rules under the witness algebra, when
 asked and never during a normal run. `--project` says where the source
 is when it is not the working directory.
+[How suss follows a value](../resolving-values.md) walks through the
+facts, the rules and the proof behind one of these chains.
 
 ```
 $ suss ask 'why does getOrder reach aws.dynamodb' --dir .suss
