@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 3673,
-      "covered": 3385,
+      "total": 3674,
+      "covered": 3386,
       "skipped": 0,
-      "pct": 92.15
+      "pct": 92.16
     },
     "statements": {
-      "total": 3774,
-      "covered": 3481,
+      "total": 3775,
+      "covered": 3482,
       "skipped": 0,
       "pct": 92.23
     },
@@ -33,10 +33,10 @@
   },
   "src/ask.ts": {
     "lines": {
-      "total": 160,
-      "covered": 154,
+      "total": 161,
+      "covered": 155,
       "skipped": 0,
-      "pct": 96.25
+      "pct": 96.27
     },
     "functions": {
       "total": 52,
@@ -45,10 +45,10 @@
       "pct": 94.23
     },
     "statements": {
-      "total": 167,
-      "covered": 161,
+      "total": 168,
+      "covered": 162,
       "skipped": 0,
-      "pct": 96.4
+      "pct": 96.42
     },
     "branches": {
       "total": 135,
