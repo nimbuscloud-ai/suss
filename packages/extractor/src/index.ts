@@ -168,6 +168,12 @@ export type EffectArg =
   | { kind: "number"; value: number }
   | { kind: "boolean"; value: boolean }
   | { kind: "object"; fields: Record<string, EffectArg> }
+  /**
+   * The element shapes the adapter could read, which is not always one
+   * per runtime element. An array a callback builds,
+   * `tags.map((tag) => ({ name: tag }))`, arrives with a single item,
+   * because every element it produces has that one shape.
+   */
   | { kind: "array"; items: EffectArg[] }
   | { kind: "template"; sourceText: string }
   /**

@@ -671,6 +671,11 @@ function extractArg(node: Node, depth: number): EffectArg {
   ) {
     return extractArg(node.getExpression(), depth);
   }
+  // Parentheses group an expression and change nothing about it, and an
+  // arrow returning an object literal has to write them.
+  if (Node.isParenthesizedExpression(node)) {
+    return extractArg(node.getExpression(), depth);
+  }
   if (
     Node.isStringLiteral(node) ||
     Node.isNoSubstitutionTemplateLiteral(node)
@@ -724,6 +729,10 @@ function extractArg(node: Node, depth: number): EffectArg {
   // Recurse into the arguments with decremented depth so the shape of
   // the composition survives in the summary.
   if (Node.isCallExpression(node)) {
+    const element = mapCallbackReturn(node);
+    if (element !== null) {
+      return { kind: "array", items: [extractArg(element, depth - 1)] };
+    }
     return {
       kind: "call",
       callee: node.getExpression().getText(),
@@ -789,6 +798,40 @@ function extractArg(node: Node, depth: number): EffectArg {
     return { kind: "array", items };
   }
   return null;
+}
+
+/**
+ * The expression a `.map(callback)` call builds each element from, when
+ * the callback is written out at the call and comes down to one
+ * expression. Every element it produces has that shape, so a pack
+ * reading a payload written this way can tell which fields it sets
+ * instead of giving up on the whole array (#537).
+ *
+ * A callback passed by name stays unread, and so does a body with more
+ * than one return, since two returns are two shapes and picking one
+ * would state a payload the code does not always build.
+ */
+function mapCallbackReturn(call: CallExpression): Node | null {
+  const callee = call.getExpression();
+  if (!Node.isPropertyAccessExpression(callee) || callee.getName() !== "map") {
+    return null;
+  }
+  const callback = call.getArguments()[0];
+  if (
+    callback === undefined ||
+    !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback))
+  ) {
+    return null;
+  }
+  const body = callback.getBody();
+  if (!Node.isBlock(body)) {
+    return body;
+  }
+  const statements = body.getStatements();
+  const only = statements.length === 1 ? statements[0] : undefined;
+  return only !== undefined && Node.isReturnStatement(only)
+    ? (only.getExpression() ?? null)
+    : null;
 }
 
 /**

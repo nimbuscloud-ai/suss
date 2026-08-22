@@ -8,9 +8,11 @@
 //   2. Read schema.prisma via @suss/contract-prisma → provider summaries.
 //   3. Run checkAll over the union; assert findings.
 //
-// Two fixture cases (both deliberately typo'd):
+// Three fixture cases, the first two deliberately typo'd:
 //   - get-user-by-email: reads User.emial (typo) → storageReadFieldUnknown
 //   - create-post: writes Post.bdoy (typo) → storageWriteFieldUnknown
+//   - create-post-with-tags: writes Tag and Label through relations
+//     whose payloads array callbacks build
 //
 // The schema declares User.deletedAt, no fixture reads it, so it
 // surfaces as storageFieldUnused. Post.title is written but never
@@ -79,11 +81,13 @@ describe("prisma integration", () => {
     ensurePrismaClientGenerated();
   });
 
-  it("emits the expected provider summary count (2 models = 2 summaries)", () => {
+  it("emits the expected provider summary count (4 models = 4 summaries)", () => {
     const providers = prismaSchemaFileToSummaries(schemaPath);
-    expect(providers).toHaveLength(2);
+    expect(providers).toHaveLength(4);
     expect(providers.map((p) => p.identity.name).sort()).toEqual([
+      "Label",
       "Post",
+      "Tag",
       "User",
     ]);
   });
@@ -137,6 +141,31 @@ describe("prisma integration", () => {
     );
     expect(f).toBeDefined();
     expect(f?.description).toContain("User");
+  });
+
+  it("writes the column a map callback sets on the relation it goes through", async () => {
+    const code = await extractCode();
+    const write = relationWrite(code, "tags");
+    expect(write?.interaction.fields).toEqual(["name"]);
+  });
+
+  it("writes unknown columns when the map callback arrives by name", async () => {
+    const code = await extractCode();
+    const write = relationWrite(code, "labels");
+    expect(write?.interaction.fields).toEqual(["*"]);
+  });
+
+  it("leaves Tag.id to the database rather than claiming code writes it", async () => {
+    const findings = await runPipeline();
+    const f = findings.find(
+      (f) =>
+        f.kind === "boundaryFieldUnused" &&
+        f.description.includes('Tag declares "id"'),
+    );
+    expect(f).toBeDefined();
+    // `aspect: "read"` is the write-only finding, which is what a
+    // wildcard write produced before the callback could be read (#537).
+    expect(f?.aspect).toBeUndefined();
   });
 
   it("does not flag declared-and-used columns (User.id, User.email, User.name)", async () => {
@@ -204,4 +233,46 @@ function collectStorageAccesses(
 
 function readTable(a: StorageAccess): string | null {
   return a.binding.semantics.container ?? null;
+}
+
+interface RelationWrite {
+  interaction: {
+    kind: string;
+    fields: string[];
+    relationPath?: string[];
+    relationKey?: true;
+  };
+}
+
+/**
+ * The write a nested operation states through `relation`, skipping the
+ * one that only moves which row is joined, since that sets the foreign
+ * key rather than the columns the call states.
+ */
+function relationWrite(
+  summaries: BehavioralSummary[],
+  relation: string,
+): RelationWrite | undefined {
+  const writes: RelationWrite[] = [];
+  for (const summary of summaries) {
+    for (const t of summary.transitions) {
+      for (const e of t.effects) {
+        if (
+          e.type !== "interaction" ||
+          e.interaction.class !== "storage-access"
+        ) {
+          continue;
+        }
+        const found = e as unknown as RelationWrite;
+        if (
+          found.interaction.kind === "write" &&
+          found.interaction.relationKey !== true &&
+          found.interaction.relationPath?.at(-1) === relation
+        ) {
+          writes.push(found);
+        }
+      }
+    }
+  }
+  return writes[0];
 }

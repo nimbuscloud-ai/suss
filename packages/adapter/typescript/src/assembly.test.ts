@@ -1549,6 +1549,202 @@ describe("edge cases", () => {
     ]);
   });
 
+  it("captures the shape a map callback builds each element from", () => {
+    // Read as a call, this payload said nothing, and a pack asking which
+    // columns the write fills had to say all of them (#537).
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function save(tags: string[]) {
+        db.article.create({
+          data: {
+            tagList: {
+              connectOrCreate: tags.map((tag: string) => ({
+                create: { name: tag },
+                where: { name: tag },
+              })),
+            },
+          },
+        });
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns).branches;
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      {
+        kind: "object",
+        fields: {
+          data: {
+            kind: "object",
+            fields: {
+              tagList: {
+                kind: "object",
+                fields: {
+                  connectOrCreate: {
+                    kind: "array",
+                    items: [
+                      {
+                        kind: "object",
+                        fields: {
+                          create: {
+                            kind: "object",
+                            fields: {
+                              name: { kind: "identifier", name: "tag" },
+                            },
+                          },
+                          where: {
+                            kind: "object",
+                            fields: {
+                              name: { kind: "identifier", name: "tag" },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("captures the shape a map callback returns from a block body", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function save(tags: string[]) {
+        db.tag.createMany({
+          data: tags.map((tag: string) => {
+            return { name: tag };
+          }),
+        });
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns).branches;
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      {
+        kind: "object",
+        fields: {
+          data: {
+            kind: "array",
+            items: [
+              {
+                kind: "object",
+                fields: { name: { kind: "identifier", name: "tag" } },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("leaves a map over a named callback unread", () => {
+    // Nothing here follows a name to the function behind it.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function save(tags: string[], buildTag: (t: string) => object) {
+        db.tag.createMany({ data: tags.map(buildTag) });
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns).branches;
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      {
+        kind: "object",
+        fields: {
+          data: {
+            kind: "call",
+            callee: "tags.map",
+            args: [{ kind: "identifier", name: "buildTag" }],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("leaves a map whose callback body branches unread", () => {
+    // Two returns are two shapes, and picking one would state a payload
+    // the code does not always build.
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function save(tags: string[]) {
+        db.tag.createMany({
+          data: tags.map((tag: string) => {
+            if (tag === "") {
+              return { name: "untitled" };
+            }
+            return { label: tag };
+          }),
+        });
+      }
+    `,
+    );
+    const patterns: TerminalPattern[] = [
+      {
+        kind: "return",
+        match: { type: "functionFallthrough" },
+        extraction: {},
+      },
+    ];
+    const branches = extractRawBranches(fn, patterns).branches;
+    const effect = branches[0].effects.find((e) => e.type === "invocation");
+    if (effect === undefined || effect.type !== "invocation") {
+      throw new Error("expected invocation effect");
+    }
+    expect(effect.args).toEqual([
+      {
+        kind: "object",
+        fields: {
+          data: { kind: "call", callee: "tags.map", args: [null] },
+        },
+      },
+    ]);
+  });
+
   it("captures nested object-of-objects and array literals", () => {
     const project = createProject();
     const fn = getExportedFunction(
