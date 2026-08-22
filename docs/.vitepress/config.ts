@@ -118,6 +118,7 @@ export default defineConfig({
           { text: "Motivation", link: "/motivation" },
           { text: "Glossary", link: "/glossary" },
           { text: "Contracts", link: "/contracts" },
+          { text: "How suss follows a value", link: "/resolving-values" },
           { text: "Cross-boundary checking", link: "/cross-boundary-checking" },
           { text: "Suppressions (model)", link: "/suppressions" },
         ],
