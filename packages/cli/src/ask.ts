@@ -205,6 +205,12 @@ const PLURAL_VERB: Record<"reads" | "writes", string> = {
   writes: "write",
 };
 
+/** Who the unfollowed call could be hiding, for each question. */
+const HIDDEN_ACTOR: Record<"reads" | "writes", string> = {
+  reads: "a reader",
+  writes: "a writer",
+};
+
 /** ", which grounds to prod-x via wrangler.toml", or nothing. */
 function groundsClause(grounding: GroundingNote[] | undefined): string {
   if (grounding === undefined) {
@@ -345,7 +351,7 @@ function answerDirection(
       headline: `Nothing in these summaries ${shape} ${label}.`,
       items: [],
       needs: [...servedBy, ...hints],
-      caveats: runCaveats(summaries),
+      caveats: runCaveats(summaries, shape),
       found: true,
     };
   }
@@ -361,6 +367,7 @@ function answerDirection(
       ...gapCaveats(matching.map((touch) => touch.summary)),
       ...runCaveats(
         summaries,
+        shape,
         matching.map((touch) => touch.summary),
       ),
     ],
@@ -593,6 +600,7 @@ function declarationsOf(summary: BehavioralSummary): Declaration[] {
  */
 function runCaveats(
   summaries: ReadonlyArray<BehavioralSummary>,
+  shape: "reads" | "writes",
   listed: ReadonlyArray<BehavioralSummary> = [],
 ): string[] {
   const already = new Set(listed);
@@ -604,7 +612,7 @@ function runCaveats(
   }
   const stops = unfollowedCalls(withGaps);
   return [
-    `suss could not follow ${stops.text}, so a reader could be hiding behind ${stops.count === 1 ? "it" : "one of them"}.`,
+    `suss could not follow ${stops.text}, so ${HIDDEN_ACTOR[shape]} could be hiding behind ${stops.count === 1 ? "it" : "one of them"}.`,
   ];
 }
 
