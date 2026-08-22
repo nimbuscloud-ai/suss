@@ -797,6 +797,15 @@ const StorageContractMetadataSchema = z.object({
          * unused and write-only checks leave it alone.
          */
         derived: z.boolean().optional(),
+        /**
+         * The columns of THIS container that a write through this
+         * relation sets. A Prisma relation declaring
+         * `@relation(fields: [authorId])` owns the foreign key, so
+         * connecting a row to it sets `authorId` here. Absent when the
+         * key lives on the other side or in a join table, where such a
+         * write changes no column of this container.
+         */
+        relationKey: z.array(z.string()).optional(),
       }),
     )
     .optional(),

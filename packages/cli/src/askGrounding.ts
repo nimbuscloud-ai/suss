@@ -84,6 +84,9 @@ export function groundedTouchesAt(
   closeOverClaims(accesses, matchedBindings, matchedProviders);
 
   const touches: GroundedTouch[] = [];
+  // One unit doing one thing at one boundary is one line, however many
+  // accesses say so, and the walk below adds only what is missing here.
+  const answered = new Set<string>();
 
   // Storage comes from the grounded accesses rather than from the
   // effects, because only these say which table a read written under a
@@ -94,23 +97,25 @@ export function groundedTouchesAt(
     if (!matchedBindings.has(record.binding)) {
       continue;
     }
+    const touched: TouchedBoundary = {
+      label: boundarySpelling(record.binding),
+      binding: record.binding,
+      relation: record.kind === "read" ? "reads" : "writes",
+      callee: record.callee,
+      transitionId: undefined,
+    };
+    const key = asTouchKey({ summary: record.summary, touched });
+    if (answered.has(key)) {
+      continue;
+    }
+    answered.add(key);
     const notes = groundingNotes(record);
     touches.push({
       summary: record.summary,
-      touched: {
-        label: boundarySpelling(record.binding),
-        binding: record.binding,
-        relation: record.kind === "read" ? "reads" : "writes",
-        callee: record.callee,
-        transitionId: undefined,
-      },
+      touched,
       ...(notes.length > 0 ? { grounding: notes } : {}),
     });
   }
-
-  // What the grounded pass answered for, so the walk below adds the
-  // boundaries it says nothing about rather than a second copy of these.
-  const answered = new Set(touches.map(asTouchKey));
 
   for (const summary of summaries) {
     for (const touched of boundariesTouchedBy(summary)) {

@@ -406,6 +406,10 @@ function withRelationAccessesPlaced(
       placed.push(access);
       continue;
     }
+    if (access.effect.interaction.relationKey === true) {
+      placed.push(...keyWrites(containers, access, reachedFor(access), path));
+      continue;
+    }
     for (const target of relationTargets(
       containers,
       access,
@@ -416,6 +420,92 @@ function withRelationAccessesPlaced(
     }
   }
   return placed;
+}
+
+/**
+ * A write that moves a join, placed as a write of the foreign key.
+ * Every hop but the last arrives at the container that declares the
+ * relation, and the last hop is the relation whose key changes there.
+ * So this write stays on the near side of the relation, where a nested
+ * `create` under that same relation crosses to the far side.
+ */
+function keyWrites(
+  containers: DeclaredContainer[],
+  access: StorageAccessRecord,
+  reached: ReachedName[],
+  path: string[],
+): StorageAccessRecord[] {
+  const relation = path[path.length - 1];
+  const written: StorageAccessRecord[] = [];
+  const seen = new Set<string>();
+  for (const name of reached) {
+    for (const start of claimantsOf(containers, access, name.name).chosen) {
+      const owner = followRelations(containers, start, path.slice(0, -1));
+      if (owner === null) {
+        continue;
+      }
+      const columns = keyColumnsOf(containers, owner.container, relation);
+      const key = `${owner.name ?? ""}:${columns.join(",")}`;
+      if (columns.length === 0 || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      written.push(withFields(placedOn(access, owner), columns));
+    }
+  }
+  return written;
+}
+
+/**
+ * The columns a write through one field of a container fills. A
+ * relation that declares a foreign key fills it, and one whose key
+ * lives on the far side or in a join table fills nothing here. A field
+ * the contract does not call a relation is taken at its word as a
+ * column, so the unknown-field check still reports one nobody declared.
+ */
+function keyColumnsOf(
+  containers: DeclaredContainer[],
+  container: DeclaredContainer,
+  field: string,
+): string[] {
+  const declared = (container.contract.fields ?? []).find(
+    (candidate) => candidate.name === field,
+  );
+  if (declared === undefined) {
+    return [field];
+  }
+  if (declared.relationKey !== undefined) {
+    return declared.relationKey;
+  }
+  if (relationTargetOf(containers, container, field) !== undefined) {
+    return [];
+  }
+  return [field];
+}
+
+/** The access, addressed to the container a walk of the path arrived at. */
+function placedOn(
+  access: StorageAccessRecord,
+  hop: RelationHop,
+): StorageAccessRecord {
+  if (hop.name === null) {
+    return access;
+  }
+  return movedTo(access, hop.name);
+}
+
+/** The same access, over the columns the contract worked out for it. */
+function withFields(
+  access: StorageAccessRecord,
+  fields: string[],
+): StorageAccessRecord {
+  return {
+    ...access,
+    effect: {
+      ...access.effect,
+      interaction: { ...access.effect.interaction, fields },
+    },
+  };
 }
 
 /** Where a relation path arrives, from each container that claims the query. */
@@ -429,39 +519,55 @@ function relationTargets(
   for (const name of reached) {
     for (const start of claimantsOf(containers, access, name.name).chosen) {
       const arrived = followRelations(containers, start, path);
-      if (arrived !== null) {
-        targets.add(arrived);
+      if (arrived !== null && arrived.name !== null) {
+        targets.add(arrived.name);
       }
     }
   }
   return [...targets];
 }
 
+/** Where a walk of a relation path ended up. */
+interface RelationHop {
+  container: DeclaredContainer;
+  /** What the last hop was declared as, and null when there was none. */
+  name: string | null;
+}
+
 /**
  * The container a relation path arrives at, one hop per relation, or
  * null when a hop is a field the contract leaves out, or a field whose
- * type is a container nothing in the run declares.
+ * type is a container nothing in the run declares. An empty path
+ * arrives where it started.
  */
 function followRelations(
   containers: DeclaredContainer[],
   start: DeclaredContainer,
   path: string[],
-): string | null {
-  let current = start;
-  let arrived: string | null = null;
+): RelationHop | null {
+  let arrived: RelationHop = { container: start, name: null };
   for (const hop of path) {
-    const type = relationTypeOf(current, hop);
-    if (type === null) {
-      return null;
-    }
-    const next = containers.find((container) => container.names.includes(type));
+    const next = relationTargetOf(containers, arrived.container, hop);
     if (next === undefined) {
       return null;
     }
-    current = next;
-    arrived = type;
+    arrived = next;
   }
   return arrived;
+}
+
+/** The container a relation field points at, when the run declares one. */
+function relationTargetOf(
+  containers: DeclaredContainer[],
+  container: DeclaredContainer,
+  field: string,
+): RelationHop | undefined {
+  const type = relationTypeOf(container, field);
+  if (type === null) {
+    return undefined;
+  }
+  const target = containers.find((candidate) => candidate.names.includes(type));
+  return target === undefined ? undefined : { container: target, name: type };
 }
 
 /** The container a relation field points at, list suffix stripped. */

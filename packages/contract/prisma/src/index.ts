@@ -11,8 +11,9 @@
 //     warning; needs storage-document semantics).
 //   - Composite types (Mongo) and views (Postgres), emit nothing
 //     today; can be added later under the same boundary semantics.
-//   - Relations between models, relation fields aren't columns
-//     (the FK columns are; those ARE captured as scalars).
+//   - Relations between models, relation fields aren't columns. The FK
+//     columns are, both as scalars and as the `relationKey` of the
+//     relation field that owns them.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -287,16 +288,33 @@ function relationField(
   type: string;
   nullable: boolean;
   derived: true;
+  relationKey?: string[];
 } | null {
   if (!modelNames.has(field.fieldType)) {
     return null;
   }
+  const key = relationKeyOf(field);
   return {
     name: field.name,
     type: field.array === true ? `${field.fieldType}[]` : field.fieldType,
     nullable: field.optional === true,
     derived: true,
+    ...(key === null ? {} : { relationKey: key }),
   };
+}
+
+/**
+ * The columns listed in `@relation(fields: [...])`, which are the
+ * foreign key this model stores. Prisma allows that argument on one
+ * side of a relation only, so the other side and every implicit
+ * many-to-many come back null: connecting a row there changes a
+ * join-table entry and no column of this model.
+ */
+function relationKeyOf(field: PrismaField): string[] | null {
+  const relation = (field.attributes ?? []).find(
+    (attr) => attr.name === "relation",
+  );
+  return relation === undefined ? null : readKeyedArrayArg(relation, "fields");
 }
 
 /**
@@ -409,28 +427,57 @@ function blockAttributeToIndex(
 
 function readArrayArg(attr: PrismaAttribute): string[] | null {
   for (const arg of attr.args ?? []) {
-    const value = arg.value as { type?: string; args?: unknown[] } | null;
-    if (value === null || value === undefined) {
-      continue;
-    }
-    if (value.type === "array" && Array.isArray(value.args)) {
-      const out: string[] = [];
-      for (const item of value.args) {
-        if (typeof item === "string") {
-          out.push(item);
-        } else if (
-          typeof item === "object" &&
-          item !== null &&
-          "name" in item &&
-          typeof (item as { name?: unknown }).name === "string"
-        ) {
-          out.push((item as { name: string }).name);
-        }
-      }
-      return out;
+    const names = arrayNames(arg.value);
+    if (names !== null) {
+      return names;
     }
   }
   return null;
+}
+
+/**
+ * The array under one named argument. A field attribute takes several
+ * arguments and the position of each varies, so the name is the only
+ * way to tell `fields` from `references`.
+ */
+function readKeyedArrayArg(
+  attr: PrismaAttribute,
+  key: string,
+): string[] | null {
+  for (const arg of attr.args ?? []) {
+    const value = arg.value as {
+      type?: string;
+      key?: string;
+      value?: unknown;
+    } | null;
+    if (value?.type !== "keyValue" || value.key !== key) {
+      continue;
+    }
+    return arrayNames(value.value);
+  }
+  return null;
+}
+
+/** The strings an array value contains, or null when it is not an array. */
+function arrayNames(value: unknown): string[] | null {
+  const array = value as { type?: string; args?: unknown[] } | null;
+  if (array?.type !== "array" || !Array.isArray(array.args)) {
+    return null;
+  }
+  const out: string[] = [];
+  for (const item of array.args) {
+    if (typeof item === "string") {
+      out.push(item);
+    } else if (
+      typeof item === "object" &&
+      item !== null &&
+      "name" in item &&
+      typeof (item as { name?: unknown }).name === "string"
+    ) {
+      out.push((item as { name: string }).name);
+    }
+  }
+  return out;
 }
 
 function readProviderString(ds: PrismaDatasource): string | null {

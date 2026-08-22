@@ -18,11 +18,14 @@
   "id": "Prisma schema: field attribute marking the primary key",
   "unique": "Prisma schema: field attribute marking a unique column",
   "index": "Prisma schema: block attribute declaring an index",
+  "relation": "Prisma schema: field attribute declaring a relation",
+  "fields": "Prisma schema: @relation argument listing the foreign key columns",
   "name": "Prisma schema: attribute argument naming the target",
   "field": "suss: shape element kind",
   "attribute": "suss: shape element kind",
   "library": "suss: marker for a value a library states",
   "exhaustive": "suss: a storage contract that declares every field",
   "_count": "Prisma client: the relation counts a query can ask for",
-  "PrismaCount": "suss: the type this pack gives the _count field"
+  "PrismaCount": "suss: the type this pack gives the _count field",
+  "keyValue": "suss: the parser's node type for a named attribute argument"
 }

@@ -1097,6 +1097,9 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "relationKey": {
+                                "type": "boolean"
                               }
                             },
                             "required": ["class", "kind", "fields"],

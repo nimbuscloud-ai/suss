@@ -38,7 +38,9 @@
 // path against the model's contract to find the table it belongs to.
 // A write does this too: a `create` with an `include` hands the
 // relation back the way a query does, and a nested operation under
-// `data` writes the model across the relation, per `NESTED_WRITE_OPERATIONS`.
+// `data` writes the model across the relation, per `NESTED_OPERATIONS`.
+// An operation that moves a join sets a foreign key, so it arrives with
+// `relationKey` and the checker fills the columns from the contract.
 //
 // Out of scope for v0:
 //   - findUniqueOrThrow and findFirstOrThrow, which would be easy to add.
@@ -218,6 +220,7 @@ function recognizePrismaCall(
           kind: "write",
           fields: nested.fields,
           relationPath: nested.relationPath,
+          ...(nested.relationKey === true ? { relationKey: true } : {}),
           // What reaches the other model is the nested operation, so
           // that is what the effect records. The outer method belongs
           // to the model in the binding.
@@ -300,6 +303,12 @@ interface NestedWrite {
   relationPath: string[];
   fields: string[];
   operation: string;
+  /**
+   * Set when the columns are the foreign key of the last relation in
+   * the path rather than columns the call states, which only the
+   * contract can supply.
+   */
+  relationKey?: true;
 }
 
 /** The row values a nested operation states, and the columns they fill. */
@@ -358,27 +367,40 @@ const updateRow: ReadWrittenRows = (payload) => {
 /** A row that goes away fills no column and changes all of them. */
 const wholeRow: ReadWrittenRows = () => ({ fields: ["*"], rows: [] });
 
+/** What one nested operation changes, on either side of the relation. */
+interface NestedOperation {
+  /** Where it states the rows it puts in the model across the relation. */
+  rows?: ReadWrittenRows;
+  /**
+   * Whether it moves which row is joined, which sets the foreign key
+   * on whichever side declares it.
+   */
+  movesJoin?: true;
+}
+
 /**
- * The nested operations that put values in the columns of the model on
- * the other side of a relation, and where each states them. A delete is
- * here because the row it takes away changes every column of that row.
+ * What each operation Prisma takes under a relation does, and where it
+ * states the values. A delete is here because the row it takes away
+ * changes every column of that row.
  *
- * The operations that move which rows are joined stay out. They put
- * nothing in the joined row's columns, and calling `connect: { id }` a
- * write of `id` would report a column the code only selects by as one
- * the code sets. Which foreign key a join moves depends on the
- * direction the schema declares the relation in, so the column that
- * does change is something only the contract could supply.
+ * An operation that moves which row is joined sets a foreign key, and
+ * which column that is depends on the side the schema declares it on,
+ * so the checker reads it off the contract. Recording `connect: { id }`
+ * as a write of `id` instead would report a column the code selects by
+ * as one the code sets, on the wrong model at that.
  */
-const NESTED_WRITE_OPERATIONS = new Map<string, ReadWrittenRows>([
-  ["create", rowIsPayload],
-  ["createMany", rowsUnder("data")],
-  ["connectOrCreate", rowsUnder("create")],
-  ["update", updateRow],
-  ["updateMany", rowsUnder("data")],
-  ["upsert", rowsUnder("create", "update")],
-  ["delete", wholeRow],
-  ["deleteMany", wholeRow],
+const NESTED_OPERATIONS = new Map<string, NestedOperation>([
+  ["create", { rows: rowIsPayload }],
+  ["createMany", { rows: rowsUnder("data") }],
+  ["connectOrCreate", { rows: rowsUnder("create"), movesJoin: true }],
+  ["update", { rows: updateRow }],
+  ["updateMany", { rows: rowsUnder("data") }],
+  ["upsert", { rows: rowsUnder("create", "update") }],
+  ["delete", { rows: wholeRow }],
+  ["deleteMany", { rows: wholeRow }],
+  ["connect", { movesJoin: true }],
+  ["disconnect", { movesJoin: true }],
+  ["set", { movesJoin: true }],
 ]);
 
 /**
@@ -417,16 +439,21 @@ function collectNestedWrites(
     if (nested === null) {
       continue;
     }
+    const relationPath = [...path, field];
     for (const [operation, payload] of Object.entries(nested.fields)) {
-      const readRows = NESTED_WRITE_OPERATIONS.get(operation);
-      if (readRows === undefined) {
+      const does = NESTED_OPERATIONS.get(operation);
+      if (does === undefined) {
         continue;
       }
-      const relationPath = [...path, field];
-      const written = readRows(payload);
-      found.push({ relationPath, fields: written.fields, operation });
-      for (const deeper of written.rows) {
-        collectNestedWrites(deeper, relationPath, found);
+      if (does.rows !== undefined) {
+        const written = does.rows(payload);
+        found.push({ relationPath, fields: written.fields, operation });
+        for (const deeper of written.rows) {
+          collectNestedWrites(deeper, relationPath, found);
+        }
+      }
+      if (does.movesJoin === true) {
+        found.push({ relationPath, fields: [], operation, relationKey: true });
       }
     }
   }
@@ -568,20 +595,39 @@ function extractFields(
   }
   // Write: data, create, or update. Collect from all three, since an upsert
   // can pass both create and update at the same time.
-  const out = new Set<string>();
+  const stated = new Map<string, EffectArg>();
   for (const propName of WRITE_PAYLOAD_KEYS) {
     const prop = readObjectArg(optionsArg.fields[propName]);
     if (prop === null) {
       continue;
     }
-    for (const k of Object.keys(prop.fields)) {
-      out.add(k);
+    for (const [name, value] of Object.entries(prop.fields)) {
+      stated.set(name, value);
     }
   }
-  if (out.size === 0) {
+  if (stated.size === 0) {
     return ["*"];
   }
-  return [...out];
+  const columns: string[] = [];
+  for (const [name, value] of stated) {
+    // A key with an operation under it reaches across a relation, and
+    // no column of this model is called that. What does change here is
+    // the relation's foreign key, which only the contract knows.
+    if (statesNestedOperations(value)) {
+      continue;
+    }
+    columns.push(name);
+  }
+  return columns;
+}
+
+/** Whether a value under a payload key is a relation's operations. */
+function statesNestedOperations(value: EffectArg): boolean {
+  const nested = readObjectArg(value);
+  if (nested === null) {
+    return false;
+  }
+  return Object.keys(nested.fields).some((key) => NESTED_OPERATIONS.has(key));
 }
 
 function extractSelector(optionsArg: ObjectArg | null): string[] | null {
