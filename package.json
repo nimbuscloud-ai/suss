@@ -25,6 +25,7 @@
     "@vitest/coverage-v8": "^4.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.4.1",
+    "mongoose": "^9.9.3",
     "prisma": "^6.19.3",
     "tsup": "^8.0.0",
     "turbo": "latest",
