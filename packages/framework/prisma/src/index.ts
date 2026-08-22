@@ -37,7 +37,8 @@
 // relation fields it was written under, and the checker resolves that
 // path against the model's contract to find the table it belongs to.
 // A write does this too: a `create` with an `include` hands the
-// relation back the way a query does.
+// relation back the way a query does, and a nested operation under
+// `data` writes the model across the relation, per `NESTED_WRITE_OPERATIONS`.
 //
 // Out of scope for v0:
 //   - findUniqueOrThrow and findFirstOrThrow, which would be easy to add.
@@ -76,6 +77,9 @@ const PRISMA_READ_METHODS = new Set([
   "aggregate",
   "groupBy",
 ]);
+
+/** Where a write states the row values, an upsert stating two of them. */
+const WRITE_PAYLOAD_KEYS = ["data", "create", "update"];
 
 const PRISMA_WRITE_METHODS = new Set([
   "create",
@@ -204,6 +208,23 @@ function recognizePrismaCall(
         },
       }),
     ),
+    ...nestedWrites(optionsArg).map(
+      (nested): Effect => ({
+        type: "interaction",
+        binding,
+        callee,
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: nested.fields,
+          relationPath: nested.relationPath,
+          // What reaches the other model is the nested operation, so
+          // that is what the effect records. The outer method belongs
+          // to the model in the binding.
+          operation: nested.operation,
+        },
+      }),
+    ),
   ];
 }
 
@@ -272,6 +293,187 @@ function recordRelation(
   const relationPath = [...path, name];
   found.push({ relationPath, fields: extractFields(nested, "read") });
   collectRelations(nested, relationPath, found);
+}
+
+/** What a write puts in another model, and the relation it goes through. */
+interface NestedWrite {
+  relationPath: string[];
+  fields: string[];
+  operation: string;
+}
+
+/** The row values a nested operation states, and the columns they fill. */
+interface WrittenRows {
+  /**
+   * The columns the operation fills. `["*"]` when the call does not
+   * write the payload out here, which says a row is written without
+   * saying which columns, the same answer a top-level write with an
+   * unreadable `data` gives.
+   */
+  fields: string[];
+  /** The row maps to keep walking, for relations of their own. */
+  rows: ObjectArg[];
+}
+
+type ReadWrittenRows = (payload: EffectArg | undefined) => WrittenRows;
+
+/** `create: { name: tag }`, or a list of those: the payload is the row. */
+const rowIsPayload: ReadWrittenRows = (payload) => {
+  const read = objectsIn(payload);
+  return { fields: fieldsOfRows(read), rows: read.rows };
+};
+
+/**
+ * An operation that puts the row a level down, `connectOrCreate:
+ * { where, create: { name } }`. An upsert puts one under each of two
+ * keys and can fill columns from either.
+ */
+function rowsUnder(...keys: string[]): ReadWrittenRows {
+  return (payload) => {
+    const outer = objectsIn(payload);
+    const rows: ObjectArg[] = [];
+    let written = outer.written && outer.rows.length > 0;
+    for (const entry of outer.rows) {
+      for (const key of keys) {
+        const inner = objectsIn(entry.fields[key]);
+        rows.push(...inner.rows);
+        written = written && inner.written;
+      }
+    }
+    return { fields: fieldsOfRows({ rows, written }), rows };
+  };
+}
+
+/**
+ * A nested `update` states `{ where, data }` against a list relation
+ * and the row itself against a single one, so the `data` key is what
+ * tells the two apart.
+ */
+const updateRow: ReadWrittenRows = (payload) => {
+  const outer = objectsIn(payload);
+  const statesData = outer.rows.some((row) => "data" in row.fields);
+  return statesData ? rowsUnder("data")(payload) : rowIsPayload(payload);
+};
+
+/** A row that goes away fills no column and changes all of them. */
+const wholeRow: ReadWrittenRows = () => ({ fields: ["*"], rows: [] });
+
+/**
+ * The nested operations that put values in the columns of the model on
+ * the other side of a relation, and where each states them. A delete is
+ * here because the row it takes away changes every column of that row.
+ *
+ * The operations that move which rows are joined stay out. They put
+ * nothing in the joined row's columns, and calling `connect: { id }` a
+ * write of `id` would report a column the code only selects by as one
+ * the code sets. Which foreign key a join moves depends on the
+ * direction the schema declares the relation in, so the column that
+ * does change is something only the contract could supply.
+ */
+const NESTED_WRITE_OPERATIONS = new Map<string, ReadWrittenRows>([
+  ["create", rowIsPayload],
+  ["createMany", rowsUnder("data")],
+  ["connectOrCreate", rowsUnder("create")],
+  ["update", updateRow],
+  ["updateMany", rowsUnder("data")],
+  ["upsert", rowsUnder("create", "update")],
+  ["delete", wholeRow],
+  ["deleteMany", wholeRow],
+]);
+
+/**
+ * Every model a write reaches through a relation, at any depth. The
+ * pack sees the relation field and never the model behind it, so each
+ * write travels with the path it was written under and the checker
+ * resolves that path on the contract, the way a nested read does.
+ */
+function nestedWrites(optionsArg: ObjectArg | null): NestedWrite[] {
+  if (optionsArg === null) {
+    return [];
+  }
+  const found: NestedWrite[] = [];
+  for (const key of WRITE_PAYLOAD_KEYS) {
+    for (const row of objectsIn(optionsArg.fields[key]).rows) {
+      collectNestedWrites(row, [], found);
+    }
+  }
+  return found;
+}
+
+/**
+ * A key of a row map whose value is an object is either a relation with
+ * nested operations under it or a column whose value is a structure,
+ * and only the schema tells the two apart. A column that looks like a
+ * relation survives as far as the checker, which drops a path the
+ * contract does not declare as a relation.
+ */
+function collectNestedWrites(
+  row: ObjectArg,
+  path: string[],
+  found: NestedWrite[],
+): void {
+  for (const [field, value] of Object.entries(row.fields)) {
+    const nested = readObjectArg(value);
+    if (nested === null) {
+      continue;
+    }
+    for (const [operation, payload] of Object.entries(nested.fields)) {
+      const readRows = NESTED_WRITE_OPERATIONS.get(operation);
+      if (readRows === undefined) {
+        continue;
+      }
+      const relationPath = [...path, field];
+      const written = readRows(payload);
+      found.push({ relationPath, fields: written.fields, operation });
+      for (const deeper of written.rows) {
+        collectNestedWrites(deeper, relationPath, found);
+      }
+    }
+  }
+}
+
+/** Row maps written out in a payload, one object or a list of them. */
+function objectsIn(arg: EffectArg | undefined): {
+  rows: ObjectArg[];
+  written: boolean;
+} {
+  const object = readObjectArg(arg);
+  if (object !== null) {
+    return { rows: [object], written: true };
+  }
+  if (
+    arg === null ||
+    arg === undefined ||
+    typeof arg !== "object" ||
+    arg.kind !== "array"
+  ) {
+    return { rows: [], written: false };
+  }
+  const rows: ObjectArg[] = [];
+  let written = true;
+  for (const item of arg.items) {
+    const row = readObjectArg(item);
+    if (row === null) {
+      written = false;
+      continue;
+    }
+    rows.push(row);
+  }
+  return { rows, written };
+}
+
+/** The columns a set of row maps fills, or the whole row when unread. */
+function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
+  if (!read.written) {
+    return ["*"];
+  }
+  const out = new Set<string>();
+  for (const row of read.rows) {
+    for (const key of Object.keys(row.fields)) {
+      out.add(key);
+    }
+  }
+  return out.size === 0 ? ["*"] : [...out];
 }
 
 /**
@@ -367,7 +569,7 @@ function extractFields(
   // Write: data, create, or update. Collect from all three, since an upsert
   // can pass both create and update at the same time.
   const out = new Set<string>();
-  for (const propName of ["data", "create", "update"]) {
+  for (const propName of WRITE_PAYLOAD_KEYS) {
     const prop = readObjectArg(optionsArg.fields[propName]);
     if (prop === null) {
       continue;

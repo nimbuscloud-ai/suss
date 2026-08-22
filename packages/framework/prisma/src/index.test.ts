@@ -122,6 +122,12 @@ function extractArgForTest(node: Node): EffectArg {
     }
     return { kind: "object", fields };
   }
+  if (Node.isArrayLiteralExpression(node)) {
+    return {
+      kind: "array",
+      items: node.getElements().map((el) => extractArgForTest(el)),
+    };
+  }
   if (Node.isIdentifier(node) || Node.isPropertyAccessExpression(node)) {
     return { kind: "identifier", name: node.getText() };
   }
@@ -351,6 +357,186 @@ describe("prisma recognizer: happy path", () => {
       kind: "read",
       fields: ["username"],
       relationPath: ["author"],
+    });
+  });
+
+  it("writes the model a nested connectOrCreate inserts into", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function createArticle(title: string) {
+        return await db.article.create({
+          data: {
+            title,
+            tagList: {
+              connectOrCreate: [{ create: { name: "ts" }, where: { name: "ts" } }],
+            },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses).toHaveLength(2);
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "write",
+      fields: ["name"],
+      relationPath: ["tagList"],
+      operation: "connectOrCreate",
+    });
+    expect(accesses[1]?.binding.semantics).toMatchObject({
+      container: "Article",
+    });
+  });
+
+  it("writes the whole row when the nested payload is built elsewhere", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function createArticle(title: string, tags: string[]) {
+        return await db.article.create({
+          data: {
+            title,
+            tagList: {
+              connectOrCreate: tags.map((tag: string) => ({
+                create: { name: tag },
+                where: { name: tag },
+              })),
+            },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "write",
+      fields: ["*"],
+      relationPath: ["tagList"],
+    });
+  });
+
+  it("records nothing for a nested operation that moves a join", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function favorite(slug: string, id: number) {
+        await db.article.update({
+          where: { slug },
+          data: { favoritedBy: { connect: { id } } },
+        });
+        await db.article.update({
+          where: { slug },
+          data: { favoritedBy: { disconnect: { id } } },
+        });
+        await db.article.update({
+          where: { slug },
+          data: { tagList: { set: [] } },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses.map((a) => a.interaction.relationPath)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("writes a model reached through two nested creates", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function createUser(email: string) {
+        return await db.user.create({
+          data: {
+            email,
+            profile: {
+              create: {
+                bio: "hi",
+                avatar: { create: { url: "u" } },
+              },
+            },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses.map((a) => a.interaction.relationPath)).toEqual([
+      undefined,
+      ["profile"],
+      ["profile", "avatar"],
+    ]);
+    expect(accesses[1]?.interaction.fields).toEqual(["bio", "avatar"]);
+    expect(accesses[2]?.interaction.fields).toEqual(["url"]);
+  });
+
+  it("takes a nested update's fields from its data, and an upsert's from both", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function editComments(id: number) {
+        await db.article.update({
+          where: { id },
+          data: {
+            comments: { update: { where: { id }, data: { body: "b" } } },
+          },
+        });
+        await db.article.update({
+          where: { id },
+          data: {
+            author: { upsert: { create: { email: "e" }, update: { bio: "b" } } },
+          },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[1]?.interaction).toMatchObject({
+      fields: ["body"],
+      relationPath: ["comments"],
+      operation: "update",
+    });
+    expect(accesses[3]?.interaction).toMatchObject({
+      fields: ["email", "bio"],
+      relationPath: ["author"],
+      operation: "upsert",
+    });
+  });
+
+  it("takes a nested update against a single relation as the row itself", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function editAuthor(id: number) {
+        await db.article.update({
+          where: { id },
+          data: { author: { update: { bio: "b" } } },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[1]?.interaction).toMatchObject({
+      fields: ["bio"],
+      relationPath: ["author"],
+      operation: "update",
+    });
+  });
+
+  it("writes the whole row for a nested delete", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      const db = new PrismaClient();
+      async function dropComment(id: number, commentId: number) {
+        await db.article.update({
+          where: { id },
+          data: { comments: { delete: { id: commentId } } },
+        });
+      }
+    `);
+    const accesses = storageEffectsOf(recognizeAll(file));
+    expect(accesses[1]?.interaction).toMatchObject({
+      kind: "write",
+      fields: ["*"],
+      relationPath: ["comments"],
+      operation: "delete",
     });
   });
 

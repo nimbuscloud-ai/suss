@@ -13,6 +13,7 @@
   "createMany": "@prisma/client: delegate write method",
   "updateMany": "@prisma/client: delegate write method",
   "deleteMany": "@prisma/client: delegate write method",
+  "connectOrCreate": "@prisma/client: nested write operation, insert the row when the lookup misses",
   "data": "@prisma/client: write argument key holding the row values",
   "read": "suss: access kind",
   "write": "suss: access kind",
