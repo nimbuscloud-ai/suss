@@ -955,17 +955,16 @@ function askedForNote(verdict: string): string {
 function makeServedFieldWrittenFinding(
   provider: BehavioralSummary,
   binding: BoundaryBinding,
-  field: { name: string; type?: string | undefined },
+  field: { name: string },
 ): Finding {
   const semantics = binding.semantics as StorageSemantics;
-  const points = field.type === undefined ? "" : ` ${field.type}`;
   return {
     kind: "boundaryFieldUnused",
     aspect: "write",
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} serves "${field.name}"${points === "" ? "" : ` from${points}`} rather than storing it, and a write here says the code sets it as a column. Nothing stores that column, so the pack that read this call read a relation as a field. The write is left out of what this run says about ${containerLabel(semantics)}.`,
+    description: `${containerLabel(semantics)} serves "${field.name}" rather than storing it, so a pack read a relation as a column. The write is left out.`,
     severity: "info",
   };
 }

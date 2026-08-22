@@ -1398,7 +1398,7 @@ describe("a write written under another table's data", () => {
 
     expect(misread).toHaveLength(1);
     expect(misread[0]?.description).toContain('serves "tagList"');
-    expect(misread[0]?.description).toContain("read a relation as a field");
+    expect(misread[0]?.description).toContain("read a relation as a column");
     // Nothing here is a claim about the project's code.
     expect(findings.filter((f) => f.severity === "error")).toEqual([]);
   });
