@@ -1398,3 +1398,79 @@ describe("checkAll, message-bus pairing integration", () => {
     );
   });
 });
+
+describe("what message-bus pairing takes for granted", () => {
+  it("compares a channel's subject letter for letter", () => {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "ordersqueue",
+      }),
+    ]);
+
+    expect(findings.map((f) => f.kind).sort()).toEqual([
+      "messageBusProducerOrphan",
+      "messageBusUnused",
+    ]);
+  });
+
+  it("lets every producer on a channel account for what any consumer receives", () => {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+      producerSummary({
+        name: "RefundProducer",
+        filePath: "src/refund-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["refundId"],
+      }),
+      consumerSummary({
+        name: "OrderConsumer",
+        channel: "OrdersQueue",
+        codeScopePath: "src/order-consumer/",
+      }),
+      consumerCodeSummary({
+        name: "handler",
+        filePath: "src/order-consumer/index.ts",
+        bodyFields: ["id", "refundId"],
+      }),
+    ]);
+
+    expect(
+      findings.filter(
+        (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "receive",
+      ),
+    ).toEqual([]);
+  });
+
+  it("says nothing about a message arriving more than once", () => {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+      consumerSummary({
+        name: "OrderConsumer",
+        channel: "OrdersQueue",
+        codeScopePath: "src/order-consumer/",
+      }),
+      consumerCodeSummary({
+        name: "handler",
+        filePath: "src/order-consumer/index.ts",
+        bodyFields: ["id"],
+      }),
+    ]);
+
+    expect(findings).toEqual([]);
+  });
+});

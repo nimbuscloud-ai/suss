@@ -255,3 +255,34 @@ describe("checkContractAgreement", () => {
     expect(findings[0].description).toMatch(/status 500/);
   });
 });
+
+describe("what contract agreement takes for granted", () => {
+  it("groups sources by method and path alone, whichever service each came from", () => {
+    const inWorkspace = (
+      summary: BehavioralSummary,
+      workspace: string,
+    ): BehavioralSummary => ({
+      ...summary,
+      location: { ...summary.location, workspace },
+    });
+    const billing = inWorkspace(
+      providerWithContract("billing", "billing/openapi.yaml", "openapi", {
+        provenance: "independent",
+        responses: [{ statusCode: 200 }, { statusCode: 402 }],
+      }),
+      "billing",
+    );
+    const identity = inWorkspace(
+      providerWithContract("identity", "identity/openapi.yaml", "openapi", {
+        provenance: "independent",
+        responses: [{ statusCode: 200 }],
+      }),
+      "identity",
+    );
+
+    const findings = checkContractAgreement([billing, identity]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.kind).toBe("contractDisagreement");
+    expect(findings[0]?.description).toMatch(/status 402/);
+  });
+});

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { readHttpMetadata, withHttpMetadata } from "@suss/behavioral-ir";
+
 import {
   consumer,
   negated,
@@ -16,7 +18,7 @@ import {
 } from "../__fixtures__/pairs.js";
 import { checkContractConsistency } from "./contractConsistency.js";
 
-import type { TypeShape } from "@suss/behavioral-ir";
+import type { BehavioralSummary, TypeShape } from "@suss/behavioral-ir";
 
 describe("checkContractConsistency", () => {
   it("returns no findings when provider has no declared contract", () => {
@@ -399,5 +401,63 @@ describe("checkContractConsistency", () => {
       }),
     ]);
     expect(checkContractConsistency(withBadContract, c)).toEqual([]);
+  });
+});
+
+describe("what contract checking takes for granted", () => {
+  const derivedFrom = (
+    summary: BehavioralSummary,
+    statuses: number[],
+  ): BehavioralSummary => ({
+    ...summary,
+    metadata: withHttpMetadata(summary.metadata, {
+      ...readHttpMetadata(summary),
+      declaredContract: {
+        framework: "openapi",
+        provenance: "derived",
+        responses: statuses.map((statusCode) => ({ statusCode })),
+      },
+    }),
+  });
+
+  it("reads a consumer as a statement made apart from the contract, however the consumer was written", () => {
+    const p = derivedFrom(
+      provider("getUser", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      [200, 404],
+    );
+    const c = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    const findings = checkContractConsistency(p, c);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.kind).toBe("consumerContractViolation");
+    expect(findings[0]?.description).toContain("404");
+  });
+
+  it("leaves a provider's own transitions unchecked against a contract read from the same source", () => {
+    const p = derivedFrom(
+      provider("getUser", [
+        transition("t-500", { output: response(500), isDefault: true }),
+      ]),
+      [200],
+    );
+    const c = consumer("UserPage", [
+      transition("ct-200", {
+        conditions: [statusEq(200)],
+        output: { type: "return", value: null },
+      }),
+    ]);
+
+    expect(
+      checkContractConsistency(p, c).filter(
+        (f) => f.kind === "providerContractViolation",
+      ),
+    ).toEqual([]);
   });
 });

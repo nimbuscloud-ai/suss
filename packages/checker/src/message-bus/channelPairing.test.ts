@@ -120,3 +120,17 @@ describe("pairingOwners", () => {
     expect(pairingOwners(set, "order.shipped")).toEqual([]);
   });
 });
+
+describe("what channel pairing takes for granted", () => {
+  it("reads a separator in any channel string as a bus in front of a subject", () => {
+    expect(channelsPair("orders#priority", "priority")).toBe(true);
+  });
+
+  it("lets a channel with no bus stated pair with that subject on every bus", () => {
+    const set = createChannelSet();
+    addChannel(set, "prod#order.placed", "orders::src/prod.ts::publish");
+    addChannel(set, "staging#order.placed", "orders::src/staging.ts::publish");
+
+    expect(pairingOwners(set, "order.placed")).toHaveLength(2);
+  });
+});

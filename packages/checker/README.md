@@ -31,6 +31,16 @@ The engine stores rows of data and matches them up by comparing values for equal
 
 Walking those edges is the opposite situation. You follow an edge to a node, then follow the edges leading out of that node, and keep going until nothing new shows up. That is ordinary recursion, which is exactly what the engine is good at, so we write it as rules. It finishes even when the routing graph has a cycle in it, for the usual reason: each round can only produce pairs built from nodes that are already in the data, and we never remove a pair once we have it. A set that only ever grows, drawn from a fixed pool, has to stop growing eventually. So a load balancer that routes back to something upstream of it produces pairs we already have, contributes nothing new that round, and the evaluation stops.
 
+## What each comparison assumes about the protocol
+
+Comparing two sides of a boundary means taking a position on how the
+protocol behaves. Reporting an unhandled 404 treats the status the
+handler wrote as the status the caller receives, and a middleware or a
+gateway can make that false. [`docs/internal/protocol-assumptions.md`](../../docs/internal/protocol-assumptions.md)
+lists every such claim per protocol, says what a finding means once the
+claim stops being true, and points at the test that pins today's
+behaviour.
+
 ## Status
 
 The checker runs six checks: provider coverage (with sub-case analysis), consumer satisfaction, contract consistency (status and body shapes), body compatibility (field presence), and semantic condition bridging (Level 5). It pairs boundaries automatically through `checkAll` / `pairSummaries`, normalizing paths as it goes (`:id` ↔ `{id}`). See [`docs/internal/status.md`](../../docs/internal/status.md).

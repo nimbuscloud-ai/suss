@@ -72,6 +72,8 @@ The checker compares:
 
 Some layers remain in progress: local-function inlining, complement reasoning on negated conditions, and body accessors beyond `.body` and `.json()`.
 
+Each of those comparisons takes a position on how the protocol behaves. Reporting an unhandled 404 treats the status the handler wrote as the status the caller receives, and a middleware or an API gateway can make that false. [`internal/protocol-assumptions.md`](internal/protocol-assumptions.md) lists those claims per protocol, says what a finding means once one of them stops being true, and points at the test that pins today's behaviour.
+
 ## How the IR supports comparison
 
 **Transitions are atomic.** Each transition is `(conditions → output, effects)` with a stable `id`. Matching happens at the transition level.
