@@ -23,6 +23,7 @@ function pack(overrides: Partial<PackFunnel> = {}): PackFunnel {
     summariesBound: 2,
     providerSummaries: 2,
     summariesWithBehavior: 2,
+    declarations: null,
     ...overrides,
   };
 }

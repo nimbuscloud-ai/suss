@@ -1,12 +1,12 @@
 {
   "totals": {
-    "packages": 56,
-    "packagesWithExports": 56,
-    "exports": 526,
-    "internal": 2113,
-    "consumers": 979,
-    "pairs": 971,
-    "unfollowedCalls": 241,
+    "packages": 57,
+    "packagesWithExports": 57,
+    "exports": 541,
+    "internal": 2127,
+    "consumers": 980,
+    "pairs": 972,
+    "unfollowedCalls": 252,
     "findingErrors": 0
   },
   "packages": {
@@ -26,10 +26,10 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 42,
-      "internal": 703,
+      "exports": 49,
+      "internal": 709,
       "consumers": 76,
-      "unfollowedCalls": 67
+      "unfollowedCalls": 68
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -327,10 +327,10 @@
     },
     "packages/framework/redis": {
       "name": "@suss/framework-redis",
-      "exports": 3,
+      "exports": 2,
       "internal": 2,
       "consumers": 5,
-      "unfollowedCalls": 0
+      "unfollowedCalls": 2
     },
     "packages/framework/sqlalchemy": {
       "name": "@suss/framework-sqlalchemy",
@@ -366,6 +366,13 @@
       "internal": 25,
       "consumers": 1,
       "unfollowedCalls": 1
+    },
+    "packages/recognize": {
+      "name": "@suss/recognize",
+      "exports": 9,
+      "internal": 8,
+      "consumers": 1,
+      "unfollowedCalls": 8
     },
     "packages/resolution": {
       "name": "@suss/resolution",

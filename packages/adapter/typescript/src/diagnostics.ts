@@ -23,7 +23,7 @@ import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
 import { collectPackGates, packIsUngated } from "./bootstrap/preFilter.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type { PackDeclarations, PatternPack } from "@suss/extractor";
 
 /** One pack's path through the funnel. */
 export interface PackFunnel {
@@ -109,6 +109,13 @@ export interface PackFunnel {
    * while this is non-empty.
    */
   failures: PackFailure[];
+  /**
+   * What the pack wrote as data rather than as code, or null for a pack
+   * written as a hand-rolled walk. This is the one thing in the funnel
+   * that no run produces: it is the pack's own shape, and it is here so
+   * the migration onto the declared surface can be measured.
+   */
+  declarations: PackDeclarations | null;
 }
 
 export interface ExtractionReport {
@@ -418,6 +425,7 @@ export function buildExtractionReport(args: {
       summariesBound: counted.bound,
       providerSummaries: counted.providers,
       summariesWithBehavior: counted.withBehavior,
+      declarations: pack.declarations ?? null,
     };
   });
 

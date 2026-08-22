@@ -1,14 +1,15 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { ResolutionStore } from "@suss/adapter-typescript";
+import { callOpsFor, ResolutionStore } from "@suss/adapter-typescript";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { redisFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 
-// The recognizer settles a call by where the method is declared, so a
+// The declaration settles a call by where the method is declared, so a
 // fixture needs a client library on disk to resolve against.
 const IOREDIS_TYPES = `
   export default class Redis {
@@ -45,11 +46,12 @@ function effectsIn(source: string): Effect[] {
       return;
     }
     const ctx = {
-      call: node as CallExpression,
+      call: node,
       sourceFile,
       extractArgs: () => [],
       isImportedFrom: () => false,
       resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
+      ops: callOpsFor(node, (value: Node) => store.resolveWrittenValue(value)),
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);
@@ -228,5 +230,41 @@ describe("the pack itself", () => {
       protocol: "redis",
       requiresImport: ["ioredis", "redis", "iovalkey"],
     });
+  });
+
+  it("prices what it declared: every link but the namespace rule is data", () => {
+    const declared = redisFramework().declarations?.declarations ?? [];
+
+    expect(declared).toEqual([
+      {
+        name: "redis",
+        dataLinks: 2,
+        functionLinks: ["container"],
+        astLinks: [],
+        example: 'redis.get("user_online:42")',
+      },
+    ]);
+  });
+
+  it("emits the effect its example says it does", () => {
+    const ran = runExamples(redisFramework(), (code) =>
+      effectsIn(`
+        ${CLIENT}
+        export async function example() {
+          return ${code};
+        }
+      `),
+    );
+
+    expect(ran).toHaveLength(1);
+    expect(storageOf(ran[0].effects[0]).interaction).toMatchObject({
+      class: "storage-access",
+      kind: "read",
+      operation: "get",
+      selector: ["user_online:42"],
+    });
+    expect(storageOf(ran[0].effects[0]).semantics.container).toBe(
+      "user_online",
+    );
   });
 });

@@ -37,6 +37,7 @@ import {
   isModuleScopeStop,
   NO_BARRIERS,
 } from "../walk/descent.js";
+import { callOpsFor } from "./callOps.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -46,6 +47,7 @@ import type {
   RawCondition,
   RawEffect,
 } from "@suss/extractor";
+import type { CallOps } from "@suss/recognize";
 
 export interface InvocationEffectLocation {
   effect: RawEffect;
@@ -146,6 +148,13 @@ export interface TsInvocationRecognizerContext {
    * binding is correct.
    */
   resolveWrittenValue(value: Node): Node | null;
+  /**
+   * What a declared pack asks about this call, in the vocabulary
+   * `@suss/recognize` defines. A pack written as a chain of data links
+   * reads only this; the members above are what a pack written as code
+   * reaches for.
+   */
+  ops: CallOps;
 }
 
 export function isImportedFrom(
@@ -472,6 +481,9 @@ export function runInvocationRecognizers(
     if (!Node.isCallExpression(node)) {
       return;
     }
+    // Built on the first read rather than up front: most calls reach no
+    // declared pack, and following a receiver costs more than the walk.
+    let ops: CallOps | null = null;
     const ctx: TsInvocationRecognizerContext = {
       call: node,
       sourceFile,
@@ -480,6 +492,10 @@ export function runInvocationRecognizers(
       // A context built without a store gives null, and the recognizer's
       // own pattern match runs on the raw node.
       resolveWrittenValue: resolveWrittenValue ?? (() => null),
+      get ops(): CallOps {
+        ops ??= callOpsFor(node, resolveWrittenValue);
+        return ops;
+      },
     };
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
