@@ -535,7 +535,10 @@ function indexDocument(doc: DocumentNode): SchemaIndex {
     if (
       def.kind !== Kind.OBJECT_TYPE_DEFINITION &&
       def.kind !== Kind.OBJECT_TYPE_EXTENSION &&
-      def.kind !== Kind.INTERFACE_TYPE_DEFINITION
+      def.kind !== Kind.INTERFACE_TYPE_DEFINITION &&
+      // A schema splits an interface the same way it splits a type, so
+      // wherever an interface counts, so does an extension of one.
+      def.kind !== Kind.INTERFACE_TYPE_EXTENSION
     ) {
       continue;
     }
