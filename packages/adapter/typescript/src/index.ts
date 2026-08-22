@@ -76,7 +76,11 @@ export type {
 } from "./diagnostics.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
 export type { TsDiscoveryContext } from "./discoveryContext.js";
-export type { HealthCheck, HealthViolation } from "./packHealth.js";
+export type {
+  HealthCheck,
+  HealthViolation,
+  PackGradient,
+} from "./packHealth.js";
 export type { TsInvocationRecognizerContext } from "./resolve/invocationEffects.js";
 export type {
   TsJsxAttributeLocation,

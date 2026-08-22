@@ -14,6 +14,7 @@
  * over a list of pairs rather than one check written per stage.
  */
 
+import type { DeclaredMatch } from "@suss/extractor";
 import type {
   ExtractionReport,
   PackFailure,
@@ -207,10 +208,123 @@ function threwWhileReading(
 }
 
 /**
+ * What one pack paid for what it matches.
+ *
+ * Expressiveness is bought link by link, and #542 asks for the price to
+ * be printed. A pack with every link written as data runs on any
+ * adapter with the executor ops. A link written as a function runs only
+ * where its own language does, and one that reads the syntax tree is
+ * the floor. All three are allowed, and this says which is which.
+ */
+export interface PackGradient {
+  pack: string;
+  /** Links written as data, across every declaration. */
+  dataLinks: number;
+  /** Links written as a function, as "declaration.question". */
+  functionLinks: string[];
+  /** Links whose function reads the adapter's own syntax tree. */
+  astLinks: string[];
+  /** Declarations shipped without a line of code to run against them. */
+  withoutExample: string[];
+}
+
+/** The gradient for every pack in a run that declared anything. */
+export function packGradients(report: ExtractionReport): PackGradient[] {
+  const gradients: PackGradient[] = [];
+  for (const funnel of report.packs) {
+    if (funnel.declarations === null) {
+      continue;
+    }
+    gradients.push(gradientOf(funnel.pack, funnel.declarations.declarations));
+  }
+  return gradients;
+}
+
+function gradientOf(
+  pack: string,
+  declarations: ReadonlyArray<DeclaredMatch>,
+): PackGradient {
+  const gradient: PackGradient = {
+    pack,
+    dataLinks: 0,
+    functionLinks: [],
+    astLinks: [],
+    withoutExample: [],
+  };
+  for (const declaration of declarations) {
+    gradient.dataLinks += declaration.dataLinks;
+    for (const question of declaration.functionLinks) {
+      gradient.functionLinks.push(`${declaration.name}.${question}`);
+    }
+    for (const question of declaration.astLinks) {
+      gradient.astLinks.push(`${declaration.name}.${question}`);
+    }
+    if (declaration.example === null) {
+      gradient.withoutExample.push(declaration.name);
+    }
+  }
+  return gradient;
+}
+
+/**
+ * A declared pack wrote a link as a function.
+ *
+ * The function is the pack's own domain knowledge and it is meant to be
+ * there. What the report adds is the price beside it, so a pack
+ * drifting back towards a hand-rolled walk shows up while it happens.
+ */
+function opaqueLinks(
+  gradients: ReadonlyArray<PackGradient>,
+): HealthViolation[] {
+  return gradients
+    .filter((gradient) => gradient.functionLinks.length > 0)
+    .map((gradient) => ({
+      label: gradient.pack,
+      detail: `${gradient.dataLinks} link(s) are data and ${gradient.functionLinks.length} written as a function: ${gradient.functionLinks.join(", ")}`,
+    }));
+}
+
+/**
+ * A declared pack reads the adapter's own syntax tree.
+ *
+ * Reaching the tree needs its own import, so a pack cannot arrive here
+ * by accident. Saying so on every run is what keeps the escape rare.
+ */
+function reachesTheSyntaxTree(
+  gradients: ReadonlyArray<PackGradient>,
+): HealthViolation[] {
+  return gradients
+    .filter((gradient) => gradient.astLinks.length > 0)
+    .map((gradient) => ({
+      label: gradient.pack,
+      detail: `reads the syntax tree at ${gradient.astLinks.join(", ")}, so those links run on this adapter alone`,
+    }));
+}
+
+/**
+ * A declaration ships without a line of code to run against it.
+ *
+ * An example the pack's tests run is documentation that fails when it
+ * stops being true. A declaration without one documents nothing, and
+ * nobody finds out when it stops matching.
+ */
+function undocumentedDeclarations(
+  gradients: ReadonlyArray<PackGradient>,
+): HealthViolation[] {
+  return gradients
+    .filter((gradient) => gradient.withoutExample.length > 0)
+    .map((gradient) => ({
+      label: gradient.pack,
+      detail: `${gradient.withoutExample.join(", ")} state no example, so nothing runs when they stop matching`,
+    }));
+}
+
+/**
  * Run every health check over one extraction report and return what
  * fired, grouped by which check caught it.
  */
 export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
+  const gradients = packGradients(report);
   return [
     {
       name: "no pack throws while it reads",
@@ -235,6 +349,24 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
       whenBroken: "a pack declares no version",
       audience: "pack",
       violations: unversionedPacks(report.packs),
+    },
+    {
+      name: "every link a declared pack states is data",
+      whenBroken: "a declared pack wrote a link as a function",
+      audience: "pack",
+      violations: opaqueLinks(gradients),
+    },
+    {
+      name: "no declared pack reads the syntax tree",
+      whenBroken: "a declared pack reads the syntax tree",
+      audience: "pack",
+      violations: reachesTheSyntaxTree(gradients),
+    },
+    {
+      name: "every declaration states an example",
+      whenBroken: "a declaration states no example",
+      audience: "pack",
+      violations: undocumentedDeclarations(gradients),
     },
   ];
 }

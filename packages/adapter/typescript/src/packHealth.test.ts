@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
+import {
+  evaluatePackHealth,
+  formatPackHealth,
+  packGradients,
+} from "./packHealth.js";
 
+import type { DeclaredMatch } from "@suss/extractor";
 import type { PackFunnel } from "./diagnostics.js";
 
 const funnel = (over: Partial<PackFunnel> = {}): PackFunnel => ({
@@ -22,6 +27,7 @@ const funnel = (over: Partial<PackFunnel> = {}): PackFunnel => ({
   summariesBound: 3,
   providerSummaries: 3,
   summariesWithBehavior: 3,
+  declarations: null,
   ...over,
 });
 
@@ -193,6 +199,107 @@ describe("the remaining checks", () => {
     expect(
       firedBy("no pack collides with itself", [funnel({ selfCollisions: 2 })]),
     ).toHaveLength(1);
+  });
+});
+
+describe("the gradient a declared pack sits on", () => {
+  const declared = (over: Partial<DeclaredMatch> = {}): PackFunnel =>
+    funnel({
+      declarations: {
+        declarations: [
+          {
+            name: "redis",
+            dataLinks: 2,
+            functionLinks: [],
+            astLinks: [],
+            example: 'redis.get("k")',
+            ...over,
+          },
+        ],
+      },
+    });
+
+  const gradients = (packs: PackFunnel[]) =>
+    packGradients({
+      filesInProject: 20,
+      filesWalked: 20,
+      packs,
+      summaries: 0,
+      filesWithUnreadableExports: [],
+      emptyStage: null,
+    });
+
+  it("passes over a pack written as a hand-rolled walk", () => {
+    expect(gradients([funnel()])).toEqual([]);
+  });
+
+  it("adds up the links across every declaration a pack ships", () => {
+    expect(gradients([declared()])).toEqual([
+      {
+        pack: "demo",
+        dataLinks: 2,
+        functionLinks: [],
+        astLinks: [],
+        withoutExample: [],
+      },
+    ]);
+  });
+
+  it("says which link a pack wrote as a function, and how many stayed data", () => {
+    const fired = firedBy("every link a declared pack states is data", [
+      declared({ functionLinks: ["container"] }),
+    ]);
+
+    expect(fired).toHaveLength(1);
+    expect(fired[0].detail).toBe(
+      "2 link(s) are data and 1 written as a function: redis.container",
+    );
+  });
+
+  it("leaves a pack alone when every link it states is data", () => {
+    expect(
+      firedBy("every link a declared pack states is data", [declared()]),
+    ).toEqual([]);
+  });
+
+  it("names a pack that reads the syntax tree", () => {
+    const fired = firedBy("no declared pack reads the syntax tree", [
+      declared({ functionLinks: ["container"], astLinks: ["container"] }),
+    ]);
+
+    expect(fired).toHaveLength(1);
+    expect(fired[0].detail).toContain("redis.container");
+  });
+
+  it("names a declaration nobody can run", () => {
+    const fired = firedBy("every declaration states an example", [
+      declared({ example: null }),
+    ]);
+
+    expect(fired).toHaveLength(1);
+    expect(fired[0].detail).toContain("redis");
+    expect(
+      firedBy("every declaration states an example", [declared()]),
+    ).toEqual([]);
+  });
+
+  it("addresses all three to whoever ships the pack", () => {
+    const checks = evaluatePackHealth({
+      filesInProject: 20,
+      filesWalked: 20,
+      packs: [declared()],
+      summaries: 0,
+      filesWithUnreadableExports: [],
+      emptyStage: null,
+    });
+    const audienceOf = (name: string) =>
+      checks.find((check) => check.name === name)?.audience;
+
+    expect(audienceOf("every link a declared pack states is data")).toBe(
+      "pack",
+    );
+    expect(audienceOf("no declared pack reads the syntax tree")).toBe("pack");
+    expect(audienceOf("every declaration states an example")).toBe("pack");
   });
 });
 
