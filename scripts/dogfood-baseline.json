@@ -3,9 +3,9 @@
     "packages": 56,
     "packagesWithExports": 56,
     "exports": 526,
-    "internal": 2104,
-    "consumers": 978,
-    "pairs": 970,
+    "internal": 2113,
+    "consumers": 979,
+    "pairs": 971,
     "unfollowedCalls": 241,
     "findingErrors": 0
   },
@@ -41,7 +41,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 39,
-      "internal": 218,
+      "internal": 223,
       "consumers": 138,
       "unfollowedCalls": 25
     },
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 13,
       "internal": 328,
-      "consumers": 204,
+      "consumers": 205,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
@@ -125,7 +125,7 @@
     "packages/contract/prisma": {
       "name": "@suss/contract-prisma",
       "exports": 2,
-      "internal": 7,
+      "internal": 10,
       "consumers": 1,
       "unfollowedCalls": 0
     },
@@ -307,7 +307,7 @@
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
       "exports": 2,
-      "internal": 15,
+      "internal": 16,
       "consumers": 4,
       "unfollowedCalls": 5
     },
