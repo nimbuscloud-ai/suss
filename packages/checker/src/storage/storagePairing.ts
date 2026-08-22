@@ -20,11 +20,12 @@
 // file's storage access pairs against every provider whose key
 // matches, just like runtime-config did for env vars.
 //
-// A read written under a relation, the select inside a Prisma
-// `include`, arrives keyed to the container the query addressed and
-// carrying `relationPath`. `withNestedReadsPlaced` walks that path over
-// the contracts and moves the read to the container it arrives at,
-// before any of it is claimed.
+// An access written under a relation, the select inside a Prisma
+// `include` or the `connectOrCreate` inside its `data`, arrives keyed
+// to the container the query addressed and carrying `relationPath`.
+// `withRelationAccessesPlaced` walks that path over the contracts and
+// moves the access to the container it arrives at, before any of it is
+// claimed.
 //
 // Two containers can be declared under names that both cover what one
 // access reached, since a name built at deploy time has a hole in it.
@@ -94,7 +95,7 @@ export function checkStorage(
   const grounding = groundReferences(summaries);
   const containers = declaredContainers(providersOf(idx, "storage"));
   const reachedFor = reachedBy(grounding);
-  const accesses = withNestedReadsPlaced(
+  const accesses = withRelationAccessesPlaced(
     containers,
     accessRecords(idx),
     reachedFor,
@@ -385,15 +386,15 @@ function claimantsOf(
 }
 
 /**
- * Accesses, with every read written under a relation moved to the
- * container that relation arrives at. A query states the relation it
- * asked for and never the container behind it, so the walk happens
- * here, over the contract of the container the query itself pairs
- * with. A relation nothing in the run declares drops the read: leaving
- * it on the container the query addressed would count a field as read
+ * Accesses, with every one written under a relation moved to the
+ * container that relation arrives at. A call states the relation it
+ * went through and never the container behind it, so the walk happens
+ * here, over the contract of the container the call itself pairs
+ * with. A relation nothing in the run declares drops the access:
+ * leaving it on the container the call addressed would count a field
  * on the wrong store.
  */
-function withNestedReadsPlaced(
+function withRelationAccessesPlaced(
   containers: DeclaredContainer[],
   accesses: StorageAccessRecord[],
   reachedFor: (access: StorageAccessRecord) => ReachedName[],
@@ -548,7 +549,7 @@ export function groundStorageAccesses(
   const grounding = groundReferences(summaries);
   const containers = declaredContainers(providersOf(idx, "storage"));
   const reachedFor = reachedBy(grounding);
-  const accesses = withNestedReadsPlaced(
+  const accesses = withRelationAccessesPlaced(
     containers,
     accessRecords(idx),
     reachedFor,
