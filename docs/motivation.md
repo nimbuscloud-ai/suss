@@ -1,22 +1,28 @@
 # Motivation
 
-suss finds a class of bug that other tooling misses: code that compiles, type-checks, passes its tests, and matches its declared contract, but at runtime sends a consumer a `200` in a form the consumer doesn't expect, or writes to a database column the schema doesn't declare. The approach is static behavioral analysis. suss extracts what each function does on each execution path, then pairs those extractions across the boundaries where two units of code meet.
+## The change that breaks somebody else
 
-## The problem
+Somebody makes `getUser` return `200` with `status: "deleted"` where it used to return `404`. It is a reasonable change. The response is a valid `User`, `200` is a valid status, the OpenAPI document still says `200 | 404`, and TypeScript is happy on both sides. Tests pass.
 
-At every boundary between two units of code, the caller makes behavioral assumptions about the callee. Those assumptions are almost never recorded in a form a tool can check. The distance between "the types line up" and "the behavior lines up" is a class of divergence no existing tool catches.
+Every caller that read a `200` as "this account is usable" is now wrong. Nothing in the pipeline says so, and the first sign of it is in production.
 
-(*Boundary* throughout means any place two units meet across a contract; the [Glossary](/glossary) and [FAQ](/faq#what-s-a-boundary) give the general definition. The worked example below shows one kind of boundary.)
+The same thing happens without a network hop:
 
-### A worked drift example
+- A `useUser()` hook returns `null` for a deleted user, and its caller reads `null` as "still loading".
+- The middleware behind `context.user` stops setting `email` for OAuth sessions, and a resolver still reads it.
+- A helper starts returning `[]`, and its caller assumed non-empty.
 
-A `getUser` handler changes from returning `404` for soft-deleted accounts to returning `200` with `status: "deleted"`. Tests pass: the response is a valid `User`, the status code is a valid HTTP code. TypeScript type-checks. The declared contract (OpenAPI, ts-rest) still says `200 | 404`, which is still true. Nothing about the implementation's structure changed. Any caller that had taken `200` to mean "the user exists and is usable" now receives a `200` that breaks that assumption, and no tool in the stack can point at the divergence.
+Every one of these is two pieces of code that agree on types and disagree about behavior. There is one of those pairs at every call site, and nobody writes down what either side assumes.
 
-The same kind of divergence happens without a network hop. A `useUser()` hook's consumer takes `null` to mean "loading"; the hook adds a `null` case for deleted users. A resolver reads `context.user.email`; the middleware populating `context.user` stops setting `email` for OAuth sessions. A utility's caller assumes the return is non-empty; the utility adds a case that returns `[]`. The unit of analysis is the boundary, and there's one at every call site.
+## What suss does about it
 
-## Why existing tools miss it
+suss reads each function and works out what it produces on each path it can take: which branches, under what conditions, with what effects. Then it compares that against what the code on the other side of the boundary does with it. A caller that never handles a status the handler returns is a finding. A query that reads a column the schema does not declare is a finding.
 
-Each layer you already run approximates behavior from a different angle and stops short of comparing derived behavior across a boundary:
+Nothing runs, nothing is instrumented, and nothing has to be annotated. The comparison happens over the source you already have.
+
+## Why the tools you already run miss it
+
+Every layer below describes something true about the code, and none of them compares what one side does against what the other side expects:
 
 - **Type systems** describe structure. `User` is still `User` whether the user is active, soft-deleted, or shadow-banned.
 - **Structural schemas** (OpenAPI, JSON Schema, Protobuf, GraphQL SDL) describe payload structure, that the response has a `status` string field, not under what conditions it takes the value `"deleted"`.

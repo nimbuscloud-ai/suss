@@ -3,110 +3,112 @@ layout: home
 
 hero:
   name: suss
-  text: A machine-readable summary of what your code actually does
-  tagline: "suss derives it from your source, path by path, with no annotations to write. Diff behavior on a pull request, check a caller against its handler, or catch the bugs that compile and pass the tests."
+  text: Find out what your code does to the code around it
+  tagline: "Change an endpoint and see which callers break. Ask which code writes a table. Check your handlers against the spec you published. suss reads the source you already have, no annotations and nothing to run."
   actions:
     - theme: brand
-      text: Get started
-      link: /tutorial/get-started
+      text: Run it on your project
+      link: /guides/add-to-project
     - theme: alt
-      text: Why suss
-      link: /motivation
+      text: Walk an example first
+      link: /tutorial/get-started
     - theme: alt
       text: GitHub
       link: https://github.com/nimbuscloud-ai/suss
 
 features:
-  - title: Drift other tools miss
-    details: "Code compiles, tests pass, types line up, and the consumer still receives a 200 the provider stopped producing. suss compares what the two sides actually do, at the branch level."
-    link: /motivation
-    linkText: Why suss
-  - title: One model across every boundary
-    details: "HTTP handlers, GraphQL resolvers, React components, queue producers, storage calls, and client call sites all produce summaries in the same form. Cross-boundary checking means diffing two summaries."
-    link: /glossary
-    linkText: Glossary
-  - title: Add a framework in one file
-    details: "Twenty-two packs ship, for HTTP handlers, GraphQL resolvers, React components, queue consumers, database calls and client call sites. Adding a framework means writing a small pack, not forking the analyzer."
-    link: /guides/writing-a-pack
-    linkText: Write a pack
-  - title: Compare against declared contracts
-    details: "Check your handlers against an OpenAPI spec, your resolvers against a GraphQL schema, your components against Storybook. A contract and your source come out in the same form, so comparing them is one step."
+  - title: Did I break a caller
+    details: "You changed what a handler returns. suss compares it against every caller it can see and reports the ones that read a field you stopped sending, or never handle a status you started returning."
     link: /cross-boundary-checking
     linkText: How checking works
-  - title: Runs on the code you already have
-    details: "Point suss at your tsconfig and get summaries from the source as it stands. No annotations or decorators to add."
-    link: /guides/add-to-project
-    linkText: Add to a project
-  - title: More than TypeScript
-    details: "TypeScript and JavaScript through the CLI. Python routes (flask-restx, FastAPI) and graphql-ruby fields through their own adapters. suss treats CloudFormation, SAM and serverless.yml as declared contracts, so the deployment and the code it deploys compare directly."
-    link: /guides/python-and-ruby
-    linkText: Python and Ruby
-  - title: Explicit about what it can't analyze
-    details: "When a condition is too dynamic for static analysis, the branch is labeled unresolved rather than silently dropped. Coverage stops are visible in the output."
-    link: /motivation#what-suss-is-not
-    linkText: What suss is not
+  - title: Who touches this table
+    details: "Ask which code writes a table, which units call a function, or what an endpoint reaches, and get the file and line for each. Useful before a migration, and useful when the answer is nobody."
+    link: /reference/cli#ask
+    linkText: Ask a question
+  - title: Does the code match the spec
+    details: "Point suss at an OpenAPI document, a GraphQL schema, a Prisma schema, or a CloudFormation template. It compares the code against what you published and reports where they drifted apart."
+    link: /guides/pair-against-openapi
+    linkText: Pair against OpenAPI
+  - title: Catch it in CI
+    details: "A check exits non-zero on an error, so a pull request that breaks a caller fails before it merges. Warnings stay warnings until you decide otherwise."
+    link: /guides/ci-integration
+    linkText: Set up CI
+  - title: Reads what you already wrote
+    details: "Twenty-two packs cover Express, Hono, NestJS, Fastify, Next.js, Apollo, Prisma, Drizzle, Redis, DynamoDB, S3, SQS and more, in TypeScript, Python and Ruby. Point it at a tsconfig and it works out the rest."
+    link: /reference/packages
+    linkText: Packs by stack
+  - title: Says when it cannot tell
+    details: "A call suss could not follow shows up as a gap in the output rather than as silence, so an empty answer never reads as nothing being wrong."
+    link: /faq
+    linkText: FAQ
 ---
 
-## Quick start
+## Two commands on your own project
 
 ```bash
-npm install --save-dev @suss/cli @suss/framework-hono @suss/client-web
-
-# Read each side of the boundary
-suss extract -f hono -o summaries/api.json
-suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
-
-# Compare them
-suss check --dir summaries/
-
-# Or only the part about the file you are editing
-suss check --dir summaries/ --at src/users.ts:43
-
-# Ask about one boundary before you write the call
-suss ask 'what can I project from dynamodb:editions#by-publication' --dir summaries/
-
-# Read a summary file back
-suss inspect summaries/api.json
+npx @suss/cli init          # works out which packs your project needs
+npx @suss/cli extract -o summaries/api.json
+npx @suss/cli check --dir summaries/
 ```
 
-## What a summary looks like
+`init` reads your dependencies and sets up the packs for your stack. `extract` writes down what each unit does. `check` compares the pieces that meet and reports where they disagree.
+
+## What it tells you
+
+Running the three commands above on [gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app), an Express and Prisma app of about fifty units:
 
 ```
-src/api.ts
-├─ GET /users/:id  (hono handler | line 11)
-│      if  !findUser()
-│        -> 404 { error }
-│      elif  findUser().deletedAt
-│        -> 410 { error }
-│      else
-│        -> 200 { id, name }
-│
-├─ POST /users  (hono handler | line 25)
-│      if  !c.req.json().name
-│        -> 400 "name is required"
-│      else
-│        -> 201 { id, name }
-│
-└─ GET /legacy/:id  (hono handler | line 35)
-       -> 302
+$ suss check --dir summaries/
+Compared 4 boundaries.
 
-3 summaries.
+3 findings: 0 error, 3 warning, 0 info
+
+[WARNING] boundaryFieldUnused
+  Tag declares "id", and no query here asks for it or writes it.
 ```
 
-`suss inspect` rendering three summaries from one file. Each header gives the endpoint, the pack that recognized it, and the source line. Under it, you get every path the code can take, with the status and the body structure that path produces. Where a handler has side effects, they appear as `+` lines, and a `!!` line marks a gap between what a declared contract promises and what the code does.
+Ask about a table before you change it:
 
-`@suss/checker` and downstream tools consume the same data as JSON. `inspect` is a renderer over it.
+```
+$ suss ask 'what writes postgresql:Article' --dir summaries/
+6 units write postgresql:Article:
+  createArticle (src/app/routes/article/article.service.ts:162) through prisma.article.create
+  updateArticle (src/app/routes/article/article.service.ts:289) through prisma.article.update
+  deleteArticle (src/app/routes/article/article.service.ts:385) through prisma.article.delete
+  favoriteArticle (src/app/routes/article/article.service.ts:562) through prisma.article.update
+  unfavoriteArticle (src/app/routes/article/article.service.ts:608) through prisma.article.update
+  disconnectArticlesTags (src/app/routes/article/article.service.ts:276) through prisma.article.update
+```
 
-## Reading order
+Ask what an endpoint reaches, and why:
 
-Everything here is built from four concepts: a **boundary** is where two units of code meet; a **summary** is what suss derives about a unit's behavior; a **check** pairs summaries and reports findings where they disagree; a **pack** teaches suss a framework. Beyond derivation, team-authored intent docs can declare what a boundary *should* do and be checked the same way (see [Contracts](/contracts)).
+```
+$ suss ask 'what does GET /articles/:slug reach' --dir summaries/
+GET /articles/:slug, 1 summary, reaches 1 boundary:
+  reads postgresql:Article  through prisma.article.findUnique, by calling getArticle
 
-The navigation splits conceptual material into **Understanding suss** (for users) and **Internals** (for contributors). Common entry points:
+$ suss ask 'why does GET /articles/:slug reach postgresql:Article' --dir summaries/
+get reaches postgresql:Article:
+  get -> getArticle -> prisma.article.findUnique
+  get (article.controller.ts:90) calls getArticle, and that call runs getArticle (article.service.ts:241)
+  getArticle reads postgresql:Article through prisma.article.findUnique (article.service.ts:241)
+```
 
-- **First time on the site:** [Get started](/tutorial/get-started) walks the smallest end-to-end example, then [Motivation](/motivation) explains why this layer exists.
-- **Adding suss to an existing project:** [Add suss to a project](/guides/add-to-project), then [Set up CI](/guides/ci-integration).
-- **Looking up a flag, finding, or term:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [Glossary](/glossary) · [FAQ](/faq).
-- **Working in Python or Ruby:** [Read a Python or Ruby project](/guides/python-and-ruby).
-- **Choosing packs for your stack:** [Packages & packs](/reference/packages).
-- **Writing or modifying a pack:** [Write a pack](/guides/writing-a-pack).
-- **Consuming the summary format:** [Behavioral summary format](/behavioral-summary-format), then [IR reference](/ir-reference).
+Every question also takes a symbol form for typing quickly: `w<- postgresql:Article`, `getArticle ->`, `<- src/orderStore.ts`.
+
+## The bug this exists for
+
+A handler used to return `404` for a deleted account and now returns `200` with `status: "deleted"`. The response is a valid `User`, the status is a valid status, the OpenAPI document still says `200 | 404`, and TypeScript is happy. Every caller that read a `200` as "this account is usable" is now wrong, and nothing in your pipeline says so.
+
+Types describe structure, and `User` is still `User`. Tests cover the cases somebody thought of. suss works out what each path actually produces and compares that against what the other side does with it, which is where this class of bug lives. [Motivation](/motivation) goes through the comparison with the tools you already run.
+
+## What you need to know
+
+Four words carry the whole tool. A **boundary** is where two units of code meet: an endpoint and its caller, a query and a table, a resolver and a schema. A **summary** is what suss worked out about one unit. A **check** compares the summaries on either side of a boundary. A **pack** teaches suss a library, and one ships for most of the stack already.
+
+- **Adding it to a project you work on:** [Add suss to a project](/guides/add-to-project), then [Set up CI](/guides/ci-integration).
+- **Seeing it work end to end first:** [Get started](/tutorial/get-started) builds a small example.
+- **Looking something up:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [Glossary](/glossary) · [FAQ](/faq).
+- **Python or Ruby:** [Read a Python or Ruby project](/guides/python-and-ruby).
+- **Your framework is missing:** [Write a pack](/guides/writing-a-pack).
+- **Consuming the output:** [Summary format](/behavioral-summary-format), then [IR reference](/ir-reference).
