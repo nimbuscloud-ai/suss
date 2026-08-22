@@ -13,15 +13,9 @@
  * namespace two ends of one boundary.
  */
 
-import { type CallExpression, Node as N, type Node } from "ts-morph";
+import { declaredBy, pack, storageCalls } from "@suss/recognize";
 
-import { methodDeclaredIn, readName } from "@suss/adapter-typescript";
-import { storageBinding } from "@suss/behavioral-ir";
-
-import type { Effect } from "@suss/behavioral-ir";
-import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
-
-const RECOGNITION = "@suss/framework-redis";
+import type { PatternPack, StorageMethod } from "@suss/recognize";
 
 /**
  * The client libraries whose method declarations settle a call. All
@@ -30,27 +24,35 @@ const RECOGNITION = "@suss/framework-redis";
  */
 const CLIENT_MODULES = ["ioredis", "redis", "iovalkey"];
 
-/** How a command addresses what it touches. */
-interface Command {
-  kind: "read" | "write";
-  /** Whether the command takes one key or a list of them. */
-  keys: "first" | "all";
-  /** The argument that says which field of a hash, when there is one. */
-  fieldArg?: number;
-}
+/** A command that takes one key, its first argument. */
+const READ_KEY: StorageMethod = { kind: "read", selector: { at: 0 } };
+const WRITE_KEY: StorageMethod = { kind: "write", selector: { at: 0 } };
 
-const READ_KEY: Command = { kind: "read", keys: "first" };
-const WRITE_KEY: Command = { kind: "write", keys: "first" };
+/** A command that takes a list of keys. */
+const READ_KEYS: StorageMethod = { kind: "read", selector: { from: 0 } };
+const WRITE_KEYS: StorageMethod = { kind: "write", selector: { from: 0 } };
+
+/** A hash command: one key, and the field inside it as the second argument. */
+const READ_FIELD: StorageMethod = {
+  kind: "read",
+  selector: { at: 0 },
+  fields: { at: 1 },
+};
+const WRITE_FIELD: StorageMethod = {
+  kind: "write",
+  selector: { at: 0 },
+  fields: { at: 1 },
+};
 
 /**
  * The commands this reads, by the lower-cased method name. node-redis
  * spells `hGet` where ioredis spells `hget`, and they are the same
  * command, so the lookup ignores case.
  */
-const COMMANDS: Record<string, Command> = {
+const COMMANDS: Record<string, StorageMethod> = {
   get: READ_KEY,
   getdel: WRITE_KEY,
-  mget: { kind: "read", keys: "all" },
+  mget: READ_KEYS,
   exists: READ_KEY,
   ttl: READ_KEY,
   strlen: READ_KEY,
@@ -63,21 +65,21 @@ const COMMANDS: Record<string, Command> = {
   incrby: WRITE_KEY,
   decr: WRITE_KEY,
   decrby: WRITE_KEY,
-  del: { kind: "write", keys: "all" },
-  unlink: { kind: "write", keys: "all" },
+  del: WRITE_KEYS,
+  unlink: WRITE_KEYS,
   expire: WRITE_KEY,
   expireat: WRITE_KEY,
   persist: WRITE_KEY,
   rename: WRITE_KEY,
-  hget: { kind: "read", keys: "first", fieldArg: 1 },
-  hmget: { kind: "read", keys: "first", fieldArg: 1 },
+  hget: READ_FIELD,
+  hmget: READ_FIELD,
   hgetall: READ_KEY,
-  hexists: { kind: "read", keys: "first", fieldArg: 1 },
-  hset: { kind: "write", keys: "first", fieldArg: 1 },
-  hmset: { kind: "write", keys: "first", fieldArg: 1 },
-  hsetnx: { kind: "write", keys: "first", fieldArg: 1 },
-  hincrby: { kind: "write", keys: "first", fieldArg: 1 },
-  hdel: { kind: "write", keys: "first", fieldArg: 1 },
+  hexists: READ_FIELD,
+  hset: WRITE_FIELD,
+  hmset: WRITE_FIELD,
+  hsetnx: WRITE_FIELD,
+  hincrby: WRITE_FIELD,
+  hdel: WRITE_FIELD,
   sadd: WRITE_KEY,
   srem: WRITE_KEY,
   smembers: READ_KEY,
@@ -102,65 +104,12 @@ const COMMANDS: Record<string, Command> = {
 /** What separates a Redis key's namespace from the rest of it. */
 const NAMESPACE_SEPARATOR = ":";
 
-interface RecognizerContext {
-  resolveWrittenValue?: (value: Node) => Node | null;
-}
-
-export function redisRecognizer(call: unknown, ctx: unknown): Effect[] | null {
-  const callNode = call as CallExpression;
-  const resolve =
-    (ctx as RecognizerContext).resolveWrittenValue ?? (() => null);
-
-  const callee = callNode.getExpression();
-  if (!N.isPropertyAccessExpression(callee)) {
-    return null;
-  }
-  const method = callee.getName();
-  const command = COMMANDS[method.toLowerCase()];
-  if (command === undefined || !fromClientLibrary(callee, resolve)) {
-    return null;
-  }
-
-  const args = callNode.getArguments();
-  const keys = (command.keys === "all" ? args : args.slice(0, 1))
-    .map((arg) => readName(arg, { resolve, unsettled: "reference" }))
-    .filter((key): key is string => key !== null);
-  const fields =
-    command.fieldArg === undefined
-      ? []
-      : args
-          .slice(command.fieldArg, command.fieldArg + 1)
-          .map((arg) => readName(arg, { resolve, unsettled: "reference" }))
-          .filter((field): field is string => field !== null);
-
-  return [
-    {
-      type: "interaction",
-      binding: storageBinding({
-        recognition: RECOGNITION,
-        storageSystem: "redis",
-        scope: "default",
-        container: namespaceOf(keys),
-        accessPath: null,
-      }),
-      callee: callee.getText(),
-      interaction: {
-        class: "storage-access",
-        kind: command.kind,
-        fields,
-        operation: method,
-        ...(keys.length > 0 ? { selector: keys } : {}),
-      },
-    },
-  ];
-}
-
 /**
  * The namespace a set of keys share. Keys of one call are the same
  * shape nearly every time, and one that is not leaves the container
  * unsettled rather than picking whichever came first.
  */
-function namespaceOf(keys: string[]): string | null {
+function namespaceOf(keys: readonly string[]): string | null {
   const namespaces = new Set(
     keys.map((key) => key.split(NAMESPACE_SEPARATOR)[0] ?? key),
   );
@@ -173,31 +122,23 @@ function namespaceOf(keys: string[]): string | null {
   return only === undefined || only.includes("{") ? null : only;
 }
 
-/** Whether a client library declares this command. */
-function fromClientLibrary(
-  callee: Node,
-  resolve: (value: Node) => Node | null,
-): boolean {
-  return CLIENT_MODULES.some((module) =>
-    methodDeclaredIn(callee, module, resolve),
-  );
-}
+const COMMAND_CALLS = storageCalls({
+  system: "redis",
+  client: declaredBy(...CLIENT_MODULES),
+})
+  .methods(COMMANDS, { ignoringCase: true })
+  .container(namespaceOf)
+  .example('redis.get("user_online:42")');
 
 /**
- * Pack export. One recognizer, gated on a file reaching a client
+ * Pack export. One declaration, gated on a file reaching a client
  * library, since that is where a command can come from.
  */
 export function redisFramework(): PatternPack {
-  return {
-    name: "redis",
-    protocol: "redis",
+  return pack("redis", [COMMAND_CALLS], {
     languages: ["typescript", "javascript"],
-    discovery: [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-    requiresImport: CLIENT_MODULES,
-    invocationRecognizers: [redisRecognizer as InvocationRecognizer],
-  };
+    recognizedAs: "@suss/framework-redis",
+  });
 }
 
 export default redisFramework;
