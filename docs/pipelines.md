@@ -43,31 +43,31 @@ Above that, `extract` prints one success line, `Wrote 46 summaries to <path> in 
 
 Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes because this repository lists axios in its `package.json` and never calls it, which is what a pack that found nothing looks like. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
 
-`--timing` says where the time went, one row per phase, ordered by cost. The numbers move a little from run to run, so treat these as proportions:
+`--timing` says where the time went, one row per phase, ordered by cost. The milliseconds differ on every run and the rows below a millisecond swap places, so read the shares rather than the numbers:
 
 ```
 Timing:
-     369ms   41.4%  preFilter
-     366ms   41.0%  extract per-file
-      84ms    9.4%  expandReachableClosure
-      35ms    4.0%  loadImportGraphs
-      17ms    1.9%  lazyProjectInit
+     360ms   41.6%  preFilter
+     355ms   41.1%  extract per-file
+      82ms    9.5%  expandReachableClosure
+      34ms    3.9%  loadImportGraphs
+      16ms    1.9%  lazyProjectInit
        6ms    0.7%  mountPrefix
        5ms    0.6%  enrichRethrows
-       4ms    0.5%  stampGraphqlClientRefs
-       2ms    0.2%  deriveBoundaryEffects
        2ms    0.2%  readTsconfigFileList
+       2ms    0.2%  stampGraphqlClientRefs
+       1ms    0.2%  deriveBoundaryEffects
        1ms    0.1%  stampModuleImports
-       0ms    0.0%  liftSchemasOntoDocuments
        0ms    0.0%  synthesizeSubUnits
-       0ms    0.0%  project.getSourceFiles
-       0ms    0.0%  cache.write
-       0ms    0.0%  cache.merge
+       0ms    0.0%  liftSchemasOntoDocuments
        0ms    0.0%  expandWrapperCallers
+       0ms    0.0%  project.getSourceFiles
+       0ms    0.0%  cache.merge
+       0ms    0.0%  cache.write
        0ms    0.0%  emitLibraryEnvReadMarkers
        0ms    0.0%  warmExportChains
        0ms    0.0%  cache.lookup
-     892ms  100.0%  total
+     865ms  100.0%  total
   cache: miss (no-manifest)
 ```
 
