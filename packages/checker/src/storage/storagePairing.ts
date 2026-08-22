@@ -200,6 +200,17 @@ export function checkStorage(
     // its fields. Reading a template on its own would otherwise give
     // one warning per field every table declares, and none of them
     // would mean what the words say.
+    // A relation is served rather than stored, so nothing writes one as
+    // a column. Code that appears to is code somebody read wrong, and
+    // the pack that read it is the thing at fault rather than the
+    // project, which is why this says so about suss rather than about
+    // the code.
+    for (const field of contract.fields ?? []) {
+      if (field.derived === true && writtenNames.has(field.name)) {
+        findings.push(makeServedFieldWrittenFinding(provider, binding, field));
+      }
+    }
+
     if (!anyDefaultShapeRead && inScope.length > 0) {
       for (const field of contract.fields ?? []) {
         // A field the store serves without keeping it has nobody to
@@ -932,6 +943,31 @@ function makeSelectorMismatchFinding(
  */
 function askedForNote(verdict: string): string {
   return `A field the code takes off a record a query returned never counts as a read here, so look for one ${verdict}.`;
+}
+
+/**
+ * A pack recorded a write of a field the contract serves rather than
+ * stores. The store keeps no column of that name, so the write cannot
+ * have happened, and what went wrong is upstream of the code: some
+ * pack read a relation as though it were a column. Said at info
+ * severity because the finding is about suss.
+ */
+function makeServedFieldWrittenFinding(
+  provider: BehavioralSummary,
+  binding: BoundaryBinding,
+  field: { name: string; type?: string | undefined },
+): Finding {
+  const semantics = binding.semantics as StorageSemantics;
+  const points = field.type === undefined ? "" : ` ${field.type}`;
+  return {
+    kind: "boundaryFieldUnused",
+    aspect: "write",
+    boundary: binding,
+    provider: makeSide(provider),
+    consumer: makeSide(provider),
+    description: `${containerLabel(semantics)} serves "${field.name}"${points === "" ? "" : ` from${points}`} rather than storing it, and a write here says the code sets it as a column. Nothing stores that column, so the pack that read this call read a relation as a field. The write is left out of what this run says about ${containerLabel(semantics)}.`,
+    severity: "info",
+  };
 }
 
 function makeFieldUnusedFinding(

@@ -1343,7 +1343,7 @@ describe("a write written under another table's data", () => {
       name: "createArticle",
       file: "src/article.service.ts",
       accesses: [
-        { container: "Article", kind: "write", fields: ["title", "tagList"] },
+        { container: "Article", kind: "write", fields: ["title"] },
         {
           container: "Article",
           kind: "write",
@@ -1379,6 +1379,42 @@ describe("a write written under another table's data", () => {
 
     expect(descriptions.join(" ")).toContain('Tag declares "id" and code');
     expect(descriptions.join(" ")).toContain('Tag declares "name" and code');
+  });
+
+  it("says suss misread when a write names a field the store only serves", () => {
+    const findings = checkStorage([
+      article(),
+      tag(),
+      makeAccessSummary({
+        name: "createArticle",
+        file: "src/article.service.ts",
+        accesses: [
+          // What a pack emits when it reads a relation as a column.
+          { container: "Article", kind: "write", fields: ["title", "tagList"] },
+        ],
+      }),
+    ]);
+    const misread = findings.filter((f) => f.severity === "info");
+
+    expect(misread).toHaveLength(1);
+    expect(misread[0]?.description).toContain('serves "tagList"');
+    expect(misread[0]?.description).toContain("read a relation as a field");
+    // Nothing here is a claim about the project's code.
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+  });
+
+  it("stays quiet when a write names only columns the store keeps", () => {
+    const findings = checkStorage([
+      article(),
+      tag(),
+      makeAccessSummary({
+        name: "createArticle",
+        file: "src/article.service.ts",
+        accesses: [{ container: "Article", kind: "write", fields: ["title"] }],
+      }),
+    ]);
+
+    expect(findings.filter((f) => f.severity === "info")).toEqual([]);
   });
 
   it("leaves the write out when the contract declares no such relation", () => {

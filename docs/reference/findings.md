@@ -98,7 +98,7 @@ The consumer references a field the provider's contract doesn't declare. Per-dom
 
 ### `boundaryFieldUnused`
 
-**Severity:** warning • **Emitted by:** every domain pairing pass
+**Severity:** warning, and info for a write of a field the store serves rather than keeps • **Emitted by:** every domain pairing pass
 
 No input produces a wrong result here: an unread field breaks nothing at runtime, and whether it is dead or reserved for future use is intent the repository does not state.
 
@@ -114,6 +114,8 @@ The provider declares a field that no consumer references. Per-domain instances:
     boundary: prisma (in-process) storage:postgresql:default:User
   ```
   suss suppresses this when ANY caller uses default-shape (`["*"]`) reads on the table, because then we can't tell whether default-shape consumers actually use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for.
+
+One instance of this kind is about suss rather than about the code. A store serves a relation without keeping a column of that name, so a write of one cannot happen, and a run that records one was given it by a pack that read a relation as a field. That comes back at info severity, says which pack surface got it wrong, and leaves the write out of what the run claims about that container. Reading a served field stays legitimate, since a query can ask for a relation.
 
 - **Storage write-only** (aspect `read` = "the read aspect of this field is unused, but writers exist")
   ```
