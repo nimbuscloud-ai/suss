@@ -1,10 +1,12 @@
 # Read a Python or Ruby project
 
-suss reads Python and Ruby through two language adapters, and
-`suss extract` reaches both. Everything downstream is unchanged. A
-summary has a boundary binding whatever language it came from, so
-`suss check` and `suss inspect` read a Python project's summaries
-exactly as they read a TypeScript project's.
+Point suss at a FastAPI service, a flask-restx service, or a
+graphql-ruby schema and get the same summaries you would get from a
+TypeScript project. Which route returns which status under which
+condition, which service function each route calls, and which table
+each query reads or writes. `check` and `inspect` read those summaries
+the same way whatever language produced them, so a Python service and
+a TypeScript client compare against each other in one run.
 
 ## What the two adapters read today
 

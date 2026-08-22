@@ -1,18 +1,12 @@
 # Set up CI checking
 
-Run suss on every pull request. What you want is a single check
-that flags boundary drift before it merges: a provider producing a
-status the client doesn't handle, a client contract that doesn't
-match a declared spec, a GraphQL selection against a field the
-schema doesn't have.
+Fail the pull request that breaks a caller, while the author is
+still looking at it. One job extracts both sides of your boundaries
+and compares them, and exits non-zero when a provider returns a
+status no client handles or a query asks for a field the schema
+never declared.
 
-## The one-job pattern
-
-The common setup is one CI job that runs `extract` on both sides,
-then `check`, and fails the build on any finding above a
-threshold.
-
-### GitHub Actions
+## GitHub Actions
 
 ```yaml
 name: suss
@@ -46,7 +40,7 @@ there are error-severity findings; warnings and info findings
 print but don't fail the build. Adjust to `--fail-on warning`
 once your signal-to-noise is tuned.
 
-### Multi-boundary
+## Several boundaries at once
 
 For an app that crosses several boundaries (HTTP + GraphQL +
 third-party APIs), run one extract per boundary into the same
