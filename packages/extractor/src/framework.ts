@@ -1176,6 +1176,43 @@ export interface PatternPack {
    * same reason as in invocationRecognizers.
    */
   accessRecognizers?: AccessRecognizer[];
+  /**
+   * What the pack wrote as data rather than as code, for the health
+   * report. Absent for a pack written as a hand-rolled walk, which is
+   * itself the thing the report says.
+   */
+  declarations?: PackDeclarations;
+}
+
+/**
+ * The price a pack paid for what it matches, so the migration onto the
+ * declared surface can be measured rather than asserted.
+ *
+ * Expressiveness is bought link by link: a link answered with data is
+ * inspectable, serializable and runs on any adapter, while a link
+ * answered with a function is code that only its own language runs.
+ * Both are allowed, and the report says which is which.
+ */
+export interface PackDeclarations {
+  declarations: DeclaredMatch[];
+}
+
+/** One thing a pack declared it matches. */
+export interface DeclaredMatch {
+  /** What it matches, in the pack's own words. */
+  name: string;
+  /** Links whose answer is data. */
+  dataLinks: number;
+  /** Links answered with a function, by the question each one asks. */
+  functionLinks: string[];
+  /**
+   * Links whose function reaches the adapter's own syntax tree, by the
+   * question each one asks. Reaching the tree needs a separate import,
+   * so a pack cannot arrive here without saying so.
+   */
+  astLinks: string[];
+  /** A line of code the pack says this matches, or null when it says none. */
+  example: string | null;
 }
 
 /**

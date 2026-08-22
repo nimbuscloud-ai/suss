@@ -1,0 +1,63 @@
+{
+  "name": "@suss/recognize",
+  "version": "0.11.0",
+  "type": "module",
+  "description": "Write a pack as data: a chain of named links that any language adapter with the executor ops can run.",
+  "keywords": [
+    "suss",
+    "pattern-pack",
+    "static-analysis",
+    "recognizer"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/recognize#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/recognize"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./ast": {
+      "types": "./dist/ast.d.ts",
+      "import": "./dist/ast.js",
+      "require": "./dist/ast.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/behavioral-ir": "0.11.0",
+    "@suss/extractor": "0.11.0"
+  },
+  "devDependencies": {
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

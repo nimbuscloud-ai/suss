@@ -19,6 +19,7 @@ export const coveragePackages = [
   ["packages/behavioral-ir", "ir"],
   ["packages/intent-ir", "intent-ir"],
   ["packages/extractor", "extractor"],
+  ["packages/recognize", "recognize"],
   ["packages/adapter/typescript", "typescript"],
   ["packages/adapter/python", "python"],
   ["packages/adapter/ruby", "ruby"],
