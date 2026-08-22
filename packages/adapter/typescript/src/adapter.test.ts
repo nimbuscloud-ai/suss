@@ -1974,6 +1974,116 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     });
   });
 
+  it("records the call an arrow hands back with no return written", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "mapper.ts",
+      `
+      export function toView(row: { id: string }) {
+        return { id: row.id };
+      }
+    `,
+    );
+    project.createSourceFile(
+      "service.ts",
+      `
+      import { toView } from "./mapper";
+      export function present(rows: Array<{ id: string }>) {
+        return rows.map((row) => toView(row));
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { present } from "./service";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        list: async () => {
+          return { status: 200 as const, body: present([]) };
+        },
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const present = summaries.find(
+      (summary) => summary.identity.name === "present",
+    );
+    const toView = summaries.find(
+      (summary) => summary.identity.name === "toView",
+    );
+    expect(toView).toBeDefined();
+
+    // The map call is an invocation of its own; this is about the one
+    // the arrow hands back.
+    const calls = (present?.transitions ?? [])
+      .flatMap((transition) => transition.effects)
+      .filter(
+        (effect) => effect.type === "invocation" && effect.callee === "toView",
+      );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      callee: "toView",
+      summary: summaryIdentifier(toView as BehavioralSummary),
+    });
+  });
+
+  it("records a call an arrow hands back only once", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "mapper.ts",
+      "export function toView(row: { id: string }) { return { id: row.id }; }",
+    );
+    project.createSourceFile(
+      "service.ts",
+      `
+      import { toView } from "./mapper";
+      export function present(rows: Array<{ id: string }>) {
+        return rows.map((row) => { return toView(row); });
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { present } from "./service";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        list: async () => ({ status: 200 as const, body: present([]) }),
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const present = summaries.find(
+      (summary) => summary.identity.name === "present",
+    );
+
+    // The block form goes through the return case, the concise form
+    // through the arrow case, and neither shape counts a call twice.
+    expect(
+      (present?.transitions ?? [])
+        .flatMap((transition) => transition.effects)
+        .filter(
+          (effect) =>
+            effect.type === "invocation" && effect.callee === "toView",
+        ),
+    ).toHaveLength(1);
+  });
+
   it("leaves a gap where a method on an injected interface has nothing wiring it up", async () => {
     const project = createTestProject();
     project.createSourceFile(

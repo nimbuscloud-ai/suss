@@ -374,6 +374,33 @@ export function extractInvocationEffects(
       return;
     }
 
+    // Case 5: the call an arrow hands back with no `return` written,
+    // `xs.map(x => toView(x))`. The walk descends into the arrow, and
+    // the call is in a position none of the cases above cover, so
+    // nothing recorded it.
+    if (Node.isArrowFunction(node)) {
+      const body = node.getBody();
+      const { call, async } = Node.isExpression(body)
+        ? unwrapCall(body)
+        : { call: null, async: false };
+      if (call !== null) {
+        const preconditions = collectPreconditions(node, func);
+        results.push({
+          effect: {
+            type: "invocation",
+            callee: call.getExpression().getText(),
+            args: extractArgs(call),
+            async: async || node.isAsync(),
+            ...(preconditions.length > 0 ? { preconditions } : {}),
+          },
+          line: startLineOf(node),
+          neverTerminal: false,
+          node: call,
+        });
+      }
+      return;
+    }
+
     // Case 3: direct call element in an array literal or property
     // assignment value: `[foo(), bar()]`, `{ key: foo() }`. These
     // also fire when the container evaluates. Skip arguments to
