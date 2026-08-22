@@ -25,6 +25,7 @@ Common combinations:
 | Cloudflare Worker | `@suss/framework-cloudflare-workers @suss/contract-wrangler` |
 | App backed by Postgres (Prisma) | add `@suss/framework-prisma @suss/contract-prisma` to any of the above |
 | App backed by Postgres (Drizzle) | add `@suss/framework-drizzle` to any of the above |
+| App backed by MongoDB (Mongoose) | add `@suss/framework-mongoose` to any of the above |
 
 The [add-to-project guide](/guides/add-to-project) walks the integration end-to-end.
 
@@ -72,6 +73,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/framework-aws-s3`](../../packages/framework/aws-s3) | AWS SDK v3 S3 object calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-s3.svg) |
 | [`@suss/framework-gcs`](../../packages/framework/gcs) | Google Cloud Storage calls, emits storage-access interactions. | ![](../../.github/badges/coverage-gcs.svg) |
 | [`@suss/framework-redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands, emits storage-access interactions. | ![](../../.github/badges/coverage-redis.svg) |
+| [`@suss/framework-mongoose`](../../packages/framework/mongoose) | Mongoose model calls, emits storage-access interactions against the collection a model's `.model(...)` call declares. | ![](../../.github/badges/coverage-mongoose.svg) |
 | [`@suss/framework-aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
 | [`@suss/framework-aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
 | [`@suss/framework-aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |

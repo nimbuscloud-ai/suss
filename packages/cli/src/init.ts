@@ -272,6 +272,14 @@ const BY_DEPENDENCY: Array<{
   },
   {
     ecosystem: "npm",
+    dependency: "mongoose",
+    name: "mongoose",
+    packageName: "@suss/framework-mongoose",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
     dependency: "@apollo/client",
     name: "apollo-client",
     packageName: "@suss/client-apollo",
