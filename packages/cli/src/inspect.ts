@@ -72,13 +72,18 @@ function shortPath(file: string): string {
 const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
   record: (s) => {
     const keys = Object.keys(s.properties);
-    if (keys.length === 0) {
+    // A spread brings in fields this run never saw, and a reader
+    // comparing two endpoints takes the list for the whole shape. The
+    // value being spread is what somebody would go and look at.
+    const spread = (s.spreads ?? []).map((from) => `...${from.sourceText}`);
+    const parts = [...spread, ...keys];
+    if (parts.length === 0) {
       return "{}";
     }
-    if (keys.length <= 5) {
-      return `{ ${keys.join(", ")} }`;
+    if (parts.length <= 5) {
+      return `{ ${parts.join(", ")} }`;
     }
-    return `{ ${keys.slice(0, 4).join(", ")}, ... }`;
+    return `{ ${parts.slice(0, 4).join(", ")}, ... }`;
   },
   literal: (s) => JSON.stringify(s.value),
   // A name, and where the type is written. A reader who wants the
