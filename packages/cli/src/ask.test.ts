@@ -153,6 +153,14 @@ describe("suss ask", () => {
     expect(output).toContain("could be hiding behind it");
   });
 
+  it("says a writer could be hiding when the question was who writes", () => {
+    // This used to say "a reader" whatever was asked, so an answer
+    // about who writes a table warned about a hidden reader.
+    expect(answer("what writes aws.dynamodb:editions").output).toContain(
+      "so a writer could be hiding behind",
+    );
+  });
+
   it("lists the boundaries a file reaches", () => {
     const { output, code } = answer("what does src/editions/dao.ts reach");
 

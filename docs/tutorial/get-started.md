@@ -94,9 +94,9 @@ Compared 4 boundaries.
   5 boundaries had nothing to pair with, so nothing was checked across them.
   Run the same command with --all to list them.
 
-3 findings: 0 error, 3 warning, 0 info
+19 findings: 0 error, 3 warning, 16 info
 
-Not shown: 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
+Not shown: 16 boundaryFieldUnused (info), 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
 
 suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
 ```
@@ -108,13 +108,22 @@ repository, so the other side of those routes was never extracted.
 [Add suss to a project](/guides/add-to-project) covers what to do about
 that.
 
-`--all` prints the findings in full:
+The three warnings and the sixteen info findings say different sorts of
+thing. A warning is about your code. `Comment` declares `articleId`,
+something here writes it, and no query ever reads it back, which is
+worth a look. An info finding is suss telling you about its own
+reading. `author` and `tagList` on `Article` are Prisma relations
+rather than columns, the pack read them as columns anyway, and suss
+would rather say so than quietly count them as fields nobody uses.
+Nothing is wrong with the schema.
+
+`--all` prints all nineteen in full. Here is the first:
 
 ```
 [WARNING] boundaryFieldUnused
-  Tag declares "id", and no query here asks for it or writes it. A field the code takes off a record a query returned never counts as a read here, so look for one before treating the field as dead.
-  provider: src/prisma/schema.prisma::Tag (src/prisma/schema.prisma:1)
-  consumer: src/prisma/schema.prisma::Tag (src/prisma/schema.prisma:1)
+  Comment declares "articleId" and code here writes it, but no query asks for it back. A field the code takes off a record a query returned never counts as a read here, so look for one before treating the write as pointless.
+  provider: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
+  consumer: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
   boundary: prisma (postgresql)
 ```
 
@@ -142,7 +151,7 @@ npx suss ask 'what writes postgresql:Article' --dir summaries/
 
 postgresql:Article is provided by src/prisma/schema.prisma::Article.
 
-suss met a call it could not follow in 19 units, of 50, so a reader could be hiding in one of them.
+suss could not follow next, so a writer could be hiding behind it.
 ```
 
 That last line matters as much as the list. Six writers are the six
