@@ -55,6 +55,11 @@ export function tsRestFramework(): PatternPack {
           body: { from: "property", name: "body" },
         },
       },
+      // A consumer of a ts-rest client finishes the way any function
+      // does, by returning or throwing. Without these two it matches
+      // no terminal at all and its summary says nothing.
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
     ],
 
     contractReading: {

@@ -47,16 +47,27 @@ async function runComposedAdapter(): Promise<BehavioralSummary[]> {
 // ---------------------------------------------------------------------------
 
 describe("tsRestFramework — pack shape", () => {
-  it("exposes handler and consumer discovery, returnShape terminal, and contract reading", async () => {
+  it("exposes handler and consumer discovery, its three terminals, and contract reading", async () => {
     const pack = tsRestFramework();
     expect(pack.name).toBe("ts-rest");
     expect(pack.discovery).toHaveLength(2);
     expect(pack.discovery[0].kind).toBe("handler");
     expect(pack.discovery[1].kind).toBe("client");
-    expect(pack.terminals).toHaveLength(1);
-    expect(pack.terminals[0].kind).toBe("response");
+    expect(pack.terminals.map((t) => t.kind)).toEqual([
+      "response",
+      "return",
+      "throw",
+    ]);
     expect(pack.contractReading).toBeDefined();
     expect(pack.inputMapping.type).toBe("destructuredObject");
+  });
+
+  it("gives a consumer the two terminals a plain function can reach", () => {
+    // The response terminal wants a `{ status, body }` return, which a
+    // consumer never writes, so without these its summary was empty.
+    const kinds = tsRestFramework().terminals.map((t) => t.match.type);
+    expect(kinds).toContain("returnStatement");
+    expect(kinds).toContain("throwExpression");
   });
 });
 
