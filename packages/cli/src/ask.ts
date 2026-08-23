@@ -54,6 +54,8 @@ export interface AskOptions {
   dir?: string;
   file?: string;
   json?: boolean;
+  /** Print every item, rather than the first few and a count. */
+  all?: boolean;
   output?: string;
   /** Where the source is, for a why question. Defaults to the cwd. */
   project?: string;
@@ -127,7 +129,7 @@ export function ask(options: AskOptions): number {
       : ANSWERS[question.shape](question.subject, loadSummaries(options));
   const rendered = options.json
     ? `${JSON.stringify(asJson(options.question, answer), null, 2)}\n`
-    : renderAnswer(answer);
+    : renderAnswer(answer, options.all === true);
   writeReport(rendered, options.output);
   return answer.found ? 0 : 1;
 }
@@ -210,6 +212,25 @@ const HIDDEN_ACTOR: Record<"reads" | "writes", string> = {
   reads: "a reader",
   writes: "a writer",
 };
+
+/**
+ * What to call a unit in a list, given the location prints beside it.
+ *
+ * A summary identifier is `workspace::file::symbol`, and the file is
+ * already in the parentheses that follow, so printing the identifier
+ * whole says the path twice. The workspace only tells two units apart
+ * when the answer spans more than one, so it comes back only then.
+ */
+function unitLabel(summary: BehavioralSummary, withWorkspace: boolean): string {
+  const parts = summaryIdentifier(summary).split("::");
+  const symbol = parts[parts.length - 1] ?? summary.identity.name;
+  return withWorkspace && parts.length > 2 ? `${parts[0]}::${symbol}` : symbol;
+}
+
+/** Whether one answer covers units from more than one workspace. */
+function spansWorkspaces(summaries: ReadonlyArray<BehavioralSummary>): boolean {
+  return new Set(summaries.map((s) => s.location.workspace)).size > 1;
+}
 
 /** ", which grounds to prod-x via wrangler.toml", or nothing. */
 function groundsClause(grounding: GroundingNote[] | undefined): string {
@@ -325,8 +346,9 @@ function answerDirection(
 
   const label = boundaryLabelFor(subject, touches);
   const matching = touches.filter((touch) => touch.touched.relation === shape);
+  const named = spansWorkspaces(matching.map((touch) => touch.summary));
   const items = matching.map(({ summary, touched, grounding }) => ({
-    text: `${summaryIdentifier(summary)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}`,
+    text: `${unitLabel(summary, named)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}`,
     data: {
       unit: summaryIdentifier(summary),
       file: summary.location.file,
@@ -666,10 +688,26 @@ function asJson(question: string, answer: Answer): unknown {
   };
 }
 
-function renderAnswer(answer: Answer): string {
+/**
+ * How many items an answer prints before it stops and says the count.
+ *
+ * A question over a repository can pick out hundreds of units, and a
+ * screen of them buries the two lines under the list that say what was
+ * provided and what suss could not follow.
+ */
+const ITEMS_SHOWN = 10;
+
+function renderAnswer(answer: Answer, all: boolean): string {
+  const shown = all ? answer.items : answer.items.slice(0, ITEMS_SHOWN);
+  const hidden = answer.items.length - shown.length;
   const lines = [answer.headline];
-  for (const item of answer.items) {
+  for (const item of shown) {
     lines.push(`  ${item.text}`);
+  }
+  if (hidden > 0) {
+    lines.push(
+      `  ... and ${hidden} more. Run the same command with --all to see them.`,
+    );
   }
   for (const need of answer.needs) {
     lines.push("", need);

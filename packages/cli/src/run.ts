@@ -38,7 +38,7 @@ Usage:
   suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
   suss check --dir <directory> [--intent <intent-dir>] [--all] [--json] [-o <output>]
   suss check --dir <directory> --at <file[:line] | boundary | summary-id> [--json]
-  suss ask "<question>" [--dir <directory> | <summaries.json>] [--json]
+  suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
 
@@ -141,6 +141,9 @@ Options (ask):
   matches more: "dynamodb:editions" covers every index on that table.
   --dir            Folder of summary files to read, instead of one file
   --project        Where the source is, for a why question (default: cwd)
+  --all            List every unit an answer picked out. Without it a
+                   long answer stops after ten and says how many are
+                   left. --json is unaffected and always lists all.
   --json           Write the answer as JSON instead of prose
   -o, --output     Write the answer to a file instead of stdout
 
@@ -559,6 +562,7 @@ function runAsk(args: string[]): number {
       dir: { type: "string" },
       project: { type: "string" },
       json: { type: "boolean" },
+      all: { type: "boolean" },
       output: { type: "string", short: "o" },
     },
     allowPositionals: true,
@@ -581,6 +585,7 @@ function runAsk(args: string[]): number {
     ...(values.project !== undefined ? { project: values.project } : {}),
     ...(file !== undefined ? { file } : {}),
     ...(values.json === true ? { json: true } : {}),
+    ...(values.all === true ? { all: true } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),
   });
 }
