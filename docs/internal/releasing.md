@@ -80,7 +80,7 @@ that each package configures for itself, at
 `POST /-/npm/v1/oidc/token/exchange/package/{name}`. A package that has
 not been set up gets nothing back, and with no token to fall back on,
 that package alone fails. There is no organization-wide setting and no
-bulk UI, so you do this 44 times.
+bulk UI, so you do this once per package.
 
 On npmjs.com, for each package: **Packages → the package → Settings →
 Trusted Publisher → GitHub Actions**, then
@@ -97,6 +97,20 @@ The workflow filename is the name on its own (not
 `.github/workflows/release.yml`), and it keeps its extension. A package
 can have only one trusted publisher at a time; changing providers means
 editing the existing entry rather than adding a second.
+
+### A package npm has never seen
+
+That settings page belongs to a package, so a package that has never
+been published has nowhere to configure a publisher, and its first
+version cannot go out over OIDC. Every package that failed at 0.11.0
+was already on the registry from an earlier release and had never been
+set up, which is why setting them up and re-running worked.
+
+Publish the first version of a genuinely new package by hand, then
+configure its trusted publisher, and every release after that goes the
+same way as the rest. Check before the release rather than during it:
+a release that stops on a new package leaves the packages that
+depend on it pointing at a version nobody can install.
 
 Nothing needs to change in the repository. The pieces the workflow has
 to supply are already there:

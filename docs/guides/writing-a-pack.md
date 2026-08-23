@@ -4,11 +4,12 @@ Step-by-step instructions for creating a new framework, client, or runtime pack.
 
 The steps below walk through two existing packs, ts-rest and runtime-node, with a longer Fastify example at the end.
 
-## Step 1: Create the package
+## Step 1: Create the directory
 
 ```
 packages/framework/<name>/
-  package.json         @suss/framework-<name>, deps: @suss/extractor workspace:*
+  package.json         @suss/framework-<name>, private: true,
+                       deps: @suss/extractor workspace:*
   tsconfig.json        extends ../../../tsconfig.base.json
   src/
     index.ts           exports a function returning PatternPack
@@ -18,6 +19,19 @@ packages/framework/<name>/
 ```
 
 For runtime packs use `packages/runtime/<name>/`; for client packs use `packages/client/<name>/`. Everything else is the same. The quickest way is to copy an existing pack directory and rename it. Each pack is 50-300 lines of declarative data plus a small test file.
+
+The directory is `private: true` because a pack is not published on its own. Every pack ships inside `@suss/packs`, which is one npm package with a subpath per pack, so that adding a pack does not mean configuring a trusted publisher on npmjs.com for a new package.
+
+## Step 1b: Wire it into `@suss/packs`
+
+Four edits, and `npm run check:packs` fails on any you miss:
+
+1. `packages/packs/src/<name>.ts`, one line: `export { default } from "@suss/framework-<name>";`
+2. `"./<name>"` in the `exports` of `packages/packs/package.json`.
+3. `"@suss/framework-<name>": "*"` in that package's `devDependencies`, which is what makes turbo build your pack before the package that bundles it.
+4. `<name>: "@suss/packs/<name>"` in `BUILTIN_FRAMEWORKS` in `packages/cli/src/extract.ts`, which is what `-f <name>` resolves through.
+
+Three of those fail quietly without the check. A missing subpath works in this workspace and breaks for anybody who installs the package, a missing devDependency breaks a cold CI run alone, and a pack left public publishes the same code under two names.
 
 ## Step 2: Decide on pack kind
 
