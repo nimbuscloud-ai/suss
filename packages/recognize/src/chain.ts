@@ -44,6 +44,48 @@ export interface StartLink {
   readonly at: MatchStart;
 }
 
+/**
+ * One step from a call to another call it reaches.
+ *
+ * A pack that has to read a chain of calls, or a command a call was
+ * handed, states the steps to it and asks the same questions there. The
+ * steps are data, so a pack that reads three calls still declares three
+ * links rather than one function that walks.
+ */
+export type CallStep = ToReceiver | ToArgument;
+
+/**
+ * The call the receiver is. With a method, the walk keeps going up the
+ * receivers until it reaches a call to that method, which is how a pack
+ * says which hop it means where the shape varies:
+ * `bucket(b).file(p).download()` and `bucket(b).getFiles()` put the
+ * bucket a different distance away.
+ */
+export interface ToReceiver {
+  readonly to: "receiver";
+  readonly method?: string;
+}
+
+/** The call an argument is, when the argument is a call or a construction. */
+export interface ToArgument {
+  readonly to: "argument";
+  /** Which argument, or every argument from a position on. */
+  readonly at: number | { readonly from: number };
+}
+
+/**
+ * Which call a chain is about, when it is not the one in hand.
+ *
+ * The method is `send` at every AWS SDK call site in a codebase, and
+ * what the call does is inside the command it was handed. A chain about
+ * the command reads the operation, the container and the selector off
+ * it, and the effect still records the call in hand as its callee.
+ */
+export interface SubjectLink {
+  readonly asks: "subject";
+  readonly of: readonly CallStep[];
+}
+
 /** Which methods count, and what each one does. */
 export interface MethodsLink<TMeaning> {
   readonly asks: "methods";
@@ -57,27 +99,81 @@ export interface MethodsLink<TMeaning> {
 }
 
 /**
- * Which container a call's selector belongs to.
- *
- * The call in hand comes second so that a rule written over the
- * selector alone, which is most of them, ignores it. A rule that has to
- * read the syntax tree goes through `astLink`, which is what puts the
- * call to use.
+ * Which container a call's selector belongs to, as an argument the call
+ * states or as the pack's own rule over what the call reached.
  */
-export interface ContainerLink {
+export type ContainerLink = ContainerArgument | ContainerRule;
+
+/** The container as one of the call's own arguments states it. */
+export interface ContainerArgument {
+  readonly asks: "container";
+  readonly argument: ArgumentPick;
+}
+
+/**
+ * The container worked out by the pack. The call in hand comes second
+ * so that a rule written over the selector alone, which is most of
+ * them, ignores it. A rule that has to read the syntax tree goes
+ * through `astLink`, which is what puts the call to use.
+ */
+export interface ContainerRule {
   readonly asks: "container";
   readonly from: LinkFunction<[readonly string[], CallOps], string | null>;
 }
 
 /** One question in a chain, and the answer the pack gave for it. */
-export type Link<TMeaning> = StartLink | MethodsLink<TMeaning> | ContainerLink;
+export type Link<TMeaning> =
+  | StartLink
+  | SubjectLink
+  | MethodsLink<TMeaning>
+  | ContainerLink;
 
-/** Which argument or arguments say what a call reached. */
-export type ArgumentPick = { readonly at: number } | { readonly from: number };
+/**
+ * Which argument or arguments say what a call reached, and where to go
+ * looking. Without `of` the argument belongs to the chain's subject.
+ */
+export type ArgumentPick = OneArgument | ArgumentsFrom;
+
+/** The argument in one position. */
+export interface OneArgument {
+  /** The steps to the call the argument belongs to. */
+  readonly of?: readonly CallStep[];
+  readonly at: number;
+  /**
+   * Properties of the object the argument states, tried in order, when
+   * what the call reached is inside the argument rather than being it.
+   */
+  readonly property?: readonly string[];
+}
+
+/** Every argument the call passes from one position on. */
+export interface ArgumentsFrom {
+  /** The steps to the call the arguments belong to. */
+  readonly of?: readonly CallStep[];
+  readonly from: number;
+  /** Properties of the object each argument states, tried in order. */
+  readonly property?: readonly string[];
+}
+
+/**
+ * What one method of a storage client does to the store: a read, a
+ * write, or whichever of the two one of its arguments asked for.
+ */
+export type AccessKind = "read" | "write" | KindAsAsked;
+
+/** A method the caller tells which way round it goes. */
+export interface KindAsAsked {
+  /** Where the call says what it is for. */
+  readonly asks: ArgumentPick;
+  /** What each thing the caller can ask for comes to. */
+  readonly means: Readonly<Record<string, "read" | "write">>;
+  /** What it comes to when the call says nothing. */
+  readonly otherwise: "read" | "write";
+}
 
 /** What one method of a storage client does. */
 export interface StorageMethod {
-  readonly kind: "read" | "write";
+  readonly kind: AccessKind;
   /** Which argument or arguments say what the call reached. */
   readonly selector?: ArgumentPick;
   /** Which argument says which field inside it, when the method takes one. */

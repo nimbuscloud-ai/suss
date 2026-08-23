@@ -34,6 +34,12 @@ export interface PackSpec {
    * results after an edit.
    */
   version?: string;
+  /**
+   * What the pack itself speaks, when that is not the wire its accesses
+   * record. An S3 access goes over the AWS SDK and says so on every
+   * effect, while the pack speaks S3.
+   */
+  protocol?: string;
 }
 
 /** A pack, assembled from the calls it says it matches. */
@@ -51,7 +57,7 @@ export function pack(
     name,
     languages: spec.languages,
     ...(spec.version === undefined ? {} : { version: spec.version }),
-    protocol: protocolOf(chains),
+    protocol: spec.protocol ?? protocolOf(chains),
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
@@ -108,6 +114,6 @@ function describe(chain: Chain<StorageMethod>): DeclaredMatch {
 /** Whether a pack answered this link with code. */
 function isFunctionLink(
   link: Link<StorageMethod>,
-): link is Extract<Link<StorageMethod>, { asks: "container" }> {
-  return link.asks === "container";
+): link is Extract<Link<StorageMethod>, { from: unknown }> {
+  return link.asks === "container" && "from" in link;
 }

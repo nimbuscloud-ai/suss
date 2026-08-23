@@ -105,10 +105,89 @@ result on the recognizer context under `ops`.
 | `argumentCount()` | how many arguments the call passes |
 | `nameAt(index, unsettled)` | the name that argument gives, with the hole policy applied |
 | `calleeText()` | the callee, as the source writes it |
+| `receiver()` | the call the receiver is, as ops of its own |
+| `argument(index)` | the call that argument is, as ops of its own |
+| `propertyAt(index, property, unsettled)` | what a named property of that argument says |
+
+The last three are what let a chain read a call next to the one in
+hand. `receiver()` and `argument(index)` give back another `CallOps`,
+so every question above works one step along; `propertyAt` is the only
+one that reaches inside a value, because a property bag is not a call
+and nothing else reaches into one.
 
 A chain running on an adapter with no ops matches nothing rather than
 throwing, since a pack loaded into the wrong adapter is a configuration
 mistake and not a crash.
+
+## Reaching a call next to this one
+
+Two of the three storage shapes put what a pack needs somewhere other
+than the call the adapter is standing on.
+
+```ts
+s3.send(new GetObjectCommand({ Bucket: "photos", Key: "a.jpg" }));
+storage.bucket("photos").file("a.jpg").download();
+```
+
+The first says `send` at every call site in the codebase and puts the
+operation, the bucket and the key in the command. The second puts the
+bucket two hops back up the receivers and the object one hop back.
+Neither needs a question of its own: both are the questions above,
+asked of a different call.
+
+A pack says which call with `about`, and a pick says which call with
+`of`. Both take steps, and a step is data:
+
+| step | what it reaches |
+|---|---|
+| `{ to: "receiver" }` | the call the receiver is |
+| `{ to: "receiver", method: "bucket" }` | the first call to `bucket` up the receivers |
+| `{ to: "argument", at: 0 }` | the call the first argument is |
+| `{ to: "argument", at: { from: 0 } }` | every argument that is a call, first one that matches wins |
+
+```ts
+storageCalls({ system: "s3", client: constructedFrom("@aws-sdk/client-s3") })
+  .about({ to: "argument", at: { from: 0 } })
+  .methods({ GetObjectCommand: { kind: "read", selector: KEY } })
+  .container({ at: 0, property: ["Bucket"] });
+```
+
+With a subject, every other link is asked of the call the steps reach:
+the operation is that call's own name, the origin check is about that
+call, and a pick with no `of` reads that call's arguments. The effect
+still records the call in hand as its callee, since that is where a
+reader would go and look.
+
+A step that says which method is searched for rather than counted to,
+because `bucket(b).file(p).download()` and `bucket(b).getFiles()` put
+the bucket a different distance back. The search is bounded at eight
+receivers: a receiver chain can come back round to itself through a
+variable, and a pack that meant more than eight hops has written
+something else by mistake.
+
+A pick reads the argument itself, or a property of the object the
+argument states. The properties are tried in order, so `property:
+["Key", "Prefix"]` is "the key, or the prefix a listing asked for
+instead". A construction is unwrapped first, since that is where a
+command puts its inputs.
+
+## A method the caller says which way round it goes
+
+Most methods read or write whatever the call site looks like, and a few
+are told. A signed URL is the one in the shipped packs: the same call
+hands back a URL for reading or for writing depending on what it was
+asked to sign for.
+
+```ts
+kind: {
+  asks: { at: 0, property: ["action"] },
+  means: { read: "read", write: "write" },
+  otherwise: "read",
+}
+```
+
+`otherwise` is what the call comes to when it says nothing, which is
+the library's own default rather than a guess.
 
 ## The example every declaration states
 

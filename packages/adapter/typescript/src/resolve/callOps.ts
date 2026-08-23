@@ -19,15 +19,33 @@ import { readName } from "./readName.js";
 
 import type { ReceiverOrigin, UnsettledName } from "@suss/recognize";
 import type { AstCapableOps } from "@suss/recognize/ast";
-import type { CallExpression, PropertyAccessExpression } from "ts-morph";
+import type {
+  CallExpression,
+  NewExpression,
+  ObjectLiteralExpression,
+  PropertyAccessExpression,
+  VariableDeclaration,
+} from "ts-morph";
+
+/** A call, or a construction, which asks the same questions. */
+type Called = CallExpression | NewExpression;
 
 /** One-hop lookup from a written name to the value it was bound to. */
 type Resolve = (value: Node) => Node | null;
 
+/**
+ * How many variables a step follows before it gives up. A value put
+ * in a variable that came from another variable is ordinary; a longer
+ * run of them is a program this cannot read anyway.
+ */
+const MAX_WRITTEN_HOPS = 4;
+
 /** What every origin check is handed. */
 interface Receiver {
-  /** The property access the call goes through. */
-  callee: PropertyAccessExpression;
+  /** The property access the call goes through, when it goes through one. */
+  callee: PropertyAccessExpression | null;
+  /** The whole callee, which is what made the value where there is no receiver. */
+  expression: Node;
   resolve: Resolve;
 }
 
@@ -37,8 +55,9 @@ const ORIGIN: Record<
   (origin: ReceiverOrigin, receiver: Receiver) => boolean
 > = {
   declaredBy: (origin, receiver) =>
+    receiver.callee !== null &&
     origin.importedFrom.some((module) =>
-      methodDeclaredIn(receiver.callee, module, receiver.resolve),
+      methodDeclaredIn(receiver.callee as Node, module, receiver.resolve),
     ),
   constructed: (origin, receiver) =>
     origin.importedFrom.some((module) =>
@@ -50,8 +69,12 @@ const ORIGIN: Record<
  * What made the receiver, as the name the source called it. A client
  * the program keeps in a const or hands round as a parameter comes back
  * through the fact layer as the `new` or the factory call that made it.
+ * A call with no receiver made its own value, so its callee says.
  */
 function madeBy(receiver: Receiver): Node {
+  if (receiver.callee === null) {
+    return rootIdentifier(receiver.expression) ?? receiver.expression;
+  }
   const written = receiver.resolve(receiver.callee.getExpression());
   if (
     written === null ||
@@ -64,7 +87,7 @@ function madeBy(receiver: Receiver): Node {
 
 /** What a declared pack can ask about one TypeScript call. */
 export function callOpsFor(
-  call: CallExpression,
+  call: Called,
   resolveWrittenValue?: Resolve,
 ): AstCapableOps {
   const resolve = resolveWrittenValue ?? (() => null);
@@ -83,13 +106,78 @@ export function callOpsFor(
   return {
     method: () => (callee === null ? null : callee.getName()),
     receiverIsFrom: (origin) =>
-      callee !== null && ORIGIN[origin.origin](origin, { callee, resolve }),
+      ORIGIN[origin.origin](origin, { callee, expression, resolve }),
     argumentCount: () => argumentsOf().length,
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
     calleeText: () => expression.getText(),
+    receiver: () =>
+      callee === null ? null : opsOverCall(callee.getExpression(), resolve),
+    argument: (index) => opsOverCall(argumentsOf()[index], resolve),
+    propertyAt: (index, property, unsettled) =>
+      propertyAt(argumentsOf()[index], property, unsettled, resolve),
     ast: () => call,
   };
+}
+
+/** The ops for a value, when the value is a call the source wrote. */
+function opsOverCall(
+  value: Node | undefined,
+  resolve: Resolve,
+): AstCapableOps | null {
+  const written = settled(value, resolve);
+  if (written === null || !isCalled(written)) {
+    return null;
+  }
+  return callOpsFor(written, resolve);
+}
+
+/** Whether a value is a call or a construction. */
+function isCalled(value: Node): value is Called {
+  return Node.isCallExpression(value) || Node.isNewExpression(value);
+}
+
+/**
+ * A value, or what the source wrote it as when it is a name. A
+ * repository class keeps the bucket in a field and builds the command a
+ * few lines above the call, and both have to be followed.
+ *
+ * A variable says at its declaration what it was written as, and a
+ * field is filled in somewhere else, which is what the fact layer is
+ * for. Asking the fact layer anyway costs a walk out over the imports
+ * of the file, and that walk can make a value nearby ambiguous.
+ */
+function settled(value: Node | undefined, resolve: Resolve): Node | null {
+  let step = value ?? null;
+  for (let hops = 0; hops < MAX_WRITTEN_HOPS; hops += 1) {
+    if (
+      step === null ||
+      (!Node.isIdentifier(step) && !Node.isPropertyAccessExpression(step))
+    ) {
+      return step;
+    }
+    const declared = variableFor(step);
+    const written =
+      declared === null ? resolve(step) : (declared.getInitializer() ?? null);
+    if (written === null || written === step) {
+      return null;
+    }
+    step = written;
+  }
+  return null;
+}
+
+/** The variable a name was declared as, when the source declares one. */
+function variableFor(name: Node): VariableDeclaration | null {
+  if (!Node.isIdentifier(name)) {
+    return null;
+  }
+  for (const declaration of name.getSymbol()?.getDeclarations() ?? []) {
+    if (Node.isVariableDeclaration(declaration)) {
+      return declaration;
+    }
+  }
+  return null;
 }
 
 /** The name one argument gives, or null when nothing settles it. */
@@ -102,4 +190,48 @@ function nameAt(
     return null;
   }
   return readName(argument, { resolve, unsettled });
+}
+
+/** What a named property of the object an argument states says. */
+function propertyAt(
+  argument: Node | undefined,
+  property: string,
+  unsettled: UnsettledName,
+  resolve: Resolve,
+): string | null {
+  const stated = objectAt(argument, resolve);
+  const written = stated === null ? null : initializerOf(stated, property);
+  return written === null ? null : readName(written, { resolve, unsettled });
+}
+
+/**
+ * The object an argument states. A command puts its inputs in the
+ * object it was constructed with, so a construction is unwrapped to the
+ * object inside it.
+ */
+function objectAt(
+  argument: Node | undefined,
+  resolve: Resolve,
+): ObjectLiteralExpression | null {
+  const written = settled(argument, resolve);
+  if (written === null) {
+    return null;
+  }
+  if (isCalled(written)) {
+    return objectAt(written.getArguments()[0], resolve);
+  }
+  return Node.isObjectLiteralExpression(written) ? written : null;
+}
+
+/** What one property of an object literal was written as. */
+function initializerOf(
+  object: ObjectLiteralExpression,
+  property: string,
+): Node | null {
+  for (const written of object.getProperties()) {
+    if (Node.isPropertyAssignment(written) && written.getName() === property) {
+      return written.getInitializer() ?? null;
+    }
+  }
+  return null;
 }
