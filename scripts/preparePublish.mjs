@@ -78,15 +78,18 @@ function prepare(manifest, { write }) {
   const pkg = JSON.parse(raw);
   const changes = [];
 
-  // A bundled pack is meant to stay private, so nothing below applies
-  // to it: it ships inside `@suss/packs` rather than under its own name.
-  if (BUNDLED_INTO_PACKS.has(pkg.name)) {
-    return pkg.private === true
-      ? []
-      : ["bundled into @suss/packs but not private"];
+  // A bundled pack ships inside `@suss/packs` rather than under its own
+  // name, so it stays private and never wants publishConfig. It does
+  // want the version and the dependency ranges below: leaving those at
+  // the last release pins it to registry copies of its own siblings,
+  // and it then builds against a published version of the workspace it
+  // lives in.
+  const bundled = BUNDLED_INTO_PACKS.has(pkg.name);
+  if (bundled && pkg.private !== true) {
+    changes.push("bundled into @suss/packs but not private");
   }
 
-  if (pkg.private === true) {
+  if (!bundled && pkg.private === true) {
     changes.push("private: true");
     if (write) {
       delete pkg.private;
@@ -100,7 +103,7 @@ function prepare(manifest, { write }) {
     }
   }
 
-  if (pkg.publishConfig?.access !== "public") {
+  if (!bundled && pkg.publishConfig?.access !== "public") {
     changes.push("missing publishConfig.access");
     if (write) {
       pkg.publishConfig = { ...pkg.publishConfig, access: "public" };
