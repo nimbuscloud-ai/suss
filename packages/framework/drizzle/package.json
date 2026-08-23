@@ -60,7 +60,5 @@
     "typescript": "*",
     "vitest": "*"
   },
-  "publishConfig": {
-    "access": "public"
-  }
+  "private": true
 }

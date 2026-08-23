@@ -88,10 +88,13 @@ if (!skipBuild) {
   run("npm", ["run", "build"]);
 }
 
-const packages = findPackages().map((dir) => ({
-  dir,
-  name: readJson(path.join(dir, "package.json")).name,
-}));
+// A private package is one `@suss/packs` bundles and publishes inside
+// itself. npm refuses to publish it, so asking would fail the release
+// for something that is meant to stay unpublished.
+const packages = findPackages()
+  .map((dir) => ({ dir, manifest: readJson(path.join(dir, "package.json")) }))
+  .filter(({ manifest }) => manifest.private !== true)
+  .map(({ dir, manifest }) => ({ dir, name: manifest.name }));
 
 console.log(
   `\nChecking which of ${packages.length} packages are already at ${version}...`,

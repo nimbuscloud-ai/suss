@@ -2,7 +2,7 @@
   "name": "@suss/runtime-node",
   "version": "0.11.0",
   "type": "module",
-  "description": "Recognize Node.js runtime primitives — scheduling (setImmediate/setTimeout/queueMicrotask/process.nextTick), the process surface (env/argv/exit/cwd), and module-loading globals (__dirname/__filename/import.meta.url) — and emit interaction effects on the units that use them.",
+  "description": "Recognize Node.js runtime primitives \u2014 scheduling (setImmediate/setTimeout/queueMicrotask/process.nextTick), the process surface (env/argv/exit/cwd), and module-loading globals (__dirname/__filename/import.meta.url) \u2014 and emit interaction effects on the units that use them.",
   "keywords": [
     "suss",
     "behavioral-summary",
@@ -61,7 +61,5 @@
     "typescript": "*",
     "vitest": "*"
   },
-  "publishConfig": {
-    "access": "public"
-  }
+  "private": true
 }
