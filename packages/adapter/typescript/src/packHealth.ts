@@ -109,7 +109,7 @@ function stagesOf(funnel: PackFunnel): Array<{
       meaning: "it claimed units and turned none of them into a bound summary",
     },
     {
-      from: { name: "provider summaries", count: funnel.providerSummaries },
+      from: { name: "summaries bound", count: funnel.summariesBound },
       to: {
         name: "summaries with behavior",
         count: funnel.summariesWithBehavior,

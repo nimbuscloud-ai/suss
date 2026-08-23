@@ -76,6 +76,21 @@ describe("the funnel-drop check", () => {
     expect(found[0]?.detail).toContain("discovery matched nothing");
   });
 
+  it("fires when a pack bound client summaries and none describe anything", () => {
+    // The count this is measured against used to skip clients, so a
+    // client pack that described nothing looked like a success.
+    const found = drops([
+      funnel({ providerSummaries: 0, summariesWithBehavior: 0 }),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.detail).toContain("empty of transitions");
+    expect(found[0]?.detail).toContain("3 summaries bound");
+  });
+
+  it("stays quiet when a client pack's summaries do describe something", () => {
+    expect(drops([funnel({ providerSummaries: 0 })])).toEqual([]);
+  });
+
   it("fires when a recogniser saw bodies and matched nothing in them", () => {
     const found = drops([
       funnel({
