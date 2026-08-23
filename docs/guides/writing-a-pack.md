@@ -136,7 +136,7 @@ That's the whole point of the declarative design. A pattern you can only express
 
 ## Where a pack gets registered
 
-Your pack runs as soon as it is installed beside the project, whatever else you skip: `suss extract -f <name>` resolves `@suss/framework-<name>` and then `@suss/<name>` for a name it does not already know. The rest of this list decides how the pack is found rather than whether it works.
+Your pack runs as soon as it is installed beside the project, whatever else you skip: `suss extract -f <name>` tries `@suss/packs/<name>`, then `@suss/framework-<name>`, then `@suss/<name>`, for a name it does not already know. The rest of this list decides how the pack is found rather than whether it works.
 
 - `BUILTIN_FRAMEWORKS` in `packages/cli/src/extract.ts`, and a dependency on your package in `packages/cli/package.json`. Together these bundle the pack with the CLI, so `-f <name>` resolves for somebody who installed the CLI alone. Every shipped pack is here.
 - The dependency table in `packages/cli/src/init.ts`. This is what makes `suss init` suggest your pack when it sees the library in a project's `package.json`. A pack nobody suggests still runs when it is asked for by name.

@@ -127,6 +127,7 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
     │     │                              down to
     │     │
     │     ├─ Framework packs             discover handlers, define terminals
+    │     │  (all inside @suss/packs)
     │     │     @suss/framework-ts-rest          and inputs for a framework
     │     │     @suss/framework-express
     │     │     @suss/framework-fastify
