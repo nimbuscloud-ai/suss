@@ -1,22 +1,22 @@
 {
   "total": {
     "lines": {
-      "total": 8308,
-      "covered": 7100,
+      "total": 8309,
+      "covered": 7101,
       "skipped": 0,
-      "pct": 85.45
+      "pct": 85.46
     },
     "statements": {
-      "total": 8394,
-      "covered": 7182,
+      "total": 8398,
+      "covered": 7186,
       "skipped": 0,
       "pct": 85.56
     },
     "functions": {
-      "total": 1154,
-      "covered": 1066,
+      "total": 1157,
+      "covered": 1069,
       "skipped": 0,
-      "pct": 92.37
+      "pct": 92.39
     },
     "branches": {
       "total": 6428,
@@ -397,20 +397,20 @@
   },
   "src/packHealth.ts": {
     "lines": {
-      "total": 65,
-      "covered": 65,
+      "total": 66,
+      "covered": 66,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 26,
-      "covered": 26,
+      "total": 29,
+      "covered": 29,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 65,
-      "covered": 65,
+      "total": 69,
+      "covered": 69,
       "skipped": 0,
       "pct": 100
     },
