@@ -94,9 +94,9 @@ Compared 4 boundaries.
   5 boundaries had nothing to pair with, so nothing was checked across them.
   Run the same command with --all to list them.
 
-19 findings: 0 error, 3 warning, 16 info
+3 findings: 0 error, 3 warning, 0 info
 
-Not shown: 16 boundaryFieldUnused (info), 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
+Not shown: 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
 
 suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
 ```
@@ -108,16 +108,7 @@ repository, so the other side of those routes was never extracted.
 [Add suss to a project](/guides/add-to-project) covers what to do about
 that.
 
-The three warnings and the sixteen info findings say different sorts of
-thing. A warning is about your code. `Comment` declares `articleId`,
-something here writes it, and no query ever reads it back, which is
-worth a look. An info finding is suss telling you about its own
-reading. `author` and `tagList` on `Article` are Prisma relations
-rather than columns, the pack read them as columns anyway, and suss
-would rather say so than quietly count them as fields nobody uses.
-Nothing is wrong with the schema.
-
-`--all` prints all nineteen in full. Here is the first:
+`--all` prints all three in full. Here is the first:
 
 ```
 [WARNING] boundaryFieldUnused

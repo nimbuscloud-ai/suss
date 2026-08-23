@@ -200,17 +200,6 @@ export function checkStorage(
     // its fields. Reading a template on its own would otherwise give
     // one warning per field every table declares, and none of them
     // would mean what the words say.
-    // A relation is served rather than stored, so nothing writes one as
-    // a column. Code that appears to is code somebody read wrong, and
-    // the pack that read it is the thing at fault rather than the
-    // project, which is why this says so about suss rather than about
-    // the code.
-    for (const field of contract.fields ?? []) {
-      if (field.derived === true && writtenNames.has(field.name)) {
-        findings.push(makeServedFieldWrittenFinding(provider, binding, field));
-      }
-    }
-
     if (!anyDefaultShapeRead && inScope.length > 0) {
       for (const field of contract.fields ?? []) {
         // A field the store serves without keeping it has nobody to
@@ -943,30 +932,6 @@ function makeSelectorMismatchFinding(
  */
 function askedForNote(field: string, verdict: string): string {
   return `suss counts a column as read only when a query selects it, so before you treat ${verdict}, look for code that takes "${field}" off a record it already fetched.`;
-}
-
-/**
- * A pack recorded a write of a field the contract serves rather than
- * stores. The store keeps no column of that name, so the write cannot
- * have happened, and what went wrong is upstream of the code: some
- * pack read a relation as though it were a column. Said at info
- * severity because the finding is about suss.
- */
-function makeServedFieldWrittenFinding(
-  provider: BehavioralSummary,
-  binding: BoundaryBinding,
-  field: { name: string },
-): Finding {
-  const semantics = binding.semantics as StorageSemantics;
-  return {
-    kind: "boundaryFieldUnused",
-    aspect: "write",
-    boundary: binding,
-    provider: makeSide(provider),
-    consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} has no column "${field.name}". It is a relation, and a pack read it as a column, so the write to it is left out.`,
-    severity: "info",
-  };
 }
 
 function makeFieldUnusedFinding(

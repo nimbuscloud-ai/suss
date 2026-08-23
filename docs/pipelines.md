@@ -189,9 +189,9 @@ Compared 4 boundaries.
   5 boundaries had nothing to pair with, so nothing was checked across them.
   Run the same command with --all to list them.
 
-19 findings: 0 error, 3 warning, 16 info
+3 findings: 0 error, 3 warning, 0 info
 
-Not shown: 16 boundaryFieldUnused (info), 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
+Not shown: 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
 
 suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
 ```
