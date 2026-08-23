@@ -1381,7 +1381,11 @@ describe("a write written under another table's data", () => {
     expect(descriptions.join(" ")).toContain('Tag declares "name" and code');
   });
 
-  it("says suss misread when a write names a field the store only serves", () => {
+  it("drops a write to a relation without saying anything about it", () => {
+    // The pack records the path and the contract says which paths are
+    // relations, so a contract in the run has already settled this. It
+    // used to report the resolution, once per relation field, which on
+    // a schema of any size buried the findings somebody can act on.
     const findings = checkStorage([
       article(),
       tag(),
@@ -1394,12 +1398,11 @@ describe("a write written under another table's data", () => {
         ],
       }),
     ]);
-    const misread = findings.filter((f) => f.severity === "info");
 
-    expect(misread).toHaveLength(1);
-    expect(misread[0]?.description).toContain('has no column "tagList"');
-    expect(misread[0]?.description).toContain("a pack read it as a column");
-    // Nothing here is a claim about the project's code.
+    expect(findings.map((f) => f.description).join(" ")).not.toContain(
+      "tagList",
+    );
+    expect(findings.filter((f) => f.severity === "info")).toEqual([]);
     expect(findings.filter((f) => f.severity === "error")).toEqual([]);
   });
 
