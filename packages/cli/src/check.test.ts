@@ -837,6 +837,69 @@ describe("checkDir", () => {
     return chunks.join("");
   }
 
+  it("says which declared artifact a run left unread", () => {
+    // A provider on its own, so the boundary pairs with nothing, and a
+    // suss.json saying the project declares a schema nobody read.
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [
+          { kind: "contract", from: "prisma", file: "prisma/schema.prisma" },
+        ],
+      }),
+    );
+
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      const output = captureStdout(() => checkDir({ dir: tmpDir }));
+      expect(output).toContain("1 artifact this project declares was not read");
+      expect(output).toContain(
+        "suss contract --from prisma prisma/schema.prisma",
+      );
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  it("says nothing about an artifact the run did read", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.json"),
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [
+          { kind: "contract", from: "prisma", file: "src/handlers/getUser.ts" },
+        ],
+      }),
+    );
+
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      const output = captureStdout(() => checkDir({ dir: tmpDir }));
+      expect(output).not.toContain("was not read");
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
   it("pairs provider and consumer from separate files by method+path", () => {
     fs.writeFileSync(
       path.join(tmpDir, "provider.json"),
