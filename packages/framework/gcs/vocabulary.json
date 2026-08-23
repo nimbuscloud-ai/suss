@@ -1,10 +1,10 @@
 {
   "action": "@google-cloud/storage: what a signed URL is signed for",
   "bucket": "@google-cloud/storage: the call that says which bucket",
+  "delete": "@google-cloud/storage: a signed URL that removes the object",
   "file": "@google-cloud/storage: the call that says which object",
   "gcs": "Google Cloud Storage, the store this reads",
-  "getSignedUrl": "@google-cloud/storage: hands back a URL that reaches the object later",
   "read": "suss: access kind",
-  "reference": "suss: what a reader says instead of a name when the name is somewhere else",
+  "resumable": "@google-cloud/storage: a signed URL that uploads in parts",
   "write": "suss: access kind"
 }

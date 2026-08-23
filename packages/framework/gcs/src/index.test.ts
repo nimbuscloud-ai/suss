@@ -1,14 +1,15 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { ResolutionStore } from "@suss/adapter-typescript";
+import { callOpsFor, ResolutionStore } from "@suss/adapter-typescript";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { gcsFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 
-// The recognizer settles a call by where the operation is declared, so
+// The declaration settles a call by where the operation is declared, so
 // a fixture needs the client library on disk to resolve against.
 const GCS_TYPES = `
   export declare class File {
@@ -59,6 +60,7 @@ function effectsIn(source: string): Effect[] {
       extractArgs: () => [],
       isImportedFrom: () => false,
       resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
+      ops: callOpsFor(node, (value: Node) => store.resolveWrittenValue(value)),
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);
@@ -232,6 +234,39 @@ describe("the pack itself", () => {
       name: "gcs",
       protocol: "gcs",
       requiresImport: ["@google-cloud/storage"],
+    });
+  });
+
+  it("prices what it declared: every link is data", () => {
+    expect(gcsFramework().declarations?.declarations).toEqual([
+      {
+        name: "gcs",
+        dataLinks: 3,
+        functionLinks: [],
+        astLinks: [],
+        example: 'storage.bucket("uploads").file("reports/a.pdf").download()',
+      },
+    ]);
+  });
+
+  it("emits the effect its example says it does", () => {
+    const ran = runExamples(gcsFramework(), (code) =>
+      effectsIn(`
+        ${CLIENT}
+        export async function example() {
+          return ${code};
+        }
+      `),
+    );
+
+    expect(ran).toHaveLength(1);
+    const { semantics, interaction } = storageOf(ran[0].effects[0]);
+    expect(semantics.container).toBe("uploads");
+    expect(interaction).toMatchObject({
+      class: "storage-access",
+      kind: "read",
+      operation: "download",
+      selector: ["reports/a.pdf"],
     });
   });
 });
