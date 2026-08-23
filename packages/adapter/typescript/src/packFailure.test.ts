@@ -92,7 +92,7 @@ describe("a pack whose hook throws", () => {
 
       expect(printed).toContain("breaks");
       expect(printed).toContain("threw from discoverUnits");
-      expect(printed).toContain("a floor");
+      expect(printed).toContain("read less than the counts below suggest");
 
       const quiet = await reportFor(packThatFindsNothing());
       expect(
