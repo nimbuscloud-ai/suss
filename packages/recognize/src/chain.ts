@@ -111,10 +111,10 @@ export interface ContainerArgument {
 }
 
 /**
- * The container worked out by the pack. The call in hand comes second
- * so that a rule written over the selector alone, which is most of
- * them, ignores it. A rule that has to read the syntax tree goes
- * through `astLink`, which is what puts the call to use.
+ * The container worked out by the pack. The call the chain is about
+ * comes second so that a rule written over the selector alone, which is
+ * most of them, ignores it. A rule that has to read the syntax tree
+ * goes through `astLink`, which is what puts the call to use.
  */
 export interface ContainerRule {
   readonly asks: "container";
