@@ -41,7 +41,8 @@ export interface DeclaredBy {
 /**
  * A client made from a module's export, however the program caches it.
  * Asked of the receiver itself, so it still works where the method is untyped
- * and `declaredBy` finds nothing to read.
+ * and `declaredBy` finds nothing to read. A call that reaches for no
+ * receiver, `new GetObjectCommand(...)`, is made by its own callee.
  */
 export interface ConstructedFrom {
   readonly origin: "constructed";
@@ -79,6 +80,11 @@ export type UnsettledName = "nothing" | "reference";
  * recognizer through its context. Every member is about the call in
  * hand, so there is no node to pass around and no place for a pack to
  * reach past what it declared.
+ *
+ * Two members give back another `CallOps`, which is how these questions
+ * reach a call next to this one. A chain of calls and a command object
+ * are both these same questions asked one step along, so neither needed
+ * a question of its own.
  */
 export interface CallOps {
   /** Which method the call reaches for, spelled as the source spells it. */
@@ -91,6 +97,28 @@ export interface CallOps {
   nameAt(index: number, unsettled: UnsettledName): string | null;
   /** The callee, as the source writes it. */
   calleeText(): string;
+  /**
+   * The call the receiver is, or null when the receiver is not a call.
+   * A receiver the source wrote into a variable comes back as the call
+   * it was written as.
+   */
+  receiver(): CallOps | null;
+  /**
+   * The call the argument in this position is, or null when that
+   * argument is neither a call nor a construction. `new
+   * GetObjectCommand(...)` comes back as a call whose callee is the
+   * class, the same as any other call.
+   */
+  argument(index: number): CallOps | null;
+  /**
+   * What a named property of the object an argument states says. A
+   * property bag is not a call, so nothing else here reaches into one.
+   */
+  propertyAt(
+    index: number,
+    property: string,
+    unsettled: UnsettledName,
+  ): string | null;
 }
 
 /**

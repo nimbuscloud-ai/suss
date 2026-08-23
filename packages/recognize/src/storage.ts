@@ -9,6 +9,8 @@
  */
 
 import type {
+  ArgumentPick,
+  CallStep,
   Chain,
   Link,
   LinkFunction,
@@ -36,17 +38,26 @@ export interface StorageCallsSpec {
 
 /** A storage chain, and the links that can still be added to it. */
 export interface StorageCalls {
+  /**
+   * Which call the chain is about, when it is not the one in hand. The
+   * steps run from the call in hand, and every other link is asked of
+   * what they reach.
+   */
+  about(...of: readonly CallStep[]): StorageCalls;
   /** Which methods count, and what each one reads or writes. */
   methods(
     table: Readonly<Record<string, StorageMethod>>,
     options?: { ignoringCase?: boolean },
   ): StorageCalls;
   /**
-   * Which container a call's selector belongs to. Without this the
-   * first name a call reached is the container.
+   * Which container a call's selector belongs to, as an argument or as
+   * the pack's own rule. Without this the first name a call reached is
+   * the container.
    */
   container(
-    from: LinkFunction<[readonly string[], CallOps], string | null>,
+    says:
+      | ArgumentPick
+      | LinkFunction<[readonly string[], CallOps], string | null>,
   ): StorageCalls;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): StorageCalls;
@@ -77,13 +88,19 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
 
   return {
     declared,
+    about: (...of) => adding({ asks: "subject", of }),
     methods: (table, options) =>
       adding({
         asks: "methods",
         table,
         ignoringCase: options?.ignoringCase ?? false,
       }),
-    container: (from) => adding({ asks: "container", from }),
+    container: (says) =>
+      adding(
+        typeof says === "function"
+          ? { asks: "container", from: says }
+          : { asks: "container", argument: says },
+      ),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
 }

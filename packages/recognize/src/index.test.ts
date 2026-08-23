@@ -17,6 +17,12 @@ function callOps(over: {
   args?: ReadonlyArray<string | null>;
   callee?: string;
   node?: unknown;
+  /** The calls this one's arguments are, by position. */
+  built?: Record<number, CallOps>;
+  /** The call the receiver is. */
+  receiver?: CallOps;
+  /** What each argument's properties say, by position. */
+  properties?: Record<number, Record<string, string>>;
 }): CallOps {
   const args = over.args ?? [];
   const from = over.from ?? [];
@@ -27,6 +33,10 @@ function callOps(over: {
     argumentCount: () => args.length,
     nameAt: (index) => args[index] ?? null,
     calleeText: () => over.callee ?? "client.get",
+    receiver: () => over.receiver ?? null,
+    argument: (index) => over.built?.[index] ?? null,
+    propertyAt: (index, property) =>
+      over.properties?.[index]?.[property] ?? null,
     ast: () => over.node ?? null,
   } as CallOps;
 }
@@ -306,6 +316,152 @@ describe("the example every declaration states", () => {
 
   it("says nothing about a pack that declared nothing", () => {
     expect(examplesMissing({ name: "x" } as never)).toEqual([]);
+  });
+});
+
+describe("a chain about the command a call was handed", () => {
+  const commandCalls = storageCalls({
+    system: "cassette",
+    client: constructedFrom("tapedeck"),
+  })
+    .about({ to: "argument", at: { from: 0 } })
+    .methods({
+      PlaySideCommand: {
+        kind: "read",
+        selector: { at: 0, property: ["Track"] },
+      },
+    })
+    .container({ at: 0, property: ["Side"] })
+    .example('deck.send(new PlaySideCommand({ Side: "a", Track: "1" }))');
+
+  const command = callOps({
+    callee: "PlaySideCommand",
+    from: ["tapedeck"],
+    args: [null],
+    properties: { 0: { Side: "a", Track: "1" } },
+  });
+
+  it("reads the operation off the command and the rest out of its inputs", () => {
+    const effects = run(
+      commandCalls,
+      callOps({
+        method: "send",
+        callee: "deck.send",
+        args: [null],
+        built: { 0: command },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "a" } },
+      callee: "deck.send",
+      interaction: { operation: "PlaySideCommand", selector: ["1"] },
+    });
+  });
+
+  it("takes the command wherever the call passes it", () => {
+    const effects = run(
+      commandCalls,
+      callOps({
+        method: "sign",
+        args: [null, null],
+        built: { 1: command },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      interaction: { operation: "PlaySideCommand" },
+    });
+  });
+
+  it("leaves a call whose arguments are no command it knows alone", () => {
+    expect(
+      run(commandCalls, callOps({ method: "send", args: [null] })),
+    ).toBeNull();
+  });
+});
+
+describe("a chain read back up its receivers", () => {
+  const side = callOps({ method: "side", args: ["a"] });
+  const track = callOps({ method: "track", args: ["1"], receiver: side });
+
+  const chainCalls = storageCalls({
+    system: "cassette",
+    client: declaredBy("tapedeck"),
+  })
+    .methods({
+      play: {
+        kind: "read",
+        selector: { of: [{ to: "receiver", method: "track" }], at: 0 },
+      },
+    })
+    .container({ of: [{ to: "receiver", method: "side" }], at: 0 })
+    .example('deck.side("a").track("1").play()');
+
+  it("finds each hop by the method it calls, however far back it is", () => {
+    const effects = run(
+      chainCalls,
+      callOps({ method: "play", from: ["tapedeck"], receiver: track }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "a" } },
+      interaction: { operation: "play", selector: ["1"] },
+    });
+  });
+
+  it("gives up on a receiver that comes back round to itself", () => {
+    const loop = { ops: null as CallOps | null };
+    const circular = callOps({ method: "wound", args: ["x"] });
+    Object.assign(circular, { receiver: () => loop.ops });
+    loop.ops = circular;
+
+    const effects = run(
+      chainCalls,
+      callOps({ method: "play", from: ["tapedeck"], receiver: circular }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: null } },
+    });
+  });
+});
+
+describe("a method the caller says which way round it goes", () => {
+  const signing = storageCalls({
+    system: "cassette",
+    client: declaredBy("tapedeck"),
+  }).methods({
+    sign: {
+      kind: {
+        asks: { at: 0, property: ["action"] },
+        means: { write: "write" },
+        otherwise: "read",
+      },
+    },
+  });
+
+  it("takes the kind from what the call asked for", () => {
+    const effects = run(
+      signing,
+      callOps({
+        method: "sign",
+        from: ["tapedeck"],
+        args: [null],
+        properties: { 0: { action: "write" } },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({ interaction: { kind: "write" } });
+  });
+
+  it("falls back to what the library does when the call says nothing", () => {
+    const effects = run(
+      signing,
+      callOps({ method: "sign", from: ["tapedeck"], args: [null] }),
+    );
+
+    expect(effects?.[0]).toMatchObject({ interaction: { kind: "read" } });
   });
 });
 

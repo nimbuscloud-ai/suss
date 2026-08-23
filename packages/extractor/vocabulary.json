@@ -118,5 +118,6 @@
   "property": "expression kind the extractor records",
   "call": "expression kind the extractor records",
   "mutation": "GraphQL spec: operation type",
-  "subscription": "GraphQL spec: operation type"
+  "subscription": "GraphQL spec: operation type",
+  "receiver": "suss: CallStep variant tag"
 }

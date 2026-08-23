@@ -3,7 +3,9 @@
  *
  * The anchor is the command, wherever a call takes one. `send` runs it
  * now and `getSignedUrl` hands back a URL that runs it later, and both
- * address the same object.
+ * address the same object. So the chain is about the command rather
+ * than the call that was handed it: the method is `send` everywhere,
+ * and the command says which operation, which bucket and which key.
  *
  * A bucket's objects have no fields to compare a read against, so what
  * a call says is the key it addressed. A key built from a template
@@ -11,184 +13,75 @@
  * bucket's key convention would be compared against.
  */
 
-import { type CallExpression, Node as N, type Node } from "ts-morph";
+import { constructedFrom, pack, storageCalls } from "@suss/recognize";
 
-import { readName, rootIdentifier } from "@suss/adapter-typescript";
-import { storageBinding } from "@suss/behavioral-ir";
-
-import type { Effect } from "@suss/behavioral-ir";
-import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
-
-const RECOGNITION = "@suss/framework-aws-s3";
+import type {
+  ArgumentPick,
+  CallStep,
+  PatternPack,
+  StorageMethod,
+} from "@suss/recognize";
 
 /** The module a command class comes from. */
 const COMMAND_MODULE = "@aws-sdk/client-s3";
 
+/**
+ * The command a call was handed, wherever the call takes it. `send`
+ * takes it first and the presigner takes it second.
+ */
+const COMMAND: CallStep = { to: "argument", at: { from: 0 } };
+
+/**
+ * What the command addressed. A listing states a prefix where an
+ * item-level command states a key, and either is the part of the bucket
+ * the call reached.
+ */
+const ADDRESSED: ArgumentPick = { at: 0, property: ["Key", "Prefix"] };
+
+/** Which bucket the command reached. */
+const BUCKET: ArgumentPick = { at: 0, property: ["Bucket"] };
+
+const READ_OBJECT: StorageMethod = { kind: "read", selector: ADDRESSED };
+const WRITE_OBJECT: StorageMethod = { kind: "write", selector: ADDRESSED };
+
 /** Every command this reads, and whether it reads or writes. */
-const COMMANDS: Record<string, "read" | "write"> = {
-  GetObjectCommand: "read",
-  HeadObjectCommand: "read",
-  ListObjectsV2Command: "read",
-  ListObjectsCommand: "read",
-  PutObjectCommand: "write",
-  DeleteObjectCommand: "write",
-  DeleteObjectsCommand: "write",
-  CopyObjectCommand: "write",
+const COMMANDS: Record<string, StorageMethod> = {
+  GetObjectCommand: READ_OBJECT,
+  HeadObjectCommand: READ_OBJECT,
+  ListObjectsV2Command: READ_OBJECT,
+  ListObjectsCommand: READ_OBJECT,
+  PutObjectCommand: WRITE_OBJECT,
+  DeleteObjectCommand: WRITE_OBJECT,
+  DeleteObjectsCommand: WRITE_OBJECT,
+  CopyObjectCommand: WRITE_OBJECT,
   // A large object goes up in parts, and each command in that sequence
   // writes the same object.
-  CreateMultipartUploadCommand: "write",
-  UploadPartCommand: "write",
-  CompleteMultipartUploadCommand: "write",
-  AbortMultipartUploadCommand: "write",
+  CreateMultipartUploadCommand: WRITE_OBJECT,
+  UploadPartCommand: WRITE_OBJECT,
+  CompleteMultipartUploadCommand: WRITE_OBJECT,
+  AbortMultipartUploadCommand: WRITE_OBJECT,
 };
 
-interface RecognizerContext {
-  isImportedFrom: (identifier: Node, expectedModule: string) => boolean;
-  resolveWrittenValue?: (value: Node) => Node | null;
-}
-
-export function s3Recognizer(call: unknown, ctx: unknown): Effect[] | null {
-  const callNode = call as CallExpression;
-  const recognizerCtx = ctx as RecognizerContext;
-  const resolve = recognizerCtx.resolveWrittenValue ?? (() => null);
-
-  const built = commandArgument(callNode, resolve);
-  if (built === null) {
-    return null;
-  }
-
-  const ctorExpr = built.getExpression();
-  const commandName = N.isPropertyAccessExpression(ctorExpr)
-    ? ctorExpr.getName()
-    : ctorExpr.getText();
-  const kind = COMMANDS[commandName];
-  if (kind === undefined || !fromS3Module(ctorExpr, recognizerCtx)) {
-    return null;
-  }
-
-  const input = built.getArguments()[0];
-  if (input === undefined || !N.isObjectLiteralExpression(input)) {
-    return null;
-  }
-
-  const key = nameOfProperty(input, "Key", resolve);
-  const prefix = nameOfProperty(input, "Prefix", resolve);
-  const addressed = key ?? prefix;
-  return [
-    {
-      type: "interaction",
-      binding: storageBinding({
-        recognition: RECOGNITION,
-        storageSystem: "s3",
-        transport: "aws-sdk",
-        scope: "default",
-        container: nameOfProperty(input, "Bucket", resolve),
-        accessPath: null,
-      }),
-      callee: callNode.getExpression().getText(),
-      interaction: {
-        class: "storage-access",
-        kind,
-        // An object has no fields, so a call says nothing about any.
-        fields: [],
-        operation: commandName,
-        ...(addressed !== null ? { selector: [addressed] } : {}),
-      },
-    },
-  ];
-}
-
-type NewExpression = Node & {
-  getExpression(): Node;
-  getArguments(): Node[];
-};
+const OBJECT_CALLS = storageCalls({
+  system: "s3",
+  transport: "aws-sdk",
+  client: constructedFrom(COMMAND_MODULE),
+})
+  .about(COMMAND)
+  .methods(COMMANDS)
+  .container(BUCKET)
+  .example('s3.send(new GetObjectCommand({ Bucket: "photos", Key: "a.jpg" }))');
 
 /**
- * The command a call was handed. A command written into the call
- * belongs to that call, and a nested call gets it first, so a command
- * is read once however many calls it passes through.
- */
-function commandArgument(
-  call: CallExpression,
-  resolve: (value: Node) => Node | null,
-): NewExpression | null {
-  for (const arg of call.getArguments()) {
-    if (N.isNewExpression(arg)) {
-      return arg;
-    }
-    // Asking where a value was written costs a pass over the run's
-    // facts, and nearly every call in a codebase takes an argument that
-    // is not a command. The type says which ones are worth asking about.
-    if (!N.isIdentifier(arg) || !typedAsCommand(arg)) {
-      continue;
-    }
-    const written = resolve(arg);
-    if (written !== null && N.isNewExpression(written)) {
-      return written;
-    }
-  }
-  return null;
-}
-
-/** Whether a value is one of the command classes this reads. */
-function typedAsCommand(value: Node): boolean {
-  const declared = (
-    value as Node & {
-      getType(): { getSymbol(): { getName(): string } | undefined };
-    }
-  )
-    .getType()
-    .getSymbol();
-  return declared !== undefined && COMMANDS[declared.getName()] !== undefined;
-}
-
-/** Whether the command class is the SDK's rather than a same-named local one. */
-function fromS3Module(ctorExpr: Node, ctx: RecognizerContext): boolean {
-  const target = N.isPropertyAccessExpression(ctorExpr)
-    ? rootIdentifier(ctorExpr)
-    : ctorExpr;
-  return target !== null && ctx.isImportedFrom(target, COMMAND_MODULE);
-}
-
-/** What one input of a command is called, when it says. */
-function nameOfProperty(
-  input: Node,
-  name: string,
-  resolve: (value: Node) => Node | null,
-): string | null {
-  const written = property(input, name);
-  return written === null
-    ? null
-    : readName(written, { resolve, unsettled: "reference" });
-}
-
-function property(input: Node, name: string): Node | null {
-  if (!N.isObjectLiteralExpression(input)) {
-    return null;
-  }
-  for (const prop of input.getProperties()) {
-    if (N.isPropertyAssignment(prop) && prop.getName() === name) {
-      return prop.getInitializer() ?? null;
-    }
-  }
-  return null;
-}
-
-/**
- * Pack export. One recognizer, gated on a file importing the S3 client,
- * which is where a command class can come from.
+ * Pack export. One declaration, gated on a file importing the S3
+ * client, which is where a command class can come from.
  */
 export function s3Framework(): PatternPack {
-  return {
-    name: "aws-s3",
-    protocol: "s3",
+  return pack("aws-s3", [OBJECT_CALLS], {
     languages: ["typescript", "javascript"],
-    discovery: [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-    requiresImport: [COMMAND_MODULE],
-    invocationRecognizers: [s3Recognizer as InvocationRecognizer],
-  };
+    recognizedAs: "@suss/framework-aws-s3",
+    protocol: "s3",
+  });
 }
 
 export default s3Framework;

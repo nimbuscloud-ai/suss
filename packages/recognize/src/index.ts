@@ -14,18 +14,28 @@ export type {
   PatternPack,
 } from "@suss/extractor";
 export type {
+  AccessKind,
   ArgumentPick,
+  ArgumentsFrom,
+  CallStep,
   Chain,
+  ContainerArgument,
   ContainerLink,
+  ContainerRule,
   Ending,
   FromReceiver,
+  KindAsAsked,
   Link,
   LinkFunction,
   MatchStart,
   MethodsLink,
+  OneArgument,
   StartLink,
   StorageEnding,
   StorageMethod,
+  SubjectLink,
+  ToArgument,
+  ToReceiver,
 } from "./chain.js";
 export type { RanExample, RunOverCode } from "./example.js";
 export type {
