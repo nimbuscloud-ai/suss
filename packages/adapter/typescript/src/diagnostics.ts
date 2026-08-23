@@ -95,14 +95,17 @@ export interface PackFunnel {
   /**
    * Bound summaries on the provider side of their boundary.
    *
-   * Transitions say what a unit does with a request, which only a
-   * provider can say. A consumer records what it reads back from the
-   * response instead, and that goes on the summary's metadata. Measuring
-   * a client pack against transitions would report every working one as
-   * having extracted nothing.
+   * Kept apart from the count below because a provider that produced
+   * no transitions is a different problem from a client that produced
+   * none.
    */
   providerSummaries: number;
-  /** Provider summaries with at least one transition. */
+  /**
+   * Summaries with at least one transition, of any role. A provider's
+   * transitions say what it does with a request and a client's say what
+   * it expects back, so a pack whose summaries have none has bound
+   * something and described nothing either way.
+   */
   summariesWithBehavior: number;
   /**
    * Where one of this pack's hooks threw. Every count above is a floor
@@ -375,9 +378,9 @@ function summaryCountsByPack(
     entry.bound += 1;
     if (BOUNDARY_ROLE[summary.kind] === "provider") {
       entry.providers += 1;
-      if (summary.transitions.length > 0) {
-        entry.withBehavior += 1;
-      }
+    }
+    if (summary.transitions.length > 0) {
+      entry.withBehavior += 1;
     }
     counts.set(recognition, entry);
   }
