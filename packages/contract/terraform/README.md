@@ -52,9 +52,9 @@ Depends on `@suss/behavioral-ir` for the summaries it produces and `hcl2-parser`
 
 ## A way in that copies part of an item
 
-A DynamoDB index does not carry the whole item. `projection_type = "INCLUDE"` copies the attributes it lists, `KEYS_ONLY` copies none, and both copy the index's keys and the table's. A reader asking that index for anything else gets nothing back for it, and the store raises no error, so the caller sees an item with fields missing and nothing says why.
+A DynamoDB index does not contain the whole item. `projection_type = "INCLUDE"` copies the attributes it lists, `KEYS_ONLY` copies none, and both copy the index's keys and the table's. A reader asking that index for anything else gets nothing back for it, and the store raises no error, so the caller sees an item with fields missing and nothing says why.
 
-So an index like that declares every field it will ever have, and its contract says `exhaustive` where the table's says `partial`. A pack states which attributes carry that, under `serves`, and a store without the idea leaves it out.
+So an index like that declares every field it will ever have, and its contract says `exhaustive` where the table's says `partial`. A pack states which attributes have that, under `serves`, and a store without the idea leaves it out.
 
 ## A resource that reads what another one declares
 

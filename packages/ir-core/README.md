@@ -23,7 +23,7 @@ const binding = restBinding({
 
 ## Message-bus channels
 
-A channel is a subject, optionally qualified by the bus that carries it, written `${bus}#${subject}`. Two channels pair when their subjects are equal and their buses agree, and buses agree when they are the same or when either side does not know its bus.
+A channel is a subject, optionally qualified by the bus it travels on, written `${bus}#${subject}`. Two channels pair when their subjects are equal and their buses agree, and buses agree when they are the same or when either side does not know its bus.
 
 The two sides rarely know the same amount. A CloudFormation template gives both the bus and the detail-type, and it goes out of its way to distinguish one bus from another, so when a side does know its bus we keep that precision. Code usually knows only the subject: the code pack reads `subject: 'order.placed'` from a handler's config, but which bus actually reaches that handler is deployment configuration the code never mentions. So `default#order.placed` pairs with `order.placed`, while `staging#order.placed` does not pair with `default#order.placed`.
 
@@ -41,7 +41,7 @@ A container or an access path in a summary is a string that means one of three t
 
 `boundaryName.ts` owns the syntax in both directions. `parseBoundaryName` turns a string into the discriminated `BoundaryName` value, `boundaryNameString` turns one back into exactly the string it came from, and everything else, `namesAgree`, `namesNothing`, `fixedTextLength`, `referenceName`, `referenceFromName`, is a view over that pair. Nothing outside the module reads or writes the braces itself: a second parser can disagree about which of the three a string is, and a second printer can spell a value the parser cannot read back. Both have happened. The two halves of caller grounding once spelled a reference differently and never met (#456), which is why writing one and reading one are the same module rather than a format each side implements for itself. `check:name-syntax` in CI keeps it that way.
 
-The wire format is the string. Summaries on disk carry `orders-v1`, `{stage}-orders-v1`, `{location.table}` unchanged, so nothing about this layout is a schema change, and an old summary reads the same as a new one.
+The wire format is the string. Summaries on disk contain `orders-v1`, `{stage}-orders-v1`, `{location.table}` unchanged, so nothing about this layout is a schema change, and an old summary reads the same as a new one.
 
 ### How two names pair
 
