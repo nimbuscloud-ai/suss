@@ -6,28 +6,33 @@ Twenty-two packs read code today, across eighteen frameworks, three HTTP and Gra
 
 Most of that is TypeScript and JavaScript, which is what `suss extract` reads. Three of the framework packs are not: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby reads Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well; the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
-## Install by stack
+## What to run, by stack
+
+Every pack ships inside the CLI, so there is one install:
 
 ```bash
-npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/client-axios
+npm install --save-dev @suss/cli
 ```
 
-Common combinations:
+After that a pack is reached by name, and the names are what `-f` takes.
+A declared artifact is read by `suss contract` rather than by a pack.
 
-| Stack | Packs |
+| Stack | What to run |
 |---|---|
-| ts-rest full-stack | `@suss/framework-ts-rest` (provider + client through the contract) |
-| Hono + fetch | `@suss/framework-hono @suss/client-web` |
-| Express + fetch | `@suss/framework-express @suss/client-web` |
-| Next.js route handlers | `@suss/framework-nextjs` |
-| React + GraphQL | `@suss/framework-react @suss/client-apollo` |
-| Lambda + SQS | `@suss/framework-aws-sqs @suss/contract-cloudformation @suss/runtime-node` |
-| Cloudflare Worker | `@suss/framework-cloudflare-workers @suss/contract-wrangler` |
-| App backed by Postgres (Prisma) | add `@suss/framework-prisma @suss/contract-prisma` to any of the above |
-| App backed by Postgres (Drizzle) | add `@suss/framework-drizzle` to any of the above |
-| App backed by MongoDB (Mongoose) | add `@suss/framework-mongoose` to any of the above |
+| ts-rest full-stack | `-f ts-rest`, which reads the provider and the client through the contract |
+| Hono and fetch | `-f hono -f fetch` |
+| Express and fetch | `-f express -f fetch` |
+| Next.js route handlers | `-f nextjs` |
+| React and GraphQL | `-f react -f apollo-client` |
+| Lambda and SQS | `-f aws-sqs -f node`, and `contract --from cloudformation` |
+| Cloudflare Worker | `-f cloudflare-workers`, and `contract --from wrangler` |
+| Postgres through Prisma | add `-f prisma`, and `contract --from prisma` |
+| Postgres through Drizzle | add `-f drizzle` |
+| MongoDB through Mongoose | add `-f mongoose` |
 
-The [add-to-project guide](/guides/add-to-project) walks the integration end-to-end.
+`suss init` reads your dependencies and writes these out for your own
+project. The [add-to-project guide](/guides/add-to-project) walks the
+integration end-to-end.
 
 ## Core
 
@@ -42,6 +47,7 @@ The [add-to-project guide](/guides/add-to-project) walks the integration end-to-
 | [`@suss/resolution`](../../packages/resolution) | Datalog rules for following a value back to the function it resolves to: a factory's argument, a re-exported wrapper, a closure three levels down. Language-neutral, so an adapter supplies facts and inherits the rules. | ![](../../.github/badges/coverage-resolution.svg) |
 | [`@suss/extractor`](../../packages/extractor) | Assembly engine. It converts raw extracted structure into `BehavioralSummary`. | ![](../../.github/badges/coverage-extractor.svg) |
 | [`@suss/recognize`](../../packages/recognize) | Write a pack as data: a chain of named links, compiled to the recognizer hooks, run by any adapter that implements the executor ops. | ![](../../.github/badges/coverage-recognize.svg) |
+| [`@suss/packs`](../../packages/packs) | Every pack, one subpath each, so `@suss/packs/express` reaches the Express pack. The CLI resolves `-f` names to these on its own. | tested through each pack |
 | [`@suss/adapter-typescript`](../../packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](../../.github/badges/coverage-typescript.svg) |
 | [`@suss/adapter-python`](../../packages/adapter/python) | Python language adapter: tree-sitter (WASM) parsing, a lexical binder, repo-scoped module resolution. v0, no path-engine work yet. | ![](../../.github/badges/coverage-python.svg) |
 | [`@suss/adapter-ruby`](../../packages/adapter/ruby) | Ruby language adapter: tree-sitter (WASM) parsing, a lexical binder over class/module nesting, Rails' constant-to-path convention for `mutation:` / `resolver:` wiring. v0, graphql-ruby only, no `routes.rb`, no path-engine work yet. | ![](../../.github/badges/coverage-ruby.svg) |

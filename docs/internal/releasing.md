@@ -1,6 +1,6 @@
 # Releasing
 
-All 58 packages share one version. You raise that number once in the
+All 29 packages share one version. You raise that number once in the
 root `package.json`,
 [`scripts/preparePublish.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/preparePublish.mjs)
 copies it out to every package, and
@@ -30,7 +30,7 @@ nothing and still writes the release notes to the job summary, so you
 can read what the release would say before it says it.
 
 Start with a dry run. It reports which credential it found before it
-lists anything, so a rehearsal that says "would publish 58 packages" is
+lists anything, so a rehearsal that says "would publish 29 packages" is
 one that would in fact have published them.
 
 You can publish from a laptop with `npm run release -- --otp <code>`,
@@ -80,7 +80,7 @@ that each package configures for itself, at
 `POST /-/npm/v1/oidc/token/exchange/package/{name}`. A package that has
 not been set up gets nothing back, and with no token to fall back on,
 that package alone fails. There is no organization-wide setting and no
-bulk UI, so you do this 44 times.
+bulk UI, so you do this once per package.
 
 On npmjs.com, for each package: **Packages → the package → Settings →
 Trusted Publisher → GitHub Actions**, then
@@ -97,6 +97,20 @@ The workflow filename is the name on its own (not
 `.github/workflows/release.yml`), and it keeps its extension. A package
 can have only one trusted publisher at a time; changing providers means
 editing the existing entry rather than adding a second.
+
+### A package npm has never seen
+
+That settings page belongs to a package, so a package that has never
+been published has nowhere to configure a publisher, and its first
+version cannot go out over OIDC. Every package that failed at 0.11.0
+was already on the registry from an earlier release and had never been
+set up, which is why setting them up and re-running worked.
+
+Publish the first version of a genuinely new package by hand, then
+configure its trusted publisher, and every release after that goes the
+same way as the rest. Check before the release rather than during it:
+a release that stops on a new package leaves the packages that
+depend on it pointing at a version nobody can install.
 
 Nothing needs to change in the repository. The pieces the workflow has
 to supply are already there:
@@ -145,7 +159,7 @@ the registry is confirming the version is up.
 
 ## What a release leaves behind
 
-- 58 packages on the registry at the new version.
+- 29 packages on the registry at the new version.
 - An annotated `v<version>` tag on the commit that was published.
 - A GitHub release at that tag, titled `v<version>`, with the notes
   the workflow generated from the commits since the last release.
@@ -162,7 +176,7 @@ how 0.0.2 reached npm and `main` with no tag on it. The release is
 created with `--verify-tag`, so if the tag did not reach the remote the
 release is not written either.
 
-Publishing 58 packages, tagging, and writing the release are three
+Publishing 29 packages, tagging, and writing the release are three
 steps, and a run can stop between them. Re-dispatching is safe: the
 packages already on the registry are skipped, and the tag check stops
 the run before it publishes a version that is already out. If the tag

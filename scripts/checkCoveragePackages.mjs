@@ -39,6 +39,10 @@ import { ROOT, readWorkspacePackages } from "./workspacePackages.mjs";
  */
 const EXEMPT = new Map([
   // ["packages/example", "why this one cannot be measured"],
+  [
+    "packages/packs",
+    "every file re-exports one pack and nothing else, so the packs' own tests are the coverage",
+  ],
 ]);
 
 const listedDirs = new Map(coveragePackages);

@@ -37,9 +37,9 @@ an Express and Prisma API of about fifty units:
   Declared contracts
     prisma           a Prisma schema at src/prisma/schema.prisma
 
-1. Install the packs
+1. Install suss
 
-   npm install --save-dev @suss/cli @suss/framework-prisma @suss/client-axios @suss/framework-express @suss/contract-prisma
+   npm install --save-dev @suss/cli
 
 2. Read each side into one folder
 
@@ -59,8 +59,7 @@ side of those queries.
 ## Read the code
 
 ```bash
-npm install --save-dev @suss/cli @suss/framework-express \
-  @suss/client-axios @suss/framework-prisma @suss/contract-prisma
+npm install --save-dev @suss/cli
 
 npx suss extract -p tsconfig.app.json -f express -f axios -f prisma -o summaries/code.json
 npx suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json
@@ -166,7 +165,7 @@ npm init -y
 npm pkg set type=module
 
 npm install hono
-npm install --save-dev @suss/cli @suss/framework-hono @suss/client-web typescript
+npm install --save-dev @suss/cli typescript
 ```
 
 `tsconfig.json`:

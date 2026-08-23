@@ -43,6 +43,27 @@ const VERSION = JSON.parse(
  */
 const OWNS_TS_MORPH = ["@suss/adapter-typescript", "@suss/cli"];
 
+/**
+ * The packages `@suss/packs` bundles, read off its entry files.
+ *
+ * Each of those is built into `@suss/packs` and published inside it, so
+ * publishing it again on its own would ship the same code twice under
+ * two names. They stay `private: true`, and this is derived rather than
+ * listed so that a pack added to or dropped from `@suss/packs` needs no
+ * second edit here.
+ */
+const BUNDLED_INTO_PACKS = new Set(
+  fs
+    .readdirSync(path.join(PACKAGES_DIR, "packs", "src"))
+    .filter((entry) => entry.endsWith(".ts"))
+    .flatMap((entry) => [
+      ...fs
+        .readFileSync(path.join(PACKAGES_DIR, "packs", "src", entry), "utf8")
+        .matchAll(/from "(@suss\/[\w-]+)"/g),
+    ])
+    .map((match) => match[1]),
+);
+
 /** The one ts-morph every pack has to agree with: the adapter's. */
 const TS_MORPH_RANGE = JSON.parse(
   fs.readFileSync(
@@ -56,6 +77,14 @@ function prepare(manifest, { write }) {
   const raw = fs.readFileSync(manifest, "utf8");
   const pkg = JSON.parse(raw);
   const changes = [];
+
+  // A bundled pack is meant to stay private, so nothing below applies
+  // to it: it ships inside `@suss/packs` rather than under its own name.
+  if (BUNDLED_INTO_PACKS.has(pkg.name)) {
+    return pkg.private === true
+      ? []
+      : ["bundled into @suss/packs but not private"];
+  }
 
   if (pkg.private === true) {
     changes.push("private: true");
@@ -181,6 +210,6 @@ if (check && problems > 0) {
 
 process.stdout.write(
   problems === 0
-    ? `All ${manifests.length} packages are ready to publish at ${VERSION}.\n`
+    ? `All ${manifests.length - BUNDLED_INTO_PACKS.size} packages are ready to publish at ${VERSION}, and ${BUNDLED_INTO_PACKS.size} ship inside @suss/packs.\n`
     : `\nUpdated ${manifests.length} packages to publish at ${VERSION}.\n`,
 );

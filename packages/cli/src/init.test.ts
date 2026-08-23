@@ -214,7 +214,9 @@ describe("formatInitReport", () => {
 
     // One pass over the project reads every pack, so one command does.
     expect(output).toContain("suss extract -f hono -f axios");
-    expect(output).toContain("@suss/framework-hono @suss/client-axios");
+    // The packs ship inside the CLI, so the install step names it alone.
+    expect(output).toContain("npm install --save-dev @suss/cli");
+    expect(output).not.toContain("@suss/framework-hono");
   });
 
   it("puts the file it found into the contract command", () => {

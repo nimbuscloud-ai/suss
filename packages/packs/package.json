@@ -1,0 +1,208 @@
+{
+  "name": "@suss/packs",
+  "version": "0.11.0",
+  "type": "module",
+  "description": "Every pack suss ships, as one package with a subpath per pack.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "packs"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/packs#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/packs"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "exports": {
+    "./activerecord": {
+      "types": "./dist/activerecord.d.ts",
+      "import": "./dist/activerecord.js"
+    },
+    "./apollo": {
+      "types": "./dist/apollo.d.ts",
+      "import": "./dist/apollo.js"
+    },
+    "./apollo-client": {
+      "types": "./dist/apollo-client.d.ts",
+      "import": "./dist/apollo-client.js"
+    },
+    "./aws-dynamodb": {
+      "types": "./dist/aws-dynamodb.d.ts",
+      "import": "./dist/aws-dynamodb.js"
+    },
+    "./aws-eventbridge": {
+      "types": "./dist/aws-eventbridge.d.ts",
+      "import": "./dist/aws-eventbridge.js"
+    },
+    "./aws-lambda": {
+      "types": "./dist/aws-lambda.d.ts",
+      "import": "./dist/aws-lambda.js"
+    },
+    "./aws-s3": {
+      "types": "./dist/aws-s3.d.ts",
+      "import": "./dist/aws-s3.js"
+    },
+    "./aws-sqs": {
+      "types": "./dist/aws-sqs.d.ts",
+      "import": "./dist/aws-sqs.js"
+    },
+    "./axios": {
+      "types": "./dist/axios.d.ts",
+      "import": "./dist/axios.js"
+    },
+    "./cloudflare-workers": {
+      "types": "./dist/cloudflare-workers.d.ts",
+      "import": "./dist/cloudflare-workers.js"
+    },
+    "./drizzle": {
+      "types": "./dist/drizzle.d.ts",
+      "import": "./dist/drizzle.js"
+    },
+    "./express": {
+      "types": "./dist/express.d.ts",
+      "import": "./dist/express.js"
+    },
+    "./fastapi": {
+      "types": "./dist/fastapi.d.ts",
+      "import": "./dist/fastapi.js"
+    },
+    "./fastify": {
+      "types": "./dist/fastify.d.ts",
+      "import": "./dist/fastify.js"
+    },
+    "./fetch": {
+      "types": "./dist/fetch.d.ts",
+      "import": "./dist/fetch.js"
+    },
+    "./flask-restx": {
+      "types": "./dist/flask-restx.d.ts",
+      "import": "./dist/flask-restx.js"
+    },
+    "./gcs": {
+      "types": "./dist/gcs.d.ts",
+      "import": "./dist/gcs.js"
+    },
+    "./graphql-ruby": {
+      "types": "./dist/graphql-ruby.d.ts",
+      "import": "./dist/graphql-ruby.js"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "import": "./dist/hono.js"
+    },
+    "./mongoose": {
+      "types": "./dist/mongoose.d.ts",
+      "import": "./dist/mongoose.js"
+    },
+    "./nestjs-graphql": {
+      "types": "./dist/nestjs-graphql.d.ts",
+      "import": "./dist/nestjs-graphql.js"
+    },
+    "./nestjs-rest": {
+      "types": "./dist/nestjs-rest.d.ts",
+      "import": "./dist/nestjs-rest.js"
+    },
+    "./nextjs": {
+      "types": "./dist/nextjs.d.ts",
+      "import": "./dist/nextjs.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./prisma": {
+      "types": "./dist/prisma.d.ts",
+      "import": "./dist/prisma.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./react-router": {
+      "types": "./dist/react-router.d.ts",
+      "import": "./dist/react-router.js"
+    },
+    "./redis": {
+      "types": "./dist/redis.d.ts",
+      "import": "./dist/redis.js"
+    },
+    "./sqlalchemy": {
+      "types": "./dist/sqlalchemy.d.ts",
+      "import": "./dist/sqlalchemy.js"
+    },
+    "./ts-rest": {
+      "types": "./dist/ts-rest.d.ts",
+      "import": "./dist/ts-rest.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --passWithNoTests",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "ts-morph": "^23.0.0"
+  },
+  "dependencies": {
+    "@suss/adapter-python": "0.11.0",
+    "@suss/adapter-ruby": "0.11.0",
+    "@suss/adapter-typescript": "0.11.0",
+    "@suss/behavioral-ir": "0.11.0",
+    "@suss/contract-graphql": "0.11.0",
+    "@suss/extractor": "0.11.0",
+    "@suss/manifest-aws": "0.11.0",
+    "@suss/recognize": "0.11.0",
+    "@suss/sql": "0.11.0"
+  },
+  "devDependencies": {
+    "@suss/client-apollo": "*",
+    "@suss/client-axios": "*",
+    "@suss/client-web": "*",
+    "@suss/framework-activerecord": "*",
+    "@suss/framework-apollo": "*",
+    "@suss/framework-aws-dynamodb": "*",
+    "@suss/framework-aws-eventbridge": "*",
+    "@suss/framework-aws-lambda": "*",
+    "@suss/framework-aws-s3": "*",
+    "@suss/framework-aws-sqs": "*",
+    "@suss/framework-cloudflare-workers": "*",
+    "@suss/framework-drizzle": "*",
+    "@suss/framework-express": "*",
+    "@suss/framework-fastapi": "*",
+    "@suss/framework-fastify": "*",
+    "@suss/framework-flask-restx": "*",
+    "@suss/framework-gcs": "*",
+    "@suss/framework-graphql-ruby": "*",
+    "@suss/framework-hono": "*",
+    "@suss/framework-mongoose": "*",
+    "@suss/framework-nestjs-graphql": "*",
+    "@suss/framework-nestjs-rest": "*",
+    "@suss/framework-nextjs": "*",
+    "@suss/framework-prisma": "*",
+    "@suss/framework-react": "*",
+    "@suss/framework-react-router": "*",
+    "@suss/framework-redis": "*",
+    "@suss/framework-sqlalchemy": "*",
+    "@suss/framework-ts-rest": "*",
+    "@suss/runtime-node": "*",
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

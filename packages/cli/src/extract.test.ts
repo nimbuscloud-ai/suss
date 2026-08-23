@@ -132,12 +132,14 @@ describe("resolveFramework", () => {
 
   it("stamps a pack with a hash of the code it loaded", async () => {
     const pack = await resolveFramework("apollo-client");
-    const loaded = fileURLToPath(import.meta.resolve("@suss/client-apollo"));
+    const loaded = fileURLToPath(
+      import.meta.resolve("@suss/packs/apollo-client"),
+    );
 
     expect(pack.version).toContain(computeContentHash([loaded]));
     expect(pack.version).not.toContain(
       computeContentHash([
-        fileURLToPath(import.meta.resolve("@suss/client-web")),
+        fileURLToPath(import.meta.resolve("@suss/packs/fetch")),
       ]),
     );
   });
@@ -148,12 +150,12 @@ describe("resolveFramework", () => {
 
     expect(apollo.version).toContain(
       computeContentHash([
-        fileURLToPath(import.meta.resolve("@suss/client-apollo")),
+        fileURLToPath(import.meta.resolve("@suss/packs/apollo-client")),
       ]),
     );
     expect(web.version).toContain(
       computeContentHash([
-        fileURLToPath(import.meta.resolve("@suss/client-web")),
+        fileURLToPath(import.meta.resolve("@suss/packs/fetch")),
       ]),
     );
   });
@@ -163,9 +165,7 @@ describe("resolveFramework", () => {
       `aws-sqs=${writeConfig('{"producers":[{"module":"@acme/async","receiver":"CommandDispatcher","method":"dispatch","subjectArg":0}]}')}`,
     );
     const plain = await resolveFramework("aws-sqs");
-    const loaded = fileURLToPath(
-      import.meta.resolve("@suss/framework-aws-sqs"),
-    );
+    const loaded = fileURLToPath(import.meta.resolve("@suss/packs/aws-sqs"));
     const code = computeContentHash([loaded]);
 
     expect(plain.version).toContain(code);
@@ -211,12 +211,17 @@ describe("resolveFramework", () => {
       fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
     ) as { dependencies: Record<string, string> };
 
+    // Every built-in is a subpath of the one package the CLI depends
+    // on, so the check is that the subpath resolves rather than that
+    // each pack is its own dependency.
     for (const [name, specifier] of Object.entries(BUILTIN_FRAMEWORKS)) {
       expect(
-        { name, declared: specifier in manifest.dependencies },
+        { name, declared: specifier.startsWith("@suss/packs/") },
         `-f ${name} names ${specifier}`,
       ).toEqual({ name, declared: true });
+      expect(() => import.meta.resolve(specifier)).not.toThrow();
     }
+    expect("@suss/packs" in manifest.dependencies).toBe(true);
 
     const packs = await Promise.all(
       Object.keys(BUILTIN_FRAMEWORKS).map(loadAnyPack),

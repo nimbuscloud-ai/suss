@@ -183,6 +183,14 @@ jobs:
         if: steps.diff.outputs.docs_only != 'true'
         run: npm run check:name-syntax
 
+      # A pack ships inside @suss/packs, and three of the four edits
+      # that puts it there fail without saying so: a missing subpath
+      # only breaks the published package, a missing build edge only
+      # breaks a cold CI run, and a pack left public publishes twice.
+      - name: Pack wiring
+        if: steps.diff.outputs.docs_only != 'true'
+        run: npm run check:packs
+
       # The fixed-seed fuzz run: a few thousand generated programs
       # through the pipeline itself, in about twenty seconds. A shape
       # that works today and stops working fails the build the day it

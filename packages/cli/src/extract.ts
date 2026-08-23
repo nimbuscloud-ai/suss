@@ -145,36 +145,36 @@ function canonicalize(value: unknown): string {
  * every `@suss/framework-*` the CLI depends on is here.
  */
 export const BUILTIN_FRAMEWORKS: Record<string, string> = {
-  "ts-rest": "@suss/framework-ts-rest",
-  "react-router": "@suss/framework-react-router",
-  express: "@suss/framework-express",
-  fastify: "@suss/framework-fastify",
-  hono: "@suss/framework-hono",
-  nextjs: "@suss/framework-nextjs",
-  react: "@suss/framework-react",
-  apollo: "@suss/framework-apollo",
-  "nestjs-graphql": "@suss/framework-nestjs-graphql",
-  "nestjs-rest": "@suss/framework-nestjs-rest",
-  "aws-lambda": "@suss/framework-aws-lambda",
-  "cloudflare-workers": "@suss/framework-cloudflare-workers",
-  prisma: "@suss/framework-prisma",
-  drizzle: "@suss/framework-drizzle",
-  mongoose: "@suss/framework-mongoose",
-  "aws-sqs": "@suss/framework-aws-sqs",
-  "aws-eventbridge": "@suss/framework-aws-eventbridge",
-  "aws-dynamodb": "@suss/framework-aws-dynamodb",
-  "aws-s3": "@suss/framework-aws-s3",
-  gcs: "@suss/framework-gcs",
-  redis: "@suss/framework-redis",
-  fetch: "@suss/client-web",
-  axios: "@suss/client-axios",
-  "apollo-client": "@suss/client-apollo",
-  node: "@suss/runtime-node",
-  fastapi: "@suss/framework-fastapi",
-  "flask-restx": "@suss/framework-flask-restx",
-  "graphql-ruby": "@suss/framework-graphql-ruby",
-  sqlalchemy: "@suss/framework-sqlalchemy",
-  activerecord: "@suss/framework-activerecord",
+  "ts-rest": "@suss/packs/ts-rest",
+  "react-router": "@suss/packs/react-router",
+  express: "@suss/packs/express",
+  fastify: "@suss/packs/fastify",
+  hono: "@suss/packs/hono",
+  nextjs: "@suss/packs/nextjs",
+  react: "@suss/packs/react",
+  apollo: "@suss/packs/apollo",
+  "nestjs-graphql": "@suss/packs/nestjs-graphql",
+  "nestjs-rest": "@suss/packs/nestjs-rest",
+  "aws-lambda": "@suss/packs/aws-lambda",
+  "cloudflare-workers": "@suss/packs/cloudflare-workers",
+  prisma: "@suss/packs/prisma",
+  drizzle: "@suss/packs/drizzle",
+  mongoose: "@suss/packs/mongoose",
+  "aws-sqs": "@suss/packs/aws-sqs",
+  "aws-eventbridge": "@suss/packs/aws-eventbridge",
+  "aws-dynamodb": "@suss/packs/aws-dynamodb",
+  "aws-s3": "@suss/packs/aws-s3",
+  gcs: "@suss/packs/gcs",
+  redis: "@suss/packs/redis",
+  fetch: "@suss/packs/fetch",
+  axios: "@suss/packs/axios",
+  "apollo-client": "@suss/packs/apollo-client",
+  node: "@suss/packs/node",
+  fastapi: "@suss/packs/fastapi",
+  "flask-restx": "@suss/packs/flask-restx",
+  "graphql-ruby": "@suss/packs/graphql-ruby",
+  sqlalchemy: "@suss/packs/sqlalchemy",
+  activerecord: "@suss/packs/activerecord",
 };
 
 /** Packs that read something other than TypeScript. */
@@ -289,7 +289,7 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
 
   const candidates = looksLikeAPackage(name)
     ? [name]
-    : [`@suss/framework-${name}`, `@suss/${name}`];
+    : [`@suss/packs/${name}`, `@suss/framework-${name}`, `@suss/${name}`];
   for (const specifier of candidates) {
     const mod = await importPack(specifier);
     if (mod !== null) {

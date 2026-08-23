@@ -57,9 +57,9 @@ npx @suss/cli init --plain
 ```
 
 ```
-1. Install the packs
+1. Install suss
 
-   npm install --save-dev @suss/cli @suss/framework-prisma @suss/client-axios @suss/framework-express @suss/contract-prisma
+   npm install --save-dev @suss/cli
 
 2. Read each side into one folder
 

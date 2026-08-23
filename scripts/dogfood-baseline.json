@@ -1,8 +1,8 @@
 {
   "totals": {
-    "packages": 58,
-    "packagesWithExports": 58,
-    "exports": 543,
+    "packages": 59,
+    "packagesWithExports": 59,
+    "exports": 573,
     "internal": 2156,
     "consumers": 989,
     "pairs": 981,
@@ -373,6 +373,13 @@
       "internal": 25,
       "consumers": 1,
       "unfollowedCalls": 1
+    },
+    "packages/packs": {
+      "name": "@suss/packs",
+      "exports": 30,
+      "internal": 0,
+      "consumers": 0,
+      "unfollowedCalls": 0
     },
     "packages/recognize": {
       "name": "@suss/recognize",
