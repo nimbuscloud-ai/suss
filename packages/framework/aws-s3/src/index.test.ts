@@ -1,15 +1,20 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { isImportedFrom, ResolutionStore } from "@suss/adapter-typescript";
+import {
+  callOpsFor,
+  isImportedFrom,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { s3Framework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 
-// The recognizer asks the type of an argument before asking where it
-// was written, so a fixture needs the SDK on disk to resolve against.
+// The declaration settles a command by where its class came from, so a
+// fixture needs the SDK on disk to resolve against.
 const SDK_TYPES = `
   export declare class S3Client { send(command: unknown): Promise<unknown>; }
   export declare class GetObjectCommand { constructor(input: unknown); }
@@ -64,6 +69,7 @@ function effectsIn(source: string): Effect[] {
       extractArgs: () => [],
       isImportedFrom,
       resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
+      ops: callOpsFor(node, (value: Node) => store.resolveWrittenValue(value)),
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);
@@ -294,6 +300,41 @@ describe("the pack itself", () => {
       name: "aws-s3",
       protocol: "s3",
       requiresImport: ["@aws-sdk/client-s3"],
+    });
+  });
+
+  it("prices what it declared: every link is data", () => {
+    expect(s3Framework().declarations?.declarations).toEqual([
+      {
+        name: "s3",
+        dataLinks: 4,
+        functionLinks: [],
+        astLinks: [],
+        example:
+          's3.send(new GetObjectCommand({ Bucket: "photos", Key: "a.jpg" }))',
+      },
+    ]);
+  });
+
+  it("emits the effect its example says it does", () => {
+    const ran = runExamples(s3Framework(), (code) =>
+      effectsIn(`
+        ${IMPORTS}
+        declare const s3: S3Client;
+        export async function example() {
+          return ${code};
+        }
+      `),
+    );
+
+    expect(ran).toHaveLength(1);
+    const { semantics, interaction } = storageOf(ran[0].effects[0]);
+    expect(semantics.container).toBe("photos");
+    expect(interaction).toMatchObject({
+      class: "storage-access",
+      kind: "read",
+      operation: "GetObjectCommand",
+      selector: ["a.jpg"],
     });
   });
 });
