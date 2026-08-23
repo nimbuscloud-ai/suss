@@ -1,6 +1,6 @@
 {
   "name": "@suss/recognize",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "type": "module",
   "description": "Write a pack as data: a chain of named links that any language adapter with the executor ops can run.",
   "keywords": [
@@ -49,8 +49,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.11.0",
-    "@suss/extractor": "0.11.0"
+    "@suss/behavioral-ir": "0.12.0",
+    "@suss/extractor": "0.12.0"
   },
   "devDependencies": {
     "tsup": "*",

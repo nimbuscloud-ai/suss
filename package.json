@@ -1,9 +1,9 @@
 {
   "name": "suss",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
-  "description": "Static behavioral analysis for TypeScript \u2014 extract, compare, and publish summaries of what your code does.",
+  "description": "Static behavioral analysis for TypeScript — extract, compare, and publish summaries of what your code does.",
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
   "homepage": "https://github.com/nimbuscloud-ai/suss#readme",
