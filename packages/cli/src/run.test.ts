@@ -190,6 +190,24 @@ describe("runCli top-level dispatch", () => {
     expect(io.stdout).toContain("extract");
   });
 
+  it("prints USAGE when any command is asked for help", async () => {
+    // `check --help` used to come back as an unknown option, and
+    // `init --help` ignored the flag and started scanning the repo.
+    for (const command of ["check", "extract", "inspect", "init"]) {
+      const { exit, io } = await capture(() => runCli([command, "--help"]));
+      expect(exit).toBe(0);
+      expect(io.stdout).toContain("Commands:");
+    }
+  });
+
+  it("leaves a help flag after the separator to the command", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["inspect", "--", "--help"]),
+    );
+    expect(exit).not.toBe(0);
+    expect(io.stdout).not.toContain("Commands:");
+  });
+
   it("rejects unknown commands with a non-zero exit", async () => {
     const { exit, io } = await capture(() => runCli(["nope"]));
     expect(exit).toBe(1);
