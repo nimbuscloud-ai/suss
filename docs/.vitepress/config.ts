@@ -95,6 +95,7 @@ export default defineConfig({
           },
           { text: "Suppress a finding", link: "/guides/suppress-findings" },
           { text: "Write a pack", link: "/guides/writing-a-pack" },
+          { text: "Why a pack found nothing", link: "/guides/pack-health" },
         ],
       },
       {

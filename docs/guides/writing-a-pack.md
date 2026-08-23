@@ -107,6 +107,8 @@ A pack test has two layers:
 
 See `packages/framework/ts-rest/src/index.test.ts` for a discovery-driven pack with contract reading, `packages/framework/express/src/index.test.ts` for one without, and `packages/runtime/node/src/scheduling.test.ts` for a recognizer-only pack.
 
+Once the pack runs against a project, `suss extract --explain` prints a health block that says which stage it stopped at. [Why a pack found nothing](pack-health.md) covers what each code means.
+
 ## What you don't need to know
 
 A pack author doesn't need to understand:
