@@ -25,8 +25,8 @@ describe("set up a Python project", () => {
 
     expect(init.stdout).toContain("suss extract --lang python");
     expect(init.stdout).toContain("npm install --save-dev @suss/cli");
-    expect(init.stdout).toContain("@suss/framework-fastapi");
-    expect(init.stdout).toContain("@suss/framework-flask-restx");
+    expect(init.stdout).toContain("-f fastapi");
+    expect(init.stdout).toContain("-f flask-restx");
   });
 
   it("says what each pack needs told before it will read anything", () => {
@@ -45,7 +45,7 @@ describe("set up a Ruby project", () => {
 
     expect(init.status, init.stderr).toBe(0);
     expect(init.stdout).toContain("graphql-ruby     graphql in Gemfile.lock");
-    expect(init.stdout).toContain("@suss/framework-graphql-ruby");
+    expect(init.stdout).toContain("-f graphql-ruby");
     expect(init.stdout).toContain("suss extract --lang ruby");
     expect(init.stdout).toContain('{"root":"app/graphql"}');
   });

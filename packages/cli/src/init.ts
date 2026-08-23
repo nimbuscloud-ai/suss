@@ -715,11 +715,12 @@ export function formatInitReport(report: InitReport): string {
     lines.push("");
   }
 
-  lines.push(bold("1. Install the packs"));
+  // The packs ship inside @suss/cli, so the only install anybody needs
+  // is the CLI itself. What they still have to know is which names to
+  // pass, and step 2 below spells those out.
+  lines.push(bold("1. Install suss"));
   lines.push("");
-  lines.push(
-    `   npm install --save-dev @suss/cli ${suggestions.map((s) => s.packageName).join(" ")}`,
-  );
+  lines.push("   npm install --save-dev @suss/cli");
   lines.push("");
 
   lines.push(bold("2. Read each side into one folder"));

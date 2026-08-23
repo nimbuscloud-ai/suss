@@ -92,7 +92,7 @@ npx suss inspect summaries/stripe.json | head -30
 ## Step 2. Extract your client code
 
 ```bash
-npm install -D @suss/client-axios   # or @suss/client-web, or @suss/client-apollo
+npm install -D @suss/cli   # the axios, fetch and apollo packs ship with it
 npx suss extract -p tsconfig.json -f axios -o summaries/client.json
 ```
 
