@@ -520,7 +520,7 @@ describe("checkStorage", () => {
     expect(unused).toHaveLength(1);
     expect(unused[0].description).toContain("deletedAt");
     expect(unused[0].description).toContain(
-      "A field the code takes off a record a query returned never counts as a read here",
+      "suss counts a column as read only when a query selects it",
     );
     expect(unused[0].severity).toBe("warning");
   });
@@ -573,9 +573,9 @@ describe("checkStorage", () => {
     );
     expect(writeOnly).toHaveLength(1);
     expect(writeOnly[0].description).toContain("lastLoginAt");
-    expect(writeOnly[0].description).toContain("no query asks for it back");
+    expect(writeOnly[0].description).toContain("no query reads it");
     expect(writeOnly[0].description).toContain(
-      "before treating the write as pointless",
+      "before you treat the write as pointless",
     );
   });
 
@@ -1397,8 +1397,8 @@ describe("a write written under another table's data", () => {
     const misread = findings.filter((f) => f.severity === "info");
 
     expect(misread).toHaveLength(1);
-    expect(misread[0]?.description).toContain('serves "tagList"');
-    expect(misread[0]?.description).toContain("read a relation as a column");
+    expect(misread[0]?.description).toContain('has no column "tagList"');
+    expect(misread[0]?.description).toContain("a pack read it as a column");
     // Nothing here is a claim about the project's code.
     expect(findings.filter((f) => f.severity === "error")).toEqual([]);
   });
@@ -1545,8 +1545,8 @@ describe("a write that moves which row a relation joins", () => {
     expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
       [],
     );
-    expect(descriptions).not.toContain("code here writes it");
-    expect(descriptions).toContain('Article declares "id", and no query here');
+    expect(descriptions).not.toContain("code here writes to it");
+    expect(descriptions).toContain('Article declares "id". No query here');
   });
 
   it("reads the key off the model the rest of the path arrives at", () => {

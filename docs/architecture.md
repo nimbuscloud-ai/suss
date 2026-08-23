@@ -197,7 +197,7 @@ What goes where, when adding new behavior:
 
 There is no pack whose only job is to translate the language spec; that work goes in the adapter.
 
-### Provider-shape carries client patterns (known tension)
+### The provider shape is reused for client patterns (known tension)
 
 The `PatternPack` interface was designed around provider-side extraction. Client and consumer discovery came later, through the `clientCall` match and the `returnStatement` terminal. That works correctly, but it leaves structural noise behind. `inputMapping` means nothing for a client, since clients don't receive framework-structured inputs. The `returnStatement` and `throwExpression` terminals are boilerplate every client pack repeats. And `contractReading` applies only to providers, yet it lives at the top level.
 

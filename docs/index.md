@@ -38,7 +38,7 @@ features:
     link: /reference/packages
     linkText: Packs by stack
   - title: Says when it cannot tell
-    details: "A call suss could not follow shows up as a gap in the output rather than as silence, so an empty answer never reads as nothing being wrong."
+    details: "A call suss could not follow shows up as a gap in the output rather than as silence, so an empty answer never looks like nothing being wrong."
     link: /faq
     linkText: FAQ
 ---
@@ -72,7 +72,7 @@ Compared 4 boundaries.
 
 ```
 [WARNING] boundaryFieldUnused
-  Comment declares "articleId" and code here writes it, but no query asks for it back. A field the code takes off a record a query returned never counts as a read here, so look for one before treating the write as pointless.
+  Comment declares "articleId" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "articleId" off a record it already fetched.
   provider: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
   consumer: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
   boundary: prisma (postgresql)
@@ -115,7 +115,7 @@ Types describe structure, and `User` is still `User`. Tests cover the cases some
 
 ## What you need to know
 
-Four words carry the whole tool. A **boundary** is where two units of code meet: an endpoint and its caller, a query and a table, a resolver and a schema. A **summary** is what suss worked out about one unit. A **check** compares the summaries on either side of a boundary. A **pack** teaches suss a library, and one ships for most of the stack already.
+Four words are the whole tool. A **boundary** is where two units of code meet: an endpoint and its caller, a query and a table, a resolver and a schema. A **summary** is what suss worked out about one unit. A **check** compares the summaries on either side of a boundary. A **pack** teaches suss a library, and one ships for most of the stack already.
 
 - **Adding it to a project you work on:** [Add suss to a project](/guides/add-to-project), then [Set up CI](/guides/ci-integration).
 - **Seeing it work end to end first:** [Get started](/tutorial/get-started) builds a small example.

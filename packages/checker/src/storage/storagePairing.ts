@@ -941,8 +941,8 @@ function makeSelectorMismatchFinding(
  * Both unused findings rest on a query asking for the field, which is
  * the only read either of them can see.
  */
-function askedForNote(verdict: string): string {
-  return `A field the code takes off a record a query returned never counts as a read here, so look for one ${verdict}.`;
+function askedForNote(field: string, verdict: string): string {
+  return `suss counts a column as read only when a query selects it, so before you treat ${verdict}, look for code that takes "${field}" off a record it already fetched.`;
 }
 
 /**
@@ -964,7 +964,7 @@ function makeServedFieldWrittenFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} serves "${field.name}" rather than storing it, so a pack read a relation as a column. The write is left out.`,
+    description: `${containerLabel(semantics)} has no column "${field.name}". It is a relation, and a pack read it as a column, so the write to it is left out.`,
     severity: "info",
   };
 }
@@ -980,7 +980,7 @@ function makeFieldUnusedFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares "${field}", and no query here asks for it or writes it. ${askedForNote("before treating the field as dead")}`,
+    description: `${containerLabel(semantics)} declares "${field}". No query here reads it and nothing writes to it. ${askedForNote(field, "the column as dead")}`,
     severity: "warning",
   };
 }
@@ -997,7 +997,7 @@ function makeWriteOnlyFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares "${field}" and code here writes it, but no query asks for it back. ${askedForNote("before treating the write as pointless")}`,
+    description: `${containerLabel(semantics)} declares "${field}" and code here writes to it, but no query reads it. ${askedForNote(field, "the write as pointless")}`,
     severity: "warning",
   };
 }

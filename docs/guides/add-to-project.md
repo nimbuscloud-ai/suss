@@ -159,7 +159,7 @@ The run succeeded and one pack contributed nothing to it. The usual
 cause is a library that is installed but not yet in a usable state.
 Prisma is the common one: `@prisma/client` is in `node_modules`, but
 until `npx prisma generate` runs, the package exports no model types,
-so every `prisma.article.findUnique` call reads as a call on an opaque
+so every `prisma.article.findUnique` call is treated as a call on an opaque
 value and the pack classifies none of them.
 
 ```bash

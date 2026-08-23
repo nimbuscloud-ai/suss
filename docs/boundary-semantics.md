@@ -439,7 +439,7 @@ transformation descriptor (path-rewrite rules, header-add list, etc.) rather
 than a category enum.
 
 Assembling multi-hop chains belongs in the query layer, not inside suss. Once
-pairing works two sides at a time over binding identities rich enough to carry
+pairing works two sides at a time over binding identities detailed enough to describe
 the details, walking a chain is graph traversal over the pairing results, the
 kind of thing an MCP tool or a query CLI does over the summary store. The IR
 additions (a transformation descriptor, and richer contract packs for the

@@ -135,7 +135,7 @@ A line starting `+` is an **effect**: something the branch does besides producin
 
 **Reaches** collects the same effects for the whole unit, so you can see everything a handler touches without reading down its branches.
 
-A line starting `!!` is a **gap**: something suss could not settle, written down instead of dropped. This one is the contract promising a 500 that no branch produces. A gap in the output is the difference between "there is nothing here" and "suss could not tell", and keeping them apart is why an empty answer never reads as an all-clear.
+A line starting `!!` is a **gap**: something suss could not settle, written down instead of dropped. This one is the contract promising a 500 that no branch produces. A gap in the output is the difference between "there is nothing here" and "suss could not tell", and keeping them apart is why an empty answer never looks like an all-clear.
 
 `suss inspect --diff before.json after.json` and `suss inspect --dir summaries/` are variants over the same load-and-parse plumbing. The first uses `diffSummaries` to compute added, removed and changed transitions per summary pair. The second uses `pairSummaries` to show which summaries face which, and which ones matched nothing.
 
