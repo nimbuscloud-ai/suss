@@ -74,8 +74,8 @@ function count(n: number, one: string, many: string): string {
 interface FunnelStage {
   from: { count: number };
   to: { count: number };
-  /** What to say when this stage dropped to nothing, given the count above it. */
-  said: (count: number) => string;
+  /** What to say when this stage dropped to nothing. */
+  said: string;
 }
 
 function stagesOf(funnel: PackFunnel): FunnelStage[] {
@@ -93,8 +93,7 @@ function stagesOf(funnel: PackFunnel): FunnelStage[] {
     stages.push({
       from: { count: funnel.unitsInGatedFiles },
       to: { count: funnel.effectsRecognized },
-      said: (n) =>
-        `it found the library and matched nothing in the ${count(n, "unit body", "unit bodies")} it looked inside`,
+      said: `it found the library and matched nothing in the ${count(funnel.unitsInGatedFiles, "unit body", "unit bodies")} it looked inside`,
     });
   }
 
@@ -102,8 +101,7 @@ function stagesOf(funnel: PackFunnel): FunnelStage[] {
     stages.push({
       from: { count: funnel.candidateFiles },
       to: { count: funnel.unitsDiscovered },
-      said: (n) =>
-        `it found the library in ${count(n, "source file", "source files")} and recognised nothing there`,
+      said: `it found the library in ${count(funnel.candidateFiles, "source file", "source files")} and recognised nothing there`,
     });
   }
 
@@ -111,14 +109,12 @@ function stagesOf(funnel: PackFunnel): FunnelStage[] {
     {
       from: { count: funnel.unitsClaimed },
       to: { count: funnel.summariesBound },
-      said: (n) =>
-        `it recognised ${count(n, "unit", "units")} and turned none of them into a summary`,
+      said: `it recognised ${count(funnel.unitsClaimed, "unit", "units")} and turned none of them into a summary`,
     },
     {
       from: { count: funnel.summariesBound },
       to: { count: funnel.summariesWithBehavior },
-      said: (n) =>
-        `it wrote ${count(n, "summary", "summaries")} and recorded nothing in any of them, so there is nothing here to compare`,
+      said: `it wrote ${count(funnel.summariesBound, "summary", "summaries")} and recorded nothing in any of them, so there is nothing here to compare`,
     },
   );
 
@@ -135,7 +131,7 @@ function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
       }
       violations.push({
         label: funnel.pack,
-        detail: stage.said(stage.from.count),
+        detail: stage.said,
       });
     }
   }
