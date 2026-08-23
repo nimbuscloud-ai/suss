@@ -31,13 +31,14 @@ export interface HealthCheck {
   /** The property being checked, as something either true or false. */
   name: string;
   /**
-   * The heading printed when this check finds something.
+   * The short word this check reports under, kebab-case.
    *
-   * `name` is written as an assertion, so printing it above the
-   * violations would say "no pack collides with itself" and then list a
-   * pack colliding with itself.
+   * It is the first column of every line the check prints, so a reader
+   * works out what it means once and recognises it after that. `name`
+   * is written as an assertion and would read backwards over a list of
+   * things failing it.
    */
-  whenBroken: string;
+  code: string;
   /**
    * Who the finding is addressed to.
    *
@@ -66,16 +67,9 @@ export interface HealthCheck {
  * Measuring against that made the same pack look working or broken
  * depending on which unrelated pack was passed alongside it.
  */
-/** "1 summary" / "3 summaries", so a count reads as a sentence. */
-function count(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
 interface FunnelStage {
-  from: { count: number };
-  to: { count: number };
-  /** What to say when this stage dropped to nothing. */
-  said: string;
+  from: { count: number; name: string };
+  to: { count: number; name: string };
 }
 
 function stagesOf(funnel: PackFunnel): FunnelStage[] {
@@ -91,30 +85,26 @@ function stagesOf(funnel: PackFunnel): FunnelStage[] {
   // when the gate resolved, since an unresolved gate has its own copy.
   if (funnel.recognizes && !funnel.discovers && gateSaysSomething) {
     stages.push({
-      from: { count: funnel.unitsInGatedFiles },
-      to: { count: funnel.effectsRecognized },
-      said: `it found the library and matched nothing in the ${count(funnel.unitsInGatedFiles, "unit body", "unit bodies")} it looked inside`,
+      from: { count: funnel.unitsInGatedFiles, name: "unit bodies" },
+      to: { count: funnel.effectsRecognized, name: "effects" },
     });
   }
 
   if (funnel.discovers && gateSaysSomething) {
     stages.push({
-      from: { count: funnel.candidateFiles },
-      to: { count: funnel.unitsDiscovered },
-      said: `it found the library in ${count(funnel.candidateFiles, "source file", "source files")} and recognised nothing there`,
+      from: { count: funnel.candidateFiles, name: "source files" },
+      to: { count: funnel.unitsDiscovered, name: "units" },
     });
   }
 
   stages.push(
     {
-      from: { count: funnel.unitsClaimed },
-      to: { count: funnel.summariesBound },
-      said: `it recognised ${count(funnel.unitsClaimed, "unit", "units")} and turned none of them into a summary`,
+      from: { count: funnel.unitsClaimed, name: "units" },
+      to: { count: funnel.summariesBound, name: "summaries" },
     },
     {
-      from: { count: funnel.summariesBound },
-      to: { count: funnel.summariesWithBehavior },
-      said: `it wrote ${count(funnel.summariesBound, "summary", "summaries")} and recorded nothing in any of them, so there is nothing here to compare`,
+      from: { count: funnel.summariesBound, name: "summaries" },
+      to: { count: funnel.summariesWithBehavior, name: "transitions" },
     },
   );
 
@@ -131,7 +121,7 @@ function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
       }
       violations.push({
         label: funnel.pack,
-        detail: stage.said,
+        detail: `${stage.from.count} ${stage.from.name} -> 0 ${stage.to.name}`,
       });
     }
   }
@@ -154,8 +144,7 @@ function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
     .filter((funnel) => funnel.version === null)
     .map((funnel) => ({
       label: funnel.pack,
-      detail:
-        "declares no version, so a cache entry cannot tell its builds apart",
+      detail: "no version declared",
     }));
 }
 
@@ -172,7 +161,7 @@ function selfCollisions(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
     .filter((funnel) => funnel.selfCollisions > 0)
     .map((funnel) => ({
       label: funnel.pack,
-      detail: `found ${count(funnel.selfCollisions, "unit", "units")} twice over, so two of its own patterns overlap and the second match was dropped`,
+      detail: `${funnel.selfCollisions} ${funnel.selfCollisions === 1 ? "unit" : "units"} matched twice, second dropped`,
     }));
 }
 
@@ -196,11 +185,10 @@ function threwWhileReading(
     .map((funnel) => {
       const first = funnel.failures[0] as PackFailure;
       const rest = funnel.failures.length - 1;
-      const alsoIn =
-        rest > 0 ? ` and on ${count(rest, "other file", "other files")}` : "";
+      const alsoIn = rest > 0 ? ` (+${rest} more)` : "";
       return {
         label: funnel.pack,
-        detail: `threw from ${first.hook} on ${first.file}${alsoIn}, so it read less than the counts below suggest: ${first.message}`,
+        detail: `${first.hook} on ${first.file}${alsoIn}: ${first.message}`,
       };
     });
 }
@@ -278,7 +266,7 @@ function opaqueLinks(
     .filter((gradient) => gradient.functionLinks.length > 0)
     .map((gradient) => ({
       label: gradient.pack,
-      detail: `${gradient.dataLinks} link(s) are data and ${gradient.functionLinks.length} written as a function: ${gradient.functionLinks.join(", ")}`,
+      detail: `${gradient.functionLinks.join(", ")} (${gradient.dataLinks} data)`,
     }));
 }
 
@@ -295,7 +283,7 @@ function reachesTheSyntaxTree(
     .filter((gradient) => gradient.astLinks.length > 0)
     .map((gradient) => ({
       label: gradient.pack,
-      detail: `reads the syntax tree at ${gradient.astLinks.join(", ")}, so those links run on this adapter alone`,
+      detail: gradient.astLinks.join(", "),
     }));
 }
 
@@ -313,7 +301,7 @@ function undocumentedDeclarations(
     .filter((gradient) => gradient.withoutExample.length > 0)
     .map((gradient) => ({
       label: gradient.pack,
-      detail: `${gradient.withoutExample.join(", ")} state no example, so nothing runs when they stop matching`,
+      detail: gradient.withoutExample.join(", "),
     }));
 }
 
@@ -326,43 +314,43 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
   return [
     {
       name: "no pack throws while it reads",
-      whenBroken: "a pack threw while it was reading",
+      code: "threw",
       audience: "run",
       violations: threwWhileReading(report.packs),
     },
     {
       name: "no pack finds something and records nothing",
-      whenBroken: "a pack found something and recorded nothing",
+      code: "no-output",
       audience: "run",
       violations: funnelDrops(report.packs),
     },
     {
       name: "no pack collides with itself",
-      whenBroken: "a pack collided with itself",
+      code: "double-match",
       audience: "run",
       violations: selfCollisions(report.packs),
     },
     {
       name: "every pack declares a version",
-      whenBroken: "a pack declares no version",
+      code: "no-version",
       audience: "pack",
       violations: unversionedPacks(report.packs),
     },
     {
       name: "every link a declared pack states is data",
-      whenBroken: "a declared pack wrote a link as a function",
+      code: "fn-link",
       audience: "pack",
       violations: opaqueLinks(gradients),
     },
     {
       name: "no declared pack reads the syntax tree",
-      whenBroken: "a declared pack reads the syntax tree",
+      code: "ast-link",
       audience: "pack",
       violations: reachesTheSyntaxTree(gradients),
     },
     {
       name: "every declaration states an example",
-      whenBroken: "a declaration states no example",
+      code: "no-example",
       audience: "pack",
       violations: undocumentedDeclarations(gradients),
     },
@@ -389,12 +377,21 @@ export function formatPackHealth(
     return "";
   }
 
-  const lines = ["", "Pack health:"];
-  for (const check of fired) {
-    lines.push(`  ${check.whenBroken}`);
-    for (const violation of check.violations) {
-      lines.push(`    ${violation.label}: ${violation.detail}`);
-    }
+  const rows = fired.flatMap((check) =>
+    check.violations.map((violation) => ({
+      code: check.code,
+      pack: violation.label,
+      detail: violation.detail,
+    })),
+  );
+  const codeWidth = Math.max(...rows.map((row) => row.code.length));
+  const packWidth = Math.max(...rows.map((row) => row.pack.length));
+
+  const lines = ["", `Pack health (${rows.length}):`];
+  for (const row of rows) {
+    lines.push(
+      `  ${row.code.padEnd(codeWidth)}  ${row.pack.padEnd(packWidth)}  ${row.detail}`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }

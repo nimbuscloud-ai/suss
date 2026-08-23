@@ -73,7 +73,7 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("recognised nothing there");
+    expect(found[0]?.detail).toBe("4 source files -> 0 units");
   });
 
   it("fires when a pack bound client summaries and none describe anything", () => {
@@ -83,8 +83,7 @@ describe("the funnel-drop check", () => {
       funnel({ providerSummaries: 0, summariesWithBehavior: 0 }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("recorded nothing in any of them");
-    expect(found[0]?.detail).toContain("it wrote 3 summaries");
+    expect(found[0]?.detail).toBe("3 summaries -> 0 transitions");
   });
 
   it("stays quiet when a client pack's summaries do describe something", () => {
@@ -107,7 +106,7 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("matched nothing in the 20 unit bodies");
+    expect(found[0]?.detail).toBe("20 unit bodies -> 0 effects");
   });
 
   it("says nothing about a recogniser whose library is not installed", () => {
@@ -157,7 +156,7 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("turned none of them into a summary");
+    expect(found[0]?.detail).toBe("3 units -> 0 summaries");
   });
 
   it("stays quiet when an earlier pack claimed every unit", () => {
@@ -177,7 +176,7 @@ describe("the funnel-drop check", () => {
   it("fires when every summary a pack wrote records nothing", () => {
     const found = drops([funnel({ summariesWithBehavior: 0 })]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("recorded nothing in any of them");
+    expect(found[0]?.detail).toBe("3 summaries -> 0 transitions");
   });
 });
 
@@ -266,9 +265,7 @@ describe("the gradient a declared pack sits on", () => {
     ]);
 
     expect(fired).toHaveLength(1);
-    expect(fired[0].detail).toBe(
-      "2 link(s) are data and 1 written as a function: redis.container",
-    );
+    expect(fired[0].detail).toBe("redis.container (2 data)");
   });
 
   it("leaves a pack alone when every link it states is data", () => {
@@ -332,7 +329,7 @@ describe("formatPackHealth", () => {
   it("says nothing when the caller asked for an audience that found nothing", () => {
     expect(
       formatPackHealth(
-        [{ whenBroken: "broken", name: "x", audience: "run", violations: [] }],
+        [{ code: "x", name: "x", audience: "run", violations: [] }],
         ["run"],
       ),
     ).toBe("");
@@ -340,11 +337,11 @@ describe("formatPackHealth", () => {
 
   it("prints only the audience the caller asked for", () => {
     const runOnly = formatPackHealth(checks(), ["run"]);
-    expect(runOnly).toContain("recorded nothing in any of them");
-    expect(runOnly).not.toContain("declares no version");
+    expect(runOnly).toContain("no-output");
+    expect(runOnly).not.toContain("no-version");
 
     const both = formatPackHealth(checks(), ["run", "pack"]);
-    expect(both).toContain("recorded nothing in any of them");
-    expect(both).toContain("declares no version");
+    expect(both).toContain("no-output");
+    expect(both).toContain("no-version");
   });
 });

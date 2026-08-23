@@ -90,9 +90,9 @@ describe("a pack whose hook throws", () => {
       const broke = await reportFor(packThatThrows());
       const printed = formatPackHealth(evaluatePackHealth(broke), ["run"]);
 
+      expect(printed).toContain("threw");
       expect(printed).toContain("breaks");
-      expect(printed).toContain("threw from discoverUnits");
-      expect(printed).toContain("read less than the counts below suggest");
+      expect(printed).toContain("discoverUnits on /src/a.ts");
 
       const quiet = await reportFor(packThatFindsNothing());
       expect(
