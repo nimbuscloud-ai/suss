@@ -20,6 +20,7 @@ import {
 } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
 
+import { readProjectFile, unreadArtifacts } from "./projectFile.js";
 import {
   DEFAULT_SUPPRESSIONS_FILENAMES,
   loadSuppressionsOrEmpty,
@@ -255,6 +256,7 @@ export function checkDir(
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
+      renderUnreadArtifacts(allSummaries, result.unmatched) +
       renderIntentSection(intent);
 
   writeReport(rendered, options.output);
@@ -770,6 +772,50 @@ function renderGapCoverage(withGaps: number, total: number): string {
   }
   const units = withGaps === 1 ? "one unit" : `${withGaps} units`;
   return `\nsuss met a call it could not follow in ${units}, of ${total}, so ${withGaps === 1 ? "that one is" : "those are"} described in part. \`suss inspect\` says which calls.\n`;
+}
+
+/**
+ * Artifacts `suss.json` says this project declares that this run never
+ * read, when something went unpaired.
+ *
+ * The other side of a declared boundary lives in the artifact, so a run
+ * without it pairs those boundaries with nothing. Saying which file and
+ * which command turns an empty comparison into one edit.
+ */
+function renderUnreadArtifacts(
+  summaries: ReadonlyArray<BehavioralSummary>,
+  unmatched: CheckAllResult["unmatched"],
+): string {
+  if (unmatched.providers.length + unmatched.consumers.length === 0) {
+    return "";
+  }
+
+  const project = readProjectFile(process.cwd());
+  if (project === null) {
+    return "";
+  }
+
+  const unread = unreadArtifacts(
+    project,
+    new Set(summaries.map((summary) => summary.location.file)),
+  );
+  if (unread.length === 0) {
+    return "";
+  }
+
+  const lines = [
+    "",
+    `${unread.length} ${unread.length === 1 ? "artifact this project declares was" : "artifacts this project declares were"} not read, and ${unread.length === 1 ? "it describes" : "they describe"} the other side of a boundary:`,
+    "",
+  ];
+  for (const entry of unread) {
+    lines.push(
+      `    suss contract --from ${entry.from} ${entry.file} -o summaries/${entry.from}.json`,
+    );
+  }
+  lines.push("");
+  lines.push("  Then check them together with suss check --dir summaries/.");
+  return `${lines.join("\n")}\n`;
 }
 
 function renderDirHuman(
