@@ -142,12 +142,12 @@ npx suss ask 'what writes postgresql:Article' --dir summaries/
 
 ```
 6 units write postgresql:Article:
-  @api/source::src/app/routes/article/article.service.ts::createArticle (src/app/routes/article/article.service.ts:162) through prisma.article.create
-  @api/source::src/app/routes/article/article.service.ts::updateArticle (src/app/routes/article/article.service.ts:289) through prisma.article.update
-  @api/source::src/app/routes/article/article.service.ts::deleteArticle (src/app/routes/article/article.service.ts:385) through prisma.article.delete
-  @api/source::src/app/routes/article/article.service.ts::favoriteArticle (src/app/routes/article/article.service.ts:562) through prisma.article.update
-  @api/source::src/app/routes/article/article.service.ts::unfavoriteArticle (src/app/routes/article/article.service.ts:608) through prisma.article.update
-  @api/source::src/app/routes/article/article.service.ts::disconnectArticlesTags (src/app/routes/article/article.service.ts:276) through prisma.article.update
+  createArticle (src/app/routes/article/article.service.ts:162) through prisma.article.create
+  updateArticle (src/app/routes/article/article.service.ts:289) through prisma.article.update
+  deleteArticle (src/app/routes/article/article.service.ts:385) through prisma.article.delete
+  favoriteArticle (src/app/routes/article/article.service.ts:562) through prisma.article.update
+  unfavoriteArticle (src/app/routes/article/article.service.ts:608) through prisma.article.update
+  disconnectArticlesTags (src/app/routes/article/article.service.ts:276) through prisma.article.update
 
 postgresql:Article is provided by src/prisma/schema.prisma::Article.
 

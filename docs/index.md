@@ -89,6 +89,10 @@ $ suss ask 'what writes postgresql:Article' --dir summaries/
   favoriteArticle (src/app/routes/article/article.service.ts:562) through prisma.article.update
   unfavoriteArticle (src/app/routes/article/article.service.ts:608) through prisma.article.update
   disconnectArticlesTags (src/app/routes/article/article.service.ts:276) through prisma.article.update
+
+postgresql:Article is provided by src/prisma/schema.prisma::Article.
+
+suss could not follow next, so a writer could be hiding behind it.
 ```
 
 Ask what an endpoint reaches, and why:

@@ -98,7 +98,7 @@ describe("suss ask", () => {
 
   function answer(
     question: string,
-    options: { json?: boolean } = {},
+    options: { json?: boolean; all?: boolean } = {},
   ): { output: string; code: number } {
     const chunks: string[] = [];
     const original = process.stdout.write.bind(process.stdout);
@@ -113,6 +113,37 @@ describe("suss ask", () => {
       process.stdout.write = original;
     }
   }
+
+  it("stops a long answer after ten units and says how many are left", () => {
+    const many = Array.from({ length: 14 }, (_, i) => ({
+      ...dao,
+      location: { ...dao.location, file: `src/reader${i}.ts` },
+      identity: {
+        ...dao.identity,
+        name: `read${i}`,
+        exportPath: [`read${i}`],
+        id: `repo::src/reader${i}.ts::read${i}`,
+      },
+    }));
+    fs.writeFileSync(path.join(dir, "app.json"), JSON.stringify(many));
+
+    const collapsed = answer("what reads aws.dynamodb:editions");
+    expect(collapsed.output).toContain("14 units read");
+    expect(collapsed.output).toContain("... and 4 more");
+    expect(collapsed.output).toContain("--all");
+    expect(collapsed.output).not.toContain("read11 (");
+
+    const full = answer("what reads aws.dynamodb:editions", { all: true });
+    expect(full.output).toContain("read11 (");
+    expect(full.output).not.toContain("and 4 more");
+  });
+
+  it("names a unit by its symbol, since the file follows in the location", () => {
+    const { output } = answer("what reads aws.dynamodb:editions");
+
+    expect(output).toMatch(/ {2}byPublication \(src\/editions\/dao\.ts:\d+\)/);
+    expect(output).not.toContain("::src/editions/dao.ts::byPublication");
+  });
 
   it("lists what an index declares", () => {
     const { output, code } = answer(
@@ -1058,7 +1089,10 @@ describe("suss ask across a grounded name", () => {
     );
 
     expect(code).toBe(0);
-    expect(output).toContain("repo::src/orderStore.ts::putRow");
+    // One workspace in the answer, so the unit is named by its symbol
+    // and the file comes from the location beside it.
+    expect(output).toContain("putRow (src/orderStore.ts:");
+    expect(output).not.toContain("repo::src/orderStore.ts::putRow (");
     expect(output).toContain(
       "which grounds to prod-subscribers-v1 via repo::src/orders.ts::subscribe",
     );
@@ -1072,7 +1106,7 @@ describe("suss ask across a grounded name", () => {
     );
 
     expect(code).toBe(0);
-    expect(output).toContain("repo::src/orderStore.ts::putRow");
+    expect(output).toContain("putRow (src/orderStore.ts:");
     expect(output).toContain(
       "which grounds to prod-subscribers-v1 via repo::src/orders.ts::subscribe",
     );

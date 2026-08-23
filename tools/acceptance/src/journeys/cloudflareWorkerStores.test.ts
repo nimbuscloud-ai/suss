@@ -84,7 +84,7 @@ describe("check a Worker against the stores wrangler.toml binds", () => {
 
     expect(deployed.status, deployed.stderr).toBe(0);
     for (const answer of [deployed.stdout, reference.stdout]) {
-      expect(answer).toContain("cloudflare-worker-stores::src/index.ts::fetch");
+      expect(answer).toContain("fetch (src/index.ts:");
       expect(answer).toContain(
         "which grounds to prod-subscribers-v1 via wrangler:",
       );
