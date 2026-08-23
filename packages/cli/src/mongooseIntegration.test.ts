@@ -11,7 +11,7 @@
 
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import mongooseFramework from "@suss/framework-mongoose";
@@ -91,15 +91,19 @@ function containerOf(access: StorageAccess): string | null {
 }
 
 describe("mongoose integration", () => {
-  it("emits storage-access interactions for every handler", async () => {
-    const summaries = await extractCode();
-    const accesses = storageAccesses(summaries);
+  // One ts-morph project for the whole file. Building it per test ran
+  // the extraction four times and timed out under a full-suite run.
+  let accesses: StorageAccess[];
+
+  beforeAll(async () => {
+    accesses = storageAccesses(await extractCode());
+  }, 30_000);
+
+  it("emits storage-access interactions for every handler", () => {
     expect(accesses.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("resolves the default-pluralized collection for User", async () => {
-    const summaries = await extractCode();
-    const accesses = storageAccesses(summaries);
+  it("resolves the default-pluralized collection for User", () => {
     const users = accesses.filter((a) => containerOf(a) === "users");
     expect(users.length).toBeGreaterThanOrEqual(3);
 
@@ -107,9 +111,7 @@ describe("mongoose integration", () => {
     expect(operations).toEqual(["create", "findById", "findByIdAndUpdate"]);
   });
 
-  it("resolves the schema's explicit collection for Post", async () => {
-    const summaries = await extractCode();
-    const accesses = storageAccesses(summaries);
+  it("resolves the schema's explicit collection for Post", () => {
     const posts = accesses.filter((a) => containerOf(a) === "blog_posts");
     expect(posts.length).toBeGreaterThanOrEqual(2);
 
@@ -117,10 +119,7 @@ describe("mongoose integration", () => {
     expect(operations).toEqual(["find", "save"]);
   });
 
-  it("reads the write payload and read projection fields", async () => {
-    const summaries = await extractCode();
-    const accesses = storageAccesses(summaries);
-
+  it("reads the write payload and read projection fields", () => {
     const created = accesses.find((a) => a.interaction.operation === "create");
     expect(created).toBeDefined();
     expect(created?.interaction.fields.sort()).toEqual(["email", "name"]);
