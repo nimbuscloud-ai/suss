@@ -86,7 +86,7 @@ suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
 
 | Flag | Required | Description |
 |---|---|---|
-| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. A name that is not built in resolves in three tries. A name starting with `@` or containing a `/` is imported exactly as you wrote it; otherwise suss tries `@suss/framework-NAME` and then `@suss/NAME`. |
+| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. A name that is not built in resolves in three tries. A name starting with `@` or containing a `/` is imported exactly as you wrote it; otherwise suss tries `@suss/packs/NAME`, then `@suss/framework-NAME`, then `@suss/NAME`. |
 | `-p`, `--project PATH` | no | Path to `tsconfig.json`, for the same type resolution your compiler sees. Leave it off and suss uses the nearest tsconfig or jsconfig above the working directory. |
 | `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
 | `--lang NAME` | no | Which language to read this project as: `typescript`, `python`, or `ruby`. Leave it off and suss works that out from what the directory contains, from the packs you asked for, and from the nearest tsconfig, and it tells you when it cannot tell. |
@@ -116,23 +116,26 @@ that has since been fixed.
 
 `-f NAME` accepts these out of the box:
 
-| Name | Package | What it discovers |
+Every one of them ships inside `@suss/packs`, so the module column is
+where the name resolves rather than something to install.
+
+| Name | Module | What it discovers |
 |---|---|---|
-| `ts-rest` | `@suss/framework-ts-rest` | ts-rest routers + contracts; handlers and clients derive method/path from the contract |
-| `express` | `@suss/framework-express` | `app.get(...)` / `router.get(...)` style registration |
-| `fastify` | `@suss/framework-fastify` | `fastify.get(...)` / equivalent Fastify handlers |
-| `hono` | `@suss/framework-hono` | `app.get(...)` Hono handlers, including `c.json(body, status)` |
-| `nextjs` | `@suss/framework-nextjs` | Next.js route handlers and pages; the route comes from where the file is on disk |
-| `nestjs-rest` | `@suss/framework-nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) |
-| `nestjs-graphql` | `@suss/framework-nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) |
-| `apollo` | `@suss/framework-apollo` | Apollo Server code-first resolvers (`new ApolloServer({ typeDefs, resolvers })`) |
-| `aws-lambda` | `@suss/framework-aws-lambda` | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes |
-| `react` | `@suss/framework-react` | Function components + locally-authored event handlers + `useEffect` bodies |
-| `react-router` | `@suss/framework-react-router` | React Router v6+ `loader` / `action` named exports |
-| `fetch` | `@suss/client-web` | Global `fetch(...)` call sites |
-| `axios` | `@suss/client-axios` | axios call sites + `axios.create` factories |
-| `apollo-client` | `@suss/client-apollo` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
-| `node` | `@suss/runtime-node` | `setTimeout` and friends, the `process` surface including `process.env.X`, module-loading globals |
+| `ts-rest` | `@suss/packs/ts-rest` | ts-rest routers + contracts; handlers and clients derive method/path from the contract |
+| `express` | `@suss/packs/express` | `app.get(...)` / `router.get(...)` style registration |
+| `fastify` | `@suss/packs/fastify` | `fastify.get(...)` / equivalent Fastify handlers |
+| `hono` | `@suss/packs/hono` | `app.get(...)` Hono handlers, including `c.json(body, status)` |
+| `nextjs` | `@suss/packs/nextjs` | Next.js route handlers and pages; the route comes from where the file is on disk |
+| `nestjs-rest` | `@suss/packs/nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) |
+| `nestjs-graphql` | `@suss/packs/nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) |
+| `apollo` | `@suss/packs/apollo` | Apollo Server code-first resolvers (`new ApolloServer({ typeDefs, resolvers })`) |
+| `aws-lambda` | `@suss/packs/aws-lambda` | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes |
+| `react` | `@suss/packs/react` | Function components + locally-authored event handlers + `useEffect` bodies |
+| `react-router` | `@suss/packs/react-router` | React Router v6+ `loader` / `action` named exports |
+| `fetch` | `@suss/packs/fetch` | Global `fetch(...)` call sites |
+| `axios` | `@suss/packs/axios` | axios call sites + `axios.create` factories |
+| `apollo-client` | `@suss/packs/apollo-client` | `@apollo/client` hooks + imperative `client.query` / `mutate` |
+| `node` | `@suss/packs/node` | `setTimeout` and friends, the `process` surface including `process.env.X`, module-loading globals |
 
 Three of them read another language, so you run them with `--lang` or
 point them at a directory suss treats as that language, and they cannot
@@ -142,9 +145,9 @@ something about your project, which you pass through
 
 | Name | Package | What it discovers |
 |---|---|---|
-| `fastapi` | `@suss/framework-fastapi` | FastAPI routes (Python): the verb comes from the decorator's attribute name, and router prefixes are composed one mount hop deep. `wrapperModules` is optional. |
-| `flask-restx` | `@suss/framework-flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. `wrapperModules` is optional. |
-| `graphql-ruby` | `@suss/framework-graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. It needs `root`, and reads nothing without it. |
+| `fastapi` | `@suss/packs/fastapi` | FastAPI routes (Python): the verb comes from the decorator's attribute name, and router prefixes are composed one mount hop deep. `wrapperModules` is optional. |
+| `flask-restx` | `@suss/packs/flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. `wrapperModules` is optional. |
+| `graphql-ruby` | `@suss/packs/graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. It needs `root`, and reads nothing without it. |
 
 Five more names are built in the same way, and discover no units of
 their own. They attach typed effects to calls inside whatever units
@@ -152,14 +155,15 @@ another pack found:
 
 | Name | Package | What it recognizes |
 |---|---|---|
-| `prisma` | `@suss/framework-prisma` | Prisma client calls, as storage-access interactions |
-| `drizzle` | `@suss/framework-drizzle` | Drizzle query-builder and relational-query calls, with SQL table names |
-| `aws-dynamodb` | `@suss/framework-aws-dynamodb` | AWS SDK v3 DynamoDB commands, as storage-access interactions. `requestFunctions` is optional. |
-| `aws-sqs` | `@suss/framework-aws-sqs` | AWS SDK v3 SQS producer calls, as message-send interactions |
-| `aws-eventbridge` | `@suss/framework-aws-eventbridge` | EventBridge `PutEvents` calls, as message-bus interactions |
+| `prisma` | `@suss/packs/prisma` | Prisma client calls, as storage-access interactions |
+| `drizzle` | `@suss/packs/drizzle` | Drizzle query-builder and relational-query calls, with SQL table names |
+| `aws-dynamodb` | `@suss/packs/aws-dynamodb` | AWS SDK v3 DynamoDB commands, as storage-access interactions. `requestFunctions` is optional. |
+| `aws-sqs` | `@suss/packs/aws-sqs` | AWS SDK v3 SQS producer calls, as message-send interactions |
+| `aws-eventbridge` | `@suss/packs/aws-eventbridge` | EventBridge `PutEvents` calls, as message-bus interactions |
 
-Your own packs work the same way. Install `@suss/framework-mypack` and
-`-f mypack` resolves it.
+Your own pack works the same way. Publish it under any name and pass
+that name: `-f @acme/suss-pack` imports it as written, and
+`-f mypack` finds `@suss/framework-mypack` through the fallback above.
 
 ### Configuring a pack
 

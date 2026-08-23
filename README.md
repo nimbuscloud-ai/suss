@@ -101,13 +101,13 @@ All four work on the same `BehavioralSummary[]`:
 
 ## Install
 
-suss ships as `@suss/cli`, plus packs you opt into for the frameworks, runtimes, and contract sources you use:
+suss ships as `@suss/cli`, with every pack inside it, so there is one install:
 
 ```bash
-npm install --save-dev @suss/cli @suss/framework-ts-rest @suss/client-axios
+npm install --save-dev @suss/cli
 ```
 
-See [docs/reference/packages.md](docs/reference/packages.md) for the full pack matrix and common stack combinations, and the [add-to-project guide](docs/guides/add-to-project.md) for end-to-end integration.
+A pack is then reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. See [docs/reference/packages.md](docs/reference/packages.md) for every name and the common stack combinations, and the [add-to-project guide](docs/guides/add-to-project.md) for end-to-end integration.
 
 ## A complete example
 
