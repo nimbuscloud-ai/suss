@@ -190,6 +190,31 @@ describe("suss init, guided", () => {
     );
   });
 
+  it("writes down the artifacts a later run would otherwise miss", async () => {
+    project(".", "api", ["hono"]);
+    // install: no, sussignore: no, ci: no, project file: yes
+    answers.push(false, false, false, true);
+
+    await initInteractive({ dir });
+
+    const written = JSON.parse(
+      fs.readFileSync(path.join(dir, "suss.json"), "utf8"),
+    ) as { read: Array<{ kind: string; packs?: string[] }> };
+    expect(written.read.some((entry) => entry.kind === "extract")).toBe(true);
+    expect(
+      written.read.find((entry) => entry.kind === "extract")?.packs,
+    ).toContain("hono");
+  });
+
+  it("leaves the project file alone when nobody asked for it", async () => {
+    project(".", "api", ["hono"]);
+    answers.push(false, false, false, false);
+
+    await initInteractive({ dir });
+
+    expect(fs.existsSync(path.join(dir, "suss.json"))).toBe(false);
+  });
+
   it("writes a workflow that runs both halves and then compares them", async () => {
     project(".", "api", ["hono"]);
     // install: no, sussignore: no, ci: yes

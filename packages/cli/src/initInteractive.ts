@@ -26,6 +26,11 @@ import {
   unnamedLanguages,
 } from "./init.js";
 import { run } from "./processRun.js";
+import {
+  PROJECT_FILE,
+  projectFileFor,
+  writeProjectFile,
+} from "./projectFile.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
@@ -97,6 +102,7 @@ export async function initInteractive(
   await offerFirstRun(root, chosen, installed === "installed");
   await offerSuppressions(root);
   await offerCi(root, chosen);
+  await offerProjectFile(root, chosen);
 
   p.outro("Done. Re-run `suss check --dir summaries/` whenever code changes.");
   return 0;
@@ -458,6 +464,47 @@ function runCommandsFor(target: Target): RunnableCommand[] {
   }
 
   return commands;
+}
+
+/**
+ * Write down what this run found, so a later command can read it.
+ *
+ * Without it the artifacts a project declares are known once, here, and
+ * a run that forgets one of them pairs those boundaries with nothing
+ * and cannot say why.
+ */
+async function offerProjectFile(root: string, chosen: Target[]): Promise<void> {
+  if (fs.existsSync(path.join(root, PROJECT_FILE))) {
+    return;
+  }
+
+  const entries = chosen.flatMap((target) => {
+    const file = projectFileFor(target.report);
+    if (file === null) {
+      return [];
+    }
+    return file.read.map((entry) =>
+      entry.kind === "contract" && target.directory !== "."
+        ? { ...entry, file: path.join(target.directory, entry.file) }
+        : entry,
+    );
+  });
+  if (entries.length === 0) {
+    return;
+  }
+
+  const answer = await p.confirm({
+    message: `Write ${PROJECT_FILE}, so later runs know what this project declares?`,
+    initialValue: true,
+  });
+  if (p.isCancel(answer) || !answer) {
+    return;
+  }
+
+  writeProjectFile(root, { version: 1, read: entries });
+  p.log.success(
+    `Wrote ${PROJECT_FILE}. Commit it: it says what the project contains, which is the same for everybody.`,
+  );
 }
 
 async function offerSuppressions(root: string): Promise<void> {
