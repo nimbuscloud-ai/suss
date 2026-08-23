@@ -20,7 +20,7 @@ readSqlAccess("SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id =
 // [{ table: "users", fields: ["email"], ... }, { table: "orders", fields: ["total"], ... }]
 ```
 
-A query written as a tagged template becomes readable through `sqlFromParts`, which writes each interpolation as a parameter. What a query interpolates is a value nearly every time, and a parameter is how the statement would carry one anyway.
+A query written as a tagged template becomes readable through `sqlFromParts`, which writes each interpolation as a parameter. What a query interpolates is a value nearly every time, and a parameter is how the statement would supply one anyway.
 
 It reads Postgres, MySQL, SQLite, and BigQuery. Pass the dialect the way a pack states its store:
 

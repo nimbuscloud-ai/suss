@@ -62,7 +62,7 @@ A file declines caching when one of its summaries takes part in a run-level Grap
 
 ### What stage one does not promise
 
-A type read more than one import hop away, through a chain no recorded mechanism followed, can change a summary's printed types without invalidating it. The middle file of a deep re-export chain has the same hole when the compiler, not the store, resolved the chain. A dependency upgrade under `node_modules` invalidates nothing (the pack and adapter hashes carry library knowledge instead). Recording what each answer read, per answer, is stage two of #422 and closes these.
+A type read more than one import hop away, through a chain no recorded mechanism followed, can change a summary's printed types without invalidating it. The middle file of a deep re-export chain has the same hole when the compiler, not the store, resolved the chain. A dependency upgrade under `node_modules` invalidates nothing (the pack and adapter hashes account for library knowledge instead). Recording what each answer read, per answer, is stage two of #422 and closes these.
 
 A re-extracted summary can also differ from a cache-free run in one representational way: type-shape expansion shares a per-run memo, so a run that walks five files can expand a shape to a different depth than a run that walks a thousand, and the shape digest moves with it. The summary was computed fresh either way; nothing served is stale.
 

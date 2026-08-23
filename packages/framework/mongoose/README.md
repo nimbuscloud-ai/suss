@@ -53,7 +53,7 @@ A receiver this cannot trace at all, through a factory function or a value passe
 
 Read methods: `find`, `findOne`, `findById`, `countDocuments`, `exists`, `distinct`. Write methods: `create`, `insertMany`, `updateOne`, `updateMany`, `replaceOne`, `deleteOne`, `deleteMany`, `findOneAndUpdate`, `findByIdAndUpdate`, `findOneAndDelete`, `findByIdAndDelete`, `findOneAndReplace`, and the document instance method `save()`.
 
-A pure-exclusion projection (every value falsy, `{ password: 0 }`) reads the whole document back, so it comes out as `["*"]`, the same as no projection at all. `deleteOne` / `deleteMany` / `findOneAndDelete` / `findByIdAndDelete` remove the whole document, so they come out as `["*"]` too. `save()` always comes out as `["*"]`: the document can carry mutations made after it was constructed, which this pack does not track, so it does not report the constructor's fields as if they were still current.
+A pure-exclusion projection (every value falsy, `{ password: 0 }`) reads the whole document back, so it comes out as `["*"]`, the same as no projection at all. `deleteOne` / `deleteMany` / `findOneAndDelete` / `findByIdAndDelete` remove the whole document, so they come out as `["*"]` too. `save()` always comes out as `["*"]`: the document can have mutations made after it was constructed, which this pack does not track, so it does not report the constructor's fields as if they were still current.
 
 `save()` resolves its own model by walking the document backward: through `new User(...)` when the document was constructed directly, or through the query that produced it (`const doc = await User.findById(id); doc.save()`).
 

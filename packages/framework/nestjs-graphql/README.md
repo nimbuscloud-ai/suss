@@ -6,7 +6,7 @@ Framework pack for [`@nestjs/graphql`](https://docs.nestjs.com/graphql/quick-sta
 
 `@suss/framework-nestjs-graphql` returns a `PatternPack` describing:
 
-- **Discovery**: a class decorated with `@Resolver()` whose methods carry `@Query`, `@Mutation`, `@ResolveField`, or `@Subscription`. NestJS wires resolvers internally, so there is no `new ApolloServer({ resolvers: {...} })` call for the resolver-map discovery in `@suss/framework-apollo` to find.
+- **Discovery**: a class decorated with `@Resolver()` whose methods have `@Query`, `@Mutation`, `@ResolveField`, or `@Subscription`. NestJS wires resolvers internally, so there is no `new ApolloServer({ resolvers: {...} })` call for the resolver-map discovery in `@suss/framework-apollo` to find.
 - **Boundary bindings**: `graphql-resolver(typeName, fieldName)`, pairing against a client operation the same way any other graphql-resolver summary does.
 - **Terminals**: a resolver returns a value, and errors propagate as thrown exceptions that NestJS and Apollo turn into `errors[]` on the outgoing response.
 - **Inputs**: `@Args()`, `@Parent()`, `@Context()`, and `@Info()` map to the (parent, args, context, info) tuple Apollo passes positionally. Each parameter's first matching decorator decides its role.

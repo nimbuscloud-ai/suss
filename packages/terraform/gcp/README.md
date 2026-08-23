@@ -15,7 +15,7 @@ const summaries = terraformFileToSummaries("infra/terraform/monitoring", {
 });
 ```
 
-`suss contract --from terraform <path>` loads the entries for you. Nothing here runs at check time: the summaries carry what a metric measures and what a reading needs, and `checkMetric` in `@suss/checker` compares them, so `suss check --dir` over a folder of summaries reports the pair below with no pack loaded.
+`suss contract --from terraform <path>` loads the entries for you. Nothing here runs at check time: the summaries contain what a metric measures and what a reading needs, and `checkMetric` in `@suss/checker` compares them, so `suss check --dir` over a folder of summaries reports the pair below with no pack loaded.
 
 ## What it reads today
 
