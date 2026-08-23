@@ -42,7 +42,7 @@ const firedBy = (name: string, packs: PackFunnel[]) =>
   }).find((check) => check.name === name)?.violations ?? [];
 
 const drops = (packs: PackFunnel[]) =>
-  firedBy("no pack drops everything it was holding", packs);
+  firedBy("no pack finds something and records nothing", packs);
 
 describe("the funnel-drop check", () => {
   it("stays quiet when a pack's gate selected nothing", () => {
@@ -73,7 +73,7 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("discovery matched nothing");
+    expect(found[0]?.detail).toContain("recognised nothing there");
   });
 
   it("fires when a pack bound client summaries and none describe anything", () => {
@@ -83,8 +83,8 @@ describe("the funnel-drop check", () => {
       funnel({ providerSummaries: 0, summariesWithBehavior: 0 }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("empty of transitions");
-    expect(found[0]?.detail).toContain("3 summaries bound");
+    expect(found[0]?.detail).toContain("recorded nothing in any of them");
+    expect(found[0]?.detail).toContain("it wrote 3 summaries");
   });
 
   it("stays quiet when a client pack's summaries do describe something", () => {
@@ -107,7 +107,7 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("matched nothing in the bodies it saw");
+    expect(found[0]?.detail).toContain("matched nothing in the 20 unit bodies");
   });
 
   it("says nothing about a recogniser whose library is not installed", () => {
@@ -157,9 +157,7 @@ describe("the funnel-drop check", () => {
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain(
-      "turned none of them into a bound summary",
-    );
+    expect(found[0]?.detail).toContain("turned none of them into a summary");
   });
 
   it("stays quiet when an earlier pack claimed every unit", () => {
@@ -176,10 +174,10 @@ describe("the funnel-drop check", () => {
     ).toEqual([]);
   });
 
-  it("fires when every summary a pack produced is empty of transitions", () => {
+  it("fires when every summary a pack wrote records nothing", () => {
     const found = drops([funnel({ summariesWithBehavior: 0 })]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toContain("empty of transitions");
+    expect(found[0]?.detail).toContain("recorded nothing in any of them");
   });
 });
 
@@ -196,7 +194,9 @@ describe("who a check is addressed to", () => {
     const audienceOf = (name: string) =>
       checks.find((check) => check.name === name)?.audience;
 
-    expect(audienceOf("no pack drops everything it was holding")).toBe("run");
+    expect(audienceOf("no pack finds something and records nothing")).toBe(
+      "run",
+    );
     expect(audienceOf("no pack collides with itself")).toBe("run");
     expect(audienceOf("every pack declares a version")).toBe("pack");
   });
@@ -340,11 +340,11 @@ describe("formatPackHealth", () => {
 
   it("prints only the audience the caller asked for", () => {
     const runOnly = formatPackHealth(checks(), ["run"]);
-    expect(runOnly).toContain("empty of transitions");
+    expect(runOnly).toContain("recorded nothing in any of them");
     expect(runOnly).not.toContain("declares no version");
 
     const both = formatPackHealth(checks(), ["run", "pack"]);
-    expect(both).toContain("empty of transitions");
+    expect(both).toContain("recorded nothing in any of them");
     expect(both).toContain("declares no version");
   });
 });

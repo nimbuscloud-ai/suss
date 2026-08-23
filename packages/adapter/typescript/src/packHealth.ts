@@ -66,12 +66,20 @@ export interface HealthCheck {
  * Measuring against that made the same pack look working or broken
  * depending on which unrelated pack was passed alongside it.
  */
-function stagesOf(funnel: PackFunnel): Array<{
-  from: { name: string; count: number };
-  to: { name: string; count: number };
-  meaning: string;
-}> {
-  const stages = [];
+/** "1 summary" / "3 summaries", so a count reads as a sentence. */
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+interface FunnelStage {
+  from: { count: number };
+  to: { count: number };
+  /** What to say when this stage dropped to nothing. */
+  said: string;
+}
+
+function stagesOf(funnel: PackFunnel): FunnelStage[] {
+  const stages: FunnelStage[] = [];
   const gateSaysSomething =
     funnel.gates.length > 0 && funnel.unresolvedGates.length === 0;
 
@@ -83,38 +91,30 @@ function stagesOf(funnel: PackFunnel): Array<{
   // when the gate resolved, since an unresolved gate has its own copy.
   if (funnel.recognizes && !funnel.discovers && gateSaysSomething) {
     stages.push({
-      from: {
-        name: "unit bodies to look inside",
-        count: funnel.unitsInGatedFiles,
-      },
-      to: { name: "effects recognized", count: funnel.effectsRecognized },
-      meaning:
-        "its import gate found the library and it matched nothing in the bodies it saw",
+      from: { count: funnel.unitsInGatedFiles },
+      to: { count: funnel.effectsRecognized },
+      said: `it found the library and matched nothing in the ${count(funnel.unitsInGatedFiles, "unit body", "unit bodies")} it looked inside`,
     });
   }
 
   if (funnel.discovers && gateSaysSomething) {
     stages.push({
-      from: { name: "candidate files", count: funnel.candidateFiles },
-      to: { name: "units discovered", count: funnel.unitsDiscovered },
-      meaning:
-        "its import gate selected files and discovery matched nothing in them",
+      from: { count: funnel.candidateFiles },
+      to: { count: funnel.unitsDiscovered },
+      said: `it found the library in ${count(funnel.candidateFiles, "source file", "source files")} and recognised nothing there`,
     });
   }
 
   stages.push(
     {
-      from: { name: "units claimed", count: funnel.unitsClaimed },
-      to: { name: "summaries bound", count: funnel.summariesBound },
-      meaning: "it claimed units and turned none of them into a bound summary",
+      from: { count: funnel.unitsClaimed },
+      to: { count: funnel.summariesBound },
+      said: `it recognised ${count(funnel.unitsClaimed, "unit", "units")} and turned none of them into a summary`,
     },
     {
-      from: { name: "summaries bound", count: funnel.summariesBound },
-      to: {
-        name: "summaries with behavior",
-        count: funnel.summariesWithBehavior,
-      },
-      meaning: "every summary it produced is empty of transitions",
+      from: { count: funnel.summariesBound },
+      to: { count: funnel.summariesWithBehavior },
+      said: `it wrote ${count(funnel.summariesBound, "summary", "summaries")} and recorded nothing in any of them, so there is nothing here to compare`,
     },
   );
 
@@ -131,7 +131,7 @@ function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
       }
       violations.push({
         label: funnel.pack,
-        detail: `${stage.meaning} (${stage.from.count} ${stage.from.name}, 0 ${stage.to.name})`,
+        detail: stage.said,
       });
     }
   }
@@ -172,7 +172,7 @@ function selfCollisions(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
     .filter((funnel) => funnel.selfCollisions > 0)
     .map((funnel) => ({
       label: funnel.pack,
-      detail: `discovered ${funnel.selfCollisions} unit(s) twice over, so two of its own patterns overlap`,
+      detail: `found ${count(funnel.selfCollisions, "unit", "units")} twice over, so two of its own patterns overlap and the second match was dropped`,
     }));
 }
 
@@ -197,12 +197,10 @@ function threwWhileReading(
       const first = funnel.failures[0] as PackFailure;
       const rest = funnel.failures.length - 1;
       const alsoIn =
-        rest > 0
-          ? ` and on ${rest} ${rest === 1 ? "other file" : "other files"}`
-          : "";
+        rest > 0 ? ` and on ${count(rest, "other file", "other files")}` : "";
       return {
         label: funnel.pack,
-        detail: `threw from ${first.hook} on ${first.file}${alsoIn}, so its counts below are a floor: ${first.message}`,
+        detail: `threw from ${first.hook} on ${first.file}${alsoIn}, so it read less than the counts below suggest: ${first.message}`,
       };
     });
 }
@@ -333,8 +331,8 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
       violations: threwWhileReading(report.packs),
     },
     {
-      name: "no pack drops everything it was holding",
-      whenBroken: "a pack dropped everything it was holding",
+      name: "no pack finds something and records nothing",
+      whenBroken: "a pack found something and recorded nothing",
       audience: "run",
       violations: funnelDrops(report.packs),
     },
