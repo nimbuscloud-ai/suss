@@ -121,7 +121,7 @@ Nothing is wrong with the schema.
 
 ```
 [WARNING] boundaryFieldUnused
-  Comment declares "articleId" and code here writes it, but no query asks for it back. A field the code takes off a record a query returned never counts as a read here, so look for one before treating the write as pointless.
+  Comment declares "articleId" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "articleId" off a record it already fetched.
   provider: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
   consumer: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
   boundary: prisma (postgresql)

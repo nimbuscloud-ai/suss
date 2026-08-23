@@ -147,7 +147,7 @@ the registry is confirming the version is up.
 
 - 58 packages on the registry at the new version.
 - An annotated `v<version>` tag on the commit that was published.
-- A GitHub release at that tag, titled `v<version>`, carrying the notes
+- A GitHub release at that tag, titled `v<version>`, with the notes
   the workflow generated from the commits since the last release.
 
 The version bump commit is already on `main` before any of this runs, so

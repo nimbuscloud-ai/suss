@@ -289,9 +289,10 @@ takes off a record the query already returned is invisible to it. A
 codebase that selects whole rows and picks fields out of them in the
 application leaves every column looking unread.
 
-`boundaryFieldUnused` says as much in its own text, "A field the code
-takes off a record a query returned never counts as a read here, so look
-for one before treating the field as dead", which
+`boundaryFieldUnused` says as much in its own text, "suss counts a
+column as read only when a query selects it, so before you treat the
+column as dead, look for code that takes it off a record it already
+fetched", which
 [#513](https://github.com/nimbuscloud-ai/suss/pull/513) added. The
 warning still fires on that evidence, and
 [#510](https://github.com/nimbuscloud-ai/suss/issues/510) is where
@@ -329,7 +330,7 @@ arriving more than once".
 
 `collectProducerFields` unions the fields of every producer whose
 channel pairs, and compares the consumer's reads against that union. One
-channel carrying two message types is ordinary, and a field only the
+channel that takes two message types is ordinary, and a field only the
 other producer sends stops a `boundaryFieldUnknown` that was true.
 
 Pinned by `messageBusPairing.test.ts`, "lets every producer on a channel

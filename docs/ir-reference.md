@@ -110,7 +110,7 @@ Where a code unit connects to the outside world. A REST endpoint is the same bou
 
 An identity field is null when the source does not give it a value; the empty string is invalid there. REST's method also allows `"*"`, the wildcard for a handler that serves every method. [`boundary-semantics.md`](boundary-semantics.md) covers each variant's pairing rule and the builder helpers packs use.
 
-Storage's `container` and `accessPath` carry the boundary-name syntax: the string is a literal (`orders-v1`), a pattern with deploy-time holes (`{stage}-orders-v1`), or a reference saying where to go and ask (`{location.table}`, `{ORDER_TABLE}`), and the braces alone say which. `parseBoundaryName` in `@suss/ir-core` is the one parser for that syntax; the `@suss/ir-core` README explains the three forms and how they pair. A REST `path` also uses braces, but a route parameter stops at the `/` between segments, so the two conventions stay separate.
+Storage's `container` and `accessPath` both use the boundary-name syntax: the string is a literal (`orders-v1`), a pattern with deploy-time holes (`{stage}-orders-v1`), or a reference saying where to go and ask (`{location.table}`, `{ORDER_TABLE}`), and the braces alone say which. `parseBoundaryName` in `@suss/ir-core` is the one parser for that syntax; the `@suss/ir-core` README explains the three forms and how they pair. A REST `path` also uses braces, but a route parameter stops at the `/` between segments, so the two conventions stay separate.
 
 ## `Transition`
 
@@ -391,7 +391,7 @@ The handler may be responding correctly in a form nobody taught the pack. Holdin
 }
 ```
 
-A call into a dependency is unfollowable too, and it leaves no gap: the run describes that as a boundary crossing rather than as a body, and a gap on every `JSON.parse` would bury the stops a reader can act on. What is recorded is a call whose callee the project itself declares. `suss inspect` prints these under `Could not follow:` beside what the unit reaches, and `suss check` counts how many summaries in a run carry any gap at all.
+A call into a dependency is unfollowable too, and it leaves no gap: the run describes that as a boundary crossing rather than as a body, and a gap on every `JSON.parse` would bury the stops a reader can act on. What is recorded is a call whose callee the project itself declares. `suss inspect` prints these under `Could not follow:` beside what the unit reaches, and `suss check` counts how many summaries in a run have any gap at all.
 
 **`consequence`** tells you what actually happens in the unhandled case:
 
