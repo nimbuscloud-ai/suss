@@ -156,14 +156,18 @@ npx suss inspect summaries/backend.json
 
 ```
 backend/src/server.ts
-└─ GET /users/:id  (express handler | line 14)
+└─ GET /users/{id}  (express handler | line 14)
        if  !user
          -> 404 { error }
        else
-         -> 200 { id, fullName }
+         -> 200 User (src/server.ts)
 
 1 summary.
 ```
+
+The 200 branch says `User` because that is the type the handler
+returns. Add `--types` and suss spells it out as `{ id, fullName }`,
+which is the list the comparison in the next step uses.
 
 ## Step 6. Compare them
 
@@ -179,11 +183,13 @@ what this tutorial wants. The `.name` read is an error either way.
 ```
 Compared 1 boundary.
 
+  1 provider-side boundary has no client to compare against.
+  Run the same command with --all to list them.
+
 ────────────────────────────────────────────────────────────
 [WARNING] unhandledProviderCase
   Provider produces status 404 but no consumer branch handles it
   provider: backend/src/server.ts::get (backend/src/server.ts:14)
-    also from: openapi:openapi.yaml::GET /users/{id}
   consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
   boundary: express (http) GET /users/:id
   to silence this one, add to the rules in .sussignore.yml:
@@ -193,9 +199,8 @@ Compared 1 boundary.
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 [ERROR] misreadProviderResponse
-  The consumer's fall-through path reads "name", but the 200 body the provider sends does not include it, and neither does any other response. The read comes back undefined and no error says so.
+  The consumer's fall-through path reads "name", but the 200 body the provider sends does not include it, and neither does any other response.
   provider: backend/src/server.ts::get (backend/src/server.ts:14)
-    also from: openapi:openapi.yaml::GET /users/{id}
   consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
   boundary: express (http) GET /users/:id
   to silence this one, add to the rules in .sussignore.yml:
@@ -203,6 +208,60 @@ Compared 1 boundary.
       boundary: "GET /users/{id}"
       provider: { transitionId: "get:response:200:ddaf2ab" }
       reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+2 findings: 1 error, 1 warning, 0 info
+
+1 boundary is claimed by more than one file:
+  GET /users/{id}  in backend.json and contract.json
+
+  suss tells boundaries apart by method and path, so two services that
+  serve the same route look like one. Anything compared against these
+  was compared against both. Check one service at a time to be sure.
+```
+
+Both bugs are there. Read the note at the bottom before going on,
+because it says what did not happen.
+
+The handler and the OpenAPI document both describe `GET /users/{id}`.
+suss tells boundaries apart by method and path, so it sees one boundary
+with two providers, compares the loader against the handler, and says
+which two files collided. The document took no part in that comparison.
+
+The `.name` read is the interesting one. suss followed the response
+through two `.then` callbacks to work out which fields the loader
+depends on, then compared that list against the handler's 200 body.
+
+## Step 6b. Compare the loader against the document
+
+Put the document and the loader on their own and the checks the
+collision skipped can run:
+
+```bash
+mkdir declared
+cp summaries/contract.json summaries/frontend.json declared/
+npx suss check --dir declared --fail-on warning
+```
+
+```
+Compared 1 boundary.
+
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 404 but no consumer branch handles it
+  provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "anonymous:response:404:stub" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+[ERROR] misreadProviderResponse
+  The consumer's fall-through path reads "name", but the 200 body the provider sends does not include it, and neither does any other response.
+  provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
+  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
 ────────────────────────────────────────────────────────────
 [WARNING] consumerContractViolation
   Contract declares response 404 but consumer does not handle it
@@ -215,26 +274,15 @@ Compared 1 boundary.
   provider: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
   consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
   boundary: openapi (http) GET /users/{id}
-  to silence this one, add to the rules in .sussignore.yml:
-    - kind: consumerContractViolation
-      boundary: "GET /users/{id}"
-      consumer: { transitionId: "loadUser:return:none:da39a3e" }
-      reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 4 findings: 1 error, 3 warning, 0 info
 ```
 
-Both bugs are there, and each is reported twice: once from pairing the
-two summaries, once from checking the loader against the declared
-contract.
-
-The `.name` read is the interesting one. suss followed the response
-through two `.then` callbacks to work out which fields the loader
-depends on, then compared that list against the handler's 200 body.
-
-The run ends with a note that two files claim `GET /users/{id}`. That is
-expected here, since the handler and the document describe the same
-endpoint.
+The same two bugs again, this time from the document rather than from
+the code, and two more the handler comparison could not make. The
+loader ignores a 404 the document promises, and it reads a field the
+document never promised. Both sources disagree with the loader in the
+same two places, which is why it is worth keeping both.
 
 ## Step 7. Fix the loader
 
@@ -252,11 +300,29 @@ export async function loadUser(id: string) {
 }
 ```
 
-Re-read the frontend and compare again:
+Re-read the frontend and run both comparisons again:
 
 ```bash
 npx suss extract -p tsconfig.json -f fetch -o summaries/frontend.json
+cp summaries/frontend.json declared/
 npx suss check --dir summaries --fail-on warning
+npx suss check --dir declared --fail-on warning
+```
+
+```
+Compared 1 boundary.
+
+  1 provider-side boundary has no client to compare against.
+  Run the same command with --all to list them.
+
+No findings. Every compared boundary agreed.
+
+1 boundary is claimed by more than one file:
+  GET /users/{id}  in backend.json and contract.json
+
+  suss tells boundaries apart by method and path, so two services that
+  serve the same route look like one. Anything compared against these
+  was compared against both. Check one service at a time to be sure.
 ```
 
 ```
@@ -265,7 +331,8 @@ Compared 1 boundary.
 No findings. Every compared boundary agreed.
 ```
 
-`suss check` exits 0.
+Both runs exit 0. The collision note stays, because the handler and
+the document still describe the same route.
 
 ## What this run exercises
 
