@@ -1,141 +1,190 @@
 # What a pack says about the boundary it found
 
-Status: draft, seeking alignment. One dead variant removed already; nothing
-else here is implemented.
+Status: draft, seeking alignment. One dead variant removed already
+(`decorator`); nothing else here is implemented.
 
-A discovery pack does two separate things. It finds a code unit, and it says
-which boundary that unit serves. The `PatternPack` interface has a field for
-each: `match` finds the unit, `bindingExtraction` says which boundary it serves.
+A discovery pack does two things. It finds a code unit, and it says which
+boundary that unit serves. Which of the two ways it says the second one
+depends on how it found the unit, and the two ways cover different ground.
 
-Only three of the fourteen `DiscoveryMatch` variants use the second field.
-For the other eleven, the boundary is worked out inside the adapter, in
-the code that implements the variant. That is why the union keeps growing: a framework
-whose boundary cannot be spelled in the existing `bindingExtraction` needs a
-new match variant, and the binding goes in with it.
-
-## What the field can say today
+**Through a callback.** A pack that discovers units with the `discoverUnits`
+hook returns `DiscoveredCustomUnit`, which can state any of four bindings:
 
 ```ts
-export type BindingExtraction = {
-  method:
-    | { type: "fromRegistration"; position: "methodName" | number; nameMap?: Record<string, string> }
-    | { type: "fromExportName" }
-    | { type: "fromContract" }
-    | { type: "fromClientMethod" }
-    | { type: "fromArgumentProperty"; position: number; property: string; default?: string }
-    | { type: "literal"; value: string };
-  path:
-    | { type: "fromRegistration"; position: number }
-    | { type: "fromArgumentProperty"; position: number; property: string }
-    | { type: "fromFilename"; root: string; /* ... */ }
-    | { type: "fromContract" }
-    | { type: "fromClientMethod" }
-    | { type: "fromArgumentLiteral"; position: number };
+routeInfo?:    { method: string | null; path: string | null };
+resolverInfo?: { typeName: string; fieldName: string };
+channelInfo?:  { messageBus: MessageBusSemantics["messageBus"]; channel: string | null };
+deployableUnit?: DeployableUnit;
+```
+
+cloudflare-workers uses it as a table, one row per trigger:
+
+```ts
+export const TRIGGERS: Record<string, TriggerShape> = {
+  fetch:     { kind: "handler",  routeInfo:   { method: "*", path: null } },
+  scheduled: { kind: "worker",   channelInfo: { messageBus: "cloudflare-cron",   channel: null } },
+  queue:     { kind: "consumer", channelInfo: { messageBus: "cloudflare-queues", channel: null } },
+  tail:      { kind: "consumer", channelInfo: { messageBus: "cloudflare-tail",   channel: null } },
 };
 ```
 
-An HTTP method and an HTTP path, both required. That is one member of the
-boundary vocabulary the IR already has:
+**Through a declaration.** A pack that discovers units with a `DiscoveryMatch`
+states its binding in `bindingExtraction`, which is typed:
 
-| Semantics | Fields |
-|---|---|
-| `rest` | method, path |
-| `graphql-resolver` | typeName, fieldName |
-| `graphql-operation` | operation, name |
-| `message-bus` | messageBus, channel |
-| `storage` | storageSystem, container |
-| `function-call` | (none) |
+```ts
+export type BindingExtraction = {
+  method: /* six sources */;
+  path:   /* six sources */;
+};
+```
 
-A GraphQL pack has nowhere to put `typeName` and `fieldName`, so
-`decoratedMethod` reads them off the decorator in `decoratedMethod.ts` and
-emits `resolverInfo`. A REST decorator pack has nowhere to say "the path is
-the class decorator's first argument", so `decoratedRoute` reads it in
-`decoratedRoute.ts` and emits `routeInfo`. The two files select their units
-the same way, through the same two helpers, and differ only in the reading
-they hardcode.
+An HTTP method and an HTTP path, both required, and no way to say anything
+else. A declarative pack whose boundary is a queue, a topic, or a GraphQL
+field has nowhere to put it.
 
-The two variant lists above also disagree with each other. `fromRegistration`
-takes `position: "methodName" | number` under `method` and `position: number`
-under `path`. `fromArgumentLiteral` exists for a path and not for a method.
-Nothing about a source of a value depends on whether the value is a method or
-a path, so the split buys nothing.
+## Why that matters
+
+`ast-link` in pack health reports a declared pack that reads the syntax tree,
+and `discoverUnits` is exactly that. So a pack author whose boundary is not
+REST is pushed toward the callback and then reported for using it. The two
+NestJS packs took the other route: `decoratedRoute` and `decoratedMethod`
+select their units through the same two helpers, `classDecoratorStandingFor`
+and `decoratedCallablesOf`, and each hardcodes its own binding reading in the
+adapter, one emitting `routeInfo` and the other `resolverInfo`.
+
+Concretely, the pack this blocks today is a NestJS microservice pack.
+`@EventPattern("order.placed")` on a decorated class is a consumer bound to a
+channel. `decoratedRoute` is the right match for finding it and cannot say
+what it is bound to, so the pack has to be written as a callback.
 
 ## What to change
 
-One list of ways to read a value, and one binding per semantics that says
-where each of its fields comes from.
+Give `DiscoveryPattern` the binding vocabulary `DiscoveredCustomUnit` already
+has, rather than inventing a second one.
 
 ```ts
-type FieldSource =
-  | { from: "registrationArgument"; position: number }
-  | { from: "registrationMethodName"; nameMap?: Record<string, string> }
-  | { from: "argumentProperty"; position: number; property: string; default?: string }
-  | { from: "argumentLiteral"; position: number }
-  | { from: "decoratorArgument"; on: "member" | "enclosingClass"; position: number }
-  | { from: "memberName" }
-  | { from: "exportName" }
-  | { from: "filename"; root: string; dynamic?: "brackets" | "dollarPrefix"; /* ... */ }
-  | { from: "contract" }
-  | { from: "clientMethod" }
-  | { from: "literal"; value: string };
+export interface DiscoveryPattern {
+  kind: string;
+  match: DiscoveryMatch;
+  bindingExtraction?: BindingExtraction;   // unchanged, still rest-only
+  /** A binding the pattern states outright, for a boundary the match cannot read from the source. */
+  binding?: DeclaredBinding;
+  requiresImport?: string[];
+}
 
-type BindingExtraction =
-  | { semantics: "rest"; method: FieldSource; path: FieldSource }
-  | { semantics: "graphql-resolver"; typeName: FieldSource; fieldName: FieldSource }
-  | { semantics: "message-bus"; channel: FieldSource; messageBus?: FieldSource }
-  | { semantics: "function-call" };
+type DeclaredBinding =
+  | { semantics: "message-bus"; messageBus: MessageBusSemantics["messageBus"]; channel: ChannelSource }
+  | { semantics: "graphql-resolver"; typeName: TypeNameSource; fieldName: FieldNameSource };
+
+type ChannelSource =
+  | { from: "decoratorArgument"; position: number }
+  | { from: "literal"; value: string }
+  | { from: "unstated" };
 ```
 
-nestjs-rest and nestjs-graphql then declare their bindings instead of getting
-them from the adapter:
+The NestJS microservice pack then declares:
 
 ```ts
-// nestjs-rest
-bindingExtraction: {
-  semantics: "rest",
-  method: { from: "memberName" },   // via the decorator name map on the match
-  path: { from: "decoratorArgument", on: "enclosingClass", position: 0 },
-}
-
-// nestjs-graphql
-bindingExtraction: {
-  semantics: "graphql-resolver",
-  typeName: { from: "decoratorArgument", on: "enclosingClass", position: 0 },
-  fieldName: { from: "memberName" },
+{
+  kind: "consumer",
+  match: {
+    type: "decoratedRoute",
+    importModule: "@nestjs/microservices",
+    classDecorators: ["Controller"],
+    methodDecoratorRouteMap: { EventPattern: "event", MessagePattern: "message" },
+  },
+  binding: {
+    semantics: "message-bus",
+    messageBus: "nats",
+    channel: { from: "decoratorArgument", position: 0 },
+  },
 }
 ```
 
-Both then want the same match: an import gate, an enclosing-class marker, and
-a set of member decorators. `decoratedMethod` and `decoratedRoute` become one
-`decorated` variant, and one implementation replaces the two.
+## What this deliberately does not do
 
-## What this is worth
+An earlier draft proposed replacing both of `BindingExtraction`'s source lists
+with one flat `FieldSource` union and discriminating the whole type by
+semantics. Review found four things wrong with it, and they are worth writing
+down so nobody proposes it again.
 
-The gain is not the variant count. It is that adding a framework stops
-requiring a change to the central union and to the adapter. A pack author
-picks a semantics, says where each field is written, and ships. Today the
-same author reads fourteen variants, finds none that fits, and either adds a
-fifteenth or writes a `discoverUnits` callback, which is TypeScript-only code
-that `ast-link` in pack health then flags.
+**The readings in the tree are not single sources.** A NestJS route path is a
+join of two decorators, `joinRoutePath(pathPrefix, pathSuffix)`, so
+`@Controller("users")` with `@Get(":id")` gives `/users/:id`. A resolver's
+type name is a three-level fallback, `typeMap[decorator] ?? classTypeName ??
+null`, and reading it in the other order files every root operation under the
+wrong type. A field name is a two-level fallback. A registered path composes a
+mount prefix from an unrelated declaration. One source per field expresses
+none of these, so `FieldSource` would have to grow a fallback chain and a join
+operator, which is a small expression language.
 
-It also settles a question the current shape cannot answer: what a pack does
-when its boundary is a queue or a topic. `message-bus` is in the IR and in no
-pack's discovery.
+**Two fields are sometimes read together.** `extractRouteInfoFromBinding`
+special-cases method and path both being `fromArgumentProperty` at the same
+position, resolves the object once, and returns null unless both halves read.
+A per-field union has no word for that.
+
+**Not every semantics field is a string.** `rest.declaredResponses` is
+`number[]`, `functionCall.exportPath` is `string[]`, and `messageBus` and
+`operationType` are enums. A string-producing extractor cannot fill them.
+
+**The sources are not interchangeable across fields.** `fromArgumentLiteral`
+under `path` runs the value through `pathFromUrlNode`, which strips a URL
+origin and rewrites `${id}` to `{id}`. It is a REST path reading, not a
+literal reading, and pointed at a channel name it would corrupt it. Flattening
+the lists also deletes a coupling the current shape has: `registrationArgument`
+means something only under a registration match, `filename` only under
+`fileConvention`.
+
+The two source lists do have one difference that looks like drift rather than
+meaning: `fromRegistration.position` is `"methodName" | number` under `method`
+and `number` under `path`. That is worth fixing on its own.
+
+**The remaining variants stay as they are.** An earlier draft ended with a
+step that moved every baked-in variant onto a declared binding. None of them
+can go:
+
+- `jsxElementRoute` decides whether a unit exists at all by reading the path,
+  and composes it from the element's ancestors.
+- `resolverMap` finds the function by walking through the type key and the
+  field key, so the binding is the walk.
+- `registrationTemplate` and `registrationLoop` emit one unit per entry in a
+  binding list, so the binding is what multiplies the units.
+- `packageExports` and `packageImport` fill `function-call` fields
+  (`package`, `exportPath`) that no source list covers.
+- `graphqlHookCall` and `graphqlImperativeCall` fill `graphql-operation` from
+  a parsed GraphQL document.
+
+`namedExport` states no binding and gets the generic `function-call` one.
+
+## The boundary vocabulary, as it actually is
+
+`packages/ir-core/src/semantics/registry.ts` is the authority. Eight members,
+with a compile-time check tying the schema union to the behavior table:
+
+| Semantics | Fields |
+|---|---|
+| `rest` | method, path, declaredResponses? |
+| `graphql-resolver` | typeName, fieldName |
+| `graphql-operation` | operationType, operationName? |
+| `message-bus` | messageBus (enum), channel |
+| `storage` | storageSystem, scope, container, accessPath |
+| `runtime-config` | (none) |
+| `function-call` | module?, exportName?, package?, exportPath? |
+| `metric` | metricSystem, metricType |
+
+Of those, `DiscoveredCustomUnit` covers three and `bindingExtraction` covers
+one.
 
 ## Order
 
-1. `FieldSource` as one list, with the current `BindingExtraction` rewritten
-   on top of it. No behaviour change, three packs edited.
-2. `semantics` as the discriminator, with `rest` the only member. Same three
-   packs.
-3. `graphql-resolver`, then the `decorated` match, then nestjs-rest and
-   nestjs-graphql onto it. Two adapter files become one.
-4. The remaining baked-in variants, one at a time, each with its pack.
-
-Steps 1 and 2 are mechanical and testable against the existing pack tests.
-Step 3 is where the claim gets tested: if the merged `decorated` variant needs
-a flag to tell a route from a resolver, the split was wrong and steps 3
-and 4 should stop.
+1. `binding` on `DiscoveryPattern`, `message-bus` only, with the NestJS
+   microservice pack as the thing that proves it works. Verify on a repo
+   somebody wrote, with the route count before and after.
+2. `graphql-resolver`, and move nestjs-graphql onto it. This is the test of
+   whether declared and baked-in readings can produce the same answer: the
+   `typeMap[decorator] ?? classTypeName` precedence has to survive, and if
+   expressing it needs a bespoke source, stop here.
+3. Fix `fromRegistration.position` to be the same type on both sides.
 
 ## What this does not cover
 
@@ -143,10 +192,10 @@ The Python and Ruby adapters keep their own discovery types
 (`PythonDiscoveryPattern`, `RubyDiscoveryPattern`), which share nothing with
 `DiscoveryMatch`. Python's two route variants bundle `RouteConventions` and
 router mounting, neither of which the TypeScript side has a concept of.
-Whether those should converge is a separate question. A shared type would
-be mostly optional fields that only one adapter reads.
+Whether those should converge is a separate question. A shared type would be
+mostly optional fields that only one adapter reads.
 
-`registrationTemplate` and `registrationLoop` work, have tests, and no pack
-declares them, so nothing a user installs can reach them. They need a pack
-option a project fills in with its own helper name, which is its own piece of
-work.
+`registrationTemplate`, `registrationLoop`, `packageExports` and
+`packageImport` have no declaring pack, so nothing a user installs reaches
+them. The first two need a pack option a project fills in with its own helper
+name (#599). The second two are constructed by `tools/differential` instead.
