@@ -151,6 +151,12 @@ export interface RouterComposition {
   routerConstructorName: string;
   /** Method that mounts a router onto the app, FastAPI's `include_router`. */
   includeMethodName: string;
+  /**
+   * What the mount method calls its router parameter, FastAPI's `router`.
+   * A call that passes the router by keyword rather than by position is
+   * read through this. Unset reads the first argument only.
+   */
+  routerKeyword?: string;
   /** One keyword serves the constructor and the mount alike. A library that spells them apart needs two fields here. */
   prefixKeyword: string;
   /** Default "prefixes". */

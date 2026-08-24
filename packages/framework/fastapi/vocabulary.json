@@ -8,5 +8,6 @@
   "Depends": "FastAPI: the callable that declares a parameter the framework resolves and passes in, rather than reads off the request",
   "Security": "FastAPI: Depends with scopes, declared the same way and injected the same way",
   "decoratedFunctionRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python",
-  "braces": "suss: path-template syntax name, defined in @suss/adapter-python; selects the {name} reader for FastAPI's Starlette-style paths"
+  "braces": "suss: path-template syntax name, defined in @suss/adapter-python; selects the {name} reader for FastAPI's Starlette-style paths",
+  "router": "FastAPI: the include_router parameter that takes the router"
 }

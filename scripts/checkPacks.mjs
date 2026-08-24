@@ -106,6 +106,36 @@ for (const file of fs.readdirSync(path.join(PACKS_DIR, "src"))) {
   }
 }
 
+// The README says what suss reads, and that claim is the first thing a
+// reader sees. A pack that ships without a mention there is a
+// drift-detection tool with drifting docs.
+const readme = fs.readFileSync(
+  path.join(PACKAGES_DIR, "..", "README.md"),
+  "utf8",
+);
+const unmentioned = builtins
+  .map((builtin) => builtin.name)
+  .filter((name) => !readme.includes(`\`${name}\``));
+if (unmentioned.length > 0) {
+  problems.push(
+    `README.md never mentions ${unmentioned.join(", ")}, so somebody reading it does not know suss can read that.`,
+  );
+}
+
+const claimed = /^(\w+) packs read code today/m.exec(readme);
+const WRITTEN_NUMBERS = {
+  Twenty: 20,
+  "Twenty-five": 25,
+  Thirty: 30,
+  "Thirty-five": 35,
+  Forty: 40,
+};
+if (claimed !== null && WRITTEN_NUMBERS[claimed[1]] !== builtins.length) {
+  problems.push(
+    `README.md says "${claimed[1]} packs read code today" and there are ${builtins.length}.`,
+  );
+}
+
 if (problems.length > 0) {
   process.stderr.write(
     `${problems.length} pack wiring problem(s):\n${problems

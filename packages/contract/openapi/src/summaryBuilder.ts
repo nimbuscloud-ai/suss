@@ -16,6 +16,7 @@ import type {
   HttpMethod,
   OpenApiOperation,
   OpenApiParameter,
+  OpenApiSchema,
   OpenApiSpec,
   PathItem,
 } from "./spec.js";
@@ -51,11 +52,43 @@ export function specToSummaries(
       if (op === undefined) {
         continue;
       }
-      summaries.push(buildSummary(spec, path, verb, op, item, sourceFile));
+      summaries.push(
+        buildSummary(spec, servedPath(spec, path), verb, op, item, sourceFile),
+      );
     }
   }
 
   return summaries;
+}
+
+/**
+ * The path a request goes to, which is the prefix the document states in
+ * front of the one written under `paths`. Swagger 2.0 writes the prefix
+ * as `basePath` and OpenAPI 3 writes it in the first server's URL. A
+ * document stating neither serves the path as written.
+ *
+ * A server URL can be absolute, and only its path belongs here. The host
+ * says which deployment serves the route, not what route it serves.
+ */
+function servedPath(spec: OpenApiSpec, path: string): string {
+  const prefix = statedPrefix(spec).replace(/\/+$/, "");
+  return prefix === "" ? path : `${prefix}${path}`;
+}
+
+function statedPrefix(spec: OpenApiSpec): string {
+  if (spec.basePath !== undefined) {
+    return spec.basePath;
+  }
+  const url = spec.servers?.[0]?.url;
+  if (url === undefined) {
+    return "";
+  }
+  try {
+    return new URL(url).pathname;
+  } catch {
+    // A server URL may be written relative, and then it is already a path.
+    return url;
+  }
 }
 
 function buildSummary(
@@ -213,7 +246,7 @@ function buildInputs(
       name: p.name,
       position: 0,
       role: locationToRole(p.in),
-      shape: schemaToShape(p.schema, ctx),
+      shape: schemaToShape(parameterSchema(p), ctx),
     });
   }
 
@@ -237,6 +270,28 @@ function buildInputs(
   return inputs;
 }
 
+/**
+ * Swagger 2.0 puts a request body and a form field in the parameter list,
+ * as `body` and `formData`. OpenAPI 3 moved both into `requestBody`, so
+ * they take the role a `requestBody` takes and the two spellings of one
+ * document pair with the same handler input.
+ */
+/** Swagger 2.0 writes a scalar parameter's schema keywords on the parameter itself. */
+function parameterSchema(p: OpenApiParameter): OpenApiSchema | undefined {
+  if (p.schema !== undefined) {
+    return p.schema;
+  }
+  if (p.type === undefined) {
+    return undefined;
+  }
+  return {
+    type: p.type,
+    ...(p.format !== undefined ? { format: p.format } : {}),
+    ...(p.items !== undefined ? { items: p.items } : {}),
+    ...(p.enum !== undefined ? { enum: p.enum } : {}),
+  };
+}
+
 function locationToRole(loc: OpenApiParameter["in"]): string {
   switch (loc) {
     case "path":
@@ -247,6 +302,10 @@ function locationToRole(loc: OpenApiParameter["in"]): string {
       return "headers";
     case "cookie":
       return "cookies";
+    case "body":
+      return "requestBody";
+    case "formData":
+      return "requestBody";
   }
 }
 
@@ -348,14 +407,15 @@ function bodyShape(
   response: NonNullable<OpenApiOperation["responses"]>[string],
   ctx: ReturnType<typeof newContext>,
 ): TypeShape | null {
-  if (response === undefined || response.content === undefined) {
+  if (response === undefined) {
     return null;
   }
-  const firstContent = chosenContent(response.content);
-  if (firstContent?.schema === undefined) {
-    return null;
-  }
-  return schemaToShape(firstContent.schema, ctx);
+  // Swagger 2.0 writes the schema on the response, 3.x inside a media type.
+  const schema =
+    response.content === undefined
+      ? response.schema
+      : chosenContent(response.content)?.schema;
+  return schema === undefined ? null : schemaToShape(schema, ctx);
 }
 
 type ParsedStatus =

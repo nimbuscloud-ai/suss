@@ -486,8 +486,14 @@ export type BindingExtraction = {
         default?: string;
       }
     | { type: "literal"; value: string };
-  path:
-    | { type: "fromRegistration"; position: number }
+  path: /**
+   * The path is the argument at this position. A name bound to a
+   * string is followed one hop to what it was written as, and a
+   * template's substitutions are read the same way, so
+   * `app.get(USERS, h)` and `` fetch(`${BASE}/items/${id}`) `` both
+   * come out with a path on them.
+   */
+    | { type: "fromArgument"; position: number }
     | {
         // The path is on a property of the argument at `position`, the way a
         // route object built by createRoute stores its path.
@@ -537,8 +543,7 @@ export type BindingExtraction = {
         flat?: boolean;
       }
     | { type: "fromContract" }
-    | { type: "fromClientMethod" }
-    | { type: "fromArgumentLiteral"; position: number };
+    | { type: "fromClientMethod" };
 };
 
 export interface DiscoveryPattern {

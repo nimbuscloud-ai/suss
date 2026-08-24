@@ -36,6 +36,7 @@ const fastapiLike: PythonPack = {
       routerComposition: {
         routerConstructorName: "APIRouter",
         includeMethodName: "include_router",
+        routerKeyword: "router",
         prefixKeyword: "prefix",
       },
     },
@@ -109,6 +110,30 @@ describe("router prefix composition, one mount hop", () => {
         "",
         "",
         'app.include_router(router, prefix="/api")',
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("composes a mount whose router is passed by keyword", async () => {
+    // FastAPI's own signature names the parameter `router`, and a call
+    // that writes it out used to mount nothing, because the reading took
+    // the first positional argument and there was not one.
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        'app.include_router(router=router, prefix="/api")',
         "",
       ].join("\n"),
     );
@@ -527,6 +552,62 @@ describe("prefix composition for a class-decorator route", () => {
     expect(pathOf(units, "BehaviorDetail.get")).toBe(
       "/behaviors/{school_id}/{behavior_id}",
     );
+  });
+
+  it("composes a path under an Api built from a spread dictionary", async () => {
+    // `Api(**build_authorizations())` used to count the spread as the
+    // first positional argument, so the mount reader saw two candidates
+    // for what the Api was built from and declined the whole thing. Every
+    // route under it came back with no path.
+    const units = await unitsOf(
+      [
+        "from flask_restx import Api, Namespace",
+        "",
+        "def build_authorizations():",
+        '    return {"authorizations": {}}',
+        "",
+        "api = Api(**build_authorizations())",
+        'ns = Namespace("behaviors", path="/behaviors")',
+        "",
+        '@ns.route("/<int:behavior_id>")',
+        "class BehaviorDetail:",
+        "    def get(self, behavior_id):",
+        "        return {}",
+        "",
+        "",
+        "api.add_namespace(ns)",
+        "",
+      ].join("\n"),
+      [namespaceLike],
+    );
+    expect(pathOf(units, "BehaviorDetail.get")).toBe(
+      "/behaviors/{behavior_id}",
+    );
+  });
+
+  it("composes a path when a spread comes after a positional argument", async () => {
+    const units = await unitsOf(
+      [
+        "from flask_restx import Api, Namespace",
+        "",
+        "def options():",
+        '    return {"title": "Example"}',
+        "",
+        "api = Api(**options())",
+        'ns = Namespace("reports", path="/reports")',
+        "",
+        '@ns.route("")',
+        "class ReportList:",
+        "    def get(self):",
+        "        return []",
+        "",
+        "",
+        "api.add_namespace(ns)",
+        "",
+      ].join("\n"),
+      [namespaceLike],
+    );
+    expect(pathOf(units, "ReportList.get")).toBe("/reports");
   });
 
   it("reads an empty route path as the namespace's own path", async () => {

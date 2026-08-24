@@ -32,7 +32,13 @@ export interface OpenApiSpec {
     title?: string;
     version?: string;
   };
+  /** Swagger 2.0 writes the prefix every path comes after here. */
+  basePath?: string;
+  /** OpenAPI 3 writes it in the first server's URL instead. */
+  servers?: Array<{ url?: string }>;
   paths?: Record<string, PathItem | undefined>;
+  /** Swagger 2.0 keeps its named schemas here, where 3.x uses `components.schemas`. */
+  definitions?: Record<string, OpenApiSchema | undefined>;
   components?: {
     schemas?: Record<string, OpenApiSchema | undefined>;
     parameters?: Record<string, OpenApiParameter | undefined>;
@@ -57,9 +63,22 @@ export interface OpenApiOperation {
 
 export interface OpenApiParameter {
   name: string;
-  in: "path" | "query" | "header" | "cookie";
+  /**
+   * Where the parameter is written. Swagger 2.0 puts a request body and
+   * a form field here, as `body` and `formData`; OpenAPI 3 moved both
+   * into `requestBody`, so a 3.x document never uses either.
+   */
+  in: "path" | "query" | "header" | "cookie" | "body" | "formData";
   required?: boolean;
   schema?: OpenApiSchema;
+  /**
+   * Swagger 2.0 writes a scalar parameter's type on the parameter, where
+   * 3.x wraps it in `schema`. The other schema keywords sit beside it.
+   */
+  type?: OpenApiSchema["type"];
+  format?: OpenApiSchema["format"];
+  items?: OpenApiSchema["items"];
+  enum?: OpenApiSchema["enum"];
   description?: string;
 }
 
@@ -72,6 +91,8 @@ export interface OpenApiRequestBody {
 export interface OpenApiResponse {
   description?: string;
   content?: Record<string, OpenApiMediaType>;
+  /** Swagger 2.0 writes the body's schema here, with no media type around it. */
+  schema?: OpenApiSchema;
   headers?: Record<string, { schema?: OpenApiSchema }>;
 }
 

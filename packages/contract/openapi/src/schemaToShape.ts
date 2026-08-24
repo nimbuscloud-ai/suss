@@ -252,10 +252,10 @@ function wrapNullable(shape: TypeShape, nullable: boolean): TypeShape {
 }
 
 function resolveRef(ref: string, ctx: SchemaContext): TypeShape {
-  // Only #/components/schemas/<Name> refs are supported. Anything else
-  // becomes a named ref placeholder so the consumer at least knows what
-  // was intended.
-  const match = /^#\/components\/schemas\/(.+)$/.exec(ref);
+  // 3.x keeps named schemas under components, 2.0 under definitions.
+  // Anything else becomes a named ref placeholder, so a consumer knows
+  // what was meant even when nothing here can resolve it.
+  const match = /^#\/(?:components\/schemas|definitions)\/(.+)$/.exec(ref);
   if (match === null) {
     return { type: "ref", name: ref };
   }
@@ -267,7 +267,8 @@ function resolveRef(ref: string, ctx: SchemaContext): TypeShape {
     return { type: "ref", name };
   }
 
-  const target = ctx.spec.components?.schemas?.[name];
+  const target =
+    ctx.spec.components?.schemas?.[name] ?? ctx.spec.definitions?.[name];
   if (target === undefined) {
     return { type: "ref", name };
   }

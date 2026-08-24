@@ -1261,7 +1261,12 @@ function recordMountStatement(
     scan.composition,
     position.site,
   );
-  for (const target of mountedConstructions(args[0], position, scan)) {
+  const mounted =
+    args[0] ??
+    (scan.composition.routerKeyword === undefined
+      ? undefined
+      : keywordArgs[scan.composition.routerKeyword]);
+  for (const target of mountedConstructions(mounted, position, scan)) {
     recordMount(scan.index, target, state);
   }
 }

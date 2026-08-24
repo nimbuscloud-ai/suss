@@ -25,7 +25,7 @@ describe("httpRouteDiscovery", () => {
           position: "methodName",
           nameMap: { all: "*" },
         },
-        path: { type: "fromRegistration", position: 0 },
+        path: { type: "fromArgument", position: 0 },
       },
       requiresImport: ["express"],
     });

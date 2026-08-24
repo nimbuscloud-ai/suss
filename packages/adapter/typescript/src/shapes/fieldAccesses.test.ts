@@ -123,7 +123,7 @@ const fetchPack: PatternPack = {
           property: "method",
           default: "GET",
         },
-        path: { type: "fromArgumentLiteral", position: 0 },
+        path: { type: "fromArgument", position: 0 },
       },
     },
   ],

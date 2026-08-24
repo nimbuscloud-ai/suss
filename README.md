@@ -129,9 +129,31 @@ Reference and internals: [Summary format](docs/behavioral-summary-format.md), [I
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
-Nineteen packs read code today: ts-rest, Express, Fastify, Hono, Next.js, NestJS REST and GraphQL, Apollo Server, AWS Lambda, React (components, handlers, effects), React Router, fetch, axios, Apollo Client, Prisma, Drizzle, AWS SQS and EventBridge producers, and the Node runtime surface including `process.env`.
+Thirty packs read code today, reached by name with `-f`:
 
-Seven contract readers turn a declared artifact into that same format: OpenAPI 3.x, GraphQL (SDL and committed `.graphql` operation documents), AWS API Gateway, CloudFormation / SAM, AppSync, Storybook CSF3, Prisma schema. Intent docs your team writes are handled separately, by `suss check --intent`.
+| What it reads | Packs |
+|---|---|
+| HTTP frameworks, TypeScript | `express` `fastify` `hono` `nextjs` `nestjs-rest` `ts-rest` |
+| HTTP frameworks, Python | `fastapi` `flask-restx` |
+| GraphQL servers | `apollo` `nestjs-graphql` `graphql-ruby` |
+| Serverless and edge | `aws-lambda` `cloudflare-workers` |
+| UI | `react` `react-router` |
+| HTTP and GraphQL clients | `fetch` `axios` `apollo-client` |
+| Databases and ORMs | `prisma` `drizzle` `mongoose` `sqlalchemy` `activerecord` `redis` |
+| Object and key-value storage | `aws-s3` `gcs` `aws-dynamodb` |
+| Messaging | `aws-sqs` `aws-eventbridge` |
+| Runtime surface | `node`, which includes `process.env` |
+
+Eleven contract readers turn a declared artifact into the same format,
+reached with `--from`: `openapi`, `graphql` (SDL and committed `.graphql`
+operation documents), `aws-apigateway`, `cloudformation` (including SAM),
+`serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`.
+Intent docs your team writes are handled separately, by `suss check
+--intent`.
+
+The Python and Ruby adapters read their own languages and are called from
+a script rather than the CLI. See
+[docs/guides/python-and-ruby.md](docs/guides/python-and-ruby.md).
 
 ## License
 

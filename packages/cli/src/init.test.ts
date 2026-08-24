@@ -35,6 +35,15 @@ describe("inspectProject", () => {
     expect(names(dir)).toEqual(["hono"]);
   });
 
+  it("offers a Swagger 2.0 document, which a project names swagger.json", () => {
+    writeManifest({});
+    fs.writeFileSync(
+      path.join(dir, "swagger.json"),
+      JSON.stringify({ swagger: "2.0", paths: {} }),
+    );
+    expect(names(dir)).toContain("openapi");
+  });
+
   it("suggests the Next.js pack for a Next.js project", () => {
     writeManifest({ dependencies: { next: "^15.0.0" } });
     expect(names(dir)).toEqual(["nextjs"]);

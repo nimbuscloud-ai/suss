@@ -63,7 +63,7 @@ export function httpRouteDiscovery(opts: {
         position: "methodName",
         nameMap: { all: "*" },
       },
-      path: { type: "fromRegistration", position: 0 },
+      path: { type: "fromArgument", position: 0 },
     },
     ...(opts.mount !== undefined ? { mount: opts.mount } : {}),
     requiresImport: [opts.importModule],

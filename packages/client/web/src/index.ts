@@ -21,7 +21,7 @@ export function webFetchPack(): PatternPack {
             property: "method",
             default: "GET",
           },
-          path: { type: "fromArgumentLiteral", position: 0 },
+          path: { type: "fromArgument", position: 0 },
         },
         // No import gate: `fetch` is a global. Walk every file,
         // the discovery dispatch is itself cheap (just looks for
