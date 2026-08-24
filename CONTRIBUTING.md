@@ -88,7 +88,7 @@ A command needs a project to run in, and not every page builds one, so a page op
 <!-- suss:excerpt -->                       the next output fence shows part of
                                             the output, so look for those lines
                                             inside it
-<!-- suss:unchecked <reason> -->             everything below this goes
+<!-- suss:unchecked <reason> -->            everything below this goes
                                             unchecked, and here is why
 ```
 
