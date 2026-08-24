@@ -157,6 +157,34 @@ export interface TsInvocationRecognizerContext {
   ops: CallOps;
 }
 
+/**
+ * Everything a recognizer may ask about one call site.
+ *
+ * A pack's tests build it here too, so a pack that passes them has run
+ * against the context extraction gives it.
+ */
+export function invocationContextFor(
+  call: CallExpression,
+  resolveWrittenValue?: (value: Node) => Node | null,
+): TsInvocationRecognizerContext {
+  // Built on the first read rather than up front: most calls reach no
+  // declared pack, and following a receiver costs more than the walk.
+  let ops: CallOps | null = null;
+  return {
+    call,
+    sourceFile: call.getSourceFile(),
+    extractArgs: () => extractArgs(call),
+    isImportedFrom,
+    // A context built without a store gives null, and the recognizer's
+    // own pattern match runs on the raw node.
+    resolveWrittenValue: resolveWrittenValue ?? (() => null),
+    get ops(): CallOps {
+      ops ??= callOpsFor(call, resolveWrittenValue);
+      return ops;
+    },
+  };
+}
+
 export function isImportedFrom(
   identifier: Node,
   expectedModule: string,
@@ -481,22 +509,7 @@ export function runInvocationRecognizers(
     if (!Node.isCallExpression(node)) {
       return;
     }
-    // Built on the first read rather than up front: most calls reach no
-    // declared pack, and following a receiver costs more than the walk.
-    let ops: CallOps | null = null;
-    const ctx: TsInvocationRecognizerContext = {
-      call: node,
-      sourceFile,
-      extractArgs: () => extractArgs(node),
-      isImportedFrom,
-      // A context built without a store gives null, and the recognizer's
-      // own pattern match runs on the raw node.
-      resolveWrittenValue: resolveWrittenValue ?? (() => null),
-      get ops(): CallOps {
-        ops ??= callOpsFor(node, resolveWrittenValue);
-        return ops;
-      },
-    };
+    const ctx = invocationContextFor(node, resolveWrittenValue);
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;

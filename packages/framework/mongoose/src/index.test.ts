@@ -1,9 +1,11 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { callOpsFor, ResolutionStore } from "@suss/adapter-typescript";
+import {
+  packUnderTest,
+  storageByOperation,
+  storageOf,
+} from "@suss/pack-harness";
 import { runExamples } from "@suss/recognize";
-import { createTestProject } from "@suss/test-project";
 
 import { mongooseFramework } from "./index.js";
 
@@ -58,80 +60,17 @@ const MONGOOSE_TYPES = `
   export default mongoose;
 `;
 
-function withMongooseTypes(
-  project: ReturnType<typeof createTestProject>,
-): void {
-  project.createSourceFile(
-    "/node_modules/mongoose/package.json",
-    JSON.stringify({ name: "mongoose", types: "index.d.ts" }),
-  );
-  project.createSourceFile("/node_modules/mongoose/index.d.ts", MONGOOSE_TYPES);
-}
+const mongoose = packUnderTest(mongooseFramework(), {
+  library: { mongoose: MONGOOSE_TYPES },
+});
 
-function runRecognizers(sourceFile: SourceFile, pack: PatternPack): Effect[] {
-  const recognizers = pack.invocationRecognizers ?? [];
-  const store = new ResolutionStore();
-  const effects: Effect[] = [];
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const resolve = (value: Node) => store.resolveWrittenValue(value);
-    const ctx = {
-      call: node as CallExpression,
-      sourceFile,
-      extractArgs: () => [],
-      isImportedFrom: () => false,
-      resolveWrittenValue: resolve,
-      ops: callOpsFor(node, resolve),
-    };
-    for (const recognizer of recognizers) {
-      const emitted = recognizer(node, ctx);
-      if (emitted !== null) {
-        effects.push(...emitted);
-      }
-    }
-  });
-  return effects;
-}
-
-function effectsIn(
+const effectsIn = (
   source: string,
   pack: PatternPack = mongooseFramework(),
-): Effect[] {
-  const project = createTestProject();
-  withMongooseTypes(project);
-  const sourceFile = project.createSourceFile("/repo.ts", source);
-  return runRecognizers(sourceFile, pack);
-}
-
-function storageOf(effect: Effect) {
-  if (effect.type !== "interaction") {
-    throw new Error(`expected an interaction, got ${effect.type}`);
-  }
-  const semantics = effect.binding.semantics;
-  if (semantics.name !== "storage") {
-    throw new Error(`expected storage, got ${semantics.name}`);
-  }
-  if (effect.interaction.class !== "storage-access") {
-    throw new Error(`expected storage-access, got ${effect.interaction.class}`);
-  }
-  return { semantics, interaction: effect.interaction };
-}
-
-/** The storage-access effect for one named operation, among several a source produced. */
-function storageByOperation(effects: Effect[], operation: string) {
-  const found = effects.find(
-    (e) =>
-      e.type === "interaction" &&
-      e.interaction.class === "storage-access" &&
-      e.interaction.operation === operation,
+): Effect[] =>
+  packUnderTest(pack, { library: { mongoose: MONGOOSE_TYPES } }).effectsIn(
+    source,
   );
-  if (found === undefined) {
-    throw new Error(`no storage-access effect for operation "${operation}"`);
-  }
-  return storageOf(found);
-}
 
 const CLIENT = `
   import mongoose from "mongoose";
@@ -504,26 +443,22 @@ describe("collection naming", () => {
   });
 
   it("follows a model imported from another file", () => {
-    const project = createTestProject();
-    withMongooseTypes(project);
-    project.createSourceFile(
-      "/models.ts",
-      `
+    const effects = mongoose.effectsAcross(
+      {
+        "/models.ts": `
       import mongoose from "mongoose";
       export const User = mongoose.model("User", new mongoose.Schema({}));
     `,
-    );
-    const sourceFile = project.createSourceFile(
-      "/repo.ts",
-      `
+        "/repo.ts": `
       import { User } from "./models.js";
       export async function all() {
         return User.find({});
       }
     `,
+      },
+      "/repo.ts",
     );
 
-    const effects = runRecognizers(sourceFile, mongooseFramework());
     expect(storageOf(effects[0]).semantics.container).toBe("users");
   });
 

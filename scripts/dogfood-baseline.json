@@ -2,11 +2,11 @@
   "totals": {
     "packages": 59,
     "packagesWithExports": 59,
-    "exports": 576,
-    "internal": 2160,
-    "consumers": 996,
-    "pairs": 986,
-    "unfollowedCalls": 254,
+    "exports": 578,
+    "internal": 2150,
+    "consumers": 982,
+    "pairs": 972,
+    "unfollowedCalls": 243,
     "findingErrors": 0
   },
   "packages": {
@@ -26,7 +26,7 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 55,
+      "exports": 57,
       "internal": 726,
       "consumers": 76,
       "unfollowedCalls": 69
@@ -188,9 +188,9 @@
     "packages/framework/aws-dynamodb": {
       "name": "@suss/framework-aws-dynamodb",
       "exports": 2,
-      "internal": 5,
-      "consumers": 9,
-      "unfollowedCalls": 2
+      "internal": 4,
+      "consumers": 6,
+      "unfollowedCalls": 0
     },
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",
@@ -209,16 +209,16 @@
     "packages/framework/aws-s3": {
       "name": "@suss/framework-aws-s3",
       "exports": 2,
-      "internal": 2,
-      "consumers": 5,
-      "unfollowedCalls": 2
+      "internal": 1,
+      "consumers": 2,
+      "unfollowedCalls": 0
     },
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
       "exports": 2,
-      "internal": 11,
+      "internal": 8,
       "consumers": 8,
-      "unfollowedCalls": 6
+      "unfollowedCalls": 5
     },
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",
@@ -265,9 +265,9 @@
     "packages/framework/gcs": {
       "name": "@suss/framework-gcs",
       "exports": 2,
-      "internal": 2,
-      "consumers": 5,
-      "unfollowedCalls": 2
+      "internal": 1,
+      "consumers": 2,
+      "unfollowedCalls": 0
     },
     "packages/framework/graphql-ruby": {
       "name": "@suss/framework-graphql-ruby",
@@ -286,9 +286,9 @@
     "packages/framework/mongoose": {
       "name": "@suss/framework-mongoose",
       "exports": 2,
-      "internal": 4,
-      "consumers": 8,
-      "unfollowedCalls": 2
+      "internal": 1,
+      "consumers": 6,
+      "unfollowedCalls": 0
     },
     "packages/framework/nestjs-graphql": {
       "name": "@suss/framework-nestjs-graphql",
@@ -335,9 +335,9 @@
     "packages/framework/redis": {
       "name": "@suss/framework-redis",
       "exports": 2,
-      "internal": 2,
-      "consumers": 5,
-      "unfollowedCalls": 2
+      "internal": 1,
+      "consumers": 2,
+      "unfollowedCalls": 0
     },
     "packages/framework/sqlalchemy": {
       "name": "@suss/framework-sqlalchemy",

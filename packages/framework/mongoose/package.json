@@ -52,6 +52,7 @@
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
     "@suss/extractor": "*",
+    "@suss/pack-harness": "*",
     "@suss/test-project": "*",
     "mongoose": "*",
     "ts-morph": "*",

@@ -1,58 +1,17 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import {
-  callOpsFor,
-  isImportedFrom,
-  ResolutionStore,
-} from "@suss/adapter-typescript";
+import { packUnderTest, storageOf } from "@suss/pack-harness";
 import { runExamples } from "@suss/recognize";
-import { createTestProject } from "@suss/test-project";
 
 import { dynamoFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { DynamoPackOptions } from "./index.js";
 
-function effectsIn(source: string, options: DynamoPackOptions = {}): Effect[] {
-  const project = createTestProject();
-  const sourceFile: SourceFile = project.createSourceFile("/dao.ts", source);
-  const store = new ResolutionStore();
-  const recognizers = dynamoFramework(options).invocationRecognizers ?? [];
-  const effects: Effect[] = [];
-
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const ctx = {
-      call: node as CallExpression,
-      sourceFile,
-      extractArgs: () => [],
-      isImportedFrom,
-      resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
-      ops: callOpsFor(node, (value: Node) => store.resolveWrittenValue(value)),
-    };
-    for (const recognizer of recognizers) {
-      const emitted = recognizer(node, ctx);
-      if (emitted !== null) {
-        effects.push(...emitted);
-      }
-    }
-  });
-  return effects;
-}
-
-function storageOf(effect: Effect) {
-  if (effect.type !== "interaction") {
-    throw new Error(`expected an interaction, got ${effect.type}`);
-  }
-  const semantics = effect.binding.semantics;
-  if (semantics.name !== "storage") {
-    throw new Error(`expected storage, got ${semantics.name}`);
-  }
-  return { semantics, interaction: effect.interaction };
-}
+// A project configures this pack, so the pack under test is built per
+// call rather than once.
+const effectsIn = (source: string, options: DynamoPackOptions = {}): Effect[] =>
+  packUnderTest(dynamoFramework(options)).effectsIn(source);
 
 const IMPORTS = `import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";`;
 
