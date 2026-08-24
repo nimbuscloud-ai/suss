@@ -433,3 +433,38 @@ describe("reading a value an argument states", () => {
     ).toEqual(["side"]);
   });
 });
+
+describe("stepping to a receiver another file declared", () => {
+  it("crosses an import to the call that made the value", () => {
+    // A model or a table is declared once and imported everywhere it is
+    // used, so a step that stops at the import specifier reaches
+    // nothing. This is the case #585 made unreliable and #588 settled.
+    const project = withLibrary();
+    project.createSourceFile(
+      "/decks.ts",
+      `import { makeDeck } from "tapedeck";
+       export const nightly = makeDeck();`,
+    );
+    const file = project.createSourceFile(
+      "/show.ts",
+      `import { nightly } from "./decks";
+       export const run = () => nightly.play("intro");`,
+    );
+    const store = new ResolutionStore();
+    let call: CallExpression | undefined;
+    file.forEachDescendant((node) => {
+      if (
+        Node.isCallExpression(node) &&
+        node.getExpression().getText().endsWith(".play")
+      ) {
+        call = node;
+      }
+    });
+
+    const receiver = callOpsFor(call as CallExpression, (value) =>
+      store.resolveWrittenValue(value),
+    ).receiver();
+
+    expect(receiver?.calleeText()).toBe("makeDeck");
+  });
+});

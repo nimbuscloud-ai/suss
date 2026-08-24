@@ -166,7 +166,7 @@ export function callOpsFor(
 function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
   let settledValue: Node | undefined;
   const written = (): Node => {
-    settledValue ??= settled(value) ?? value;
+    settledValue ??= settled(value, resolve) ?? value;
     return settledValue;
   };
 
@@ -255,7 +255,7 @@ function opsOverCall(
   value: Node | undefined,
   resolve: Resolve,
 ): AstCapableOps | null {
-  const written = settled(value);
+  const written = settled(value, resolve);
   if (written === null || !isCalled(written)) {
     return null;
   }
@@ -272,22 +272,24 @@ function isCalled(value: Node): value is Called {
  * repository class builds the command a few lines above the call, and
  * that has to be followed.
  *
- * Only what the source states is followed here. Asking the fact layer
- * about a value it cannot settle is not free and not harmless: the
- * store widens its walk out over the file's imports looking for an
- * answer, extracts what it finds, and a query that came back one way
- * before the widening comes back another way after it. This runs for
- * every argument of every call in a gated file, so it is the one place
- * that has to stay out of the fact layer. The questions a pack asks
- * once it has arrived, `readName` and `receiverIsFrom`, still go there.
+ * The variable's own initializer comes first, since the source states
+ * it outright and reading it costs nothing. The fact layer supplies
+ * what is left, which is how a step crosses an import to the file a
+ * model or a table was declared in.
+ *
+ * That fallback was removed while a resolution query could answer
+ * differently depending on what had been asked before it (#585). The
+ * cause of the case that bit here was a construction resolving on to
+ * the class it makes an instance of, fixed in #588, so the fallback is
+ * back.
  */
-function settled(value: Node | undefined): Node | null {
+function settled(value: Node | undefined, resolve: Resolve): Node | null {
   let step = value ?? null;
   for (let hops = 0; hops < MAX_WRITTEN_HOPS; hops += 1) {
     if (step === null || !Node.isIdentifier(step)) {
       return step;
     }
-    const written = variableFor(step)?.getInitializer() ?? null;
+    const written = variableFor(step)?.getInitializer() ?? resolve(step);
     if (written === null || written === step) {
       return null;
     }
@@ -342,7 +344,7 @@ function objectAt(
   argument: Node | undefined,
   resolve: Resolve,
 ): ObjectLiteralExpression | null {
-  const written = settled(argument);
+  const written = settled(argument, resolve);
   if (written === null) {
     return null;
   }
