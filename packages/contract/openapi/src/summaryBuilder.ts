@@ -245,7 +245,7 @@ function buildInputs(
       name: p.name,
       position: 0,
       role: locationToRole(p.in),
-      shape: schemaToShape(p.schema, ctx),
+      shape: schemaToShape(parameterSchema(p), ctx),
     });
   }
 
@@ -275,6 +275,22 @@ function buildInputs(
  * they take the role a `requestBody` takes and the two spellings of one
  * document pair with the same handler input.
  */
+/** Swagger 2.0 writes a scalar parameter's schema keywords on the parameter itself. */
+function parameterSchema(p: OpenApiParameter): OpenApiSchema | undefined {
+  if (p.schema !== undefined) {
+    return p.schema;
+  }
+  if (p.type === undefined) {
+    return undefined;
+  }
+  return {
+    type: p.type,
+    ...(p.format !== undefined ? { format: p.format } : {}),
+    ...(p.items !== undefined ? { items: p.items } : {}),
+    ...(p.enum !== undefined ? { enum: p.enum } : {}),
+  };
+}
+
 function locationToRole(loc: OpenApiParameter["in"]): string {
   switch (loc) {
     case "path":
@@ -390,14 +406,15 @@ function bodyShape(
   response: NonNullable<OpenApiOperation["responses"]>[string],
   ctx: ReturnType<typeof newContext>,
 ): TypeShape | null {
-  if (response === undefined || response.content === undefined) {
+  if (response === undefined) {
     return null;
   }
-  const firstContent = chosenContent(response.content);
-  if (firstContent?.schema === undefined) {
-    return null;
-  }
-  return schemaToShape(firstContent.schema, ctx);
+  // Swagger 2.0 writes the schema on the response, 3.x inside a media type.
+  const schema =
+    response.content === undefined
+      ? response.schema
+      : chosenContent(response.content)?.schema;
+  return schema === undefined ? null : schemaToShape(schema, ctx);
 }
 
 type ParsedStatus =

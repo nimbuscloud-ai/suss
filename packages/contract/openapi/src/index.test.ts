@@ -1367,3 +1367,59 @@ describe("what the reader writes, the checker can read", () => {
     expect(restPathOf(openApiToSummaries(three[1])[0])).toBe("/v2/orders/{id}");
   });
 });
+
+describe("Swagger 2.0 shapes", () => {
+  const spec: OpenApiSpec = {
+    swagger: "2.0",
+    paths: {
+      "/widgets/{id}": {
+        get: {
+          operationId: "getWidget",
+          parameters: [
+            { name: "id", in: "path", type: "string" },
+            { name: "limit", in: "query", type: "integer" },
+          ],
+          responses: {
+            "200": {
+              description: "ok",
+              schema: { $ref: "#/definitions/Widget" },
+            },
+          },
+        },
+      },
+    },
+    definitions: {
+      Widget: { type: "object", properties: { name: { type: "string" } } },
+    },
+  };
+
+  it("reads a scalar parameter's type off the parameter", () => {
+    const [summary] = openApiToSummaries(spec);
+    expect(
+      summary.inputs.map((input) =>
+        input.type === "parameter" ? input.shape : null,
+      ),
+    ).toEqual([{ type: "text" }, { type: "integer" }]);
+  });
+
+  it("reads a response body written on the response", () => {
+    const [summary] = openApiToSummaries(spec);
+    const output = summary.transitions[0]?.output;
+    expect(output?.type === "response" ? output.body : null).toEqual({
+      type: "record",
+      properties: {
+        name: {
+          type: "union",
+          variants: [{ type: "text" }, { type: "undefined" }],
+        },
+      },
+    });
+  });
+
+  it("resolves a #/definitions ref the way it resolves a components one", () => {
+    const [summary] = openApiToSummaries(spec);
+    const output = summary.transitions[0]?.output;
+    const body = output?.type === "response" ? output.body : null;
+    expect(body?.type).toBe("record");
+  });
+});
