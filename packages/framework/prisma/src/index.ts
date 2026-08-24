@@ -53,23 +53,20 @@ import {
 } from "ts-morph";
 
 import { storageBinding } from "@suss/behavioral-ir";
-import { readSqlAccess, sqlFromParts } from "@suss/sql";
+import {
+  compile,
+  declarationsIn,
+  declaredBy,
+  sqlStatements,
+} from "@suss/recognize";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
-  AccessRecognizer,
   EffectArg,
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
-
-/** The client methods that take a statement written as SQL. */
-const RAW_METHODS = new Set([
-  "$queryRaw",
-  "$executeRaw",
-  "$queryRawUnsafe",
-  "$executeRawUnsafe",
-]);
+import type { SqlMethod, SqlStatements } from "@suss/recognize";
 
 const PRISMA_READ_METHODS = new Set([
   "findUnique",
@@ -643,110 +640,52 @@ function extractSelector(optionsArg: ObjectArg | null): string[] | null {
 }
 
 /**
- * Pack export. Has one invocationRecognizer; no discovery
- * patterns or terminals (Prisma calls aren't boundaries themselves
- *: they're effects on already-discovered handlers / services).
+ * Where each raw method states its statement. The tagged form writes it
+ * as a template and the unsafe form as a string, and a tagged template
+ * is a call whose one argument is the template, so both put it in the
+ * same position.
  */
+const STATEMENT: SqlMethod = { statement: { at: 0 } };
+
 /**
- * `prisma.$queryRaw\`...\`` states its query as SQL and bypasses the
- * typed client, so the text is what says which tables it touches. The
- * tagged template is where the query is, and the access hook is what
- * gets handed one.
+ * The raw path, as a declaration.
+ *
+ * A raw call bypasses the typed client, so the text of the statement is
+ * what says which tables the query touches, and the ending reads it.
+ * Which client the call is on is settled by where the method was
+ * declared: the generated client lives under `.prisma/client` and the
+ * package's own surface under `@prisma/client`, and a project reaches
+ * its client through one or the other.
  */
-function makeRawRecognizer(opts: PrismaRecognizerOptions): AccessRecognizer {
-  const storageSystem = opts.storageSystem ?? "postgresql";
-  const scope = opts.scope ?? "default";
-  return ((node: unknown) => {
-    const statement = rawStatementAt(node as Node);
-    if (statement === null) {
-      return null;
-    }
-    const accesses = readSqlAccess(statement.sql, { dialect: storageSystem });
-    if (accesses.length === 0) {
-      return null;
-    }
-    return accesses.map((access) => ({
-      type: "interaction" as const,
-      binding: storageBinding({
-        recognition: "@suss/framework-prisma",
-        storageSystem,
-        scope,
-        container: access.table,
-      }),
-      callee: statement.callee,
-      interaction: {
-        class: "storage-access" as const,
-        kind: access.kind,
-        fields: access.fields,
-        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
-        operation: statement.method,
-      },
-    }));
-  }) as AccessRecognizer;
+function rawStatements(options: PrismaRecognizerOptions): SqlStatements {
+  // Prisma's provider is the store and the SQL the statements are
+  // written in at once, so the one option states both.
+  const provider = options.storageSystem ?? "postgresql";
+  return sqlStatements({
+    system: provider,
+    dialect: provider,
+    scope: options.scope ?? "default",
+    client: declaredBy("@prisma/client", ".prisma/client"),
+  })
+    .methods({
+      $queryRaw: STATEMENT,
+      $executeRaw: STATEMENT,
+      $queryRawUnsafe: STATEMENT,
+      $executeRawUnsafe: STATEMENT,
+    })
+    .example('prisma.$queryRawUnsafe("SELECT id, email FROM users")');
 }
 
 /**
- * The SQL a raw call states, whichever way it was written. The tagged
- * form takes the query as a template and the unsafe form takes it as a
- * string, and both go through a client the receiver has to be.
+ * The pack. It recognizes calls and nothing else: a Prisma call is not
+ * a boundary of its own, it is an effect inside a handler or a service
+ * some other pack discovered, so there are no discovery patterns and no
+ * terminals here.
  */
-function rawStatementAt(
-  node: Node,
-): { sql: string; method: string; callee: string } | null {
-  const tag = N.isTaggedTemplateExpression(node)
-    ? node.getTag()
-    : N.isCallExpression(node)
-      ? node.getExpression()
-      : null;
-  if (tag === null || !N.isPropertyAccessExpression(tag)) {
-    return null;
-  }
-  const method = tag.getName();
-  if (!RAW_METHODS.has(method)) {
-    return null;
-  }
-  if (!isPrismaClientReceiver(tag.getExpression())) {
-    return null;
-  }
-  const sql = N.isTaggedTemplateExpression(node)
-    ? templateSql(node.getTemplate())
-    : N.isCallExpression(node)
-      ? literalSql(node.getArguments()[0])
-      : null;
-  return sql === null ? null : { sql, method, callee: tag.getText() };
-}
-
-function templateSql(template: Node): string | null {
-  if (N.isNoSubstitutionTemplateLiteral(template)) {
-    return template.getLiteralValue();
-  }
-  if (!N.isTemplateExpression(template)) {
-    return null;
-  }
-  return sqlFromParts([
-    template.getHead().getLiteralText(),
-    ...template
-      .getTemplateSpans()
-      .map((span) => span.getLiteral().getLiteralText()),
-  ]);
-}
-
-function literalSql(argument: Node | undefined): string | null {
-  if (argument === undefined) {
-    return null;
-  }
-  if (
-    N.isStringLiteral(argument) ||
-    N.isNoSubstitutionTemplateLiteral(argument)
-  ) {
-    return argument.getLiteralValue();
-  }
-  return N.isTemplateExpression(argument) ? templateSql(argument) : null;
-}
-
 export function prismaFramework(
   options: PrismaRecognizerOptions = {},
 ): PatternPack {
+  const raw = rawStatements(options);
   return {
     name: "prisma",
     protocol: "in-process",
@@ -758,7 +697,10 @@ export function prismaFramework(
     // recognizer's type-resolution check would reject them anyway.
     requiresImport: ["@prisma/client"],
     invocationRecognizers: [makeRecognizer(options)],
-    accessRecognizers: [makeRawRecognizer(options)],
+    // A tagged template is not an invocation, so the raw chain runs on
+    // the access walk, which visits calls as well.
+    accessRecognizers: [compile(raw.declared, "@suss/framework-prisma")],
+    declarations: declarationsIn([raw]),
   };
 }
 

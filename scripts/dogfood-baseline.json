@@ -2,11 +2,11 @@
   "totals": {
     "packages": 59,
     "packagesWithExports": 59,
-    "exports": 578,
-    "internal": 2150,
-    "consumers": 982,
-    "pairs": 972,
-    "unfollowedCalls": 243,
+    "exports": 580,
+    "internal": 2160,
+    "consumers": 989,
+    "pairs": 978,
+    "unfollowedCalls": 250,
     "findingErrors": 0
   },
   "packages": {
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 57,
-      "internal": 726,
+      "internal": 730,
       "consumers": 76,
       "unfollowedCalls": 69
     },
@@ -315,8 +315,8 @@
       "name": "@suss/framework-prisma",
       "exports": 2,
       "internal": 16,
-      "consumers": 4,
-      "unfollowedCalls": 5
+      "consumers": 8,
+      "unfollowedCalls": 7
     },
     "packages/framework/react": {
       "name": "@suss/framework-react",
@@ -383,10 +383,10 @@
     },
     "packages/recognize": {
       "name": "@suss/recognize",
-      "exports": 9,
-      "internal": 19,
-      "consumers": 1,
-      "unfollowedCalls": 14
+      "exports": 11,
+      "internal": 25,
+      "consumers": 4,
+      "unfollowedCalls": 19
     },
     "packages/resolution": {
       "name": "@suss/resolution",

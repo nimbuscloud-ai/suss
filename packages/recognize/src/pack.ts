@@ -14,19 +14,29 @@ import { compile } from "./compile.js";
 import type {
   DeclaredMatch,
   InvocationRecognizer,
+  PackDeclarations,
   PatternPack,
 } from "@suss/extractor";
 import type {
   ArgumentPick,
   Chain,
+  Ending,
   InputRule,
   Link,
+  MethodMeaning,
   MethodsLink,
   StatedRule,
   StorageMethod,
 } from "./chain.js";
 import type { ReceiverOrigin } from "./ops.js";
-import type { StorageCalls } from "./storage.js";
+
+/**
+ * One thing a pack matches, as whichever entry point built it hands it
+ * over. `storageCalls` and `sqlStatements` both come out as this.
+ */
+export interface Match {
+  readonly declared: Chain<MethodMeaning>;
+}
 
 /** What a pack says about itself, beyond the calls it matches. */
 export interface PackSpec {
@@ -58,16 +68,38 @@ export interface PackSpec {
   requiresImport?: string[];
 }
 
+/**
+ * Which walk a chain is dispatched on.
+ *
+ * A statement written as a tagged template is not an invocation, so the
+ * invocation walk never reaches it. The access walk visits calls as
+ * well as templates, which is why a chain over statements goes there
+ * whichever of the two the source wrote.
+ */
+const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
+  storageAccess: "invocation",
+  sqlAccess: "access",
+};
+
+/** The chains a pack dispatches on one of the two walks. */
+function walkedBy(
+  chains: readonly Chain<MethodMeaning>[],
+  walk: "invocation" | "access",
+  recognizedAs: string,
+): InvocationRecognizer[] {
+  return chains
+    .filter((chain) => DISPATCHED_ON[chain.ending.yields] === walk)
+    .map((chain) => compile(chain, recognizedAs));
+}
+
 /** A pack, assembled from the calls it says it matches. */
 export function pack(
   name: string,
-  matches: readonly StorageCalls[],
+  matches: readonly Match[],
   spec: PackSpec,
 ): PatternPack {
   const chains = matches.map((match) => match.declared);
-  const recognizers: InvocationRecognizer[] = chains.map((chain) =>
-    compile(chain, spec.recognizedAs),
-  );
+  const access = walkedBy(chains, "access", spec.recognizedAs);
 
   return {
     name,
@@ -80,13 +112,23 @@ export function pack(
     requiresImport: [
       ...new Set([...gateOf(chains), ...(spec.requiresImport ?? [])]),
     ],
-    invocationRecognizers: recognizers,
-    declarations: { declarations: chains.map(describe) },
+    invocationRecognizers: walkedBy(chains, "invocation", spec.recognizedAs),
+    ...(access.length === 0 ? {} : { accessRecognizers: access }),
+    declarations: declarationsIn(matches),
   };
 }
 
+/**
+ * What a set of chains cost, for a pack that assembles itself. A pack
+ * part way through the migration still has a hand-rolled walk beside
+ * its declarations, and this is how the part that moved is priced.
+ */
+export function declarationsIn(matches: readonly Match[]): PackDeclarations {
+  return { declarations: matches.map((match) => describe(match.declared)) };
+}
+
 /** The wire every chain in a pack reaches over. */
-function protocolOf(chains: readonly Chain<StorageMethod>[]): string {
+function protocolOf(chains: readonly Chain<MethodMeaning>[]): string {
   const wires = new Set(
     chains.map((chain) => chain.ending.transport ?? chain.ending.system),
   );
@@ -100,7 +142,7 @@ function protocolOf(chains: readonly Chain<StorageMethod>[]): string {
 }
 
 /** The modules a file has to reach before any of these chains can match. */
-function gateOf(chains: readonly Chain<StorageMethod>[]): string[] {
+function gateOf(chains: readonly Chain<MethodMeaning>[]): string[] {
   const modules = new Set<string>();
   for (const chain of chains) {
     for (const origin of originsIn(chain)) {
@@ -117,7 +159,7 @@ function gateOf(chains: readonly Chain<StorageMethod>[]): string[] {
  * a chain about a command says where that command came from as it steps
  * to it, so both are places a module can only be reached from.
  */
-function originsIn(chain: Chain<StorageMethod>): ReceiverOrigin[] {
+function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
   const found: ReceiverOrigin[] = [];
   for (const link of chain.links) {
     if (link.asks === "start" && link.at.starts === "receiver") {
@@ -142,7 +184,7 @@ interface WrittenAsCode {
 }
 
 /** What one chain cost, as the health report reads it. */
-function describe(chain: Chain<StorageMethod>): DeclaredMatch {
+function describe(chain: Chain<MethodMeaning>): DeclaredMatch {
   const links = chain.links.filter(isFunctionLink);
   const written: WrittenAsCode[] = [
     ...links.map((link) => ({
@@ -166,21 +208,21 @@ function describe(chain: Chain<StorageMethod>): DeclaredMatch {
 
 /** Whether a pack wrote this link as code. */
 function isFunctionLink(
-  link: Link<StorageMethod>,
-): link is Extract<Link<StorageMethod>, { from: unknown }> {
+  link: Link<MethodMeaning>,
+): link is Extract<Link<MethodMeaning>, { from: unknown }> {
   return link.asks === "container" && "from" in link;
 }
 
 /** The questions a rule inside the methods table settles, by name. */
-function rulesIn(chain: Chain<StorageMethod>): WrittenAsCode[] {
+function rulesIn(chain: Chain<MethodMeaning>): WrittenAsCode[] {
   const link = chain.links.find(
-    (candidate): candidate is MethodsLink<StorageMethod> =>
+    (candidate): candidate is MethodsLink<MethodMeaning> =>
       candidate.asks === "methods",
   );
   const written = new Map<string, InputRule>();
   for (const method of Object.values(link?.table ?? {})) {
     for (const asks of ["selector", "fields"] as const) {
-      const rule = ruleFor(method[asks]);
+      const rule = ruleFor((method as Partial<StorageMethod>)[asks]);
       if (rule !== null) {
         written.set(asks, rule);
       }

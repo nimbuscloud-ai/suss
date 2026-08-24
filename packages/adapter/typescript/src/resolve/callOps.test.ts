@@ -7,13 +7,20 @@ import { ResolutionStore } from "../facts/store.js";
 import { callOpsFor } from "./callOps.js";
 
 import type { CallOps, ReceiverOrigin } from "@suss/recognize";
-import type { CallExpression, Project } from "ts-morph";
+import type {
+  CallExpression,
+  Project,
+  TaggedTemplateExpression,
+  Node as TsNode,
+} from "ts-morph";
 
 const LIBRARY = `
   export default class Deck {
     play(track: string): Promise<void>;
     side(name: string): Deck;
     send(command: unknown): Promise<void>;
+    query(parts: TemplateStringsArray, ...values: unknown[]): Promise<void>;
+    queryText(statement: string): Promise<void>;
   }
   export declare function makeDeck(): Deck;
   export declare class PlayCommand { constructor(input: unknown); }
@@ -55,6 +62,25 @@ function opsForLastCall(source: string): CallOps {
 /** The ops for the outermost call, which is where a chain is read from. */
 function opsForOuterCall(source: string): CallOps {
   return opsForCall(source, "first");
+}
+
+/** The ops for the tagged template in a file, which reads as a call. */
+function opsForTaggedTemplate(source: string): CallOps {
+  const project = withLibrary();
+  const file = project.createSourceFile("/repo.ts", source);
+  const store = new ResolutionStore();
+  let tagged: TsNode | undefined;
+  file.forEachDescendant((node) => {
+    if (Node.isTaggedTemplateExpression(node)) {
+      tagged = node;
+    }
+  });
+  if (tagged === undefined) {
+    throw new Error("the fixture contains no tagged template");
+  }
+  return callOpsFor(tagged as TaggedTemplateExpression, (value) =>
+    store.resolveWrittenValue(value),
+  );
 }
 
 describe("what the adapter can tell a declared pack", () => {
@@ -517,5 +543,57 @@ describe("stepping to a receiver another file declared", () => {
     ).receiver();
 
     expect(receiver?.calleeText()).toBe("makeDeck");
+  });
+});
+
+describe("a statement the source wrote as a tagged template", () => {
+  const TAGGED = `
+    import Deck from "tapedeck";
+    declare const deck: Deck;
+    export function play(side: string) {
+      return deck.query\`SELECT id FROM tapes WHERE side = \${side}\`;
+    }
+  `;
+
+  it("reads as a call whose one argument is the template", () => {
+    const ops = opsForTaggedTemplate(TAGGED);
+
+    expect(ops.method()).toBe("query");
+    expect(ops.calleeText()).toBe("deck.query");
+    expect(ops.argumentCount()).toBe(1);
+    expect(
+      ops.receiverIsFrom({ origin: "declaredBy", importedFrom: ["tapedeck"] }),
+    ).toBe(true);
+  });
+
+  it("gives the text either side of each hole", () => {
+    expect(opsForTaggedTemplate(TAGGED).valueAt(0)?.parts()).toEqual([
+      "SELECT id FROM tapes WHERE side = ",
+      "",
+    ]);
+  });
+
+  it("gives one piece for a statement the source wrote as a string", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.queryText("SELECT id FROM tapes");
+      }
+    `);
+
+    expect(ops.valueAt(0)?.parts()).toEqual(["SELECT id FROM tapes"]);
+  });
+
+  it("gives nothing for a value that is not text at all", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.send({ Side: "a" });
+      }
+    `);
+
+    expect(ops.valueAt(0)?.parts()).toBeNull();
   });
 });

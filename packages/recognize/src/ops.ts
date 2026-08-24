@@ -99,6 +99,14 @@ export interface ValueOps {
   items(): readonly ValueOps[];
   /** What one named property of this object states, or null for none. */
   property(name: string): ValueOps | null;
+  /**
+   * The pieces of text the source wrote here, in order, with whatever
+   * it interpolated between them left out. A string is one piece and a
+   * template is one piece per hole plus one, so a reader that means to
+   * put its own placeholders in the holes can. Null when the source
+   * wrote neither.
+   */
+  parts(): readonly string[] | null;
 }
 
 /** One entry of an object a call states. */

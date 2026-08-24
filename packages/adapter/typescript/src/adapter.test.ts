@@ -19,6 +19,7 @@ import { discoverUnits } from "./discovery/index.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
+import type { CallOps } from "@suss/recognize";
 import type { FunctionRoot } from "./conditions.js";
 import type { DiscoveredUnit } from "./discovery/index.js";
 
@@ -2661,6 +2662,62 @@ describe("access recognizers", () => {
       frameworks: [recognizingPack],
     }).extractAll();
     expect(seen).toEqual(["user.created"]);
+  });
+
+  it("hands a declared pack the ops for a tagged template", async () => {
+    const asked: unknown[] = [];
+    const readingPack: PatternPack = {
+      name: "test-tagged",
+      protocol: "http",
+      languages: ["typescript"],
+      discovery: [
+        {
+          kind: "handler",
+          match: { type: "namedExport", names: ["handler"] },
+          requiresImport: [],
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+      accessRecognizers: [
+        (access, rawCtx) => {
+          const node = access as Node;
+          const { ops } = rawCtx as { ops?: CallOps };
+          if (Node.isTaggedTemplateExpression(node)) {
+            asked.push({
+              method: ops?.method(),
+              parts: ops?.valueAt(0)?.parts(),
+            });
+          }
+          if (Node.isPropertyAccessExpression(node)) {
+            asked.push({ propertyAccessGets: ops });
+          }
+          return null;
+        },
+      ],
+    };
+
+    const project = createTestProject();
+    project.createSourceFile(
+      "handler.ts",
+      `
+      const deck = { query: (parts: TemplateStringsArray) => parts };
+      export function handler() {
+        return deck.query\`SELECT id FROM tapes\`;
+      }
+    `,
+    );
+    await createTypeScriptAdapter({
+      project,
+      frameworks: [readingPack],
+    }).extractAll();
+
+    expect(asked).toEqual([
+      { method: "query", parts: ["SELECT id FROM tapes"] },
+      { propertyAccessGets: undefined },
+    ]);
   });
 });
 

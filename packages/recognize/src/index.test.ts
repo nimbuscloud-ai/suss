@@ -4,10 +4,11 @@ import { astLink } from "./ast.js";
 import { examplesMissing, runExamples } from "./example.js";
 import { constructedFrom, declaredBy, opsIn } from "./ops.js";
 import { pack } from "./pack.js";
+import { sqlStatements } from "./sqlStatements.js";
 import { storageCalls } from "./storage.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { StorageMethod } from "./chain.js";
+import type { SqlMethod, StorageMethod } from "./chain.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
 /** A call, as the ops see it, so a chain can run with no compiler here. */
@@ -69,7 +70,22 @@ function valueOps(stated: unknown): ValueOps {
       })),
     property: (name) =>
       object === null || !(name in object) ? null : valueOps(object[name]),
+    parts: () => partsOf(stated),
   };
+}
+
+/**
+ * The text a value states, in pieces. A test writes a plain string for
+ * a statement with no holes and a list of strings for one with them.
+ */
+function partsOf(stated: unknown): string[] | null {
+  if (typeof stated === "string") {
+    return [stated];
+  }
+  if (Array.isArray(stated) && stated.every((it) => typeof it === "string")) {
+    return stated as string[];
+  }
+  return null;
 }
 
 /** What the properties of an object a call states are called. */
@@ -626,6 +642,7 @@ describe("a rule that says which value it reads", () => {
         by: ({ input }) => [
           ...(input.text() === null ? [] : ["text"]),
           ...(input.flag() === null ? [] : ["flag"]),
+          ...(input.parts() === null ? [] : ["parts"]),
           ...(input.property("side") === null ? [] : ["property"]),
           ...input.items().map(() => "item"),
           ...input.entries("nothing").map(() => "entry"),
@@ -727,6 +744,215 @@ describe("a pack that reads more files than its chains match in", () => {
     });
 
     expect(gated.requiresImport).toEqual(["tapedeck", "reel-to-reel"]);
+  });
+});
+
+const STATEMENT: SqlMethod = { statement: { at: 0 } };
+
+const queries = (over: { dialect?: string } = {}) =>
+  sqlStatements({
+    system: "postgresql",
+    dialect: over.dialect ?? "postgresql",
+    client: declaredBy("tapedeck"),
+  })
+    .methods({ query: STATEMENT, exec: STATEMENT })
+    .example('deck.query("SELECT id FROM tapes")');
+
+function runQuery(
+  calls: ReturnType<typeof queries>,
+  ops: CallOps,
+): Effect[] | null {
+  const [recognizer] =
+    pack("tapedeck", [calls], {
+      languages: ["typescript"],
+      recognizedAs: "@suss/framework-tapedeck",
+    }).accessRecognizers ?? [];
+  if (recognizer === undefined) {
+    throw new Error("the pack compiled no recognizer");
+  }
+  return recognizer(null, { ops });
+}
+
+const asking = (statement: unknown, method = "query") =>
+  runQuery(
+    queries(),
+    callOps({
+      method,
+      from: ["tapedeck"],
+      callee: "deck.query",
+      values: { 0: statement },
+    }),
+  );
+
+describe("a chain over statements written as SQL", () => {
+  it("emits one access per table the statement touches", () => {
+    const effects = asking(
+      "SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id = 1",
+    );
+
+    expect(effects).toEqual([
+      {
+        type: "interaction",
+        binding: {
+          transport: "postgresql",
+          semantics: {
+            name: "storage",
+            storageSystem: "postgresql",
+            scope: "default",
+            container: "users",
+            accessPath: null,
+          },
+          recognition: "@suss/framework-tapedeck",
+        },
+        callee: "deck.query",
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["email"],
+          operation: "query",
+          selector: ["id"],
+        },
+      },
+      {
+        type: "interaction",
+        binding: {
+          transport: "postgresql",
+          semantics: {
+            name: "storage",
+            storageSystem: "postgresql",
+            scope: "default",
+            container: "orders",
+            accessPath: null,
+          },
+          recognition: "@suss/framework-tapedeck",
+        },
+        callee: "deck.query",
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["total"],
+          operation: "query",
+        },
+      },
+    ]);
+  });
+
+  it("takes the kind from the statement rather than from the method", () => {
+    expect(asking("UPDATE tapes SET side = 'b' WHERE id = 1", "exec")).toEqual([
+      expect.objectContaining({
+        interaction: expect.objectContaining({
+          kind: "write",
+          fields: ["side"],
+          selector: ["id"],
+        }),
+      }),
+    ]);
+  });
+
+  it("reads a statement the source wrote with holes in it", () => {
+    const effects = asking(["SELECT id FROM tapes WHERE side = ", ""]);
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "tapes" } },
+      interaction: { kind: "read", selector: ["side"] },
+    });
+  });
+
+  it("says nothing for a statement nobody can read", () => {
+    expect(asking("MOUNT tapes")).toBeNull();
+  });
+
+  it("says nothing where the call states no statement at all", () => {
+    expect(
+      runQuery(queries(), callOps({ method: "query", from: ["tapedeck"] })),
+    ).toBeNull();
+  });
+
+  it("leaves the same method on somebody else's client alone", () => {
+    expect(
+      runQuery(
+        queries(),
+        callOps({
+          method: "query",
+          from: ["other"],
+          values: { 0: "SELECT id FROM tapes" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("parses in the dialect the pack states, not the store's own name", () => {
+    const effects = runQuery(
+      queries({ dialect: "sqlite" }),
+      callOps({
+        method: "query",
+        from: ["tapedeck"],
+        values: { 0: "SELECT id FROM tapes" },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { storageSystem: "postgresql" } },
+    });
+  });
+
+  it("records the wire a pack states, where it differs from the store", () => {
+    const overWire = sqlStatements({
+      system: "d1",
+      transport: "cloudflare-api",
+      dialect: "sqlite",
+      client: declaredBy("tapedeck"),
+    }).methods({ query: STATEMENT });
+    const effects = runQuery(
+      overWire,
+      callOps({
+        method: "query",
+        from: ["tapedeck"],
+        values: { 0: "SELECT id FROM tapes" },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { transport: "cloudflare-api" },
+    });
+  });
+
+  it("matches on the method alone, for a helper a project wrote itself", () => {
+    const helper = sqlStatements({
+      system: "postgresql",
+      dialect: "postgresql",
+    }).methods({ runQuery: STATEMENT });
+    const effects = runQuery(
+      helper,
+      callOps({
+        method: "runQuery",
+        from: [],
+        values: { 0: "SELECT id FROM tapes" },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "tapes" } },
+    });
+  });
+
+  it("goes on the access walk, since a template is not an invocation", () => {
+    const assembled = pack("tapedeck", [queries()], {
+      languages: ["typescript"],
+      recognizedAs: "@suss/framework-tapedeck",
+    });
+
+    expect(assembled.invocationRecognizers).toEqual([]);
+    expect(assembled.accessRecognizers).toHaveLength(1);
+    expect(assembled.declarations?.declarations).toEqual([
+      {
+        name: "postgresql",
+        dataLinks: 2,
+        functionLinks: [],
+        astLinks: [],
+        example: 'deck.query("SELECT id FROM tapes")',
+      },
+    ]);
   });
 });
 
