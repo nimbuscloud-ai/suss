@@ -1,29 +1,17 @@
-import { type CallExpression, Node } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { createTestProject } from "@suss/test-project";
+import { packUnderTest } from "@suss/pack-harness";
+import { runExamples } from "@suss/recognize";
 
 import { drizzleFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { SourceFile } from "ts-morph";
-
-const raise = (msg: string): never => {
-  throw new Error(msg);
-};
 
 /**
- * Build an in-memory Project with a minimal `drizzle-orm` .d.ts so the
- * recognizer's type check finds the database symbol declared under
- * `node_modules/drizzle-orm/`, plus a schema module declaring tables
- * via `pgTable("...")` the way real Drizzle projects do.
+ * A minimal `drizzle-orm`, so the recognizer's type check finds the
+ * database symbol declared under `node_modules/drizzle-orm/`.
  */
-function makeProject(userSource: string): SourceFile {
-  const project = createTestProject();
-
-  project.createSourceFile(
-    "node_modules/drizzle-orm/index.d.ts",
-    `
+const DRIZZLE_TYPES = `
       export interface SelectChain {
         from(table: unknown): SelectChain;
         where(condition: unknown): SelectChain;
@@ -58,20 +46,18 @@ function makeProject(userSource: string): SourceFile {
       export declare function eq(a: unknown, b: unknown): unknown;
       export declare function and(...conditions: unknown[]): unknown;
       export declare function sql(strings: TemplateStringsArray, ...values: unknown[]): unknown;
-    `,
-  );
-  project.createSourceFile(
-    "node_modules/drizzle-orm/pg-core/index.d.ts",
-    `
+`;
+
+/** The table factories, which a project imports from its own dialect. */
+const PG_CORE_TYPES = `
       export declare function pgTable(name: string, columns: Record<string, unknown>): Record<string, unknown>;
       export declare function serial(name: string): unknown;
       export declare function text(name: string): unknown;
       export declare function integer(name: string): unknown;
-    `,
-  );
-  project.createSourceFile(
-    "schema.ts",
-    `
+`;
+
+/** A schema module declaring tables the way a Drizzle project does. */
+const SCHEMA = `
       import { integer, pgTable, serial, text } from "drizzle-orm/pg-core";
       export const users = pgTable("users", {
         id: serial("id"),
@@ -83,31 +69,23 @@ function makeProject(userSource: string): SourceFile {
         userId: integer("user_id"),
         total: integer("total"),
       });
-    `,
+`;
+
+const ENTRY = "/user.ts";
+
+const drizzle = packUnderTest(drizzleFramework(), {
+  library: {
+    "drizzle-orm": DRIZZLE_TYPES,
+    "drizzle-orm/pg-core": PG_CORE_TYPES,
+  },
+});
+
+/** What the pack makes of a snippet, with the schema module beside it. */
+function effectsIn(source: string): Effect[] {
+  return drizzle.effectsAcross(
+    { "/schema.ts": SCHEMA, [ENTRY]: source },
+    ENTRY,
   );
-
-  return project.createSourceFile("user.ts", userSource);
-}
-
-function recognizeAll(sourceFile: SourceFile): Effect[] {
-  const pack = drizzleFramework();
-  const recognizer = pack.invocationRecognizers?.[0] ?? raise("no recognizer");
-  const effects: Effect[] = [];
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const ctx = {
-      call: node as CallExpression,
-      sourceFile,
-      extractArgs: () => [],
-    };
-    const emitted = recognizer(node, ctx);
-    if (emitted !== null) {
-      effects.push(...emitted);
-    }
-  });
-  return effects;
 }
 
 function interactionOf(effect: Effect): Record<string, unknown> {
@@ -130,7 +108,7 @@ function tableOf(effect: Effect): string | null {
 
 describe("drizzle recognizer — select chains", () => {
   it("recognizes select().from().where() once, with table, fields, selector", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle, eq } from "drizzle-orm";
       import { users } from "./schema.js";
       const db = drizzle({});
@@ -140,7 +118,6 @@ describe("drizzle recognizer — select chains", () => {
           .where(eq(users.id, id));
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     expect(tableOf(effects[0])).toBe("users");
     const interaction = interactionOf(effects[0]);
@@ -151,7 +128,7 @@ describe("drizzle recognizer — select chains", () => {
   });
 
   it("bare select() reads the whole row and compound where unions columns", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { and, drizzle, eq } from "drizzle-orm";
       import { users } from "./schema.js";
       const db = drizzle({});
@@ -160,7 +137,6 @@ describe("drizzle recognizer — select chains", () => {
           .where(and(eq(users.email, email), eq(users.name, name)));
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     const interaction = interactionOf(effects[0]);
     expect(interaction.fields).toEqual(["*"]);
@@ -170,7 +146,7 @@ describe("drizzle recognizer — select chains", () => {
 
 describe("drizzle recognizer — mutations", () => {
   it("insert().values() is a write with the value keys as fields", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle } from "drizzle-orm";
       import { users } from "./schema.js";
       const db = drizzle({});
@@ -178,7 +154,6 @@ describe("drizzle recognizer — mutations", () => {
         return db.insert(users).values({ email, name: "new" }).returning();
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     expect(tableOf(effects[0])).toBe("users");
     const interaction = interactionOf(effects[0]);
@@ -188,7 +163,7 @@ describe("drizzle recognizer — mutations", () => {
   });
 
   it("update().set().where() carries set keys and where columns", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle, eq } from "drizzle-orm";
       import { users } from "./schema.js";
       const db = drizzle({});
@@ -196,7 +171,6 @@ describe("drizzle recognizer — mutations", () => {
         return db.update(users).set({ name }).where(eq(users.id, id));
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     const interaction = interactionOf(effects[0]);
     expect(interaction.kind).toBe("write");
@@ -206,7 +180,7 @@ describe("drizzle recognizer — mutations", () => {
   });
 
   it("delete().where() is a whole-row write with a selector", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle, eq } from "drizzle-orm";
       import { orders } from "./schema.js";
       const db = drizzle({});
@@ -214,7 +188,6 @@ describe("drizzle recognizer — mutations", () => {
         return db.delete(orders).where(eq(orders.id, id));
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     expect(tableOf(effects[0])).toBe("orders");
     const interaction = interactionOf(effects[0]);
@@ -225,7 +198,7 @@ describe("drizzle recognizer — mutations", () => {
   });
 
   it("recognizes calls on a transaction handle", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle } from "drizzle-orm";
       import { orders, users } from "./schema.js";
       const db = drizzle({});
@@ -236,14 +209,13 @@ describe("drizzle recognizer — mutations", () => {
         });
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects.map(tableOf).sort()).toEqual(["orders", "users"]);
   });
 });
 
 describe("drizzle recognizer — relational query API", () => {
   it("query.<table>.findMany resolves the schema export's SQL name", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle } from "drizzle-orm";
       import * as schema from "./schema.js";
       const db = drizzle({}, { schema });
@@ -254,7 +226,6 @@ describe("drizzle recognizer — relational query API", () => {
         });
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     expect(tableOf(effects[0])).toBe("users");
     const interaction = interactionOf(effects[0]);
@@ -264,14 +235,13 @@ describe("drizzle recognizer — relational query API", () => {
   });
 
   it("findFirst without options reads the whole row", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle } from "drizzle-orm";
       const db = drizzle({});
       export async function first() {
         return db.query.orders.findFirst();
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     const interaction = interactionOf(effects[0]);
     expect(interaction.operation).toBe("findFirst");
@@ -281,7 +251,7 @@ describe("drizzle recognizer — relational query API", () => {
 
 describe("drizzle recognizer — negatives", () => {
   it("ignores fluent chains on non-drizzle receivers", () => {
-    const sf = makeProject(`
+    const effects = effectsIn(`
       const qb = {
         select: () => ({ from: (t: unknown) => ({ where: (c: unknown) => [] }) }),
         insert: (t: unknown) => ({ values: (v: unknown) => [] }),
@@ -291,14 +261,14 @@ describe("drizzle recognizer — negatives", () => {
         qb.insert("users").values({ a: 1 });
       }
     `);
-    expect(recognizeAll(sf)).toHaveLength(0);
+    expect(effects).toHaveLength(0);
   });
 
   it("does not name a table when the declaration is opaque", () => {
     // The identifier's own text is not the table name. Reporting it
     // would pair this query against a schema table that spells the
     // same way, so the query keeps its effect without a table.
-    const sf = makeProject(`
+    const effects = effectsIn(`
       import { drizzle } from "drizzle-orm";
       const db = drizzle({});
       declare const mystery: Record<string, unknown>;
@@ -306,38 +276,14 @@ describe("drizzle recognizer — negatives", () => {
         return db.select().from(mystery);
       }
     `);
-    const effects = recognizeAll(sf);
     expect(effects).toHaveLength(1);
     expect(tableOf(effects[0])).toBeNull();
   });
 });
 
 describe("drizzle raw SQL", () => {
-  function rawEffects(source: string): Effect[] {
-    const sourceFile = makeProject(source);
-    const recognizers = drizzleFramework().invocationRecognizers ?? [];
-    const effects: Effect[] = [];
-    sourceFile.forEachDescendant((node) => {
-      if (!Node.isCallExpression(node)) {
-        return;
-      }
-      const ctx = {
-        call: node as CallExpression,
-        sourceFile,
-        extractArgs: () => [],
-      };
-      for (const recognizer of recognizers) {
-        const emitted = recognizer(node, ctx);
-        if (emitted !== null) {
-          effects.push(...emitted);
-        }
-      }
-    });
-    return effects;
-  }
-
   it("reads the tables a statement touches, and what it picks rows by", () => {
-    const effects = rawEffects(`
+    const effects = effectsIn(`
       import { drizzle, sql } from "drizzle-orm";
       const db = drizzle({} as never);
       export async function activeUsers(tenant: string) {
@@ -359,7 +305,7 @@ describe("drizzle raw SQL", () => {
   });
 
   it("gives a join one effect per table, which the query builder path never did", () => {
-    const effects = rawEffects(`
+    const effects = effectsIn(`
       import { drizzle, sql } from "drizzle-orm";
       const db = drizzle({} as never);
       export async function ordersFor(id: string) {
@@ -378,7 +324,7 @@ describe("drizzle raw SQL", () => {
   });
 
   it("reads a write as a write", () => {
-    const effects = rawEffects(`
+    const effects = effectsIn(`
       import { drizzle, sql } from "drizzle-orm";
       const db = drizzle({} as never);
       export async function touch(id: string) {
@@ -398,7 +344,7 @@ describe("drizzle raw SQL", () => {
   });
 
   it("reads a statement that interpolates the table object, which is how a schema is written", () => {
-    const effects = rawEffects(`
+    const effects = effectsIn(`
       import { drizzle, sql } from "drizzle-orm";
       import { users } from "./schema";
       const db = drizzle({} as never);
@@ -422,7 +368,7 @@ describe("drizzle raw SQL", () => {
 
   it("says nothing about a statement it cannot read", () => {
     expect(
-      rawEffects(`
+      effectsIn(`
         import { drizzle, sql } from "drizzle-orm";
         const db = drizzle({} as never);
         export async function mystery(table: string) {
@@ -430,5 +376,68 @@ describe("drizzle raw SQL", () => {
         }
       `),
     ).toEqual([]);
+  });
+
+  it("reads a statement the source wrote as a plain string", () => {
+    const effects = effectsIn(`
+      import { drizzle } from "drizzle-orm";
+      const db = drizzle({} as never);
+      export async function everyone() {
+        return db.execute("SELECT id, email FROM users");
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBe("users");
+    expect(interactionOf(effects[0]).fields).toEqual(["id", "email"]);
+  });
+
+  it("leaves the same method on somebody else's client alone", () => {
+    expect(
+      effectsIn(`
+        const shell = { execute: (statement: string) => [statement] };
+        export function run() {
+          return shell.execute("SELECT id FROM users");
+        }
+      `),
+    ).toEqual([]);
+  });
+
+  it("runs the line the declaration says it matches", () => {
+    const ran = runExamples(drizzleFramework(), (code) =>
+      effectsIn(`
+        import { drizzle, sql } from "drizzle-orm";
+        const db = drizzle({} as never);
+        export async function example() {
+          return ${code};
+        }
+      `),
+    );
+
+    expect(ran).toHaveLength(1);
+    expect(tableOf(ran[0].effects[0])).toBe("users");
+    expect(interactionOf(ran[0].effects[0])).toMatchObject({
+      kind: "read",
+      fields: ["id", "email"],
+      operation: "execute",
+    });
+  });
+});
+
+describe("what the pack declares", () => {
+  it("puts the statement path on the access walk, as data with an example", () => {
+    const pack = drizzleFramework();
+
+    expect(pack.invocationRecognizers).toHaveLength(1);
+    expect(pack.accessRecognizers).toHaveLength(1);
+    expect(pack.declarations?.declarations).toEqual([
+      {
+        name: "postgresql",
+        dataLinks: 3,
+        functionLinks: [],
+        astLinks: [],
+        example: "db.execute(sql`SELECT id, email FROM users`)",
+      },
+    ]);
   });
 });

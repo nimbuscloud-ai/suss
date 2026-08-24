@@ -18,6 +18,5 @@
   "columns": "drizzle-orm: relational query option key",
   "with": "drizzle-orm: relational query option key",
   "read": "suss: access kind",
-  "write": "suss: access kind",
-  "execute": "drizzle-orm: method taking a statement written as SQL"
+  "write": "suss: access kind"
 }

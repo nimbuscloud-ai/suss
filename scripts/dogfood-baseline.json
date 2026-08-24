@@ -2,11 +2,11 @@
   "totals": {
     "packages": 59,
     "packagesWithExports": 59,
-    "exports": 580,
-    "internal": 2157,
-    "consumers": 988,
-    "pairs": 977,
-    "unfollowedCalls": 249,
+    "exports": 581,
+    "internal": 2162,
+    "consumers": 992,
+    "pairs": 980,
+    "unfollowedCalls": 251,
     "findingErrors": 0
   },
   "packages": {
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 57,
-      "internal": 730,
+      "exports": 58,
+      "internal": 731,
       "consumers": 76,
       "unfollowedCalls": 69
     },
@@ -230,8 +230,8 @@
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
       "exports": 2,
-      "internal": 15,
-      "consumers": 5,
+      "internal": 17,
+      "consumers": 9,
       "unfollowedCalls": 0
     },
     "packages/framework/express": {
@@ -384,9 +384,9 @@
     "packages/recognize": {
       "name": "@suss/recognize",
       "exports": 11,
-      "internal": 25,
+      "internal": 27,
       "consumers": 4,
-      "unfollowedCalls": 19
+      "unfollowedCalls": 21
     },
     "packages/resolution": {
       "name": "@suss/resolution",
