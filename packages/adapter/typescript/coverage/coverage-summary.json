@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 8396,
-      "covered": 7180,
+      "total": 8412,
+      "covered": 7196,
       "skipped": 0,
-      "pct": 85.51
+      "pct": 85.54
     },
     "statements": {
-      "total": 8487,
-      "covered": 7267,
+      "total": 8503,
+      "covered": 7283,
       "skipped": 0,
-      "pct": 85.62
+      "pct": 85.65
     },
     "functions": {
-      "total": 1188,
-      "covered": 1098,
+      "total": 1195,
+      "covered": 1105,
       "skipped": 0,
-      "pct": 92.42
+      "pct": 92.46
     },
     "branches": {
-      "total": 6510,
-      "covered": 5071,
+      "total": 6521,
+      "covered": 5084,
       "skipped": 0,
-      "pct": 77.89
+      "pct": 77.96
     },
     "branchesTrue": {
       "total": 0,
@@ -1697,54 +1697,54 @@
   },
   "src/resolve/callOps.ts": {
     "lines": {
-      "total": 112,
-      "covered": 103,
+      "total": 122,
+      "covered": 113,
       "skipped": 0,
-      "pct": 91.96
+      "pct": 92.62
     },
     "functions": {
-      "total": 45,
-      "covered": 41,
+      "total": 50,
+      "covered": 46,
       "skipped": 0,
-      "pct": 91.11
+      "pct": 92
     },
     "statements": {
-      "total": 115,
-      "covered": 105,
+      "total": 125,
+      "covered": 115,
       "skipped": 0,
-      "pct": 91.3
+      "pct": 92
     },
     "branches": {
-      "total": 98,
-      "covered": 77,
+      "total": 107,
+      "covered": 88,
       "skipped": 0,
-      "pct": 78.57
+      "pct": 82.24
     }
   },
   "src/resolve/invocationEffects.ts": {
     "lines": {
-      "total": 276,
-      "covered": 244,
+      "total": 282,
+      "covered": 250,
       "skipped": 0,
-      "pct": 88.4
+      "pct": 88.65
     },
     "functions": {
-      "total": 34,
-      "covered": 30,
+      "total": 36,
+      "covered": 32,
       "skipped": 0,
-      "pct": 88.23
+      "pct": 88.88
     },
     "statements": {
-      "total": 278,
-      "covered": 246,
+      "total": 284,
+      "covered": 252,
       "skipped": 0,
-      "pct": 88.48
+      "pct": 88.73
     },
     "branches": {
-      "total": 236,
-      "covered": 205,
+      "total": 238,
+      "covered": 207,
       "skipped": 0,
-      "pct": 86.86
+      "pct": 86.97
     }
   },
   "src/resolve/reachableClosure.ts": {
