@@ -1,6 +1,6 @@
 {
   "name": "@suss/client-web",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "type": "module",
   "description": "Client pack for extracting suss client behavioral summaries from web fetch() call sites.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/extractor": "0.13.0"
+    "@suss/extractor": "0.13.1"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
