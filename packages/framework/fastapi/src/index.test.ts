@@ -29,6 +29,7 @@ describe("fastapiFramework", () => {
         routerComposition: {
           routerConstructorName: "APIRouter",
           includeMethodName: "include_router",
+          routerKeyword: "router",
           prefixKeyword: "prefix",
         },
       },

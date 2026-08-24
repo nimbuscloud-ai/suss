@@ -69,6 +69,7 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         routerComposition: {
           routerConstructorName: "APIRouter",
           includeMethodName: "include_router",
+          routerKeyword: "router",
           prefixKeyword: "prefix",
         },
       },

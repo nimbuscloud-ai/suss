@@ -36,6 +36,7 @@ const fastapiLike: PythonPack = {
       routerComposition: {
         routerConstructorName: "APIRouter",
         includeMethodName: "include_router",
+        routerKeyword: "router",
         prefixKeyword: "prefix",
       },
     },
@@ -109,6 +110,30 @@ describe("router prefix composition, one mount hop", () => {
         "",
         "",
         'app.include_router(router, prefix="/api")',
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("composes a mount whose router is passed by keyword", async () => {
+    // FastAPI's own signature names the parameter `router`, and a call
+    // that writes it out used to mount nothing, because the reading took
+    // the first positional argument and there was not one.
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        'app.include_router(router=router, prefix="/api")',
         "",
       ].join("\n"),
     );

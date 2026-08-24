@@ -395,7 +395,10 @@ const BY_FILE: Array<{
     describe: (p) => `a GraphQL schema at ${p}`,
   },
   {
-    matches: (f) => /^openapi\.(ya?ml|json)$/.test(f),
+    // The same reader takes a Swagger 2.0 document, and a project on 2.0
+    // names the file after the spec it wrote, so a scan for openapi.json
+    // alone walked past it.
+    matches: (f) => /^(openapi|swagger)\.(ya?ml|json)$/.test(f),
     name: "openapi",
     packageName: "@suss/contract-openapi",
     describe: (p) => `an OpenAPI document at ${p}`,
