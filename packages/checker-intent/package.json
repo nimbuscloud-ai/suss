@@ -1,6 +1,6 @@
 {
   "name": "@suss/checker-intent",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "Pair team-authored intent (IntentSummary) against derived code (BehavioralSummary) and report where they diverge.",
   "keywords": [
@@ -47,9 +47,9 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.12.0",
-    "@suss/intent-ir": "0.12.0",
-    "@suss/ir-core": "0.12.0"
+    "@suss/behavioral-ir": "0.13.0",
+    "@suss/intent-ir": "0.13.0",
+    "@suss/ir-core": "0.13.0"
   },
   "devDependencies": {
     "tsup": "*",
