@@ -117,6 +117,18 @@ export function readCallArguments(argumentList: PyNode | null): {
       }
       continue;
     }
+    // `f(**cfg)` and `f(*rest)` spread a value the call does not write
+    // out. Neither one is an argument at a position, and counting a spread as
+    // the first positional argument made `Api(**authorizations())` look like
+    // a construction on something this reading could not identify, which
+    // left every route under it with no path.
+    //
+    // A spread dictionary could carry the prefix keyword itself. Reading
+    // the keywords that are written and leaving it there is what keeps
+    // the routes; see the Python adapter README.
+    if (child.type === "dictionary_splat" || child.type === "list_splat") {
+      continue;
+    }
     args.push(readArg(child));
   }
   return { args, keywordArgs };

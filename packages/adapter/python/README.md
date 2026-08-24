@@ -81,6 +81,20 @@ FastAPI has no column here: its app has no prefix of its own, and the pack decla
 | `""`, `None`, `False`, `0` | the blueprint's prefix + the rest | unstated |
 | a name or a call | whatever it evaluates to | unreadable |
 
+### A call that spreads a dictionary
+
+`Api(**build_authorizations())` and `include_router(router, **options)`
+spread a value the call does not write out. The reader skips the spread
+and reads the keywords that are written, so the routes underneath keep
+their paths.
+
+That leaves one thing it cannot see. If the dictionary sets the prefix
+keyword itself, the composed path is wrong, and nothing in the output
+says so. Reading the prefix as unknown instead would be correct and would
+cost every route under every call that spreads a config dictionary, which
+is most of them. Propagating the uncertainty rather than choosing between
+the two is the work that would settle this.
+
 **At the registration** (`app.register_blueprint(bp, ...)`), which the reader consults only to abstain:
 
 | Written | flask-restx serves | The reader says |
