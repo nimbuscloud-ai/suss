@@ -32,6 +32,10 @@ export interface OpenApiSpec {
     title?: string;
     version?: string;
   };
+  /** Swagger 2.0 writes the prefix every path comes after here. */
+  basePath?: string;
+  /** OpenAPI 3 writes it in the first server's URL instead. */
+  servers?: Array<{ url?: string }>;
   paths?: Record<string, PathItem | undefined>;
   components?: {
     schemas?: Record<string, OpenApiSchema | undefined>;
@@ -57,7 +61,12 @@ export interface OpenApiOperation {
 
 export interface OpenApiParameter {
   name: string;
-  in: "path" | "query" | "header" | "cookie";
+  /**
+   * Where the parameter is written. Swagger 2.0 puts a request body and
+   * a form field here, as `body` and `formData`; OpenAPI 3 moved both
+   * into `requestBody`, so a 3.x document never uses either.
+   */
+  in: "path" | "query" | "header" | "cookie" | "body" | "formData";
   required?: boolean;
   schema?: OpenApiSchema;
   description?: string;
