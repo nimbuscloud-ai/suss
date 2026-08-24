@@ -3,10 +3,10 @@
     "packages": 59,
     "packagesWithExports": 59,
     "exports": 580,
-    "internal": 2160,
-    "consumers": 989,
-    "pairs": 978,
-    "unfollowedCalls": 250,
+    "internal": 2157,
+    "consumers": 988,
+    "pairs": 977,
+    "unfollowedCalls": 249,
     "findingErrors": 0
   },
   "packages": {
@@ -195,9 +195,9 @@
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",
       "exports": 2,
-      "internal": 13,
-      "consumers": 10,
-      "unfollowedCalls": 5
+      "internal": 10,
+      "consumers": 9,
+      "unfollowedCalls": 4
     },
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
