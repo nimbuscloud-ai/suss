@@ -19,10 +19,10 @@
       "pct": 93.68
     },
     "branches": {
-      "total": 1901,
-      "covered": 1623,
+      "total": 1903,
+      "covered": 1625,
       "skipped": 0,
-      "pct": 85.37
+      "pct": 85.39
     },
     "branchesTrue": {
       "total": 0,
@@ -857,10 +857,10 @@
       "pct": 97.36
     },
     "branches": {
-      "total": 38,
-      "covered": 32,
+      "total": 40,
+      "covered": 34,
       "skipped": 0,
-      "pct": 84.21
+      "pct": 85
     }
   },
   "src/pairing/semanticBridging.ts": {
