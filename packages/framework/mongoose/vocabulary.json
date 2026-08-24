@@ -2,10 +2,10 @@
   "$": "mongoose/MongoDB: the prefix marking an update-operator key ($set, $inc, ...)",
   "_id": "mongoose/MongoDB: the primary key field, the implicit filter for the ...ById methods",
   "collection": "mongoose: the Schema option naming the collection explicitly",
+  "model": "mongoose: the factory function/method that builds a Model from a name and a schema",
   "mongodb": "the database mongoose models access",
   "mongoose": "pack name, the Mongoose ODM",
-  "model": "mongoose: the factory function/method that builds a Model from a name and a schema",
+  "nothing": "suss: what a reader says instead of a name when nothing settles it",
   "read": "suss: access kind",
-  "save": "mongoose: the Document instance method that persists a document",
   "write": "suss: access kind"
 }

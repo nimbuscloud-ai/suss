@@ -2,11 +2,11 @@
   "totals": {
     "packages": 59,
     "packagesWithExports": 59,
-    "exports": 575,
-    "internal": 2173,
-    "consumers": 993,
-    "pairs": 984,
-    "unfollowedCalls": 251,
+    "exports": 576,
+    "internal": 2160,
+    "consumers": 996,
+    "pairs": 986,
+    "unfollowedCalls": 254,
     "findingErrors": 0
   },
   "packages": {
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 54,
-      "internal": 724,
+      "exports": 55,
+      "internal": 726,
       "consumers": 76,
       "unfollowedCalls": 69
     },
@@ -286,8 +286,8 @@
     "packages/framework/mongoose": {
       "name": "@suss/framework-mongoose",
       "exports": 2,
-      "internal": 20,
-      "consumers": 5,
+      "internal": 4,
+      "consumers": 8,
       "unfollowedCalls": 2
     },
     "packages/framework/nestjs-graphql": {
@@ -384,9 +384,9 @@
     "packages/recognize": {
       "name": "@suss/recognize",
       "exports": 9,
-      "internal": 18,
+      "internal": 19,
       "consumers": 1,
-      "unfollowedCalls": 11
+      "unfollowedCalls": 14
     },
     "packages/resolution": {
       "name": "@suss/resolution",
