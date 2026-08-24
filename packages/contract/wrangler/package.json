@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-wrangler",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "Generate suss behavioral summaries from a Cloudflare wrangler.toml or wrangler.jsonc.",
   "keywords": [
@@ -45,8 +45,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.12.0",
-    "@suss/ir-core": "0.12.0",
+    "@suss/behavioral-ir": "0.13.0",
+    "@suss/ir-core": "0.13.0",
     "jsonc-parser": "^3.3.1",
     "smol-toml": "^1.4.2"
   },
