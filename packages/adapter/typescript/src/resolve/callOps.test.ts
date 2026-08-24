@@ -167,6 +167,36 @@ describe("pinning down the receiver", () => {
 
     expect(ops.receiverIsFrom(constructed)).toBe(false);
   });
+
+  it("asks the same question of the call itself, off its own callee", () => {
+    const ops = opsForLastCall(`
+      import Deck, { PlayCommand } from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.send(new PlayCommand({ Track: "1" }));
+      }
+    `);
+
+    expect(ops.argument(0)?.isFrom(constructed)).toBe(true);
+    expect(
+      ops
+        .argument(0)
+        ?.isFrom({ origin: "constructed", importedFrom: ["reel"] }),
+    ).toBe(false);
+  });
+
+  it("leaves a command of the same name the project wrote itself alone", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      class PlayCommand { constructor(input: unknown) {} }
+      declare const deck: Deck;
+      export function play() {
+        return deck.send(new PlayCommand({ Track: "1" }));
+      }
+    `);
+
+    expect(ops.argument(0)?.isFrom(constructed)).toBe(false);
+  });
 });
 
 describe("the calls one call reaches", () => {
@@ -310,5 +340,96 @@ describe("reading inside an argument", () => {
     `);
 
     expect(ops.propertyAt(0, "Side", "reference")).toBeNull();
+  });
+});
+
+describe("reading a value an argument states", () => {
+  it("reads the entries of an object, the items of a list, and a string", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.send({
+          Sides: [{ Side: "a" }, { Side: "b" }],
+          Order: "shuffled",
+        });
+      }
+    `);
+
+    const stated = ops.valueAt(0);
+    expect(stated?.property("Order")?.text()).toBe("shuffled");
+    expect(
+      stated
+        ?.property("Sides")
+        ?.items()
+        .flatMap((item) => item.entries("nothing").map((entry) => entry.key)),
+    ).toEqual(["Side", "Side"]);
+    expect(stated?.property("Missing")).toBeNull();
+  });
+
+  it("reads a key the source computes the way it reads any other name", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export class Player {
+        private readonly side: string;
+        constructor(stage: string) {
+          this.side = \`\${stage}-a\`;
+        }
+        play() {
+          return deck.send({ Sides: { [this.side]: { Track: "1" } } });
+        }
+      }
+    `);
+
+    const sides = ops.valueAt(0)?.property("Sides");
+    expect(sides?.entries("nothing").map((entry) => entry.key)).toEqual([
+      "{stage}-a",
+    ]);
+  });
+
+  it("follows a request the source wrote into a variable first", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        const request = { Side: "a" };
+        return deck.send(request);
+      }
+    `);
+
+    expect(ops.valueAt(0)?.property("Side")?.text()).toBe("a");
+  });
+
+  it("says nothing about a value the call does not state", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.play("1");
+      }
+    `);
+
+    expect(ops.valueAt(4)).toBeNull();
+    expect(ops.valueAt(0)?.entries("nothing")).toEqual([]);
+    expect(ops.valueAt(0)?.items()).toEqual([]);
+    expect(ops.valueAt(0)?.text()).toBe("1");
+  });
+
+  it("takes a shorthand property as an entry of its own", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play(side: string) {
+        return deck.send({ side });
+      }
+    `);
+
+    expect(
+      ops
+        .valueAt(0)
+        ?.entries("nothing")
+        .map((entry) => entry.key),
+    ).toEqual(["side"]);
   });
 });

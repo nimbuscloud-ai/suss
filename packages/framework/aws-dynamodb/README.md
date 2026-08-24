@@ -4,7 +4,7 @@ Says which DynamoDB tables a TypeScript service reads and writes, and what it to
 
 ## What this package is
 
-A pattern pack. It recognizes `client.send(command)` and reads the command for everything else: which table, which index, whether the call reads or writes, and which attributes it states. A project that signs and posts the request itself declares its own helper in config, and the same reading runs from there.
+A pattern pack. It recognizes the command a call was handed, `client.send(new GetCommand({ ... }))`, and reads the command for everything else: which table, which index, whether the call reads or writes, and which attributes it states. A project that signs and posts the request itself declares its own helper in config, and the same reading runs from there.
 
 ```ts
 import { dynamoFramework } from "@suss/framework-aws-dynamodb";
@@ -48,6 +48,14 @@ A name the pack cannot settle comes out null, and null pairs with nothing rather
 | `RequestItems` | one effect per table, for a batch or a transaction |
 
 A read that states no projection reads whatever the item has, which is recorded as `*`, the same wildcard a Prisma call with no `select` uses. A DynamoDB table's contract declares its key attributes and nothing else, so the checker never calls an attribute unknown here. What it can say is which declared key nothing reads.
+
+## Why two of the links are code
+
+The pack is a declaration in `@suss/recognize`, so most of what it knows is data: the command table, where the table name is, where the index is, where a batch lists the tables it touched. Two links are functions the pack wrote itself, and pack health prints them on every run.
+
+Both are the same reason. `ProjectionExpression` and `KeyConditionExpression` are a little language of DynamoDB's own, with `ExpressionAttributeNames` beside them as the table an aliased name is looked up in. Reading one is a parse, and no arrangement of picks over arguments and properties expresses a parse. The pack is handed the request object and gives back which attributes the call touched, which keeps the parse out of the adapter and lets the same declaration run on another language's adapter once one implements the ops.
+
+A parser that covered `FilterExpression` and the update expressions as well would replace both of these with one, and it is worth having the day those matter. Neither is read today.
 
 ## A project that signs the request itself
 
@@ -105,4 +113,4 @@ signing library the helper imports is one.
 
 ## Where it fits in suss
 
-Depends on `@suss/behavioral-ir` for the binding it builds and `@suss/adapter-typescript` for the import check and for asking what a name was written as. The storage pass in `@suss/checker` pairs what this emits against whatever declares the table, which is `@suss/contract-cloudformation` for a template that declares one.
+Depends on `@suss/recognize`, which compiles the declaration into the recognizer hooks the adapters call and asks the running adapter everything about a call site. The storage pass in `@suss/checker` pairs what this emits against whatever declares the table, which is `@suss/contract-cloudformation` for a template that declares one.

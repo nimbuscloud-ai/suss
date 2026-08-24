@@ -12,7 +12,7 @@
  * instead is code, that link alone, and pack health says which ones.
  */
 
-import type { CallOps, ReceiverOrigin } from "./ops.js";
+import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
 /** A link whose answer a pack wrote as code rather than as data. */
 export interface LinkFunction<A extends unknown[], R> {
@@ -71,6 +71,13 @@ export interface ToArgument {
   readonly to: "argument";
   /** Which argument, or every argument from a position on. */
   readonly at: number | { readonly from: number };
+  /**
+   * Where the argument has to have come from, for a step that tries
+   * several. `send(command)` takes one argument and a presigner takes
+   * two, and the one that matters is the command the SDK declares, so
+   * the step says so rather than reading whatever it lands on.
+   */
+  readonly origin?: ReceiverOrigin;
 }
 
 /**
@@ -121,12 +128,45 @@ export interface ContainerRule {
   readonly from: LinkFunction<[readonly string[], CallOps], string | null>;
 }
 
+/** Which way into the container the call took, when it states one. */
+export interface AccessPathLink {
+  readonly asks: "accessPath";
+  readonly argument: ArgumentPick;
+}
+
+/**
+ * Where a call states the containers it reached, for a call that
+ * reaches several at once. A batch or a transaction states them as a
+ * map, one entry per container, so the chain yields one effect per
+ * entry: the entry's own key is what the container is called, and its
+ * value says what the call did there.
+ */
+export interface ContainersLink {
+  readonly asks: "containers";
+  readonly in: OneArgument;
+}
+
+/**
+ * Where a call states its inputs, when it states them as one object
+ * rather than as positional arguments. A call that states none is not
+ * one of these calls, so the chain stops there, and a rule the pack
+ * writes over the inputs is handed the object rather than a position to
+ * go looking in.
+ */
+export interface InputLink {
+  readonly asks: "input";
+  readonly at: OneArgument;
+}
+
 /** One question in a chain, and the answer the pack gave for it. */
 export type Link<TMeaning> =
   | StartLink
   | SubjectLink
   | MethodsLink<TMeaning>
-  | ContainerLink;
+  | ContainerLink
+  | AccessPathLink
+  | ContainersLink
+  | InputLink;
 
 /**
  * Which argument or arguments say what a call reached, and where to go
@@ -167,17 +207,44 @@ export interface KindAsAsked {
   readonly asks: ArgumentPick;
   /** What each thing the caller can ask for comes to. */
   readonly means: Readonly<Record<string, "read" | "write">>;
-  /** What it comes to when the call says nothing. */
-  readonly otherwise: "read" | "write";
+  /**
+   * What it comes to when the call says nothing. Left out, a call that
+   * asks for something the table does not list is not one of these
+   * calls, which is how a pack reads a helper whose operations a
+   * project lists in its own config.
+   */
+  readonly otherwise?: "read" | "write";
 }
+
+/** What a pack's own rule over the inputs a call states is handed. */
+export interface StatedInputs {
+  /** The object the call states its inputs as. */
+  readonly input: ValueOps;
+  /** The container's own entry, when the call reached several. */
+  readonly entry: ValueOps | null;
+  /** What the call does to the store. */
+  readonly kind: "read" | "write";
+}
+
+/**
+ * A pack's own rule over the inputs a call states, for a library that
+ * writes what a reader wants somewhere no pick can reach.
+ */
+export type InputRule = LinkFunction<[StatedInputs], readonly string[]>;
 
 /** What one method of a storage client does. */
 export interface StorageMethod {
   readonly kind: AccessKind;
+  /**
+   * Which argument says which operation the call performs, when the
+   * name the call goes to does not. A project's own request helper is
+   * the case: every operation goes through the one function.
+   */
+  readonly operation?: ArgumentPick;
   /** Which argument or arguments say what the call reached. */
-  readonly selector?: ArgumentPick;
+  readonly selector?: ArgumentPick | InputRule;
   /** Which argument says which field inside it, when the method takes one. */
-  readonly fields?: ArgumentPick;
+  readonly fields?: ArgumentPick | InputRule;
 }
 
 /** What a chain produces when every link matches. */

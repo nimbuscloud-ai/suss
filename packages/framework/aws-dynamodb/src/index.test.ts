@@ -1,7 +1,12 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { isImportedFrom, ResolutionStore } from "@suss/adapter-typescript";
+import {
+  callOpsFor,
+  isImportedFrom,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { dynamoFramework } from "./index.js";
@@ -26,6 +31,7 @@ function effectsIn(source: string, options: DynamoPackOptions = {}): Effect[] {
       extractArgs: () => [],
       isImportedFrom,
       resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
+      ops: callOpsFor(node, (value: Node) => store.resolveWrittenValue(value)),
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);
@@ -710,6 +716,62 @@ describe("the pack a project configures", () => {
         ],
       }),
     ).toThrow(/requestArg/);
+  });
+
+  it("prices what it declared: the two rules over DynamoDB's own strings", () => {
+    expect(dynamoFramework().declarations?.declarations).toEqual([
+      {
+        name: "aws.dynamodb",
+        dataLinks: 6,
+        functionLinks: ["selector", "fields"],
+        astLinks: [],
+        example:
+          'client.send(new GetCommand({ TableName: "orders-v1", Key: { orderId: "a" } }))',
+      },
+    ]);
+  });
+
+  it("emits the effect its example says it does", () => {
+    const ran = runExamples(dynamoFramework(), (code) =>
+      effectsIn(`
+        ${IMPORTS}
+        declare const client: DynamoDBDocumentClient;
+        export async function example() {
+          return ${code};
+        }
+      `),
+    );
+
+    expect(ran).toHaveLength(1);
+    const { semantics, interaction } = storageOf(ran[0].effects[0]);
+    expect(semantics.container).toBe("orders-v1");
+    expect(interaction).toMatchObject({
+      class: "storage-access",
+      kind: "read",
+      operation: "GetCommand",
+      selector: ["orderId"],
+    });
+  });
+
+  it("writes an example for a request function out of what the config says", () => {
+    const ran = runExamples(dynamoFramework(SIGNED_REQUEST), (code) =>
+      effectsIn(
+        `
+        ${CLIENT_IMPORT}
+        export async function example() {
+          return ${code};
+        }
+      `,
+        SIGNED_REQUEST,
+      ),
+    );
+
+    expect(ran[1].example).toBe(
+      'sendRequest(undefined, undefined, "Query", { TableName: "orders-v1", Key: { orderId: "a" } })',
+    );
+    const { semantics, interaction } = storageOf(ran[1].effects[0]);
+    expect(semantics.container).toBe("orders-v1");
+    expect(interaction).toMatchObject({ kind: "read", operation: "Query" });
   });
 
   it("refuses an entry whose operations say something other than read or write", () => {

@@ -21,21 +21,32 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { InvocationRecognizer } from "@suss/extractor";
 import type {
   AccessKind,
+  AccessPathLink,
   ArgumentPick,
   CallStep,
   Chain,
   ContainerLink,
+  ContainersLink,
   Ending,
+  InputLink,
   KindAsAsked,
+  Link,
   MatchStart,
   MethodsLink,
+  OneArgument,
+  StatedInputs,
   StorageEnding,
   StorageMethod,
   SubjectLink,
   ToArgument,
   ToReceiver,
 } from "./chain.js";
-import type { CallOps, UnsettledName } from "./ops.js";
+import type {
+  CallOps,
+  ReceiverOrigin,
+  UnsettledName,
+  ValueOps,
+} from "./ops.js";
 
 /**
  * How many receivers a walk climbs before it gives up. A receiver chain
@@ -87,15 +98,20 @@ export function compile(
   };
 }
 
+/** The link for one question, or null when the chain does not ask it. */
+function linkIn<TAsks extends Link<StorageMethod>["asks"]>(
+  chain: Chain<StorageMethod>,
+  asks: TAsks,
+): Extract<Link<StorageMethod>, { asks: TAsks }> | null {
+  const link = chain.links.find((candidate) => candidate.asks === asks);
+  return (link as Extract<Link<StorageMethod>, { asks: TAsks }>) ?? null;
+}
+
 /** The methods link, which every chain that recognizes calls states. */
 function methodsIn(
   chain: Chain<StorageMethod>,
 ): MethodsLink<StorageMethod> | null {
-  const link = chain.links.find(
-    (candidate): candidate is MethodsLink<StorageMethod> =>
-      candidate.asks === "methods",
-  );
-  return link ?? null;
+  return linkIn(chain, "methods");
 }
 
 /**
@@ -124,10 +140,8 @@ function listed(
  * turn until the rest of the chain matches.
  */
 function subjectsOf(chain: Chain<StorageMethod>, ops: CallOps): CallOps[] {
-  const link = chain.links.find(
-    (candidate): candidate is SubjectLink => candidate.asks === "subject",
-  );
-  return link === undefined ? [ops] : walk([ops], link.of);
+  const link: SubjectLink | null = linkIn(chain, "subject");
+  return link === null ? [ops] : walk([ops], link.of);
 }
 
 /** One way of stepping from a call to the calls it reaches. */
@@ -136,7 +150,7 @@ const STEP: Record<
   (step: CallStep, ops: CallOps) => CallOps[]
 > = {
   receiver: (step, ops) => receiversOf(ops, (step as ToReceiver).method),
-  argument: (step, ops) => argumentsOf(ops, (step as ToArgument).at),
+  argument: (step, ops) => argumentsOf(ops, step as ToArgument),
 };
 
 /** The calls a list of steps reaches from where it starts. */
@@ -164,16 +178,24 @@ function receiversOf(ops: CallOps, method: string | undefined): CallOps[] {
   return [];
 }
 
-/** The calls the picked arguments are, in the order the call passes them. */
-function argumentsOf(ops: CallOps, at: ToArgument["at"]): CallOps[] {
+/**
+ * The calls the picked arguments are, in the order the call passes
+ * them, dropping the ones the step's origin rules out.
+ */
+function argumentsOf(ops: CallOps, step: ToArgument): CallOps[] {
   const found: CallOps[] = [];
-  for (const index of positions(ops, at)) {
+  for (const index of positions(ops, step.at)) {
     const argument = ops.argument(index);
-    if (argument !== null) {
+    if (argument !== null && cameFrom(argument, step.origin)) {
       found.push(argument);
     }
   }
   return found;
+}
+
+/** Whether an argument is the one the step's origin asked for. */
+function cameFrom(argument: CallOps, origin: ReceiverOrigin | undefined) {
+  return origin === undefined || argument.isFrom(origin);
 }
 
 /** The argument positions a pick covers. */
@@ -213,53 +235,107 @@ const YIELD: Record<Ending["yields"], (matched: Matched) => Effect[] | null> = {
   storageAccess: storageAccess,
 };
 
-function storageAccess(matched: Matched): Effect[] {
-  const { ops, subject, method, meaning, chain, recognition } = matched;
-  const ending = chain.ending as StorageEnding;
-  const unsettled = ending.unsettledName;
-  const selector = namesAt(subject, meaning.selector, unsettled);
-  const fields = namesAt(subject, meaning.fields, unsettled);
-  const container = containerOf(chain, selector, subject, unsettled);
-
-  return [
-    {
-      type: "interaction",
-      binding: storageBinding({
-        recognition,
-        storageSystem: ending.system,
-        ...(ending.transport === undefined
-          ? {}
-          : { transport: ending.transport }),
-        scope: ending.scope,
-        container,
-        accessPath: null,
-      }),
-      callee: ops.calleeText(),
-      interaction: {
-        class: "storage-access",
-        kind: kindOf(meaning.kind, subject, unsettled),
-        fields,
-        operation: method,
-        ...(selector.length > 0 ? { selector } : {}),
-      },
-    },
-  ];
+/** One container a call reached, and what the call says about it. */
+interface Reached {
+  /** What the container is called, when the map's own key says. */
+  readonly container: string | null;
+  /** The entry, or null when the call reached a single container. */
+  readonly entry: ValueOps | null;
 }
 
-/** Whether the call reads or writes, when one of its arguments says. */
+/** What one storage effect is built from, beyond the links themselves. */
+interface Access {
+  /** The object the call states its inputs as, when the chain says where. */
+  readonly input: ValueOps | null;
+  readonly kind: "read" | "write";
+  readonly reached: Reached;
+  readonly unsettled: UnsettledName;
+}
+
+function storageAccess(matched: Matched): Effect[] | null {
+  const { subject, meaning, chain } = matched;
+  const unsettled = (chain.ending as StorageEnding).unsettledName;
+  const kind = kindOf(meaning.kind, subject, unsettled);
+  const link: InputLink | null = linkIn(chain, "input");
+  const input = link === null ? null : statedValue(subject, link.at);
+  if (kind === null || (link !== null && input === null)) {
+    return null;
+  }
+  return reachedBy(chain, subject, unsettled).map((reached) =>
+    accessEffect(matched, { input, kind, reached, unsettled }),
+  );
+}
+
+function accessEffect(matched: Matched, access: Access): Effect {
+  const { ops, subject, method, meaning, chain, recognition } = matched;
+  const ending = chain.ending as StorageEnding;
+  const { input, kind, reached, unsettled } = access;
+  const stated = { input, entry: reached.entry, kind };
+  const selector = namesFor(meaning.selector, subject, stated, unsettled);
+  const fields = namesFor(meaning.fields, subject, stated, unsettled);
+
+  return {
+    type: "interaction",
+    binding: storageBinding({
+      recognition,
+      storageSystem: ending.system,
+      ...(ending.transport === undefined
+        ? {}
+        : { transport: ending.transport }),
+      scope: ending.scope,
+      container:
+        reached.entry === null
+          ? containerOf(chain, selector, subject, unsettled)
+          : reached.container,
+      accessPath: accessPathOf(chain, subject, unsettled),
+    }),
+    callee: ops.calleeText(),
+    interaction: {
+      class: "storage-access",
+      kind,
+      fields,
+      operation: namesAt(subject, meaning.operation, unsettled)[0] ?? method,
+      ...(selector.length > 0 ? { selector } : {}),
+    },
+  };
+}
+
+/**
+ * The containers the call reached. A call that states a map of them
+ * reached one per entry, and every other call reached the single
+ * container the container link picks out.
+ */
+function reachedBy(
+  chain: Chain<StorageMethod>,
+  subject: CallOps,
+  unsettled: UnsettledName,
+): Reached[] {
+  const link: ContainersLink | null = linkIn(chain, "containers");
+  const map = link === null ? null : statedValue(subject, link.in);
+  if (map === null) {
+    return [{ container: null, entry: null }];
+  }
+  return map
+    .entries(unsettled)
+    .map((entry) => ({ container: entry.key, entry: entry.value }));
+}
+
+/**
+ * Whether the call reads or writes, or null when one of its arguments
+ * says and what it said is not something this chain matches.
+ */
 function kindOf(
   kind: AccessKind,
   subject: CallOps,
   unsettled: UnsettledName,
-): "read" | "write" {
+): "read" | "write" | null {
   if (typeof kind === "string") {
     return kind;
   }
   const asked = kind as KindAsAsked;
   const [answer] = namesAt(subject, asked.asks, unsettled);
-  return answer === undefined
-    ? asked.otherwise
-    : (asked.means[answer] ?? asked.otherwise);
+  const said = answer === undefined ? undefined : asked.means[answer];
+  return said ?? asked.otherwise ?? null;
 }
 
 /** The container the selector belongs to, by the pack's own rule. */
@@ -269,16 +345,63 @@ function containerOf(
   subject: CallOps,
   unsettled: UnsettledName,
 ): string | null {
-  const link = chain.links.find(
-    (candidate): candidate is ContainerLink => candidate.asks === "container",
-  );
-  if (link === undefined) {
+  const link: ContainerLink | null = linkIn(chain, "container");
+  if (link === null) {
     return selector[0] ?? null;
   }
   if ("from" in link) {
     return link.from(selector, subject);
   }
   return namesAt(subject, link.argument, unsettled)[0] ?? null;
+}
+
+/** Which way into the container the call took, when the chain says where. */
+function accessPathOf(
+  chain: Chain<StorageMethod>,
+  subject: CallOps,
+  unsettled: UnsettledName,
+): string | null {
+  const link: AccessPathLink | null = linkIn(chain, "accessPath");
+  return link === null
+    ? null
+    : (namesAt(subject, link.argument, unsettled)[0] ?? null);
+}
+
+/** The value the call states where a pick points, or null for none. */
+function statedValue(subject: CallOps, pick: OneArgument): ValueOps | null {
+  for (const ops of walk([subject], pick.of ?? [])) {
+    const stated = ops.valueAt(pick.at);
+    if (stated === null) {
+      continue;
+    }
+    if (pick.property === undefined) {
+      return stated;
+    }
+    for (const property of pick.property) {
+      const inside = stated.property(property);
+      if (inside !== null) {
+        return inside;
+      }
+    }
+  }
+  return null;
+}
+
+/** What the call reached, by the argument it picks or by the pack's rule. */
+function namesFor(
+  says: StorageMethod["selector"],
+  subject: CallOps,
+  stated: Omit<StatedInputs, "input"> & { input: ValueOps | null },
+  unsettled: UnsettledName,
+): string[] {
+  if (says === undefined) {
+    return [];
+  }
+  if (typeof says !== "function") {
+    return namesAt(subject, says, unsettled);
+  }
+  const input = stated.input;
+  return input === null ? [] : [...says({ ...stated, input })];
 }
 
 /** The name each picked argument gives, dropping the ones nothing settles. */

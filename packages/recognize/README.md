@@ -102,18 +102,34 @@ result on the recognizer context under `ops`.
 |---|---|
 | `method()` | which method the call reaches for, as the source spells it |
 | `receiverIsFrom(origin)` | whether the receiver came from where the origin says |
+| `isFrom(origin)` | whether the call itself came from where the origin says |
 | `argumentCount()` | how many arguments the call passes |
 | `nameAt(index, unsettled)` | the name that argument gives, with the hole policy applied |
 | `calleeText()` | the callee, as the source writes it |
 | `receiver()` | the call the receiver is, as ops of its own |
 | `argument(index)` | the call that argument is, as ops of its own |
 | `propertyAt(index, property, unsettled)` | what a named property of that argument says |
+| `valueAt(index)` | the value that argument states, as `ValueOps` |
 
-The last three are what let a chain read a call next to the one in
-hand. `receiver()` and `argument(index)` give back another `CallOps`,
-so every question above works one step along; `propertyAt` is the only
-one that reaches inside a value, because a property bag is not a call
-and nothing else reaches into one.
+`receiver()` and `argument(index)` let a chain read a call next to the
+one in hand: both give back another `CallOps`, so every question above
+works one step along.
+
+The last two reach a value rather than a call. `propertyAt` pulls one
+name out of a property bag, which is what a pack that wants a bucket or
+a table wants. `valueAt` hands the value over whole, for a pack whose
+rule has to walk it:
+
+| op | what it gives back |
+|---|---|
+| `text()` | the string the source wrote, or null for anything else |
+| `entries(unsettled)` | what an object states, as key and value per entry |
+| `items()` | what a list states, item by item |
+| `property(name)` | what one named property states, as a value of its own |
+
+A key the source computes, `{ [this.tableName]: [...] }`, is read the
+way any other name is, so an entry's key comes back settled where the
+source settles it.
 
 A chain running on an adapter with no ops matches nothing rather than
 throwing, since a pack loaded into the wrong adapter is a configuration
@@ -144,6 +160,7 @@ A pack says which call with `about`, and a pick says which call with
 | `{ to: "receiver", method: "bucket" }` | the first call to `bucket` up the receivers |
 | `{ to: "argument", at: 0 }` | the call the first argument is |
 | `{ to: "argument", at: { from: 0 } }` | every argument that is a call, first one that matches wins |
+| `{ to: "argument", at: { from: 0 }, origin }` | the same, keeping only the ones the origin pins down |
 
 ```ts
 storageCalls({ system: "s3", client: constructedFrom("@aws-sdk/client-s3") })
@@ -165,11 +182,78 @@ receivers: a receiver chain can come back round to itself through a
 variable, and a pack that meant more than eight hops has written
 something else by mistake.
 
+A step to an argument can say where that argument had to have come
+from, which is `isFrom` asked of each candidate in turn. `send(command)`
+takes one argument and a presigner takes two, and the one that matters
+is the command the SDK declares, so the step says so rather than
+reading whatever it lands on. The modules it says go into the pack's
+import gate the way a start link's do.
+
 A pick reads the argument itself, or a property of the object the
 argument states. The properties are tried in order, so `property:
 ["Key", "Prefix"]` is "the key, or the prefix a listing asked for
 instead". A construction is unwrapped first, since that is where a
 command puts its inputs.
+
+## A call that states one request object
+
+An AWS SDK command puts everything the call is doing inside one object,
+and four of the things a storage effect records come out of it. Each is
+a link of its own.
+
+```ts
+storageCalls({ system: "aws.dynamodb" })
+  .about({ to: "argument", at: { from: 0 }, origin: constructedFrom(...MODULES) })
+  .methods(COMMANDS)
+  .input({ at: 0 })
+  .container({ at: 0, property: ["TableName"] })
+  .accessPath({ at: 0, property: ["IndexName"] })
+  .containersIn({ at: 0, property: ["RequestItems"] });
+```
+
+`input` says where the call states its inputs. A call that states none
+is not one of these calls, so the chain stops there, and a rule the pack
+wrote over the inputs is handed the object rather than a position to go
+looking in.
+
+`accessPath` is the way in the call took, which pairs against a
+declared index rather than against the container itself.
+
+`containersIn` is for a call that reaches several containers at once. A
+batch states them as a map, one entry per container, and the chain then
+yields one effect per entry: the entry's key is what the container is
+called, and the entry's value is what the call did there. A chain
+without it yields the single effect its container link addresses.
+
+A rule the pack writes for `selector` or `fields` is handed the input,
+that entry when there is one, and whether the call reads or writes:
+
+```ts
+fields: ({ input, entry, kind }) =>
+  (entry ?? input).property("ProjectionExpression")?.text()?.split(",") ?? [],
+```
+
+A method table with a rule inside it is still a table, so the link
+stays counted as data and pack health prices the rule beside it.
+
+## An operation the call says rather than the name it goes to
+
+A project that wraps a whole API behind one helper puts the operation in
+an argument. `operation` says which one, and a `kind` written with no
+`otherwise` says that an answer the table does not list is not one of
+these calls at all:
+
+```ts
+{
+  operation: { at: 2 },
+  kind: { asks: { at: 2 }, means: { Query: "read", PutItem: "write" } },
+}
+```
+
+A pack matching a helper the project rather than a library wrote leaves
+`client` out of `storageCalls`, since the name that project gave is the
+whole of what it has, and passes `requiresImport` to `pack()` for the
+modules that make a file worth reading.
 
 ## A method the caller says which way round it goes
 
