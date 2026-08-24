@@ -1960,3 +1960,49 @@ describe("a blueprint prefix and the site the mount is written at", () => {
     );
   });
 });
+
+describe("a construction this reading cannot identify", () => {
+  it("leaves a router built by a bare call undiscovered", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "router = make_router()",
+        "",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+        "",
+        "app.include_router(router)",
+        "",
+      ].join("\n"),
+    );
+    expect(units.find((u) => u.identity.name === "ping")).toBeUndefined();
+  });
+
+  it("leaves a router built through a module nobody imported undiscovered", async () => {
+    const units = await unitsOf(
+      [
+        "import other",
+        "",
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        'router = other.APIRouter(prefix="/x")',
+        "",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+        "",
+        "app.include_router(router)",
+        "",
+      ].join("\n"),
+    );
+    expect(units.find((u) => u.identity.name === "ping")).toBeUndefined();
+  });
+});

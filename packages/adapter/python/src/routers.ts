@@ -572,7 +572,7 @@ function readPrefixKeyword(
   keywordArgs: Record<string, DecoratorArg>,
   keyword: string,
   composition: RouterComposition,
-  scope: Scope | undefined,
+  scope: Scope,
 ): PrefixReading {
   const arg = keywordArgs[keyword];
   if (arg === undefined) {
@@ -593,7 +593,7 @@ function readPrefixKeyword(
 function constructorPrefix(
   keywordArgs: Record<string, DecoratorArg>,
   composition: RouterComposition,
-  scope: Scope | undefined,
+  scope: Scope,
 ): PrefixReading {
   const reading = readPrefixKeyword(
     keywordArgs,
