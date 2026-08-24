@@ -12,8 +12,8 @@
     },
     "directus-api": {
       "pin": "193a65a807a4b7557c7705e54b975eb0e1c53ecf",
-      "summaries": 826,
-      "boundaries": 826
+      "summaries": 662,
+      "boundaries": 662
     },
     "twenty-server": {
       "pin": "0288021c9c0f76f0424e327dce984d1657271ef8",
