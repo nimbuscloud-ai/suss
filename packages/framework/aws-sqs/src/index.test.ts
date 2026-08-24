@@ -1,32 +1,19 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { isImportedFrom } from "@suss/adapter-typescript";
 import { boundaryKey } from "@suss/ir-core";
-import { createTestProject } from "@suss/test-project";
+import { interactionsOf, packUnderTest } from "@suss/pack-harness";
 
 import { sqsFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { EffectArg } from "@suss/extractor";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
 };
 
-/**
- * Build an in-memory ts-morph Project with a fake `@aws-sdk/client-sqs`
- * .d.ts so the recognizer's import-source check (`isImportedFrom`) has
- * symbols to resolve against. Returns a ready-to-use SourceFile.
- */
-function makeProject(userSource: string): SourceFile {
-  const project = createTestProject();
-
-  // Minimal fake @aws-sdk/client-sqs surface: enough for the
-  // recognizer to walk the import to its source.
-  project.createSourceFile(
-    "node_modules/@aws-sdk/client-sqs/index.d.ts",
-    `
+// The recognizer walks an import back to the module that declared it,
+// so every module a fixture imports has to be on disk.
+const SQS_TYPES = `
 export class SQSClient {
   constructor(config?: unknown);
   send(command: unknown): Promise<unknown>;
@@ -37,14 +24,9 @@ export class SendMessageCommand {
 export class SendMessageBatchCommand {
   constructor(input: { QueueUrl?: string; Entries?: unknown[] });
 }
-`,
-  );
+`;
 
-  // Minimal fake aws-lambda types: for the consumer-side
-  // messageReceiveRecognizer's import gate.
-  project.createSourceFile(
-    "node_modules/aws-lambda/index.d.ts",
-    `
+const LAMBDA_TYPES = `
 export interface SQSRecord {
   messageId: string;
   body: string;
@@ -52,26 +34,21 @@ export interface SQSRecord {
 export interface SQSEvent {
   Records: SQSRecord[];
 }
-`,
-  );
+`;
 
-  // A project's own dispatcher, for the configured-producer tests.
-  project.createSourceFile(
-    "node_modules/@acme/async/package.json",
-    JSON.stringify({ name: "@acme/async", types: "index.d.ts" }),
-  );
-  project.createSourceFile(
-    "node_modules/@acme/async/index.d.ts",
-    `
+/** A project's own dispatcher, for the configured-producer tests. */
+const ASYNC_TYPES = `
 export declare class CommandDispatcher {
   dispatch(subject: string, data: unknown, opts: unknown): Promise<void>;
   dispatchBatch(subject: string, entries: unknown[]): Promise<void>;
 }
-`,
-  );
+`;
 
-  return project.createSourceFile("user.ts", userSource);
-}
+const LIBRARY = {
+  "@aws-sdk/client-sqs": SQS_TYPES,
+  "aws-lambda": LAMBDA_TYPES,
+  "@acme/async": ASYNC_TYPES,
+};
 
 /** The dispatcher config the configured-producer tests run with. */
 const DISPATCHER_OPTIONS = {
@@ -92,124 +69,28 @@ const DISPATCHER_OPTIONS = {
   ],
 };
 
-/**
- * Walk the source file and run the SQS recognizer on every CallExpression.
- * Returns the flat list of emitted effects.
- *
- * Not using the adapter's runInvocationRecognizers here because that
- * would pull the adapter as a dependency for unit tests: these tests
- * exercise the recognizer in isolation.
- */
-function recognizeAll(
-  sourceFile: SourceFile,
+const recognizeAll = (
+  source: string,
   options?: Parameters<typeof sqsFramework>[0],
-): Effect[] {
-  const pack = sqsFramework(options);
-  const recognizers = pack.invocationRecognizers ?? [];
-  if (recognizers.length === 0) {
-    return raise("expected pack to declare invocationRecognizers");
-  }
-  const effects: Effect[] = [];
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const ctx = {
-      call: node as CallExpression,
-      sourceFile,
-      extractArgs: (): EffectArg[] => extractArgsForTest(node),
-      isImportedFrom,
-    };
-    for (const recognizer of recognizers) {
-      const emitted = recognizer(node, ctx);
-      if (emitted !== null) {
-        effects.push(...emitted);
-      }
-    }
-  });
-  return effects;
-}
+): Effect[] =>
+  packUnderTest(sqsFramework(options), { library: LIBRARY }).effectsIn(source);
 
-/**
- * A small EffectArg builder for tests. It handles the object, string,
- * identifier, and `new (...)` forms the recognizer reads, mirroring the
- * adapter's extractArgs closely enough for the SQS recognizer.
- */
-function extractArgsForTest(call: CallExpression): EffectArg[] {
-  return call.getArguments().map((arg) => extractArgForTest(arg));
-}
+const messageSendEffectsOf = (effects: Effect[]) =>
+  interactionsOf(effects, "message-send");
 
-function extractArgForTest(node: Node): EffectArg {
-  if (Node.isStringLiteral(node)) {
-    return { kind: "string", value: node.getLiteralValue() };
-  }
-  if (Node.isObjectLiteralExpression(node)) {
-    const fields: Record<string, EffectArg> = {};
-    for (const prop of node.getProperties()) {
-      if (!Node.isPropertyAssignment(prop)) {
-        continue;
-      }
-      const initializer = prop.getInitializer();
-      if (initializer === undefined) {
-        continue;
-      }
-      fields[prop.getName()] = extractArgForTest(initializer);
-    }
-    return { kind: "object", fields };
-  }
-  if (Node.isNewExpression(node)) {
-    return {
-      kind: "call",
-      callee: node.getExpression().getText(),
-      args: node.getArguments().map((a) => extractArgForTest(a)),
-    };
-  }
-  if (Node.isIdentifier(node) || Node.isPropertyAccessExpression(node)) {
-    return { kind: "identifier", name: node.getText() };
-  }
-  if (Node.isCallExpression(node)) {
-    return {
-      kind: "call",
-      callee: node.getExpression().getText(),
-      args: node.getArguments().map((a) => extractArgForTest(a)),
-    };
-  }
-  return null;
-}
-
-function messageSendEffectsOf(
-  effects: Effect[],
-): Array<Extract<Effect, { type: "interaction" }>> {
-  return effects.filter(
-    (e): e is Extract<Effect, { type: "interaction" }> =>
-      e.type === "interaction" && e.interaction.class === "message-send",
-  );
-}
+const messageReceiveEffectsOf = (effects: Effect[]) =>
+  interactionsOf(effects, "message-receive");
 
 describe("sqs recognizer, through a project-local barrel", () => {
   it("recognizes a send whose import goes through a re-export barrel", () => {
-    const project = createTestProject();
-    project.createSourceFile(
-      "node_modules/@aws-sdk/client-sqs/index.d.ts",
-      `
-export class SQSClient {
-  constructor(config?: unknown);
-  send(command: unknown): Promise<unknown>;
-}
-export class SendMessageCommand {
-  constructor(input: { QueueUrl?: string; MessageBody?: string });
-}
-`,
-    );
-    // The barrel: an internal package re-exporting the SDK, which is
-    // how shared aws helpers are packaged in production monorepos.
-    project.createSourceFile(
-      "aws/sqs.ts",
-      `export { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";`,
-    );
-    const file = project.createSourceFile(
-      "producer.ts",
-      `
+    const sends = messageSendEffectsOf(
+      packUnderTest(sqsFramework(), { library: LIBRARY }).effectsAcross(
+        {
+          // The barrel: an internal package re-exporting the SDK, which
+          // is how shared aws helpers are packaged in production
+          // monorepos.
+          "/aws/sqs.ts": `export { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";`,
+          "/producer.ts": `
       import { SQSClient, SendMessageCommand } from "./aws/sqs";
       const client = new SQSClient({});
       async function enqueue(order: { id: string }) {
@@ -219,16 +100,18 @@ export class SendMessageCommand {
         }));
       }
     `,
+        },
+        "/producer.ts",
+      ),
     );
 
-    const sends = messageSendEffectsOf(recognizeAll(file));
     expect(sends).toHaveLength(1);
   });
 });
 
 describe("sqs recognizer: happy path", () => {
   it("emits one message-send interaction for client.send(new SendMessageCommand({...}))", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       async function enqueue(order: { id: string }) {
@@ -237,8 +120,8 @@ describe("sqs recognizer: happy path", () => {
           MessageBody: JSON.stringify(order),
         }));
       }
-    `);
-    const effects = recognizeAll(file);
+    `;
+    const effects = recognizeAll(source);
     const sends = messageSendEffectsOf(effects);
     expect(sends).toHaveLength(1);
     const send = sends[0] ?? raise("no send effect");
@@ -251,7 +134,7 @@ describe("sqs recognizer: happy path", () => {
   });
 
   it("captures MessageBody as the interaction body shape", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       async function enqueue(order: { id: string }) {
@@ -260,9 +143,9 @@ describe("sqs recognizer: happy path", () => {
           MessageBody: JSON.stringify(order),
         }));
       }
-    `);
+    `;
     const send =
-      messageSendEffectsOf(recognizeAll(file))[0] ?? raise("no send");
+      messageSendEffectsOf(recognizeAll(source))[0] ?? raise("no send");
     expect(send.interaction).toMatchObject({
       class: "message-send",
       body: expect.anything(),
@@ -270,7 +153,7 @@ describe("sqs recognizer: happy path", () => {
   });
 
   it("handles a literal QueueUrl (test/local dev pattern)", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       async function enqueue() {
@@ -279,9 +162,9 @@ describe("sqs recognizer: happy path", () => {
           MessageBody: "hello",
         }));
       }
-    `);
+    `;
     const send =
-      messageSendEffectsOf(recognizeAll(file))[0] ?? raise("no send");
+      messageSendEffectsOf(recognizeAll(source))[0] ?? raise("no send");
     expect(send.binding.semantics).toMatchObject({
       name: "message-bus",
       messageBus: "aws_sqs",
@@ -290,7 +173,7 @@ describe("sqs recognizer: happy path", () => {
   });
 
   it("recognizes namespace import (`import * as sqs from ...`)", () => {
-    const file = makeProject(`
+    const source = `
       import * as sqs from "@aws-sdk/client-sqs";
       const client = new sqs.SQSClient({});
       async function enqueue() {
@@ -299,8 +182,8 @@ describe("sqs recognizer: happy path", () => {
           MessageBody: "hello",
         }));
       }
-    `);
-    const sends = messageSendEffectsOf(recognizeAll(file));
+    `;
+    const sends = messageSendEffectsOf(recognizeAll(source));
     expect(sends).toHaveLength(1);
     expect(sends[0]?.binding.semantics).toMatchObject({
       name: "message-bus",
@@ -310,7 +193,7 @@ describe("sqs recognizer: happy path", () => {
   });
 
   it("recognizes SendMessageBatchCommand", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageBatchCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       async function enqueueBatch() {
@@ -319,8 +202,8 @@ describe("sqs recognizer: happy path", () => {
           Entries: [],
         }));
       }
-    `);
-    const sends = messageSendEffectsOf(recognizeAll(file));
+    `;
+    const sends = messageSendEffectsOf(recognizeAll(source));
     expect(sends).toHaveLength(1);
   });
 });
@@ -330,7 +213,7 @@ describe("a send whose queue the code does not name", () => {
     // The queue arrives as a parameter, which is what a wrapper around
     // the SDK looks like. Dropping the whole effect made a service that
     // sends to a queue read as a service that sends nothing.
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient();
       export async function publish(queue: string, body: string) {
@@ -339,21 +222,21 @@ describe("a send whose queue the code does not name", () => {
           MessageBody: body,
         }));
       }
-    `);
+    `;
 
-    expect(messageSendEffectsOf(recognizeAll(file))).toHaveLength(1);
+    expect(messageSendEffectsOf(recognizeAll(source))).toHaveLength(1);
   });
 
   it("names no queue, so it pairs with nothing", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient();
       export async function publish(queue: string) {
         await client.send(new SendMessageCommand({ QueueUrl: queue }));
       }
-    `);
+    `;
 
-    const [effect] = messageSendEffectsOf(recognizeAll(file));
+    const [effect] = messageSendEffectsOf(recognizeAll(source));
     const binding = effect?.binding ?? raise("no binding");
     const semantics = binding.semantics;
     expect(semantics.name === "message-bus" && semantics.channel).toBeNull();
@@ -363,7 +246,7 @@ describe("a send whose queue the code does not name", () => {
 
 describe("sqs recognizer: rejection cases", () => {
   it("ignores .send() with a non-SQS command class", () => {
-    const file = makeProject(`
+    const source = `
       class FakeCommand {
         constructor(public input: unknown) {}
       }
@@ -374,12 +257,12 @@ describe("sqs recognizer: rejection cases", () => {
           MessageBody: "y",
         }));
       }
-    `);
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
   it("ignores SendMessageCommand from the wrong module", () => {
-    const file = makeProject(`
+    const source = `
       // SendMessageCommand exists locally but is NOT from @aws-sdk/client-sqs.
       class SendMessageCommand {
         constructor(public input: unknown) {}
@@ -391,23 +274,23 @@ describe("sqs recognizer: rejection cases", () => {
           MessageBody: "y",
         }));
       }
-    `);
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
   it("ignores .send() called on something other than a New expression", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       async function noop() {
         await client.send("a string, not a command");
       }
-    `);
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
   it("ignores method calls that aren't .send", () => {
-    const file = makeProject(`
+    const source = `
       import { SendMessageCommand } from "@aws-sdk/client-sqs";
       const command = new SendMessageCommand({
         QueueUrl: process.env.X,
@@ -417,12 +300,12 @@ describe("sqs recognizer: rejection cases", () => {
         // Constructed but not sent: no .send call.
         return command;
       }
-    `);
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
   it("records a send whose queue comes back from a call", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       function buildUrl(): string { return "x"; }
@@ -432,11 +315,11 @@ describe("sqs recognizer: rejection cases", () => {
           MessageBody: "y",
         }));
       }
-    `);
+    `;
 
     // The queue cannot be read, so nothing is claimed about which one it
     // is, and the boundary pairs with nothing. The send still happened.
-    const [effect] = messageSendEffectsOf(recognizeAll(file));
+    const [effect] = messageSendEffectsOf(recognizeAll(source));
     const binding = effect?.binding ?? raise("no binding");
     expect(
       binding.semantics.name === "message-bus" && binding.semantics.channel,
@@ -445,30 +328,21 @@ describe("sqs recognizer: rejection cases", () => {
   });
 
   it("returns null when SendMessageCommand input isn't an object literal", () => {
-    const file = makeProject(`
+    const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       const input = { QueueUrl: process.env.X, MessageBody: "y" };
       async function noop() {
         await client.send(new SendMessageCommand(input));
       }
-    `);
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 });
 
-function messageReceiveEffectsOf(
-  effects: Effect[],
-): Array<Extract<Effect, { type: "interaction" }>> {
-  return effects.filter(
-    (e): e is Extract<Effect, { type: "interaction" }> =>
-      e.type === "interaction" && e.interaction.class === "message-receive",
-  );
-}
-
 describe("sqs message-receive recognizer", () => {
   it("emits a message-receive interaction for JSON.parse(record.body) inside for-of(event.Records)", () => {
-    const file = makeProject(`
+    const source = `
       import type { SQSEvent } from "aws-lambda";
       export async function handler(event: SQSEvent): Promise<void> {
         for (const record of event.Records) {
@@ -476,8 +350,8 @@ describe("sqs message-receive recognizer", () => {
           void id; void totalAmount;
         }
       }
-    `);
-    const receives = messageReceiveEffectsOf(recognizeAll(file));
+    `;
+    const receives = messageReceiveEffectsOf(recognizeAll(source));
     expect(receives).toHaveLength(1);
     const receive = receives[0] ?? raise("no receive effect");
     expect(receive.binding.semantics).toMatchObject({
@@ -490,7 +364,7 @@ describe("sqs message-receive recognizer", () => {
   });
 
   it("captures destructured field names as the interaction body shape", () => {
-    const file = makeProject(`
+    const source = `
       import type { SQSEvent } from "aws-lambda";
       export async function handler(event: SQSEvent): Promise<void> {
         for (const record of event.Records) {
@@ -498,9 +372,9 @@ describe("sqs message-receive recognizer", () => {
           void id; void totalAmount;
         }
       }
-    `);
+    `;
     const receive =
-      messageReceiveEffectsOf(recognizeAll(file))[0] ?? raise("no receive");
+      messageReceiveEffectsOf(recognizeAll(source))[0] ?? raise("no receive");
     if (receive.interaction.class !== "message-receive") {
       throw new Error("wrong interaction class");
     }
@@ -515,7 +389,7 @@ describe("sqs message-receive recognizer", () => {
   });
 
   it("emits no body when the parse result isn't destructured", () => {
-    const file = makeProject(`
+    const source = `
       import type { SQSEvent } from "aws-lambda";
       export async function handler(event: SQSEvent): Promise<void> {
         for (const record of event.Records) {
@@ -523,8 +397,8 @@ describe("sqs message-receive recognizer", () => {
           void order;
         }
       }
-    `);
-    const receives = messageReceiveEffectsOf(recognizeAll(file));
+    `;
+    const receives = messageReceiveEffectsOf(recognizeAll(source));
     expect(receives).toHaveLength(1);
     const receive = receives[0] ?? raise("no receive");
     if (receive.interaction.class !== "message-receive") {
@@ -537,7 +411,7 @@ describe("sqs message-receive recognizer", () => {
     // const { total: localAlias }: `total` is the property the
     // recognizer should record (matching what producers write), not
     // `localAlias`.
-    const file = makeProject(`
+    const source = `
       import type { SQSEvent } from "aws-lambda";
       export async function handler(event: SQSEvent): Promise<void> {
         for (const record of event.Records) {
@@ -545,9 +419,9 @@ describe("sqs message-receive recognizer", () => {
           void localAlias;
         }
       }
-    `);
+    `;
     const receive =
-      messageReceiveEffectsOf(recognizeAll(file))[0] ?? raise("no receive");
+      messageReceiveEffectsOf(recognizeAll(source))[0] ?? raise("no receive");
     if (receive.interaction.class !== "message-receive") {
       throw new Error("wrong interaction class");
     }
@@ -558,16 +432,16 @@ describe("sqs message-receive recognizer", () => {
   });
 
   it("ignores JSON.parse calls outside event.Records loops", () => {
-    const file = makeProject(`
+    const source = `
       export async function handler(input: string): Promise<unknown> {
         return JSON.parse(input);
       }
-    `);
-    expect(messageReceiveEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
   it("ignores JSON.parse on non-.body access", () => {
-    const file = makeProject(`
+    const source = `
       import type { SQSEvent } from "aws-lambda";
       export async function handler(event: SQSEvent): Promise<void> {
         for (const record of event.Records) {
@@ -575,12 +449,12 @@ describe("sqs message-receive recognizer", () => {
           void x;
         }
       }
-    `);
-    expect(messageReceiveEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
   it("ignores parse calls that aren't JSON.parse", () => {
-    const file = makeProject(`
+    const source = `
       import type { SQSEvent } from "aws-lambda";
       const myParser = { parse: (_: string): unknown => null };
       export async function handler(event: SQSEvent): Promise<void> {
@@ -589,12 +463,12 @@ describe("sqs message-receive recognizer", () => {
           void x;
         }
       }
-    `);
-    expect(messageReceiveEffectsOf(recognizeAll(file))).toEqual([]);
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
   it("handles `as` cast on the parse result without breaking destructuring extraction", () => {
-    const file = makeProject(`
+    const source = `
       import type { SQSEvent } from "aws-lambda";
       interface Order { id: string; total: number }
       export async function handler(event: SQSEvent): Promise<void> {
@@ -603,9 +477,9 @@ describe("sqs message-receive recognizer", () => {
           void id; void total;
         }
       }
-    `);
+    `;
     const receive =
-      messageReceiveEffectsOf(recognizeAll(file))[0] ?? raise("no receive");
+      messageReceiveEffectsOf(recognizeAll(source))[0] ?? raise("no receive");
     if (receive.interaction.class !== "message-receive") {
       throw new Error("wrong interaction class");
     }
@@ -641,7 +515,7 @@ describe("sqs pack metadata", () => {
 
 describe("sqs configured producer", () => {
   it("reads a send on the project's own dispatcher", () => {
-    const file = makeProject(`
+    const source = `
       import { CommandDispatcher } from "@acme/async";
       export async function place(dispatcher: CommandDispatcher) {
         await dispatcher.dispatch(
@@ -650,9 +524,11 @@ describe("sqs configured producer", () => {
           { queueUrl: process.env.ORDERS_QUEUE_URL }
         );
       }
-    `);
+    `;
 
-    const sends = messageSendEffectsOf(recognizeAll(file, DISPATCHER_OPTIONS));
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, DISPATCHER_OPTIONS),
+    );
     expect(sends).toHaveLength(1);
     const send = sends[0];
     expect(send.binding.semantics).toEqual({
@@ -675,27 +551,29 @@ describe("sqs configured producer", () => {
   });
 
   it("reads nothing when the subject is computed", () => {
-    const file = makeProject(`
+    const source = `
       import { CommandDispatcher } from "@acme/async";
       export async function place(dispatcher: CommandDispatcher, kind: string) {
         await dispatcher.dispatch(kind, { orderId: "o-1" }, { queueUrl: "u" });
       }
-    `);
+    `;
 
     expect(
-      messageSendEffectsOf(recognizeAll(file, DISPATCHER_OPTIONS)),
+      messageSendEffectsOf(recognizeAll(source, DISPATCHER_OPTIONS)),
     ).toEqual([]);
   });
 
   it("carries no body for a batch method the config gives no body argument", () => {
-    const file = makeProject(`
+    const source = `
       import { CommandDispatcher } from "@acme/async";
       export async function placeMany(dispatcher: CommandDispatcher) {
         await dispatcher.dispatchBatch("order.placed", []);
       }
-    `);
+    `;
 
-    const sends = messageSendEffectsOf(recognizeAll(file, DISPATCHER_OPTIONS));
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, DISPATCHER_OPTIONS),
+    );
     expect(sends).toHaveLength(1);
     if (sends[0].interaction.class !== "message-send") {
       throw new Error("wrong interaction class");
@@ -709,13 +587,13 @@ describe("sqs configured producer", () => {
   });
 
   it("reads nothing without the config, on the same source", () => {
-    const file = makeProject(`
+    const source = `
       import { CommandDispatcher } from "@acme/async";
       export async function place(dispatcher: CommandDispatcher) {
         await dispatcher.dispatch("order.placed", { orderId: "o-1" }, {});
       }
-    `);
+    `;
 
-    expect(messageSendEffectsOf(recognizeAll(file))).toEqual([]);
+    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 });

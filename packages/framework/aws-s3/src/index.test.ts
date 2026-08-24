@@ -1,13 +1,7 @@
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import {
-  callOpsFor,
-  isImportedFrom,
-  ResolutionStore,
-} from "@suss/adapter-typescript";
+import { packUnderTest, storageOf } from "@suss/pack-harness";
 import { runExamples } from "@suss/recognize";
-import { createTestProject } from "@suss/test-project";
 
 import { s3Framework } from "./index.js";
 
@@ -33,64 +27,14 @@ const PRESIGNER_TYPES = `
   ): Promise<string>;
 `;
 
-function effectsIn(source: string): Effect[] {
-  const project = createTestProject();
-  project.createSourceFile(
-    "/node_modules/@aws-sdk/client-s3/package.json",
-    JSON.stringify({ name: "@aws-sdk/client-s3", types: "index.d.ts" }),
-  );
-  project.createSourceFile(
-    "/node_modules/@aws-sdk/client-s3/index.d.ts",
-    SDK_TYPES,
-  );
-  project.createSourceFile(
-    "/node_modules/@aws-sdk/s3-request-presigner/package.json",
-    JSON.stringify({
-      name: "@aws-sdk/s3-request-presigner",
-      types: "index.d.ts",
-    }),
-  );
-  project.createSourceFile(
-    "/node_modules/@aws-sdk/s3-request-presigner/index.d.ts",
-    PRESIGNER_TYPES,
-  );
-  const sourceFile: SourceFile = project.createSourceFile("/repo.ts", source);
-  const store = new ResolutionStore();
-  const recognizers = s3Framework().invocationRecognizers ?? [];
-  const effects: Effect[] = [];
+const s3 = packUnderTest(s3Framework(), {
+  library: {
+    "@aws-sdk/client-s3": SDK_TYPES,
+    "@aws-sdk/s3-request-presigner": PRESIGNER_TYPES,
+  },
+});
 
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const ctx = {
-      call: node as CallExpression,
-      sourceFile,
-      extractArgs: () => [],
-      isImportedFrom,
-      resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
-      ops: callOpsFor(node, (value: Node) => store.resolveWrittenValue(value)),
-    };
-    for (const recognizer of recognizers) {
-      const emitted = recognizer(node, ctx);
-      if (emitted !== null) {
-        effects.push(...emitted);
-      }
-    }
-  });
-  return effects;
-}
-
-function storageOf(effect: Effect) {
-  if (effect.type !== "interaction") {
-    throw new Error(`expected an interaction, got ${effect.type}`);
-  }
-  const semantics = effect.binding.semantics;
-  if (semantics.name !== "storage") {
-    throw new Error(`expected storage, got ${semantics.name}`);
-  }
-  return { semantics, interaction: effect.interaction };
-}
+const effectsIn = (source: string): Effect[] => s3.effectsIn(source);
 
 const IMPORTS = `import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";`;
 
