@@ -130,3 +130,55 @@ describe("classifyDecorator: unresolved", () => {
     expect(result.module).toBeNull();
   });
 });
+
+describe("classifyDecorator: an object built through a module", () => {
+  it("resolves a decorator on a router the imported module constructed", async () => {
+    const { decorator, scope } = await firstDecorator(
+      [
+        "import fastapi",
+        "",
+        'router = fastapi.APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const result = classifyDecorator(decorator, scope);
+    expect(result.module).toBe("fastapi");
+    expect(result.importedName).toBe("get");
+    expect(result.objectName).toBe("router");
+  });
+
+  it("leaves a decorator on an object built by a call nobody can follow unresolved", async () => {
+    const { decorator, scope } = await firstDecorator(
+      [
+        "router = make_router()",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    expect(classifyDecorator(decorator, scope).module).toBeNull();
+  });
+
+  it("leaves a decorator on an object built through two hops unresolved", async () => {
+    const { decorator, scope } = await firstDecorator(
+      [
+        "import fastapi",
+        "",
+        "router = fastapi.routing.APIRouter()",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    expect(classifyDecorator(decorator, scope).module).toBeNull();
+  });
+});

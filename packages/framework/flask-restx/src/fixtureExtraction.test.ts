@@ -190,7 +190,7 @@ describe("extraction over fixtures/python-webapp", () => {
     expect(paths).toEqual(["/invoices", "/invoices/{invoice_id}"]);
   });
 
-  it("names no path for a namespace whose path is not a literal", async () => {
+  it("composes a namespace path written as a module constant", async () => {
     const { summaries } = await extractFixture();
     const report = summaries.find(
       (s) => s.identity.name === "ReportDetail.get",
@@ -198,14 +198,11 @@ describe("extraction over fixtures/python-webapp", () => {
     expect(report?.identity.boundaryBinding?.semantics).toEqual({
       name: "rest",
       method: "GET",
-      path: null,
+      path: "/reports/{report_id}",
     });
-    expect(gapTextOf(report)).toContain(
-      "declares a prefix that is not a string literal",
-    );
   });
 
-  it("names no role either, for a route whose path nobody could read", async () => {
+  it("classifies a path parameter under a path it worked out", async () => {
     const { summaries } = await extractFixture();
     const report = summaries.find(
       (s) => s.identity.name === "ReportDetail.get",
@@ -215,13 +212,10 @@ describe("extraction over fixtures/python-webapp", () => {
         type: "parameter",
         name: "report_id",
         position: 1,
-        role: null,
+        role: "pathParams",
         shape: null,
       },
     ]);
-    expect(gapTextOf(report)).toContain(
-      "its parameters name no role and a path parameter here does not read as one",
-    );
   });
 
   it("names no path for a namespace mounted more than once", async () => {

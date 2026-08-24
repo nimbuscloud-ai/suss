@@ -997,7 +997,8 @@ function namespacePathRenderings(
       constructorArg: `, path=NS_PATH_${k}`,
       prelude: [`NS_PATH_${k} = "/c${k}"`, ""],
       prefix: `/c${k}`,
-      readable: false,
+      // The reader follows a bare name to the string it was assigned.
+      readable: true,
     }),
   };
 }
@@ -1053,6 +1054,9 @@ function mountPathRenderings(
       overridePrefix: null,
       readable: true,
     }),
+    // The constant is followed, and flask-restx replaces the
+    // namespace's own prefix with whatever the mount states, which this
+    // reading declines whether the prefix is a literal or a name.
     computed: () => ({
       mountArg: `, path=OVERRIDE_${k}`,
       prelude: [`OVERRIDE_${k} = "/mo${k}"`, ""],
@@ -1303,7 +1307,7 @@ function writtenPrefixRenderings(
       arguments: [`${keyword}=${constantName}`],
       prelude: [`${constantName} = "${computed}"`, ""],
       prefix: computed,
-      readable: false,
+      readable: true,
     }),
   };
 }
