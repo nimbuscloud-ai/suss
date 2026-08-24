@@ -95,6 +95,23 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     });
   });
 
+  it("drops a hole that resolves to the empty string", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const BASE = "";
+      const r = Router();
+      r.get(\`\${BASE}/items\`, (req, res) => { res.json({}); });
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+      new ResolutionStore(),
+    );
+    expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/items" });
+  });
+
   it("writes a placeholder for a template hole nobody can follow", () => {
     const sf = sourceFile(`
       import { Router } from "express";

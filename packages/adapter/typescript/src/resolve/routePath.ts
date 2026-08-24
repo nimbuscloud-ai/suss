@@ -198,13 +198,25 @@ function placeholderName(expr: Node): string {
  */
 function holeText(expr: Node, resolution: ResolutionStore | undefined): string {
   const written = resolution?.resolveWrittenValue(expr) ?? null;
-  if (written !== null) {
-    const text = pathFromUrlNode(written, resolution);
-    if (text !== undefined) {
-      return text;
-    }
+  if (written === null) {
+    return `{${placeholderName(expr)}}`;
   }
-  return `{${placeholderName(expr)}}`;
+  // A hole written as the empty string contributes nothing to the path,
+  // so `` `${BASE}/users` `` under `BASE = ""` is `/users`. The reader
+  // for a whole path gives back undefined for that, since a path of ""
+  // is invalid in the IR, and here it means something.
+  if (emptyStringLiteral(written)) {
+    return "";
+  }
+  return pathFromUrlNode(written, resolution) ?? `{${placeholderName(expr)}}`;
+}
+
+function emptyStringLiteral(node: Node): boolean {
+  return (
+    (Node.isStringLiteral(node) ||
+      Node.isNoSubstitutionTemplateLiteral(node)) &&
+    node.getLiteralValue() === ""
+  );
 }
 
 /**
