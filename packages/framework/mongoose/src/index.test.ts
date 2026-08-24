@@ -1,13 +1,14 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { ResolutionStore } from "@suss/adapter-typescript";
+import { callOpsFor, ResolutionStore } from "@suss/adapter-typescript";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { mongooseFramework } from "./index.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { EffectArg, PatternPack } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
 /**
  * The recognizer settles a call by where its method is declared, so a
@@ -67,54 +68,6 @@ function withMongooseTypes(
   project.createSourceFile("/node_modules/mongoose/index.d.ts", MONGOOSE_TYPES);
 }
 
-/**
- * A small EffectArg builder, mirroring the adapter's own closely
- * enough for what the recognizer needs: object and array literals,
- * strings, numbers, booleans, and bare identifiers.
- */
-function extractArgForTest(node: Node): EffectArg {
-  if (Node.isStringLiteral(node)) {
-    return { kind: "string", value: node.getLiteralValue() };
-  }
-  if (Node.isNumericLiteral(node)) {
-    return { kind: "number", value: node.getLiteralValue() };
-  }
-  if (Node.isTrueLiteral(node)) {
-    return { kind: "boolean", value: true };
-  }
-  if (Node.isFalseLiteral(node)) {
-    return { kind: "boolean", value: false };
-  }
-  if (Node.isObjectLiteralExpression(node)) {
-    const fields: Record<string, EffectArg> = {};
-    for (const prop of node.getProperties()) {
-      if (Node.isShorthandPropertyAssignment(prop)) {
-        const name = prop.getName();
-        fields[name] = { kind: "identifier", name };
-        continue;
-      }
-      if (!Node.isPropertyAssignment(prop)) {
-        continue;
-      }
-      const initializer = prop.getInitializer();
-      if (initializer !== undefined) {
-        fields[prop.getName()] = extractArgForTest(initializer);
-      }
-    }
-    return { kind: "object", fields };
-  }
-  if (Node.isArrayLiteralExpression(node)) {
-    return {
-      kind: "array",
-      items: node.getElements().map((el) => extractArgForTest(el)),
-    };
-  }
-  if (Node.isIdentifier(node) || Node.isPropertyAccessExpression(node)) {
-    return { kind: "identifier", name: node.getText() };
-  }
-  return null;
-}
-
 function runRecognizers(sourceFile: SourceFile, pack: PatternPack): Effect[] {
   const recognizers = pack.invocationRecognizers ?? [];
   const store = new ResolutionStore();
@@ -123,13 +76,14 @@ function runRecognizers(sourceFile: SourceFile, pack: PatternPack): Effect[] {
     if (!Node.isCallExpression(node)) {
       return;
     }
+    const resolve = (value: Node) => store.resolveWrittenValue(value);
     const ctx = {
       call: node as CallExpression,
       sourceFile,
-      extractArgs: () =>
-        node.getArguments().map((arg) => extractArgForTest(arg)),
+      extractArgs: () => [],
       isImportedFrom: () => false,
-      resolveWrittenValue: (value: Node) => store.resolveWrittenValue(value),
+      resolveWrittenValue: resolve,
+      ops: callOpsFor(node, resolve),
     };
     for (const recognizer of recognizers) {
       const emitted = recognizer(node, ctx);
@@ -362,6 +316,17 @@ describe("a static Model call", () => {
     expect(storageOf(effects[0]).interaction).toMatchObject({ fields: ["*"] });
   });
 
+  it("falls back to the whole document when a key is built at run time", () => {
+    const effects = effectsIn(`
+      ${CLIENT}
+      export async function touch(id: string, field: string) {
+        return User.updateOne({ _id: id }, { [field]: true });
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({ fields: ["*"] });
+  });
+
   it("falls back to the whole document when the update isn't a readable object", () => {
     const effects = effectsIn(`
       ${CLIENT}
@@ -487,6 +452,18 @@ describe("collection naming", () => {
     `);
 
     expect(storageOf(effects[0]).semantics.container).toBe("categories");
+  });
+
+  it("adds es after a sibilant", () => {
+    const effects = effectsIn(`
+      import mongoose from "mongoose";
+      const Box = mongoose.model("Box", new mongoose.Schema({}));
+      export async function all() {
+        return Box.find({});
+      }
+    `);
+
+    expect(storageOf(effects[0]).semantics.container).toBe("boxes");
   });
 
   it("takes an explicit third argument over the default", () => {
@@ -631,7 +608,41 @@ describe("the pack itself", () => {
       terminals: [],
       requiresImport: ["mongoose"],
     });
-    expect(mongooseFramework().invocationRecognizers).toHaveLength(2);
+    expect(mongooseFramework().invocationRecognizers).toHaveLength(1);
+  });
+
+  it("prices what it declared: the collection and two rules are code", () => {
+    expect(mongooseFramework().declarations?.declarations).toEqual([
+      {
+        name: "mongodb",
+        dataLinks: 2,
+        functionLinks: ["container", "selector", "fields"],
+        astLinks: [],
+        example: 'User.find({ email: "a@b.c" }, { name: 1 })',
+      },
+    ]);
+  });
+
+  it("emits the effect its example says it does", () => {
+    const ran = runExamples(mongooseFramework(), (code) =>
+      effectsIn(`
+        ${CLIENT}
+        export async function example() {
+          return ${code};
+        }
+      `),
+    );
+
+    expect(ran).toHaveLength(1);
+    const { semantics, interaction } = storageOf(ran[0].effects[0]);
+    expect(semantics.container).toBe("users");
+    expect(interaction).toMatchObject({
+      class: "storage-access",
+      kind: "read",
+      operation: "find",
+      fields: ["name"],
+      selector: ["email"],
+    });
   });
 
   it("takes a scope option for a project with more than one connection", () => {

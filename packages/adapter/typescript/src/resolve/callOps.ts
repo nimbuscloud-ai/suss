@@ -145,6 +145,7 @@ export function callOpsFor(
     receiver: () =>
       callee === null ? null : opsOverCall(callee.getExpression(), resolve),
     argument: (index) => opsOverCall(argumentsOf()[index], resolve),
+    callee: () => opsOverCall(expression, resolve),
     propertyAt: (index, property, unsettled) =>
       propertyAt(argumentsOf()[index], property, unsettled, resolve),
     valueAt: (index) => {
@@ -172,6 +173,7 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
 
   return {
     text: () => literalText(written()),
+    flag: () => literalFlag(written()),
     entries: (unsettled) => entriesOf(written(), unsettled, resolve),
     items: () => itemsOf(written(), resolve),
     property: (name) => {
@@ -245,6 +247,19 @@ function literalText(value: Node): string | null {
     : null;
 }
 
+/**
+ * The yes or no the source writes out, or null for anything else. A
+ * library that asks which fields a call wants takes a map of these, and
+ * accepts a number in place of the boolean, so both are read the same
+ * way round.
+ */
+function literalFlag(value: Node): boolean | null {
+  if (Node.isTrueLiteral(value) || Node.isFalseLiteral(value)) {
+    return Node.isTrueLiteral(value);
+  }
+  return Node.isNumericLiteral(value) ? value.getLiteralValue() !== 0 : null;
+}
+
 /** A property name without the quotes a source that needs them writes. */
 function unquoted(name: string): string {
   return name.replace(/^["']|["']$/g, "");
@@ -284,7 +299,7 @@ function isCalled(value: Node): value is Called {
  * back.
  */
 function settled(value: Node | undefined, resolve: Resolve): Node | null {
-  let step = value ?? null;
+  let step = unwrapped(value ?? null);
   for (let hops = 0; hops < MAX_WRITTEN_HOPS; hops += 1) {
     if (step === null || !Node.isIdentifier(step)) {
       return step;
@@ -293,9 +308,25 @@ function settled(value: Node | undefined, resolve: Resolve): Node | null {
     if (written === null || written === step) {
       return null;
     }
-    step = written;
+    step = unwrapped(written);
   }
   return null;
+}
+
+/**
+ * A value with the wrappers taken off. A document read back off a query
+ * is written as `await User.findById(id)`, and what made it is the call
+ * inside the await rather than the await itself.
+ */
+function unwrapped(value: Node | null): Node | null {
+  let inside = value;
+  while (
+    inside !== null &&
+    (Node.isAwaitExpression(inside) || Node.isParenthesizedExpression(inside))
+  ) {
+    inside = inside.getExpression();
+  }
+  return inside;
 }
 
 /** The variable a name was declared as, when the source declares one. */

@@ -216,9 +216,16 @@ export interface KindAsAsked {
   readonly otherwise?: "read" | "write";
 }
 
-/** What a pack's own rule over the inputs a call states is handed. */
+/** What a pack's own rule is handed: one value, and what the call does. */
 export interface StatedInputs {
-  /** The object the call states its inputs as. */
+  /**
+   * The value the rule reads. That is the object the call states its
+   * inputs as when the chain says where with `input`, and the value the
+   * rule was pointed at when it says where for itself. A call that
+   * passed nothing there states nothing, rather than the rule being
+   * skipped: a projection the caller left out is still a read of every
+   * field there is, and only the pack knows that.
+   */
   readonly input: ValueOps;
   /** The container's own entry, when the call reached several. */
   readonly entry: ValueOps | null;
@@ -232,6 +239,24 @@ export interface StatedInputs {
  */
 export type InputRule = LinkFunction<[StatedInputs], readonly string[]>;
 
+/**
+ * A pack's own rule, pointed at the value it reads.
+ *
+ * `input` says where a call that states one request object states it,
+ * and every rule on that chain reads the one value. A library that
+ * spreads what a reader wants over several places needs each rule
+ * pointed somewhere of its own: Mongoose picks documents by the first
+ * argument and reads the fields the second asks for, and Drizzle puts
+ * the fields, the table and the condition on three calls of one chain,
+ * which the pick's own `of` steps reach.
+ */
+export interface StatedRule {
+  /** Which value the rule reads. */
+  readonly of: OneArgument;
+  /** What the pack works out from it. */
+  readonly by: InputRule;
+}
+
 /** What one method of a storage client does. */
 export interface StorageMethod {
   readonly kind: AccessKind;
@@ -241,10 +266,18 @@ export interface StorageMethod {
    * the case: every operation goes through the one function.
    */
   readonly operation?: ArgumentPick;
-  /** Which argument or arguments say what the call reached. */
-  readonly selector?: ArgumentPick | InputRule;
-  /** Which argument says which field inside it, when the method takes one. */
-  readonly fields?: ArgumentPick | InputRule;
+  /**
+   * What the call reached. An argument the call passes, a rule the pack
+   * wrote, or the plain list a method whose own name settles it states
+   * outright: `findById` picks by `_id` however the id is spelt.
+   */
+  readonly selector?: readonly string[] | ArgumentPick | InputRule | StatedRule;
+  /**
+   * Which fields the call touched, said the same three ways. A delete
+   * touches the whole document and states `["*"]`, since nothing in its
+   * arguments says so.
+   */
+  readonly fields?: readonly string[] | ArgumentPick | InputRule | StatedRule;
 }
 
 /** What a chain produces when every link matches. */

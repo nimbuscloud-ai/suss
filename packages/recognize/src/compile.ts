@@ -35,6 +35,7 @@ import type {
   MethodsLink,
   OneArgument,
   StatedInputs,
+  StatedRule,
   StorageEnding,
   StorageMethod,
   SubjectLink,
@@ -387,6 +388,19 @@ function statedValue(subject: CallOps, pick: OneArgument): ValueOps | null {
   return null;
 }
 
+/**
+ * What a call passed nowhere. A rule pointed at an argument the call
+ * left out still runs, because only the pack knows what leaving it out
+ * means: a Mongoose read with no projection reads every field there is.
+ */
+const NOTHING_STATED: ValueOps = {
+  text: () => null,
+  flag: () => null,
+  entries: () => [],
+  items: () => [],
+  property: () => null,
+};
+
 /** What the call reached, by the argument it picks or by the pack's rule. */
 function namesFor(
   says: StorageMethod["selector"],
@@ -397,11 +411,19 @@ function namesFor(
   if (says === undefined) {
     return [];
   }
-  if (typeof says !== "function") {
-    return namesAt(subject, says, unsettled);
+  if (Array.isArray(says)) {
+    return [...(says as readonly string[])];
   }
-  const input = stated.input;
-  return input === null ? [] : [...says({ ...stated, input })];
+  if (typeof says === "function") {
+    const input = stated.input;
+    return input === null ? [] : [...says({ ...stated, input })];
+  }
+  const pointed = says as ArgumentPick | StatedRule;
+  if (!("by" in pointed)) {
+    return namesAt(subject, pointed, unsettled);
+  }
+  const input = statedValue(subject, pointed.of) ?? NOTHING_STATED;
+  return [...pointed.by({ ...stated, input })];
 }
 
 /** The name each picked argument gives, dropping the ones nothing settles. */

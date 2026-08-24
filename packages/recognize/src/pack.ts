@@ -17,10 +17,12 @@ import type {
   PatternPack,
 } from "@suss/extractor";
 import type {
+  ArgumentPick,
   Chain,
   InputRule,
   Link,
   MethodsLink,
+  StatedRule,
   StorageMethod,
 } from "./chain.js";
 import type { ReceiverOrigin } from "./ops.js";
@@ -178,9 +180,9 @@ function rulesIn(chain: Chain<StorageMethod>): WrittenAsCode[] {
   const written = new Map<string, InputRule>();
   for (const method of Object.values(link?.table ?? {})) {
     for (const asks of ["selector", "fields"] as const) {
-      const says = method[asks];
-      if (typeof says === "function") {
-        written.set(asks, says);
+      const rule = ruleFor(method[asks]);
+      if (rule !== null) {
+        written.set(asks, rule);
       }
     }
   }
@@ -188,4 +190,21 @@ function rulesIn(chain: Chain<StorageMethod>): WrittenAsCode[] {
     asks,
     reachesAst: from.reachesAst === true,
   }));
+}
+
+/**
+ * The rule a method gave for one question, whether it reads the inputs
+ * the chain found or a value it pointed itself at. Both are code and
+ * both are priced, so the pack health report does not go quiet when a
+ * pack moves from one form to the other.
+ */
+function ruleFor(says: StorageMethod["selector"]): InputRule | null {
+  if (typeof says === "function") {
+    return says;
+  }
+  if (says === undefined || Array.isArray(says)) {
+    return null;
+  }
+  const pointed = says as ArgumentPick | StatedRule;
+  return "by" in pointed ? pointed.by : null;
 }

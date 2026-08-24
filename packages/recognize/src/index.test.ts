@@ -41,6 +41,7 @@ function callOps(over: {
     calleeText: () => over.callee ?? "client.get",
     receiver: () => over.receiver ?? null,
     argument: (index) => over.built?.[index] ?? null,
+    callee: () => null,
     propertyAt: (index, property) =>
       over.properties?.[index]?.[property] ??
       (index in values
@@ -58,6 +59,7 @@ function valueOps(stated: unknown): ValueOps {
       : null;
   return {
     text: () => (typeof stated === "string" ? stated : null),
+    flag: () => (typeof stated === "boolean" ? stated : null),
     items: () =>
       Array.isArray(stated) ? stated.map((item) => valueOps(item)) : [],
     entries: () =>
@@ -68,6 +70,17 @@ function valueOps(stated: unknown): ValueOps {
     property: (name) =>
       object === null || !(name in object) ? null : valueOps(object[name]),
   };
+}
+
+/** What the properties of an object a call states are called. */
+function keysIn(value: ValueOps): string[] {
+  const found: string[] = [];
+  for (const entry of value.entries("nothing")) {
+    if (entry.key !== null) {
+      found.push(entry.key);
+    }
+  }
+  return found;
 }
 
 const READ_KEY: StorageMethod = { kind: "read", selector: { at: 0 } };
@@ -585,6 +598,85 @@ describe("a call that states one request object", () => {
     expect(packOf(requests).declarations?.declarations[0]).toMatchObject({
       dataLinks: 6,
       functionLinks: ["fields"],
+      astLinks: [],
+    });
+  });
+});
+
+/**
+ * What a library that spreads one call over several arguments needs. A
+ * rule pointed at the value it reads covers it, and a method whose own
+ * name settles the answer states it outright.
+ */
+describe("a rule that says which value it reads", () => {
+  const listing = storageCalls({
+    system: "cassette",
+    client: declaredBy("tapedeck"),
+  }).methods({
+    play: {
+      kind: "read",
+      selector: { of: { at: 0 }, by: ({ input }) => keysIn(input) },
+      fields: { of: { at: 1 }, by: ({ input }) => keysIn(input) },
+    },
+    erase: { kind: "write", selector: ["*"], fields: ["*"] },
+    scan: {
+      kind: "read",
+      fields: {
+        of: { at: 0 },
+        by: ({ input }) => [
+          ...(input.text() === null ? [] : ["text"]),
+          ...(input.flag() === null ? [] : ["flag"]),
+          ...(input.property("side") === null ? [] : ["property"]),
+          ...input.items().map(() => "item"),
+          ...input.entries("nothing").map(() => "entry"),
+        ],
+      },
+    },
+  });
+
+  const playing = (values: Record<number, unknown>) =>
+    run(listing, callOps({ method: "play", from: ["tapedeck"], values }));
+
+  it("reads one argument for the selector and the next for the fields", () => {
+    const effects = playing({ 0: { side: "a" }, 1: { title: 1 } });
+
+    expect(effects?.[0]).toMatchObject({
+      interaction: { selector: ["side"], fields: ["title"] },
+    });
+  });
+
+  it("runs the rule anyway when the call passed nothing there", () => {
+    const effects = playing({ 0: { side: "a" } });
+
+    expect(effects?.[0]).toMatchObject({
+      interaction: { selector: ["side"], fields: [] },
+    });
+  });
+
+  it("gives a rule a value that states nothing, whatever it asks", () => {
+    const effects = run(
+      listing,
+      callOps({ method: "scan", from: ["tapedeck"] }),
+    );
+
+    expect(effects?.[0]).toMatchObject({ interaction: { fields: [] } });
+  });
+
+  it("takes the answer a method states outright", () => {
+    const effects = run(
+      listing,
+      callOps({ method: "erase", from: ["tapedeck"] }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      interaction: { selector: ["*"], fields: ["*"] },
+    });
+  });
+
+  it("prices a rule pointed at a value the way it prices any other", () => {
+    expect(packOf(listing).declarations?.declarations[0]).toMatchObject({
+      dataLinks: 2,
+      functionLinks: ["selector", "fields"],
       astLinks: [],
     });
   });

@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 8386,
-      "covered": 7174,
+      "total": 8395,
+      "covered": 7179,
       "skipped": 0,
-      "pct": 85.54
+      "pct": 85.51
     },
     "statements": {
-      "total": 8477,
-      "covered": 7261,
+      "total": 8486,
+      "covered": 7266,
       "skipped": 0,
-      "pct": 85.65
+      "pct": 85.62
     },
     "functions": {
-      "total": 1183,
-      "covered": 1095,
+      "total": 1187,
+      "covered": 1097,
       "skipped": 0,
-      "pct": 92.56
+      "pct": 92.41
     },
     "branches": {
-      "total": 6501,
-      "covered": 5068,
+      "total": 6510,
+      "covered": 5071,
       "skipped": 0,
-      "pct": 77.95
+      "pct": 77.89
     },
     "branchesTrue": {
       "total": 0,
@@ -1697,28 +1697,28 @@
   },
   "src/resolve/callOps.ts": {
     "lines": {
-      "total": 103,
-      "covered": 98,
+      "total": 112,
+      "covered": 103,
       "skipped": 0,
-      "pct": 95.14
+      "pct": 91.96
     },
     "functions": {
-      "total": 41,
-      "covered": 39,
+      "total": 45,
+      "covered": 41,
       "skipped": 0,
-      "pct": 95.12
+      "pct": 91.11
     },
     "statements": {
-      "total": 106,
-      "covered": 100,
+      "total": 115,
+      "covered": 105,
       "skipped": 0,
-      "pct": 94.33
+      "pct": 91.3
     },
     "branches": {
-      "total": 89,
-      "covered": 74,
+      "total": 98,
+      "covered": 77,
       "skipped": 0,
-      "pct": 83.14
+      "pct": 78.57
     }
   },
   "src/resolve/invocationEffects.ts": {

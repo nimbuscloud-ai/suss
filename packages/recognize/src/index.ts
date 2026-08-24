@@ -36,6 +36,7 @@ export type {
   OneArgument,
   StartLink,
   StatedInputs,
+  StatedRule,
   StorageEnding,
   StorageMethod,
   SubjectLink,

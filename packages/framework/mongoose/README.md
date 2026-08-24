@@ -12,6 +12,8 @@ import { mongooseFramework } from "@suss/framework-mongoose";
 const pack = mongooseFramework();
 ```
 
+This pack is a declaration rather than a walk over the syntax tree. It states its methods, its receiver and where each of them reads as data through `@suss/recognize`, and three questions are code: the collection, which needs Mongoose's own pluralizer, and the two rules that read a filter, a projection, an update document and a payload.
+
 ## How it settles a call
 
 A call is recognized by where its method is declared, not by what the receiver is called:
@@ -55,7 +57,7 @@ Read methods: `find`, `findOne`, `findById`, `countDocuments`, `exists`, `distin
 
 A pure-exclusion projection (every value falsy, `{ password: 0 }`) reads the whole document back, so it comes out as `["*"]`, the same as no projection at all. `deleteOne` / `deleteMany` / `findOneAndDelete` / `findByIdAndDelete` remove the whole document, so they come out as `["*"]` too. `save()` always comes out as `["*"]`: the document can have mutations made after it was constructed, which this pack does not track, so it does not report the constructor's fields as if they were still current.
 
-`save()` resolves its own model by walking the document backward: through `new User(...)` when the document was constructed directly, or through the query that produced it (`const doc = await User.findById(id); doc.save()`).
+`save()` resolves its own model by walking the document backward: through `new User(...)` when the document was constructed directly, or through the query that produced it (`const doc = await User.findById(id); doc.save()`). Both are one step past where a static call's model is, so the collection rule tries the receiver, then what made the class the receiver was constructed from, then the receiver's own receiver.
 
 ## Out of scope for now
 
@@ -69,4 +71,4 @@ A pure-exclusion projection (every value falsy, `{ password: 0 }`) reads the who
 
 ## Where it fits in suss
 
-Depends on `@suss/behavioral-ir` for the binding it builds and `@suss/adapter-typescript` for the declaration check and argument extraction. Mongoose has no separate schema-reader package the way Prisma does; what a call's collection pairs against is other code, the same as the Redis and Drizzle packs, through the storage pass in `@suss/checker`.
+Depends on `@suss/recognize`, which compiles the declaration into the recognizer hook an adapter calls and asks the adapter's own ops about each call. Mongoose has no separate schema-reader package the way Prisma does; what a call's collection pairs against is other code, the same as the Redis and Drizzle packs, through the storage pass in `@suss/checker`.
