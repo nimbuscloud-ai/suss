@@ -3,9 +3,9 @@
     "packages": 59,
     "packagesWithExports": 59,
     "exports": 581,
-    "internal": 2163,
-    "consumers": 992,
-    "pairs": 980,
+    "internal": 2167,
+    "consumers": 994,
+    "pairs": 982,
     "unfollowedCalls": 251,
     "findingErrors": 0
   },
@@ -27,8 +27,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 58,
-      "internal": 732,
-      "consumers": 76,
+      "internal": 733,
+      "consumers": 77,
       "unfollowedCalls": 69
     },
     "packages/behavioral-ir": {
@@ -118,8 +118,8 @@
     "packages/contract/openapi": {
       "name": "@suss/contract-openapi",
       "exports": 2,
-      "internal": 19,
-      "consumers": 8,
+      "internal": 22,
+      "consumers": 9,
       "unfollowedCalls": 0
     },
     "packages/contract/prisma": {
