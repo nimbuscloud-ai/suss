@@ -236,8 +236,11 @@ describe("router prefix composition: abstentions", () => {
     return unreadTextOf(unit);
   }
 
-  it("abstains when the router's own prefix is not a string literal", async () => {
-    const reason = await abstained(
+  it("follows a prefix written as a name to the string it was assigned", async () => {
+    // Every FastAPI project of any size writes `prefix=settings.API_V1`
+    // or a module constant rather than a literal, and each one used to
+    // lose the path on every route under that router.
+    const units = await unitsOf(
       [
         "from fastapi import FastAPI, APIRouter",
         "",
@@ -254,9 +257,76 @@ describe("router prefix composition: abstentions", () => {
         "app.include_router(router)",
         "",
       ].join("\n"),
+    );
+    expect(pathOf(units, "ping")).toBe("/items/ping");
+  });
+
+  it("follows a prefix written as a name at the mount too", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        'MOUNT = "/api/v1"',
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+        "",
+        "app.include_router(router, prefix=MOUNT)",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "ping")).toBe("/api/v1/items/ping");
+  });
+
+  it("abstains on a prefix nothing here can read", async () => {
+    const reason = await abstained(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        "router = APIRouter(prefix=compute_prefix())",
+        "",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+        "",
+        "app.include_router(router)",
+        "",
+      ].join("\n"),
       "ping",
     );
     expect(reason).toContain("declares a prefix that is not a string literal");
+  });
+
+  it("reads a router built through the module it was imported as", async () => {
+    // `import fastapi` and then `fastapi.APIRouter(...)` used to produce
+    // no summary at all, so those routes were missing rather than
+    // unpathed and nobody could see they had gone.
+    const units = await unitsOf(
+      [
+        "import fastapi",
+        "",
+        "app = fastapi.FastAPI()",
+        'router = fastapi.APIRouter(prefix="/items")',
+        "",
+        "",
+        '@router.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+        "",
+        'app.include_router(router, prefix="/api")',
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "ping")).toBe("/api/items/ping");
   });
 
   it("abstains when the mount call's prefix is not a string literal", async () => {

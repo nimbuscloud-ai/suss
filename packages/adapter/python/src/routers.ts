@@ -30,7 +30,13 @@
 // The object a mount is called on states a prefix of its own where
 // the pack says so, in front of the other two.
 
-import { bodyStatements, field, rangeOf, stripDecorators } from "./ast.js";
+import {
+  bodyStatements,
+  field,
+  rangeOf,
+  stringLiteralValue,
+  stripDecorators,
+} from "./ast.js";
 import { readCallArguments } from "./decorators.js";
 import {
   containedValues,
@@ -502,19 +508,13 @@ function constructionOf(
   }
 
   const callee = field(binding.value, "function");
-  if (callee?.type !== "identifier") {
+  if (callee === null) {
     return null;
   }
-
-  const calleeBinding = resolveName(scope, callee.text);
-  if (
-    calleeBinding?.kind !== "importFrom" ||
-    !importModule.includes(calleeBinding.module)
-  ) {
-    return null;
-  }
-
-  return { constructorName: calleeBinding.importedName, call: binding.value };
+  const constructorName = importedConstructorName(callee, scope, importModule);
+  return constructorName === null
+    ? null
+    : { constructorName, call: binding.value };
 }
 
 /** The prefix as the library stores it. A library that drops trailing slashes ends up with something other than what the source wrote. */
@@ -540,11 +540,39 @@ const NO_VALUE_LITERALS: Partial<
   none: () => true,
 };
 
+/**
+ * The string a prefix argument comes down to, or null when nothing here
+ * can say. A bare name is followed to what it was assigned, because
+ * `prefix=API_V1` and `prefix="/api/v1"` describe the same route, and a
+ * settings module is where most projects put the value.
+ */
+function prefixStringOf(
+  arg: DecoratorArg,
+  scope: Scope | undefined,
+): string | null {
+  if (arg.kind === "string") {
+    return arg.value;
+  }
+  if (arg.kind !== "identifier" || scope === undefined) {
+    return null;
+  }
+  const binding = resolveName(scope, arg.name);
+  if (
+    binding === null ||
+    binding.kind !== "assignment" ||
+    binding.value === null
+  ) {
+    return null;
+  }
+  return stringLiteralValue(binding.value);
+}
+
 /** Every site reads a prefix through here, so the same spelling means the same thing at a constructor and at a mount. */
 function readPrefixKeyword(
   keywordArgs: Record<string, DecoratorArg>,
   keyword: string,
   composition: RouterComposition,
+  scope: Scope | undefined,
 ): PrefixReading {
   const arg = keywordArgs[keyword];
   if (arg === undefined) {
@@ -558,21 +586,20 @@ function readPrefixKeyword(
     return UNSTATED_PREFIX;
   }
 
-  if (arg.kind === "string") {
-    return { kind: "stated", value: arg.value };
-  }
-
-  return UNREADABLE_PREFIX;
+  const value = prefixStringOf(arg, scope);
+  return value === null ? UNREADABLE_PREFIX : { kind: "stated", value };
 }
 
 function constructorPrefix(
   keywordArgs: Record<string, DecoratorArg>,
   composition: RouterComposition,
+  scope: Scope | undefined,
 ): PrefixReading {
   const reading = readPrefixKeyword(
     keywordArgs,
     composition.prefixKeyword,
     composition,
+    scope,
   );
   if (reading.kind !== "stated") {
     return reading;
@@ -609,23 +636,57 @@ function constructionStatement(
   }
 
   const callee = field(right, "function");
-  if (callee?.type !== "identifier") {
+  if (callee === null) {
+    return null;
+  }
+  const constructorName = importedConstructorName(callee, scope, importModule);
+  if (constructorName === null) {
     return null;
   }
 
-  const calleeBinding = resolveName(scope, callee.text);
-  if (
-    calleeBinding?.kind !== "importFrom" ||
-    !importModule.includes(calleeBinding.module)
-  ) {
-    return null;
+  return { name: left.text, constructorName, call: right };
+}
+
+/**
+ * The constructor a call says it is calling, when it comes from one of the
+ * pack's modules. A project reaches the same constructor two ways, and
+ * both have to name it:
+ *
+ *   from fastapi import APIRouter   ->   APIRouter(prefix=...)
+ *   import fastapi                  ->   fastapi.APIRouter(prefix=...)
+ *
+ * Null for anything else, including a same-named constructor somebody
+ * else exports.
+ */
+function importedConstructorName(
+  callee: PyNode,
+  scope: Scope,
+  importModule: string[],
+): string | null {
+  if (callee.type === "identifier") {
+    const binding = resolveName(scope, callee.text);
+    if (
+      binding?.kind !== "importFrom" ||
+      !importModule.includes(binding.module)
+    ) {
+      return null;
+    }
+    return binding.importedName;
   }
 
-  return {
-    name: left.text,
-    constructorName: calleeBinding.importedName,
-    call: right,
-  };
+  if (callee.type !== "attribute") {
+    return null;
+  }
+  const object = field(callee, "object");
+  const attribute = field(callee, "attribute");
+  if (object?.type !== "identifier" || attribute?.type !== "identifier") {
+    return null;
+  }
+  const binding = resolveName(scope, object.text);
+  if (binding?.kind !== "import" || !importModule.includes(binding.module)) {
+    return null;
+  }
+  return attribute.text;
 }
 
 /**
@@ -686,7 +747,8 @@ function collectConstructions(
       construction,
       bound.module,
       bound.file,
-      (keywordArgs) => constructorPrefix(keywordArgs, composition),
+      (keywordArgs) =>
+        constructorPrefix(keywordArgs, composition, bound.module.moduleScope),
       index.constructions,
       index.byValueKey,
     );
@@ -726,7 +788,12 @@ function collectCarrierConstructions(
         scan.bound.module,
         scan.bound.file,
         (keywordArgs) =>
-          readPrefixKeyword(keywordArgs, carrier.prefixKeyword, composition),
+          readPrefixKeyword(
+            keywordArgs,
+            carrier.prefixKeyword,
+            composition,
+            scan.bound.module.moduleScope,
+          ),
         scan.index.carriers,
         scan.index.byValueKey,
       );
@@ -1260,6 +1327,7 @@ function recordMountStatement(
     objectPrefix,
     scan.composition,
     position.site,
+    position.scope,
   );
   const mounted =
     args[0] ??
@@ -1278,6 +1346,7 @@ function mountStateOf(
   objectPrefix: OwnPrefixResolution,
   composition: RouterComposition,
   site: MountSite,
+  scope: Scope,
 ): MountState {
   if (includerConstructorName === composition.routerConstructorName) {
     return {
@@ -1298,6 +1367,7 @@ function mountStateOf(
     keywordArgs,
     composition.prefixKeyword,
     composition,
+    scope,
   );
   if (mountPrefix.kind === "unreadable") {
     return {
@@ -1549,7 +1619,12 @@ function readMountObjectPrefix(
   const own =
     spec.prefixKeyword === undefined
       ? UNSTATED_PREFIX
-      : readPrefixKeyword(keywordArgs, spec.prefixKeyword, scan.composition);
+      : readPrefixKeyword(
+          keywordArgs,
+          spec.prefixKeyword,
+          scan.composition,
+          scan.bound.module.moduleScope,
+        );
   if (own.kind === "unreadable") {
     return {
       kind: "abstain",

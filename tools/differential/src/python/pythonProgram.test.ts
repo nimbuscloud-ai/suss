@@ -503,8 +503,9 @@ describe("renderPythonProgram", () => {
       ["Alpha0.get", "claim", ["/ns0/alpha0"]],
       // A falsy constructor path leaves the library deriving one from the name.
       ["Beta1.get", "abstain", ["/ns1/beta1"]],
-      // A mount path nobody can read takes the namespace somewhere this
-      // reading cannot follow.
+      // The mount states a path of its own, and flask-restx replaces the
+      // namespace's with it rather than composing, so this abstains
+      // whether the path is a literal or a name.
       ["Gamma2.get", "abstain", ["/mo2/gamma2"]],
     ]);
   });

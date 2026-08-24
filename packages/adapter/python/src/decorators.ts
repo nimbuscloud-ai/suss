@@ -159,17 +159,42 @@ function resolveObjectModule(
   }
   if (binding?.kind === "assignment" && binding.value?.type === "call") {
     const callee = field(binding.value, "function");
-    if (callee?.type === "identifier") {
-      const calleeBinding = resolveName(scope, callee.text);
-      if (calleeBinding?.kind === "importFrom") {
-        return {
-          module: calleeBinding.module,
-          relativeLevel: calleeBinding.relativeLevel,
-        };
-      }
-    }
+    return callee === null ? null : calleeModule(callee, scope);
   }
   return null;
+}
+
+/**
+ * The module a call's constructor comes from, whichever way the call
+ * reaches it. Both spellings put the same object in the variable:
+ *
+ *   from fastapi import APIRouter   ->   APIRouter()
+ *   import fastapi                  ->   fastapi.APIRouter()
+ *
+ * so a route decorated with what either one returns belongs to the same
+ * pack.
+ */
+function calleeModule(
+  callee: PyNode,
+  scope: Scope,
+): { module: string; relativeLevel: number } | null {
+  if (callee.type === "identifier") {
+    const binding = resolveName(scope, callee.text);
+    return binding?.kind === "importFrom"
+      ? { module: binding.module, relativeLevel: binding.relativeLevel }
+      : null;
+  }
+  if (callee.type !== "attribute") {
+    return null;
+  }
+  const object = field(callee, "object");
+  if (object?.type !== "identifier") {
+    return null;
+  }
+  const binding = resolveName(scope, object.text);
+  return binding?.kind === "import"
+    ? { module: binding.module, relativeLevel: binding.relativeLevel }
+    : null;
 }
 
 /** An attribute chain deeper than one property access (`a.b.route`) is left unresolved, and its decorator is not discovered. */

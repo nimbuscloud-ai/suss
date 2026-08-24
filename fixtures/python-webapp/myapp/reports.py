@@ -1,7 +1,7 @@
-"""A namespace whose path is not written as a literal.
+"""A namespace whose path is written as a module constant.
 
-Nothing here reads what REPORTS_PATH holds, so the routes on this
-namespace name no path rather than one composed from a guess.
+The constant is followed to the string it was assigned, so the routes
+here come out with the path flask-restx serves them under.
 """
 
 from flask_restx import Namespace
