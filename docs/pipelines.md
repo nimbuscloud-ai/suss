@@ -16,6 +16,8 @@ Each matched unit then goes through the five extraction steps in [`extraction-al
 
 Python and Ruby take the same route through `@suss/adapter-python` and `@suss/adapter-ruby`, which parse with tree-sitter instead of ts-morph and emit the same `RawCodeStructure`. `--lang` says which one to use, and when you leave the flag off suss works it out from what the directory contains.
 
+<!-- suss:unchecked it runs against gothinkster/node-express-realworld-example-app, which this repository does not check in -->
+
 Here it is over an Express and Prisma API, [gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app), with `--explain` to print the counts behind the total:
 
 ```bash
@@ -139,6 +141,8 @@ A line starting `!!` is a **gap**: something suss could not settle, written down
 
 `suss inspect --diff before.json after.json` and `suss inspect --dir summaries/` are variants over the same load-and-parse plumbing. The first uses `diffSummaries` to compute added, removed and changed transitions per summary pair. The second uses `pairSummaries` to show which summaries face which, and which ones matched nothing.
 
+<!-- suss:unchecked the two summary files it compares are a sketch, so there is nothing on disk to run it over -->
+
 `--diff` is the mode a pull request wants. Add one branch to an Express route so admins get an extra field, read the route again into `after/api.json`, then compare it against the file from before the change:
 
 ```bash
@@ -175,6 +179,8 @@ The CLI loads the files through `safeParseSummaries`, the same validation path `
 Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows nothing about the other six. The findings are then rendered, human-readable or JSON, and the exit code comes from `--fail-on`: `error`, `warning`, `info` or `none`.
 
 `suss check --dir summaries/` is the same flow with a step in front. `pairSummaries` groups every summary by its boundary key and by its role from `BOUNDARY_ROLE[kind]`, and produces matched pairs plus buckets of unmatched providers, unmatched consumers, and summaries that took no part. `checkPair` runs on each matched pair.
+
+<!-- suss:unchecked it runs against gothinkster/node-express-realworld-example-app, which this repository does not check in -->
 
 Over the same Express and Prisma API, with the schema read into the same folder by `suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json`:
 
@@ -258,6 +264,8 @@ Turns an OpenAPI 3.x document into `BehavioralSummary[]` marked `confidence.sour
 
 `@suss/contract-openapi` walks every `(path, operation)` in the document. For each operation it emits one handler summary with one transition per declared response, the status code plus the body schema converted to a `TypeShape`, `metadata.http.declaredContract` populated so `checkContractConsistency` can cross-check a provider you extract later, and `confidence.source: "derived"` so a downstream reader knows where it came from.
 
+<!-- suss:unchecked the command that writes the file it reads is in the prose above rather than in a block, so there is nothing to run first -->
+
 Over the Petstore document in `examples/petstore-axios-openapi`, `suss contract --from openapi petstore-openapi.json -o out/provider.json` writes 19 summaries, one per operation. Reading them back:
 
 ```bash
@@ -300,12 +308,16 @@ The **resource-semantics** layer turns each normalized config into `BehavioralSu
 
 Over the SAM template in `fixtures/aws-lambda`:
 
+<!-- suss:example fixtures=aws-lambda -->
+
 ```bash
 suss contract --from cloudformation fixtures/aws-lambda/template.yaml -o cfn.json
 suss inspect cfn.json
 ```
 
 That template gives 32 summaries, and `inspect` prints all of them, about a hundred lines. Six are routes, and each looks like this:
+
+<!-- suss:excerpt -->
 
 ```
 cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
@@ -321,6 +333,8 @@ Neither status is in the Lambda. API Gateway produces the 504 on an integration 
 
 The other 26 are the template's own resources, printed as one tree under the template's name. Here is where that tree starts:
 
+<!-- suss:excerpt -->
+
 ```
 cloudformation:fixtures/aws-lambda/template.yaml
 ├─ ConfirmTokenFunction  (cloudformation library | line 1)
@@ -331,6 +345,8 @@ cloudformation:fixtures/aws-lambda/template.yaml
 ```
 
 and where it ends:
+
+<!-- suss:excerpt -->
 
 ```
 ├─ ScheduledSyncFunction.Nightly → eventbridge schedule:ScheduledSyncFunction.Nightly  (cloudformation consumer | line 1)
