@@ -5,6 +5,7 @@
 import { Node } from "ts-morph";
 
 import {
+  accessContextFor,
   invocationContextFor,
   ResolutionStore,
 } from "@suss/adapter-typescript";
@@ -104,27 +105,50 @@ function writeFiles(
 }
 
 function effectsOver(sourceFile: SourceFile, pack: PatternPack): Effect[] {
-  const recognizers = pack.invocationRecognizers ?? [];
-  if (recognizers.length === 0) {
+  const invocations = pack.invocationRecognizers ?? [];
+  const accesses = pack.accessRecognizers ?? [];
+  if (invocations.length === 0 && accesses.length === 0) {
     throw new Error(
-      `the pack "${pack.name}" declares no invocationRecognizers, so there is nothing to run`,
+      `the pack "${pack.name}" declares no recognizers, so there is nothing to run`,
     );
   }
   const store = new ResolutionStore();
+  const resolve = (value: Node): Node | null =>
+    store.resolveWrittenValue(value);
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
+    if (Node.isCallExpression(node)) {
+      collect(effects, invocations, node, invocationContextFor(node, resolve));
     }
-    const ctx = invocationContextFor(node, (value: Node) =>
-      store.resolveWrittenValue(value),
-    );
-    for (const recognizer of recognizers) {
-      const emitted = recognizer(node, ctx);
-      if (emitted !== null) {
-        effects.push(...emitted);
-      }
+    // The access walk reaches a tagged template as well, which is how a
+    // statement written as one is read at all.
+    if (
+      Node.isPropertyAccessExpression(node) ||
+      Node.isCallExpression(node) ||
+      Node.isTaggedTemplateExpression(node)
+    ) {
+      collect(
+        effects,
+        accesses,
+        node,
+        accessContextFor(node, sourceFile, resolve),
+      );
     }
   });
   return effects;
+}
+
+/** What one set of recognizers makes of one node. */
+function collect(
+  effects: Effect[],
+  recognizers: ReadonlyArray<(node: Node, ctx: unknown) => Effect[] | null>,
+  node: Node,
+  ctx: unknown,
+): void {
+  for (const recognizer of recognizers) {
+    const emitted = recognizer(node, ctx);
+    if (emitted !== null) {
+      effects.push(...emitted);
+    }
+  }
 }

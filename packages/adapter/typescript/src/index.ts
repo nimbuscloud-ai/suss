@@ -42,6 +42,8 @@ export { parseConditionExpression } from "./predicates.js";
 // harness can build the same context the adapter threads through.
 export { callOpsFor } from "./resolve/callOps.js";
 export {
+  type Accessed,
+  accessContextFor,
   invocationContextFor,
   isImportedFrom,
   methodDeclaredIn,
