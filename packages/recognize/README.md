@@ -108,12 +108,15 @@ result on the recognizer context under `ops`.
 | `calleeText()` | the callee, as the source writes it |
 | `receiver()` | the call the receiver is, as ops of its own |
 | `argument(index)` | the call that argument is, as ops of its own |
+| `callee()` | the call the callee itself was written as |
 | `propertyAt(index, property, unsettled)` | what a named property of that argument says |
 | `valueAt(index)` | the value that argument states, as `ValueOps` |
 
-`receiver()` and `argument(index)` let a chain read a call next to the
-one in hand: both give back another `CallOps`, so every question above
-works one step along.
+`receiver()`, `argument(index)` and `callee()` read a call next to the
+one in hand: each gives back another `CallOps`, so every question above
+works one step along. `callee()` is the one for a class a factory made, where the
+source writes `new User({ name })` and what `User` is comes from the
+`model("User", schema)` call it was declared as.
 
 The last two reach a value rather than a call. `propertyAt` pulls one
 name out of a property bag, which is what a pack that wants a bucket or
@@ -123,6 +126,7 @@ rule has to walk it:
 | op | what it gives back |
 |---|---|
 | `text()` | the string the source wrote, or null for anything else |
+| `flag()` | the yes or no the source wrote, taking a number the way it takes a boolean |
 | `entries(unsettled)` | what an object states, as key and value per entry |
 | `items()` | what a list states, item by item |
 | `property(name)` | what one named property states, as a value of its own |
@@ -174,6 +178,10 @@ the operation is that call's own name, the origin check is about that
 call, and a pick with no `of` reads that call's arguments. The effect
 still records the call in hand as its callee, since that is where a
 reader would go and look.
+
+A step follows what the source wrote a name as, so `const side = await
+deck.side("a")` reaches `deck.side("a")` rather than stopping at the
+await.
 
 A step that says which method is searched for rather than counted to,
 because `bucket(b).file(p).download()` and `bucket(b).getFiles()` put
@@ -235,6 +243,45 @@ fields: ({ input, entry, kind }) =>
 
 A method table with a rule inside it is still a table, so the link
 stays counted as data and pack health prices the rule beside it.
+
+## A rule that says which value it reads
+
+`input` suits a library that puts everything one call is doing in one
+object. Mongoose spreads it over two arguments instead:
+
+```ts
+User.find({ email }, { name: 1, email: 1 });
+//        ^ selector   ^ fields
+```
+
+Both are rules, since a pick gives back names and neither of these
+states one. So a rule can say where it reads, the way a pick already
+says which call it reads with `of`:
+
+```ts
+find: {
+  kind: "read",
+  selector: { of: { at: 0 }, by: filterKeys },
+  fields: { of: { at: 1 }, by: projected },
+}
+```
+
+`of` is the same `OneArgument` a pick takes, steps and all, so a rule
+can read a value on another call of the chain rather than another
+argument of this one.
+
+A rule pointed at an argument the call left out still runs, and what it
+is handed states nothing. Only the pack knows what leaving it out
+means: a Mongoose read with no projection reads every field there is,
+where a call with no request object is not one of these calls at all.
+That guard stays with `input`, which is where it belongs.
+
+A method whose own name settles the answer states it as a plain list:
+
+```ts
+findById: { kind: "read", selector: ["_id"], fields: projection(1) },
+deleteOne: { kind: "write", selector: filter(0), fields: ["*"] },
+```
 
 ## An operation the call says rather than the name it goes to
 

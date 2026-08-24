@@ -86,6 +86,13 @@ export type UnsettledName = "nothing" | "reference";
 export interface ValueOps {
   /** The text of the string the source wrote, or null for anything else. */
   text(): string | null;
+  /**
+   * The yes or no the source wrote here, or null for anything else. A
+   * library that asks which fields a call wants states them as a map of
+   * flags, `{ name: 1, password: 0 }`, and a number and a boolean mean
+   * the same thing in one of those.
+   */
+  flag(): boolean | null;
   /** What this object states, entry by entry. Empty for anything else. */
   entries(unsettled: UnsettledName): readonly ValueEntry[];
   /** What this list states, item by item. Empty for anything else. */
@@ -150,6 +157,13 @@ export interface CallOps {
    * class, the same as any other call.
    */
   argument(index: number): CallOps | null;
+  /**
+   * The call the callee itself was written as, or null when nothing
+   * wrote it as one. A class a factory made is the case: `new
+   * User({...})` says nothing about what `User` is, and the
+   * `model("User", schema)` call it was declared as says everything.
+   */
+  callee(): CallOps | null;
   /**
    * What a named property of the object an argument states says. A
    * property bag is not a call, so nothing else here reaches into one.

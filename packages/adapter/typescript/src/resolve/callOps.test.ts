@@ -1,4 +1,4 @@
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -300,6 +300,57 @@ describe("the calls one call reaches", () => {
 
     expect(ops.argument(0)).toBeNull();
     expect(ops.argument(4)).toBeNull();
+  });
+
+  it("gives the call the callee was written as", () => {
+    const ops = opsForLastCall(`
+      import { makeDeck } from "tapedeck";
+      const Nightly = makeDeck();
+      export function play() {
+        return Nightly.play("1");
+      }
+    `);
+
+    expect(ops.callee()).toBeNull();
+    expect(ops.receiver()?.calleeText()).toBe("makeDeck");
+  });
+
+  it("reaches the factory behind the class a construction reaches for", () => {
+    const project = withLibrary();
+    project.createSourceFile(
+      "/decks.ts",
+      `
+      import { makeDeck } from "tapedeck";
+      export const Nightly = makeDeck();
+    `,
+    );
+    const file = project.createSourceFile(
+      "/repo.ts",
+      `
+      import { Nightly } from "./decks.js";
+      export function build() {
+        return new Nightly();
+      }
+    `,
+    );
+    const store = new ResolutionStore();
+    const made = file.getFirstDescendantByKindOrThrow(SyntaxKind.NewExpression);
+
+    const ops = callOpsFor(made, (value) => store.resolveWrittenValue(value));
+    expect(ops.callee()?.calleeText()).toBe("makeDeck");
+  });
+
+  it("reads a receiver through the await the source wrote round it", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export async function play() {
+        const side = await deck.side("a");
+        return side.play("1");
+      }
+    `);
+
+    expect(ops.receiver()?.method()).toBe("side");
   });
 });
 
