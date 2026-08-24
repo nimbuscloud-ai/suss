@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 1912,
-      "covered": 1833,
+      "total": 1915,
+      "covered": 1835,
       "skipped": 0,
-      "pct": 95.86
+      "pct": 95.82
     },
     "statements": {
-      "total": 1943,
-      "covered": 1863,
+      "total": 1946,
+      "covered": 1865,
       "skipped": 0,
-      "pct": 95.88
+      "pct": 95.83
     },
     "functions": {
       "total": 383,
@@ -19,10 +19,10 @@
       "pct": 99.21
     },
     "branches": {
-      "total": 1483,
-      "covered": 1285,
+      "total": 1491,
+      "covered": 1291,
       "skipped": 0,
-      "pct": 86.64
+      "pct": 86.58
     },
     "branchesTrue": {
       "total": 0,
@@ -85,10 +85,10 @@
   },
   "src/decorators.ts": {
     "lines": {
-      "total": 123,
-      "covered": 115,
+      "total": 125,
+      "covered": 116,
       "skipped": 0,
-      "pct": 93.49
+      "pct": 92.8
     },
     "functions": {
       "total": 15,
@@ -97,16 +97,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 123,
-      "covered": 115,
+      "total": 125,
+      "covered": 116,
       "skipped": 0,
-      "pct": 93.49
+      "pct": 92.8
     },
     "branches": {
-      "total": 111,
-      "covered": 94,
+      "total": 115,
+      "covered": 97,
       "skipped": 0,
-      "pct": 84.68
+      "pct": 84.34
     }
   },
   "src/discovery.ts": {
@@ -319,10 +319,10 @@
   },
   "src/routers.ts": {
     "lines": {
-      "total": 427,
-      "covered": 417,
+      "total": 428,
+      "covered": 418,
       "skipped": 0,
-      "pct": 97.65
+      "pct": 97.66
     },
     "functions": {
       "total": 77,
@@ -331,16 +331,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 432,
-      "covered": 422,
+      "total": 433,
+      "covered": 423,
       "skipped": 0,
-      "pct": 97.68
+      "pct": 97.69
     },
     "branches": {
-      "total": 308,
-      "covered": 288,
+      "total": 312,
+      "covered": 291,
       "skipped": 0,
-      "pct": 93.5
+      "pct": 93.26
     }
   },
   "src/scope.ts": {

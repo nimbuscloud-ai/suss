@@ -1423,3 +1423,51 @@ describe("Swagger 2.0 shapes", () => {
     expect(body?.type).toBe("record");
   });
 });
+
+describe("the prefix a document states", () => {
+  const withServer = (url: string): OpenApiSpec => ({
+    openapi: "3.0.0",
+    servers: [{ url }],
+    paths: {
+      "/orders": {
+        get: {
+          operationId: "list",
+          responses: { "200": { description: "ok" } },
+        },
+      },
+    },
+  });
+
+  it("takes the path out of an absolute server URL", () => {
+    expect(
+      restPathOf(
+        openApiToSummaries(withServer("https://api.example.com/v2"))[0],
+      ),
+    ).toBe("/v2/orders");
+  });
+
+  it("takes a relative server URL as the path it already is", () => {
+    expect(restPathOf(openApiToSummaries(withServer("/gateway"))[0])).toBe(
+      "/gateway/orders",
+    );
+  });
+
+  it("adds nothing for a server URL that is only a slash", () => {
+    expect(restPathOf(openApiToSummaries(withServer("/"))[0])).toBe("/orders");
+  });
+
+  it("serves the path as written when the document states no prefix", () => {
+    const spec: OpenApiSpec = {
+      openapi: "3.0.0",
+      paths: {
+        "/orders": {
+          get: {
+            operationId: "list",
+            responses: { "200": { description: "ok" } },
+          },
+        },
+      },
+    };
+    expect(restPathOf(openApiToSummaries(spec)[0])).toBe("/orders");
+  });
+});
