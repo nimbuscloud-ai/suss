@@ -20,6 +20,8 @@
 
 import { Node } from "ts-morph";
 
+import { patternHole } from "@suss/behavioral-ir";
+
 import type { TemplateExpression } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -199,7 +201,7 @@ function placeholderName(expr: Node): string {
 function holeText(expr: Node, resolution: ResolutionStore | undefined): string {
   const written = resolution?.resolveWrittenValue(expr) ?? null;
   if (written === null) {
-    return `{${placeholderName(expr)}}`;
+    return patternHole(placeholderName(expr));
   }
   // A hole written as the empty string contributes nothing to the path,
   // so `` `${BASE}/users` `` under `BASE = ""` is `/users`. The reader
@@ -208,7 +210,9 @@ function holeText(expr: Node, resolution: ResolutionStore | undefined): string {
   if (emptyStringLiteral(written)) {
     return "";
   }
-  return pathFromUrlNode(written, resolution) ?? `{${placeholderName(expr)}}`;
+  return (
+    pathFromUrlNode(written, resolution) ?? patternHole(placeholderName(expr))
+  );
 }
 
 function emptyStringLiteral(node: Node): boolean {
