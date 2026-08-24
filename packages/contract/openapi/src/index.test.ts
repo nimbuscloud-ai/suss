@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readHttpMetadata } from "@suss/behavioral-ir";
+import { readHttpMetadata, safeParseSummaries } from "@suss/behavioral-ir";
 
 import { openApiFileToSummaries, openApiToSummaries } from "./index.js";
 
@@ -1285,5 +1285,85 @@ describe("openApiToSummaries — pairing", () => {
     const summaries = openApiToSummaries(minimalSpec);
     expect(restPathOf(summaries[0])).toBe("/users/{id}");
     expect(restMethodOf(summaries[0])).toBe("GET");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Swagger 2.0
+// ---------------------------------------------------------------------------
+
+const swagger2: OpenApiSpec = {
+  swagger: "2.0",
+  basePath: "/api/v1.0",
+  paths: {
+    "/widgets": {
+      post: {
+        operationId: "createWidget",
+        parameters: [
+          { name: "trace", in: "header" },
+          { name: "body", in: "body" },
+          { name: "upload", in: "formData" },
+        ],
+        responses: { "201": { description: "made" } },
+      },
+    },
+  },
+};
+
+describe("Swagger 2.0", () => {
+  it("gives a body parameter the role a 3.x requestBody gets", () => {
+    const [summary] = openApiToSummaries(swagger2);
+    expect(
+      summary.inputs.map((input) =>
+        input.type === "parameter" ? `${input.name}:${input.role}` : input.type,
+      ),
+    ).toEqual(["trace:headers", "body:requestBody", "upload:requestBody"]);
+  });
+
+  it("serves every path under the basePath the document states", () => {
+    expect(restPathOf(openApiToSummaries(swagger2)[0])).toBe(
+      "/api/v1.0/widgets",
+    );
+  });
+});
+
+describe("what the reader writes, the checker can read", () => {
+  // A body parameter used to come back with no role at all, and the
+  // checker's schema requires one, so suss wrote a file suss rejected.
+  // Every document this package can read gets parsed back here.
+  const documents: Array<[string, OpenApiSpec]> = [
+    ["a Swagger 2.0 document", swagger2],
+    [
+      "an OpenAPI 3 document",
+      {
+        openapi: "3.0.0",
+        servers: [{ url: "https://api.example.com/v2" }],
+        paths: {
+          "/orders/{id}": {
+            get: {
+              operationId: "getOrder",
+              parameters: [{ name: "id", in: "path" }],
+              responses: { "200": { description: "ok" } },
+            },
+          },
+        },
+      },
+    ],
+  ];
+
+  for (const [what, spec] of documents) {
+    it(`parses ${what} back through the checker's own schema`, () => {
+      const written = JSON.parse(
+        JSON.stringify(openApiToSummaries(spec)),
+      ) as unknown;
+      const result = safeParseSummaries(written);
+      expect(result.error?.issues ?? []).toEqual([]);
+      expect(result.success).toBe(true);
+    });
+  }
+
+  it("reads a server URL's path as the prefix a 3.x document states", () => {
+    const [, three] = documents;
+    expect(restPathOf(openApiToSummaries(three[1])[0])).toBe("/v2/orders/{id}");
   });
 });

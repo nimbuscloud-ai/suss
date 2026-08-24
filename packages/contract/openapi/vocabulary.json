@@ -12,6 +12,7 @@
   "query": "OpenAPI: parameter location",
   "header": "OpenAPI: parameter location",
   "cookie": "OpenAPI: parameter location",
+  "formData": "Swagger 2.0: parameter location for a form field",
   "body": "suss: input role",
   "headers": "suss: input role",
   "cookies": "suss: input role",

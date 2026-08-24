@@ -51,11 +51,43 @@ export function specToSummaries(
       if (op === undefined) {
         continue;
       }
-      summaries.push(buildSummary(spec, path, verb, op, item, sourceFile));
+      summaries.push(
+        buildSummary(spec, servedPath(spec, path), verb, op, item, sourceFile),
+      );
     }
   }
 
   return summaries;
+}
+
+/**
+ * The path a request goes to, which is the prefix the document states in
+ * front of the one written under `paths`. Swagger 2.0 writes the prefix
+ * as `basePath` and OpenAPI 3 writes it in the first server's URL. A
+ * document stating neither serves the path as written.
+ *
+ * A server URL can be absolute, and only its path belongs here. The host
+ * says which deployment serves the route, not what route it serves.
+ */
+function servedPath(spec: OpenApiSpec, path: string): string {
+  const prefix = statedPrefix(spec).replace(/\/+$/, "");
+  return prefix === "" ? path : `${prefix}${path}`;
+}
+
+function statedPrefix(spec: OpenApiSpec): string {
+  if (spec.basePath !== undefined) {
+    return spec.basePath;
+  }
+  const url = spec.servers?.[0]?.url;
+  if (url === undefined) {
+    return "";
+  }
+  try {
+    return new URL(url).pathname;
+  } catch {
+    // A server URL may be written relative, and then it is already a path.
+    return url;
+  }
 }
 
 function buildSummary(
@@ -237,6 +269,12 @@ function buildInputs(
   return inputs;
 }
 
+/**
+ * Swagger 2.0 puts a request body and a form field in the parameter list,
+ * as `body` and `formData`. OpenAPI 3 moved both into `requestBody`, so
+ * they take the role a `requestBody` takes and the two spellings of one
+ * document pair with the same handler input.
+ */
 function locationToRole(loc: OpenApiParameter["in"]): string {
   switch (loc) {
     case "path":
@@ -247,6 +285,10 @@ function locationToRole(loc: OpenApiParameter["in"]): string {
       return "headers";
     case "cookie":
       return "cookies";
+    case "body":
+      return "requestBody";
+    case "formData":
+      return "requestBody";
   }
 }
 
