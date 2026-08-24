@@ -3456,7 +3456,7 @@ describe("a handler named at the registration rather than written there", () => 
       ...makeExpressPattern(),
       bindingExtraction: {
         method: { type: "fromRegistration", position: "methodName" },
-        path: { type: "fromRegistration", position: 0 },
+        path: { type: "fromArgument", position: 0 },
       },
     };
     const units = discoverUnits(file, [routed], new ResolutionStore());

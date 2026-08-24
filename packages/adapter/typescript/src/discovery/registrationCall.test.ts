@@ -27,7 +27,7 @@ function sourceFile(code: string) {
 // HTTP-style: method from the registration verb, path from arg 0.
 const httpBinding: BindingExtraction = {
   method: { type: "fromRegistration", position: "methodName" },
-  path: { type: "fromRegistration", position: 0 },
+  path: { type: "fromArgument", position: 0 },
 };
 
 const expressMatch: RegistrationMatch = {
@@ -53,6 +53,67 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     expect(units).toHaveLength(1);
     expect(units[0].kind).toBe("handler");
     expect(units[0].routeInfo).toEqual({ method: "GET", path: "/users/:id" });
+  });
+
+  it("follows a path passed by name to the string it was written as", () => {
+    // A provider whose path is a constant used to come back with no route at
+    // all, so a client calling it paired with nothing. The consumer side
+    // has followed a name since #123; both read it the same way now.
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const USERS = "/users";
+      const r = Router();
+      r.get(USERS, (req, res) => { res.json({}); });
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+      new ResolutionStore(),
+    );
+    expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/users" });
+  });
+
+  it("puts a resolved prefix into a path built from a template", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const BASE = "/api";
+      const r = Router();
+      r.get(\`\${BASE}/items/:id\`, (req, res) => { res.json({}); });
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+      new ResolutionStore(),
+    );
+    expect(units[0]?.routeInfo).toEqual({
+      method: "GET",
+      path: "/api/items/:id",
+    });
+  });
+
+  it("writes a placeholder for a template hole nobody can follow", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      export function mount(prefix: string) {
+        r.get(\`\${prefix}/items\`, (req, res) => { res.json({}); });
+      }
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+      new ResolutionStore(),
+    );
+    expect(units[0]?.routeInfo).toEqual({
+      method: "GET",
+      path: "{prefix}/items",
+    });
   });
 
   it("lifts the path from a no-substitution template literal", () => {
@@ -177,7 +238,7 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     };
     const binding: BindingExtraction = {
       method: { type: "fromRegistration", position: 0 },
-      path: { type: "fromRegistration", position: 1 },
+      path: { type: "fromArgument", position: 1 },
     };
     const units = discoverRegistrationCalls(sf, match, "handler", binding);
     expect(units[0].routeInfo).toEqual({
@@ -201,7 +262,7 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     };
     const binding: BindingExtraction = {
       method: { type: "fromRegistration", position: 0 },
-      path: { type: "fromRegistration", position: 1 },
+      path: { type: "fromArgument", position: 1 },
     };
     const units = discoverRegistrationCalls(sf, match, "handler", binding);
     expect(units[0].routeInfo).toBeUndefined();

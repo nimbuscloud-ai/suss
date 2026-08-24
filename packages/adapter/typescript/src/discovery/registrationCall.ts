@@ -13,6 +13,7 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import { nodeId } from "../facts/extract.js";
+import { pathFromArgument } from "../resolve/routePath.js";
 import {
   functionValueOf,
   objectLiteralOf,
@@ -588,7 +589,7 @@ function extractRouteInfoFromBinding(
 
   if (
     binding.method.type !== "fromRegistration" ||
-    binding.path.type !== "fromRegistration"
+    binding.path.type !== "fromArgument"
   ) {
     return null;
   }
@@ -608,16 +609,10 @@ function extractRouteInfoFromBinding(
     method = arg.getLiteralValue().toUpperCase();
   }
 
-  const args = call.getArguments();
-  const pathArg = args[binding.path.position] as Node | undefined;
-  if (
-    pathArg === undefined ||
-    !(
-      Node.isStringLiteral(pathArg) ||
-      Node.isNoSubstitutionTemplateLiteral(pathArg)
-    )
-  ) {
-    return null;
-  }
-  return { method, path: pathArg.getLiteralValue() };
+  const pathArg = call.getArguments()[binding.path.position] as
+    | Node
+    | undefined;
+  const path =
+    pathArg === undefined ? undefined : pathFromArgument(pathArg, resolution);
+  return path === undefined ? null : { method, path };
 }
