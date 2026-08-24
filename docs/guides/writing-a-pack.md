@@ -396,7 +396,7 @@ discovery: [
     },
     bindingExtraction: {
       method: { type: "fromRegistration", position: "methodName" },
-      path: { type: "fromRegistration", position: 0 },
+      path: { type: "fromArgument", position: 0 },
     },
   },
   // ...same shape with importName: "fastify" for the named-import form

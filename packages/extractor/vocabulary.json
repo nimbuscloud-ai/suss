@@ -21,7 +21,7 @@
   "destructuredObject": "suss: InputMappingPattern variant tag",
   "componentProps": "suss: InputMappingPattern variant tag",
   "decoratedParams": "suss: InputMappingPattern variant tag",
-  "fromArgumentLiteral": "suss: BindingExtraction source tag",
+  "fromArgument": "suss: BindingExtraction source tag",
   "fromArgumentProperty": "suss: BindingExtraction source tag",
   "fromFilename": "suss: BindingExtraction source tag",
   "fromClientMethod": "suss: BindingExtraction source tag",

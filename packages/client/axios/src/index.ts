@@ -60,7 +60,7 @@ function discoveryForVerb(
       },
       bindingExtraction: {
         method: { type: "literal", value: verb.toUpperCase() },
-        path: { type: "fromArgumentLiteral", position: 0 },
+        path: { type: "fromArgument", position: 0 },
       },
       requiresImport: ["axios"],
     },
@@ -81,7 +81,7 @@ function discoveryForVerb(
       },
       bindingExtraction: {
         method: { type: "literal", value: verb.toUpperCase() },
-        path: { type: "fromArgumentLiteral", position: 0 },
+        path: { type: "fromArgument", position: 0 },
       },
       // A bare specifier gates the way "axios" above does: cheap and
       // exact, since two files spelling a package name the same way

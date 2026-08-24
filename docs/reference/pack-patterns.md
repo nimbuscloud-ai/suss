@@ -202,17 +202,17 @@ How to derive the HTTP method and path from a discovered code unit:
     | { type: "fromContract" }         // ts-rest: method comes from contract
     | { type: "literal"; value: string };
   path:
-    | { type: "fromRegistration"; position: number }
+    | { type: "fromArgument"; position: number }
     | { type: "fromFilename" }         // file-based routing
     | { type: "fromContract" };
 }
 ```
 
-- **`fromRegistration`**: extract from the registration call. `position: "methodName"` means the method *is* the HTTP method (`app.get` → `"GET"`). `position: 0` means it's the first argument.
+- **`fromRegistration`**: the method comes from the registration call. `position: "methodName"` means the method the pack registers on is the HTTP method, so `app.get` gives `"GET"`. A number reads it out of that argument instead.
 - **`fromExportName`**: the export name *is* the HTTP method. Next.js App Router convention.
 - **`fromContract`**: both method and path live in a separate contract definition.
 - **`fromClientMethod`**: the method or path is derived from the client call site's method name via the contract. Used by ts-rest client discovery: `client.getUser(...)` resolves `getUser` back through the contract to find `method: "GET"`, `path: "/users/:id"`.
-- **`fromArgumentLiteral`**: the path is a string literal at a given argument position. Used by `@suss/client-web`: `fetch("/users")` extracts `"/users"` from argument 0.
+- **`fromArgument`**: the path is the argument at this position, on either side of the boundary. `app.get("/users", h)` and `fetch("/users")` both give `/users`. A name bound to a string is followed one hop to what it was written as, so `app.get(USERS, h)` gives `/users` too, and a template is read hole by hole, so `` `${BASE}/items/:id` `` with `BASE = "/api"` gives `/api/items/:id`. A hole nobody can follow becomes `{name}`, which the path normalizer treats the same way as `:name`.
 - **`fromArgumentProperty`**: the method is a property on an options argument. Used by `@suss/client-web`: `fetch(url, { method: "POST" })` extracts `"POST"` from argument 1, property `method`. Supports a `default` value (e.g., `"GET"` when no options are passed).
 - **`fromFilename`**: file-based routing (React Router, Next.js, SvelteKit). The adapter derives the path from the file path.
 - **`literal`**: hard-code the value. React Router loaders are always `GET`.
