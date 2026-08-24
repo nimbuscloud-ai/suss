@@ -6,7 +6,7 @@
     "internal": 2173,
     "consumers": 993,
     "pairs": 984,
-    "unfollowedCalls": 250,
+    "unfollowedCalls": 251,
     "findingErrors": 0
   },
   "packages": {
@@ -29,7 +29,7 @@
       "exports": 54,
       "internal": 724,
       "consumers": 76,
-      "unfollowedCalls": 68
+      "unfollowedCalls": 69
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
