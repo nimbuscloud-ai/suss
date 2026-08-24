@@ -583,33 +583,11 @@ describe("registrationCall — Express Router style", () => {
 });
 
 // ---------------------------------------------------------------------------
-// decorator and fileConvention: stubs
+// fileConvention: a path the glob does not match
 // ---------------------------------------------------------------------------
 
-describe("decorator and fileConvention — stubs return []", () => {
-  it("decorator pattern returns empty array", () => {
-    const project = createProject();
-    const file = project.createSourceFile(
-      "test.ts",
-      `
-      function handler() {}
-    `,
-    );
-
-    const pattern: DiscoveryPattern = {
-      kind: "handler",
-      match: {
-        type: "decorator",
-        decoratorModule: "nest",
-        decoratorName: "Get",
-      },
-    };
-
-    const units = discoverUnits(file, [pattern]);
-    expect(units).toHaveLength(0);
-  });
-
-  it("fileConvention pattern returns empty array", () => {
+describe("fileConvention, on a path the glob does not match", () => {
+  it("finds nothing in a file the pattern does not select", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",

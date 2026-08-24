@@ -73,13 +73,71 @@ Find code units registered via a call chain starting from an import. Used by ts-
 
 The `registrationChain` is a list of method/property accesses to follow from the import. The adapter walks each import reference, follows the chain, and extracts handler functions from the chain's endpoint.
 
-### `decorator`
+### `decoratedRoute`
 ```typescript
-{ type: "decorator"; decoratorModule: string; decoratorName: string }
+{
+  type: "decoratedRoute";
+  importModule: string | string[];
+  classDecorators: string[];
+  methodDecoratorRouteMap: Record<string, string>;
+}
 ```
-Find functions or methods with specific decorators. Used by NestJS (`@Controller`, `@Get`, `@Resolver`, `@Query`) and Apollo (`@FieldResolver`).
+Find route handlers written as decorated methods on a decorated class. NestJS
+declares REST controllers this way. `classDecorators` says which decorator
+marks a class as a controller, and `methodDecoratorRouteMap` maps each method
+decorator to the HTTP method it serves:
 
-Python decorators are matched by their own patterns, `decoratedFunctionRoute` and `decoratedClassRoute`, which the Python adapter defines rather than sharing these. See [Read a Python or Ruby project](/guides/python-and-ruby).
+```typescript
+{
+  type: "decoratedRoute",
+  importModule: "@nestjs/common",
+  classDecorators: ["Controller"],
+  methodDecoratorRouteMap: { Get: "GET", Post: "POST", Delete: "DELETE" },
+}
+```
+
+The path comes from the two decorators together. `@Controller("users")` above
+`@Get(":id")` gives `/users/:id`. A constant passed by name resolves to the
+string it was written with, so `@Controller(BASE_PATH)` keeps its prefix.
+
+The file must import at least one of the method decorators from
+`importModule`, or nothing in it is discovered.
+
+### `decoratedMethod`
+```typescript
+{
+  type: "decoratedMethod";
+  importModule: string | string[];
+  classDecorators: string[];
+  methodDecorators: string[];
+  methodDecoratorTypeMap: Record<string, string>;
+}
+```
+Find GraphQL resolvers written as decorated methods on a decorated class,
+which is how NestJS declares them. It selects units the same way
+`decoratedRoute` does, and reads a resolver rather than a route out of them.
+
+`methodDecoratorTypeMap` is for the decorators that settle their own type.
+`@Query` puts its field on the root `Query` type however the class is
+decorated, so it goes in the map. `@ResolveField` needs the class to say
+which type, so it is left out and `@Resolver(() => User)` supplies it.
+
+```typescript
+{
+  type: "decoratedMethod",
+  importModule: "@nestjs/graphql",
+  classDecorators: ["Resolver"],
+  methodDecorators: ["Query", "Mutation", "ResolveField"],
+  methodDecoratorTypeMap: { Query: "Query", Mutation: "Mutation" },
+}
+```
+
+The field name is the method's name, unless the decorator overrides it with
+`@Query(() => User, { name: "foo" })`.
+
+Python decorators are matched by their own patterns, `decoratedFunctionRoute`
+and `decoratedClassRoute`, which the Python adapter defines rather than
+sharing these. See [Read a Python or Ruby project](/guides/python-and-ruby).
 
 ### `fileConvention`
 ```typescript
