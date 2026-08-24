@@ -165,6 +165,9 @@ function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
     if (link.asks === "start" && link.at.starts === "receiver") {
       found.push(link.at.origin);
     }
+    if (link.asks === "interpolates" && link.from !== undefined) {
+      found.push(link.from);
+    }
     if (link.asks !== "subject") {
       continue;
     }

@@ -30,6 +30,7 @@ import type {
   ContainersLink,
   Ending,
   InputLink,
+  InterpolatesLink,
   KindAsAsked,
   Link,
   MatchStart,
@@ -408,6 +409,7 @@ const NOTHING_STATED: ValueOps = {
   items: () => [],
   property: () => null,
   parts: () => null,
+  holes: () => [],
 };
 
 /** What the call reached, by the argument it picks or by the pack's rule. */
@@ -489,12 +491,11 @@ function sqlAccess(matched: Matched): Effect[] | null {
   const ending = chain.ending as SqlEnding;
   const stated = statedValue(subject, (matched.meaning as SqlMethod).statement);
   const parts = stated?.parts() ?? null;
-  if (parts === null) {
+  if (stated === null || parts === null) {
     return null;
   }
-  const accesses = readSqlAccess(sqlFromParts(parts), {
-    dialect: ending.dialect,
-  });
+  const statement = sqlFromParts(parts, namesInHoles(chain, stated));
+  const accesses = readSqlAccess(statement, { dialect: ending.dialect });
   return accesses.length === 0
     ? null
     : accesses.map((access) => ({
@@ -517,4 +518,31 @@ function sqlAccess(matched: Matched): Effect[] | null {
           operation: method,
         },
       }));
+}
+
+/**
+ * What each hole in the statement comes to, in the order the source
+ * wrote them. A chain that says nothing about its holes leaves them all
+ * as parameters, which is what a value would have been anyway.
+ */
+function namesInHoles(
+  chain: Chain<MethodMeaning>,
+  stated: ValueOps,
+): (string | null)[] {
+  const link: InterpolatesLink | null = linkIn(chain, "interpolates");
+  if (link === null) {
+    return [];
+  }
+  return stated.holes().map((hole) => nameInHole(hole, link));
+}
+
+/** The name one hole gives, or null for a hole the pack does not read. */
+function nameInHole(
+  hole: CallOps | null,
+  link: InterpolatesLink,
+): string | null {
+  if (hole === null || (link.from !== undefined && !hole.isFrom(link.from))) {
+    return null;
+  }
+  return namesAt(hole, link.named, "nothing")[0] ?? null;
 }

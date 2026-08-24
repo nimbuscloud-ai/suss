@@ -29,6 +29,7 @@ export type {
   FromReceiver,
   InputLink,
   InputRule,
+  InterpolatesLink,
   KindAsAsked,
   Link,
   LinkFunction,

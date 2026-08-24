@@ -160,6 +160,23 @@ export interface InputLink {
   readonly at: OneArgument;
 }
 
+/**
+ * What the values a statement interpolates come to.
+ *
+ * A query that says which table it reached by handing over the schema
+ * object leaves the name out of the text, and a parameter in its place
+ * does not parse. Only the pack knows the object is a table rather than
+ * a value, so the pack says which argument of the call behind it gives
+ * the name, and where that call had to have come from.
+ */
+export interface InterpolatesLink {
+  readonly asks: "interpolates";
+  /** Which argument of the call the value was written as gives the name. */
+  readonly named: ArgumentPick;
+  /** Where the value had to have come from. Left out, every hole is read. */
+  readonly from?: ReceiverOrigin;
+}
+
 /** One question in a chain, and the answer the pack gave for it. */
 export type Link<TMeaning> =
   | StartLink
@@ -168,7 +185,8 @@ export type Link<TMeaning> =
   | ContainerLink
   | AccessPathLink
   | ContainersLink
-  | InputLink;
+  | InputLink
+  | InterpolatesLink;
 
 /**
  * Which argument or arguments say what a call reached, and where to go

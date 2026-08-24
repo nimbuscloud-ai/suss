@@ -191,6 +191,7 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
       return inside === null ? null : valueOpsFor(inside, resolve);
     },
     parts: () => literalParts(written()),
+    holes: () => templateHoles(written(), resolve),
   };
 }
 
@@ -201,19 +202,43 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
  * rather than losing the statement to one interpolated value.
  */
 function literalParts(value: Node): string[] | null {
-  const whole = literalText(value);
+  const written = untagged(value);
+  const whole = literalText(written);
   if (whole !== null) {
     return [whole];
   }
-  if (!Node.isTemplateExpression(value)) {
+  if (!Node.isTemplateExpression(written)) {
     return null;
   }
   return [
-    value.getHead().getLiteralText(),
-    ...value
+    written.getHead().getLiteralText(),
+    ...written
       .getTemplateSpans()
       .map((span) => span.getLiteral().getLiteralText()),
   ];
+}
+
+/** What the source interpolated between those pieces, hole by hole. */
+function templateHoles(
+  value: Node,
+  resolve: Resolve,
+): (AstCapableOps | null)[] {
+  const written = untagged(value);
+  if (!Node.isTemplateExpression(written)) {
+    return [];
+  }
+  return written
+    .getTemplateSpans()
+    .map((span) => opsOverCall(span.getExpression(), resolve));
+}
+
+/**
+ * The template a tag was handed. A statement written as a tagged
+ * template states its text through the tag, and the text is what a
+ * reader is after rather than the tag.
+ */
+function untagged(value: Node): Node {
+  return Node.isTaggedTemplateExpression(value) ? value.getTemplate() : value;
 }
 
 /** What an object states, entry by entry. */
