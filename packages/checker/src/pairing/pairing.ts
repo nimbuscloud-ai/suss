@@ -133,8 +133,16 @@ function servedBy(
   }
   const home = consumer.location.workspace;
   if (home !== undefined) {
+    // A provider that states no workspace is a declared artifact rather
+    // than a rival service, the way `servicesOf` below already treats
+    // one, so it is kept beside the local provider instead of losing to
+    // it. An OpenAPI document and the handler it describes are two
+    // sides of one service, and dropping the document here is what
+    // stopped the contract checks running at all.
     const athome = agreeing.filter(
-      (provider) => provider.location.workspace === home,
+      (provider) =>
+        provider.location.workspace === home ||
+        provider.location.workspace === undefined,
     );
     if (athome.length > 0) {
       return athome;

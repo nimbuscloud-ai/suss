@@ -364,6 +364,27 @@ describe("pairSummaries", () => {
     expect(result.ambiguous[0]?.services).toEqual(["billing", "identity"]);
   });
 
+  it("keeps a declared contract beside the handler it describes", () => {
+    // A contract summary states no workspace, so preferring the
+    // caller's own service used to discard it and the contract checks
+    // never ran. The two are one service described twice.
+    const handler = inService(
+      providerWithPath("getUser", "GET", "/users/{id}"),
+      "shop",
+    );
+    const declared = providerWithPath("getUser", "GET", "/users/{id}");
+    const client = inService(
+      consumerWithPath("UserPage", "GET", "/users/{id}"),
+      "shop",
+    );
+
+    const result = pairSummaries([handler, declared, client]);
+
+    expect(result.pairs).toHaveLength(2);
+    expect(result.ambiguous).toHaveLength(0);
+    expect(result.pairs.map((pair) => pair.provider)).toContain(declared);
+  });
+
   it("takes the provider in the caller's own service over a stranger's", () => {
     const mine = inService(
       providerWithPath("getUser", "GET", "/users/{id}"),
