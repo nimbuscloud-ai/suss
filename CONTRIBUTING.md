@@ -72,6 +72,32 @@ A pack may hardcode an identifier only when the library that pack is about defin
 
 A field on a metadata namespace needs a writer and a reader before it does anything. Both halves are usually written weeks apart, and the test on each side passes whether or not the other side exists, so `npm run check:metadata-wiring` compares the two lists instead. A field with a writer and no reader, or a reader and no writer, fails the build. If the consumer is genuinely still to come, add the field to `EXEMPT` in [`scripts/checkMetadataWiring.mjs`](scripts/checkMetadataWiring.mjs) with the reason and the issue that tracks it. [`docs/internal/style.md#both-sides-of-a-metadata-field`](docs/internal/style.md#both-sides-of-a-metadata-field) has the detail.
 
+## Documentation that shows a command and its output
+
+`npm run check:examples` runs the commands the pages show and compares what comes back to what the page says comes back. It exists because `docs/tutorial/get-started.md` promised a finding count the tool had stopped producing, twice in one week, and nothing noticed until somebody sat down and followed the tutorial.
+
+A command needs a project to run in, and not every page builds one, so a page opts in with HTML comments the rendered site drops:
+
+```
+<!-- suss:example -->                       run everything below this in an
+                                            empty temporary directory
+<!-- suss:example fixtures=aws-lambda -->   the same, with fixtures/aws-lambda
+                                            copied in at that path, for a page
+                                            whose commands name a fixture
+<!-- suss:file src/client.ts -->            write the next code fence there
+<!-- suss:excerpt -->                       the next output fence shows part of
+                                            the output, so look for those lines
+                                            inside it
+<!-- suss:unchecked <reason> -->             everything below this goes
+                                            unchecked, and here is why
+```
+
+Inside a run, a code fence introduced by a paragraph that starts with a backticked path and ends with a colon is written to that path, which is what both tutorials already do. `suss:file` is for a fence whose prose does not say where it goes.
+
+Only suss commands run. `npm install express` and `mkdir` are left where they are, because extraction reads import specifiers rather than resolved packages and these projects need no `node_modules`. Where a bash fence has several commands in it, the output below it is compared against the last one, and timings and absolute paths are normalised out first.
+
+Every output block the check did not run is listed at the end with the reason. Adding a page to that list costs nothing; leaving a wrong number on a page nobody checks costs a reader their first hour.
+
 ## Reporting bugs
 
 Open an issue using the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/). For a bug, a tsconfig plus a handful of TS files is usually enough to reproduce it.
