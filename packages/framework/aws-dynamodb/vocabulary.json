@@ -9,8 +9,7 @@
   "RequestItems": "DynamoDB command input: the tables a batch or transaction touches",
   "TableName": "DynamoDB command input: which table",
   "dynamodb": "AWS transport name, Amazon DynamoDB",
+  "nothing": "suss: what a reader says instead of a name when nothing settles it",
   "read": "suss: access kind",
-  "reference": "suss: what a reader says instead of a name when the name is somewhere else",
-  "send": "@aws-sdk/lib-dynamodb: the client method a command goes to",
   "write": "suss: access kind"
 }

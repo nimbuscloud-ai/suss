@@ -74,6 +74,38 @@ export function constructedFrom(
 export type UnsettledName = "nothing" | "reference";
 
 /**
+ * One value a call states, as the questions a pack can ask about it.
+ *
+ * `CallOps` reaches a call beside the one in hand, and this reaches the
+ * values that are not calls. A library that takes one request object
+ * puts everything the call is doing inside it, sometimes as a list and
+ * sometimes as a string in a little language of the library's own, and
+ * a pack that reads those is handed this rather than the adapter's own
+ * node. So the rule it writes runs wherever the ops do.
+ */
+export interface ValueOps {
+  /** The text of the string the source wrote, or null for anything else. */
+  text(): string | null;
+  /** What this object states, entry by entry. Empty for anything else. */
+  entries(unsettled: UnsettledName): readonly ValueEntry[];
+  /** What this list states, item by item. Empty for anything else. */
+  items(): readonly ValueOps[];
+  /** What one named property of this object states, or null for none. */
+  property(name: string): ValueOps | null;
+}
+
+/** One entry of an object a call states. */
+export interface ValueEntry {
+  /**
+   * What the entry is called. A key the source computes,
+   * `{ [table]: ... }`, is read the way any other name is.
+   */
+  readonly key: string | null;
+  /** What the entry says. */
+  readonly value: ValueOps;
+}
+
+/**
  * One call site, as the questions a chain asks about it.
  *
  * An adapter builds one of these per call and hands it to the
@@ -119,6 +151,13 @@ export interface CallOps {
     property: string,
     unsettled: UnsettledName,
   ): string | null;
+  /**
+   * The value the argument in this position states, or null when the
+   * call passes none. `propertyAt` reads one name out of a property
+   * bag, which covers a pack that wants one; this hands the bag over
+   * for a pack whose rule has to walk it.
+   */
+  valueAt(index: number): ValueOps | null;
 }
 
 /**

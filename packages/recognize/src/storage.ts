@@ -14,6 +14,7 @@ import type {
   Chain,
   Link,
   LinkFunction,
+  OneArgument,
   StorageEnding,
   StorageMethod,
 } from "./chain.js";
@@ -27,8 +28,12 @@ export interface StorageCallsSpec {
   transport?: string;
   /** Which of the store's namespaces the calls reach. Defaults to "default". */
   scope?: string;
-  /** How the pack pins down the client its calls are on. */
-  client: ReceiverOrigin;
+  /**
+   * How the pack pins down the client its calls are on. A pack that
+   * matches a helper a project lists in its own config leaves this out,
+   * because the name that project gave is the whole of what it has.
+   */
+  client?: ReceiverOrigin;
   /**
    * What a reader gives back for a name nothing settles. Defaults to
    * "reference", which says which value to go and ask about.
@@ -59,6 +64,19 @@ export interface StorageCalls {
       | ArgumentPick
       | LinkFunction<[readonly string[], CallOps], string | null>,
   ): StorageCalls;
+  /** Which way into the container the call took, when it states one. */
+  accessPath(says: ArgumentPick): StorageCalls;
+  /**
+   * Where a call that reaches several containers at once states them.
+   * Each entry becomes one effect, against the container its key says.
+   */
+  containersIn(says: OneArgument): StorageCalls;
+  /**
+   * Where a call states its inputs, when it states them as one object.
+   * A call that states none does not match, and a rule the pack wrote
+   * over the inputs is handed the object.
+   */
+  input(says: OneArgument): StorageCalls;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): StorageCalls;
   /** The links and the ending, as data. */
@@ -74,8 +92,12 @@ export function storageCalls(spec: StorageCallsSpec): StorageCalls {
     scope: spec.scope ?? "default",
     unsettledName: spec.unsettledName ?? "reference",
   };
+  const client = spec.client;
   return chainFrom({
-    links: [{ asks: "start", at: { starts: "receiver", origin: spec.client } }],
+    links:
+      client === undefined
+        ? []
+        : [{ asks: "start", at: { starts: "receiver", origin: client } }],
     ending,
     example: null,
   });
@@ -101,6 +123,9 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
           ? { asks: "container", from: says }
           : { asks: "container", argument: says },
       ),
+    accessPath: (says) => adding({ asks: "accessPath", argument: says }),
+    containersIn: (says) => adding({ asks: "containers", in: says }),
+    input: (says) => adding({ asks: "input", at: says }),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
 }

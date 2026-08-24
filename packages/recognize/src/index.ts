@@ -15,6 +15,7 @@ export type {
 } from "@suss/extractor";
 export type {
   AccessKind,
+  AccessPathLink,
   ArgumentPick,
   ArgumentsFrom,
   CallStep,
@@ -22,8 +23,11 @@ export type {
   ContainerArgument,
   ContainerLink,
   ContainerRule,
+  ContainersLink,
   Ending,
   FromReceiver,
+  InputLink,
+  InputRule,
   KindAsAsked,
   Link,
   LinkFunction,
@@ -31,6 +35,7 @@ export type {
   MethodsLink,
   OneArgument,
   StartLink,
+  StatedInputs,
   StorageEnding,
   StorageMethod,
   SubjectLink,
@@ -45,6 +50,8 @@ export type {
   OpsCarrier,
   ReceiverOrigin,
   UnsettledName,
+  ValueEntry,
+  ValueOps,
 } from "./ops.js";
 export type { PackSpec } from "./pack.js";
 export type { StorageCalls, StorageCallsSpec } from "./storage.js";

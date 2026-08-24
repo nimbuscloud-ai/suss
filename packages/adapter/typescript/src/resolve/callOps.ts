@@ -17,13 +17,19 @@ import { rootIdentifier } from "../configuredCall.js";
 import { isImportedFrom, methodDeclaredIn } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
-import type { ReceiverOrigin, UnsettledName } from "@suss/recognize";
+import type {
+  ReceiverOrigin,
+  UnsettledName,
+  ValueEntry,
+  ValueOps,
+} from "@suss/recognize";
 import type { AstCapableOps } from "@suss/recognize/ast";
 import type {
   CallExpression,
   NewExpression,
   ObjectLiteralExpression,
   PropertyAccessExpression,
+  PropertyAssignment,
   VariableDeclaration,
 } from "ts-morph";
 
@@ -116,8 +122,107 @@ export function callOpsFor(
     argument: (index) => opsOverCall(argumentsOf()[index], resolve),
     propertyAt: (index, property, unsettled) =>
       propertyAt(argumentsOf()[index], property, unsettled, resolve),
+    valueAt: (index) => {
+      const argument = argumentsOf()[index];
+      return argument === undefined ? null : valueOpsFor(argument, resolve);
+    },
     ast: () => call,
   };
+}
+
+/**
+ * What a declared pack can ask about one value the source states.
+ *
+ * Nothing is settled until a question is asked. A pack walking a
+ * request map reads the keys of a few objects and never looks at the
+ * values under them, and following a name it never reads costs a walk
+ * out over the file's imports.
+ */
+function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
+  let settledValue: Node | undefined;
+  const written = (): Node => {
+    settledValue ??= settled(value) ?? value;
+    return settledValue;
+  };
+
+  return {
+    text: () => literalText(written()),
+    entries: (unsettled) => entriesOf(written(), unsettled, resolve),
+    items: () => itemsOf(written(), resolve),
+    property: (name) => {
+      const object = written();
+      const inside = Node.isObjectLiteralExpression(object)
+        ? initializerOf(object, name)
+        : null;
+      return inside === null ? null : valueOpsFor(inside, resolve);
+    },
+  };
+}
+
+/** What an object states, entry by entry. */
+function entriesOf(
+  value: Node,
+  unsettled: UnsettledName,
+  resolve: Resolve,
+): ValueEntry[] {
+  if (!Node.isObjectLiteralExpression(value)) {
+    return [];
+  }
+  const found: ValueEntry[] = [];
+  for (const written of value.getProperties()) {
+    if (Node.isShorthandPropertyAssignment(written)) {
+      const name = written.getNameNode();
+      found.push({ key: name.getText(), value: valueOpsFor(name, resolve) });
+      continue;
+    }
+    if (!Node.isPropertyAssignment(written)) {
+      continue;
+    }
+    const stated = written.getInitializer();
+    found.push({
+      key: entryKey(written, unsettled, resolve),
+      value: valueOpsFor(stated ?? written, resolve),
+    });
+  }
+  return found;
+}
+
+/**
+ * What one entry is called. A key the source computes,
+ * `{ [this.tableName]: ... }`, is read the way the same expression
+ * would be read on the other side of the colon.
+ */
+function entryKey(
+  written: PropertyAssignment,
+  unsettled: UnsettledName,
+  resolve: Resolve,
+): string | null {
+  const name = written.getNameNode();
+  if (Node.isComputedPropertyName(name)) {
+    return readName(name.getExpression(), { resolve, unsettled });
+  }
+  return unquoted(written.getName());
+}
+
+/** What a list states, item by item. */
+function itemsOf(value: Node, resolve: Resolve): ValueOps[] {
+  if (!Node.isArrayLiteralExpression(value)) {
+    return [];
+  }
+  return value.getElements().map((element) => valueOpsFor(element, resolve));
+}
+
+/** The text of a string the source writes out, or null for anything else. */
+function literalText(value: Node): string | null {
+  return Node.isStringLiteral(value) ||
+    Node.isNoSubstitutionTemplateLiteral(value)
+    ? value.getLiteralValue()
+    : null;
+}
+
+/** A property name without the quotes a source that needs them writes. */
+function unquoted(name: string): string {
+  return name.replace(/^["']|["']$/g, "");
 }
 
 /** The ops for a value, when the value is a call the source wrote. */
@@ -125,7 +230,7 @@ function opsOverCall(
   value: Node | undefined,
   resolve: Resolve,
 ): AstCapableOps | null {
-  const written = settled(value, resolve);
+  const written = settled(value);
   if (written === null || !isCalled(written)) {
     return null;
   }
@@ -138,27 +243,25 @@ function isCalled(value: Node): value is Called {
 }
 
 /**
- * A value, or what the source wrote it as when it is a name. A
- * repository class keeps the bucket in a field and builds the command a
- * few lines above the call, and both have to be followed.
+ * A value, or what the source wrote it as when it is a local name. A
+ * repository class builds the command a few lines above the call, and
+ * that has to be followed.
  *
- * A variable says at its declaration what it was written as, and a
- * field is filled in somewhere else, which is what the fact layer is
- * for. Asking the fact layer anyway costs a walk out over the imports
- * of the file, and that walk can make a value nearby ambiguous.
+ * Only what the source states is followed here. Asking the fact layer
+ * about a value it cannot settle is not free and not harmless: the
+ * store widens its walk out over the file's imports looking for an
+ * answer, extracts what it finds, and a query that came back one way
+ * before the widening comes back another way after it. Reading a name
+ * that is settled somewhere else is `readName`'s job, and that is where
+ * a pack asks for one.
  */
-function settled(value: Node | undefined, resolve: Resolve): Node | null {
+function settled(value: Node | undefined): Node | null {
   let step = value ?? null;
   for (let hops = 0; hops < MAX_WRITTEN_HOPS; hops += 1) {
-    if (
-      step === null ||
-      (!Node.isIdentifier(step) && !Node.isPropertyAccessExpression(step))
-    ) {
+    if (step === null || !Node.isIdentifier(step)) {
       return step;
     }
-    const declared = variableFor(step);
-    const written =
-      declared === null ? resolve(step) : (declared.getInitializer() ?? null);
+    const written = variableFor(step)?.getInitializer() ?? null;
     if (written === null || written === step) {
       return null;
     }
@@ -213,7 +316,7 @@ function objectAt(
   argument: Node | undefined,
   resolve: Resolve,
 ): ObjectLiteralExpression | null {
-  const written = settled(argument, resolve);
+  const written = settled(argument);
   if (written === null) {
     return null;
   }

@@ -8,7 +8,7 @@ import { storageCalls } from "./storage.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { StorageMethod } from "./chain.js";
-import type { CallOps, ReceiverOrigin } from "./ops.js";
+import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
 /** A call, as the ops see it, so a chain can run with no compiler here. */
 function callOps(over: {
@@ -23,10 +23,14 @@ function callOps(over: {
   receiver?: CallOps;
   /** What each argument's properties say, by position. */
   properties?: Record<number, Record<string, string>>;
+  /** What each argument states, by position, as plain data. */
+  values?: Record<number, unknown>;
 }): CallOps {
   const args = over.args ?? [];
   const from = over.from ?? [];
+  const values = over.values ?? {};
   return {
+    valueAt: (index) => (index in values ? valueOps(values[index]) : null),
     method: () => over.method ?? null,
     receiverIsFrom: (origin: ReceiverOrigin) =>
       origin.importedFrom.some((module) => from.includes(module)),
@@ -36,9 +40,32 @@ function callOps(over: {
     receiver: () => over.receiver ?? null,
     argument: (index) => over.built?.[index] ?? null,
     propertyAt: (index, property) =>
-      over.properties?.[index]?.[property] ?? null,
+      over.properties?.[index]?.[property] ??
+      (index in values
+        ? (valueOps(values[index]).property(property)?.text() ?? null)
+        : null),
     ast: () => over.node ?? null,
   } as CallOps;
+}
+
+/** A value, as the ops see it, from what a call would have stated. */
+function valueOps(stated: unknown): ValueOps {
+  const object =
+    typeof stated === "object" && stated !== null && !Array.isArray(stated)
+      ? (stated as Record<string, unknown>)
+      : null;
+  return {
+    text: () => (typeof stated === "string" ? stated : null),
+    items: () =>
+      Array.isArray(stated) ? stated.map((item) => valueOps(item)) : [],
+    entries: () =>
+      Object.entries(object ?? {}).map(([key, value]) => ({
+        key,
+        value: valueOps(value),
+      })),
+    property: (name) =>
+      object === null || !(name in object) ? null : valueOps(object[name]),
+  };
 }
 
 const READ_KEY: StorageMethod = { kind: "read", selector: { at: 0 } };
@@ -462,6 +489,118 @@ describe("a method the caller says which way round it goes", () => {
     );
 
     expect(effects?.[0]).toMatchObject({ interaction: { kind: "read" } });
+  });
+});
+
+/**
+ * The four things a call against one request object needs, which a
+ * chain of picks over positional arguments could not state.
+ */
+describe("a call that states one request object", () => {
+  const requests = storageCalls({
+    system: "cassette",
+    client: declaredBy("tapedeck"),
+  })
+    .methods({
+      play: {
+        kind: "read",
+        fields: ({ input, entry }) =>
+          (entry ?? input).property("Tracks")?.text()?.split(",") ?? [],
+      },
+    })
+    .input({ at: 0 })
+    .container({ at: 0, property: ["Side"] })
+    .accessPath({ at: 0, property: ["Order"] })
+    .containersIn({ at: 0, property: ["Sides"] });
+
+  const playing = (values: Record<number, unknown>) =>
+    run(requests, callOps({ method: "play", from: ["tapedeck"], values }));
+
+  it("records the way in the call took as the access path", () => {
+    const effects = playing({
+      0: { Side: "a", Order: "shuffled", Tracks: "one,two" },
+    });
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "a", accessPath: "shuffled" } },
+      interaction: { fields: ["one", "two"] },
+    });
+  });
+
+  it("gives one access per entry of a map of the containers it reached", () => {
+    const effects = playing({
+      0: { Sides: { a: { Tracks: "one" }, b: { Tracks: "two" } } },
+    });
+
+    expect(effects).toHaveLength(2);
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "a" } },
+      interaction: { fields: ["one"] },
+    });
+    expect(effects?.[1]).toMatchObject({
+      binding: { semantics: { container: "b" } },
+      interaction: { fields: ["two"] },
+    });
+  });
+
+  it("leaves a call that states no request alone", () => {
+    expect(playing({})).toBeNull();
+  });
+
+  it("prices the rule the pack wrote over the request", () => {
+    expect(packOf(requests).declarations?.declarations[0]).toMatchObject({
+      dataLinks: 6,
+      functionLinks: ["fields"],
+      astLinks: [],
+    });
+  });
+});
+
+describe("an operation the call says rather than the name it goes to", () => {
+  const helper = storageCalls({ system: "cassette" })
+    .methods({
+      request: {
+        operation: { at: 0 },
+        kind: { asks: { at: 0 }, means: { Play: "read", Record: "write" } },
+      },
+    })
+    .input({ at: 1 })
+    .container({ at: 1, property: ["Side"] });
+
+  const calling = (operation: string) =>
+    run(
+      helper,
+      callOps({
+        callee: "request",
+        args: [operation, null],
+        values: { 1: { Side: "a" } },
+      }),
+    );
+
+  it("reports what the argument said and takes the kind from it", () => {
+    expect(calling("Record")?.[0]).toMatchObject({
+      interaction: { operation: "Record", kind: "write" },
+    });
+  });
+
+  it("leaves an operation the pack does not list alone", () => {
+    expect(calling("Erase")).toBeNull();
+  });
+
+  it("gates on nothing, for a helper the project rather than a library wrote", () => {
+    expect(packOf(helper).requiresImport).toEqual([]);
+  });
+});
+
+describe("a pack that reads more files than its chains match in", () => {
+  it("takes the further modules the project named for the gate", () => {
+    const gated = pack("tapedeck", [store()], {
+      languages: ["typescript"],
+      recognizedAs: "@suss/framework-tapedeck",
+      requiresImport: ["reel-to-reel"],
+    });
+
+    expect(gated.requiresImport).toEqual(["tapedeck", "reel-to-reel"]);
   });
 });
 

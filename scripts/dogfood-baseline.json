@@ -3,10 +3,10 @@
     "packages": 59,
     "packagesWithExports": 59,
     "exports": 574,
-    "internal": 2170,
-    "consumers": 990,
-    "pairs": 982,
-    "unfollowedCalls": 253,
+    "internal": 2172,
+    "consumers": 993,
+    "pairs": 984,
+    "unfollowedCalls": 250,
     "findingErrors": 0
   },
   "packages": {
@@ -26,10 +26,10 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 52,
-      "internal": 717,
+      "exports": 53,
+      "internal": 724,
       "consumers": 76,
-      "unfollowedCalls": 69
+      "unfollowedCalls": 68
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -187,10 +187,10 @@
     },
     "packages/framework/aws-dynamodb": {
       "name": "@suss/framework-aws-dynamodb",
-      "exports": 3,
-      "internal": 12,
-      "consumers": 6,
-      "unfollowedCalls": 5
+      "exports": 2,
+      "internal": 5,
+      "consumers": 9,
+      "unfollowedCalls": 2
     },
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",
@@ -384,9 +384,9 @@
     "packages/recognize": {
       "name": "@suss/recognize",
       "exports": 9,
-      "internal": 15,
+      "internal": 17,
       "consumers": 1,
-      "unfollowedCalls": 10
+      "unfollowedCalls": 11
     },
     "packages/resolution": {
       "name": "@suss/resolution",

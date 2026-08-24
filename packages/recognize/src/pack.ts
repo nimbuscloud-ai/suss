@@ -16,7 +16,13 @@ import type {
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
-import type { Chain, Link, StorageMethod } from "./chain.js";
+import type {
+  Chain,
+  InputRule,
+  Link,
+  MethodsLink,
+  StorageMethod,
+} from "./chain.js";
 import type { StorageCalls } from "./storage.js";
 
 /** What a pack says about itself, beyond the calls it matches. */
@@ -40,6 +46,13 @@ export interface PackSpec {
    * effect, while the pack speaks S3.
    */
   protocol?: string;
+  /**
+   * Further modules whose presence makes a file worth reading, beyond
+   * the ones the chains match on. A helper a project reaches by a
+   * relative path gives the gate nothing; the library that helper
+   * imports gives it something.
+   */
+  requiresImport?: string[];
 }
 
 /** A pack, assembled from the calls it says it matches. */
@@ -61,7 +74,9 @@ export function pack(
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
-    requiresImport: gateOf(chains),
+    requiresImport: [
+      ...new Set([...gateOf(chains), ...(spec.requiresImport ?? [])]),
+    ],
     invocationRecognizers: recognizers,
     declarations: { declarations: chains.map(describe) },
   };
@@ -97,23 +112,59 @@ function gateOf(chains: readonly Chain<StorageMethod>[]): string[] {
   return [...modules];
 }
 
+/** One question a pack settled with code, and how far down it reached. */
+interface WrittenAsCode {
+  asks: string;
+  reachesAst: boolean;
+}
+
 /** What one chain cost, as the health report reads it. */
 function describe(chain: Chain<StorageMethod>): DeclaredMatch {
-  const functions = chain.links.filter(isFunctionLink);
+  const links = chain.links.filter(isFunctionLink);
+  const written: WrittenAsCode[] = [
+    ...links.map((link) => ({
+      asks: link.asks,
+      reachesAst: link.from.reachesAst === true,
+    })),
+    ...rulesIn(chain),
+  ];
   return {
     name: chain.ending.system,
-    dataLinks: chain.links.length - functions.length,
-    functionLinks: functions.map((link) => link.asks),
-    astLinks: functions
-      .filter((link) => link.from.reachesAst === true)
-      .map((link) => link.asks),
+    // A method table with a rule inside it is still a table, so that
+    // link stays counted as data and the rule is priced beside it.
+    dataLinks: chain.links.length - links.length,
+    functionLinks: written.map((rule) => rule.asks),
+    astLinks: written
+      .filter((rule) => rule.reachesAst)
+      .map((rule) => rule.asks),
     example: chain.example,
   };
 }
 
-/** Whether a pack answered this link with code. */
+/** Whether a pack wrote this link as code. */
 function isFunctionLink(
   link: Link<StorageMethod>,
 ): link is Extract<Link<StorageMethod>, { from: unknown }> {
   return link.asks === "container" && "from" in link;
+}
+
+/** The questions a rule inside the methods table settles, by name. */
+function rulesIn(chain: Chain<StorageMethod>): WrittenAsCode[] {
+  const link = chain.links.find(
+    (candidate): candidate is MethodsLink<StorageMethod> =>
+      candidate.asks === "methods",
+  );
+  const written = new Map<string, InputRule>();
+  for (const method of Object.values(link?.table ?? {})) {
+    for (const asks of ["selector", "fields"] as const) {
+      const says = method[asks];
+      if (typeof says === "function") {
+        written.set(asks, says);
+      }
+    }
+  }
+  return [...written].map(([asks, from]) => ({
+    asks,
+    reachesAst: from.reachesAst === true,
+  }));
 }
