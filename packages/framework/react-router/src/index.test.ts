@@ -73,7 +73,7 @@ describe("reactRouterFramework: pack shape", () => {
       "component",
       "loader",
     ]);
-    expect(pack.inputMapping.type).toBe("singleObjectParam");
+    expect(pack.inputMapping.type).toBe("objectParam");
     expect(pack.contractReading).toBeUndefined();
   });
 
@@ -161,19 +161,22 @@ describe("reactRouterFramework: integration", () => {
     ]);
   });
 
-  it("loader uses singleObjectParam mapping: params destructure is the sole input", () => {
+  it("gives a destructured params the pathParams role the pack declares", () => {
+    // The fixture writes `loader({ params })`, and the pack declares
+    // `params: "pathParams"`. That declaration used to be ignored, so
+    // every loader came back with one input roled "request" and nothing
+    // knew the route had path parameters.
     const loader = summaries.find((s) => s.kind === "loader");
-    expect(loader).toBeDefined();
     if (!loader) {
       throw new Error("loader summary missing");
     }
-    expect(loader.inputs).toHaveLength(1);
-    const [input] = loader.inputs;
-    expect(input.type).toBe("parameter");
-    if (input.type === "parameter") {
-      expect(input.position).toBe(0);
-      expect(input.role).toBe("request");
-    }
+    expect(
+      loader.inputs.map((input) =>
+        input.type === "parameter"
+          ? `${input.name}:${input.role}@${input.position}`
+          : input.type,
+      ),
+    ).toEqual(["params:pathParams@0"]);
   });
 
   it("action assembles two response transitions from the json/redirect helpers", () => {

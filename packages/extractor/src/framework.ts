@@ -765,22 +765,26 @@ export interface ContractPattern {
 
 export type InputMappingPattern =
   | {
-      /** Single object parameter, e.g. React Router LoaderFunctionArgs */
-      type: "singleObjectParam";
-      paramPosition: number;
-      /** Property name → role, e.g. { params: "pathParams", request: "request" } */
-      knownProperties: Record<string, string>;
-    }
-  | {
       /** Positional parameters, e.g. Express (req, res, next) */
       type: "positionalParams";
       params: Array<{ position: number; role: string }>;
     }
   | {
-      /** Destructured from framework call, e.g. ts-rest { params, body, query } */
-      type: "destructuredObject";
-      /** Property name → role, e.g. { params: "pathParams", body: "requestBody" } */
+      /**
+       * One object parameter whose properties are the inputs, the way
+       * ts-rest passes `{ params, body, query }` and React Router passes
+       * `{ params, request }`. A handler that destructures it gets one
+       * input per name it binds; a handler that takes it whole gets a
+       * single input, since the source does not say which properties it
+       * reads.
+       */
+      type: "objectParam";
+      /** Defaults to the first parameter. */
+      paramPosition?: number;
+      /** Property name mapped to the role it takes, e.g. `{ params: "pathParams" }`. A name not here keeps the name it was bound under. */
       knownProperties: Record<string, string>;
+      /** The role for a parameter taken whole. Defaults to "request". */
+      wholeParamRole?: string;
     }
   | {
       /**
@@ -791,10 +795,10 @@ export type InputMappingPattern =
        * not destructured (`function X(props) {...}`), a single Input comes
        * out with `wholeParamRole`, which defaults to `"props"`.
        *
-       * This differs from `destructuredObject` because the pack does not
-       * declare the prop names up front; they are whatever the component
-       * author wrote. It differs from `singleObjectParam` because the
-       * destructuring pattern is respected when there is one.
+       * This differs from `objectParam` in two ways. The pack declares no
+       * prop names up front, since they are whatever the component author
+       * wrote, and each input records the type text of the prop, which a
+       * component's shape comparison reads.
        */
       type: "componentProps";
       paramPosition: number;
@@ -808,7 +812,7 @@ export type InputMappingPattern =
        * reachable-closure pass for internal library functions, where no
        * framework declares a set of roles, so the name a caller sees IS
        * the role. Destructured parameters are captured the
-       * same way `destructuredObject` captures them, so `(ctx, { userId })`
+       * same way `objectParam` captures them, so `(ctx, { userId })`
        * gives two inputs, `ctx` and `userId`.
        */
       type: "allPositional";

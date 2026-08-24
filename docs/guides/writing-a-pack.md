@@ -211,7 +211,7 @@ ts-rest contracts are separate files that declare expected responses. The pack t
 
 ```typescript
 inputMapping: {
-  type: "destructuredObject",
+  type: "objectParam",
   knownProperties: {
     params: "pathParams",
     body: "requestBody",

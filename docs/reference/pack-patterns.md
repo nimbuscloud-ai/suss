@@ -298,15 +298,34 @@ For a returnShape terminal where no extraction explicitly selects a property, th
 
 ## `InputMappingPattern` variants
 
-### `singleObjectParam`
+### `objectParam`
 ```typescript
 {
-  type: "singleObjectParam";
-  paramPosition: number;
+  type: "objectParam";
+  paramPosition?: number;            // defaults to the first parameter
   knownProperties: Record<string, string>;
+  wholeParamRole?: string;           // defaults to "request"
 }
 ```
-The handler takes a single object parameter. `knownProperties` maps property names to semantic roles. Used by React Router (`({ request, params, context }) => ...`).
+The handler takes one object parameter whose properties are its inputs.
+React Router passes `{ params, request }` and ts-rest passes
+`{ params, body, query }`.
+
+A handler that destructures gets one input per name it binds, with the role
+`knownProperties` gives it:
+
+```typescript
+export async function loader({ params }: LoaderFunctionArgs) { ... }
+// one input: name "params", role "pathParams"
+```
+
+A handler that takes the object whole gets a single input roled
+`wholeParamRole`, because the source does not say which properties it reads:
+
+```typescript
+export async function loader(args: LoaderFunctionArgs) { ... }
+// one input: name "args", role "request"
+```
 
 ### `positionalParams`
 ```typescript
@@ -316,15 +335,6 @@ The handler takes a single object parameter. `knownProperties` maps property nam
 }
 ```
 The handler takes positional parameters with fixed roles. Used by Express (`(req, res, next) => ...`).
-
-### `destructuredObject`
-```typescript
-{
-  type: "destructuredObject";
-  knownProperties: Record<string, string>;
-}
-```
-Like `singleObjectParam` but always destructured at position 0. Used by ts-rest. What distinguishes it from `singleObjectParam` is that the framework *always* destructures. There's no case where the handler takes the whole object as a single value.
 
 ## Recognizers
 

@@ -59,7 +59,7 @@ describe("tsRestFramework — pack shape", () => {
       "throw",
     ]);
     expect(pack.contractReading).toBeDefined();
-    expect(pack.inputMapping.type).toBe("destructuredObject");
+    expect(pack.inputMapping.type).toBe("objectParam");
   });
 
   it("gives a consumer the two terminals a plain function can reach", () => {
@@ -151,7 +151,7 @@ describe("tsRestFramework — integration", () => {
     ]);
   });
 
-  it("destructuredObject inputMapping maps params → pathParams and body → requestBody", async () => {
+  it("objectParam inputMapping maps params to pathParams and body to requestBody", async () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser).toBeDefined();
     const paramsInput = getUser?.inputs.find(

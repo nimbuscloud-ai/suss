@@ -75,7 +75,7 @@ export function tsRestFramework(): PatternPack {
     },
 
     inputMapping: {
-      type: "destructuredObject",
+      type: "objectParam",
       knownProperties: {
         params: "pathParams",
         body: "requestBody",
