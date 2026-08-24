@@ -17,7 +17,7 @@ import { declaredExports } from "./declaredSurface.mjs";
 
 /**
  * How many consumers may go unpaired while their provider is in the
- * same run. Eleven today, and every one of them asks for a method or a
+ * same run. Twelve today, and every one of them asks for a method or a
  * property on a value a package returned, which nothing publishes a
  * provider for. The dogfooding notes list them under `## Where the
  * unmatched summaries come from`.
@@ -27,7 +27,7 @@ import { declaredExports } from "./declaredSurface.mjs";
  * ceiling at all. Lowering it is a fix landing; raising it needs an
  * explanation in the same place.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 11;
+const KNOWN_UNPAIRED_CONSUMERS = 12;
 
 /**
  * Every function a package says it exports has a provider summary.

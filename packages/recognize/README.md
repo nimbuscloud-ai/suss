@@ -133,6 +133,7 @@ rule has to walk it:
 | `items()` | what a list states, item by item |
 | `property(name)` | what one named property states, as a value of its own |
 | `parts()` | the pieces of text the source wrote, with the holes left out |
+| `holes()` | what the source interpolated between those pieces, each as the call it was written as |
 
 A key the source computes, `{ [this.tableName]: [...] }`, is read the
 way any other name is, so an entry's key comes back settled where the
@@ -355,23 +356,51 @@ rather than none: backtick-quoted identifiers parse as something else
 entirely.
 
 A tagged template is a call the source wrote without parentheses: the
-tag is the callee and the template is the one argument. Both of these
-state their statement at position 0:
+tag is the callee and the template is the one argument. All three of
+these state their statement at position 0:
 
 ```ts
 prisma.$queryRaw`SELECT id FROM users WHERE id = ${id}`;
 prisma.$queryRawUnsafe("SELECT id FROM users");
+db.execute(sql`SELECT id FROM users`);
 ```
 
-`parts()` gives the text either side of each hole, and what the query
-interpolated reaches the statement as a parameter, which is what it
-would have been anyway. A pack that has to put a name in one of those
-holes, the way Drizzle interpolates a table object, needs more than
-this ending gives today.
+The third is a tagged template handed to an ordinary call, and a pick at
+position 0 reads it because the text of a value comes back through the
+tag. So a pack whose client takes its statement either way writes one
+method table rather than two declarations.
 
 The invocation walk never reaches a tagged template, so `pack` puts a
 chain with this ending on the access walk instead. That walk visits
 calls as well, which is what catches the unsafe form.
+
+### A hole that is a table rather than a value
+
+`parts()` gives the text either side of each hole, and by default what
+the query interpolated reaches the statement as a parameter, which is
+what it would have been anyway. Drizzle breaks that: a query says which
+table it reached by handing over the schema object.
+
+```ts
+db.execute(sql`UPDATE ${users} SET name = ${name} WHERE id = ${id}`);
+```
+
+Written as `UPDATE $1 SET name = $2 WHERE id = $3` that does not parse,
+and the query goes unread. Only the pack knows the first hole is a table
+and the other two are values, so the pack says so:
+
+```ts
+sqlStatements({ system: "postgresql", dialect: "postgresql", client })
+  .methods({ execute: { statement: { at: 0 } } })
+  .interpolating({ from: constructedFrom("drizzle-orm"), named: { at: 0 } });
+```
+
+`holes()` gives each hole as the call the source wrote it as, so
+`${users}` comes back as the `pgTable("users", {...})` its schema file
+declares and `named` reads the name off it the way any other pick reads
+an argument. `from` keeps the pack from reading a hole the library did
+not make; a hole that is not a call, or that came from somewhere else,
+stays the parameter it was.
 
 ## The example every declaration states
 

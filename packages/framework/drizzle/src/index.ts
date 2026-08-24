@@ -12,6 +12,7 @@
 //   db.update(users).set({...}).where(...)                 anchor: db.update(t)
 //   db.delete(users).where(...)                            anchor: db.delete(t)
 //   db.query.users.findMany({...})                         anchor: .findMany()
+//   db.execute(sql`SELECT ...`)                            anchor: db.execute(s)
 //
 // The receiver (`db`, or `tx` inside a transaction callback) is
 // verified by TYPE: its symbol declaration must live under
@@ -42,9 +43,16 @@ import { type CallExpression, Node as N, type Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
-import { readSqlAccess, sqlFromParts } from "@suss/sql";
+import {
+  compile,
+  constructedFrom,
+  declarationsIn,
+  declaredBy,
+  sqlStatements,
+} from "@suss/recognize";
 
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type { SqlStatements } from "@suss/recognize";
 
 const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
 
@@ -52,14 +60,6 @@ const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
 const TABLE_FACTORIES = new Set(["pgTable", "mysqlTable", "sqliteTable"]);
 
 const CHAIN_WALK_LIMIT = 12;
-
-/**
- * The method that takes a statement written as SQL rather than a query
- * built up. The SQLite driver's own methods take one too, and they are
- * called `run`, `all`, and `get`, which are too ordinary to match on:
- * a map's `get` in a Drizzle file would read as a query.
- */
-const RAW_METHOD = "execute";
 
 export interface DrizzleRecognizerOptions {
   /**
@@ -85,82 +85,29 @@ interface RecognizedQuery {
 }
 
 /**
- * `db.execute(sql\`...\`)` states its query as SQL rather than through
- * table the statement touches becomes its own effect, which is also how a
- * join reaches every table it reads.
+ * A statement handed to the store as SQL rather than built up link by
+ * link. The parse settles which tables it touches and what it does to
+ * each, so a join comes out as one effect per table.
+ *
+ * The method is `execute`. The SQLite driver's own methods take a
+ * statement too, and they are called `run`, `all` and `get`, which are
+ * too ordinary to match on: a map's `get` in a Drizzle file would read
+ * as a query.
+ *
+ * A statement that interpolates a table interpolates the schema object,
+ * and the factory call behind it gives the SQL name.
  */
-function makeRawRecognizer(
-  opts: DrizzleRecognizerOptions,
-): InvocationRecognizer {
+function rawStatements(opts: DrizzleRecognizerOptions): SqlStatements {
   const storageSystem = opts.storageSystem ?? "postgresql";
-  const scope = opts.scope ?? "default";
-  return ((call: unknown) => {
-    const callNode = call as CallExpression;
-    const callee = callNode.getExpression();
-    if (!N.isPropertyAccessExpression(callee)) {
-      return null;
-    }
-    if (callee.getName() !== RAW_METHOD) {
-      return null;
-    }
-    const statement = sqlTextOf(callNode.getArguments()[0]);
-    if (statement === null) {
-      return null;
-    }
-    const accesses = readSqlAccess(statement, { dialect: storageSystem });
-    if (accesses.length === 0) {
-      return null;
-    }
-    return accesses.map((access) => ({
-      type: "interaction" as const,
-      binding: storageBinding({
-        recognition: "@suss/framework-drizzle",
-        storageSystem,
-        scope,
-        container: access.table,
-      }),
-      callee: callee.getText(),
-      interaction: {
-        class: "storage-access" as const,
-        kind: access.kind,
-        fields: access.fields,
-        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
-        operation: callee.getName(),
-      },
-    }));
-  }) as InvocationRecognizer;
-}
-
-/** The SQL a `sql` tagged template states, with its values as parameters. */
-function sqlTextOf(argument: Node | undefined): string | null {
-  if (argument === undefined) {
-    return null;
-  }
-  if (N.isNoSubstitutionTemplateLiteral(argument)) {
-    return argument.getLiteralValue();
-  }
-  if (N.isTaggedTemplateExpression(argument)) {
-    const template = argument.getTemplate();
-    if (N.isNoSubstitutionTemplateLiteral(template)) {
-      return template.getLiteralValue();
-    }
-    const spans = template.getTemplateSpans();
-    return sqlFromParts(
-      [
-        template.getHead().getLiteralText(),
-        ...spans.map((span) => span.getLiteral().getLiteralText()),
-      ],
-      // A statement that interpolates a table interpolates the schema
-      // object, so the name it declares is what belongs in the text.
-      // Everything else is a value, and a parameter is what a value
-      // would have been.
-      spans.map((span) => resolveTableName(span.getExpression())),
-    );
-  }
-  if (N.isStringLiteral(argument)) {
-    return argument.getLiteralValue();
-  }
-  return null;
+  return sqlStatements({
+    system: storageSystem,
+    dialect: storageSystem,
+    scope: opts.scope ?? "default",
+    client: declaredBy("drizzle-orm"),
+  })
+    .methods({ execute: { statement: { at: 0 } } })
+    .interpolating({ from: constructedFrom("drizzle-orm"), named: { at: 0 } })
+    .example("db.execute(sql`SELECT id, email FROM users`)");
 }
 
 function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
@@ -566,13 +513,16 @@ function selectorFromWhere(
 }
 
 /**
- * Pack export. Has one invocationRecognizer; no discovery
- * patterns or terminals (Drizzle calls aren't boundaries themselves
- *: they're effects on already-discovered handlers / services).
+ * Pack export. The builder path is a recognizer written as code and the
+ * raw path is a declaration, so the pack assembles itself rather than
+ * going through `pack()`. No discovery patterns or terminals: Drizzle
+ * calls aren't boundaries themselves, they're effects on
+ * already-discovered handlers / services.
  */
 export function drizzleFramework(
   options: DrizzleRecognizerOptions = {},
 ): PatternPack {
+  const raw = rawStatements(options);
   return {
     name: "drizzle",
     protocol: "in-process",
@@ -584,10 +534,11 @@ export function drizzleFramework(
     // drizzle-orm/pg-core and driver entry points): files without
     // them can't type-check as Drizzle receivers anyway.
     requiresImport: ["drizzle-orm"],
-    invocationRecognizers: [
-      makeRecognizer(options),
-      makeRawRecognizer(options),
-    ],
+    invocationRecognizers: [makeRecognizer(options)],
+    // A statement can be written as a tagged template, which the
+    // invocation walk never reaches.
+    accessRecognizers: [compile(raw.declared, "@suss/framework-drizzle")],
+    declarations: declarationsIn([raw]),
   };
 }
 

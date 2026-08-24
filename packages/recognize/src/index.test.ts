@@ -70,8 +70,26 @@ function valueOps(stated: unknown): ValueOps {
       })),
     property: (name) =>
       object === null || !(name in object) ? null : valueOps(object[name]),
-    parts: () => partsOf(stated),
+    parts: () => interpolated(stated)?.parts ?? partsOf(stated),
+    holes: () => interpolated(stated)?.holes ?? [],
   };
+}
+
+/** A statement a test writes as its pieces of text and what fills its holes. */
+interface Interpolated {
+  readonly parts: string[];
+  readonly holes: (CallOps | null)[];
+}
+
+/** Whether a test wrote a statement with the holes spelled out. */
+function interpolated(stated: unknown): Interpolated | null {
+  const written = stated as Partial<Interpolated> | null;
+  const spelled =
+    typeof written === "object" &&
+    written !== null &&
+    Array.isArray(written.parts) &&
+    Array.isArray(written.holes);
+  return spelled ? (written as Interpolated) : null;
 }
 
 /**
@@ -643,6 +661,7 @@ describe("a rule that says which value it reads", () => {
           ...(input.text() === null ? [] : ["text"]),
           ...(input.flag() === null ? [] : ["flag"]),
           ...(input.parts() === null ? [] : ["parts"]),
+          ...input.holes().map(() => "hole"),
           ...(input.property("side") === null ? [] : ["property"]),
           ...input.items().map(() => "item"),
           ...input.entries("nothing").map(() => "entry"),
@@ -784,6 +803,25 @@ const asking = (statement: unknown, method = "query") =>
     }),
   );
 
+/** A table object a query interpolates, with the name its factory gave. */
+const tableHole = (from: string, table: string) =>
+  callOps({ method: null, from: [from], args: [table] });
+
+/** The same chain, told that a hole is a table its factory call settles. */
+const interpolating = (parts: string[], holes: (CallOps | null)[]) =>
+  runQuery(
+    queries().interpolating({
+      from: constructedFrom("tapedeck"),
+      named: { at: 0 },
+    }),
+    callOps({
+      method: "query",
+      from: ["tapedeck"],
+      callee: "deck.query",
+      values: { 0: { parts, holes } },
+    }),
+  );
+
 describe("a chain over statements written as SQL", () => {
   it("emits one access per table the statement touches", () => {
     const effects = asking(
@@ -860,6 +898,60 @@ describe("a chain over statements written as SQL", () => {
 
   it("says nothing for a statement nobody can read", () => {
     expect(asking("MOUNT tapes")).toBeNull();
+  });
+
+  it("puts the name a hole gives into the statement before the parse", () => {
+    const effects = interpolating(
+      ["SELECT id FROM ", " WHERE side = ", ""],
+      [tableHole("tapedeck", "tapes"), null],
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "tapes" } },
+      interaction: { kind: "read", fields: ["id"], selector: ["side"] },
+    });
+  });
+
+  it("leaves a hole from somewhere else the parameter it was", () => {
+    expect(
+      interpolating(["SELECT id FROM ", ""], [tableHole("other", "tapes")]),
+    ).toBeNull();
+  });
+
+  it("reads every hole where the pack says nowhere in particular", () => {
+    const effects = runQuery(
+      queries().interpolating({ named: { at: 0 } }),
+      callOps({
+        method: "query",
+        from: ["tapedeck"],
+        callee: "deck.query",
+        values: {
+          0: {
+            parts: ["SELECT id FROM ", ""],
+            holes: [tableHole("other", "tapes")],
+          },
+        },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "tapes" } },
+    });
+  });
+
+  it("gates on the modules a hole has to have come from", () => {
+    const assembled = pack(
+      "tapedeck",
+      [
+        queries().interpolating({
+          from: constructedFrom("tapedeck-schema"),
+          named: { at: 0 },
+        }),
+      ],
+      { languages: ["typescript"], recognizedAs: "@suss/framework-tapedeck" },
+    );
+
+    expect(assembled.requiresImport).toEqual(["tapedeck", "tapedeck-schema"]);
   });
 
   it("says nothing where the call states no statement at all", () => {

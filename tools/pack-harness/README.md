@@ -40,8 +40,13 @@ adapter's. A pack could pass every test against a context that
 extraction never builds.
 
 So the context comes from the adapter now, through
-`invocationContextFor`, which is the same function the adapter's own
-walker calls on the way past a call site.
+`invocationContextFor` and `accessContextFor`, which are the same two
+functions the adapter's own walkers call on the way past a node.
+
+Both walks run, because a pack can put a declaration on either. A chain
+that reads a statement written as SQL goes on the access walk, since
+`prisma.$queryRaw` is a tagged template rather than a call and the
+invocation walk never reaches one.
 
 ## What is deliberately not the adapter's
 

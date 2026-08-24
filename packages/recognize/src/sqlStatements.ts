@@ -11,7 +11,13 @@
  * own.
  */
 
-import type { Chain, Link, SqlEnding, SqlMethod } from "./chain.js";
+import type {
+  Chain,
+  InterpolatesLink,
+  Link,
+  SqlEnding,
+  SqlMethod,
+} from "./chain.js";
 import type { ReceiverOrigin } from "./ops.js";
 
 /** What a pack says about the store its statements reach. */
@@ -40,6 +46,8 @@ export interface SqlStatements {
     table: Readonly<Record<string, SqlMethod>>,
     options?: { ignoringCase?: boolean },
   ): SqlStatements;
+  /** What the values a statement interpolates come to. */
+  interpolating(says: Omit<InterpolatesLink, "asks">): SqlStatements;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): SqlStatements;
   /** The links and the ending, as data. */
@@ -79,6 +87,7 @@ function chainFrom(declared: Chain<SqlMethod>): SqlStatements {
         table,
         ignoringCase: options?.ignoringCase ?? false,
       }),
+    interpolating: (says) => adding({ asks: "interpolates", ...says }),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
 }

@@ -21,9 +21,12 @@ const LIBRARY = `
     send(command: unknown): Promise<void>;
     query(parts: TemplateStringsArray, ...values: unknown[]): Promise<void>;
     queryText(statement: string): Promise<void>;
+    run(statement: unknown): Promise<void>;
   }
   export declare function makeDeck(): Deck;
   export declare class PlayCommand { constructor(input: unknown); }
+  export declare function sql(parts: TemplateStringsArray, ...values: unknown[]): unknown;
+  export declare function tape(name: string): unknown;
 `;
 
 function withLibrary(): Project {
@@ -595,5 +598,50 @@ describe("a statement the source wrote as a tagged template", () => {
     `);
 
     expect(ops.valueAt(0)?.parts()).toBeNull();
+  });
+});
+
+describe("a statement a call was handed as a tagged template", () => {
+  const HANDED = `
+    import Deck, { sql, tape } from "tapedeck";
+    declare const deck: Deck;
+    const tapes = tape("tapes");
+    export function play(side: string) {
+      return deck.run(sql\`SELECT id FROM \${tapes} WHERE side = \${side}\`);
+    }
+  `;
+
+  it("gives the text through the tag the source wrote", () => {
+    expect(opsForLastCall(HANDED).valueAt(0)?.parts()).toEqual([
+      "SELECT id FROM ",
+      " WHERE side = ",
+      "",
+    ]);
+  });
+
+  it("gives each hole as the call the source wrote it as", () => {
+    const holes = opsForLastCall(HANDED).valueAt(0)?.holes() ?? [];
+
+    expect(holes).toHaveLength(2);
+    expect(holes[0]?.nameAt(0, "nothing")).toBe("tapes");
+    expect(
+      holes[0]?.isFrom({ origin: "constructed", importedFrom: ["tapedeck"] }),
+    ).toBe(true);
+  });
+
+  it("gives null for a hole the source wrote as something else", () => {
+    expect(opsForLastCall(HANDED).valueAt(0)?.holes()[1]).toBeNull();
+  });
+
+  it("gives no holes for a statement the source wrote as a string", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.queryText("SELECT id FROM tapes");
+      }
+    `);
+
+    expect(ops.valueAt(0)?.holes()).toEqual([]);
   });
 });

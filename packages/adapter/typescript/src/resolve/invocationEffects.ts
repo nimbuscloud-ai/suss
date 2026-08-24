@@ -598,7 +598,7 @@ export function runAccessRecognizersAtModuleScope(
 }
 
 /** The nodes this walk stops at, which is every shape a pack can guard. */
-type Accessed =
+export type Accessed =
   | PropertyAccessExpression
   | CallExpression
   | TaggedTemplateExpression;
@@ -607,11 +607,14 @@ type Accessed =
  * What one node is handed. The ops are built on the first read rather
  * than up front, the way the invocation walk builds them: most nodes
  * reach no declared pack, and a pack written as code never asks.
+ *
+ * A pack's tests build it here too, so a pack that passes them has run
+ * against the context extraction gives it.
  */
-function accessContext(
+export function accessContextFor(
   node: Accessed,
   sourceFile: SourceFile,
-  resolveWrittenValue: (value: Node) => Node | null,
+  resolveWrittenValue: (value: Node) => Node | null = () => null,
 ): TsAccessRecognizerContext {
   const given = { access: node, sourceFile, resolveWrittenValue };
   if (Node.isPropertyAccessExpression(node)) {
@@ -659,11 +662,7 @@ function dispatchAccessRecognizers(
     ) {
       return;
     }
-    const ctx = accessContext(
-      node,
-      sourceFile,
-      resolveWrittenValue ?? (() => null),
-    );
+    const ctx = accessContextFor(node, sourceFile, resolveWrittenValue);
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;

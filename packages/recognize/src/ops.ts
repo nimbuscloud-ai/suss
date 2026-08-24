@@ -107,6 +107,17 @@ export interface ValueOps {
    * wrote neither.
    */
   parts(): readonly string[] | null;
+  /**
+   * What the source interpolated between those pieces, in order, each
+   * as the call it was written as. There is one per gap, one fewer than
+   * `parts` gives, and a hole the source wrote as something other than
+   * a call is null rather than being dropped, so the two lists stay in
+   * step.
+   *
+   * What a hole comes to is the pack's to say. This says what was
+   * there, so a query that hands over a table object can still be read.
+   */
+  holes(): readonly (CallOps | null)[];
 }
 
 /** One entry of an object a call states. */
