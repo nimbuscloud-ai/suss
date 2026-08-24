@@ -583,32 +583,10 @@ describe("registrationCall — Express Router style", () => {
 });
 
 // ---------------------------------------------------------------------------
-// decorator and fileConvention: stubs
+// fileConvention: stub
 // ---------------------------------------------------------------------------
 
-describe("decorator and fileConvention — stubs return []", () => {
-  it("decorator pattern returns empty array", () => {
-    const project = createProject();
-    const file = project.createSourceFile(
-      "test.ts",
-      `
-      function handler() {}
-    `,
-    );
-
-    const pattern: DiscoveryPattern = {
-      kind: "handler",
-      match: {
-        type: "decorator",
-        decoratorModule: "nest",
-        decoratorName: "Get",
-      },
-    };
-
-    const units = discoverUnits(file, [pattern]);
-    expect(units).toHaveLength(0);
-  });
-
+describe("fileConvention — stub returns []", () => {
   it("fileConvention pattern returns empty array", () => {
     const project = createProject();
     const file = project.createSourceFile(

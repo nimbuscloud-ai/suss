@@ -35,11 +35,6 @@ export type DiscoveryMatch =
       registrationChain: string[]; // e.g. [".router"]
     }
   | {
-      type: "decorator";
-      decoratorModule: string;
-      decoratorName: string;
-    }
-  | {
       type: "fileConvention";
       filePattern: string; // glob
       exportNames: string[];
