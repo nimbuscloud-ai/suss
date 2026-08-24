@@ -152,6 +152,38 @@ function body could run any number of times, so the extractor writes
 nothing down, and the name resolves to nothing rather than to whichever
 write came first.
 
+## Why a written value has to be an expression
+
+`resolveWrittenValue` gives back the expression a value was written as,
+and it returns null when there are two of them. One chain produces two
+candidates that are not two values at all:
+
+```ts
+const command = new GetObjectCommand({ Bucket: "uploads", Key: key });
+```
+
+`command` is written as the construction. The rules also read a
+construction as arriving at an instance, so the chain runs on one more
+step to the class `GetObjectCommand`, and a class is an object value,
+which is a stopping point for this question too. Both candidates
+describe the same value: the expression that made it, and the class it
+is an instance of.
+
+That second candidate only exists once the file declaring the class has
+been extracted, and facts stay in the store after the query that pulled
+them in. So the same question answered on its own and answered after an
+unrelated query gave different results: the construction the first
+time, null the second, with nothing about the code changed in between.
+Requiring the answer to be an expression drops the class, because a
+class declaration is not an expression, and the question is what the
+source wrote the value as. `resolveObject` is the question that wants
+the class.
+
+This does not make the store order independent in general. A query
+still sees every fact any earlier query extracted, and where more files
+bring a genuinely different second value, null is the correct answer
+and the single answer the narrower walk gave was the wrong one.
+
 ## When something does not resolve
 
 Suspect the facts before the rules.

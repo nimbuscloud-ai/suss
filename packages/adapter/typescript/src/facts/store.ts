@@ -442,6 +442,9 @@ export class ResolutionStore {
    * Two candidates give null, since ambiguity is nothing. The value
    * itself is never a result either, or an identifier whose chain went
    * nowhere would come back as itself.
+   *
+   * An answer has to be an expression, which leaves out the class a
+   * construction makes an instance of. The README says why.
    */
   private lookupWritten(value: Node): Node | null {
     this.derive();
@@ -449,7 +452,7 @@ export class ResolutionStore {
     const candidates = new Set<Node>();
     for (const target of this.answersFor("wantedIsWrittenAs", nodeId(value))) {
       const node = this.table.byId.get(target);
-      if (node === undefined || node === value) {
+      if (node === undefined || node === value || !Node.isExpression(node)) {
         continue;
       }
       candidates.add(node);

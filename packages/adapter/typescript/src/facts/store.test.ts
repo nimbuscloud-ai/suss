@@ -1016,6 +1016,46 @@ describe("resolveWrittenValue", () => {
     );
     expect(written?.getKindName()).toBe("ConditionalExpression");
   });
+
+  const PRESIGNER = {
+    "/sdk.ts":
+      "export class GetObjectCommand { constructor(input: unknown) {} }",
+    "/mod.ts": `
+      import { GetObjectCommand } from "./sdk.js";
+      declare function getSignedUrl(client: unknown, command: unknown): string;
+      declare const client: unknown;
+      export function urlFor(key: string) {
+        const command = new GetObjectCommand({ Bucket: "uploads", Key: key });
+        return getSignedUrl(client, command);
+      }
+    `,
+  };
+
+  it("gives the construction a name was written as, not the class it makes one of", () => {
+    const project = projectOf(PRESIGNER);
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      usageOf(project, "/mod.ts", "command"),
+    );
+    expect(written?.getKindName()).toBe("NewExpression");
+  });
+
+  it("gives that same answer after an unrelated query widened the walk", () => {
+    const project = projectOf(PRESIGNER);
+    const store = new ResolutionStore();
+
+    // Nothing settles the client, so this walks out over the imports of
+    // the file and extracts the class the command is made from.
+    expect(
+      store.resolveWrittenValue(usageOf(project, "/mod.ts", "client")),
+    ).toBeNull();
+
+    const written = store.resolveWrittenValue(
+      usageOf(project, "/mod.ts", "command"),
+    );
+    expect(written?.getKindName()).toBe("NewExpression");
+  });
 });
 
 describe("a value written as a fallback", () => {
