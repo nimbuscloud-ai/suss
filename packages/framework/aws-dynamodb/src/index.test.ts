@@ -722,7 +722,7 @@ describe("the pack a project configures", () => {
     expect(dynamoFramework().declarations?.declarations).toEqual([
       {
         name: "aws.dynamodb",
-        dataLinks: 7,
+        dataLinks: 6,
         functionLinks: ["selector", "fields"],
         astLinks: [],
         example:

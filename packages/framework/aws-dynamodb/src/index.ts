@@ -35,8 +35,16 @@ const COMMAND_MODULES = [
 
 const RECOGNITION = "@suss/framework-aws-dynamodb";
 
-/** The command a call was handed, wherever the call takes it. */
-const COMMAND: CallStep = { to: "argument", at: { from: 0 } };
+/**
+ * The command a call was handed, wherever the call takes it. Saying
+ * which module built it settles the match on the argument itself, so
+ * the chain reads nothing out of the arguments beside it.
+ */
+const COMMAND: CallStep = {
+  to: "argument",
+  at: { from: 0 },
+  origin: constructedFrom(...COMMAND_MODULES),
+};
 
 /** Where a command states everything about the access. */
 const COMMAND_INPUT: OneArgument = { at: 0 };
@@ -129,7 +137,6 @@ const COMMANDS: Record<string, StorageMethod> = {
 const COMMAND_CALLS = storageCalls({
   system: "aws.dynamodb",
   transport: "aws-sdk",
-  client: constructedFrom(...COMMAND_MODULES),
 })
   .about(COMMAND)
   .methods(COMMANDS)

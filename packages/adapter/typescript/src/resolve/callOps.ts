@@ -72,6 +72,29 @@ const ORIGIN: Record<
 };
 
 /**
+ * One check per way a pack can pin down the call itself.
+ *
+ * `declaredBy` is the same check either way round, since a method
+ * declaration is a fact about the call. `constructed` differs: asked of
+ * the receiver it follows what made the receiver through the fact
+ * layer, and asked of the call it reads the callee the source wrote,
+ * which is what makes it cheap enough to guard a step with.
+ */
+const CALL_ORIGIN: Record<
+  ReceiverOrigin["origin"],
+  (origin: ReceiverOrigin, receiver: Receiver) => boolean
+> = {
+  declaredBy: ORIGIN.declaredBy,
+  constructed: (origin, receiver) =>
+    origin.importedFrom.some((module) =>
+      isImportedFrom(
+        rootIdentifier(receiver.expression) ?? receiver.expression,
+        module,
+      ),
+    ),
+};
+
+/**
  * What made the receiver, as the name the source called it. A client
  * the program keeps in a const or hands round as a parameter comes back
  * through the fact layer as the `new` or the factory call that made it.
@@ -113,6 +136,8 @@ export function callOpsFor(
     method: () => (callee === null ? null : callee.getName()),
     receiverIsFrom: (origin) =>
       ORIGIN[origin.origin](origin, { callee, expression, resolve }),
+    isFrom: (origin) =>
+      CALL_ORIGIN[origin.origin](origin, { callee, expression, resolve }),
     argumentCount: () => argumentsOf().length,
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
@@ -251,9 +276,10 @@ function isCalled(value: Node): value is Called {
  * about a value it cannot settle is not free and not harmless: the
  * store widens its walk out over the file's imports looking for an
  * answer, extracts what it finds, and a query that came back one way
- * before the widening comes back another way after it. Reading a name
- * that is settled somewhere else is `readName`'s job, and that is where
- * a pack asks for one.
+ * before the widening comes back another way after it. This runs for
+ * every argument of every call in a gated file, so it is the one place
+ * that has to stay out of the fact layer. The questions a pack asks
+ * once it has arrived, `readName` and `receiverIsFrom`, still go there.
  */
 function settled(value: Node | undefined): Node | null {
   let step = value ?? null;

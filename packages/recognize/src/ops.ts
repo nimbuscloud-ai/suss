@@ -123,6 +123,14 @@ export interface CallOps {
   method(): string | null;
   /** Whether the receiver came from where the origin says. */
   receiverIsFrom(origin: ReceiverOrigin): boolean;
+  /**
+   * Whether the call itself came from where the origin says, which is
+   * the same question asked of the callee rather than of what it was
+   * called on. `new GetCommand(...)` is the case: a pack that steps to
+   * an argument asks this of it before reading anything, so it never
+   * reads an argument that was never the one.
+   */
+  isFrom(origin: ReceiverOrigin): boolean;
   /** How many arguments the call passes. */
   argumentCount(): number;
   /** The name the argument in this position gives. */

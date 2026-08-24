@@ -71,6 +71,13 @@ export interface ToArgument {
   readonly to: "argument";
   /** Which argument, or every argument from a position on. */
   readonly at: number | { readonly from: number };
+  /**
+   * Where the argument has to have come from, for a step that tries
+   * several. `send(command)` takes one argument and a presigner takes
+   * two, and the one that matters is the command the SDK declares, so
+   * the step says so rather than reading whatever it lands on.
+   */
+  readonly origin?: ReceiverOrigin;
 }
 
 /**

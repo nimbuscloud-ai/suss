@@ -167,6 +167,36 @@ describe("pinning down the receiver", () => {
 
     expect(ops.receiverIsFrom(constructed)).toBe(false);
   });
+
+  it("asks the same question of the call itself, off its own callee", () => {
+    const ops = opsForLastCall(`
+      import Deck, { PlayCommand } from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.send(new PlayCommand({ Track: "1" }));
+      }
+    `);
+
+    expect(ops.argument(0)?.isFrom(constructed)).toBe(true);
+    expect(
+      ops
+        .argument(0)
+        ?.isFrom({ origin: "constructed", importedFrom: ["reel"] }),
+    ).toBe(false);
+  });
+
+  it("leaves a command of the same name the project wrote itself alone", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      class PlayCommand { constructor(input: unknown) {} }
+      declare const deck: Deck;
+      export function play() {
+        return deck.send(new PlayCommand({ Track: "1" }));
+      }
+    `);
+
+    expect(ops.argument(0)?.isFrom(constructed)).toBe(false);
+  });
 });
 
 describe("the calls one call reaches", () => {

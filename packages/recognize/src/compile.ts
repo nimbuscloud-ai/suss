@@ -41,7 +41,12 @@ import type {
   ToArgument,
   ToReceiver,
 } from "./chain.js";
-import type { CallOps, UnsettledName, ValueOps } from "./ops.js";
+import type {
+  CallOps,
+  ReceiverOrigin,
+  UnsettledName,
+  ValueOps,
+} from "./ops.js";
 
 /**
  * How many receivers a walk climbs before it gives up. A receiver chain
@@ -145,7 +150,7 @@ const STEP: Record<
   (step: CallStep, ops: CallOps) => CallOps[]
 > = {
   receiver: (step, ops) => receiversOf(ops, (step as ToReceiver).method),
-  argument: (step, ops) => argumentsOf(ops, (step as ToArgument).at),
+  argument: (step, ops) => argumentsOf(ops, step as ToArgument),
 };
 
 /** The calls a list of steps reaches from where it starts. */
@@ -173,16 +178,24 @@ function receiversOf(ops: CallOps, method: string | undefined): CallOps[] {
   return [];
 }
 
-/** The calls the picked arguments are, in the order the call passes them. */
-function argumentsOf(ops: CallOps, at: ToArgument["at"]): CallOps[] {
+/**
+ * The calls the picked arguments are, in the order the call passes
+ * them, dropping the ones the step's origin rules out.
+ */
+function argumentsOf(ops: CallOps, step: ToArgument): CallOps[] {
   const found: CallOps[] = [];
-  for (const index of positions(ops, at)) {
+  for (const index of positions(ops, step.at)) {
     const argument = ops.argument(index);
-    if (argument !== null) {
+    if (argument !== null && cameFrom(argument, step.origin)) {
       found.push(argument);
     }
   }
   return found;
+}
+
+/** Whether an argument is the one the step's origin asked for. */
+function cameFrom(argument: CallOps, origin: ReceiverOrigin | undefined) {
+  return origin === undefined || argument.isFrom(origin);
 }
 
 /** The argument positions a pick covers. */

@@ -102,6 +102,7 @@ result on the recognizer context under `ops`.
 |---|---|
 | `method()` | which method the call reaches for, as the source spells it |
 | `receiverIsFrom(origin)` | whether the receiver came from where the origin says |
+| `isFrom(origin)` | whether the call itself came from where the origin says |
 | `argumentCount()` | how many arguments the call passes |
 | `nameAt(index, unsettled)` | the name that argument gives, with the hole policy applied |
 | `calleeText()` | the callee, as the source writes it |
@@ -159,6 +160,7 @@ A pack says which call with `about`, and a pick says which call with
 | `{ to: "receiver", method: "bucket" }` | the first call to `bucket` up the receivers |
 | `{ to: "argument", at: 0 }` | the call the first argument is |
 | `{ to: "argument", at: { from: 0 } }` | every argument that is a call, first one that matches wins |
+| `{ to: "argument", at: { from: 0 }, origin }` | the same, keeping only the ones the origin pins down |
 
 ```ts
 storageCalls({ system: "s3", client: constructedFrom("@aws-sdk/client-s3") })
@@ -180,6 +182,13 @@ receivers: a receiver chain can come back round to itself through a
 variable, and a pack that meant more than eight hops has written
 something else by mistake.
 
+A step to an argument can say where that argument had to have come
+from, which is `isFrom` asked of each candidate in turn. `send(command)`
+takes one argument and a presigner takes two, and the one that matters
+is the command the SDK declares, so the step says so rather than
+reading whatever it lands on. The modules it says go into the pack's
+import gate the way a start link's do.
+
 A pick reads the argument itself, or a property of the object the
 argument states. The properties are tried in order, so `property:
 ["Key", "Prefix"]` is "the key, or the prefix a listing asked for
@@ -193,8 +202,8 @@ and four of the things a storage effect records come out of it. Each is
 a link of its own.
 
 ```ts
-storageCalls({ system: "aws.dynamodb", client: constructedFrom(COMMAND_MODULES) })
-  .about({ to: "argument", at: { from: 0 } })
+storageCalls({ system: "aws.dynamodb" })
+  .about({ to: "argument", at: { from: 0 }, origin: constructedFrom(...MODULES) })
   .methods(COMMANDS)
   .input({ at: 0 })
   .container({ at: 0, property: ["TableName"] })

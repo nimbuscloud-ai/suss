@@ -34,6 +34,8 @@ function callOps(over: {
     method: () => over.method ?? null,
     receiverIsFrom: (origin: ReceiverOrigin) =>
       origin.importedFrom.some((module) => from.includes(module)),
+    isFrom: (origin: ReceiverOrigin) =>
+      origin.importedFrom.some((module) => from.includes(module)),
     argumentCount: () => args.length,
     nameAt: (index) => args[index] ?? null,
     calleeText: () => over.callee ?? "client.get",
@@ -405,6 +407,38 @@ describe("a chain about the command a call was handed", () => {
     expect(
       run(commandCalls, callOps({ method: "send", args: [null] })),
     ).toBeNull();
+  });
+
+  it("stops on the argument the step says the library built", () => {
+    const guarded = storageCalls({ system: "cassette" })
+      .about({
+        to: "argument",
+        at: { from: 0 },
+        origin: constructedFrom("tapedeck"),
+      })
+      .methods({ PlaySideCommand: { kind: "read" } })
+      .container({ at: 0, property: ["Side"] });
+    const ours = callOps({ callee: "PlaySideCommand", args: [null] });
+
+    const sending = (built: Record<number, CallOps>) =>
+      run(guarded, callOps({ method: "send", args: [null, null], built }));
+
+    expect(sending({ 0: ours, 1: command })).toMatchObject([
+      { binding: { semantics: { container: "a" } } },
+    ]);
+    expect(sending({ 0: ours })).toBeNull();
+  });
+
+  it("gates on the module a step says the command came from", () => {
+    const guarded = storageCalls({ system: "cassette" })
+      .about({
+        to: "argument",
+        at: 0,
+        origin: constructedFrom("tapedeck"),
+      })
+      .methods({ PlaySideCommand: { kind: "read" } });
+
+    expect(packOf(guarded).requiresImport).toEqual(["tapedeck"]);
   });
 });
 

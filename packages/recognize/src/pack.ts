@@ -23,6 +23,7 @@ import type {
   MethodsLink,
   StorageMethod,
 } from "./chain.js";
+import type { ReceiverOrigin } from "./ops.js";
 import type { StorageCalls } from "./storage.js";
 
 /** What a pack says about itself, beyond the calls it matches. */
@@ -100,16 +101,36 @@ function protocolOf(chains: readonly Chain<StorageMethod>[]): string {
 function gateOf(chains: readonly Chain<StorageMethod>[]): string[] {
   const modules = new Set<string>();
   for (const chain of chains) {
-    for (const link of chain.links) {
-      if (link.asks !== "start" || link.at.starts !== "receiver") {
-        continue;
-      }
-      for (const module of link.at.origin.importedFrom) {
+    for (const origin of originsIn(chain)) {
+      for (const module of origin.importedFrom) {
         modules.add(module);
       }
     }
   }
   return [...modules];
+}
+
+/**
+ * Every origin a chain states. A chain says where its match starts, and
+ * a chain about a command says where that command came from as it steps
+ * to it, so both are places a module can only be reached from.
+ */
+function originsIn(chain: Chain<StorageMethod>): ReceiverOrigin[] {
+  const found: ReceiverOrigin[] = [];
+  for (const link of chain.links) {
+    if (link.asks === "start" && link.at.starts === "receiver") {
+      found.push(link.at.origin);
+    }
+    if (link.asks !== "subject") {
+      continue;
+    }
+    for (const step of link.of) {
+      if (step.to === "argument" && step.origin !== undefined) {
+        found.push(step.origin);
+      }
+    }
+  }
+  return found;
 }
 
 /** One question a pack settled with code, and how far down it reached. */
