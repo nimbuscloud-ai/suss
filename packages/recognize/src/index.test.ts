@@ -41,6 +41,7 @@ function callOps(over: {
     calleeText: () => over.callee ?? "client.get",
     receiver: () => over.receiver ?? null,
     argument: (index) => over.built?.[index] ?? null,
+    callee: () => null,
     propertyAt: (index, property) =>
       over.properties?.[index]?.[property] ??
       (index in values
