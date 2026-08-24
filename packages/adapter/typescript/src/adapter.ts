@@ -177,6 +177,37 @@ function bindingPatternNames(nameNode: Node): string[] | null {
   return null;
 }
 
+/**
+ * One input per property the handler binds, or one for the parameter
+ * itself when it takes the object whole. A handler that writes
+ * `{ params }` says it reads the path parameters; one that writes `args`
+ * says nothing about which properties it reads, so the whole object is
+ * the input.
+ */
+function objectParamInputs(
+  param: ParameterDeclaration,
+  position: number,
+  mapping: Extract<InputMappingPattern, { type: "objectParam" }>,
+): RawParameter[] {
+  const boundNames = bindingPatternNames(param.getNameNode());
+  if (boundNames === null) {
+    return [
+      {
+        name: param.getName(),
+        position,
+        role: mapping.wholeParamRole ?? "request",
+        typeText: null,
+      },
+    ];
+  }
+  return boundNames.map((name) => ({
+    name,
+    position,
+    role: mapping.knownProperties[name] ?? name,
+    typeText: null,
+  }));
+}
+
 function componentPropsParameters(
   param: ParameterDeclaration,
   mapping: Extract<InputMappingPattern, { type: "componentProps" }>,
@@ -225,34 +256,11 @@ function extractParameters(
         typeText: null,
       });
     }
-  } else if (inputMapping.type === "singleObjectParam") {
-    const param = params[inputMapping.paramPosition];
+  } else if (inputMapping.type === "objectParam") {
+    const position = inputMapping.paramPosition ?? 0;
+    const param = params[position];
     if (param !== undefined) {
-      result.push({
-        name: param.getName(),
-        position: inputMapping.paramPosition,
-        role: "request",
-        typeText: null,
-      });
-    }
-  } else if (inputMapping.type === "destructuredObject") {
-    const param = params[0];
-    if (param !== undefined) {
-      const nameNode = param.getNameNode();
-      const boundNames = bindingPatternNames(nameNode);
-      if (boundNames !== null) {
-        for (const name of boundNames) {
-          const role = inputMapping.knownProperties[name] ?? name;
-          result.push({ name, position: 0, role, typeText: null });
-        }
-      } else {
-        result.push({
-          name: param.getName(),
-          position: 0,
-          role: "request",
-          typeText: null,
-        });
-      }
+      result.push(...objectParamInputs(param, position, inputMapping));
     }
   } else if (inputMapping.type === "allPositional") {
     for (let i = 0; i < params.length; i++) {

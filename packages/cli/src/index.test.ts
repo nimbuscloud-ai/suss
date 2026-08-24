@@ -608,13 +608,14 @@ describe("extract: react-router", () => {
       expect.unreachable("loader not found");
     }
 
-    // Single destructured params object mapped to role "request".
+    // The loader writes `{ params }`, and the pack declares that params
+    // is the path parameters, so the input says so.
     expect(loader.inputs).toEqual([
       {
         type: "parameter",
-        name: "{ params }",
+        name: "params",
         position: 0,
-        role: "request",
+        role: "pathParams",
         shape: null,
       },
     ]);

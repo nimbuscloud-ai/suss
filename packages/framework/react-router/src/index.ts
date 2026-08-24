@@ -241,8 +241,7 @@ export function reactRouterFramework(
     ],
 
     inputMapping: {
-      type: "singleObjectParam",
-      paramPosition: 0,
+      type: "objectParam",
       knownProperties: {
         request: "request",
         params: "pathParams",

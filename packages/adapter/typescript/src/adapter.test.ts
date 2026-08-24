@@ -138,7 +138,7 @@ const tsRestPack: PatternPack = {
     paramsExtraction: { property: "pathParams" },
   },
   inputMapping: {
-    type: "destructuredObject",
+    type: "objectParam",
     knownProperties: {
       params: "pathParams",
       body: "requestBody",
