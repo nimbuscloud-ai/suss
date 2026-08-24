@@ -22,7 +22,13 @@
 //     `invocation` effects with the callee's source text.
 //   * Async detection via `Node.isAwaitExpression` on the call.
 
-import { type CallExpression, Node, type SourceFile } from "ts-morph";
+import {
+  type CallExpression,
+  Node,
+  type PropertyAccessExpression,
+  type SourceFile,
+  type TaggedTemplateExpression,
+} from "ts-morph";
 
 import {
   collectAncestorConditionInfos,
@@ -101,6 +107,13 @@ export interface TsAccessRecognizerContext {
    * and the recognizer's own pattern match runs on the raw node.
    */
   resolveWrittenValue: (value: Node) => Node | null;
+  /**
+   * What a declared pack asks about this node, when the node is a call
+   * or a tagged template. This walk visits property accesses as well,
+   * and there is no call there to ask about, so a declared pack
+   * standing on one is handed nothing and matches nothing.
+   */
+  ops?: CallOps;
 }
 
 /**
@@ -584,6 +597,36 @@ export function runAccessRecognizersAtModuleScope(
   );
 }
 
+/** The nodes this walk stops at, which is every shape a pack can guard. */
+type Accessed =
+  | PropertyAccessExpression
+  | CallExpression
+  | TaggedTemplateExpression;
+
+/**
+ * What one node is handed. The ops are built on the first read rather
+ * than up front, the way the invocation walk builds them: most nodes
+ * reach no declared pack, and a pack written as code never asks.
+ */
+function accessContext(
+  node: Accessed,
+  sourceFile: SourceFile,
+  resolveWrittenValue: (value: Node) => Node | null,
+): TsAccessRecognizerContext {
+  const given = { access: node, sourceFile, resolveWrittenValue };
+  if (Node.isPropertyAccessExpression(node)) {
+    return given;
+  }
+  let ops: CallOps | undefined;
+  return {
+    ...given,
+    get ops(): CallOps {
+      ops ??= callOpsFor(node, resolveWrittenValue);
+      return ops;
+    },
+  };
+}
+
 function dispatchAccessRecognizers(
   root: Node,
   recognizers: AccessRecognizer[],
@@ -616,11 +659,11 @@ function dispatchAccessRecognizers(
     ) {
       return;
     }
-    const ctx: TsAccessRecognizerContext = {
-      access: node,
+    const ctx = accessContext(
+      node,
       sourceFile,
-      resolveWrittenValue: resolveWrittenValue ?? (() => null),
-    };
+      resolveWrittenValue ?? (() => null),
+    );
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;

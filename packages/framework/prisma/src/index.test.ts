@@ -1,6 +1,8 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { callOpsFor } from "@suss/adapter-typescript";
+import { runExamples } from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { prismaFramework } from "./index.js";
@@ -808,11 +810,18 @@ describe("prisma raw SQL", () => {
     const recognizers = prismaFramework().accessRecognizers ?? [];
     const effects: Effect[] = [];
     sourceFile.forEachDescendant((node) => {
+      if (
+        !Node.isCallExpression(node) &&
+        !Node.isTaggedTemplateExpression(node)
+      ) {
+        return;
+      }
       for (const recognizer of recognizers) {
         const emitted = recognizer(node, {
           access: node,
           sourceFile,
           resolveWrittenValue: () => null,
+          ops: callOpsFor(node),
         });
         if (emitted !== null) {
           effects.push(...emitted);
@@ -894,5 +903,55 @@ describe("prisma raw SQL", () => {
         }
       `),
     ).toEqual([]);
+  });
+
+  it("reads one statement that touches two tables as two effects", () => {
+    const effects = rawEffects(`
+      import { PrismaClient } from "@prisma/client";
+      const prisma = new PrismaClient();
+      export async function report() {
+        return prisma.$queryRawUnsafe(
+          "SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id = u.id"
+        );
+      }
+    `);
+
+    expect(effects).toHaveLength(2);
+    expect(
+      effects.map((effect) => storageOf(effect).semantics.container),
+    ).toEqual(["users", "orders"]);
+  });
+
+  it("prices the raw path: every link is data", () => {
+    expect(prismaFramework().declarations?.declarations).toEqual([
+      {
+        name: "postgresql",
+        dataLinks: 2,
+        functionLinks: [],
+        astLinks: [],
+        example: 'prisma.$queryRawUnsafe("SELECT id, email FROM users")',
+      },
+    ]);
+  });
+
+  it("emits the effect its example says it does", () => {
+    const ran = runExamples(prismaFramework(), (code) =>
+      rawEffects(`
+        import { PrismaClient } from "@prisma/client";
+        const prisma = new PrismaClient();
+        export async function example() {
+          return ${code};
+        }
+      `),
+    );
+
+    expect(ran).toHaveLength(1);
+    const { semantics, interaction } = storageOf(ran[0].effects[0]);
+    expect(semantics).toMatchObject({ container: "users" });
+    expect(interaction).toMatchObject({
+      kind: "read",
+      fields: ["id", "email"],
+      operation: "$queryRawUnsafe",
+    });
   });
 });

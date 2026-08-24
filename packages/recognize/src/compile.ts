@@ -14,6 +14,7 @@
  */
 
 import { storageBinding } from "@suss/behavioral-ir";
+import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
 import { opsIn } from "./ops.js";
 
@@ -32,8 +33,11 @@ import type {
   KindAsAsked,
   Link,
   MatchStart,
+  MethodMeaning,
   MethodsLink,
   OneArgument,
+  SqlEnding,
+  SqlMethod,
   StatedInputs,
   StatedRule,
   StorageEnding,
@@ -64,14 +68,15 @@ interface Matched {
   subject: CallOps;
   /** The operation as the source spells it. */
   method: string;
-  meaning: StorageMethod;
-  chain: Chain<StorageMethod>;
+  /** What the method table says this method does, as its ending reads it. */
+  meaning: MethodMeaning;
+  chain: Chain<MethodMeaning>;
   recognition: string;
 }
 
 /** A chain, as the hook the adapter dispatches to on every call. */
 export function compile(
-  chain: Chain<StorageMethod>,
+  chain: Chain<MethodMeaning>,
   recognition: string,
 ): InvocationRecognizer {
   return (_call: unknown, ctx: unknown): Effect[] | null => {
@@ -100,18 +105,18 @@ export function compile(
 }
 
 /** The link for one question, or null when the chain does not ask it. */
-function linkIn<TAsks extends Link<StorageMethod>["asks"]>(
-  chain: Chain<StorageMethod>,
+function linkIn<TAsks extends Link<MethodMeaning>["asks"]>(
+  chain: Chain<MethodMeaning>,
   asks: TAsks,
-): Extract<Link<StorageMethod>, { asks: TAsks }> | null {
+): Extract<Link<MethodMeaning>, { asks: TAsks }> | null {
   const link = chain.links.find((candidate) => candidate.asks === asks);
-  return (link as Extract<Link<StorageMethod>, { asks: TAsks }>) ?? null;
+  return (link as Extract<Link<MethodMeaning>, { asks: TAsks }>) ?? null;
 }
 
 /** The methods link, which every chain that recognizes calls states. */
 function methodsIn(
-  chain: Chain<StorageMethod>,
-): MethodsLink<StorageMethod> | null {
+  chain: Chain<MethodMeaning>,
+): MethodsLink<MethodMeaning> | null {
   return linkIn(chain, "methods");
 }
 
@@ -126,9 +131,9 @@ function operationOf(ops: CallOps): string | null {
 
 /** What the method table says this operation does, or null. */
 function listed(
-  link: MethodsLink<StorageMethod>,
+  link: MethodsLink<MethodMeaning>,
   method: string,
-): StorageMethod | null {
+): MethodMeaning | null {
   if (!link.ignoringCase) {
     return link.table[method] ?? null;
   }
@@ -140,7 +145,7 @@ function listed(
  * call in hand, and with one it is each call the steps reach, tried in
  * turn until the rest of the chain matches.
  */
-function subjectsOf(chain: Chain<StorageMethod>, ops: CallOps): CallOps[] {
+function subjectsOf(chain: Chain<MethodMeaning>, ops: CallOps): CallOps[] {
   const link: SubjectLink | null = linkIn(chain, "subject");
   return link === null ? [ops] : walk([ops], link.of);
 }
@@ -225,7 +230,7 @@ const START: Record<
 };
 
 /** Whether the call is where the chain says its match starts. */
-function startsHere(chain: Chain<StorageMethod>, subject: CallOps): boolean {
+function startsHere(chain: Chain<MethodMeaning>, subject: CallOps): boolean {
   return chain.links.every((link) =>
     link.asks === "start" ? START[link.at.starts](link.at, subject) : true,
   );
@@ -234,6 +239,7 @@ function startsHere(chain: Chain<StorageMethod>, subject: CallOps): boolean {
 /** One ending per thing a chain can produce. */
 const YIELD: Record<Ending["yields"], (matched: Matched) => Effect[] | null> = {
   storageAccess: storageAccess,
+  sqlAccess: sqlAccess,
 };
 
 /** One container a call reached, and what the call says about it. */
@@ -254,7 +260,8 @@ interface Access {
 }
 
 function storageAccess(matched: Matched): Effect[] | null {
-  const { subject, meaning, chain } = matched;
+  const { subject, chain } = matched;
+  const meaning = matched.meaning as StorageMethod;
   const unsettled = (chain.ending as StorageEnding).unsettledName;
   const kind = kindOf(meaning.kind, subject, unsettled);
   const link: InputLink | null = linkIn(chain, "input");
@@ -268,7 +275,8 @@ function storageAccess(matched: Matched): Effect[] | null {
 }
 
 function accessEffect(matched: Matched, access: Access): Effect {
-  const { ops, subject, method, meaning, chain, recognition } = matched;
+  const { ops, subject, method, chain, recognition } = matched;
+  const meaning = matched.meaning as StorageMethod;
   const ending = chain.ending as StorageEnding;
   const { input, kind, reached, unsettled } = access;
   const stated = { input, entry: reached.entry, kind };
@@ -307,7 +315,7 @@ function accessEffect(matched: Matched, access: Access): Effect {
  * container the container link picks out.
  */
 function reachedBy(
-  chain: Chain<StorageMethod>,
+  chain: Chain<MethodMeaning>,
   subject: CallOps,
   unsettled: UnsettledName,
 ): Reached[] {
@@ -341,7 +349,7 @@ function kindOf(
 
 /** The container the selector belongs to, by the pack's own rule. */
 function containerOf(
-  chain: Chain<StorageMethod>,
+  chain: Chain<MethodMeaning>,
   selector: readonly string[],
   subject: CallOps,
   unsettled: UnsettledName,
@@ -358,7 +366,7 @@ function containerOf(
 
 /** Which way into the container the call took, when the chain says where. */
 function accessPathOf(
-  chain: Chain<StorageMethod>,
+  chain: Chain<MethodMeaning>,
   subject: CallOps,
   unsettled: UnsettledName,
 ): string | null {
@@ -399,6 +407,7 @@ const NOTHING_STATED: ValueOps = {
   entries: () => [],
   items: () => [],
   property: () => null,
+  parts: () => null,
 };
 
 /** What the call reached, by the argument it picks or by the pack's rule. */
@@ -464,4 +473,48 @@ function nameOf(
     }
   }
   return null;
+}
+
+/**
+ * Every table the statement touches, as one effect each.
+ *
+ * The kind, the fields and the selector come out of the parse rather
+ * than out of anything the chain asked, so nothing here reads the
+ * method table beyond finding where the call put the statement. A
+ * statement nobody can read gives back nothing, and the call goes
+ * unrecorded rather than recorded with a guessed kind.
+ */
+function sqlAccess(matched: Matched): Effect[] | null {
+  const { ops, subject, method, chain, recognition } = matched;
+  const ending = chain.ending as SqlEnding;
+  const stated = statedValue(subject, (matched.meaning as SqlMethod).statement);
+  const parts = stated?.parts() ?? null;
+  if (parts === null) {
+    return null;
+  }
+  const accesses = readSqlAccess(sqlFromParts(parts), {
+    dialect: ending.dialect,
+  });
+  return accesses.length === 0
+    ? null
+    : accesses.map((access) => ({
+        type: "interaction",
+        binding: storageBinding({
+          recognition,
+          storageSystem: ending.system,
+          ...(ending.transport === undefined
+            ? {}
+            : { transport: ending.transport }),
+          scope: ending.scope,
+          container: access.table,
+        }),
+        callee: ops.calleeText(),
+        interaction: {
+          class: "storage-access",
+          kind: access.kind,
+          fields: access.fields,
+          ...(access.selector.length > 0 ? { selector: access.selector } : {}),
+          operation: method,
+        },
+      }));
 }

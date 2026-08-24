@@ -3,7 +3,8 @@
 export { compile } from "./compile.js";
 export { examplesMissing, runExamples } from "./example.js";
 export { constructedFrom, declaredBy, opsIn } from "./ops.js";
-export { pack } from "./pack.js";
+export { declarationsIn, pack } from "./pack.js";
+export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
 
 // A declared pack imports its whole surface from here, including the
@@ -32,8 +33,11 @@ export type {
   Link,
   LinkFunction,
   MatchStart,
+  MethodMeaning,
   MethodsLink,
   OneArgument,
+  SqlEnding,
+  SqlMethod,
   StartLink,
   StatedInputs,
   StatedRule,
@@ -54,5 +58,6 @@ export type {
   ValueEntry,
   ValueOps,
 } from "./ops.js";
-export type { PackSpec } from "./pack.js";
+export type { Match, PackSpec } from "./pack.js";
+export type { SqlStatements, SqlStatementsSpec } from "./sqlStatements.js";
 export type { StorageCalls, StorageCallsSpec } from "./storage.js";

@@ -30,11 +30,18 @@ import type {
   ObjectLiteralExpression,
   PropertyAccessExpression,
   PropertyAssignment,
+  TaggedTemplateExpression,
   VariableDeclaration,
 } from "ts-morph";
 
-/** A call, or a construction, which asks the same questions. */
-type Called = CallExpression | NewExpression;
+/**
+ * A call, a construction, or a tagged template, which all ask the same
+ * questions. A tagged template is a call the source wrote without
+ * parentheses: the tag is the callee and the template is the one
+ * argument, which is how a pack reaches a statement written that way
+ * without a second grammar for it.
+ */
+type Called = CallExpression | NewExpression | TaggedTemplateExpression;
 
 /** One-hop lookup from a written name to the value it was bound to. */
 type Resolve = (value: Node) => Node | null;
@@ -120,7 +127,7 @@ export function callOpsFor(
   resolveWrittenValue?: Resolve,
 ): AstCapableOps {
   const resolve = resolveWrittenValue ?? (() => null);
-  const expression = call.getExpression();
+  const expression = calleeOf(call);
   const callee = Node.isPropertyAccessExpression(expression)
     ? expression
     : null;
@@ -128,7 +135,7 @@ export function callOpsFor(
   // here, and a chain reads several positions of the same call.
   let args: Node[] | null = null;
   const argumentsOf = (): Node[] => {
-    args ??= call.getArguments();
+    args ??= argumentsIn(call);
     return args;
   };
 
@@ -183,7 +190,30 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
         : null;
       return inside === null ? null : valueOpsFor(inside, resolve);
     },
+    parts: () => literalParts(written()),
   };
+}
+
+/**
+ * The text a value states, in the pieces the source wrote it in. A
+ * template with holes in it comes back as the text either side of each
+ * hole, so a reader can put its own placeholder where the hole was
+ * rather than losing the statement to one interpolated value.
+ */
+function literalParts(value: Node): string[] | null {
+  const whole = literalText(value);
+  if (whole !== null) {
+    return [whole];
+  }
+  if (!Node.isTemplateExpression(value)) {
+    return null;
+  }
+  return [
+    value.getHead().getLiteralText(),
+    ...value
+      .getTemplateSpans()
+      .map((span) => span.getLiteral().getLiteralText()),
+  ];
 }
 
 /** What an object states, entry by entry. */
@@ -277,9 +307,27 @@ function opsOverCall(
   return callOpsFor(written, resolve);
 }
 
-/** Whether a value is a call or a construction. */
+/** Whether a value is a call, a construction or a tagged template. */
 function isCalled(value: Node): value is Called {
-  return Node.isCallExpression(value) || Node.isNewExpression(value);
+  return (
+    Node.isCallExpression(value) ||
+    Node.isNewExpression(value) ||
+    Node.isTaggedTemplateExpression(value)
+  );
+}
+
+/** What the call goes to: the tag, where the source wrote a template. */
+function calleeOf(call: Called): Node {
+  return Node.isTaggedTemplateExpression(call)
+    ? call.getTag()
+    : call.getExpression();
+}
+
+/** What the call was handed. A tagged template hands over the template. */
+function argumentsIn(call: Called): Node[] {
+  return Node.isTaggedTemplateExpression(call)
+    ? [call.getTemplate()]
+    : call.getArguments();
 }
 
 /**
@@ -380,7 +428,7 @@ function objectAt(
     return null;
   }
   if (isCalled(written)) {
-    return objectAt(written.getArguments()[0], resolve);
+    return objectAt(argumentsIn(written)[0], resolve);
   }
   return Node.isObjectLiteralExpression(written) ? written : null;
 }

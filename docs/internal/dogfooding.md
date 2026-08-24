@@ -196,15 +196,17 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 10 unmatched consumers ask for a method or a property on a
+**The 11 unmatched consumers ask for a method or a property on a
 value a package returned.** They are `checkAll(...).findings`,
 `groundStorageAccesses(...).accesses`,
 `SuppressionFileSchema.safeParse(...)`, `IntentDocSchema.parse(...)`,
-`evaluate(...).facts`, and two of `storageCalls(...).methods(...)`. The
-DynamoDB pack builds its chain inside a function because the chain
-depends on what a project configured, and the Mongoose pack builds its
-own inside one because the scope a project asks for goes into the chain
-itself. The consumer records the member as part of
+`evaluate(...).facts`, two of `storageCalls(...).methods(...)` and one
+of `sqlStatements(...).methods(...)`. The DynamoDB pack builds its chain
+inside a function because the chain depends on what a project
+configured, the Mongoose pack builds its own inside one because the
+scope a project asks for goes into the chain itself, and the Prisma pack
+does the same for its raw path because the store and the scope are the
+pack's own options. The consumer records the member as part of
 its export path, so it asks for `@suss/checker::checkAll.findings`,
 and a package publishes providers for what it exports rather than for
 the members of what those exports return. Closing this means

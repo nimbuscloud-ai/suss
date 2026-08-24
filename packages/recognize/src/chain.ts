@@ -5,8 +5,10 @@
  * receiver, match the method, read the arguments, then yield. What
  * differs is the ending. Recognition yields effects, discovery yields a
  * unit, a terminal yields a response write, and a claimed callback
- * yields a sub-unit. Only the effects ending is built; the others are
- * further members of `Ending` with an entry in the compile table.
+ * yields a sub-unit. Two recognition endings are built, one that asks
+ * the call what it reached and one that reads the statement the call
+ * was handed; the other three jobs are further members of `Ending`
+ * with an entry in the compile table.
  *
  * A link's answer is data wherever it can be. A link given a function
  * instead is code, that link alone, and pack health says which ones.
@@ -280,8 +282,26 @@ export interface StorageMethod {
   readonly fields?: readonly string[] | ArgumentPick | InputRule | StatedRule;
 }
 
+/**
+ * What one method of a client that takes a statement written as SQL
+ * does. The statement says which tables it touches and what it does to
+ * each, so the only thing a pack has to state is where the call puts
+ * it.
+ */
+export interface SqlMethod {
+  /**
+   * Where the call states the statement. The pick's steps reach a call
+   * beside this one, which is how a pack reads a statement handed to
+   * `execute` as a tagged template rather than written on the call.
+   */
+  readonly statement: OneArgument;
+}
+
+/** What one method table can say a method does. */
+export type MethodMeaning = StorageMethod | SqlMethod;
+
 /** What a chain produces when every link matches. */
-export type Ending = StorageEnding;
+export type Ending = StorageEnding | SqlEnding;
 
 /** A storage access: one call, one thing it read or wrote. */
 export interface StorageEnding {
@@ -297,10 +317,37 @@ export interface StorageEnding {
 }
 
 /**
+ * Every table a statement touches, as one effect each.
+ *
+ * The other ending settles what a call reached by asking the call. This
+ * one settles it by reading the statement, so one call yields as many
+ * effects as the statement has tables, and each of them states its own
+ * kind: a statement that writes one table while reading another says
+ * both.
+ */
+export interface SqlEnding {
+  readonly yields: "sqlAccess";
+  /** The store, in the words OpenTelemetry's semantic conventions use. */
+  readonly system: string;
+  /** The wire, when it differs from the store's own name. */
+  readonly transport?: string;
+  /** Which of the store's namespaces the call reached. */
+  readonly scope: string;
+  /**
+   * Which dialect the statements are written in. A pack states it
+   * outright because nothing here can work it out: a Cloudflare D1
+   * database is a store of its own whose statements are SQLite, and a
+   * reader that guessed Postgres for a MySQL project would report the
+   * wrong tables rather than none.
+   */
+  readonly dialect: string;
+}
+
+/**
  * A pack's declaration for one kind of call: the links, the ending, and
  * a line of code it matches.
  */
-export interface Chain<TMeaning = StorageMethod> {
+export interface Chain<TMeaning = MethodMeaning> {
   readonly links: readonly Link<TMeaning>[];
   readonly ending: Ending;
   /** A line of code this matches, which the pack's tests run. */

@@ -19,9 +19,5 @@
   "set": "@prisma/client: nested write operation, replace the joined rows",
   "data": "@prisma/client: write argument key holding the row values",
   "read": "suss: access kind",
-  "write": "suss: access kind",
-  "$queryRaw": "@prisma/client: method taking a query as a tagged template",
-  "$executeRaw": "@prisma/client: method taking a statement as a tagged template",
-  "$queryRawUnsafe": "@prisma/client: method taking a query as a string",
-  "$executeRawUnsafe": "@prisma/client: method taking a statement as a string"
+  "write": "suss: access kind"
 }
