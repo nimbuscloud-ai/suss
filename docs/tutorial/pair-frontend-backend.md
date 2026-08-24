@@ -8,6 +8,8 @@ from source alone.
 The two sides share no types and no framework. The OpenAPI document is
 the only artifact they have in common.
 
+<!-- suss:example -->
+
 ## Step 1. Set up a workspace
 
 ```bash

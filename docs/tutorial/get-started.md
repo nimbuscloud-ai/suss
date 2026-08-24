@@ -10,6 +10,8 @@ If your first run turns up nothing to compare, the
 this page builds two files that disagree, so you have a finding in
 front of you while you work out what your own project needs.
 
+<!-- suss:unchecked it runs against gothinkster/node-express-realworld-example-app, which this repository does not check in -->
+
 ## Work out which packs you need
 
 ```bash
@@ -157,6 +159,8 @@ code. Useful when your own first run had nothing to compare, or when
 you want to see what a cross-boundary finding looks like before you go
 hunting for one.
 
+<!-- suss:example -->
+
 ### Set up a workspace
 
 ```bash
@@ -301,6 +305,8 @@ with a finding. It matches this finding and no other. See
 
 Give the caller its own branch:
 
+<!-- suss:file src/client.ts -->
+
 ```ts
 export async function loadUser(id: string) {
   const response = await fetch(`/users/${id}`);
@@ -330,6 +336,8 @@ No findings. Every compared boundary agreed.
 
 suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
+
+<!-- suss:unchecked the step below is an edit to paste into a file rather than the whole file, so the run cannot apply it -->
 
 ### Change the endpoint and watch it break
 

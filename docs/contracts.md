@@ -227,12 +227,16 @@ Design artifacts upstream of the code: Figma and Sketch files, design tokens, pr
 
 Everything shipped today is a **specification**: schema-shaped artifacts across the HTTP, GraphQL, AppSync, message-bus, storage and component domains. Point `suss contract --from <source>` at one and you get summaries in the same form `extract` produces. A CloudFormation template, for example:
 
+<!-- suss:example fixtures=aws-lambda -->
+
 ```bash
 suss contract --from cloudformation fixtures/aws-lambda/template.yaml -o cfn.json
 suss inspect cfn.json
 ```
 
 That template declares 32 summaries, six of them routes. One route, with the other 31 cut:
+
+<!-- suss:excerpt -->
 
 ```
 cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
