@@ -76,9 +76,9 @@ export interface OpenApiParameter {
    * 3.x wraps it in `schema`. The other schema keywords sit beside it.
    */
   type?: OpenApiSchema["type"];
-  format?: string;
-  items?: OpenApiSchema;
-  enum?: unknown[];
+  format?: OpenApiSchema["format"];
+  items?: OpenApiSchema["items"];
+  enum?: OpenApiSchema["enum"];
   description?: string;
 }
 

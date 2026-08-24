@@ -16,6 +16,7 @@ import type {
   HttpMethod,
   OpenApiOperation,
   OpenApiParameter,
+  OpenApiSchema,
   OpenApiSpec,
   PathItem,
 } from "./spec.js";
