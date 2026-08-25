@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { interactionsOf, packUnderTest } from "@suss/pack-harness";
-
-import { messageSends } from "./messageSends.js";
-import { constructedFrom } from "./ops.js";
-import { pack } from "./pack.js";
+import { constructedFrom, messageSends, pack } from "@suss/recognize";
 
 import type { PatternPack } from "@suss/extractor";
 
+// What the message-send ending does, proven against the two AWS shapes
+// it exists for. It lives here because a real project is what shows a
+// channel named by a variable being read, and the harness that builds
+// one cannot be reached from @suss/recognize without a cycle.
+//
 // The AWS SDK v3 shape both packs read: one `send`, and the command
 // class says which operation it is.
 const LIBRARY = {
