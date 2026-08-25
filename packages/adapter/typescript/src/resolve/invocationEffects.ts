@@ -48,12 +48,12 @@ import { callOpsFor } from "./callOps.js";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   AccessRecognizer,
+  CallOps,
   EffectArg,
   InvocationRecognizer,
   RawCondition,
   RawEffect,
 } from "@suss/extractor";
-import type { CallOps } from "@suss/recognize";
 
 export interface InvocationEffectLocation {
   effect: RawEffect;
@@ -163,7 +163,7 @@ export interface TsInvocationRecognizerContext {
   resolveWrittenValue(value: Node): Node | null;
   /**
    * What a declared pack asks about this call, in the vocabulary
-   * `@suss/recognize` defines. A pack written as a chain of data links
+   * `@suss/extractor` defines. A pack written as a chain of data links
    * reads only this; the members above are what a pack written as code
    * reaches for.
    */

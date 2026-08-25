@@ -12,18 +12,8 @@
  * against, and that cast is how the pack says which adapter it needs.
  */
 
+import type { AstCapableOps, CallOps } from "@suss/extractor";
 import type { LinkFunction } from "./chain.js";
-import type { CallOps } from "./ops.js";
-
-/**
- * The ops an adapter implements when it can hand out its own nodes. The
- * extra member is here rather than on `CallOps` so that a pack reaching
- * for a node has to import this module first.
- */
-export interface AstCapableOps extends CallOps {
-  /** The adapter's own node for the call in hand. */
-  ast(): unknown;
-}
 
 /**
  * A link answered by reading the call's own node. `read` is handed the

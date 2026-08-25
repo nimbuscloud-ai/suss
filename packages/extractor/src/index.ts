@@ -948,3 +948,15 @@ export function paramToInput(param: RawParameter): Input {
     shape: param.typeText ? { type: "ref", name: param.typeText } : null,
   };
 }
+
+export type {
+  AstCapableOps,
+  CallOps,
+  ConstructedFrom,
+  DeclaredBy,
+  OpsCarrier,
+  ReceiverOrigin,
+  UnsettledName,
+  ValueEntry,
+  ValueOps,
+} from "./ops.js";
