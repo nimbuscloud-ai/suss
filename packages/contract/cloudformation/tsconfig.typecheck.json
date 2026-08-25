@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./.tsbuild",
+    "tsBuildInfoFile": "./.tsbuild/tsconfig.tsbuildinfo",
+    "noEmit": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../../behavioral-ir/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../checker/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../ir-core/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../manifest/aws/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../aws-apigateway/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../openapi/tsconfig.typecheck.json"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./.tsbuild",
+    "tsBuildInfoFile": "./.tsbuild/tsconfig.tsbuildinfo",
+    "noEmit": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../../packages/adapter/python/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/adapter/typescript/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/behavioral-ir/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/checker/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/extractor/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/apollo/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/aws-lambda/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/aws-sqs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/express/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/fastapi/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/fastify/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/flask-restx/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/nestjs-graphql/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/nestjs-rest/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/framework/react/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/runtime/node/tsconfig.typecheck.json"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./.tsbuild",
+    "tsBuildInfoFile": "./.tsbuild/tsconfig.tsbuildinfo",
+    "noEmit": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../../adapter/typescript/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../behavioral-ir/tsconfig.typecheck.json"
+    }
+  ]
+}
