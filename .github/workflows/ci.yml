@@ -44,6 +44,14 @@ jobs:
       - uses: ./.github/actions/prepare
         id: prepare
 
+      # Every package's exports point at dist, so anything that resolves
+      # a sibling by name needs a build first. Turbo used to sequence
+      # this through `typecheck dependsOn ^build`, and typecheck runs as
+      # one tsc over the project graph now rather than through turbo.
+      - name: Build
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run build
+
       - name: Lint
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run lint
@@ -64,10 +72,6 @@ jobs:
       - name: Typecheck
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run typecheck
-
-      - name: Build
-        if: steps.prepare.outputs.docs_only != 'true'
-        run: npm run build
 
       # A package that drifts back to private, or picks up a "*" range
       # on a sibling, only fails at publish time. Catching it on every
@@ -152,6 +156,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/prepare
         id: prepare
+
+      # These run the CLI over fixtures rather than going through turbo,
+      # so nothing else here would build what they load.
+      - name: Build
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run build
 
       - name: Fuzz (fixed seed)
         if: steps.prepare.outputs.docs_only != 'true'
