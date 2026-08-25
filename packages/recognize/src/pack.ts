@@ -79,6 +79,7 @@ export interface PackSpec {
 const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
   storageAccess: "invocation",
   sqlAccess: "access",
+  messageSend: "invocation",
 };
 
 /** The chains a pack dispatches on one of the two walks. */
@@ -127,11 +128,26 @@ export function declarationsIn(matches: readonly Match[]): PackDeclarations {
   return { declarations: matches.map((match) => describe(match.declared)) };
 }
 
+/** The wire one chain reaches over, whichever ending it has. */
+function wireOf(ending: Ending): string {
+  if (ending.yields === "messageSend") {
+    return ending.wire;
+  }
+  return ending.transport ?? ending.system;
+}
+
+/**
+ * What a declaration is called where it is priced. A storage chain is
+ * known by its store rather than by the wire it reaches over, since one
+ * wire carries several stores.
+ */
+function declaredName(ending: Ending): string {
+  return ending.yields === "messageSend" ? ending.wire : ending.system;
+}
+
 /** The wire every chain in a pack reaches over. */
 function protocolOf(chains: readonly Chain<MethodMeaning>[]): string {
-  const wires = new Set(
-    chains.map((chain) => chain.ending.transport ?? chain.ending.system),
-  );
+  const wires = new Set(chains.map((chain) => wireOf(chain.ending)));
   const [only] = [...wires];
   if (wires.size !== 1 || only === undefined) {
     throw new Error(
@@ -197,7 +213,7 @@ function describe(chain: Chain<MethodMeaning>): DeclaredMatch {
     ...rulesIn(chain),
   ];
   return {
-    name: chain.ending.system,
+    name: declaredName(chain.ending),
     // A method table with a rule inside it is still a table, so that
     // link stays counted as data and the rule is priced beside it.
     dataLinks: chain.links.length - links.length,

@@ -53,6 +53,13 @@ export interface ConstructedFrom {
   readonly origin: "constructed";
   /** The modules whose export the client was made from. */
   readonly importedFrom: readonly string[];
+  /**
+   * Which of those exports, when a pack has to tell two apart. Every
+   * AWS SDK command comes from the one module and goes through the one
+   * `send`, so the command class is what says which operation a call
+   * performs. Unset matches whatever the module exports.
+   */
+  readonly named?: readonly string[];
 }
 
 /**
