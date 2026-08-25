@@ -26,7 +26,7 @@ import type {
   MessageSendEnding,
   MessageSendMethod,
 } from "./chain.js";
-import type { ReceiverOrigin } from "./ops.js";
+import type { ReceiverOrigin, UnsettledName } from "./ops.js";
 
 export interface MessageSendsSpec {
   /** The wire, in the words the IR's message-bus semantics use. */
@@ -39,6 +39,12 @@ export interface MessageSendsSpec {
   channelSeparator?: string;
   /** The property a message states its body on. */
   body?: string;
+  /**
+   * What a reader gives back for a channel nothing in the source
+   * settles. Defaults to keeping the reference, since a queue named
+   * only at deploy time is the common case rather than the exception.
+   */
+  unsettledName?: UnsettledName;
   /** How the pack pins down the client its calls are on. */
   client?: ReceiverOrigin;
 }
@@ -67,6 +73,7 @@ export function messageSends(spec: MessageSendsSpec): MessageSends {
       ? {}
       : { channelSeparator: spec.channelSeparator }),
     ...(spec.body === undefined ? {} : { body: spec.body }),
+    unsettledName: spec.unsettledName ?? "reference",
   };
   return chainFrom({
     links: chainStart(spec.client),

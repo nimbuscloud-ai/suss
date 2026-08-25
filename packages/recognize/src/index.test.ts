@@ -60,6 +60,7 @@ function valueOps(stated: unknown): ValueOps {
       : null;
   return {
     text: () => (typeof stated === "string" ? stated : null),
+    name: () => (typeof stated === "string" ? stated : null),
     flag: () => (typeof stated === "boolean" ? stated : null),
     items: () =>
       Array.isArray(stated) ? stated.map((item) => valueOps(item)) : [],

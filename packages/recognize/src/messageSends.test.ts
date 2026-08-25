@@ -87,6 +87,9 @@ const eventBridgePack = (): PatternPack =>
           { property: "EventBusName", whenAbsent: "default" },
           { property: "DetailType" },
         ],
+        // A subject written where nothing here can read it leaves the
+        // send unnamed. A hole in its place would pair across buses.
+        unsettledName: "nothing",
         body: "Detail",
       })
         .methods(INSIDE_THE_COMMAND(["PutEventsCommand"], EVENTBRIDGE))
@@ -190,6 +193,26 @@ describe("a call that sends many", () => {
         eventBridgePack,
       ),
     ).toEqual([null]);
+  });
+});
+
+describe("a channel the code names rather than writes out", () => {
+  it("keeps the reference, since a queue only exists at deploy time", () => {
+    // The URL is not in the source and never will be. What both sides
+    // of the boundary agree on is the variable, so the send records a
+    // reference to it rather than nothing.
+    expect(
+      channelsIn(
+        `import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+         const client = new SQSClient({});
+         export async function send() {
+           await client.send(new SendMessageCommand({
+             QueueUrl: process.env.ORDERS_QUEUE_URL, MessageBody: "{}",
+           }));
+         }`,
+        sqsPack,
+      ),
+    ).toEqual(["{ORDERS_QUEUE_URL}"]);
   });
 });
 

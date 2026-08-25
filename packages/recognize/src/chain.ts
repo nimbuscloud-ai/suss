@@ -15,7 +15,12 @@
  */
 
 import type { MessageBusSemantics } from "@suss/behavioral-ir";
-import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
+import type {
+  CallOps,
+  ReceiverOrigin,
+  UnsettledName,
+  ValueOps,
+} from "./ops.js";
 
 /** A link whose answer a pack wrote as code rather than as data. */
 export interface LinkFunction<A extends unknown[], R> {
@@ -432,6 +437,13 @@ export interface MessageSendEnding {
   readonly channelSeparator?: string;
   /** The property the message states its body on, when the pack can say. */
   readonly body?: string;
+  /**
+   * What a reader gives back for a channel nothing in the source
+   * settles. A queue URL only exists at deploy time, so the code writes
+   * `process.env.ORDERS_QUEUE_URL` and the env var's name is what both
+   * sides of the boundary agree on. `"reference"` keeps that name.
+   */
+  readonly unsettledName: UnsettledName;
 }
 
 /**

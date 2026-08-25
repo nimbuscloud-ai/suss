@@ -199,6 +199,7 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
 
   return {
     text: () => literalText(written()),
+    name: (unsettled) => readName(written(), { resolve, unsettled }),
     flag: () => literalFlag(written()),
     entries: (unsettled) => entriesOf(written(), unsettled, resolve),
     items: () => itemsOf(written(), resolve),
