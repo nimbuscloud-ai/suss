@@ -351,6 +351,11 @@ for (const finding of checked.findings) {
 console.log(`  pairs:               ${pairing.pairs.length}`);
 console.log(`  unmatched providers: ${pairing.unmatched.providers.length}`);
 console.log(`  unmatched consumers: ${pairing.unmatched.consumers.length}`);
+if (process.env.DOGFOOD_LIST_UNMATCHED === "1") {
+  for (const entry of pairing.unmatched.consumers) {
+    console.log(`    ${JSON.stringify(entry).slice(0, 160)}`);
+  }
+}
 const unpairableByReason = new Map();
 for (const entry of pairing.unmatched.unpairable) {
   unpairableByReason.set(

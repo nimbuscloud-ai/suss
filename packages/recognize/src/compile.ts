@@ -13,7 +13,7 @@
  * says what each step reaches and why the walk is bounded.
  */
 
-import { storageBinding } from "@suss/behavioral-ir";
+import { messageBusBinding, storageBinding } from "@suss/behavioral-ir";
 import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
 import { opsIn } from "./ops.js";
@@ -34,6 +34,9 @@ import type {
   KindAsAsked,
   Link,
   MatchStart,
+  MessageLocation,
+  MessageSendEnding,
+  MessageSendMethod,
   MethodMeaning,
   MethodsLink,
   OneArgument,
@@ -241,6 +244,7 @@ function startsHere(chain: Chain<MethodMeaning>, subject: CallOps): boolean {
 const YIELD: Record<Ending["yields"], (matched: Matched) => Effect[] | null> = {
   storageAccess: storageAccess,
   sqlAccess: sqlAccess,
+  messageSend: messageSend,
 };
 
 /** One container a call reached, and what the call says about it. */
@@ -404,6 +408,7 @@ function statedValue(subject: CallOps, pick: OneArgument): ValueOps | null {
  */
 const NOTHING_STATED: ValueOps = {
   text: () => null,
+  name: () => null,
   flag: () => null,
   entries: () => [],
   items: () => [],
@@ -486,6 +491,90 @@ function nameOf(
  * statement nobody can read gives back nothing, and the call goes
  * unrecorded rather than recorded with a guessed kind.
  */
+/**
+ * One effect per message the call sends.
+ *
+ * A library either takes the message as the call's input or takes a
+ * collection of them under a property, and the ending says which. The
+ * channel is read off each message, so a batch of sends to different
+ * queues records one effect per queue.
+ */
+function messageSend(matched: Matched): Effect[] | null {
+  const { ops, subject, chain, recognition } = matched;
+  const ending = chain.ending as MessageSendEnding;
+  const input = statedValue(
+    subject,
+    (matched.meaning as MessageSendMethod).input,
+  );
+  if (input === null) {
+    return null;
+  }
+
+  const messages = messagesIn(input, ending.messages);
+  return messages.length === 0
+    ? null
+    : messages.map((message) => ({
+        type: "interaction",
+        binding: messageBusBinding({
+          recognition,
+          messageBus: ending.wire,
+          channel: channelOf(message, ending),
+        }),
+        callee: ops.calleeText(),
+        interaction: {
+          class: "message-send",
+          ...bodyOf(message, ending),
+        },
+      }));
+}
+
+/** Each message the call sends, however the library takes them. */
+function messagesIn(
+  input: ValueOps,
+  location: MessageLocation,
+): readonly ValueOps[] {
+  if (location.each === "theInput") {
+    return [input];
+  }
+  const collection = input.property(location.property);
+  return collection === null ? [] : collection.items();
+}
+
+/**
+ * The channel one message names, or null when the source leaves a part
+ * of it unsaid. A channel named by half of itself would pair across
+ * wires, so a message missing a part records the send with nothing
+ * claimed about where it went.
+ */
+function channelOf(
+  message: ValueOps,
+  ending: MessageSendEnding,
+): string | null {
+  const parts: string[] = [];
+  for (const part of ending.channel) {
+    const stated =
+      message.property(part.property)?.name(ending.unsettledName) ?? null;
+    const value = stated === null || stated === "" ? part.whenAbsent : stated;
+    if (value === undefined) {
+      return null;
+    }
+    parts.push(value);
+  }
+  return parts.join(ending.channelSeparator ?? "#");
+}
+
+/** The body a message states, when the pack says where it is. */
+function bodyOf(
+  message: ValueOps,
+  ending: MessageSendEnding,
+): { body?: string } {
+  if (ending.body === undefined) {
+    return {};
+  }
+  const stated = message.property(ending.body)?.text() ?? null;
+  return stated === null ? {} : { body: stated };
+}
+
 function sqlAccess(matched: Matched): Effect[] | null {
   const { ops, subject, method, chain, recognition } = matched;
   const ending = chain.ending as SqlEnding;

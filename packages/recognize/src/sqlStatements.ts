@@ -11,6 +11,8 @@
  * own.
  */
 
+import { chainStart } from "./chain.js";
+
 import type {
   Chain,
   InterpolatesLink,
@@ -65,10 +67,7 @@ export function sqlStatements(spec: SqlStatementsSpec): SqlStatements {
   };
   const client = spec.client;
   return chainFrom({
-    links:
-      client === undefined
-        ? []
-        : [{ asks: "start", at: { starts: "receiver", origin: client } }],
+    links: chainStart(client),
     ending,
     example: null,
   });

@@ -8,6 +8,8 @@
  * is finished data by the time `pack` receives it.
  */
 
+import { chainStart } from "./chain.js";
+
 import type {
   ArgumentPick,
   CallStep,
@@ -94,10 +96,7 @@ export function storageCalls(spec: StorageCallsSpec): StorageCalls {
   };
   const client = spec.client;
   return chainFrom({
-    links:
-      client === undefined
-        ? []
-        : [{ asks: "start", at: { starts: "receiver", origin: client } }],
+    links: chainStart(client),
     ending,
     example: null,
   });

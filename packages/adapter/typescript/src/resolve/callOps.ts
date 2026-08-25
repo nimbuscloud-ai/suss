@@ -73,10 +73,25 @@ const ORIGIN: Record<
       methodDeclaredIn(receiver.callee as Node, module, receiver.resolve),
     ),
   constructed: (origin, receiver) =>
+    madeFromNamed(origin, madeBy(receiver)) &&
     origin.importedFrom.some((module) =>
       isImportedFrom(madeBy(receiver), module),
     ),
 };
+
+/**
+ * Whether the export a value was made from is one the pack asked for.
+ * A pack that says nothing takes whatever the module exports. Every AWS
+ * SDK command comes from the one module and goes through the one
+ * `send`, so without this a batch send and a single send are the same
+ * call.
+ */
+function madeFromNamed(origin: ReceiverOrigin, made: Node): boolean {
+  if (origin.origin !== "constructed" || origin.named === undefined) {
+    return true;
+  }
+  return origin.named.includes(made.getText());
+}
 
 /**
  * One check per way a pack can pin down the call itself.
@@ -93,6 +108,10 @@ const CALL_ORIGIN: Record<
 > = {
   declaredBy: ORIGIN.declaredBy,
   constructed: (origin, receiver) =>
+    madeFromNamed(
+      origin,
+      rootIdentifier(receiver.expression) ?? receiver.expression,
+    ) &&
     origin.importedFrom.some((module) =>
       isImportedFrom(
         rootIdentifier(receiver.expression) ?? receiver.expression,
@@ -180,6 +199,7 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
 
   return {
     text: () => literalText(written()),
+    name: (unsettled) => readName(written(), { resolve, unsettled }),
     flag: () => literalFlag(written()),
     entries: (unsettled) => entriesOf(written(), unsettled, resolve),
     items: () => itemsOf(written(), resolve),

@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 10 consumers unpaired, plus the
+The run leaves 134 providers and 14 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -196,12 +196,13 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 12 unmatched consumers ask for a method or a property on a
+**The 14 unmatched consumers ask for a method or a property on a
 value a package returned.** They are `checkAll(...).findings`,
 `groundStorageAccesses(...).accesses`,
 `SuppressionFileSchema.safeParse(...)`, `IntentDocSchema.parse(...)`,
-`evaluate(...).facts`, two of `storageCalls(...).methods(...)` and two
-of `sqlStatements(...).methods(...)`. The DynamoDB pack builds its chain
+`evaluate(...).facts`, two of `storageCalls(...).methods(...)`, two
+of `sqlStatements(...).methods(...)`, and two of
+`messageSends(...).methods(...)`. The DynamoDB pack builds its chain
 inside a function because the chain depends on what a project
 configured, the Mongoose pack builds its own inside one because the
 scope a project asks for goes into the chain itself, and the Prisma and

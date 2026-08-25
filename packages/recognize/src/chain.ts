@@ -14,7 +14,13 @@
  * instead is code, that link alone, and pack health says which ones.
  */
 
-import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
+import type { MessageBusSemantics } from "@suss/behavioral-ir";
+import type {
+  CallOps,
+  ReceiverOrigin,
+  UnsettledName,
+  ValueOps,
+} from "./ops.js";
 
 /** A link whose answer a pack wrote as code rather than as data. */
 export interface LinkFunction<A extends unknown[], R> {
@@ -38,6 +44,19 @@ export type MatchStart = FromReceiver;
 export interface FromReceiver {
   readonly starts: "receiver";
   readonly origin: ReceiverOrigin;
+}
+
+/**
+ * The link a chain opens with, when the pack says which client its calls
+ * are on. A pack that names no client matches the method wherever it is
+ * written, which is what a global send does.
+ */
+export function chainStart<TMeaning>(
+  client: ReceiverOrigin | undefined,
+): Link<TMeaning>[] {
+  return client === undefined
+    ? []
+    : [{ asks: "start", at: { starts: "receiver", origin: client } }];
 }
 
 /** Where the match begins. */
@@ -316,10 +335,16 @@ export interface SqlMethod {
 }
 
 /** What one method table can say a method does. */
-export type MethodMeaning = StorageMethod | SqlMethod;
+/** What one send method does, as the message-send ending reads it. */
+export interface MessageSendMethod {
+  /** Where the call states the message, or the collection of them. */
+  readonly input: OneArgument;
+}
+
+export type MethodMeaning = StorageMethod | SqlMethod | MessageSendMethod;
 
 /** What a chain produces when every link matches. */
-export type Ending = StorageEnding | SqlEnding;
+export type Ending = StorageEnding | SqlEnding | MessageSendEnding;
 
 /** A storage access: one call, one thing it read or wrote. */
 export interface StorageEnding {
@@ -359,6 +384,66 @@ export interface SqlEnding {
    * wrong tables rather than none.
    */
   readonly dialect: string;
+}
+
+/**
+ * Where the messages a call sends are written.
+ *
+ * A library either takes one message as the call's input or takes a
+ * collection of them under a property. Which of the two is a fact about
+ * the command, so a library offering both spells them as two
+ * declarations rather than one with a setting on it: SQS has
+ * `SendMessageCommand` and `SendMessageBatchCommand`, and they are
+ * different shapes.
+ */
+export type MessageLocation = OneMessage | ManyIn;
+
+/** The call's input is the message. */
+export interface OneMessage {
+  readonly each: "theInput";
+}
+
+/** A property of the call's input contains the messages, one each. */
+export interface ManyIn {
+  readonly each: "in";
+  /** The property the collection is written on. */
+  readonly property: string;
+}
+
+/**
+ * One part of the channel a message goes to, read off the message.
+ *
+ * A channel is one name on some wires and several on others. SQS has a
+ * queue, EventBridge has a bus and a subject on it, and both are read
+ * the same way, so a pack states the parts in the order they join.
+ */
+export interface ChannelPart {
+  /** The property the message states this part on. */
+  readonly property: string;
+  /** What the library uses when the message leaves this part out. */
+  readonly whenAbsent?: string;
+}
+
+/** A message sent on a wire, which pairs with whatever consumes that channel. */
+export interface MessageSendEnding {
+  readonly yields: "messageSend";
+  /** The wire, in the words the IR's message-bus semantics use. */
+  readonly wire: MessageBusSemantics["messageBus"];
+  /** Where the messages are. */
+  readonly messages: MessageLocation;
+  /** The parts of the channel, joined in the order they are written. */
+  readonly channel: readonly ChannelPart[];
+  /** What joins the parts, when there is more than one. */
+  readonly channelSeparator?: string;
+  /** The property the message states its body on, when the pack can say. */
+  readonly body?: string;
+  /**
+   * What a reader gives back for a channel nothing in the source
+   * settles. A queue URL only exists at deploy time, so the code writes
+   * `process.env.ORDERS_QUEUE_URL` and the env var's name is what both
+   * sides of the boundary agree on. `"reference"` keeps that name.
+   */
+  readonly unsettledName: UnsettledName;
 }
 
 /**

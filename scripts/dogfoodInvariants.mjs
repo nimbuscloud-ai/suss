@@ -17,17 +17,20 @@ import { declaredExports } from "./declaredSurface.mjs";
 
 /**
  * How many consumers may go unpaired while their provider is in the
- * same run. Twelve today, and every one of them asks for a method or a
- * property on a value a package returned, which nothing publishes a
+ * same run. Fourteen today, and every one of them asks for a method or
+ * a property on a value a package returned, which nothing publishes a
  * provider for. The dogfooding notes list them under `## Where the
  * unmatched summaries come from`.
  *
- * What bounds this number is how well suss resolves, not how many
- * exports the repo happens to have, which is why it can be a fixed
- * ceiling at all. Lowering it is a fix landing; raising it needs an
- * explanation in the same place.
+ * The number tracks how many places call a builder in that style, so it
+ * moves when a pack is written rather than only when resolution changes.
+ * It went to fourteen when a second declaration in one test called
+ * `messageSends(...).methods(...)`, which is the same shape as the
+ * `storageCalls` and `sqlStatements` call sites already counted here.
+ * Lowering it is a fix landing; raising it needs saying which call
+ * sites arrived and why they are the same shape as the rest.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 12;
+const KNOWN_UNPAIRED_CONSUMERS = 14;
 
 /**
  * Every function a package says it exports has a provider summary.

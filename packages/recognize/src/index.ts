@@ -2,6 +2,7 @@
 
 export { compile } from "./compile.js";
 export { examplesMissing, runExamples } from "./example.js";
+export { messageSends } from "./messageSends.js";
 export { constructedFrom, declaredBy, opsIn } from "./ops.js";
 export { declarationsIn, pack } from "./pack.js";
 export { sqlStatements } from "./sqlStatements.js";
@@ -21,6 +22,7 @@ export type {
   ArgumentsFrom,
   CallStep,
   Chain,
+  ChannelPart,
   ContainerArgument,
   ContainerLink,
   ContainerRule,
@@ -33,10 +35,15 @@ export type {
   KindAsAsked,
   Link,
   LinkFunction,
+  ManyIn,
   MatchStart,
+  MessageLocation,
+  MessageSendEnding,
+  MessageSendMethod,
   MethodMeaning,
   MethodsLink,
   OneArgument,
+  OneMessage,
   SqlEnding,
   SqlMethod,
   StartLink,
@@ -49,6 +56,7 @@ export type {
   ToReceiver,
 } from "./chain.js";
 export type { RanExample, RunOverCode } from "./example.js";
+export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
 export type {
   CallOps,
   ConstructedFrom,

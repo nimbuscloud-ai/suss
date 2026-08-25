@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { astLink } from "./ast.js";
 import { examplesMissing, runExamples } from "./example.js";
+import { messageSends } from "./messageSends.js";
 import { constructedFrom, declaredBy, opsIn } from "./ops.js";
 import { pack } from "./pack.js";
 import { sqlStatements } from "./sqlStatements.js";
@@ -60,6 +61,7 @@ function valueOps(stated: unknown): ValueOps {
       : null;
   return {
     text: () => (typeof stated === "string" ? stated : null),
+    name: () => (typeof stated === "string" ? stated : null),
     flag: () => (typeof stated === "boolean" ? stated : null),
     items: () =>
       Array.isArray(stated) ? stated.map((item) => valueOps(item)) : [],
@@ -1052,5 +1054,208 @@ describe("reading the ops off a context", () => {
   it("gives null for a context with none", () => {
     expect(opsIn(undefined)).toBeNull();
     expect(opsIn({})).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A chain that sends a message
+// ---------------------------------------------------------------------------
+
+/** Where every one of these declarations says the message is. */
+const IN_THE_COMMAND = {
+  send: { input: { at: 0 } },
+} as const;
+
+const sends = (over: Partial<Parameters<typeof messageSends>[0]> = {}) =>
+  messageSends({
+    wire: "aws_sqs",
+    client: declaredBy("tapedeck"),
+    messages: { each: "theInput" },
+    channel: [{ property: "QueueUrl" }],
+    body: "MessageBody",
+    ...over,
+  })
+    .methods(IN_THE_COMMAND)
+    .example('client.send({ QueueUrl: "orders" })');
+
+function runSend(
+  calls: ReturnType<typeof sends>,
+  ops: CallOps,
+): Effect[] | null {
+  const [recognizer] =
+    pack("tapedeck", [calls], {
+      languages: ["typescript"],
+      recognizedAs: "@suss/framework-tapedeck",
+    }).invocationRecognizers ?? [];
+  if (recognizer === undefined) {
+    throw new Error("the pack compiled no recognizer");
+  }
+  return recognizer(null, { ops });
+}
+
+const channelsOf = (effects: Effect[] | null) =>
+  (effects ?? []).map((effect) =>
+    effect.type === "interaction" &&
+    effect.binding?.semantics.name === "message-bus"
+      ? effect.binding.semantics.channel
+      : null,
+  );
+
+describe("a chain that sends one message", () => {
+  it("reads the channel and the body off the call's input", () => {
+    const effects = runSend(
+      sends(),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { QueueUrl: "orders", MessageBody: "{}" } },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual(["orders"]);
+    expect(
+      effects?.[0]?.type === "interaction" ? effects[0].interaction : null,
+    ).toEqual({ class: "message-send", body: "{}" });
+  });
+
+  it("says nothing when the call states no input at all", () => {
+    expect(
+      runSend(sends(), callOps({ method: "send", from: ["tapedeck"] })),
+    ).toBeNull();
+  });
+});
+
+describe("a chain that sends many", () => {
+  const batch = () => sends({ messages: { each: "in", property: "Entries" } });
+
+  it("records one message per entry", () => {
+    expect(
+      channelsOf(
+        runSend(
+          batch(),
+          callOps({
+            method: "send",
+            from: ["tapedeck"],
+            values: {
+              0: {
+                Entries: [{ QueueUrl: "orders" }, { QueueUrl: "invoices" }],
+              },
+            },
+          }),
+        ),
+      ),
+    ).toEqual(["orders", "invoices"]);
+  });
+
+  it("says nothing when the property holding them is absent", () => {
+    expect(
+      runSend(
+        batch(),
+        callOps({ method: "send", from: ["tapedeck"], values: { 0: {} } }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("a channel written in more than one place", () => {
+  const twoParts = () =>
+    sends({
+      wire: "eventbridge",
+      messages: { each: "in", property: "Entries" },
+      channel: [
+        { property: "EventBusName", whenAbsent: "default" },
+        { property: "DetailType" },
+      ],
+      unsettledName: "nothing",
+    });
+
+  const entries = (entry: Record<string, unknown>) =>
+    callOps({
+      method: "send",
+      from: ["tapedeck"],
+      values: { 0: { Entries: [entry] } },
+    });
+
+  it("joins the parts in the order they are written", () => {
+    expect(
+      channelsOf(
+        runSend(
+          twoParts(),
+          entries({ EventBusName: "orders", DetailType: "Placed" }),
+        ),
+      ),
+    ).toEqual(["orders#Placed"]);
+  });
+
+  it("uses what the library uses when a part is left out", () => {
+    expect(
+      channelsOf(runSend(twoParts(), entries({ DetailType: "Placed" }))),
+    ).toEqual(["default#Placed"]);
+  });
+
+  it("names no channel when a part is written where nothing can read it", () => {
+    // A send named by half of itself would pair across buses.
+    expect(
+      channelsOf(runSend(twoParts(), entries({ EventBusName: "orders" }))),
+    ).toEqual([null]);
+  });
+
+  it("joins with whatever separator the pack asks for", () => {
+    expect(
+      channelsOf(
+        runSend(
+          sends({
+            messages: { each: "in", property: "Entries" },
+            channel: [{ property: "EventBusName" }, { property: "DetailType" }],
+            channelSeparator: "/",
+          }),
+          entries({ EventBusName: "orders", DetailType: "Placed" }),
+        ),
+      ),
+    ).toEqual(["orders/Placed"]);
+  });
+});
+
+describe("what a declaration leaves out", () => {
+  it("records no body when the pack does not say where one is", () => {
+    const effects = runSend(
+      messageSends({
+        wire: "aws_sqs",
+        client: declaredBy("tapedeck"),
+        messages: { each: "theInput" },
+        channel: [{ property: "QueueUrl" }],
+      })
+        .methods(IN_THE_COMMAND)
+        .example('client.send({ QueueUrl: "orders" })'),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { QueueUrl: "orders", MessageBody: "{}" } },
+      }),
+    );
+    expect(
+      effects?.[0]?.type === "interaction" ? effects[0].interaction : null,
+    ).toEqual({ class: "message-send" });
+  });
+});
+
+describe("naming which export a client was made from", () => {
+  it("takes the modules and the export names together", () => {
+    expect(
+      constructedFrom({
+        from: ["@aws-sdk/client-sqs"],
+        named: ["SendMessageBatchCommand"],
+      }),
+    ).toEqual({
+      origin: "constructed",
+      importedFrom: ["@aws-sdk/client-sqs"],
+      named: ["SendMessageBatchCommand"],
+    });
+  });
+
+  it("takes the modules alone, and matches whatever they export", () => {
+    expect(constructedFrom("@aws-sdk/client-sqs")).toEqual({
+      origin: "constructed",
+      importedFrom: ["@aws-sdk/client-sqs"],
+    });
   });
 });
