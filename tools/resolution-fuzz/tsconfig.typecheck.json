@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./.tsbuild",
+    "tsBuildInfoFile": "./.tsbuild/tsconfig.tsbuildinfo",
+    "noEmit": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../../packages/datalog/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/resolution/tsconfig.typecheck.json"
+    }
+  ]
+}

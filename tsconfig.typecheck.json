@@ -1,0 +1,200 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/adapter/python/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/adapter/ruby/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/adapter/typescript/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/behavioral-ir/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/checker-intent/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/checker/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/cli/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/client/apollo/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/client/axios/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/client/web/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/appsync/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/aws-apigateway/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/cloudformation/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/graphql/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/intent/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/openapi/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/prisma/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/serverless/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/storybook/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/terraform/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/contract/wrangler/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/datalog/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/extractor/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/activerecord/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/apollo/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/aws-dynamodb/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/aws-eventbridge/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/aws-lambda/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/aws-s3/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/aws-sqs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/cloudflare-workers/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/drizzle/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/express/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/fastapi/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/fastify/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/flask-restx/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/gcs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/graphql-ruby/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/hono/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/mongoose/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/nestjs-graphql/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/nestjs-rest/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/nextjs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/prisma/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/react-router/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/react/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/redis/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/sqlalchemy/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/ts-rest/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/intent-ir/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/ir-core/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/manifest/aws/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/packs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/recognize/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/resolution/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/runtime/node/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/sql/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/terraform/aws/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/terraform/gcp/tsconfig.typecheck.json"
+    },
+    {
+      "path": "tools/acceptance/tsconfig.typecheck.json"
+    },
+    {
+      "path": "tools/differential/tsconfig.typecheck.json"
+    },
+    {
+      "path": "tools/metamorphic/tsconfig.typecheck.json"
+    },
+    {
+      "path": "tools/pack-harness/tsconfig.typecheck.json"
+    },
+    {
+      "path": "tools/resolution-fuzz/tsconfig.typecheck.json"
+    },
+    {
+      "path": "tools/test-project/tsconfig.typecheck.json"
+    }
+  ]
+}

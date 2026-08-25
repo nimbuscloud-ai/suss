@@ -12,257 +12,180 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The work runs as three jobs at once, because one job doing everything
+# in order took nine minutes and the three longest steps did not depend
+# on each other. Wall clock is now the slowest of the three.
+#
+#   checks     lint, typecheck, build, and every check: script that
+#              reads the tree rather than running it
+#   test       the unit suite, then the badges it writes and the
+#              coverage floor read from them
+#   behaviour  dogfood, the fuzzers, and the acceptance journeys, which
+#              run the CLI over fixtures
+#
+# `ci` is the required check. It stays a job of its own, needing the
+# other three, so the name a branch ruleset asks for keeps reporting.
+# Splitting them without it would leave every pull request waiting on a
+# check that no longer exists.
+#
+# A docs-only change skips the steps only a code change needs. The
+# checks that read documentation still run, because a docs-only diff is
+# exactly what they exist to catch. The skip is a condition on each
+# step rather than a paths filter on the workflow: a workflow a filter
+# stops from running never reports, which leaves the pull request stuck.
+
 jobs:
-  ci:
+  checks:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Both baseline gates default to comparing against HEAD, which
-          # a shallow checkout already carries. fetch-depth: 0 is what
-          # makes a remote ref like origin/main resolvable too, for
-          # whoever points DOGFOOD_BASELINE_REF or COVERAGE_BASELINE_REF
-          # at one.
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-          # For pull_request events, checkout defaults to a detached
-          # merge commit, whose tree is the branch merged into main. Both
-          # baseline gates ask whether a tree holds up the numbers
-          # committed alongside it, so they have to run on the tree the
-          # author committed rather than on a merge nobody wrote.
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
-
-      # A doc-only change doesn't need a build or a test run. This diffs
-      # against the merge base and, when every changed path is under
-      # docs/, ends in .md, or sits under .github/badges or
-      # .github/ISSUE_TEMPLATE, every step below that only a code change
-      # needs is skipped. The checks that read docs content still run,
-      # because a docs-only diff is exactly what they exist to catch:
-      # diagram geometry walks the SVG in docs/, the coverage list check
-      # reads the package table in docs/reference/, the link check walks
-      # every markdown file, and the examples check runs the commands the
-      # pages show. Only the last of those needs a build, and it gets one
-      # of its own further down. The skip lives inside the job, as a
-      # condition on each step, rather than as a paths filter on the
-      # workflow: ci is a required check, and a workflow a paths filter
-      # stops from running never reports, which leaves the PR stuck. This
-      # way the job still runs and succeeds, so the required check gets a
-      # result.
-      - name: Detect a docs-only diff
-        id: diff
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.event.pull_request.base.ref }}"
-          else
-            BASE="${{ github.event.before }}"
-          fi
-
-          MERGE_BASE=$(git merge-base HEAD "$BASE" 2>/dev/null) || MERGE_BASE=""
-          if [ -z "$MERGE_BASE" ]; then
-            echo "Could not resolve a merge base against $BASE, running the full pipeline."
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if ! CHANGED=$(git diff --name-only "$MERGE_BASE" HEAD); then
-            echo "Could not diff against $MERGE_BASE, running the full pipeline."
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Changed paths against $MERGE_BASE:"
-          echo "$CHANGED"
-
-          NON_DOCS=$(echo "$CHANGED" | grep -vE '^docs/|\.md$|^\.github/badges/|^\.github/ISSUE_TEMPLATE/' || true)
-          if [ -z "$NON_DOCS" ]; then
-            echo "Every changed path is docs/, a *.md file, a badge, or an issue template."
-            echo "docs_only=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Docs-only diff, nothing to build or test
-        if: steps.diff.outputs.docs_only == 'true'
-        run: echo "Only docs, markdown, badges, or issue templates changed. Skipping the build and test steps; the diagram geometry and coverage list checks still run."
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Turbo persists task outputs under .turbo/. Caching it between
-      # runs lets `turbo build / test / lint / typecheck` hit "FULL TURBO"
-      # for packages whose hashed inputs didn't change. Key includes the
-      # commit SHA so each run writes its own cache entry; restore-keys
-      # walk back to the nearest previous turbo cache. Invalidated
-      # automatically when package-lock.json changes (dependency churn
-      # affects task hashes).
-      - name: Cache turbo
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-            turbo-${{ runner.os }}-
+      - uses: ./.github/actions/prepare
+        id: prepare
 
       - name: Lint
-        if: steps.diff.outputs.docs_only != 'true'
+        if: steps.prepare.outputs.docs_only != 'true'
         run: npm run lint
 
+      # One `tsc --build` over the project graph, not one process per
+      # package. The incremental state under each package's .tsbuild is
+      # cached, so an unchanged package costs nothing.
+      - name: Cache the typecheck graph
+        if: steps.prepare.outputs.docs_only != 'true'
+        uses: actions/cache@v4
+        with:
+          path: "**/.tsbuild"
+          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            tsbuild-${{ runner.os }}-
+
       - name: Typecheck
-        if: steps.diff.outputs.docs_only != 'true'
+        if: steps.prepare.outputs.docs_only != 'true'
         run: npm run typecheck
 
       - name: Build
-        if: steps.diff.outputs.docs_only != 'true'
+        if: steps.prepare.outputs.docs_only != 'true'
         run: npm run build
 
-      # A package that drifts back to private, or picks up a "*" range on
-      # a sibling, only fails at publish time. Catching it on every PR
-      # keeps the release step boring.
+      # A package that drifts back to private, or picks up a "*" range
+      # on a sibling, only fails at publish time. Catching it on every
+      # pull request keeps the release step boring.
       - name: Publish readiness
-        if: steps.diff.outputs.docs_only != 'true'
+        if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:publish
 
-      # A package left out of the coverage list has no badge and no
-      # baseline, so its coverage can fall to zero and the regression
-      # gate will not notice. Four packages shipped that way. This also
-      # validates the package table in docs/reference/, so it runs on
-      # docs-only diffs too; it needs nothing from the build.
+      - name: Style conventions
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:style
+
+      - name: Pack vocabulary
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:vocabulary
+
+      - name: Protocol dispatch
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:dispatch
+
+      - name: Metadata wiring
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:metadata-wiring
+
+      - name: Boundary-name syntax
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:name-syntax
+
+      - name: Pack wiring
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:packs
+
+      # These four read documentation, so they run whatever changed.
       - name: Coverage list completeness
         run: npm run check:coverage-packages
 
-      # Hand-authored SVG buys layout control and costs the guarantee
-      # that a label fits where it was put. Two collisions shipped before
-      # this ran. The SVG it walks lives in docs/, so it runs on
-      # docs-only diffs too; it needs nothing from the build.
       - name: Diagram geometry
         run: npm run check:diagrams
 
-      # Renames broke links quietly until a reader hit one (#252). Runs
-      # on docs-only diffs too; it needs nothing from the build.
       - name: Markdown links
         run: npm run check:doc-links
 
-      # A page that promises output the tool stopped producing is how the
-      # tutorial drifted twice in one week (#560). The check runs the
-      # commands the annotated pages show and compares what comes back, so
-      # it needs the binary. A docs-only diff skips the build above, and a
-      # docs-only diff is exactly when a documented number moves, so build
-      # the CLI on its own for those runs.
+      # The examples check runs the commands the pages show, so it needs
+      # a CLI. A code change has one from the build above; a docs-only
+      # change builds the one package.
       - name: Build the CLI for the documented examples
-        if: steps.diff.outputs.docs_only == 'true'
+        if: steps.prepare.outputs.docs_only == 'true'
         run: npx turbo build --filter=@suss/cli
 
       - name: Documented examples
         run: npm run check:examples
 
-      # The style rules Biome has no rule for.
-      - name: Style conventions
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:style
-
-      # A pack that names an identifier its own library does not define
-      # gives every other user false matches, and inflates coverage
-      # measured against the codebase the name came from. Three packs
-      # shipped one project's wrapper names before this ran.
-      - name: Pack vocabulary
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:vocabulary
-
-      # A generic file branching on a protocol name is how one route
-      # got spelled two ways and a message-bus suppression rule
-      # silently stopped matching. Protocol behavior comes from the
-      # semantics registry; the pre-existing sites carry counts that
-      # only go down.
-      - name: Protocol dispatch
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:dispatch
-
-      # A metadata field with a writer and no reader is a feature that
-      # cannot work, and both sides pass their own tests while it is in
-      # that state. Four shipped that way before this ran (#464).
-      - name: Metadata wiring
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:metadata-wiring
-
-      # A second parser of the boundary-name braces can disagree with
-      # the one in @suss/ir-core about what a name means, which is how
-      # a reference shipped written one way and read another (#456).
-      - name: Boundary-name syntax
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:name-syntax
-
-      # A pack ships inside @suss/packs, and three of the four edits
-      # that puts it there fail without saying so: a missing subpath
-      # only breaks the published package, a missing build edge only
-      # breaks a cold CI run, and a pack left public publishes twice.
-      - name: Pack wiring
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:packs
-
-      # The fixed-seed fuzz run: a few thousand generated programs
-      # through the pipeline itself, in about twenty seconds. A shape
-      # that works today and stops working fails the build the day it
-      # lands, and the failure prints the minimized program rather than
-      # whatever the sample happened to draw.
-      - name: Fuzz (fixed seed)
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:fuzz
-
-      # The built binary, run the way a person runs it, over the
-      # fixture projects. Everything else in the suite calls a function
-      # one layer below the command, which is how a pack recovering
-      # every route and spelling every path wrong got through with the
-      # whole build green. Three seconds, so it runs on every pull
-      # request rather than nightly, and it runs before the wider suite
-      # because it fails on the thing a person would notice first.
-      - name: Acceptance journeys
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run test:acceptance
+  test:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/prepare
+        id: prepare
 
       - name: Test
-        if: steps.diff.outputs.docs_only != 'true'
+        if: steps.prepare.outputs.docs_only != 'true'
         run: npm run test:coverage
 
-      # Run suss against its own 38 packages. This is the widest test in
-      # the repo: discovery, extraction, resolution and the checker over
-      # a large TypeScript codebase rather than a fixture. It takes well
-      # under a minute, so it stays in this job and reuses the build
-      # above rather than paying for a second checkout and install.
-      #
-      # This step also fails when an invariant breaks: an export a
-      # package declares that produced no summary, a recognised boundary
-      # with no pairing key, a consumer that will not pair with the
-      # provider next to it. None of those depend on a baseline.
-      - name: Dogfood
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run dogfood
-
-      # Fail when a count came out below the baseline committed in this
-      # tree. The comparison is against HEAD, so an author who deleted
-      # exports refreshes the baseline in the same branch and the drop
-      # lands in the pull request diff for a reviewer to agree with.
-      - name: Dogfood count check
-        if: steps.diff.outputs.docs_only != 'true'
-        run: npm run check:dogfood
-
-      # vitest writes coverage keyed by absolute path and minified. This
-      # step rewrites it into the form the repo commits, so the check
-      # below reads the same shape on both sides of the comparison.
+      # The badges are written from the coverage this run produced, and
+      # the floor check reads them, so these three stay in order in the
+      # one job.
       - name: Normalize coverage and regenerate badges
-        if: steps.diff.outputs.docs_only != 'true'
+        if: steps.prepare.outputs.docs_only != 'true'
         run: npm run badges
 
-      # Fail when a package's line coverage came out below the figure
-      # committed in this tree. Same comparison as the dogfood count
-      # check above, against the same ref, so neither gate can fail on a
-      # package the branch never touched.
       - name: Coverage floor check
-        if: steps.diff.outputs.docs_only != 'true'
+        if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:coverage
+
+  behaviour:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/prepare
+        id: prepare
+
+      - name: Fuzz (fixed seed)
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:fuzz
+
+      - name: Acceptance journeys
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run test:acceptance
+
+      # The count check reads what the dogfood run wrote, so the two
+      # stay in order in the one job.
+      - name: Dogfood
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run dogfood
+
+      - name: Dogfood count check
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:dogfood
+
+  # The name a branch ruleset requires. It does nothing but wait, so
+  # that splitting the work above did not change what a pull request
+  # has to satisfy.
+  ci:
+    runs-on: ubuntu-latest
+    needs: [checks, test, behaviour]
+    if: always()
+    steps:
+      - name: Report
+        run: |
+          echo "checks:    ${{ needs.checks.result }}"
+          echo "test:      ${{ needs.test.result }}"
+          echo "behaviour: ${{ needs.behaviour.result }}"
+          if [ "${{ needs.checks.result }}" != "success" ] \
+            || [ "${{ needs.test.result }}" != "success" ] \
+            || [ "${{ needs.behaviour.result }}" != "success" ]; then
+            exit 1
+          fi

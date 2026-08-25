@@ -1,0 +1,76 @@
+name: Prepare
+description: >
+  Check out the tree the author committed, install, restore the turbo
+  cache, and work out whether the diff is docs only. Every CI job starts
+  this way, so it lives here rather than three times over.
+
+outputs:
+  docs_only:
+    description: Whether every changed path is documentation, markdown, a badge, or an issue template.
+    value: ${{ steps.diff.outputs.docs_only }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        # Both baseline gates default to comparing against HEAD, which
+        # a shallow checkout already includes. fetch-depth: 0 is what
+        # makes a remote ref like origin/main resolvable too, for
+        # whoever points DOGFOOD_BASELINE_REF or COVERAGE_BASELINE_REF
+        # at one.
+        fetch-depth: 0
+        # For pull_request events, checkout defaults to a detached merge
+        # commit, whose tree is the branch merged into main. Both
+        # baseline gates ask whether a tree still produces the numbers
+        # committed beside it, so they have to run on the tree the
+        # author committed rather than on a merge nobody wrote.
+        ref: ${{ github.event.pull_request.head.ref || github.ref }}
+
+    - name: Detect a docs-only diff
+      id: diff
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+        else
+          BASE="${{ github.event.before }}"
+        fi
+        if ! git rev-parse --verify --quiet "$BASE" >/dev/null; then
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        CHANGED=$(git diff --name-only "$BASE"...HEAD)
+        if [ -z "$CHANGED" ]; then
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if echo "$CHANGED" | grep -qvE '^(docs/|.*\.md$|\.github/badges/|\.github/ISSUE_TEMPLATE/)'; then
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "docs_only=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    # Turbo persists task outputs under .turbo/. Caching it between runs
+    # lets the turbo tasks hit "FULL TURBO" for packages whose hashed
+    # inputs did not change. The key includes the commit SHA so each run
+    # writes its own entry; restore-keys walk back to the nearest
+    # previous one. Dependency churn changes package-lock.json, which
+    # changes the key and drops the stale entries.
+    - name: Cache turbo
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+        restore-keys: |
+          turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+          turbo-${{ runner.os }}-

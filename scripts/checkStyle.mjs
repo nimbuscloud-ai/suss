@@ -14,6 +14,7 @@ const SKIP_DIRECTORIES = new Set([
   "node_modules",
   "dist",
   ".turbo",
+  ".tsbuild",
   ".git",
   "coverage",
   ".suss",

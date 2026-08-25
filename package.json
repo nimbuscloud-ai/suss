@@ -3,7 +3,7 @@
   "version": "0.13.1",
   "private": true,
   "type": "module",
-  "description": "Static behavioral analysis for TypeScript — extract, compare, and publish summaries of what your code does.",
+  "description": "Static behavioral analysis for TypeScript \u2014 extract, compare, and publish summaries of what your code does.",
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
   "homepage": "https://github.com/nimbuscloud-ai/suss#readme",
@@ -80,7 +80,7 @@
     "test:acceptance": "npm run -w @suss/acceptance test",
     "test:badges": "npm run test:coverage && npm run badges",
     "test:coverage": "turbo test:coverage --concurrency=3",
-    "typecheck": "turbo typecheck"
+    "typecheck": "tsc --build tsconfig.typecheck.json"
   },
   "lint-staged": {
     "*": [

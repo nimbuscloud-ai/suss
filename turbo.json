@@ -27,7 +27,8 @@
     "typecheck": {
       "dependsOn": ["^build"],
       "outputs": [],
-      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"]
+      "inputs": ["$TURBO_DEFAULT$", "!coverage/**"],
+      "cache": false
     },
     "check:self": {
       "dependsOn": ["build"],

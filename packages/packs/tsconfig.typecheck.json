@@ -1,0 +1,129 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./.tsbuild",
+    "tsBuildInfoFile": "./.tsbuild/tsconfig.tsbuildinfo",
+    "noEmit": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../adapter/python/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../adapter/ruby/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../adapter/typescript/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../behavioral-ir/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../client/apollo/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../client/axios/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../client/web/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../contract/graphql/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../extractor/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/activerecord/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/apollo/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/aws-dynamodb/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/aws-eventbridge/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/aws-lambda/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/aws-s3/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/aws-sqs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/cloudflare-workers/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/drizzle/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/express/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/fastapi/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/fastify/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/flask-restx/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/gcs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/graphql-ruby/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/hono/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/mongoose/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/nestjs-graphql/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/nestjs-rest/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/nextjs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/prisma/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/react-router/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/react/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/redis/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/sqlalchemy/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/ts-rest/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../manifest/aws/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../recognize/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../runtime/node/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../sql/tsconfig.typecheck.json"
+    }
+  ]
+}
