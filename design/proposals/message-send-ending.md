@@ -45,11 +45,11 @@ export interface MessageSendEnding {
   /** Where the body is, when the pack can say. */
   readonly body?: InputRule;
   /**
-   * The property whose elements are each their own message. Unset means
-   * the call sends one. `sqlAccess` fans out the same way, by reading
-   * what the call was handed rather than asking the call.
+   * Where the messages are. The command input is one message, or a
+   * property of it contains many, and which of the two is a property of
+   * the command rather than a setting on it.
    */
-  readonly eachIn?: InputRule;
+  readonly messages: OneMessage | ManyIn;
   /** What a reader gives back for a channel nothing in the source settles. */
   readonly unsettledName: "nothing" | "reference";
 }
@@ -88,11 +88,21 @@ and belongs to the symbolic-reference direction rather than here. Until
 it is decided, `unsettledName: "reference"` keeps the behaviour the pack
 has.
 
-The batch forms differ in a way worth checking before building.
-EventBridge always fans out, since `Entries` is required. SQS has a
-single command and a batch command, so one pack states two declarations
-rather than one with an optional `eachIn`. If that turns out to read
-worse than a single declaration, `eachIn` is the wrong shape.
+**Decided.** A library that puts an intermediate collection between the
+call and the messages states that, and one that does not says the input
+is the message:
+
+```ts
+// SendMessageCommand: the input is the message.
+messages: { each: "theInput" }
+
+// SendMessageBatchCommand and PutEventsCommand: a property contains them.
+messages: { each: "in", property: "Entries" }
+```
+
+So SQS writes two declarations and EventBridge writes one, because SQS's
+two commands are two shapes. Making the fan-out an optional field on one
+declaration would hide that difference behind a setting.
 
 ## Why this one first
 
