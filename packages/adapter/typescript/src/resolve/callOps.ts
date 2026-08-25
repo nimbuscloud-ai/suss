@@ -3,7 +3,7 @@
  *
  * Every question here was already worked out somewhere in this adapter,
  * once per pack that needed it. Collecting them behind the one
- * interface `@suss/recognize` declares is what lets a pack stop being a
+ * interface `@suss/extractor` declares is what lets a pack stop being a
  * walk over ts-morph and start being data.
  *
  * Two of the receiver origins are implemented. The migration plan for
@@ -18,12 +18,12 @@ import { isImportedFrom, methodDeclaredIn } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
 import type {
+  AstCapableOps,
   ReceiverOrigin,
   UnsettledName,
   ValueEntry,
   ValueOps,
-} from "@suss/recognize";
-import type { AstCapableOps } from "@suss/recognize/ast";
+} from "@suss/extractor";
 import type {
   CallExpression,
   NewExpression,
