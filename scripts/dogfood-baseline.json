@@ -6,7 +6,7 @@
     "internal": 2170,
     "consumers": 994,
     "pairs": 982,
-    "unfollowedCalls": 251,
+    "unfollowedCalls": 235,
     "findingErrors": 0
   },
   "packages": {
@@ -386,7 +386,7 @@
       "exports": 11,
       "internal": 27,
       "consumers": 4,
-      "unfollowedCalls": 21
+      "unfollowedCalls": 5
     },
     "packages/resolution": {
       "name": "@suss/resolution",
