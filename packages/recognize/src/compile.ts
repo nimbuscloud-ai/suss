@@ -408,6 +408,7 @@ function statedValue(subject: CallOps, pick: OneArgument): ValueOps | null {
  */
 const NOTHING_STATED: ValueOps = {
   text: () => null,
+  name: () => null,
   flag: () => null,
   entries: () => [],
   items: () => [],
@@ -551,7 +552,8 @@ function channelOf(
 ): string | null {
   const parts: string[] = [];
   for (const part of ending.channel) {
-    const stated = message.property(part.property)?.text() ?? null;
+    const stated =
+      message.property(part.property)?.name(ending.unsettledName) ?? null;
     const value = stated === null || stated === "" ? part.whenAbsent : stated;
     if (value === undefined) {
       return null;

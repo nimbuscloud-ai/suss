@@ -83,6 +83,15 @@ export interface ValueOps {
   /** The text of the string the source wrote, or null for anything else. */
   text(): string | null;
   /**
+   * What this value is called, when the source names it rather than
+   * writing it out. A queue URL is nearly always
+   * `process.env.ORDERS_QUEUE_URL`, so the value only exists at deploy
+   * time and the env var's name is what both sides of the boundary
+   * agree on. `"reference"` gives that name back, `"nothing"` gives
+   * null for anything the source does not settle.
+   */
+  name(unsettled: UnsettledName): string | null;
+  /**
    * The yes or no the source wrote here, or null for anything else. A
    * library that asks which fields a call wants states them as a map of
    * flags, `{ name: 1, password: 0 }`, and a number and a boolean mean
