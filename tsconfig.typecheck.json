@@ -23,6 +23,9 @@
       "path": "packages/cli/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/mcp/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/client/apollo/tsconfig.typecheck.json"
     },
     {

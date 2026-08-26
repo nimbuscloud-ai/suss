@@ -26,6 +26,7 @@ export const coveragePackages = [
   ["packages/checker", "checker"],
   ["packages/checker-intent", "checker-intent"],
   ["packages/cli", "cli"],
+  ["packages/mcp", "mcp"],
   // Frameworks
   ["packages/framework/ts-rest", "ts-rest"],
   ["packages/framework/react-router", "react-router"],

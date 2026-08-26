@@ -1,20 +1,20 @@
 {
   "total": {
     "lines": {
-      "total": 3780,
-      "covered": 3487,
+      "total": 3781,
+      "covered": 3488,
       "skipped": 0,
-      "pct": 92.24
+      "pct": 92.25
     },
     "statements": {
-      "total": 3887,
-      "covered": 3589,
+      "total": 3888,
+      "covered": 3590,
       "skipped": 0,
       "pct": 92.33
     },
     "functions": {
-      "total": 810,
-      "covered": 758,
+      "total": 811,
+      "covered": 759,
       "skipped": 0,
       "pct": 93.58
     },
@@ -33,22 +33,22 @@
   },
   "src/ask.ts": {
     "lines": {
-      "total": 171,
-      "covered": 165,
+      "total": 172,
+      "covered": 166,
       "skipped": 0,
-      "pct": 96.49
+      "pct": 96.51
     },
     "functions": {
-      "total": 56,
-      "covered": 53,
+      "total": 57,
+      "covered": 54,
       "skipped": 0,
-      "pct": 94.64
+      "pct": 94.73
     },
     "statements": {
-      "total": 180,
-      "covered": 174,
+      "total": 181,
+      "covered": 175,
       "skipped": 0,
-      "pct": 96.66
+      "pct": 96.68
     },
     "branches": {
       "total": 145,

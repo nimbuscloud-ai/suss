@@ -109,6 +109,23 @@ failing the run. A finding that points at one transition prints a
 `.sussignore` rule you can paste, so a decision to accept a finding is
 recordable rather than repeated.
 
+## Running it as an MCP server
+
+`@suss/mcp` puts the same questions in front of a model as tools, so it
+can ask one mid-task instead of remembering this file:
+
+```bash
+npx @suss/mcp /path/to/project
+```
+
+`suss_ask` takes the seven questions. `suss_check` compares both sides
+of every boundary. `suss_boundaries` lists them. `suss_status` says
+which commands the server ran and which failed.
+
+The server re-extracts when a source file changes, so an answer
+describes the tree as it is rather than the last time somebody ran
+`extract`. That matters most in the loop below.
+
 ## Where to run it
 
 By the time CI runs, the code is written and the only move left is to

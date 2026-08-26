@@ -1,7 +1,7 @@
 // @suss/cli: public exports. The bin entry lives in bin.ts so importing
 // this module is side-effect free.
 
-export { type AskOptions, ask } from "./ask.js";
+export { type AskOptions, answerQuestion, ask } from "./ask.js";
 export { check, checkDir, checkDirectory } from "./check.js";
 export { type CheckAtOptions, type CheckAtResult, checkAt } from "./checkAt.js";
 export { contract } from "./contract.js";
@@ -13,9 +13,10 @@ export {
 } from "./corroborateCommand.js";
 export { extract } from "./extract.js";
 export { inspect, inspectDiff, inspectDir } from "./inspect.js";
+export { LANGUAGES, type Language } from "./language.js";
 export { runCli, USAGE } from "./run.js";
 
-export type { Answer, QuestionShape } from "./ask.js";
+export type { Answer, AnswerJson, QuestionShape } from "./ask.js";
 export type {
   CheckDirOptions,
   CheckOptions,
