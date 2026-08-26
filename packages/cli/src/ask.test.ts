@@ -171,6 +171,66 @@ describe("suss ask", () => {
     expect(output).toContain("docClient.query");
   });
 
+  it("prints one line for a caller recorded with and without its call", () => {
+    // A client's own binding says it reads the route, and its fetch
+    // effect says the same read through the call. One unit doing one
+    // thing at one boundary is one line, and the line that says which
+    // call it went through is the one worth keeping.
+    fs.writeFileSync(
+      path.join(dir, "caller.json"),
+      JSON.stringify([
+        {
+          kind: "client",
+          location: {
+            file: "web/login.ts",
+            range: { start: 1, end: 30 },
+            exportName: "login",
+          },
+          identity: {
+            name: "login",
+            exportPath: ["login"],
+            boundaryBinding: restBinding({
+              transport: "http",
+              recognition: "fetch",
+              method: "POST",
+              path: "/login",
+            }),
+          },
+          inputs: [],
+          transitions: [
+            {
+              id: "login:call",
+              conditions: [],
+              output: { type: "return", value: null },
+              effects: [
+                {
+                  type: "interaction",
+                  binding: restBinding({
+                    transport: "http",
+                    recognition: "fetch",
+                    method: "POST",
+                    path: "/login",
+                  }),
+                  callee: "fetch",
+                  interaction: { class: "service-call", method: "POST" },
+                },
+              ],
+              location: { start: 5, end: 15 },
+              isDefault: true,
+            },
+          ],
+          gaps: [],
+          confidence: { source: "inferred_static", level: "high" },
+        },
+      ]),
+    );
+
+    const { output } = answer("what reads POST /login");
+    expect(output).toContain("1 unit reads");
+    expect(output).toContain("through fetch");
+    expect(output.match(/web\/login\.ts:1/g) ?? []).toHaveLength(1);
+  });
+
   it("says plainly when nothing writes the store, and who serves it", () => {
     const { output, code } = answer("what writes aws.dynamodb:editions");
 
