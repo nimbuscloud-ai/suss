@@ -39,16 +39,11 @@
 // declaration; that resource is the queue. Same chain-collapse pattern
 // runtime-config uses for env-var → instance pairing.
 
-import {
-  type CallExpression,
-  Node as N,
-  type Node,
-  type SourceFile,
-} from "ts-morph";
+import { type CallExpression, Node as N, type Node } from "ts-morph";
 
-import { readConfiguredCall, rootIdentifier } from "@suss/adapter-typescript";
+import { readConfiguredCall } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
-import { unwrapJsonStringify } from "@suss/extractor";
+import { constructedFrom, messageSends, pack } from "@suss/recognize";
 
 import type {
   ConfiguredCallContext,
@@ -60,240 +55,53 @@ import type {
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
+import type { Match } from "@suss/recognize";
 
-/**
- * Map from `@aws-sdk/client-sqs` command class name to the SQS
- * operation kind. v0 covers the common message-send commands; future:
- * receive/delete/visibility commands when consumer-side recognition
- * lands here too.
- */
-const SEND_COMMANDS: Record<string, string> = {
-  SendMessageCommand: "send",
-  SendMessageBatchCommand: "sendBatch",
-};
+const SQS = "@aws-sdk/client-sqs";
 
-/**
- * Recognize a `*.send(new SendMessageCommand({...}))` shape and emit
- * one `interaction(class: "message-send")` effect.
- */
-function sqsRecognizer(call: unknown, ctx: unknown): Effect[] | null {
-  const callNode = call as CallExpression;
-  const recognizerCtx = ctx as {
-    sourceFile: SourceFile;
-    extractArgs: () => EffectArg[];
-    isImportedFrom: (identifier: Node, expectedModule: string) => boolean;
-    resolveWrittenValue?: (value: Node) => Node | null;
-  };
-
-  // Shape gate: callee must be PropertyAccess `<receiver>.send`.
-  const calleeExpr = callNode.getExpression();
-  if (!N.isPropertyAccessExpression(calleeExpr)) {
-    return null;
-  }
-  if (calleeExpr.getName() !== "send") {
-    return null;
-  }
-
-  // The first arg must be `new <CommandClass>(...)`. We bind on the
-  // command class rather than on the receiver type because:
-  //   1. Command classes are unambiguously SQS-specific;
-  //   2. Resolving the receiver to SQSClient via type checking is
-  //      possible but expensive and not strictly needed: the command
-  //      class identity is the discriminator.
-  const args = callNode.getArguments();
-  if (args.length === 0) {
-    return null;
-  }
-  const firstArg = args[0];
-  if (!N.isNewExpression(firstArg)) {
-    return null;
-  }
-  const ctorExpr = firstArg.getExpression();
-
-  // The constructor leaf name is what we look up in SEND_COMMANDS. For a named
-  // import that is the identifier (`SendMessageCommand`), and for a namespace
-  // import it is the property name (`sqs.SendMessageCommand`).
-  const ctorLeafName = N.isPropertyAccessExpression(ctorExpr)
-    ? ctorExpr.getName()
-    : ctorExpr.getText();
-  const operation = SEND_COMMANDS[ctorLeafName];
-  if (operation === undefined) {
-    return null;
-  }
-
-  // Verify the command class came from @aws-sdk/client-sqs (not a
-  // user-defined class that happens to share the name). For namespace
-  // imports we check the namespace's source; for named imports we
-  // check the named symbol's source.
-  const importCheckTarget = N.isPropertyAccessExpression(ctorExpr)
-    ? rootIdentifier(ctorExpr)
-    : ctorExpr;
-  if (
-    importCheckTarget === null ||
-    !recognizerCtx.isImportedFrom(importCheckTarget, "@aws-sdk/client-sqs")
-  ) {
-    return null;
-  }
-
-  // Extract the command's first arg: the input object literal.
-  const ctorArgs = firstArg.getArguments();
-  if (ctorArgs.length === 0) {
-    return null;
-  }
-  const input = ctorArgs[0];
-  if (!N.isObjectLiteralExpression(input)) {
-    // Object spreads / dynamic builders not supported in v0.
-    return null;
-  }
-
-  // A send whose queue is named by a variable, a parameter, or a
-  // config lookup used to be dropped entirely, so a service that sends to a
-  // queue it works out at runtime looked like a service that sends nothing. The
-  // send happened either way. A null channel says the code never gave us a
-  // name, and it pairs with nothing rather than pairing with the wrong thing.
-  // A host older than the resolution-threaded context returns null here, and
-  // the pattern match runs on the raw node, the way it always did.
-  const channel = readQueueUrlChannel(
-    input,
-    recognizerCtx.resolveWrittenValue ?? (() => null),
-  );
-
-  // Body extraction: prefer the inner object when MessageBody is
-  // `JSON.stringify({...})` (the dominant pattern). Both producer
-  // and consumer side go through JSON serialization, so the field
-  // sets the body-shape pairing compares are the OBJECT LITERAL's
-  // fields, not the JSON.stringify call wrapper. Falls back to
-  // raw EffectArg when MessageBody is anything else.
-  const rawBody = readPropertyArg(
-    input,
-    "MessageBody",
-    recognizerCtx.extractArgs,
-    callNode,
-  );
-  const body = unwrapJsonStringify(rawBody);
-
-  return [
-    {
-      type: "interaction",
-      binding: messageBusBinding({
-        recognition: "@suss/framework-aws-sqs",
-        messageBus: "aws_sqs",
-        channel,
-      }),
-      callee: callNode.getExpression().getText(),
-      interaction: {
-        class: "message-send",
-        ...(body !== null ? { body } : {}),
-        // routingKey unused for SQS standard queues. SQS FIFO uses
-        // MessageGroupId; future enhancement.
-      },
+/** Where a send states its message: one argument into the command. */
+const INSIDE_THE_COMMAND = (named: string[]) => ({
+  send: {
+    input: {
+      at: 0,
+      of: [
+        {
+          to: "argument" as const,
+          at: 0,
+          origin: constructedFrom({ from: [SQS], named }),
+        },
+      ],
     },
+  },
+});
+
+/** The declared producer side: one send, and the batch form. */
+function sendDeclarations(): Match[] {
+  return [
+    messageSends({
+      wire: "aws_sqs",
+      client: constructedFrom(SQS),
+      messages: { each: "theInput" },
+      channel: [{ property: "QueueUrl" }],
+      body: "MessageBody",
+    })
+      .methods(INSIDE_THE_COMMAND(["SendMessageCommand"]))
+      .example(
+        'client.send(new SendMessageCommand({ QueueUrl: "orders", MessageBody: "{}" }))',
+      ),
+    messageSends({
+      wire: "aws_sqs",
+      client: constructedFrom(SQS),
+      messages: { each: "in", property: "Entries" },
+      // A batch states the queue once beside the list of messages.
+      channel: [{ property: "QueueUrl", on: "theInput" }],
+      body: "MessageBody",
+    })
+      .methods(INSIDE_THE_COMMAND(["SendMessageBatchCommand"]))
+      .example(
+        'client.send(new SendMessageBatchCommand({ QueueUrl: "orders", Entries: [{ MessageBody: "{}" }] }))',
+      ),
   ];
-}
-
-/**
- * Read the QueueUrl property of the SendMessageCommand input object
- * and return the channel identifier as a string. Two forms give us a channel:
- *   - `QueueUrl: process.env.ORDERS_QUEUE_URL` gives "ORDERS_QUEUE_URL"
- *   - `QueueUrl: "https://sqs..."` gives the literal URL
- *
- * Anything else goes to the resolution store first. A const set to a literal,
- * here or in another file, resolves to that literal and gives us the channel:
- *
- *   const url = "https://sqs/.../orders";
- *   new SendMessageCommand({ QueueUrl: url })   // the literal URL
- *
- * Null means the chain leaves what the code states (a parameter, a
- * config lookup, a call result). The send is still recorded; the
- * channel is null on its binding.
- */
-function readQueueUrlChannel(
-  input: Node,
-  resolveWrittenValue: (value: Node) => Node | null,
-): string | null {
-  if (!N.isObjectLiteralExpression(input)) {
-    return null;
-  }
-  for (const prop of input.getProperties()) {
-    if (!N.isPropertyAssignment(prop)) {
-      continue;
-    }
-    if (prop.getName() !== "QueueUrl") {
-      continue;
-    }
-    const initializer = prop.getInitializer();
-    if (initializer === undefined) {
-      return null;
-    }
-    const named = channelNamedBy(initializer);
-    if (named !== null) {
-      return named;
-    }
-    const resolved = resolveWrittenValue(initializer);
-    return resolved === null ? null : channelNamedBy(resolved);
-  }
-  return null;
-}
-
-/** The channel a single expression names, with no resolution. */
-function channelNamedBy(expr: Node): string | null {
-  // process.env.X
-  if (N.isPropertyAccessExpression(expr)) {
-    const text = expr.getText();
-    const match = text.match(/^process\.env\.(\w+)$/);
-    return match === null ? null : (match[1] ?? null);
-  }
-
-  // "literal-url"
-  if (N.isStringLiteral(expr)) {
-    return expr.getLiteralValue();
-  }
-
-  return null;
-}
-
-/**
- * Find a property by name on the input object literal and return its
- * EffectArg shape. Used to extract MessageBody so downstream tooling
- * can describe what's being sent.
- *
- * Implementation note: we ask the recognizer's `extractArgs` helper to
- * produce the FULL call's argument shape, then dig down to the
- * property of interest. Avoids re-implementing literal/object/identifier
- * shape extraction here.
- */
-function readPropertyArg(
-  input: Node,
-  propName: string,
-  extractCallArgs: () => EffectArg[],
-  callNode: CallExpression,
-): EffectArg | null {
-  // The call's args are: [new SendMessageCommand({...})]. extractArgs
-  // gives us a `call`-shaped EffectArg whose own args[0] is the
-  // command's input object.
-  const callArgs = extractCallArgs();
-  const first = callArgs[0];
-  if (
-    first === null ||
-    typeof first !== "object" ||
-    (first as { kind?: string }).kind !== "call"
-  ) {
-    return null;
-  }
-  const ctorArgs = (first as { args?: EffectArg[] }).args ?? [];
-  const inputArg = ctorArgs[0];
-  if (
-    inputArg === null ||
-    typeof inputArg !== "object" ||
-    (inputArg as { kind?: string }).kind !== "object"
-  ) {
-    return null;
-  }
-  const fields =
-    (inputArg as { fields?: Record<string, EffectArg> }).fields ?? {};
-  void input;
-  void callNode;
-  return fields[propName] ?? null;
 }
 
 /**
@@ -547,30 +355,18 @@ function configuredProducerRecognizer(
  */
 export function sqsFramework(options: SqsPackOptions = {}): PatternPack {
   const producers = options.producers ?? [];
-  return {
-    name: "sqs",
-    protocol: "sqs",
+  return pack("sqs", sendDeclarations(), {
     languages: ["typescript", "javascript"],
-    discovery: [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-    // Skip files that don't import either `@aws-sdk/client-sqs`
-    // (producer side) or `aws-lambda` (consumer side; SQSEvent type).
-    // The recognizers' structural checks are quick but the import
-    // gate spares walking SQS-irrelevant files in monorepos.
-    requiresImport: [
-      ...new Set([
-        "@aws-sdk/client-sqs",
-        "aws-lambda",
-        ...producers.map((p) => p.module),
-      ]),
-    ],
-    invocationRecognizers: [
-      sqsRecognizer as InvocationRecognizer,
+    recognizedAs: "@suss/framework-aws-sqs",
+    protocol: "sqs",
+    // The consumer side reads SQSEvent handlers, whose files import
+    // aws-lambda rather than the SQS client.
+    requiresImport: ["aws-lambda", ...producers.map((p) => p.module)],
+    recognizers: [
       messageReceiveRecognizer as InvocationRecognizer,
       ...producers.map(configuredProducerRecognizer),
     ],
-  };
+  });
 }
 
 export default sqsFramework;

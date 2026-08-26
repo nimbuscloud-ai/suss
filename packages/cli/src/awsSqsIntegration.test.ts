@@ -76,9 +76,9 @@ describe("aws-sqs integration", () => {
       .filter((c): c is string => c !== null)
       .sort();
     expect(channels).toEqual([
-      "ORDERS_QUEUE_URL",
-      "ORPHAN_QUEUE_URL",
       "https://sqs.us-east-1.amazonaws.com/123456789012/AuditQueue",
+      "{ORDERS_QUEUE_URL}",
+      "{ORPHAN_QUEUE_URL}",
     ]);
   });
 

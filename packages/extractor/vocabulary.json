@@ -110,6 +110,7 @@
   "string": "TypeScript primitive type name",
   "subscription": "GraphQL spec: operation type",
   "text": "shape kind the extractor records, and the render-tree text node kind",
+  "theInput": "suss: message location, the call's whole input is one message",
   "throw": "suss: terminal kind",
   "throwExpression": "suss: TerminalMatch variant tag",
   "true": "JavaScript literal",

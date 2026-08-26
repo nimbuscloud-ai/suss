@@ -1208,6 +1208,28 @@ describe("a chain that sends one message", () => {
     expect(sent?.routingKey).toBe("orders.service");
   });
 
+  it("reads a part written once beside the list of messages", () => {
+    // A batch command states the queue on the call's input and the
+    // messages one entry at a time, so the part says where it is.
+    const effects = runSend(
+      sends({
+        messages: { each: "in", property: "Entries" },
+        channel: [{ property: "QueueUrl", on: "theInput" }],
+      }),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: {
+          0: {
+            QueueUrl: "orders",
+            Entries: [{ MessageBody: "{}" }, { MessageBody: "{}" }],
+          },
+        },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual(["orders", "orders"]);
+  });
+
   it("leaves the routing key off when the message does not state one", () => {
     const effects = runSend(
       sends({ routingKey: "Source" }),
@@ -1249,13 +1271,15 @@ describe("a chain that sends many", () => {
     ).toEqual(["orders", "invoices"]);
   });
 
-  it("says nothing when the property holding them is absent", () => {
-    expect(
-      runSend(
-        batch(),
-        callOps({ method: "send", from: ["tapedeck"], values: { 0: {} } }),
-      ),
-    ).toBeNull();
+  it("records one send with nothing claimed when the list is unreadable", () => {
+    // A batch whose list this run cannot read is still a send. It used
+    // to be dropped whole, and a service that sends read as one that
+    // sends nothing.
+    const effects = runSend(
+      batch(),
+      callOps({ method: "send", from: ["tapedeck"], values: { 0: {} } }),
+    );
+    expect(channelsOf(effects)).toEqual([null]);
   });
 });
 

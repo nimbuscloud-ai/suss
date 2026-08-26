@@ -375,7 +375,9 @@ describe("eventbridge recognizer: skip cases", () => {
     expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
-  it("returns null when a function builds the entries", () => {
+  it("records one send with nothing claimed when a function builds the entries", () => {
+    // The send happened. Dropping it made a service that publishes
+    // read as one that publishes nothing.
     const source = `
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
@@ -384,10 +386,11 @@ describe("eventbridge recognizer: skip cases", () => {
         await client.send(new PutEventsCommand({ Entries: buildEntries() }));
       }
     `;
-    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
+    const sends = messageSendEffectsOf(recognizeAll(source));
+    expect(sends.map(channelOf)).toEqual([null]);
   });
 
-  it("returns null when the entries arrive as a parameter", () => {
+  it("records one send with nothing claimed when the entries arrive as a parameter", () => {
     const source = `
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
@@ -395,7 +398,8 @@ describe("eventbridge recognizer: skip cases", () => {
         await client.send(new PutEventsCommand({ Entries: entries }));
       }
     `;
-    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
+    const sends = messageSendEffectsOf(recognizeAll(source));
+    expect(sends.map(channelOf)).toEqual([null]);
   });
 
   it("reads entries a const states, since extraction follows it", () => {

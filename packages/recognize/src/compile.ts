@@ -512,23 +512,26 @@ function messageSend(matched: Matched): Effect[] | null {
     return null;
   }
 
+  // A batch whose list this run cannot read into messages is still a
+  // send. It is recorded once, with the input-side channel parts read
+  // and nothing claimed about the messages, because dropping it made a
+  // service that sends read as one that sends nothing.
   const messages = messagesIn(input, ending.messages);
-  return messages.length === 0
-    ? null
-    : messages.map((message) => ({
-        type: "interaction",
-        binding: messageBusBinding({
-          recognition,
-          messageBus: ending.wire,
-          channel: channelOf(message, ending),
-        }),
-        callee: ops.calleeText(),
-        interaction: {
-          class: "message-send",
-          ...bodyOf(message, ending),
-          ...routingKeyOf(message, ending),
-        },
-      }));
+  const sent = messages.length === 0 ? [NOTHING_STATED] : messages;
+  return sent.map((message) => ({
+    type: "interaction",
+    binding: messageBusBinding({
+      recognition,
+      messageBus: ending.wire,
+      channel: channelOf(message, input, ending),
+    }),
+    callee: ops.calleeText(),
+    interaction: {
+      class: "message-send",
+      ...bodyOf(message, ending),
+      ...routingKeyOf(message, ending),
+    },
+  }));
 }
 
 /** Each message the call sends, however the library takes them. */
@@ -557,11 +560,13 @@ function messagesIn(
  */
 function channelOf(
   message: ValueOps,
+  input: ValueOps,
   ending: MessageSendEnding,
 ): string | null {
   const parts: string[] = [];
   for (const part of ending.channel) {
-    const written = message.property(part.property);
+    const holder = part.on === "theInput" ? input : message;
+    const written = holder.property(part.property);
     if (written === null) {
       if (part.whenAbsent === undefined) {
         return null;

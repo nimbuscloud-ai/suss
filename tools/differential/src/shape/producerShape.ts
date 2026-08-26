@@ -103,7 +103,9 @@ const renderings: DispatchTable<
   }),
   envVar: () => ({
     files: { "user.ts": handlerSending(`process.env.${ENV_VAR}`) },
-    expectedChannel: ENV_VAR,
+    // The reference spelling, which grounding reads. The bare name was
+    // a private spelling only the message-bus checker knew.
+    expectedChannel: `{${ENV_VAR}}`,
   }),
   constSameFile: () => ({
     files: {
@@ -127,14 +129,15 @@ const renderings: DispatchTable<
   }),
   templateString: () => ({
     files: {
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the string is TypeScript source for the generated program, and the template is what the case exercises.
       "user.ts": handlerSending("`${base}/WidgetQueue`", [
         'const base = "https://sqs.us-east-1.amazonaws.com/123456789012";',
         "",
       ]),
     },
-    // A computed string has no written form to resolve to, so the
-    // send is recorded and the channel stays null.
-    expectedChannel: null,
+    // The template's one hole is a const with a literal, so the ops
+    // put it back together. The hand-rolled reader recorded null here.
+    expectedChannel: QUEUE_URL,
   }),
   parameter: () => ({
     files: {
@@ -152,7 +155,9 @@ const renderings: DispatchTable<
         "",
       ].join("\n"),
     },
-    expectedChannel: null,
+    // A caller passes the queue, so a caller can ground it. The
+    // channel keeps the reference for whoever knows.
+    expectedChannel: "{event.queueUrl}",
   }),
 };
 

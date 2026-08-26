@@ -1,11 +1,12 @@
 {
-  "send": "AWS SDK v3: the client method a command is dispatched through",
-  "sendBatch": "AWS SDK v3: SQSClient batch send operation",
+  "Entries": "SQS batch input: the messages one batch call sends",
+  "JSON": "JavaScript built-in namespace object",
   "MessageBody": "AWS SDK v3: SendMessageCommand input field",
   "QueueUrl": "AWS SDK v3: SendMessageCommand input field",
   "Records": "AWS Lambda: SQSEvent field holding the delivered messages",
+  "SendMessageBatchCommand": "@aws-sdk/client-sqs: the batch-send operation's command class",
+  "SendMessageCommand": "@aws-sdk/client-sqs: the single-send operation's command class",
   "body": "AWS Lambda: SQSRecord field holding the message payload",
-  "sqs": "AWS transport name, Amazon SQS",
-  "JSON": "JavaScript built-in namespace object",
-  "parse": "JavaScript: JSON.parse"
+  "parse": "JavaScript: JSON.parse",
+  "sqs": "AWS transport name, Amazon SQS"
 }
