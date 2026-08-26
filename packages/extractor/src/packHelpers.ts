@@ -47,7 +47,7 @@ export function httpRouteDiscovery(opts: {
   mount?: DiscoveryPattern["mount"];
 }): DiscoveryPattern[] {
   const kind = opts.kind ?? "handler";
-  return opts.importNames.map((importName) => ({
+  const calls: DiscoveryPattern[] = opts.importNames.map((importName) => ({
     kind,
     match: {
       type: "registrationCall",
@@ -67,6 +67,89 @@ export function httpRouteDiscovery(opts: {
     },
     ...(opts.mount !== undefined ? { mount: opts.mount } : {}),
     requiresImport: [opts.importModule],
+  }));
+
+  if (opts.importNames.length === 0) {
+    // No import, no routable to guard the loop with.
+    return calls;
+  }
+
+  return [
+    ...calls,
+    // Routes registered in a loop over an array of specs, a shape
+    // registration-call discovery cannot see. The receiver comes from
+    // the same import declaration as the calls above, so a loop that
+    // never touches this library's routable is left alone.
+    {
+      kind,
+      match: {
+        type: "registrationLoop",
+        elementShape: LOOP_ELEMENT_SHAPE,
+        receiver: {
+          importModule: opts.importModule,
+          importNames: [...opts.importNames],
+        },
+      },
+      requiresImport: [opts.importModule],
+    },
+  ];
+}
+
+/**
+ * The property names a route-spec object conventionally uses. One
+ * convention across every HTTP framework pack, so a project whose
+ * specs spell them differently is out of scope rather than a per-pack
+ * setting nobody remembers to set.
+ */
+const LOOP_ELEMENT_SHAPE = {
+  methodKey: "method",
+  pathKey: "path",
+  handlerKey: "handler",
+} as const;
+
+/**
+ * One route a project helper registers when called, spelled with `{N}`
+ * placeholders for the call's positional arguments.
+ */
+export interface RegistrationHelper {
+  /** The helper's exported name, as the project's code imports it. */
+  helperName: string;
+  /** The module the helper is imported from, to tell two apart. */
+  importModule?: string;
+  registrations: Array<{
+    method: string;
+    pathTemplate: string;
+    handlerArg: string;
+  }>;
+}
+
+/**
+ * Discovery patterns for a project's own registration helpers.
+ *
+ * A helper like `registerCrud(app, "users", handlers)` registers
+ * routes the call-site never spells out, so registration-call
+ * discovery cannot see them. The helper's name belongs to one project,
+ * which is why this arrives through per-project pack config rather
+ * than shipping inside any framework pack:
+ *
+ *   suss extract -f express=config.json
+ *
+ * with `{ "registrationHelpers": [...] }` in the file.
+ */
+export function registrationHelperDiscovery(
+  helpers: readonly RegistrationHelper[],
+  kind = "handler",
+): DiscoveryPattern[] {
+  return helpers.map((helper) => ({
+    kind,
+    match: {
+      type: "registrationTemplate",
+      helperName: helper.helperName,
+      ...(helper.importModule !== undefined
+        ? { importModule: helper.importModule }
+        : {}),
+      registrations: helper.registrations.map((one) => ({ ...one })),
+    },
   }));
 }
 

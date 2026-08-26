@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { httpRouteDiscovery } from "./packHelpers.js";
+import {
+  httpRouteDiscovery,
+  registrationHelperDiscovery,
+} from "./packHelpers.js";
 
 describe("httpRouteDiscovery", () => {
   it("emits one DiscoveryPattern per importName with the shared binding-extraction shape", () => {
@@ -10,7 +13,13 @@ describe("httpRouteDiscovery", () => {
       methods: [".get", ".post"],
     });
 
-    expect(patterns).toHaveLength(2);
+    // One registration-call pattern per import, and the loop pattern
+    // every HTTP pack gets.
+    expect(patterns).toHaveLength(3);
+    expect(patterns[2]?.match).toMatchObject({
+      type: "registrationLoop",
+      receiver: { importModule: "express", importNames: ["Router", "express"] },
+    });
     expect(patterns[0]).toEqual({
       kind: "handler",
       match: {
@@ -82,7 +91,13 @@ describe("httpRouteDiscovery", () => {
       methods: [".get"],
       mount: { method: "use", prefixPosition: 0, targetPosition: 1 },
     });
-    for (const pattern of patterns) {
+    const calls = patterns.filter(
+      (one) => one.match.type === "registrationCall",
+    );
+    // The loop pattern registers routes rather than mounting anything,
+    // so the mount config goes on the call patterns alone.
+    expect(calls.length).toBeGreaterThan(0);
+    for (const pattern of calls) {
       expect(pattern.mount).toEqual({
         method: "use",
         prefixPosition: 0,
@@ -98,5 +113,47 @@ describe("httpRouteDiscovery", () => {
       methods: [".get"],
     });
     expect(patterns[0].mount).toBeUndefined();
+  });
+});
+
+describe("registrationHelperDiscovery", () => {
+  it("turns each helper into one registrationTemplate pattern", () => {
+    const patterns = registrationHelperDiscovery([
+      {
+        helperName: "registerCrud",
+        importModule: "./crud.js",
+        registrations: [
+          { method: "GET", pathTemplate: "/{1}", handlerArg: "{2}.list" },
+          { method: "POST", pathTemplate: "/{1}", handlerArg: "{2}.create" },
+        ],
+      },
+    ]);
+
+    expect(patterns).toEqual([
+      {
+        kind: "handler",
+        match: {
+          type: "registrationTemplate",
+          helperName: "registerCrud",
+          importModule: "./crud.js",
+          registrations: [
+            { method: "GET", pathTemplate: "/{1}", handlerArg: "{2}.list" },
+            { method: "POST", pathTemplate: "/{1}", handlerArg: "{2}.create" },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("leaves importModule off when the helper does not say one", () => {
+    const [pattern] = registrationHelperDiscovery([
+      { helperName: "mount", registrations: [] },
+    ]);
+
+    expect(pattern?.match).not.toHaveProperty("importModule");
+  });
+
+  it("produces nothing from no helpers, so the default costs nothing", () => {
+    expect(registrationHelperDiscovery([])).toEqual([]);
   });
 });

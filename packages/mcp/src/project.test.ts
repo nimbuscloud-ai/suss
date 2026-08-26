@@ -156,7 +156,7 @@ describe("Project", () => {
     // this test should be measuring.
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-live-"));
     projectWithOneRoute(root, "/orders");
-    const project = new Project({ root, watch: true });
+    const project = new Project({ root, watch: true, settleMs: 50 });
     const first = await project.start();
 
     // A recursive watch takes a moment to arm on macOS, and a write in

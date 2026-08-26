@@ -14,9 +14,12 @@
 // status is the second argument, and it defaults to 200 when the handler
 // leaves it off.
 
-import { httpRouteDiscovery } from "@suss/extractor";
+import {
+  httpRouteDiscovery,
+  registrationHelperDiscovery,
+} from "@suss/extractor";
 
-import type { PatternPack } from "@suss/extractor";
+import type { PatternPack, RegistrationHelper } from "@suss/extractor";
 
 /**
  * Status codes for Hono's `HTTPException`, thrown rather than returned.
@@ -27,7 +30,17 @@ const HTTP_EXCEPTION_CODES: Record<string, number> = {
   HTTPException: 500,
 };
 
-export function honoFramework(): PatternPack {
+export interface HonoPackOptions {
+  /**
+   * The project's own registration helpers, each expanded into the
+   * routes one call registers. A helper's name belongs to one project,
+   * so this arrives through per-project pack config
+   * (`-f hono=config.json`) rather than being built in here.
+   */
+  registrationHelpers?: RegistrationHelper[];
+}
+
+export function honoFramework(options: HonoPackOptions = {}): PatternPack {
   return {
     name: "hono",
     protocol: "http",
@@ -101,6 +114,7 @@ export function honoFramework(): PatternPack {
         },
         requiresImport: ["@hono/zod-openapi"],
       },
+      ...registrationHelperDiscovery(options.registrationHelpers ?? []),
     ],
 
     // The createRoute object registered alongside the handler declares

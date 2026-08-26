@@ -35,15 +35,20 @@ describe("fastifyFramework: pack shape", () => {
     const pack = fastifyFramework();
     expect(pack.name).toBe("fastify");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
-    // Two discovery patterns: default-import and named-import variants
-    expect(pack.discovery).toHaveLength(2);
+    // Default-import and named-import call patterns, plus the loop
+    // pattern every HTTP pack gets.
+    expect(pack.discovery).toHaveLength(3);
     expect(pack.contractReading).toBeUndefined();
     expect(pack.inputMapping.type).toBe("positionalParams");
   });
 
   it("registers all standard HTTP method verbs", () => {
     const pack = fastifyFramework();
-    for (const discovery of pack.discovery) {
+    const calls = pack.discovery.filter(
+      (one) => one.match.type === "registrationCall",
+    );
+    expect(calls.length).toBeGreaterThan(0);
+    for (const discovery of calls) {
       expect(discovery.match.type).toBe("registrationCall");
       if (discovery.match.type !== "registrationCall") {
         continue;

@@ -335,6 +335,18 @@ export type DiscoveryMatch =
         pathKey: string;
         handlerKey: string;
       };
+      /**
+       * The routable the loop registers on. When set, the loop's body
+       * must call a method on a variable constructed from one of these
+       * imports, the same resolution a registration call's subject
+       * gets. Without it, any loop over objects with the three keys
+       * above matches, and a file that imports the library can contain
+       * an unrelated one.
+       */
+      receiver?: {
+        importModule: string;
+        importNames: string[];
+      };
     }
   | {
       /**

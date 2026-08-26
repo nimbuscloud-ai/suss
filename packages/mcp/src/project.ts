@@ -28,7 +28,7 @@ import { contract, extract } from "@suss/cli";
 import type { ContractSource, Language } from "@suss/cli";
 
 /** How long the writes have to stop before a rebuild starts. */
-const SETTLE_MS = 400;
+const DEFAULT_SETTLE_MS = 400;
 
 /** What `suss.json` says this project contains. */
 interface ProjectFile {
@@ -46,6 +46,12 @@ export interface ProjectOptions {
   summaryDir?: string;
   /** Watch the tree and rebuild on a change. On by default. */
   watch?: boolean;
+  /**
+   * How long writes have to stop before a rebuild starts. The default
+   * suits an editor. A test that waits on a rebuild sets it low, so
+   * what the test covers stops depending on scheduler timing.
+   */
+  settleMs?: number;
 }
 
 /** What a rebuild produced, so a caller can say why an answer is thin. */
@@ -68,6 +74,7 @@ export class Project {
   private watcher: fs.FSWatcher | null = null;
   private pending: NodeJS.Timeout | null = null;
   private watchWanted = true;
+  private readonly settleMs: number;
   private readonly ownsSummaryDir: boolean;
   /** A rebuild already running, so a burst does not start a second. */
   private running: Promise<BuildReport> | null = null;
@@ -91,6 +98,7 @@ export class Project {
       configured: false,
     };
     this.watchWanted = options.watch !== false;
+    this.settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
   }
 
   /**
@@ -202,7 +210,7 @@ export class Project {
       this.running = this.build().finally(() => {
         this.running = null;
       });
-    }, SETTLE_MS);
+    }, this.settleMs);
     this.pending.unref?.();
   }
 }
