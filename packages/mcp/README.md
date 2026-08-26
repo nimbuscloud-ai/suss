@@ -36,7 +36,7 @@ In a host that reads a config file:
 |---|---|
 | `suss_ask` | One question about one boundary. The seven question forms are in the tool description. |
 | `suss_check` | Compare both sides of every boundary and report where they disagree. Takes a boundary to narrow to. |
-| `suss_boundaries` | Every boundary in the project and which ones have both sides. |
+| `suss_boundaries` | The boundaries, split into the ones with both sides and the ones with only one. |
 | `suss_status` | Which commands ran, which failed, and whether the project has a `suss.json`. |
 
 Every tool reads. None of them change a file, and all four are marked
@@ -45,7 +45,8 @@ read-only, so a host never has to ask a person before calling one.
 An answer is trimmed to leave the model room to act on it. `suss_check`
 over a repository of any size produces hundreds of findings, so it
 shows the first twenty, counts every kind in `findingCounts`, and says
-to ask again about one boundary for the rest.
+to ask again about one boundary for the rest. `suss_boundaries` does
+the same with its three lists and keeps the totals in `counts`.
 
 `suss_ask` is the one to reach for first. Ask about a table before
 changing it, ask what calls a function before changing its signature.
@@ -81,4 +82,5 @@ await server.connect(myTransport);
 
 Pass `watch: false` to extract once and leave it. Pass `summaryDir` to
 put the summaries somewhere you choose instead of a temporary
-directory.
+directory, and `close()` will leave that one alone: a directory the
+server made is the only one it removes.

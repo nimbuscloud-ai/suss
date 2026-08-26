@@ -10,7 +10,7 @@
  * Every tool reads. None of them change a file.
  */
 
-import { answerQuestion, checkAt, checkDir, inspectDir } from "@suss/cli";
+import { answerQuestion, checkAt, checkDir } from "@suss/cli";
 
 import { omissionNote, SHOWN, trim } from "./budget.js";
 
@@ -50,9 +50,15 @@ Severity says how the run would exit, not what to do. Read the finding's own tex
 
 Pass a boundary to narrow to one thing when a whole-project report is too much.`;
 
-export const INSPECT_DESCRIPTION = `List every boundary in this codebase and say which ones have both sides and which have only one.
+export const INSPECT_DESCRIPTION = `List the boundaries in this codebase, split into the ones with both sides and the ones with only one.
 
-Reach for this to get oriented in an unfamiliar project, or when suss_check reports nothing and you want to know whether that means agreement or means nothing was compared. A boundary with only a provider has no caller suss could find; one with only a consumer calls something suss cannot see.
+Reach for this to get oriented in an unfamiliar project, or when suss_check reports no findings and you want to know whether that means the two sides agreed or means nothing was compared.
+
+  paired        both sides are here, and suss_check compared them.
+  providerOnly  something serves it and nothing suss can see calls it. Often correct: a public API's callers are in somebody else's repository.
+  consumerOnly  something calls it and suss cannot see what serves it. Often another service, and sometimes the two sides spelling one boundary differently, which is worth checking before assuming the first.
+
+Each list shows the first few; counts has the totals.
 
 To read what one boundary does, use suss_ask with "what can I project from <boundary>".`;
 
@@ -153,35 +159,40 @@ function oneBoundary(dir: string, at: string): Record<string, unknown> {
 
 export async function inspectTool(project: Project): Promise<ToolResult> {
   await project.settled();
-  const text = capture(() => {
-    inspectDir({ dir: project.summaryDir });
+  const result = checkDir({
+    dir: project.summaryDir,
+    json: true,
+    output: NOWHERE,
   });
-  const lines = text.split("\n");
-  if (lines.length <= BOUNDARY_LINES) {
-    return { content: [{ type: "text", text }] };
-  }
-  return {
-    content: [
-      {
-        type: "text",
-        text: [
-          ...lines.slice(0, BOUNDARY_LINES),
-          "",
-          `${lines.length - BOUNDARY_LINES} more lines are not shown. Ask suss_ask "what does <file> reach" for one file instead of reading the whole list.`,
-        ].join("\n"),
-      },
-    ],
+
+  const paired = result.result.pairs.map((pair) => pair.key);
+  const providerOnly = result.result.unmatched.providers.map(labelOf);
+  const consumerOnly = result.result.unmatched.consumers.map(labelOf);
+
+  const payload = {
+    paired: paired.slice(0, SHOWN),
+    providerOnly: providerOnly.slice(0, SHOWN),
+    consumerOnly: consumerOnly.slice(0, SHOWN),
+    counts: {
+      paired: paired.length,
+      providerOnly: providerOnly.length,
+      consumerOnly: consumerOnly.length,
+    },
+    guide:
+      "paired means both sides are here and suss_check compared them. providerOnly means nothing suss can see calls it. consumerOnly means it calls something suss cannot see, which is usually another service or a spelling the two sides disagree on.",
+    ...(paired.length + providerOnly.length + consumerOnly.length > SHOWN * 3
+      ? {
+          note: `Each list shows the first ${SHOWN}. counts has the totals. Ask suss_ask "what does <file> reach" for one file rather than reading the whole list.`,
+        }
+      : {}),
   };
+  return said(payload);
 }
 
-/**
- * How many lines of the boundary listing a tool result shows.
- *
- * A repository of any size has thousands of boundaries, and a model
- * that spends its window reading all of them has none left to act on
- * any of them.
- */
-const BOUNDARY_LINES = 120;
+/** A boundary as a reader spells it, falling back to the unit's name. */
+function labelOf(one: { key: string | null; name: string }): string {
+  return one.key ?? one.name;
+}
 
 export function statusTool(project: Project): ToolResult {
   const report = project.lastBuild();
@@ -222,22 +233,6 @@ function said(payload: Record<string, unknown>): ToolResult {
  * would get wrong.
  */
 const NOWHERE = process.platform === "win32" ? "NUL" : "/dev/null";
-
-/** What a command wrote to stdout, for the ones with no return value. */
-function capture(run: () => void): string {
-  const written: string[] = [];
-  const original = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array): boolean => {
-    written.push(String(chunk));
-    return true;
-  }) as typeof process.stdout.write;
-  try {
-    run();
-  } finally {
-    process.stdout.write = original;
-  }
-  return written.join("");
-}
 
 function failure(text: string): ToolResult {
   return { content: [{ type: "text", text }], isError: true };

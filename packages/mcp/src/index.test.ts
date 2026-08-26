@@ -163,7 +163,10 @@ describe("the suss MCP server", () => {
       name: "suss_boundaries",
       arguments: {},
     });
-    expect(JSON.stringify(result.content)).toContain("/orders/");
+    const payload = result.structuredContent as {
+      counts: { paired: number };
+    };
+    expect(payload.counts.paired).toBe(1);
   });
 
   it("marks every tool read-only, so a host never has to ask before calling one", async () => {

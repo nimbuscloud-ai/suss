@@ -74,13 +74,18 @@ async function projectWith(count: number): Promise<Project> {
 }
 
 describe("the tools, on a project bigger than one answer", () => {
-  it("cuts the boundary listing and says how to ask about one thing", async () => {
+  it("cuts each boundary list and keeps the totals", async () => {
     const project = await projectWith(150);
     const result = await inspectTool(project);
-    const text = textOf(result);
+    const payload = result.structuredContent as {
+      providerOnly: string[];
+      counts: { providerOnly: number };
+      note?: string;
+    };
 
-    expect(text).toContain("more lines are not shown");
-    expect(text).toContain("what does <file> reach");
+    expect(payload.providerOnly).toHaveLength(20);
+    expect(payload.counts.providerOnly).toBe(150);
+    expect(payload.note).toContain("counts has the totals");
 
     project.close();
   }, 60_000);
@@ -88,8 +93,9 @@ describe("the tools, on a project bigger than one answer", () => {
   it("says nothing was omitted when everything fits", async () => {
     const project = await projectWith(2);
     const result = await inspectTool(project);
+    const payload = result.structuredContent as { note?: string };
 
-    expect(textOf(result)).not.toContain("not shown");
+    expect(payload.note).toBeUndefined();
 
     project.close();
   }, 60_000);

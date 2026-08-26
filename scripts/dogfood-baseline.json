@@ -3,10 +3,10 @@
     "packages": 60,
     "packagesWithExports": 60,
     "exports": 589,
-    "internal": 2196,
+    "internal": 2194,
     "consumers": 1012,
     "pairs": 998,
-    "unfollowedCalls": 238,
+    "unfollowedCalls": 237,
     "findingErrors": 0
   },
   "packages": {
@@ -377,9 +377,9 @@
     "packages/mcp": {
       "name": "@suss/mcp",
       "exports": 6,
-      "internal": 15,
+      "internal": 13,
       "consumers": 6,
-      "unfollowedCalls": 3
+      "unfollowedCalls": 2
     },
     "packages/packs": {
       "name": "@suss/packs",

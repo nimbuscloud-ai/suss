@@ -68,6 +68,7 @@ export class Project {
   private watcher: fs.FSWatcher | null = null;
   private pending: NodeJS.Timeout | null = null;
   private watchWanted = true;
+  private readonly ownsSummaryDir: boolean;
   /** A rebuild already running, so a burst does not start a second. */
   private running: Promise<BuildReport> | null = null;
 
@@ -79,6 +80,9 @@ export class Project {
     this.root = realPath(path.resolve(options.root));
     this.summaryDir =
       options.summaryDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "suss-mcp-"));
+    // Only a directory this made is a directory this may remove. One
+    // the caller chose is theirs, and they may want to read it after.
+    this.ownsSummaryDir = options.summaryDir === undefined;
     fs.mkdirSync(this.summaryDir, { recursive: true });
     this.report = {
       summaryDir: this.summaryDir,
@@ -152,7 +156,13 @@ export class Project {
     return this.report;
   }
 
-  /** Stop watching. A server that is shutting down calls this. */
+  /**
+   * Stop watching and clear up. A server shutting down calls this.
+   *
+   * The summaries go with it when this made the directory they are in,
+   * since a server that ran for a week and stopped should not leave one
+   * behind.
+   */
   close(): void {
     if (this.pending !== null) {
       clearTimeout(this.pending);
@@ -160,6 +170,9 @@ export class Project {
     }
     this.watcher?.close();
     this.watcher = null;
+    if (this.ownsSummaryDir) {
+      fs.rmSync(this.summaryDir, { recursive: true, force: true });
+    }
   }
 
   private watch(): void {
