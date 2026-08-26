@@ -3,9 +3,9 @@
     "packages": 60,
     "packagesWithExports": 60,
     "exports": 589,
-    "internal": 2194,
-    "consumers": 1012,
-    "pairs": 998,
+    "internal": 2195,
+    "consumers": 1013,
+    "pairs": 999,
     "unfollowedCalls": 237,
     "findingErrors": 0
   },
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 14,
-      "internal": 339,
-      "consumers": 211,
+      "internal": 340,
+      "consumers": 212,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
