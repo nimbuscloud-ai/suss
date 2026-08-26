@@ -390,6 +390,13 @@ async function runInspect(argv: string[]): Promise<number> {
   const types = argv.includes("--types");
   const json = argv.includes("--json");
   const args = argv.filter((a) => a !== "--types" && a !== "--json");
+  // `--diff` is the one form that takes it. Everything else inspect
+  // does reads a file that is already JSON, so the flag is refused
+  // here rather than in each branch, where --dir used to drop it.
+  if (json && args[0] !== "--diff") {
+    process.stderr.write(inspectFlagMessage("--json"));
+    return 1;
+  }
   const unknown = args.find((a) => a.startsWith("--") && !INSPECT_FLAGS.has(a));
   if (unknown !== undefined) {
     process.stderr.write(inspectFlagMessage(unknown));
@@ -423,10 +430,6 @@ async function runInspect(argv: string[]): Promise<number> {
     process.stderr.write(
       "inspect needs a summaries file to read. Try: suss inspect summaries/api.json, or --dir to read a whole folder.\n",
     );
-    return 1;
-  }
-  if (json) {
-    process.stderr.write(inspectFlagMessage("--json"));
     return 1;
   }
   inspect({ file, ...(types ? { types } : {}) });
@@ -558,6 +561,15 @@ function runCheck(args: string[]): number {
     return 1;
   }
 
+  // Two-file check compares every provider against every consumer
+  // without building pairs, so there is nothing there to count as
+  // empty. Saying so beats taking the flag and doing nothing with it.
+  if (values["fail-on-empty"] === true) {
+    process.stderr.write(
+      "--fail-on-empty needs --dir. Comparing two files checks every provider against every consumer without pairing them, so there is no count of what paired.\n",
+    );
+    return 1;
+  }
   const result = check({
     providerFile: positionals[0],
     consumerFile: positionals[1],

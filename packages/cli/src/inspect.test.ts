@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { restBinding } from "@suss/behavioral-ir";
 
 import { inspectDiff } from "./inspect.js";
+import { runCli } from "./run.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -121,5 +122,28 @@ describe("inspect --diff --json", () => {
       expect(output).toContain("removed handler");
       expect(() => JSON.parse(output)).toThrow();
     });
+  });
+});
+
+describe("which inspect forms take --json", () => {
+  const quietly = async (args: string[]): Promise<number> => {
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (() => true) as typeof process.stderr.write;
+    try {
+      return await runCli(args);
+    } finally {
+      process.stderr.write = original;
+    }
+  };
+
+  it("refuses it for a plain read, and says where to get JSON", async () => {
+    // The file inspect reads is already JSON, so printing it again
+    // helps nobody. A diff is worked out from two files and lives in
+    // neither, which is why that form takes the flag.
+    expect(await quietly(["inspect", "summaries.json", "--json"])).toBe(1);
+  });
+
+  it("refuses it for --dir, which used to drop it without a word", async () => {
+    expect(await quietly(["inspect", "--dir", "summaries/", "--json"])).toBe(1);
   });
 });
