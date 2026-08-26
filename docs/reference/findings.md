@@ -166,6 +166,10 @@ Both sides have to say what the value is. A metric whose summary states no `meta
 
 The kind is also where the message-bus body-shape pairing will report, along with the type-aware extensions of the storage / runtime-config / graphql checkers. It subsumes the per-domain shape-mismatch kinds earlier versions reserved (`storageTypeMismatch`, `storageNullableViolation`, `storageSelectorIndexMismatch`, `envVarTypeCoercionMissing`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch`, `componentPropTypeMismatch`, `contentTypeMismatch`).
 
+**Legitimate when:** the consumer coerces the value itself before using it, so the difference never reaches anything that cares.
+
+**Bug when:** it does not. The two sides disagree about the form of a value they both name, and the side that reads it will act on something other than what arrives.
+
 ### `boundaryFieldRequired`
 
 **Severity:** error
@@ -176,6 +180,10 @@ The provider declares a field as required and the consumer doesn't supply it. Th
 
 No emitter ships today. This kind subsumes earlier per-domain reserved kinds: `requiredHeaderMissing`, `requiredQueryParamMissing`, `componentRequiredPropMissing`, `graphqlRequiredArgMissing`.
 
+**Legitimate when:** something between the two supplies the field, a gateway or a middleware the run does not read.
+
+**Bug when:** nothing does. Send the field, or drop the requirement if the provider no longer needs it.
+
 ### `boundaryConstraintViolation`
 
 **Severity:** per-emitter
@@ -185,6 +193,10 @@ Each emitter states its own outcome sentence when it ships: a value the store re
 The value supplied for a field violates a value-level constraint the provider declared, enum membership, declared length, etc. This is distinct from `boundaryShapeMismatch` because the value's *type* is correct; only the value itself violates the constraint.
 
 No emitter ships today. This kind subsumes earlier per-domain reserved kinds: `storageLengthConstraintViolation`, `storageEnumConstraintViolation`, `graphqlEnumValueUnknown`.
+
+**Legitimate when:** the value is settled somewhere the run cannot see, so what suss read is a placeholder rather than what is sent.
+
+**Bug when:** the value is what the source writes. The store refuses it, or takes it and loses part of it.
 
 ### `boundarySelectorMismatch` *(shipped)*
 
@@ -207,6 +219,10 @@ A contract that does not state `metadata.storageContract.identifies` claims noth
 ---
 
 ## REST findings
+
+**Legitimate when:** nothing here. A store that accepts only its key attributes refuses the query outright.
+
+**Bug when:** always, on the shipped emitter. Query by an attribute the store keys on, or add an index for the one you want.
 
 ### `unhandledProviderCase` *(shipped)*
 
@@ -296,6 +312,10 @@ The consumer's expected statuses or body-field reads disagree with the contract.
 
 A contract's range and `default` entries widen what is declared: a branch on 404 agrees with a declared `4XX`, and nothing is undeclared against a contract with a `default`. A declared range the consumer handles no member of reports once (`Contract declares 4XX responses but consumer handles none of them`).
 
+**Legitimate when:** the consumer genuinely does not care about the status, because a wrapper throws on it and something above catches, or because the declared response never arrives on the path this caller uses.
+
+**Bug when:** the consumer falls through to a path written for a different answer. Handle the status, or take it out of the contract if nothing serves it.
+
 ### `contractDisagreement` *(shipped)*
 
 **Severity:** warning • **Emitted by:** `checkContractAgreement`
@@ -310,6 +330,10 @@ Two or more providers at the same boundary (e.g. an OpenAPI spec and a CFN templ
   sources: ["petstore.yaml::getPet", "template.yaml::getPet"]
   boundary: openapi (http) GET /pets/:id
 ```
+
+**Legitimate when:** the sources describe different deployments of the same route, so one really does serve a status the other cannot.
+
+**Bug when:** they describe one deployment. One of them is stale, and the run cannot say which, so this needs somebody who knows which document is maintained.
 
 ### `contractOperationUnimplemented` *(shipped)*
 
@@ -394,11 +418,19 @@ Code sends a message to a queue / topic that no provider in the analyzed scope d
 
 A consumer Lambda is wired to receive from a channel but no code in the project sends to that channel. It could be dead infra, or the producer may live in a different repo; which of the two needs a person.
 
+**Legitimate when:** the producer is in another repository, which one run cannot see.
+
+**Bug when:** the producer was meant to be here. Nothing sends on the channel, so the consumer never runs and nothing says so at deploy time.
+
 ### `messageBusUnused` *(shipped)*
 
 **Severity:** warning • **Emitted by:** `checkMessageBus`
 
 A queue / topic is declared in infrastructure but neither produced to nor consumed from anywhere in the project. Nothing breaks at runtime; it is probably an orphan resource left over from a removed feature, and removing it is a judgement.
+
+**Legitimate when:** something outside the project uses it, or it is kept deliberately for a consumer that has not landed.
+
+**Bug when:** the feature it belonged to is gone. Nothing breaks either way, so this is cleanup rather than a defect.
 
 ### `messageBusConsumerDisabled` *(shipped)*
 
@@ -409,6 +441,10 @@ A rule or subscription deploys switched off (`State: DISABLED`), so its target r
 ---
 
 ## Runtime-config findings
+
+**Legitimate when:** it is switched off on purpose, which is why this is info and why the pass does not report the channel as unused.
+
+**Bug when:** somebody meant to enable it and did not. The target receives nothing, and no other finding will say so, because a disabled subscription is left out of the producer and channel checks on purpose.
 
 ### `runtimeScopeUnknown` *(shipped)*
 
@@ -454,17 +490,33 @@ It also reports every `unreadOutcome` gap on the provider. That gap means a `ret
 
 **Fix:** teach the pack that terminal shape. Until then the handler is under-described, not wrong, which is why this is info and not an error.
 
-### `unsupportedSemantics` *(reserved)*
+### `unsupportedSemantics` *(shipped)*
 
-**Severity:** info
+**Severity:** info • **Emitted by:** `checkMessageBus`
 
-A pack identifies a boundary it doesn't know how to summarise, a WebSocket subscription handler, an SSE stream producer, a gRPC streaming method, etc. The emitter ships when a pack first encounters such a boundary.
+A pack identifies a boundary it cannot work out the other side of. The
+shipped emitter is the message-bus one: a subscription whose channel
+nothing in the run resolves, and the finding says which reading gave
+up. It also covers a boundary no pack knows how to summarise, a
+WebSocket subscription handler or a gRPC streaming method among them.
+
+**Legitimate when:** the channel is settled outside the code, by a
+deploy-time value or a console change, so the source could not have
+said it.
+
+**Bug when:** the source does say it and the pack could not follow it.
+That is a gap in suss rather than in the project, and the reason on the
+finding says where.
 
 ### `opaquePredicateBlocking` *(reserved)*
 
 **Severity:** info
 
 A pairing pass refused to emit substantive findings because too many predicates on the relevant transitions are opaque. This one is per-pair, in contrast to `lowConfidence`, which is per-summary.
+
+**Nothing emits this today.** It is a name reserved in the schema, so a
+run never produces it and there is nothing to act on until the emitter
+lands.
 
 ### `ambiguousProvider`
 
@@ -486,3 +538,7 @@ Storage says it for a container. A table declared as `{StageName}-orders-blue` a
 - **Not a spec.** The authoritative list is `FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts).
 - **Not exhaustive for severity mapping.** Severities shown are the defaults the checker emits. `.sussignore` rules can downgrade or hide any finding, see [Suppressions](/suppressions).
 - **Not a roadmap.** The *reserved* tag means the kind exists in the IR enum but no checker emits it yet; it doesn't promise an emitter will land soon.
+
+**Legitimate when:** the two providers are the same route in two documents, so whichever the consumer reaches behaves the same.
+
+**Bug when:** they are different services that happen to share a method and a path. The consumer is being checked against an API it never calls, so every finding on that pair is suspect until the collision is settled.
