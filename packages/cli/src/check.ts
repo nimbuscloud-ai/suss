@@ -74,6 +74,16 @@ export interface CheckOptions {
   noSuppressions?: boolean;
   /** Print every finding and every list, not the collapsed report. */
   all?: boolean;
+  /**
+   * Exit non-zero when the run compared nothing.
+   *
+   * A run that pairs no boundary produces no findings and reads as a
+   * pass, which is the same answer it gives when both sides agree. The
+   * two are worth telling apart: one means the code is consistent, the
+   * other means suss could not see enough of it to say. `extract` takes
+   * the same flag for the same reason.
+   */
+  failOnEmpty?: boolean;
 }
 
 export interface CheckDirOptions {
@@ -84,6 +94,8 @@ export interface CheckDirOptions {
   sussignore?: string;
   noSuppressions?: boolean;
   all?: boolean;
+  /** Exit non-zero when the run compared nothing. See CheckOptions. */
+  failOnEmpty?: boolean;
   /**
    * Directory of team-authored intent specs (`*.intent` / `*.prd`).
    * When set, each boundary intent is paired against the code summaries
@@ -267,9 +279,33 @@ export function checkDir(
     ...(intent !== undefined ? { intent } : {}),
     hasErrors:
       meetsThreshold(result.findings, failOn) ||
-      intentMeetsThreshold(intent?.findings ?? [], failOn),
+      intentMeetsThreshold(intent?.findings ?? [], failOn) ||
+      comparedNothing(options.failOnEmpty === true, allSummaries, result),
     result,
   };
+}
+
+/**
+ * Whether the caller asked to hear about a run that compared nothing,
+ * and this was one.
+ *
+ * A run over no summaries at all is a different mistake, and the empty
+ * run already says so, so this only fires where there was something to
+ * compare and no pair came out of it.
+ */
+function comparedNothing(
+  asked: boolean,
+  summaries: readonly BehavioralSummary[],
+  result: CheckAllResult,
+): boolean {
+  if (!asked || summaries.length === 0 || result.pairs.length > 0) {
+    return false;
+  }
+  process.stderr.write(
+    `[suss] nothing paired: ${summaries.length} summaries, no boundary with both sides. ` +
+      "Exiting non-zero because --fail-on-empty was asked for.\n",
+  );
+  return true;
 }
 
 /** A boundary whose providers came from more than one summary file. */

@@ -1225,6 +1225,14 @@ export interface DirOptions {
 export interface DiffOptions {
   before: string;
   after: string;
+  /**
+   * Write the diff as JSON rather than for a person. `inspect` says no
+   * to `--json` everywhere else, because the summaries it reads are
+   * already JSON and printing them again helps nobody. A diff is the
+   * one thing here that no file contains: it is worked out from two of
+   * them, so something reading it has nowhere else to go.
+   */
+  json?: boolean;
 }
 
 /**
@@ -1528,6 +1536,81 @@ function renderDiff(
   return lines.join("\n");
 }
 
+/** One summary that moved, as the fields a reader of the diff needs. */
+interface DiffedSummary {
+  readonly key: string;
+  readonly change: "added" | "removed" | "changed";
+  readonly kind: string;
+  readonly file: string | null;
+  readonly addedTransitions?: unknown[];
+  readonly removedTransitions?: unknown[];
+  readonly changedTransitions?: unknown[];
+}
+
+/**
+ * The same comparison the rendered diff walks, written out.
+ *
+ * A summary that did not move says nothing, so it is left out: a
+ * consumer wants what changed, and printing every unchanged boundary
+ * beside it buries that.
+ */
+function writeDiffJson(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+): void {
+  const beforeByKey = new Map(before.map((s) => [summaryKey(s), s]));
+  const afterByKey = new Map(after.map((s) => [summaryKey(s), s]));
+  const moved: DiffedSummary[] = [];
+
+  for (const [key, summary] of afterByKey) {
+    if (!beforeByKey.has(key)) {
+      moved.push({
+        key,
+        change: "added",
+        kind: summary.kind,
+        file: summary.location.file,
+      });
+    }
+  }
+  for (const [key, summary] of beforeByKey) {
+    if (!afterByKey.has(key)) {
+      moved.push({
+        key,
+        change: "removed",
+        kind: summary.kind,
+        file: summary.location.file,
+      });
+    }
+  }
+  for (const [key, beforeSummary] of beforeByKey) {
+    const afterSummary = afterByKey.get(key);
+    if (afterSummary === undefined) {
+      continue;
+    }
+    const diff = diffSummaries(beforeSummary, afterSummary);
+    if (
+      diff.addedTransitions.length === 0 &&
+      diff.removedTransitions.length === 0 &&
+      diff.changedTransitions.length === 0
+    ) {
+      continue;
+    }
+    moved.push({
+      key,
+      change: "changed",
+      kind: afterSummary.kind,
+      file: afterSummary.location.file,
+      addedTransitions: diff.addedTransitions,
+      removedTransitions: diff.removedTransitions,
+      changedTransitions: diff.changedTransitions,
+    });
+  }
+
+  process.stdout.write(
+    `${JSON.stringify({ version: 1, changed: moved.length, summaries: moved }, null, 2)}\n`,
+  );
+}
+
 export function inspectDiff(options: DiffOptions): void {
   const beforePath = path.resolve(options.before);
   const afterPath = path.resolve(options.after);
@@ -1556,6 +1639,11 @@ export function inspectDiff(options: DiffOptions): void {
   const afterByKey = new Map<string, BehavioralSummary>();
   for (const s of afterSummaries) {
     afterByKey.set(summaryKey(s), s);
+  }
+
+  if (options.json === true) {
+    writeDiffJson(beforeSummaries, afterSummaries);
+    return;
   }
 
   let hasChanges = false;
