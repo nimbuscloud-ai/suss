@@ -27,10 +27,13 @@ import { declaredExports } from "./declaredSurface.mjs";
  * It went to fourteen when a second declaration in one test called
  * `messageSends(...).methods(...)`, which is the same shape as the
  * `storageCalls` and `sqlStatements` call sites already counted here.
+ * It went to fifteen when the eventbridge pack migrated onto
+ * `messageSends(...)`: its factory now calls the builder the same way
+ * the dynamodb, mongoose, drizzle and prisma factories already do.
  * Lowering it is a fix landing; raising it needs saying which call
  * sites arrived and why they are the same shape as the rest.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 14;
+const KNOWN_UNPAIRED_CONSUMERS = 15;
 
 /**
  * Every function a package says it exports has a provider summary.
