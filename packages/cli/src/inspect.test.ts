@@ -9,7 +9,7 @@ import { restBinding } from "@suss/behavioral-ir";
 import { inspectDiff } from "./inspect.js";
 import { runCli } from "./run.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 
 /** The smallest summary a diff has something to say about. */
 function routeSummary(name: string, routePath: string): BehavioralSummary {
@@ -145,5 +145,75 @@ describe("which inspect forms take --json", () => {
 
   it("refuses it for --dir, which used to drop it without a word", async () => {
     expect(await quietly(["inspect", "--dir", "summaries/", "--json"])).toBe(1);
+  });
+});
+
+describe("inspect --diff, human output", () => {
+  const withFiles = (
+    before: BehavioralSummary[],
+    after: BehavioralSummary[],
+    run: (paths: { before: string; after: string }) => void,
+  ) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-diffhuman-"));
+    const beforePath = path.join(dir, "before.json");
+    const afterPath = path.join(dir, "after.json");
+    fs.writeFileSync(beforePath, JSON.stringify(before));
+    fs.writeFileSync(afterPath, JSON.stringify(after));
+    try {
+      run({ before: beforePath, after: afterPath });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  const respondsWith = (
+    name: string,
+    routePath: string,
+    transition: Partial<Transition>,
+  ): BehavioralSummary => ({
+    ...routeSummary(name, routePath),
+    transitions: [
+      {
+        id: "t1",
+        conditions: [],
+        output: {
+          type: "response",
+          statusCode: { type: "literal", value: 200 },
+          body: null,
+          headers: {},
+        },
+        effects: [],
+        location: { start: 1, end: 5 },
+        isDefault: true,
+        ...transition,
+      },
+    ],
+  });
+
+  it("says which field moved when the two lines read the same", () => {
+    // The short line says the output and the conditions. A change to
+    // anything else printed as one line twice, and a reader gating a
+    // review on the diff could not tell what moved.
+    const before = respondsWith("getUser", "/users/:id", {});
+    const after = respondsWith("getUser", "/users/:id", {
+      effects: [{ type: "stateChange", variable: "auditCount" }],
+    });
+
+    withFiles([before], [after], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("(effects changed)");
+    });
+  });
+
+  it("stays quiet about a transition that only moved in the file", () => {
+    const before = respondsWith("getUser", "/users/:id", {});
+    const after = respondsWith("getUser", "/users/:id", {
+      location: { start: 41, end: 45 },
+    });
+
+    withFiles([before], [after], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("No behavioral changes.");
+    });
   });
 });

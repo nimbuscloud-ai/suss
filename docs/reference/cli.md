@@ -675,7 +675,7 @@ suss inspect SUMMARIES.json
 suss inspect --dir DIR
 
 # Diff two summary files (shows changed transitions)
-suss inspect --diff BEFORE.json AFTER.json
+suss inspect --diff BEFORE.json AFTER.json [--json]
 
 # Who serves a request, hop by hop
 suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
@@ -684,14 +684,22 @@ suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
 | Flag | Description |
 |---|---|
 | `--dir PATH` | Report how the summaries in a directory pair up, boundary by boundary, and which ones found nothing to pair with. It does not render the summaries themselves. |
-| `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. |
+| `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. A transition that only moved in the file is not a change, so an edit above a handler leaves the diff quiet. Takes `--json`. |
 | `--types` | Spell out the named types a summary references instead of printing their names. It applies to a single file and to `--dir`; a `--diff` run ignores it. |
 | `--flow "METHOD URL"` | Work out who serves one request, hop by hop. See [below](#suss-inspect-flow). |
 
-Rendering has no JSON output mode, it is always human-formatted. For
-programmatic consumption, read the summary files directly (they ARE
-JSON). `--flow` is the exception: it computes an answer rather than
-rendering a file, and `--json` gives you that answer as data.
+Rendering a file has no JSON output mode, it is always human-formatted.
+For programmatic consumption, read the summary files directly (they ARE
+JSON). Two forms are different, because each works an answer out rather
+than rendering a file, so there is nowhere else to read it from.
+`--flow` takes `--json` and gives you the chain as data. `--diff` takes
+it and gives you what moved between two runs, as
+`{ version, changed, summaries }` with each entry marked `added`,
+`removed`, or `changed`.
+
+A diff reports behaviour. Two runs over the same code with a comment
+added produce transitions at different offsets and the diff says
+nothing, because where a handler is in a file is not something it does.
 
 ### `suss inspect --flow`
 
