@@ -180,7 +180,42 @@ export function pathFromUrlNode(
   if (Node.isTemplateExpression(node)) {
     return pathFromTemplateUrl(node, resolution);
   }
+  if (Node.isBinaryExpression(node)) {
+    const joined = joinedStringOf(node, resolution);
+    return joined === undefined ? undefined : pathFromLiteralUrl(joined);
+  }
   return undefined;
+}
+
+/**
+ * The string a `+` of strings works out to, or undefined when a side
+ * is anything else. `"/users" + "/:id"` states the same path a
+ * template does, written the other way, and a name in either side is
+ * followed to what it was written as, the same hop every other
+ * spelling of a path gets.
+ */
+function joinedStringOf(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): string | undefined {
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node)
+  ) {
+    return node.getLiteralValue();
+  }
+  if (
+    Node.isBinaryExpression(node) &&
+    node.getOperatorToken().getText() === "+"
+  ) {
+    const left = joinedStringOf(node.getLeft(), resolution);
+    const right = joinedStringOf(node.getRight(), resolution);
+    return left === undefined || right === undefined ? undefined : left + right;
+  }
+  const written = resolution?.resolveWrittenValue(node) ?? null;
+  return written === null || written === node
+    ? undefined
+    : joinedStringOf(written, resolution);
 }
 
 function placeholderName(expr: Node): string {

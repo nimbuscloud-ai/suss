@@ -3,7 +3,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { createFixtureProject } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { expressFramework } from "./index.js";
 
@@ -46,6 +46,67 @@ describe("expressFramework: pack shape", () => {
 // ---------------------------------------------------------------------------
 // Integration: run the adapter against the express fixture
 // ---------------------------------------------------------------------------
+
+describe("expressFramework: a path built by joining strings", () => {
+  const pathsOf = (summaries: BehavioralSummary[]): (string | null)[] =>
+    summaries
+      .map((one) => {
+        const semantics = one.identity.boundaryBinding?.semantics;
+        return semantics?.name === "rest" ? semantics.path : null;
+      })
+      .filter((one): one is string => one !== null)
+      .sort();
+
+  const extract = async (source: string): Promise<BehavioralSummary[]> => {
+    const project = createTestProject();
+    project.createSourceFile("app.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    return await adapter.extractAll();
+  };
+
+  it("reads a route whose path is two literals joined", async () => {
+    // Every other spelling of the same value already worked: a
+    // literal, a const, an import, a template. A concatenation states
+    // the same path written the other way.
+    const summaries = await extract(`
+      import express from "express";
+      const app = express();
+      app.get("/users" + "/:id", (req: any, res: any) => {
+        res.status(200).json({});
+      });
+    `);
+    expect(pathsOf(summaries)).toEqual(["/users/:id"]);
+  });
+
+  it("follows a const into either side of the join", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const app = express();
+      const base = "/users";
+      const P = base + "/:id";
+      app.get(P, (req: any, res: any) => {
+        res.status(200).json({});
+      });
+    `);
+    expect(pathsOf(summaries)).toEqual(["/users/:id"]);
+  });
+
+  it("claims nothing for a join with a side it cannot read", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const app = express();
+      export function mount(prefix: string) {
+        app.get(prefix + "/:id", (req: any, res: any) => {
+          res.status(200).json({});
+        });
+      }
+    `);
+    expect(pathsOf(summaries)).toEqual([]);
+  });
+});
 
 describe("expressFramework: registration options", () => {
   it("expands the project's own helpers when config supplies them", () => {
