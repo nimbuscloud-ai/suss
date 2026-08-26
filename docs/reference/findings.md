@@ -1,8 +1,10 @@
 # Findings catalog
 
-Every finding kind in the IR's `FindingKindSchema`. Use this as the lookup when a finding surfaces and you want to know whether it's a bug or noise.
+Every finding kind suss emits. Use this as the lookup when a finding surfaces and you want to know whether it's a bug or noise.
 
-The authoritative source is `FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts), every kind below appears there with the same wording.
+A run produces up to three lists and they have different shapes. Most of this page is the behavioural findings, under `findings` in the JSON, which say that two sides of a boundary disagree. [Intent findings](#intent-findings) go under `intent` and say that code and a document your team wrote disagree. [Run findings](#run-findings) go under `run` and say the run could not get far enough to compare anything. A parser that reads only `findings` misses the other two.
+
+The authoritative sources are `FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) and `IntentFindingKindSchema` in [`packages/intent-ir/src/findings.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/intent-ir/src/findings.ts). Every kind below appears in one of them with the same wording.
 
 ## Finding shape
 
@@ -34,7 +36,7 @@ The test for error is outcome-shaped: name the input and the wrong result. Every
 
 Three of the kinds below, `boundaryFieldUnknown`, `boundaryFieldUnused`, and `boundaryShapeMismatch`, are **generic** and emitted by every per-domain checker. The boundary's `binding.semantics.name` gives you the domain context (storage, runtime-config, graphql-resolver, message-bus, etc.), and the `aspect` field says which direction the failure runs in. The remaining kinds are domain-specific or meta.
 
-The catalog is organised: **shipped generic kinds**, then **shipped domain-specific kinds** grouped by domain, then **reserved kinds** (in the IR enum, awaiting an emitter), then **meta kinds**.
+The behavioural catalog is organised: **shipped generic kinds**, then **shipped domain-specific kinds** grouped by domain, then **reserved kinds** (in the IR enum, awaiting an emitter), then **meta kinds**. The intent and run kinds follow at the end.
 
 ---
 
@@ -529,6 +531,138 @@ One consumer matched two providers where at most one of them can be right.
 Two GraphQL services in one repo can each declare `Query.user`, and the key has no endpoint identity to tell them apart, so the operation pairs with both and some of those pairs are wrong. The finding says which services collided so you can see where the extra pairs came from.
 
 Storage says it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` are both called something that covers `prod-orders-blue`, and each states as much of its name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and this finding says which two were in the way. When one of the two states more of its name, that one takes the access and no finding is emitted.
+
+---
+
+## Intent findings
+
+These come from a second checker and travel in a second list. `suss check --intent DIR` pairs the intent docs your team writes against the same code summaries, and puts what it found under `intent` in the JSON rather than in `findings`. A parser that reads only `findings` will never see one of these.
+
+They have a different shape from a behavioural finding. There is no `provider` and no `consumer`, because one side is a document rather than code:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | string (one of the eight below) | Which failure mode this is. |
+| `severity` | `error` \| `warning` \| `info` | Default severity. |
+| `boundary` | string | A readable label, `GET /users/:id` or `fn:@suss/cli::contract`. The key the intent and the code paired on. |
+| `intent` | `{ name, outcomeId? }` | The intent doc's `name` (boundary intent) or `title` (PRD), and the declared outcome when the finding is about one. |
+| `code` | string? | The matched summary as `${file}::${name}`. Absent on `unimplementedBoundary`, where no code matched. |
+| `scenario` | `{ title?, link }`? | Present only on the three scenario kinds. |
+| `message` | string | One line of human-readable text. |
+| `suppressed` | `IntentFindingSuppression?` | Present only when a `.sussignore` rule matched. |
+
+One rule cuts across all eight: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the doc restores the full severity. So an `error` you see at `warning` may mean nobody has confirmed the intent yet, not that the problem is smaller.
+
+The severity split follows from what an intent doc is. A person sat down and wrote it, so code that does not satisfy it is a defect and reads as an error. An intent that cannot be checked, or a scenario that points at nothing, is a gap in the documents and reads as a warning. Code that does more than the document claims reads as info.
+
+### `unimplementedBoundary` *(shipped)*
+
+**Severity:** error • **Emitted by:** `checkBoundaryIntent`
+
+Someone declared a boundary in an intent doc and no code in the run produces it.
+
+**Legitimate when:** the intent is written ahead of the code on purpose, or the implementation lives in a repository this run did not read.
+
+**Bug when:** the code is supposed to be here. Either the boundary was never built, or it is built under a key that does not match what the intent declares, and a spelling that differs by one path parameter is the usual cause. Run `suss inspect --dir` and compare the key the code claims against the one the intent declares.
+
+### `uncoveredOutcome` *(shipped)*
+
+**Severity:** error • **Emitted by:** `compareIntentToImpl`
+
+The code implements the boundary, and none of its transitions produce one of the outcomes the intent declares. A route declared to return 409 on a duplicate has no branch that returns 409.
+
+**Legitimate when:** the outcome is produced somewhere suss cannot follow, in a shared error handler or a framework layer the pack does not read. Check the summary's gaps before treating it as missing.
+
+**Bug when:** the branch is genuinely absent. The declared behaviour is not implemented, which is the case this checker exists for.
+
+### `outcomeShapeMismatch` *(shipped)*
+
+**Severity:** error • **Emitted by:** `compareIntentToImpl`
+
+A branch produces the declared outcome and the body it returns disagrees with the body the intent declares.
+
+Several branches can produce one status with different bodies, so the check is satisfied when any matching branch produces a conforming shape. This fires only when none of them does.
+
+**Legitimate when:** the intent doc describes the body loosely and the code is correct. Fix the document.
+
+**Bug when:** a caller reading the field the intent promised gets something else. This is the same failure as `boundaryShapeMismatch`, with a written declaration on one side instead of a second piece of code.
+
+### `undeclaredOutcome` *(shipped)*
+
+**Severity:** info • **Emitted by:** `compareIntentToImpl`
+
+The code returns a REST status the intent never mentions. One finding per status, so two catch arms both returning 500 produce one finding rather than two.
+
+It is limited to REST statuses on purpose. Function-call returns are too numerous for every undeclared one to mean something.
+
+**Legitimate when:** the status is a framework default or an infrastructure response nobody intended to write down. A 500 from an unhandled throw is not a promise anybody made.
+
+**Bug when:** the status is part of the contract callers depend on and the document does not say so. Add it to the intent, since a caller reading the document will not handle it.
+
+### `unkeyableBoundary` *(shipped)*
+
+**Severity:** warning • **Emitted by:** `checkBoundaryIntent`
+
+The intent doc is well-formed and its boundary cannot be keyed for pairing, so nothing was checked against it. A function-call boundary needs a package and an export path, and without both there is nothing to match the code against.
+
+**Legitimate when:** never, in the sense that it is always worth fixing. The author declared coverage they are not getting.
+
+**Bug when:** it fires at all. This is a defect in the intent document rather than in the code. Add the missing fields and the boundary starts being checked.
+
+### `unlinkedScenario` *(shipped)*
+
+**Severity:** info • **Emitted by:** the PRD pass
+
+A scenario in a PRD is not linked to any system-intent outcome. It reads fine on its own, and nothing checks whether the behaviour it describes exists.
+
+**Legitimate when:** the PRD is still being written, or the scenario describes something outside any one boundary. This is a valid pending state rather than a defect.
+
+**Bug when:** never on its own. Treat the count as a coverage number: how much of what the PRD describes is connected to something suss can check.
+
+### `danglingScenarioLink` *(shipped)*
+
+**Severity:** warning • **Emitted by:** the PRD pass
+
+A scenario links to an intent or an outcome nothing declares. Either no boundary intent goes by that name, or the intent exists and never declares an outcome with that id. The message lists the outcomes it does declare.
+
+**Legitimate when:** the boundary intent lives in a directory this run did not read. Point `--intent` at both.
+
+**Bug when:** the name is wrong or the intent was renamed and the link was not. The scenario claims coverage of something that does not exist.
+
+### `ambiguousScenarioLink` *(shipped)*
+
+**Severity:** warning • **Emitted by:** the PRD pass
+
+A scenario links to a name two or more boundary intents share, so the link resolves to more than one and suss will not pick.
+
+**Legitimate when:** never. Two intent docs sharing a name is a problem regardless of the link.
+
+**Bug when:** it fires. Rename the intents so the link resolves to one.
+
+---
+
+## Run findings
+
+A third list, under `run` in the JSON. These are about the run rather than about a boundary, so they have no two sides and no boundary key at all:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | string | Which problem this is. |
+| `severity` | `error` \| `warning` \| `info` | |
+| `description` | string | What happened. |
+| `remedy` | string | What to do about it. A run-level problem has no boundary to point at, so it says the next step instead. |
+
+### `nothingPaired` *(shipped)*
+
+**Severity:** error • **Emitted by:** `suss check --dir` under `--fail-on-empty`
+
+The run read summaries and paired none of them. No boundary had both a provider and a consumer, so nothing was compared, and the report would otherwise say the same thing it says when both sides agree.
+
+It fires only under `--fail-on-empty`, and only when there was something to compare. A run over no summaries at all says so on its own.
+
+**Legitimate when:** you meant to extract one side. Checking a service against a contract you have not read yet pairs nothing, correctly.
+
+**Bug when:** both sides are in the directory and still nothing paired. The two sides are spelling the boundary differently, and `suss inspect --dir` over the same files shows both spellings side by side.
 
 ---
 

@@ -32,6 +32,8 @@ import {
   type OutputSchema,
   type PredicateSchema,
   type RenderNodeSchema,
+  RunFindingKindSchema,
+  type RunFindingSchema,
   type SummaryDiffSchema,
   type TransitionSchema,
   type ValueRefSchema,
@@ -186,6 +188,12 @@ export type FindingKind = z.infer<typeof FindingKindSchema>;
  */
 export const FINDING_KINDS: readonly FindingKind[] = FindingKindSchema.options;
 export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
+export type RunFindingKind = z.infer<typeof RunFindingKindSchema>;
+export type RunFinding = z.infer<typeof RunFindingSchema>;
+
+/** Every run-level finding kind, as runtime values. See FINDING_KINDS. */
+export const RUN_FINDING_KINDS: readonly RunFindingKind[] =
+  RunFindingKindSchema.options;
 export type BoundaryAspect = z.infer<typeof BoundaryAspectSchema>;
 
 export type CodeUnitIdentity = z.infer<typeof CodeUnitIdentitySchema>;

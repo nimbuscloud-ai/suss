@@ -31,6 +31,7 @@ import type {
   BehavioralSummary,
   ConfidenceInfo,
   Finding,
+  RunFinding,
 } from "@suss/behavioral-ir";
 import type {
   CheckAllResult,
@@ -106,6 +107,8 @@ export interface CheckDirOptions {
 
 export interface CheckResult {
   findings: Finding[];
+  /** Problems with the run itself, present only when there were any. */
+  run?: RunFinding[];
   /**
    * Intent pass result (findings + checked / unchecked accounting),
    * present only when --intent was supplied.
@@ -262,50 +265,79 @@ export function checkDir(
 
   const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
   const summariesWithGaps = countSummariesWithGaps(allSummaries);
+  const run = runFindings(options.failOnEmpty === true, allSummaries, result);
+
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, intent, pairs: result.pairs, unmatched: result.unmatched, runtimeNamedCrossings, summariesWithGaps, collisions }, null, 2)}\n`
+    ? `${JSON.stringify({ findings: result.findings, run, intent, pairs: result.pairs, unmatched: result.unmatched, runtimeNamedCrossings, summariesWithGaps, collisions }, null, 2)}\n`
     : renderDirHuman(result, confidence, scopeOf(options)) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
       renderUnreadArtifacts(allSummaries, result.unmatched) +
-      renderIntentSection(intent);
+      renderIntentSection(intent) +
+      renderRunFindings(run);
 
   writeReport(rendered, options.output);
 
   const failOn = options.failOn ?? "error";
   return {
     findings: result.findings,
+    ...(run.length > 0 ? { run } : {}),
     ...(intent !== undefined ? { intent } : {}),
     hasErrors:
       meetsThreshold(result.findings, failOn) ||
       intentMeetsThreshold(intent?.findings ?? [], failOn) ||
-      comparedNothing(options.failOnEmpty === true, allSummaries, result),
+      run.length > 0,
     result,
   };
 }
 
 /**
- * Whether the caller asked to hear about a run that compared nothing,
- * and this was one.
+ * What went wrong with the run, as findings rather than as an exit code
+ * alone.
+ *
+ * A red exit with nothing to read stalls an automated fixer: it has
+ * something to react to and nothing to act on. So a run that fails
+ * because it compared nothing says so in the report, with what to do
+ * about it, and the exit code follows from the finding.
  *
  * A run over no summaries at all is a different mistake, and the empty
  * run already says so, so this only fires where there was something to
  * compare and no pair came out of it.
  */
-function comparedNothing(
+function runFindings(
   asked: boolean,
   summaries: readonly BehavioralSummary[],
   result: CheckAllResult,
-): boolean {
+): RunFinding[] {
   if (!asked || summaries.length === 0 || result.pairs.length > 0) {
-    return false;
+    return [];
   }
-  process.stderr.write(
-    `[suss] nothing paired: ${summaries.length} summaries, no boundary with both sides. ` +
-      "Exiting non-zero because --fail-on-empty was asked for.\n",
-  );
-  return true;
+  return [
+    {
+      kind: "nothingPaired",
+      severity: "error",
+      description:
+        `Read ${summaries.length} ${summaries.length === 1 ? "summary" : "summaries"} and paired nothing. ` +
+        "No boundary in this run had both a provider and a consumer, so nothing was compared.",
+      remedy:
+        "Check that both sides of at least one boundary are in the directory. " +
+        "A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. " +
+        "`suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.",
+    },
+  ];
+}
+
+function renderRunFindings(findings: readonly RunFinding[]): string {
+  if (findings.length === 0) {
+    return "";
+  }
+  return findings
+    .map(
+      (one) =>
+        `\n${one.severity}: ${one.kind}\n  ${one.description}\n  ${one.remedy}\n`,
+    )
+    .join("");
 }
 
 /** A boundary whose providers came from more than one summary file. */

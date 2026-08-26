@@ -114,6 +114,9 @@ jobs:
       - name: Markdown links
         run: npm run check:doc-links
 
+      - name: Findings catalog covers every kind
+        run: npm run check:findings
+
       # The examples check runs the commands the pages show, so it needs
       # a CLI. A code change has one from the build above; a docs-only
       # change builds the one package.
