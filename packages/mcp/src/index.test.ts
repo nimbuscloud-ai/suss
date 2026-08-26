@@ -82,6 +82,19 @@ describe("the suss MCP server", () => {
     ({ client } = await connect(root));
   }, 60_000);
 
+  it("reports the version it was published at", async () => {
+    // npm_package_version is set when npm runs a script and not when a
+    // host starts the binary, so every client that asked used to be
+    // told 0.0.0-dev.
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+
+    const info = client.getServerVersion();
+    expect(info?.version).toBe(manifest.version);
+    expect(info?.version).not.toBe("0.0.0-dev");
+  });
+
   it("offers the four read tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
