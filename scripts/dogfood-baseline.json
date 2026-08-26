@@ -3,7 +3,7 @@
     "packages": 59,
     "packagesWithExports": 59,
     "exports": 582,
-    "internal": 2179,
+    "internal": 2181,
     "consumers": 1006,
     "pairs": 992,
     "unfollowedCalls": 235,
@@ -34,7 +34,7 @@
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
       "exports": 69,
-      "internal": 19,
+      "internal": 20,
       "consumers": 4,
       "unfollowedCalls": 2
     },
@@ -55,7 +55,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 13,
-      "internal": 338,
+      "internal": 339,
       "consumers": 211,
       "unfollowedCalls": 39
     },
