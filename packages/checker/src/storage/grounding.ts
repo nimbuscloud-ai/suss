@@ -14,14 +14,9 @@
  * reference over, so nothing here reads the string again.
  */
 
-import {
-  namePatternFromSub,
-  readRuntimeContractMetadata,
-  summaryIdentifier,
-} from "@suss/behavioral-ir";
+import { namePatternFromSub, summaryIdentifier } from "@suss/behavioral-ir";
 
-import { placeRuntimes } from "../runtime-config/placement.js";
-import { runsIn, unitsByFile } from "../scope/unitScope.js";
+import { deployedValues } from "../runtime-config/deployedValues.js";
 
 import type { BehavioralSummary, Effect, Reference } from "@suss/behavioral-ir";
 
@@ -177,30 +172,18 @@ function callerNames(
 function configuredNames(
   summaries: BehavioralSummary[],
 ): (summary: BehavioralSummary, reference: Reference) => GroundedName[] {
-  const { placed } = placeRuntimes(summaries);
-  if (placed.length === 0) {
-    return () => [];
-  }
-  const byFile = unitsByFile(summaries);
-  const values = placed.map((runtime) => ({
-    scope: runtime.scope,
-    source: runtime.runtime,
-    set: readRuntimeContractMetadata(runtime.runtime)?.envVarValues ?? {},
-  }));
+  const setTo = deployedValues(summaries);
 
   return (summary, reference) => {
     const variable = variableAsked(summary, reference);
     if (variable === null) {
       return [];
     }
-    const names: GroundedName[] = [];
-    for (const { scope, source, set } of values) {
-      const value = set[variable];
-      if (value !== undefined && runsIn(summary, scope, byFile)) {
-        names.push({ name: value, source, role: "runtime" });
-      }
-    }
-    return names;
+    return setTo(summary, variable).map((found) => ({
+      name: found.value,
+      source: found.source,
+      role: "runtime" as const,
+    }));
   };
 }
 

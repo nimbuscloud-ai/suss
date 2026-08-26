@@ -20,6 +20,26 @@ export function boundaryKey(binding: BoundaryBinding): string | null {
   return behaviorOf(binding.semantics).identityKey(binding.semantics);
 }
 
+/**
+ * The bucket a boundary pairs in, with any name the deployment fills in
+ * put in first.
+ *
+ * A consumer that gets its base URL from the runtime states a different
+ * string from the provider it reaches, and the two are one boundary.
+ * Every protocol that has such a name says how to fill it in, and one
+ * whose names are settled in the source keys exactly as before.
+ */
+export function groundedPairingKey(
+  binding: BoundaryBinding,
+  deployedAs: (variable: string) => string | null,
+): string | null {
+  const behavior = behaviorOf(binding.semantics);
+  const grounded = behavior.groundName?.(binding.semantics, deployedAs) ?? null;
+  return pairingKey(
+    grounded === null ? binding : { ...binding, semantics: grounded },
+  );
+}
+
 export function pairingKey(binding: BoundaryBinding): string | null {
   const behavior = behaviorOf(binding.semantics);
   return (behavior.pairingKey ?? behavior.identityKey)(binding.semantics);

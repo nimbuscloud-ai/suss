@@ -2,11 +2,11 @@
   "totals": {
     "packages": 60,
     "packagesWithExports": 60,
-    "exports": 589,
-    "internal": 2195,
-    "consumers": 1013,
-    "pairs": 999,
-    "unfollowedCalls": 237,
+    "exports": 592,
+    "internal": 2197,
+    "consumers": 1016,
+    "pairs": 1002,
+    "unfollowedCalls": 242,
     "findingErrors": 0
   },
   "packages": {
@@ -41,9 +41,9 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 39,
-      "internal": 223,
-      "consumers": 138,
-      "unfollowedCalls": 25
+      "internal": 225,
+      "consumers": 141,
+      "unfollowedCalls": 29
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -362,10 +362,10 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 58,
+      "exports": 61,
       "internal": 14,
       "consumers": 0,
-      "unfollowedCalls": 8
+      "unfollowedCalls": 9
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",

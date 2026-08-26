@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 
+import { pathAfterOrigin } from "../urlPath.js";
 import { defineBoundarySemantics } from "./definition.js";
 
 export const RestSemanticsSchema = z.object({
@@ -37,6 +38,20 @@ export const RestSemanticsSchema = z.object({
 });
 
 export type RestSemantics = z.infer<typeof RestSemanticsSchema>;
+
+/** A path that opens with a hole, and the rest of the path after it. */
+const OPENING_HOLE = /^\{([^{}]+)\}(.*)$/;
+
+/**
+ * The variable a hole's label asks about.
+ *
+ * A pack writes the label the way the source spells the read, so
+ * `{API_BASE}` and `{env.API_BASE}` ask about the same variable.
+ */
+function variableOf(label: string): string {
+  const parts = label.split(".");
+  return parts[parts.length - 1] ?? label;
+}
 
 /**
  * Normalize a route path to a canonical form for matching.
@@ -199,6 +214,37 @@ export const restSemantics = defineBoundarySemantics({
       }
 
       return routePathAdmits(semantics.path, path) ? "match" : "nomatch";
+    },
+    /**
+     * A call whose base URL the deployment fills in, resolved to the
+     * path it reaches.
+     *
+     * The source cannot settle this on its own, which is why the
+     * adapter leaves the hole in. `API_BASE` could be
+     * `http://backend.internal`, and then the path is `/orders`. It
+     * could equally be `/api/v2`, and then the path is
+     * `/api/v2/orders`. Putting the deployed value in and reading the
+     * path back out gets the right one either way.
+     *
+     * Only a hole at the front is a base URL. A hole further along is a
+     * route parameter, and `/orders/{id}` means every id rather than a
+     * variable somebody set.
+     */
+    groundName(semantics, deployedAs) {
+      if (semantics.path === null) {
+        return null;
+      }
+      const opening = OPENING_HOLE.exec(semantics.path);
+      if (opening === null) {
+        return null;
+      }
+      const [, label, rest] = opening;
+      const base = deployedAs(variableOf(label));
+      if (base === null) {
+        return null;
+      }
+      const grounded = pathAfterOrigin(`${base}${rest}`);
+      return { ...semantics, path: grounded === "" ? "/" : grounded };
     },
     ruleBoundary: {
       // "METHOD /path": one leading token, then an absolute path.

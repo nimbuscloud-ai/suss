@@ -104,6 +104,15 @@ export type { StorageSemantics } from "./semantics/storage.js";
 // that neither checker, behavioural or intent, owns them and the two
 // cannot drift apart.
 
+// ---------------------------------------------------------------------------
+// Shared comparison primitives
+// ---------------------------------------------------------------------------
+//
+// These are pure operations over the primitives above that more than one
+// checker needs and that all of them have to agree on. They are here so
+// that neither checker, behavioural or intent, owns them and the two
+// cannot drift apart.
+
 // normalizeRuleBoundary is defined in boundaryKey.ts too, but it is exported
 // below with the suppressions, next to the matcher that uses it.
 export {
@@ -112,6 +121,7 @@ export {
   canPair,
   displayLabel,
   exchangesHttpResponses,
+  groundedPairingKey,
   pairingKey,
   reportsUnpairedItself,
   semanticsAgree,
@@ -165,6 +175,7 @@ export {
   validateRule,
 } from "./suppressions.js";
 export { bodyShapesMatch, type MatchResult } from "./typeShapeMatch.js";
+export { pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
 
 // ---------------------------------------------------------------------------
 // Boundary binding constructors

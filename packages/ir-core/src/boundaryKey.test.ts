@@ -9,6 +9,7 @@ import {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  groundedPairingKey,
   messageBusBinding,
   methodsAgree,
   metricBinding,
@@ -17,6 +18,7 @@ import {
   reportsUnpairedItself,
   restBinding,
   semanticsAgree,
+  storageBinding,
 } from "./index.js";
 
 describe("normalizePath", () => {
@@ -508,5 +510,43 @@ describe("a metric boundary", () => {
   it("gives back measurements rather than a status and a body", () => {
     expect(exchangesHttpResponses(metric("a/b"))).toBe(false);
     expect(reportsUnpairedItself(metric("a/b"))).toBe(false);
+  });
+});
+
+describe("groundedPairingKey", () => {
+  const forwarder = restBinding({
+    transport: "http",
+    recognition: "fetch",
+    method: "GET",
+    path: "{API_BASE}/orders",
+  });
+
+  it("keys on the path a deploy-time base URL reaches", () => {
+    expect(groundedPairingKey(forwarder, () => "http://backend.internal")).toBe(
+      pairingKey(
+        restBinding({
+          transport: "http",
+          recognition: "express",
+          method: "GET",
+          path: "/orders",
+        }),
+      ),
+    );
+  });
+
+  it("keys as before when nothing fills the name in", () => {
+    expect(groundedPairingKey(forwarder, () => null)).toBe(
+      pairingKey(forwarder),
+    );
+  });
+
+  it("keys as before for a protocol with nothing to fill in", () => {
+    const store = storageBinding({
+      recognition: "dynamodb",
+      storageSystem: "aws.dynamodb",
+      scope: "table",
+      container: "orders",
+    });
+    expect(groundedPairingKey(store, () => "anything")).toBe(pairingKey(store));
   });
 });
