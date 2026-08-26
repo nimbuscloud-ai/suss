@@ -37,7 +37,11 @@ import {
 } from "./target.js";
 import { UsageError } from "./usageError.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  TypeShape,
+  ValueRef,
+} from "@suss/behavioral-ir";
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
 
@@ -626,7 +630,65 @@ const DECLARATION_READERS: ReadonlyArray<
       what: "env var",
       name,
     })),
+  respondsWith,
 ];
+
+/**
+ * The responses a handler produces, for a boundary suss read from code
+ * rather than from a document.
+ *
+ * The readers above ask what a contract declares, which answers only
+ * for a boundary somebody wrote a spec for. A route extracted from
+ * source declares the same thing by returning it, and a caller wanting
+ * to know what it can expect back should not have to care which of the
+ * two the answer came from.
+ *
+ * A status the run could not settle is reported as the expression that
+ * decides it. A reader who knows the code can finish the thought, and a
+ * reader who does not at least learns there is another branch.
+ */
+function respondsWith(summary: BehavioralSummary): Declaration[] {
+  const seen = new Map<string, Declaration>();
+  for (const transition of summary.transitions) {
+    const output = transition.output;
+    if (output.type !== "response") {
+      continue;
+    }
+    const name = statusName(output.statusCode);
+    if (name === null || seen.has(name)) {
+      continue;
+    }
+    const fields = bodyFields(output.body);
+    seen.set(name, {
+      what: "response",
+      name,
+      ...(fields === undefined ? {} : { detail: fields }),
+    });
+  }
+  return [...seen.values()];
+}
+
+/** How to write a status, or null when there is nothing to write. */
+function statusName(status: ValueRef | null): string | null {
+  if (status === null) {
+    return null;
+  }
+  if (status.type === "literal") {
+    return String(status.value);
+  }
+  return status.type === "unresolved"
+    ? `decided by ${status.sourceText}`
+    : null;
+}
+
+/** The top-level fields of a response body, on one line. */
+function bodyFields(body: TypeShape | null): string | undefined {
+  if (body === null || body.type !== "record") {
+    return undefined;
+  }
+  const fields = Object.keys(body.properties ?? {});
+  return fields.length === 0 ? undefined : fields.join(", ");
+}
 
 function declarationsOf(summary: BehavioralSummary): Declaration[] {
   return DECLARATION_READERS.flatMap((read) => read(summary));
