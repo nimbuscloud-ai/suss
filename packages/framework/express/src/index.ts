@@ -1,10 +1,25 @@
 // @suss/framework-express: PatternPack for Express
 
-import { httpRouteDiscovery } from "@suss/extractor";
+import {
+  httpRouteDiscovery,
+  registrationHelperDiscovery,
+} from "@suss/extractor";
 
-import type { PatternPack } from "@suss/extractor";
+import type { PatternPack, RegistrationHelper } from "@suss/extractor";
 
-export function expressFramework(): PatternPack {
+export interface ExpressPackOptions {
+  /**
+   * The project's own registration helpers, each expanded into the
+   * routes one call registers. A helper's name belongs to one project,
+   * so this arrives through per-project pack config
+   * (`-f express=config.json`) rather than being built in here.
+   */
+  registrationHelpers?: RegistrationHelper[];
+}
+
+export function expressFramework(
+  options: ExpressPackOptions = {},
+): PatternPack {
   return {
     name: "express",
     protocol: "http",
@@ -16,12 +31,15 @@ export function expressFramework(): PatternPack {
     // Either can also be mounted onto another with `app.use(prefix,
     // router)`, so a route declared on the mounted router summarizes
     // with the mount's prefix composed in.
-    discovery: httpRouteDiscovery({
-      importModule: "express",
-      importNames: ["Router", "express"],
-      methods: [".get", ".post", ".put", ".delete", ".patch", ".all"],
-      mount: { method: "use", prefixPosition: 0, targetPosition: 1 },
-    }),
+    discovery: [
+      ...httpRouteDiscovery({
+        importModule: "express",
+        importNames: ["Router", "express"],
+        methods: [".get", ".post", ".put", ".delete", ".patch", ".all"],
+        mount: { method: "use", prefixPosition: 0, targetPosition: 1 },
+      }),
+      ...registrationHelperDiscovery(options.registrationHelpers ?? []),
+    ],
 
     terminals: [
       {

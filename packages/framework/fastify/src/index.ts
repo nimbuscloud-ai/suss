@@ -1,10 +1,25 @@
 // @suss/framework-fastify: PatternPack for Fastify
 
-import { httpRouteDiscovery } from "@suss/extractor";
+import {
+  httpRouteDiscovery,
+  registrationHelperDiscovery,
+} from "@suss/extractor";
 
-import type { PatternPack } from "@suss/extractor";
+import type { PatternPack, RegistrationHelper } from "@suss/extractor";
 
-export function fastifyFramework(): PatternPack {
+export interface FastifyPackOptions {
+  /**
+   * The project's own registration helpers, each expanded into the
+   * routes one call registers. A helper's name belongs to one project,
+   * so this arrives through per-project pack config
+   * (`-f fastify=config.json`) rather than being built in here.
+   */
+  registrationHelpers?: RegistrationHelper[];
+}
+
+export function fastifyFramework(
+  options: FastifyPackOptions = {},
+): PatternPack {
   return {
     name: "fastify",
     protocol: "http",
@@ -13,20 +28,23 @@ export function fastifyFramework(): PatternPack {
     // Fastify exposes the routable via either default `Fastify` or
     // named `fastify()`. Both drive handler registration the same way.
     // Unlike Express, Fastify's router supports `.head` and `.options`.
-    discovery: httpRouteDiscovery({
-      importModule: "fastify",
-      importNames: ["Fastify", "fastify"],
-      methods: [
-        ".get",
-        ".post",
-        ".put",
-        ".delete",
-        ".patch",
-        ".head",
-        ".options",
-        ".all",
-      ],
-    }),
+    discovery: [
+      ...httpRouteDiscovery({
+        importModule: "fastify",
+        importNames: ["Fastify", "fastify"],
+        methods: [
+          ".get",
+          ".post",
+          ".put",
+          ".delete",
+          ".patch",
+          ".head",
+          ".options",
+          ".all",
+        ],
+      }),
+      ...registrationHelperDiscovery(options.registrationHelpers ?? []),
+    ],
 
     terminals: [
       {

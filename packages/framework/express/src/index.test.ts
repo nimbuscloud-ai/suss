@@ -35,7 +35,9 @@ describe("expressFramework: pack shape", () => {
     const pack = expressFramework();
     expect(pack.name).toBe("express");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
-    expect(pack.discovery).toHaveLength(2);
+    // Two registration-call patterns (Router, express) and the
+    // registration-loop pattern every HTTP pack gets.
+    expect(pack.discovery).toHaveLength(3);
     expect(pack.contractReading).toBeUndefined();
     expect(pack.inputMapping.type).toBe("positionalParams");
   });
@@ -44,6 +46,40 @@ describe("expressFramework: pack shape", () => {
 // ---------------------------------------------------------------------------
 // Integration: run the adapter against the express fixture
 // ---------------------------------------------------------------------------
+
+describe("expressFramework: registration options", () => {
+  it("expands the project's own helpers when config supplies them", () => {
+    const pack = expressFramework({
+      registrationHelpers: [
+        {
+          helperName: "registerCrud",
+          registrations: [
+            { method: "GET", pathTemplate: "/{1}", handlerArg: "{2}.list" },
+          ],
+        },
+      ],
+    });
+    const template = pack.discovery.find(
+      (d) => d.match.type === "registrationTemplate",
+    );
+    expect(template?.match).toMatchObject({ helperName: "registerCrud" });
+  });
+
+  it("guards the loop pattern with its own routable", () => {
+    // Without the receiver, any loop over objects spelled
+    // method/path/handler in a file importing express would read as
+    // routes, and every finding on them would be wrong.
+    const loop = expressFramework().discovery.find(
+      (d) => d.match.type === "registrationLoop",
+    );
+    expect(loop?.match).toMatchObject({
+      receiver: {
+        importModule: "express",
+        importNames: ["Router", "express"],
+      },
+    });
+  });
+});
 
 describe("expressFramework: integration", () => {
   // ts-morph project setup dominates: build the summaries once and reuse.

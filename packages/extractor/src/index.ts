@@ -44,7 +44,12 @@ import type { FailureDelivery } from "./framework.js";
 import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
-export { httpRouteDiscovery, unwrapJsonStringify } from "./packHelpers.js";
+export {
+  httpRouteDiscovery,
+  type RegistrationHelper,
+  registrationHelperDiscovery,
+  unwrapJsonStringify,
+} from "./packHelpers.js";
 export {
   enumerateOrDegrade,
   enumerateStructuredPaths,

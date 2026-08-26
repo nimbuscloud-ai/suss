@@ -2,10 +2,10 @@
   "totals": {
     "packages": 60,
     "packagesWithExports": 60,
-    "exports": 592,
-    "internal": 2197,
-    "consumers": 1016,
-    "pairs": 1002,
+    "exports": 593,
+    "internal": 2199,
+    "consumers": 1019,
+    "pairs": 1005,
     "unfollowedCalls": 242,
     "findingErrors": 0
   },
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 58,
-      "internal": 733,
+      "internal": 735,
       "consumers": 77,
       "unfollowedCalls": 69
     },
@@ -166,7 +166,7 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 27,
+      "exports": 28,
       "internal": 32,
       "consumers": 4,
       "unfollowedCalls": 5
@@ -238,7 +238,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 0,
-      "consumers": 5,
+      "consumers": 6,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
@@ -252,7 +252,7 @@
       "name": "@suss/framework-fastify",
       "exports": 2,
       "internal": 0,
-      "consumers": 3,
+      "consumers": 4,
       "unfollowedCalls": 0
     },
     "packages/framework/flask-restx": {
@@ -280,7 +280,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 11,
+      "consumers": 12,
       "unfollowedCalls": 0
     },
     "packages/framework/mongoose": {

@@ -20,6 +20,7 @@
 
 import { type ForOfStatement, Node, type SourceFile } from "ts-morph";
 
+import { registrationSubjectsOf } from "./registrationCall.js";
 import {
   arrayLiteralOf,
   functionValueOf,
@@ -45,11 +46,18 @@ export function discoverRegistrationLoops(
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
+  const routables = routableNames(sourceFile, match);
+  if (routables !== null && routables.size === 0) {
+    // The pack asked for a receiver and this file constructs none, so
+    // no loop in it registers routes on one.
+    return results;
+  }
+
   sourceFile.forEachDescendant((node) => {
     if (!Node.isForOfStatement(node)) {
       return;
     }
-    const expanded = tryExpandLoop(node, match, kind, resolution);
+    const expanded = tryExpandLoop(node, match, kind, resolution, routables);
     if (expanded !== null) {
       results.push(...expanded);
     }
@@ -58,17 +66,49 @@ export function discoverRegistrationLoops(
   return results;
 }
 
+/**
+ * The variables in this file the pack's receiver declaration picks
+ * out, or null when the pattern declares no receiver and any subject
+ * is accepted.
+ */
+function routableNames(
+  sourceFile: SourceFile,
+  match: LoopMatch,
+): Set<string> | null {
+  if (match.receiver === undefined) {
+    return null;
+  }
+  const names = new Set<string>();
+  for (const importName of match.receiver.importNames) {
+    for (const name of registrationSubjectsOf(
+      sourceFile,
+      match.receiver.importModule,
+      importName,
+    ).keys()) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
 function tryExpandLoop(
   loop: ForOfStatement,
   match: LoopMatch,
   kind: string,
   resolution: ResolutionStore | undefined,
+  routables: Set<string> | null,
 ): DiscoveredUnit[] | null {
   const loopVar = loopVariableName(loop);
   if (loopVar === null) {
     return null;
   }
   if (!bodyReferencesLoopVar(loop, loopVar)) {
+    return null;
+  }
+  if (routables !== null && !bodyCallsOn(loop, routables)) {
+    // A loop over objects with the right keys that never touches the
+    // routable registers nothing, and expanding it would report routes
+    // the server does not serve.
     return null;
   }
   const arrayLit = arrayLiteralOf(loop.getExpression(), resolution);
@@ -131,6 +171,34 @@ function bodyReferencesLoopVar(loop: ForOfStatement, name: string): boolean {
     });
   });
   return referenced;
+}
+
+/**
+ * Whether the body calls a method on one of the named variables,
+ * through a property (`app.get(...)`) or an element access
+ * (`app[r.method](...)`).
+ */
+function bodyCallsOn(loop: ForOfStatement, routables: Set<string>): boolean {
+  let found = false;
+  loop.getStatement().forEachDescendant((node) => {
+    if (found || !Node.isCallExpression(node)) {
+      return;
+    }
+    const callee = node.getExpression();
+    const subject =
+      Node.isPropertyAccessExpression(callee) ||
+      Node.isElementAccessExpression(callee)
+        ? callee.getExpression()
+        : null;
+    if (
+      subject !== null &&
+      Node.isIdentifier(subject) &&
+      routables.has(subject.getText())
+    ) {
+      found = true;
+    }
+  });
+  return found;
 }
 
 function readRouteSpec(

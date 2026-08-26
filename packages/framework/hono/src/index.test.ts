@@ -22,7 +22,9 @@ describe("honoFramework", () => {
     expect(pack.name).toBe("hono");
     expect(pack.protocol).toBe("http");
     // Two import sources times the verb list, plus app.openapi.
-    expect(pack.discovery).toHaveLength(4);
+    // Two spreads of two call patterns each, plus the loop pattern
+    // each spread of httpRouteDiscovery emits.
+    expect(pack.discovery).toHaveLength(6);
     expect(pack.discovery[0]?.requiresImport).toEqual(["hono"]);
   });
 

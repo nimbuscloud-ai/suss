@@ -172,3 +172,106 @@ describe("registrationLoop discovery, a route table the loop names", () => {
     ]);
   });
 });
+
+describe("registrationLoop with a declared receiver", () => {
+  const GUARDED: DiscoveryPattern = {
+    kind: "handler",
+    match: {
+      type: "registrationLoop",
+      elementShape: {
+        methodKey: "method",
+        pathKey: "path",
+        handlerKey: "handler",
+      },
+      receiver: { importModule: "express", importNames: ["express", "Router"] },
+    },
+  };
+
+  it("expands a loop that registers on the library's routable", () => {
+    const file = makeFile(`
+      import express from "express";
+      function getUsers() {}
+      const app = express();
+      for (const r of [{ method: "get", path: "/users", handler: getUsers }]) {
+        app[r.method](r.path, r.handler);
+      }
+    `);
+    const units = discoverUnits(file, [GUARDED], new ResolutionStore());
+    expect(units.map((u) => u.routeInfo?.path)).toEqual(["/users"]);
+  });
+
+  it("leaves an identical loop over an unrelated object alone", () => {
+    // The keys match and the receiver does not. Expanding this would
+    // report routes the server never serves, and every finding on them
+    // would be wrong.
+    const file = makeFile(`
+      import express from "express";
+      function onUsers() {}
+      const app = express();
+      app.get("/health", () => {});
+      const registry: any = {};
+      for (const r of [{ method: "get", path: "/users", handler: onUsers }]) {
+        registry[r.method](r.path, r.handler);
+      }
+    `);
+    const units = discoverUnits(file, [GUARDED], new ResolutionStore());
+    expect(units.filter((u) => u.routeInfo !== undefined)).toEqual([]);
+  });
+
+  it("skips a file that never constructs the routable", () => {
+    const file = makeFile(`
+      function onUsers() {}
+      const registry: any = {};
+      for (const r of [{ method: "get", path: "/users", handler: onUsers }]) {
+        registry[r.method](r.path, r.handler);
+      }
+    `);
+    const units = discoverUnits(file, [GUARDED], new ResolutionStore());
+    expect(units).toEqual([]);
+  });
+
+  it("takes a Router the same as the app", () => {
+    const file = makeFile(`
+      import { Router } from "express";
+      function onOrders() {}
+      const orders = Router();
+      for (const r of [{ method: "get", path: "/orders", handler: onOrders }]) {
+        orders[r.method](r.path, r.handler);
+      }
+    `);
+    const units = discoverUnits(file, [GUARDED], new ResolutionStore());
+    expect(units.map((u) => u.routeInfo?.path)).toEqual(["/orders"]);
+  });
+});
+
+describe("registrationLoop with a receiver constructed by new", () => {
+  it("expands a loop on an app made with new, the way Hono is", () => {
+    const file = makeFile(`
+      import { Hono } from "hono";
+      function onUsers() {}
+      const app = new Hono();
+      for (const r of [{ method: "get", path: "/users", handler: onUsers }]) {
+        app[r.method](r.path, r.handler);
+      }
+    `);
+    const units = discoverUnits(
+      file,
+      [
+        {
+          kind: "handler",
+          match: {
+            type: "registrationLoop",
+            elementShape: {
+              methodKey: "method",
+              pathKey: "path",
+              handlerKey: "handler",
+            },
+            receiver: { importModule: "hono", importNames: ["Hono"] },
+          },
+        },
+      ],
+      new ResolutionStore(),
+    );
+    expect(units.map((u) => u.routeInfo?.path)).toEqual(["/users"]);
+  });
+});
