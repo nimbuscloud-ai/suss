@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { storageBinding, summaryIdentifier } from "@suss/behavioral-ir";
+import {
+  restBinding,
+  storageBinding,
+  summaryIdentifier,
+} from "@suss/behavioral-ir";
 
 import {
   dao,
@@ -212,6 +216,79 @@ describe("suss ask", () => {
     expect(output).toContain("GET /editions declares");
     expect(output).toContain("response 200");
     expect(output).toContain("response 503");
+  });
+
+  it("says the expression when the status is decided at run time, and lists the body fields", () => {
+    // A status the run could not settle is reported as the expression
+    // that decides it. A reader who knows the code can finish the
+    // thought, and a reader who does not learns there is another branch.
+    fs.writeFileSync(
+      path.join(dir, "forwarder.json"),
+      JSON.stringify([
+        {
+          kind: "handler",
+          location: {
+            file: "src/auth/login.ts",
+            range: { start: 1, end: 40 },
+            exportName: "POST",
+          },
+          identity: {
+            name: "POST",
+            exportPath: ["POST"],
+            boundaryBinding: restBinding({
+              transport: "http",
+              recognition: "nextjs",
+              method: "POST",
+              path: "/login",
+            }),
+          },
+          inputs: [],
+          transitions: [
+            {
+              id: "POST:dynamic",
+              conditions: [],
+              output: {
+                type: "response",
+                statusCode: {
+                  type: "unresolved",
+                  sourceText: "statusForErrors(result)",
+                },
+                body: {
+                  type: "record",
+                  properties: { errors: { type: "literal", value: true } },
+                },
+                headers: {},
+              },
+              effects: [],
+              location: { start: 10, end: 12 },
+              isDefault: false,
+            },
+            {
+              id: "POST:nostatus",
+              conditions: [],
+              output: {
+                type: "response",
+                statusCode: null,
+                body: null,
+                headers: {},
+              },
+              effects: [],
+              location: { start: 20, end: 22 },
+              isDefault: true,
+            },
+          ],
+          gaps: [],
+          confidence: { source: "inferred_static", level: "high" },
+        },
+      ]),
+    );
+
+    const { output } = answer("what can I project from POST /login");
+
+    expect(output).toContain("decided by statusForErrors(result)");
+    expect(output).toContain("(errors)");
+    // A response with no status at all says nothing worth listing.
+    expect(output).toContain("declares 1 thing");
   });
 
   it("says which input it would need when no provider is in the run at all", () => {
