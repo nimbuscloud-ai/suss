@@ -117,10 +117,25 @@ A why question reads the source too; --project says where it is when it
 is not the working directory.`;
 
 export function ask(options: AskOptions): number {
+  return answerQuestion(options).exitCode;
+}
+
+/**
+ * The same run as `ask`, with the answer handed back rather than only
+ * written out.
+ *
+ * A caller inside the same process wants the answer as data. Reading it
+ * back off stdout is the only other way, and a long-lived caller asking
+ * many questions should not have to.
+ */
+export function answerQuestion(options: AskOptions): {
+  exitCode: number;
+  answer: AnswerJson | null;
+} {
   const question = parseQuestion(options.question);
   if (question === null) {
     writeReport(`${HOW_TO_ASK}\n`, options.output);
-    return 1;
+    return { exitCode: 1, answer: null };
   }
 
   const answer =
@@ -131,7 +146,10 @@ export function ask(options: AskOptions): number {
     ? `${JSON.stringify(asJson(options.question, answer), null, 2)}\n`
     : renderAnswer(answer, options.all === true);
   writeReport(rendered, options.output);
-  return answer.found ? 0 : 1;
+  return {
+    exitCode: answer.found ? 0 : 1,
+    answer: asJson(options.question, answer),
+  };
 }
 
 export function parseQuestion(raw: string): ParsedQuestion | null {
@@ -674,7 +692,24 @@ export function unfollowedCalls(summaries: ReadonlyArray<BehavioralSummary>): {
 // Output
 // ---------------------------------------------------------------------------
 
-function asJson(question: string, answer: Answer): unknown {
+/**
+ * An answer as the shape `--json` writes and a caller in the same
+ * process reads. A why question adds its chain under `detail`, so the
+ * type stays open past the fields every shape has.
+ */
+export interface AnswerJson {
+  question: string;
+  shape: QuestionShape;
+  subject: string;
+  found: boolean;
+  headline: string;
+  items: unknown[];
+  needs: string[];
+  caveats: string[];
+  [extra: string]: unknown;
+}
+
+function asJson(question: string, answer: Answer): AnswerJson {
   return {
     question,
     shape: answer.shape,

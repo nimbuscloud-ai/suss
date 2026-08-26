@@ -116,7 +116,7 @@ A pack is then reached by name, `suss extract -f ts-rest -f axios`, and a declar
 ## Docs
 
 - [Get started](docs/tutorial/get-started.md): the smallest end-to-end example.
-- [AGENTS.md](AGENTS.md): driving suss from a coding agent, and which docs answer what.
+- [AGENTS.md](AGENTS.md): driving suss from a coding agent, and which docs answer what. [`@suss/mcp`](packages/mcp) puts the same questions in front of a model as MCP tools.
 - [Motivation](docs/motivation.md): the problem, why existing tools miss it, prior art, design principles.
 - [Glossary](docs/glossary.md): one canonical definition per term.
 - [FAQ](docs/faq.md): how suss relates to linters, types, OpenAPI, tests, observability.

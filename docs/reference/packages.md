@@ -54,6 +54,7 @@ integration end-to-end.
 | [`@suss/checker`](../../packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](../../.github/badges/coverage-checker.svg) |
 | [`@suss/checker-intent`](../../packages/checker-intent) | Pairs team-authored intent against derived code; emits `IntentFinding` coverage. | ![](../../.github/badges/coverage-checker-intent.svg) |
 | [`@suss/cli`](../../packages/cli) | CLI wrapper. | ![](../../.github/badges/coverage-cli.svg) |
+| [`@suss/mcp`](../../packages/mcp) | An MCP server over the CLI, so a coding agent can ask about a boundary while it works. Keeps its summaries current as files change. | ![](../../.github/badges/coverage-mcp.svg) |
 
 ## Frameworks
 

@@ -1,12 +1,12 @@
 {
   "totals": {
-    "packages": 59,
-    "packagesWithExports": 59,
-    "exports": 582,
-    "internal": 2181,
-    "consumers": 1006,
-    "pairs": 992,
-    "unfollowedCalls": 235,
+    "packages": 60,
+    "packagesWithExports": 60,
+    "exports": 589,
+    "internal": 2194,
+    "consumers": 1012,
+    "pairs": 998,
+    "unfollowedCalls": 237,
     "findingErrors": 0
   },
   "packages": {
@@ -54,7 +54,7 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 13,
+      "exports": 14,
       "internal": 339,
       "consumers": 211,
       "unfollowedCalls": 39
@@ -373,6 +373,13 @@
       "internal": 25,
       "consumers": 1,
       "unfollowedCalls": 1
+    },
+    "packages/mcp": {
+      "name": "@suss/mcp",
+      "exports": 6,
+      "internal": 13,
+      "consumers": 6,
+      "unfollowedCalls": 2
     },
     "packages/packs": {
       "name": "@suss/packs",
