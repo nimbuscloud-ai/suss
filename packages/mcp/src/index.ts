@@ -26,6 +26,7 @@ import {
   STATUS_DESCRIPTION,
   statusTool,
 } from "./tools.js";
+import { versionFrom } from "./version.js";
 
 import type { ProjectOptions } from "./project.js";
 
@@ -128,9 +129,5 @@ const READ_ONLY = {
   openWorldHint: false,
 } as const;
 
-/**
- * Stamped at build time so the server reports the version it was
- * published at. tsup replaces it; the fallback is what a source run
- * reports.
- */
-const VERSION = process.env.npm_package_version ?? "0.0.0-dev";
+/** The version this package was published at. See version.ts. */
+const VERSION = versionFrom(new URL("../package.json", import.meta.url));
