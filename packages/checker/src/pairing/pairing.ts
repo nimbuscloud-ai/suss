@@ -1,7 +1,7 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { boundaryKey, pairingKey, semanticsAgree } from "@suss/ir-core";
+import { boundaryKey, semanticsAgree } from "@suss/ir-core";
 
-import { groundRestPaths } from "./groundedPath.js";
+import { groundedKeys } from "./groundedPath.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -183,7 +183,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
   // A consumer whose base URL the deployment fills in buckets on the
   // path it reaches, so it meets the provider that serves it. What the
   // summary records is untouched.
-  const grounded = groundRestPaths(summaries);
+  const keyOf = groundedKeys(summaries);
 
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
@@ -192,7 +192,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       continue;
     }
 
-    const key = pairingKey(grounded(summary, binding));
+    const key = keyOf(summary, binding);
     if (key === null) {
       unpairable.push({ summary, reason: "unnamedBoundary" });
       continue;

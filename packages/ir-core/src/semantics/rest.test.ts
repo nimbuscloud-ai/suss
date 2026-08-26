@@ -88,3 +88,63 @@ describe("servesRequest through the registry", () => {
     expect(servesRequest(binding, "GET", "/orders/7")).toBeNull();
   });
 });
+
+describe("restSemantics groundName", () => {
+  const ground = restSemantics.behavior.groundName;
+  if (ground === undefined) {
+    throw new Error("rest must define groundName");
+  }
+
+  const route = (path: string | null) => ({
+    name: "rest" as const,
+    method: "GET",
+    path,
+  });
+  const sets = (values: Record<string, string>) => (variable: string) =>
+    values[variable] ?? null;
+
+  it("takes the origin off when the base URL is one", () => {
+    expect(
+      ground(route("{API_BASE}/orders"), sets({ API_BASE: "http://backend" })),
+    ).toEqual({ name: "rest", method: "GET", path: "/orders" });
+  });
+
+  it("keeps the prefix when the base URL is a path", () => {
+    // The source cannot tell these two apart, which is why the adapter
+    // leaves the hole in. Only the deployment says which one it is.
+    expect(
+      ground(route("{API_BASE}/orders"), sets({ API_BASE: "/api/v2" })),
+    ).toEqual({ name: "rest", method: "GET", path: "/api/v2/orders" });
+  });
+
+  it("reads the variable through the way the source spells it", () => {
+    expect(
+      ground(
+        route("{env.API_BASE}/orders"),
+        sets({ API_BASE: "http://backend" }),
+      ),
+    ).toEqual({ name: "rest", method: "GET", path: "/orders" });
+  });
+
+  it("gives back the root for a base URL with nothing after it", () => {
+    expect(
+      ground(route("{API_BASE}"), sets({ API_BASE: "http://backend" })),
+    ).toEqual({ name: "rest", method: "GET", path: "/" });
+  });
+
+  it("leaves the path alone when nothing sets the variable", () => {
+    expect(ground(route("{API_BASE}/orders"), sets({}))).toBeNull();
+  });
+
+  it("leaves a hole that is not at the front alone", () => {
+    // `/orders/{id}` is a route parameter, and putting a deployed value
+    // into one would be wrong.
+    expect(ground(route("/orders/{id}"), sets({ id: "9" }))).toBeNull();
+  });
+
+  it("leaves a path the source never gave alone", () => {
+    expect(
+      ground(route(null), sets({ API_BASE: "http://backend" })),
+    ).toBeNull();
+  });
+});

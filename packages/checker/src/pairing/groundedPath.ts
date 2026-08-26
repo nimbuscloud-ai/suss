@@ -1,6 +1,6 @@
 /**
- * groundedPath.ts: a consumer path whose base URL the deployment fills
- * in, resolved to the path it reaches.
+ * groundedPath.ts: what a boundary is called once the deployment has
+ * filled its part in.
  *
  * An app that forwards to another service writes the call as
  * `fetch(`${process.env.API_BASE}/orders`)`. The path suss records is
@@ -8,90 +8,38 @@
  * Both sides are in the run, they describe one boundary, and nothing
  * pairs them.
  *
- * The source alone cannot settle it, which is why the adapter leaves
- * the hole in. `API_BASE` could be `http://backend.internal`, and then
- * the path is `/orders`. It could equally be `/api/v2`, and then the
- * path is `/api/v2/orders`. Only the deployment says which, so this
- * puts the deployed value in and reads the path back out.
+ * Which protocol has such a name, and what to put in, is the protocol's
+ * own business. This works out what the deployment sets for the unit in
+ * question and hands that over.
  *
  * Nothing here changes what the summary records. The code still says
  * `{API_BASE}/orders`, and a report still shows that. What changes is
- * which bucket the consumer pairs in.
+ * which bucket the boundary pairs in.
  */
 
-import { pathAfterOrigin, referenceFromName, restBinding } from "@suss/ir-core";
+import { groundedPairingKey } from "@suss/ir-core";
 
 import { deployedValues } from "../runtime-config/deployedValues.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 
-/** A path that opens with a hole, and the variable that fills it. */
-const OPENING_HOLE = /^\{([^{}]+)\}(.*)$/;
-
 /**
- * Rewrite a REST consumer's path with its base URL filled in.
+ * Key every boundary, with deploy-time names filled in.
  *
- * Returns the binding unchanged for anything else: a provider, a path
- * with no opening hole, a variable no runtime in this run sets, or a
- * variable two runtimes disagree about, since picking one of two
- * answers would be a guess.
+ * Two runtimes setting one variable to different values leaves the
+ * boundary as it is. Picking one of two answers would be a guess, and
+ * an unpaired boundary says less than a wrong pair.
  */
-export function groundRestPaths(
+export function groundedKeys(
   summaries: BehavioralSummary[],
-): (summary: BehavioralSummary, binding: BoundaryBinding) => BoundaryBinding {
+): (summary: BehavioralSummary, binding: BoundaryBinding) => string | null {
   const setTo = deployedValues(summaries);
 
-  return (summary, binding) => {
-    const semantics = binding.semantics;
-    if (semantics.name !== "rest") {
-      return binding;
-    }
-    if (semantics.path === null) {
-      return binding;
-    }
-    const opening = OPENING_HOLE.exec(semantics.path);
-    if (opening === null) {
-      return binding;
-    }
-    const [, label, rest] = opening;
-    const variable = variableOf(label);
-    if (variable === null) {
-      return binding;
-    }
-
-    const values = new Set(
-      setTo(summary, variable).map((found) => found.value),
-    );
-    if (values.size !== 1) {
-      return binding;
-    }
-
-    const [base] = [...values];
-    const grounded = pathAfterOrigin(`${base}${rest}`);
-    return restBinding({
-      transport: binding.transport,
-      recognition: binding.recognition,
-      method: semantics.method,
-      path: grounded === "" ? "/" : grounded,
-      ...(semantics.declaredResponses !== undefined
-        ? { declaredResponses: semantics.declaredResponses }
-        : {}),
+  return (summary, binding) =>
+    groundedPairingKey(binding, (variable) => {
+      const values = new Set(
+        setTo(summary, variable).map((found) => found.value),
+      );
+      return values.size === 1 ? ([...values][0] ?? null) : null;
     });
-  };
-}
-
-/**
- * The variable a hole's label asks about.
- *
- * A pack writes the label the way the source spells the read, so
- * `{API_BASE}` and `{env.API_BASE}` ask about the same variable.
- */
-function variableOf(label: string): string | null {
-  const reference = referenceFromName(`{${label}}`);
-  if (reference === null) {
-    return null;
-  }
-  const parts = [reference.root, ...reference.fields];
-  const last = parts[parts.length - 1];
-  return last ?? null;
 }

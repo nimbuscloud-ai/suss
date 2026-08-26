@@ -121,6 +121,7 @@ export {
   canPair,
   displayLabel,
   exchangesHttpResponses,
+  groundedPairingKey,
   pairingKey,
   reportsUnpairedItself,
   semanticsAgree,

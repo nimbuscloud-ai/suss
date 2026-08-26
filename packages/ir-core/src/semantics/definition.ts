@@ -87,6 +87,28 @@ export interface BoundaryBehavior<S extends { name: string }> {
   servesRequest?(semantics: S, method: string, path: string): MatchResult;
 
   /**
+   * The same boundary with a name the deployment fills in put in.
+   *
+   * A call written as `fetch(`${process.env.API_BASE}/orders`)` gets
+   * part of its boundary from the source and part from whatever runs
+   * the code. Both parts have to be in before anybody can see that the
+   * two sides describe one boundary.
+   *
+   * `deployedAs` is already scoped to the unit this boundary belongs to.
+   * A protocol asks for a variable and gets back what this deployment
+   * sets it to, or null. Return null to leave the boundary as it is,
+   * which is right whenever nothing needs filling in or nothing can
+   * fill it.
+   *
+   * A protocol whose names are settled in the source leaves this
+   * undefined.
+   */
+  groundName?(
+    semantics: S,
+    deployedAs: (variable: string) => string | null,
+  ): S | null;
+
+  /**
    * Whether a provider produces a status and a body that a consumer
    * reads back. Every protocol has to state this, so that one added
    * later says what it is instead of landing in the HTTP-style checks
