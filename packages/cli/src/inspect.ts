@@ -1490,6 +1490,27 @@ function bindingLabel(s: BehavioralSummary): string | null {
   return boundaryLabel(binding);
 }
 
+/**
+ * Which fields of a transition differ, for the case where the two lines
+ * above read the same.
+ *
+ * The short line says the output and the conditions, which is what a
+ * reader wants nearly every time. A change to anything else then prints
+ * as one line twice, and a reader looking at a breaking-change gate has
+ * no way to tell what moved.
+ */
+function fieldsThatMoved(before: Transition, after: Transition): string[] {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...keys]
+    .filter((key) => key !== "id" && key !== "location")
+    .filter(
+      (key) =>
+        JSON.stringify(before[key as keyof Transition]) !==
+        JSON.stringify(after[key as keyof Transition]),
+    )
+    .sort();
+}
+
 function renderTransitionShort(t: Transition): string {
   const output = formatOutput(t.output);
   const conditions = t.conditions.map((c) => formatCondition(c)).join(" && ");
@@ -1531,6 +1552,13 @@ function renderDiff(
   for (const { before: b, after: a } of diff.changedTransitions) {
     lines.push(`    ~ ${renderTransitionShort(b)}`);
     lines.push(`      -> ${renderTransitionShort(a)}`);
+    const unshown = fieldsThatMoved(b, a);
+    if (
+      renderTransitionShort(b) === renderTransitionShort(a) &&
+      unshown.length > 0
+    ) {
+      lines.push(`      (${unshown.join(", ")} changed)`);
+    }
   }
 
   return lines.join("\n");

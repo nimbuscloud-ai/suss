@@ -108,6 +108,49 @@ describe("diffSummaries", () => {
     expect(diff.changedTransitions).toHaveLength(0);
   });
 
+  it("ignores a transition that only moved in the file", () => {
+    // Adding a comment above a handler shifts every offset in it. A
+    // diff that reports that says a route changed when it did not, and
+    // whoever gates a review on the diff learns to ignore it.
+    const output: Output = {
+      type: "response",
+      statusCode: { type: "literal", value: 200 },
+      body: null,
+      headers: {},
+    };
+    const before = makeSummary([makeTransition("t1", output)]);
+    const after = makeSummary([
+      { ...makeTransition("t1", output), location: { start: 41, end: 45 } },
+    ]);
+    const diff = diffSummaries(before, after);
+    expect(diff.changedTransitions).toHaveLength(0);
+    expect(diff.addedTransitions).toHaveLength(0);
+    expect(diff.removedTransitions).toHaveLength(0);
+  });
+
+  it("reports a transition that moved and also changed", () => {
+    const before = makeSummary([
+      makeTransition("t1", {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: null,
+        headers: {},
+      }),
+    ]);
+    const after = makeSummary([
+      {
+        ...makeTransition("t1", {
+          type: "response",
+          statusCode: { type: "literal", value: 204 },
+          body: null,
+          headers: {},
+        }),
+        location: { start: 41, end: 45 },
+      },
+    ]);
+    expect(diffSummaries(before, after).changedTransitions).toHaveLength(1);
+  });
+
   it("detects an added transition", () => {
     const t1 = makeTransition("t1", {
       type: "response",

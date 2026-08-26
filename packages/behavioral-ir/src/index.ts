@@ -338,6 +338,19 @@ export function safeParseSummaries(
 // Diff
 // ---------------------------------------------------------------------------
 
+/**
+ * A transition as what it does. Where it is in the file is left out.
+ *
+ * Adding a comment above a handler moves every offset in it and does
+ * not change how it behaves. A diff that reports that move says a route
+ * changed when it did not, and anybody gating a review on the diff
+ * learns to ignore it.
+ */
+function behaviourOf(t: Transition): string {
+  const { location: _location, ...behaviour } = t;
+  return JSON.stringify(behaviour);
+}
+
 export function diffSummaries(
   before: BehavioralSummary,
   after: BehavioralSummary,
@@ -360,7 +373,7 @@ export function diffSummaries(
     const afterT = afterById.get(id);
     if (!afterT) {
       removedTransitions.push(beforeT);
-    } else if (JSON.stringify(beforeT) !== JSON.stringify(afterT)) {
+    } else if (behaviourOf(beforeT) !== behaviourOf(afterT)) {
       changedTransitions.push({ before: beforeT, after: afterT });
     }
   }
