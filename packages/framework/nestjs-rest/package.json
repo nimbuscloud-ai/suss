@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-nestjs-rest",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from NestJS REST controllers (decorator-driven, @nestjs/common).",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/extractor": "0.13.2"
+    "@suss/extractor": "0.13.3"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",

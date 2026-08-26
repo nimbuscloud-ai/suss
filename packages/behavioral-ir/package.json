@@ -1,6 +1,6 @@
 {
   "name": "@suss/behavioral-ir",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "type": "module",
   "description": "Type definitions and intermediate representation for suss behavioral summaries.",
   "keywords": [
@@ -55,7 +55,7 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/ir-core": "0.13.2"
+    "@suss/ir-core": "0.13.3"
   },
   "devDependencies": {
     "tsup": "*",

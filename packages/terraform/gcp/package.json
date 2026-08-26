@@ -1,6 +1,6 @@
 {
   "name": "@suss/terraform-gcp",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "type": "module",
   "description": "What Google Cloud's Terraform provider declares, for the Terraform contract reader.",
   "keywords": [
@@ -44,8 +44,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.13.2",
-    "@suss/contract-terraform": "0.13.2"
+    "@suss/behavioral-ir": "0.13.3",
+    "@suss/contract-terraform": "0.13.3"
   },
   "devDependencies": {
     "@suss/checker": "*",
