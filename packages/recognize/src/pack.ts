@@ -66,6 +66,14 @@ export interface PackSpec {
    * imports gives it something.
    */
   requiresImport?: string[];
+  /**
+   * Recognizers written against the adapter directly, run alongside the
+   * declared chains. A pack migrating one call at a time keeps what is
+   * not declared yet here, and a pack that needs a shape the endings
+   * cannot say keeps it here for good. Health reporting counts these as
+   * function links, so the cost of staying here is visible.
+   */
+  recognizers?: InvocationRecognizer[];
 }
 
 /**
@@ -113,7 +121,10 @@ export function pack(
     requiresImport: [
       ...new Set([...gateOf(chains), ...(spec.requiresImport ?? [])]),
     ],
-    invocationRecognizers: walkedBy(chains, "invocation", spec.recognizedAs),
+    invocationRecognizers: [
+      ...walkedBy(chains, "invocation", spec.recognizedAs),
+      ...(spec.recognizers ?? []),
+    ],
     ...(access.length === 0 ? {} : { accessRecognizers: access }),
     declarations: declarationsIn(matches),
   };

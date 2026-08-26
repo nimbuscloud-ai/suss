@@ -84,7 +84,7 @@ describe("eventbridge recognizer: happy path", () => {
     if (send.binding.semantics.name === "message-bus") {
       expect(send.binding.semantics.messageBus).toBe("eventbridge");
       expect(send.binding.semantics.channel).toBe(
-        "ORDER_EVENT_BUS_NAME#OrderPlaced",
+        "{ORDER_EVENT_BUS_NAME}#OrderPlaced",
       );
     }
   });
@@ -163,8 +163,8 @@ describe("eventbridge recognizer: happy path", () => {
     // Both puts are recorded. Only the one the code named can pair.
     const sends = messageSendEffectsOf(recognizeAll(source));
     expect(sends.map(channelOf).sort()).toEqual([
-      "ORDER_EVENT_BUS_NAME#OrderPlaced",
-      "ORDER_EVENT_BUS_NAME#OrderShipped",
+      "{ORDER_EVENT_BUS_NAME}#OrderPlaced",
+      "{ORDER_EVENT_BUS_NAME}#OrderShipped",
     ]);
   });
 
@@ -223,7 +223,7 @@ describe("eventbridge recognizer: happy path", () => {
     const sends = messageSendEffectsOf(recognizeAll(source));
     expect(sends).toHaveLength(1);
     expect(channelOf(sends[0] ?? raise("no send"))).toBe(
-      "ORDER_EVENT_BUS_NAME#OrderPlaced",
+      "{ORDER_EVENT_BUS_NAME}#OrderPlaced",
     );
   });
 });
@@ -233,12 +233,11 @@ describe("eventbridge recognizer: skip cases", () => {
     const source = `
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
-      function detailTypeFor(): string { return "x"; }
-      async function publish() {
+      async function publish(kind: string) {
         await client.send(new PutEventsCommand({
           Entries: [{
             EventBusName: process.env.ORDER_EVENT_BUS_NAME,
-            DetailType: detailTypeFor(),
+            DetailType: kind,
             Detail: JSON.stringify({ id: "1" }),
           }],
         }));
@@ -251,15 +250,35 @@ describe("eventbridge recognizer: skip cases", () => {
     expect(boundaryKey(binding)).toBeNull();
   });
 
+  it("keeps the reference when the bus comes in as a parameter", () => {
+    // A caller passes the bus, so a caller can ground it. The channel
+    // keeps the reference for whoever knows, the same as an env var.
+    const source = `
+      import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
+      const client = new EventBridgeClient({});
+      async function publish(bus: string) {
+        await client.send(new PutEventsCommand({
+          Entries: [{
+            EventBusName: bus,
+            DetailType: "OrderPlaced",
+            Detail: JSON.stringify({ id: "1" }),
+          }],
+        }));
+      }
+    `;
+    const [effect] = messageSendEffectsOf(recognizeAll(source));
+    expect(channelOf(effect ?? raise("no effect"))).toBe("{bus}#OrderPlaced");
+  });
+
   it("records an entry whose bus is worked out at runtime", () => {
     const source = `
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
-      function busFor(): string { return "x"; }
+      function pick(): string { return ["a", "b"][Date.now() % 2]!; }
       async function publish() {
         await client.send(new PutEventsCommand({
           Entries: [{
-            EventBusName: busFor(),
+            EventBusName: pick(),
             DetailType: "OrderPlaced",
             Detail: JSON.stringify({ id: "1" }),
           }],
@@ -275,8 +294,7 @@ describe("eventbridge recognizer: skip cases", () => {
     const source = `
       import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
       const client = new EventBridgeClient({});
-      function detailTypeFor(): string { return "x"; }
-      async function publish() {
+      async function publish(kind: string) {
         await client.send(new PutEventsCommand({
           Entries: [
             {
@@ -286,7 +304,7 @@ describe("eventbridge recognizer: skip cases", () => {
             },
             {
               EventBusName: process.env.ORDER_EVENT_BUS_NAME,
-              DetailType: detailTypeFor(),
+              DetailType: kind,
               Detail: JSON.stringify({ id: "1" }),
             },
           ],
@@ -296,7 +314,7 @@ describe("eventbridge recognizer: skip cases", () => {
     // Both puts are recorded. Only the one the code named can pair.
     const sends = messageSendEffectsOf(recognizeAll(source));
     expect(sends.map(channelOf)).toEqual([
-      "ORDER_EVENT_BUS_NAME#OrderPlaced",
+      "{ORDER_EVENT_BUS_NAME}#OrderPlaced",
       null,
     ]);
     expect(sends.map((send) => boundaryKey(send.binding) !== null)).toEqual([
@@ -328,7 +346,7 @@ describe("eventbridge recognizer: skip cases", () => {
         "/publish.ts",
       ),
     );
-    expect(sends.map(channelOf)).toEqual(["BUS_NAME#OrderPlaced"]);
+    expect(sends.map(channelOf)).toEqual(["{BUS_NAME}#OrderPlaced"]);
   });
 
   it("ignores PutEventsCommand from the wrong module", () => {

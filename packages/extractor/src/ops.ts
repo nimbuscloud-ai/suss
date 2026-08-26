@@ -67,6 +67,8 @@ export interface ConstructedFrom {
  * `"nothing"` gives null, `"reference"` gives the value to go and ask
  * about instead.
  */
+import type { EffectArg } from "./index.js";
+
 export type UnsettledName = "nothing" | "reference";
 
 /**
@@ -104,6 +106,13 @@ export interface ValueOps {
   items(): readonly ValueOps[];
   /** What one named property of this object states, or null for none. */
   property(name: string): ValueOps | null;
+  /**
+   * This value in the form an effect records an argument, or null when
+   * the adapter cannot write one. A pack that wants a payload compared
+   * across a boundary asks for this, since a body reduced to text
+   * cannot be paired field by field.
+   */
+  asArg(): EffectArg | null;
   /**
    * The pieces of text the source wrote here, in order, with whatever
    * it interpolated between them left out. A string is one piece and a

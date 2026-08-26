@@ -40,6 +40,11 @@ export interface MessageSendsSpec {
   /** The property a message states its body on. */
   body?: string;
   /**
+   * The property whose literal value rides along as the routing key,
+   * scoping the message for a reader without joining the channel.
+   */
+  routingKey?: string;
+  /**
    * What a reader gives back for a channel nothing in the source
    * settles. Defaults to keeping the reference, since a queue named
    * only at deploy time is the common case rather than the exception.
@@ -73,6 +78,7 @@ export function messageSends(spec: MessageSendsSpec): MessageSends {
       ? {}
       : { channelSeparator: spec.channelSeparator }),
     ...(spec.body === undefined ? {} : { body: spec.body }),
+    ...(spec.routingKey === undefined ? {} : { routingKey: spec.routingKey }),
     unsettledName: spec.unsettledName ?? "reference",
   };
   return chainFrom({

@@ -3,10 +3,10 @@
     "packages": 60,
     "packagesWithExports": 60,
     "exports": 593,
-    "internal": 2199,
-    "consumers": 1019,
-    "pairs": 1005,
-    "unfollowedCalls": 242,
+    "internal": 2192,
+    "consumers": 1021,
+    "pairs": 1006,
+    "unfollowedCalls": 238,
     "findingErrors": 0
   },
   "packages": {
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 58,
-      "internal": 735,
+      "internal": 736,
       "consumers": 77,
       "unfollowedCalls": 69
     },
@@ -41,8 +41,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 39,
-      "internal": 225,
-      "consumers": 141,
+      "internal": 224,
+      "consumers": 142,
       "unfollowedCalls": 29
     },
     "packages/checker-intent": {
@@ -195,9 +195,9 @@
     "packages/framework/aws-eventbridge": {
       "name": "@suss/framework-aws-eventbridge",
       "exports": 2,
-      "internal": 10,
+      "internal": 3,
       "consumers": 18,
-      "unfollowedCalls": 4
+      "unfollowedCalls": 0
     },
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
@@ -392,7 +392,7 @@
       "name": "@suss/recognize",
       "exports": 12,
       "internal": 34,
-      "consumers": 5,
+      "consumers": 6,
       "unfollowedCalls": 5
     },
     "packages/resolution": {

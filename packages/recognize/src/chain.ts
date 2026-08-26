@@ -422,6 +422,15 @@ export interface ChannelPart {
   readonly property: string;
   /** What the library uses when the message leaves this part out. */
   readonly whenAbsent?: string;
+  /**
+   * What a reader gives back when this part is written but nothing in
+   * the source settles it, overriding the ending's `unsettledName`.
+   * EventBridge wants both: its bus is nearly always an env var, whose
+   * name both sides of the boundary agree on, and its subject is a
+   * domain string, where a run-time value should leave the channel
+   * unnamed rather than pair against everything.
+   */
+  readonly unsettled?: UnsettledName;
 }
 
 /** A message sent on a wire, which pairs with whatever consumes that channel. */
@@ -437,6 +446,12 @@ export interface MessageSendEnding {
   readonly channelSeparator?: string;
   /** The property the message states its body on, when the pack can say. */
   readonly body?: string;
+  /**
+   * The property whose literal value rides along as the routing key.
+   * Not part of the channel: it scopes the message for a reader without
+   * being what the two sides pair on.
+   */
+  readonly routingKey?: string;
   /**
    * What a reader gives back for a channel nothing in the source
    * settles. A queue URL only exists at deploy time, so the code writes
