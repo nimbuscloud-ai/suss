@@ -202,12 +202,16 @@ describe("suss ask", () => {
     expect(output).toContain("loadCursor");
   });
 
-  it("says which input it would need when nothing declares the boundary", () => {
+  it("says what a route returns, for a boundary read from code", () => {
+    // The contract readers answer for a boundary somebody wrote a spec
+    // for. A route says the same thing by returning it, and a caller
+    // should not have to care which of the two the answer came from.
     const { output, code } = answer("what can I project from GET /editions");
 
     expect(code).toBe(0);
-    expect(output).toContain("Nothing here declares what GET /editions serves");
-    expect(output).toContain("declares nothing about it");
+    expect(output).toContain("GET /editions declares");
+    expect(output).toContain("response 200");
+    expect(output).toContain("response 503");
   });
 
   it("says which input it would need when no provider is in the run at all", () => {
