@@ -1,6 +1,6 @@
 {
   "name": "@suss/client-axios",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "type": "module",
   "description": "Client pack for extracting suss client behavioral summaries from axios call sites.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/extractor": "0.13.1"
+    "@suss/extractor": "0.13.2"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
