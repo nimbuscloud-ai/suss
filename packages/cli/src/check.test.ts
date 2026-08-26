@@ -1909,3 +1909,39 @@ describe("the collapsed report", () => {
     expect(result.hasErrors).toBe(true);
   });
 });
+
+describe("--fail-on-empty", () => {
+  it("exits non-zero when the run compared nothing", () => {
+    // A check that pairs nothing reports nothing, which reads the same
+    // as both sides agreeing. Somebody gating a build on green wants to
+    // tell those apart.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-empty-"));
+    fs.writeFileSync(
+      path.join(dir, "providers.json"),
+      JSON.stringify([providerWithRoute("getUser", "GET", "/users/:id", [])]),
+    );
+
+    expect(checkDir({ dir, failOnEmpty: true }).hasErrors).toBe(true);
+    expect(checkDir({ dir }).hasErrors).toBe(false);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("stays quiet when something did pair", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-paired-"));
+    fs.writeFileSync(
+      path.join(dir, "providers.json"),
+      JSON.stringify([providerWithRoute("getUser", "GET", "/users/:id", [])]),
+    );
+    fs.writeFileSync(
+      path.join(dir, "consumers.json"),
+      JSON.stringify([
+        consumerWithRoute("callsGetUser", "GET", "/users/:id", []),
+      ]),
+    );
+
+    expect(checkDir({ dir, failOnEmpty: true }).hasErrors).toBe(false);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

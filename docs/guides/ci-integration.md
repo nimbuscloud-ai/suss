@@ -6,6 +6,23 @@ and compares them, and exits non-zero when a provider returns a
 status no client handles or a query asks for a field the schema
 never declared.
 
+## Run it earlier than this, too
+
+A merge gate is the one thing nobody talks their way past, so keep
+it. It is the wrong place to find out, though: by the time it runs,
+every decision has been made and the only thing left to do is
+reject.
+
+The same commands are worth more in the review step right after the
+code is written, before anything is pushed. The tree is complete
+there, and a finding routes straight back into another round of
+editing rather than into a failed build. That matters most where an
+agent writes the code: it will satisfy every gate it can see, and a
+fact it gets before it decides changes what it writes.
+
+So run `check` and `inspect --diff` in whatever loop produces your
+code, and keep the job below as the backstop.
+
 ## GitHub Actions
 
 ```yaml
@@ -126,4 +143,12 @@ syntax and the three effects (`mark` / `downgrade` / `hide`).
   them. Use the same tsconfig your build uses (or a superset).
 - **Don't gate on `suss check` alone for breaking-change reviews.**
   Use `suss inspect --diff before.json after.json` in parallel: it
-  shows which transitions changed, not just which pair mismatched.
+  shows which transitions changed, rather than which pair mismatched.
+  Add `--json` when something other than a person reads it.
+- **Fail the run that compared nothing.** A check that pairs nothing
+  reports nothing, which looks the same as both sides agreeing. `suss check --dir summaries/ --fail-on-empty` tells the
+  two apart, and it is worth having wherever a green result is
+  taken as evidence.
+- **Emit the finding, not only the status.** A red check with
+  nothing parseable behind it gives an automated fixer nothing to
+  act on. Write the JSON somewhere the same job can read.
