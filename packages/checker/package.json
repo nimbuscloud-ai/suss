@@ -1,6 +1,6 @@
 {
   "name": "@suss/checker",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "type": "module",
   "description": "Cross-boundary compatibility checker for suss behavioral summaries — pairs providers with consumers and reports findings.",
   "keywords": [
@@ -48,9 +48,9 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.13.2",
-    "@suss/datalog": "0.13.2",
-    "@suss/ir-core": "0.13.2",
+    "@suss/behavioral-ir": "0.13.3",
+    "@suss/datalog": "0.13.3",
+    "@suss/ir-core": "0.13.3",
     "graphql": "^16.8.0"
   },
   "devDependencies": {
