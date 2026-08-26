@@ -123,6 +123,27 @@ export const FindingKindSchema = z.enum([
 export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
 
 /**
+ * A problem with the run itself rather than with a boundary.
+ *
+ * A boundary finding points at two sides that disagree. This kind has
+ * no two sides to point at. It says the run could not get far enough
+ * to compare anything, so it goes in its own list and a reader looking
+ * for disagreements does not find one of these mixed in with them.
+ */
+export const RunFindingKindSchema = z.enum([
+  /** The run read summaries and paired nothing, so nothing was checked. */
+  "nothingPaired",
+]);
+
+export const RunFindingSchema = z.object({
+  kind: RunFindingKindSchema,
+  severity: FindingSeveritySchema,
+  description: z.string(),
+  /** What to do about it. A run-level problem has no boundary to point at. */
+  remedy: z.string(),
+});
+
+/**
  * Which side of a field a boundary finding concerns. `send` and `receive`
  * are a payload's two directions; `construct` is a scenario setting an
  * input; `selector` is a query's `where` rather than its data.

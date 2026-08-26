@@ -376,7 +376,8 @@ suss check PROVIDER.json CONSUMER.json [--all] [--json] [-o OUTPUT] [--fail-on T
 
 # A whole directory, auto-pairs by boundary key
 suss check --dir DIR [--intent INTENT_DIR] [--all] [--json] [-o OUTPUT]
-           [--fail-on THRESHOLD] [--sussignore PATH] [--no-suppressions]
+           [--fail-on THRESHOLD] [--fail-on-empty] [--sussignore PATH]
+           [--no-suppressions]
 
 # One thing out of that directory
 suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
@@ -391,6 +392,7 @@ suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
 | `--fail-on THRESHOLD` | `error` (default), exit non-zero when any error-severity finding exists. `warning`, also fail on warnings. `info`, fail on any finding. `none`, never fail (still prints). |
+| `--fail-on-empty` | Fail the run when it paired nothing. Needs `--dir`. A run that never pairs a boundary has nothing to report and reads as a pass, which is what it also prints when both sides agree. With this on, the report gets a `nothingPaired` run finding saying what happened and what to do, and the run exits non-zero. |
 | `--sussignore PATH` | Use this `.sussignore` file instead of searching for one nearby. |
 | `--no-suppressions` | Report every finding, ignoring any `.sussignore`. Useful for auditing what the suppressions are hiding. |
 

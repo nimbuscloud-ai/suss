@@ -43,7 +43,9 @@ suss check --dir .suss --fail-on-empty --json
 
 `--fail-on-empty` matters for automation. Without it a run that paired
 nothing exits 0 and prints the same "no findings" as a run where both
-sides agreed.
+sides agreed. With it on, the report gets a `nothingPaired` finding
+under `run` saying what happened and what to do, so a fixer reacting to
+the red exit has something to act on.
 
 Full flags for every command: [docs/reference/cli.md](docs/reference/cli.md).
 
@@ -87,6 +89,13 @@ Every kind suss emits has an entry in
 [docs/reference/findings.md](docs/reference/findings.md): what emits
 it, an example of the output, and when it is legitimate versus when it
 is a defect.
+
+A run produces up to three lists and they have different shapes.
+`findings` says two sides of a boundary disagree. `intent` says code and
+a document your team wrote disagree, and appears when you pass
+`--intent`. `run` says the run could not get far enough to compare
+anything. Read all three: a parser that reads only `findings` misses a
+run that failed because it compared nothing.
 
 Read the legitimate case before acting. Several kinds have no universal
 fix. `unhandledProviderCase` fires when a provider can return something
