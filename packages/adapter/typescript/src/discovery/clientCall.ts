@@ -24,11 +24,17 @@ import path from "node:path";
 import { Node, type SourceFile } from "ts-morph";
 
 import { commonDirectoryOf } from "../diagnostics.js";
+import { resolveImportedLocalName } from "./resolveImport.js";
 import { writtenNodeOf } from "./resolveValue.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
-import type { CallExpression, ImportDeclaration, Project } from "ts-morph";
+import type {
+  CallExpression,
+  ImportDeclaration,
+  NewExpression,
+  Project,
+} from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -81,7 +87,7 @@ export function discoverClientCalls(
       const init = varDecl.getInitializer();
       if (
         init !== undefined &&
-        Node.isCallExpression(init) &&
+        (Node.isCallExpression(init) || Node.isNewExpression(init)) &&
         isInstanceCreationCall(init, importedLocalName, match.factoryMethods)
       ) {
         clientVarNames.add(varDecl.getName());
@@ -176,6 +182,83 @@ export function discoverClientCalls(
  * composes nothing, the same convention an unresolved path argument
  * already follows.
  */
+/**
+ * A check for whether an expression is this pack's client.
+ *
+ * True for the imported value itself, a variable this file sets to a
+ * construction of it (a factory call or `new`), and a value the fact
+ * layer resolves to such a construction in another file. Any walk that
+ * matches methods on a client asks this instead of growing its own
+ * receiver rules, so "which object is the client" has one meaning.
+ */
+export function clientReceiverCheckFor(
+  sourceFile: SourceFile,
+  match: {
+    importModule: string;
+    importName: string;
+    factoryMethods?: string[];
+  },
+  resolution: ResolutionStore | undefined,
+): (subject: Node) => boolean {
+  const localName = resolveImportedLocalName(
+    sourceFile,
+    match.importModule,
+    match.importName,
+  );
+  const constructedHere = new Set<string>();
+  if (localName !== null) {
+    // One walk, at any depth. A client built inside a hook body, one
+    // handed in through a parameter, and one that exists only by its
+    // type annotation are all this pack's client, and a top-level-only
+    // scan missed everything a function wraps.
+    sourceFile.forEachDescendant((node) => {
+      if (Node.isVariableDeclaration(node)) {
+        const init = node.getInitializer();
+        if (
+          (init !== undefined &&
+            (Node.isCallExpression(init) || Node.isNewExpression(init)) &&
+            isInstanceCreationCall(init, localName, match.factoryMethods)) ||
+          typedAsClient(node.getTypeNode(), localName)
+        ) {
+          constructedHere.add(node.getName());
+        }
+        return;
+      }
+      if (
+        Node.isParameterDeclaration(node) &&
+        typedAsClient(node.getTypeNode(), localName)
+      ) {
+        const written = node.getNameNode();
+        if (Node.isIdentifier(written)) {
+          constructedHere.add(written.getText());
+        }
+      }
+    });
+  }
+  const full: ClientCallMatch = {
+    type: "clientCall",
+    importModule: match.importModule,
+    importName: match.importName,
+    ...(match.factoryMethods === undefined
+      ? {}
+      : { factoryMethods: match.factoryMethods }),
+  } as ClientCallMatch;
+  return (subject) =>
+    (localName !== null &&
+      Node.isIdentifier(subject) &&
+      subject.getText() === localName) ||
+    (Node.isIdentifier(subject) && constructedHere.has(subject.getText())) ||
+    resolvesToKnownInstance(subject, full, resolution);
+}
+
+/** Whether a type annotation ties this value to the imported class. */
+function typedAsClient(typeNode: Node | undefined, localName: string): boolean {
+  if (typeNode === undefined || !Node.isTypeReference(typeNode)) {
+    return false;
+  }
+  return typeNode.getTypeName().getText() === localName;
+}
+
 function resolvesToKnownInstance(
   subject: Node,
   match: ClientCallMatch,
@@ -185,7 +268,10 @@ function resolvesToKnownInstance(
     return false;
   }
   const written = writtenNodeOf(subject, resolution);
-  if (written === null || !Node.isCallExpression(written)) {
+  if (
+    written === null ||
+    (!Node.isCallExpression(written) && !Node.isNewExpression(written))
+  ) {
     // Null means not-my-call, and a subject the store never ties to a
     // construction is exactly that.
     return false;
@@ -211,7 +297,7 @@ function resolvesToKnownInstance(
  * OWN file, which is not necessarily the file asking the question.
  */
 function isInstanceCreationCall(
-  call: CallExpression,
+  call: CallExpression | NewExpression,
   importedLocalName: string,
   factoryMethods: string[] | undefined,
 ): boolean {

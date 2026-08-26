@@ -5,6 +5,7 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { clientReceiverCheckFor } from "./clientCall.js";
 import {
   enclosingFunctionRoot,
   functionNameOrAnon,
@@ -13,7 +14,6 @@ import {
   resolveGraphqlDocument,
   unreadableDocument,
 } from "./graphqlShared.js";
-import { resolveImportedLocalName } from "./resolveImport.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -25,17 +25,12 @@ export function discoverGraphqlImperativeCalls(
   kind: string,
   resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
-  // Gate on the client identifier being imported, reduces false
-  // positives against any object with a `.query()` / `.mutate()`
-  // method (common in query-builder libraries).
-  const localName = resolveImportedLocalName(
-    sourceFile,
-    match.importModule,
-    match.importName,
-  );
-  if (localName === null) {
-    return [];
-  }
+  // The gate is on the receiver rather than on the file's imports. A
+  // file that imports the library can still contain an unrelated
+  // object with a `.query()` method, a query builder or a repository,
+  // and a boundary claimed for one of those pairs against a GraphQL
+  // server the code never calls.
+  const isTheClient = clientReceiverCheckFor(sourceFile, match, resolution);
 
   const methodSpec = new Map<
     string,
@@ -63,6 +58,9 @@ export function discoverGraphqlImperativeCalls(
     const methodName = callee.getName();
     const spec = methodSpec.get(methodName);
     if (spec === undefined) {
+      return;
+    }
+    if (!isTheClient(callee.getExpression())) {
       return;
     }
     const args = node.getArguments();

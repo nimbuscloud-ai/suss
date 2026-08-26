@@ -1,26 +1,26 @@
 {
   "total": {
     "lines": {
-      "total": 8439,
-      "covered": 7222,
+      "total": 8458,
+      "covered": 7237,
       "skipped": 0,
-      "pct": 85.57
+      "pct": 85.56
     },
     "statements": {
-      "total": 8531,
-      "covered": 7310,
+      "total": 8550,
+      "covered": 7325,
       "skipped": 0,
-      "pct": 85.68
+      "pct": 85.67
     },
     "functions": {
-      "total": 1212,
-      "covered": 1118,
+      "total": 1216,
+      "covered": 1122,
       "skipped": 0,
-      "pct": 92.24
+      "pct": 92.26
     },
     "branches": {
-      "total": 6566,
-      "covered": 5122,
+      "total": 6597,
+      "covered": 5146,
       "skipped": 0,
       "pct": 78
     },
@@ -787,28 +787,28 @@
   },
   "src/discovery/clientCall.ts": {
     "lines": {
-      "total": 93,
-      "covered": 87,
+      "total": 112,
+      "covered": 103,
       "skipped": 0,
-      "pct": 93.54
+      "pct": 91.96
     },
     "functions": {
-      "total": 16,
-      "covered": 16,
+      "total": 20,
+      "covered": 20,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 94,
-      "covered": 88,
+      "total": 113,
+      "covered": 104,
       "skipped": 0,
-      "pct": 93.61
+      "pct": 92.03
     },
     "branches": {
-      "total": 106,
-      "covered": 88,
+      "total": 137,
+      "covered": 113,
       "skipped": 0,
-      "pct": 83.01
+      "pct": 82.48
     }
   },
   "src/discovery/decoratedMembers.ts": {
@@ -1074,9 +1074,9 @@
   "src/discovery/graphqlImperativeCall.ts": {
     "lines": {
       "total": 50,
-      "covered": 43,
+      "covered": 42,
       "skipped": 0,
-      "pct": 86
+      "pct": 84
     },
     "functions": {
       "total": 3,
@@ -1086,15 +1086,15 @@
     },
     "statements": {
       "total": 50,
-      "covered": 43,
+      "covered": 42,
       "skipped": 0,
-      "pct": 86
+      "pct": 84
     },
     "branches": {
       "total": 37,
-      "covered": 27,
+      "covered": 26,
       "skipped": 0,
-      "pct": 72.97
+      "pct": 70.27
     }
   },
   "src/discovery/graphqlShared.ts": {
