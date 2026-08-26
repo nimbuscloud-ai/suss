@@ -394,6 +394,57 @@ describe("apolloClientPack — codegen client-preset", () => {
 // Edge cases via in-memory projects
 // ---------------------------------------------------------------------------
 
+describe("apolloClientPack — which object is the client", () => {
+  it("leaves an unrelated object with a query method alone", async () => {
+    // db is a query builder, a repository, anything. A boundary
+    // claimed for it pairs against a GraphQL server the code never
+    // calls, so the gate is on the receiver rather than on the file's
+    // imports.
+    const summaries = await runInMemory(`
+      import { ApolloClient, gql } from "@apollo/client";
+      const GetUser = gql\`query GetUser { user { id } }\`;
+      const db: any = {};
+      export async function load() { return db.query({ query: GetUser }); }
+    `);
+    expect(summaries).toEqual([]);
+  });
+
+  it("follows a client built in the same file with new", async () => {
+    const summaries = await runInMemory(`
+      import { ApolloClient, gql } from "@apollo/client";
+      const GetUser = gql\`query GetUser { user { id } }\`;
+      const client = new ApolloClient({});
+      export async function load() { return client.query({ query: GetUser }); }
+    `);
+    const semantics = summaries[0]?.identity.boundaryBinding?.semantics as
+      | { operationName?: string }
+      | undefined;
+    expect(semantics?.operationName).toBe("GetUser");
+  });
+
+  it("follows a client imported from another file, which the docs recommend", async () => {
+    const summaries = await runInMemoryFiles({
+      "client.ts": `
+        import { ApolloClient } from "@apollo/client";
+        export const client = new ApolloClient({});
+      `,
+      "consumer.ts": `
+        import { gql } from "@apollo/client";
+        import { client } from "./client.js";
+        const GetUser = gql\`query GetUser { user { id } }\`;
+        export async function load() { return client.query({ query: GetUser }); }
+      `,
+    });
+    const found = summaries.find((one) => {
+      const semantics = one.identity.boundaryBinding?.semantics as
+        | { operationName?: string }
+        | undefined;
+      return semantics?.operationName === "GetUser";
+    });
+    expect(found?.location.file).toContain("consumer.ts");
+  });
+});
+
 describe("apolloClientPack — edge cases", () => {
   it("emits nothing when the Apollo import is absent", async () => {
     const summaries = await runInMemory(`
