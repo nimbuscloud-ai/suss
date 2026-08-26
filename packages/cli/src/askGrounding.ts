@@ -86,7 +86,9 @@ export function groundedTouchesAt(
   const touches: GroundedTouch[] = [];
   // One unit doing one thing at one boundary is one line, however many
   // accesses say so, and the walk below adds only what is missing here.
-  const answered = new Set<string>();
+  // Of two records of the one thing, the one that says which call it
+  // went through is the line worth keeping.
+  const answered = new Map<string, number>();
 
   // Storage comes from the grounded accesses rather than from the
   // effects, because only these say which table a read written under a
@@ -105,12 +107,8 @@ export function groundedTouchesAt(
       transitionId: undefined,
     };
     const key = asTouchKey({ summary: record.summary, touched });
-    if (answered.has(key)) {
-      continue;
-    }
-    answered.add(key);
     const notes = groundingNotes(record);
-    touches.push({
+    keep(touches, answered, key, {
       summary: record.summary,
       touched,
       ...(notes.length > 0 ? { grounding: notes } : {}),
@@ -119,9 +117,6 @@ export function groundedTouchesAt(
 
   for (const summary of summaries) {
     for (const touched of boundariesTouchedBy(summary)) {
-      if (answered.has(asTouchKey({ summary, touched }))) {
-        continue;
-      }
       const included =
         namesBoundary(subject, touched.binding) ||
         matchedBindings.has(touched.binding) ||
@@ -130,7 +125,7 @@ export function groundedTouchesAt(
         continue;
       }
       const notes = groundingNotes(byBinding.get(touched.binding));
-      touches.push({
+      keep(touches, answered, asTouchKey({ summary, touched }), {
         summary,
         touched,
         ...(notes.length > 0 ? { grounding: notes } : {}),
@@ -144,7 +139,41 @@ export function groundedTouchesAt(
   };
 }
 
-/** One unit doing one thing at one boundary. */
+/**
+ * Keep one line per key. A later record replaces an earlier one only
+ * when it says which call the touch went through and the earlier one
+ * does not, so the informative line survives whichever order the two
+ * walks found them in.
+ */
+function keep(
+  touches: GroundedTouch[],
+  answered: Map<string, number>,
+  key: string,
+  touch: GroundedTouch,
+): void {
+  const at = answered.get(key);
+  if (at === undefined) {
+    answered.set(key, touches.length);
+    touches.push(touch);
+    return;
+  }
+  const kept = touches[at];
+  if (
+    kept !== undefined &&
+    kept.touched.callee === undefined &&
+    touch.touched.callee !== undefined
+  ) {
+    touches[at] = touch;
+  }
+}
+
+/**
+ * One unit doing one thing at one boundary.
+ *
+ * The callee stays out of the key. One read recorded twice, once with
+ * the call it went through and once without, is one thing the unit
+ * does, and a reader asked who reads a boundary counted it twice.
+ */
 function asTouchKey(touch: {
   summary: BehavioralSummary;
   touched: TouchedBoundary;
@@ -153,7 +182,6 @@ function asTouchKey(touch: {
     summaryIdentifier(touch.summary),
     touch.touched.label,
     touch.touched.relation,
-    touch.touched.callee ?? "",
   ].join("\u0000");
 }
 
