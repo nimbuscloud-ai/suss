@@ -16,6 +16,7 @@
 import {
   readMessageBusMetadata,
   readRuntimeContractMetadata,
+  referenceFromName,
   summaryIdentifier,
   summaryRef,
 } from "@suss/behavioral-ir";
@@ -384,7 +385,11 @@ function resolveProducerChannels(
       continue;
     }
     const targets = readEnvVarTargets(runtime);
-    const target = targets[busToken];
+    // A recognizer that keeps the reference spells the bus `{X}`, and
+    // an older one spells it `X`. One lookup takes both, so the two
+    // recognizer generations resolve against the same template.
+    const variable = referenceFromName(busToken)?.root ?? busToken;
+    const target = targets[variable];
     if (target !== undefined) {
       producer.resolvedChannel =
         detailSuffix === null

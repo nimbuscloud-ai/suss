@@ -504,6 +504,37 @@ describe("eventbridge pairing", () => {
     ).toEqual([]);
   });
 
+  it("resolves a bus spelled as a kept reference the same as a bare env name", () => {
+    // A recognizer that keeps the reference spells the bus
+    // `{ORDER_EVENT_BUS_NAME}`, and an older one spells it bare. Both
+    // resolve against the same Environment block, so migrating a pack
+    // does not orphan its producers.
+    const summaries = [
+      eventBridgeProvider("OrderEventBus#OrderPlaced"),
+      eventBridgeConsumer({
+        name: "OrderConsumer#OrderPlaced",
+        channel: "OrderEventBus#OrderPlaced",
+        patternResolution: "exact",
+      }),
+      eventBridgeProducer({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "{ORDER_EVENT_BUS_NAME}#OrderPlaced",
+      }),
+      runtimeConfigProvider({
+        instanceName: "OrderProducer",
+        codeScopePath: "src/order-producer/",
+        envVarTargets: {
+          ORDER_EVENT_BUS_NAME: { kind: "ref", logicalId: "OrderEventBus" },
+        },
+      }),
+    ];
+    const findings = checkMessageBus(summaries);
+    expect(
+      findings.filter((f) => f.kind === "messageBusProducerOrphan"),
+    ).toEqual([]);
+  });
+
   it("splits an EventBridge channel on the first hash, keeping a detail-type that carries a hash of its own", () => {
     const summaries = [
       eventBridgeProvider("OrderEventBus#Order#Placed"),

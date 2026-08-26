@@ -76,8 +76,8 @@ describe("aws-eventbridge integration", () => {
   it("emits a message-send interaction per publish, keyed on env-var bus + detailType", () => {
     const sends = collectSendEffects(codeSummaries);
     expect(sends.map(readChannel).sort()).toEqual([
-      "ORDER_EVENT_BUS_NAME#OrderCancelled",
-      "ORDER_EVENT_BUS_NAME#OrderPlaced",
+      "{ORDER_EVENT_BUS_NAME}#OrderCancelled",
+      "{ORDER_EVENT_BUS_NAME}#OrderPlaced",
     ]);
   });
 

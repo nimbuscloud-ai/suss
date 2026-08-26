@@ -711,6 +711,15 @@ function extractArgs(call: CallExpression): EffectArg[] {
   return call.getArguments().map((arg) => extractArg(arg, MAX_ARG_DEPTH));
 }
 
+/**
+ * One value in the form an effect records an argument, for ops handed
+ * to a declared pack. The same reading a call's own arguments get, so
+ * a body a pack asks for pairs the way an inline argument would.
+ */
+export function effectArgOf(node: Node): EffectArg {
+  return extractArg(node, MAX_ARG_DEPTH);
+}
+
 function extractArg(node: Node, depth: number): EffectArg {
   // Unwrap type-cast wrappers: `value as Type`, `<Type>value`,
   // `value satisfies Type`, and the non-null assertion `value!`.

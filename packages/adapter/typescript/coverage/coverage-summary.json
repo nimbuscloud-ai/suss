@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 8432,
-      "covered": 7218,
+      "total": 8439,
+      "covered": 7222,
       "skipped": 0,
-      "pct": 85.6
+      "pct": 85.57
     },
     "statements": {
-      "total": 8524,
-      "covered": 7306,
+      "total": 8531,
+      "covered": 7310,
       "skipped": 0,
-      "pct": 85.71
+      "pct": 85.68
     },
     "functions": {
-      "total": 1208,
-      "covered": 1117,
+      "total": 1212,
+      "covered": 1118,
       "skipped": 0,
-      "pct": 92.46
+      "pct": 92.24
     },
     "branches": {
-      "total": 6560,
-      "covered": 5120,
+      "total": 6566,
+      "covered": 5122,
       "skipped": 0,
-      "pct": 78.04
+      "pct": 78
     },
     "branchesTrue": {
       "total": 0,
@@ -138,9 +138,9 @@
   "src/configuredCall.ts": {
     "lines": {
       "total": 32,
-      "covered": 30,
+      "covered": 31,
       "skipped": 0,
-      "pct": 93.75
+      "pct": 96.87
     },
     "functions": {
       "total": 5,
@@ -150,9 +150,9 @@
     },
     "statements": {
       "total": 32,
-      "covered": 30,
+      "covered": 31,
       "skipped": 0,
-      "pct": 93.75
+      "pct": 96.87
     },
     "branches": {
       "total": 31,
@@ -1697,48 +1697,48 @@
   },
   "src/resolve/callOps.ts": {
     "lines": {
-      "total": 134,
-      "covered": 123,
+      "total": 140,
+      "covered": 126,
       "skipped": 0,
-      "pct": 91.79
+      "pct": 90
     },
     "functions": {
-      "total": 56,
-      "covered": 51,
+      "total": 59,
+      "covered": 52,
       "skipped": 0,
-      "pct": 91.07
+      "pct": 88.13
     },
     "statements": {
-      "total": 137,
-      "covered": 125,
+      "total": 143,
+      "covered": 128,
       "skipped": 0,
-      "pct": 91.24
+      "pct": 89.51
     },
     "branches": {
-      "total": 121,
-      "covered": 100,
+      "total": 127,
+      "covered": 102,
       "skipped": 0,
-      "pct": 82.64
+      "pct": 80.31
     }
   },
   "src/resolve/invocationEffects.ts": {
     "lines": {
-      "total": 282,
+      "total": 283,
       "covered": 250,
       "skipped": 0,
-      "pct": 88.65
+      "pct": 88.33
     },
     "functions": {
-      "total": 36,
+      "total": 37,
       "covered": 32,
       "skipped": 0,
-      "pct": 88.88
+      "pct": 86.48
     },
     "statements": {
-      "total": 284,
+      "total": 285,
       "covered": 252,
       "skipped": 0,
-      "pct": 88.73
+      "pct": 88.42
     },
     "branches": {
       "total": 237,

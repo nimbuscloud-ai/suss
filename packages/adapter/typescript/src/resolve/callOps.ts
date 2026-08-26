@@ -14,7 +14,11 @@
 import { Node } from "ts-morph";
 
 import { rootIdentifier } from "../configuredCall.js";
-import { isImportedFrom, methodDeclaredIn } from "./invocationEffects.js";
+import {
+  effectArgOf,
+  isImportedFrom,
+  methodDeclaredIn,
+} from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
 import type {
@@ -73,7 +77,7 @@ const ORIGIN: Record<
       methodDeclaredIn(receiver.callee as Node, module, receiver.resolve),
     ),
   constructed: (origin, receiver) =>
-    madeFromNamed(origin, madeBy(receiver)) &&
+    madeFromNamed(origin, madeExpression(receiver)) &&
     origin.importedFrom.some((module) =>
       isImportedFrom(madeBy(receiver), module),
     ),
@@ -85,12 +89,28 @@ const ORIGIN: Record<
  * SDK command comes from the one module and goes through the one
  * `send`, so without this a batch send and a single send are the same
  * call.
+ *
+ * The export's own name is the rightmost part of the constructor
+ * expression. Through a namespace import the source writes
+ * `new eb.PutEventsCommand(...)`, and the root identifier is the
+ * namespace, which no pack ever asked for by name.
  */
 function madeFromNamed(origin: ReceiverOrigin, made: Node): boolean {
   if (origin.origin !== "constructed" || origin.named === undefined) {
     return true;
   }
-  return origin.named.includes(made.getText());
+  return origin.named.includes(constructorName(made));
+}
+
+/** The rightmost name of what a value was constructed with. */
+function constructorName(made: Node): string {
+  const expression =
+    Node.isNewExpression(made) || Node.isCallExpression(made)
+      ? made.getExpression()
+      : made;
+  return Node.isPropertyAccessExpression(expression)
+    ? expression.getName()
+    : expression.getText();
 }
 
 /**
@@ -108,10 +128,7 @@ const CALL_ORIGIN: Record<
 > = {
   declaredBy: ORIGIN.declaredBy,
   constructed: (origin, receiver) =>
-    madeFromNamed(
-      origin,
-      rootIdentifier(receiver.expression) ?? receiver.expression,
-    ) &&
+    madeFromNamed(origin, receiver.expression) &&
     origin.importedFrom.some((module) =>
       isImportedFrom(
         rootIdentifier(receiver.expression) ?? receiver.expression,
@@ -127,8 +144,22 @@ const CALL_ORIGIN: Record<
  * A call with no receiver made its own value, so its callee says.
  */
 function madeBy(receiver: Receiver): Node {
+  const made = madeExpression(receiver);
+  const expression =
+    Node.isNewExpression(made) || Node.isCallExpression(made)
+      ? made.getExpression()
+      : made;
+  return rootIdentifier(expression) ?? expression;
+}
+
+/**
+ * The construction itself, before any root is taken. The import check
+ * wants the root identifier and the export-name check wants the
+ * rightmost part, so both read off this.
+ */
+function madeExpression(receiver: Receiver): Node {
   if (receiver.callee === null) {
-    return rootIdentifier(receiver.expression) ?? receiver.expression;
+    return receiver.expression;
   }
   const written = receiver.resolve(receiver.callee.getExpression());
   if (
@@ -137,7 +168,7 @@ function madeBy(receiver: Receiver): Node {
   ) {
     return receiver.callee;
   }
-  return rootIdentifier(written.getExpression()) ?? receiver.callee;
+  return written;
 }
 
 /** What a declared pack can ask about one TypeScript call. */
@@ -203,6 +234,7 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
     flag: () => literalFlag(written()),
     entries: (unsettled) => entriesOf(written(), unsettled, resolve),
     items: () => itemsOf(written(), resolve),
+    asArg: () => effectArgOf(written()),
     property: (name) => {
       const object = written();
       const inside = Node.isObjectLiteralExpression(object)

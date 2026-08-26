@@ -14,12 +14,13 @@
  */
 
 import { messageBusBinding, storageBinding } from "@suss/behavioral-ir";
+import { unwrapJsonStringify } from "@suss/extractor";
 import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
 import { opsIn } from "./ops.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { InvocationRecognizer } from "@suss/extractor";
+import type { EffectArg, InvocationRecognizer } from "@suss/extractor";
 import type {
   AccessKind,
   AccessPathLink,
@@ -409,6 +410,7 @@ function statedValue(subject: CallOps, pick: OneArgument): ValueOps | null {
 const NOTHING_STATED: ValueOps = {
   text: () => null,
   name: () => null,
+  asArg: () => null,
   flag: () => null,
   entries: () => [],
   items: () => [],
@@ -524,6 +526,7 @@ function messageSend(matched: Matched): Effect[] | null {
         interaction: {
           class: "message-send",
           ...bodyOf(message, ending),
+          ...routingKeyOf(message, ending),
         },
       }));
 }
@@ -541,10 +544,16 @@ function messagesIn(
 }
 
 /**
- * The channel one message names, or null when the source leaves a part
- * of it unsaid. A channel named by half of itself would pair across
+ * The channel one message states, or null when the source leaves a part
+ * of it unsaid. A channel spelled by half of itself would pair across
  * wires, so a message missing a part records the send with nothing
  * claimed about where it went.
+ *
+ * A part that is absent and a part that is written but unsettled are
+ * different answers. Absent means the library fills it in, which is
+ * what `whenAbsent` is for. Written-but-unsettled means the code did
+ * say, somewhere this run cannot read, and claiming the library's
+ * default there would place the send on a channel it never goes to.
  */
 function channelOf(
   message: ValueOps,
@@ -552,27 +561,52 @@ function channelOf(
 ): string | null {
   const parts: string[] = [];
   for (const part of ending.channel) {
-    const stated =
-      message.property(part.property)?.name(ending.unsettledName) ?? null;
-    const value = stated === null || stated === "" ? part.whenAbsent : stated;
-    if (value === undefined) {
+    const written = message.property(part.property);
+    if (written === null) {
+      if (part.whenAbsent === undefined) {
+        return null;
+      }
+      parts.push(part.whenAbsent);
+      continue;
+    }
+    const stated = written.name(part.unsettled ?? ending.unsettledName);
+    if (stated === null || stated === "") {
       return null;
     }
-    parts.push(value);
+    parts.push(stated);
   }
   return parts.join(ending.channelSeparator ?? "#");
 }
 
-/** The body a message states, when the pack says where it is. */
+/**
+ * The body a message states, in the form an effect records an argument,
+ * so the field set a consumer reads pairs against it. A payload written
+ * as `JSON.stringify({...})` is recorded as the object that went in,
+ * since the consumer reads the fields back after `JSON.parse`.
+ */
 function bodyOf(
   message: ValueOps,
   ending: MessageSendEnding,
-): { body?: string } {
+): { body?: EffectArg } {
   if (ending.body === undefined) {
     return {};
   }
-  const stated = message.property(ending.body)?.text() ?? null;
+  const stated = unwrapJsonStringify(
+    message.property(ending.body)?.asArg() ?? null,
+  );
   return stated === null ? {} : { body: stated };
+}
+
+/** The routing key a message states, when it states one as a literal. */
+function routingKeyOf(
+  message: ValueOps,
+  ending: MessageSendEnding,
+): { routingKey?: string } {
+  if (ending.routingKey === undefined) {
+    return {};
+  }
+  const stated = message.property(ending.routingKey)?.text() ?? null;
+  return stated === null || stated === "" ? {} : { routingKey: stated };
 }
 
 function sqlAccess(matched: Matched): Effect[] | null {

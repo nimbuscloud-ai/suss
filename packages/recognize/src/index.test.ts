@@ -62,6 +62,8 @@ function valueOps(stated: unknown): ValueOps {
   return {
     text: () => (typeof stated === "string" ? stated : null),
     name: () => (typeof stated === "string" ? stated : null),
+    asArg: () =>
+      typeof stated === "string" ? { kind: "string", value: stated } : null,
     flag: () => (typeof stated === "boolean" ? stated : null),
     items: () =>
       Array.isArray(stated) ? stated.map((item) => valueOps(item)) : [],
@@ -1114,13 +1116,114 @@ describe("a chain that sends one message", () => {
     expect(channelsOf(effects)).toEqual(["orders"]);
     expect(
       effects?.[0]?.type === "interaction" ? effects[0].interaction : null,
-    ).toEqual({ class: "message-send", body: "{}" });
+    ).toEqual({
+      class: "message-send", // The body rides as the form an effect records an argument, so
+      // the field set a consumer reads pairs against it. Text cannot
+      // be paired field by field.
+      body: { kind: "string", value: "{}" },
+    });
   });
 
   it("says nothing when the call states no input at all", () => {
     expect(
       runSend(sends(), callOps({ method: "send", from: ["tapedeck"] })),
     ).toBeNull();
+  });
+
+  it("takes the library's default for a part the message leaves out", () => {
+    const effects = runSend(
+      sends({
+        channel: [
+          { property: "Bus", whenAbsent: "default" },
+          { property: "Kind" },
+        ],
+      }),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { Kind: "OrderPlaced" } },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual(["default#OrderPlaced"]);
+  });
+
+  it("leaves the channel unnamed when a part is written but unsettled", () => {
+    // Absent and unsettled are not the same thing. Absent means the
+    // library fills the part in. Written-but-unsettled means the code
+    // did say, somewhere this run cannot read, and claiming the
+    // default there would place the send on a channel it never goes to.
+    const effects = runSend(
+      sends({
+        channel: [{ property: "QueueUrl", whenAbsent: "default" }],
+        unsettledName: "nothing",
+      }),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { QueueUrl: true } },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual([null]);
+  });
+
+  it("lets one part keep the reference while another gives nothing", () => {
+    const effects = runSend(
+      sends({
+        channel: [
+          { property: "Bus", unsettled: "reference" },
+          { property: "Kind", unsettled: "nothing" },
+        ],
+        unsettledName: "nothing",
+      }),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { Bus: "orders", Kind: "OrderPlaced" } },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual(["orders#OrderPlaced"]);
+  });
+
+  it("rides the routing key along without joining the channel", () => {
+    const effects = runSend(
+      sends({ routingKey: "Source" }),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: {
+          0: {
+            QueueUrl: "orders",
+            Source: "orders.service",
+            MessageBody: "{}",
+          },
+        },
+      }),
+    );
+    expect(channelsOf(effects)).toEqual(["orders"]);
+    const sent =
+      effects?.[0]?.type === "interaction" &&
+      effects[0].interaction.class === "message-send"
+        ? effects[0].interaction
+        : null;
+    expect(sent?.routingKey).toBe("orders.service");
+  });
+
+  it("leaves the routing key off when the message does not state one", () => {
+    const effects = runSend(
+      sends({ routingKey: "Source" }),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { QueueUrl: "orders", MessageBody: "{}" } },
+      }),
+    );
+    const sent =
+      effects?.[0]?.type === "interaction" &&
+      effects[0].interaction.class === "message-send"
+        ? effects[0].interaction
+        : null;
+    expect(sent).not.toBeNull();
+    expect(sent?.routingKey).toBeUndefined();
   });
 });
 
