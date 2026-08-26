@@ -129,7 +129,7 @@ describe("sqs recognizer: happy path", () => {
     expect(send.binding.semantics.name).toBe("message-bus");
     if (send.binding.semantics.name === "message-bus") {
       expect(send.binding.semantics.messageBus).toBe("aws_sqs");
-      expect(send.binding.semantics.channel).toBe("ORDERS_QUEUE_URL");
+      expect(send.binding.semantics.channel).toBe("{ORDERS_QUEUE_URL}");
     }
   });
 
@@ -188,7 +188,7 @@ describe("sqs recognizer: happy path", () => {
     expect(sends[0]?.binding.semantics).toMatchObject({
       name: "message-bus",
       messageBus: "aws_sqs",
-      channel: "ORDERS_QUEUE_URL",
+      channel: "{ORDERS_QUEUE_URL}",
     });
   });
 
@@ -227,7 +227,10 @@ describe("a send whose queue the code does not name", () => {
     expect(messageSendEffectsOf(recognizeAll(source))).toHaveLength(1);
   });
 
-  it("names no queue, so it pairs with nothing", () => {
+  it("keeps the reference, so a caller can ground which queue", () => {
+    // A caller passes the queue, so a caller can ground it. The
+    // channel keeps the reference for whoever knows, the same as an
+    // env var kept its name.
     const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient();
@@ -239,8 +242,9 @@ describe("a send whose queue the code does not name", () => {
     const [effect] = messageSendEffectsOf(recognizeAll(source));
     const binding = effect?.binding ?? raise("no binding");
     const semantics = binding.semantics;
-    expect(semantics.name === "message-bus" && semantics.channel).toBeNull();
-    expect(boundaryKey(binding)).toBeNull();
+    expect(semantics.name === "message-bus" && semantics.channel).toBe(
+      "{queue}",
+    );
   });
 });
 
@@ -304,11 +308,34 @@ describe("sqs recognizer: rejection cases", () => {
     expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
   });
 
-  it("records a send whose queue comes back from a call", () => {
+  it("reads a queue through a call with one literal return", () => {
+    // The hand-rolled reader stopped at the call. The ops follow it to
+    // its single return, so a project that centralises its URL in a
+    // helper reads the same as one that writes the literal in place.
     const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
       function buildUrl(): string { return "x"; }
+      async function noop() {
+        await client.send(new SendMessageCommand({
+          QueueUrl: buildUrl(),
+          MessageBody: "y",
+        }));
+      }
+    `;
+
+    const [effect] = messageSendEffectsOf(recognizeAll(source));
+    const binding = effect?.binding ?? raise("no binding");
+    expect(
+      binding.semantics.name === "message-bus" && binding.semantics.channel,
+    ).toBe("x");
+  });
+
+  it("records a send whose queue is decided at run time", () => {
+    const source = `
+      import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+      const client = new SQSClient({});
+      function buildUrl(): string { return ["a", "b"][Date.now() % 2]!; }
       async function noop() {
         await client.send(new SendMessageCommand({
           QueueUrl: buildUrl(),
@@ -327,7 +354,11 @@ describe("sqs recognizer: rejection cases", () => {
     expect(boundaryKey(binding)).toBeNull();
   });
 
-  it("returns null when SendMessageCommand input isn't an object literal", () => {
+  it("reads an input a const states, since the ops follow it", () => {
+    // The hand-rolled reader gave up when the command's input was not
+    // written inline. The ops resolve the const, so a project that
+    // builds its input above the call reads the same as one that
+    // writes it in place.
     const source = `
       import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
       const client = new SQSClient({});
@@ -336,7 +367,11 @@ describe("sqs recognizer: rejection cases", () => {
         await client.send(new SendMessageCommand(input));
       }
     `;
-    expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
+    const [effect] = messageSendEffectsOf(recognizeAll(source));
+    const binding = effect?.binding ?? raise("no binding");
+    expect(
+      binding.semantics.name === "message-bus" && binding.semantics.channel,
+    ).toBe("{X}");
   });
 });
 
@@ -499,12 +534,14 @@ describe("sqs pack metadata", () => {
     expect(pack.terminals).toEqual([]);
     // Two recognizers: producer-side (sqsRecognizer) and consumer-side
     // (messageReceiveRecognizer).
-    expect(pack.invocationRecognizers).toHaveLength(2);
+    // The two send declarations compile to one recognizer each, plus
+    // the consumer-side receive recognizer.
+    expect(pack.invocationRecognizers).toHaveLength(3);
   });
 
   it("adds a recognizer and an import gate per configured producer", () => {
     const pack = sqsFramework(DISPATCHER_OPTIONS);
-    expect(pack.invocationRecognizers).toHaveLength(4);
+    expect(pack.invocationRecognizers).toHaveLength(5);
     expect(pack.requiresImport).toEqual([
       "@aws-sdk/client-sqs",
       "aws-lambda",

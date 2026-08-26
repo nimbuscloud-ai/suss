@@ -30,10 +30,11 @@ import { declaredExports } from "./declaredSurface.mjs";
  * It went to fifteen when the eventbridge pack migrated onto
  * `messageSends(...)`: its factory now calls the builder the same way
  * the dynamodb, mongoose, drizzle and prisma factories already do.
+ * Sixteen is the sqs factory making the same move.
  * Lowering it is a fix landing; raising it needs saying which call
  * sites arrived and why they are the same shape as the rest.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 15;
+const KNOWN_UNPAIRED_CONSUMERS = 16;
 
 /**
  * Every function a package says it exports has a provider summary.

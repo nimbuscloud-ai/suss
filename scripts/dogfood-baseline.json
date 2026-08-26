@@ -3,10 +3,10 @@
     "packages": 60,
     "packagesWithExports": 60,
     "exports": 593,
-    "internal": 2192,
-    "consumers": 1021,
+    "internal": 2189,
+    "consumers": 1022,
     "pairs": 1006,
-    "unfollowedCalls": 238,
+    "unfollowedCalls": 233,
     "findingErrors": 0
   },
   "packages": {
@@ -216,9 +216,9 @@
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
       "exports": 2,
-      "internal": 8,
-      "consumers": 8,
-      "unfollowedCalls": 5
+      "internal": 5,
+      "consumers": 9,
+      "unfollowedCalls": 0
     },
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",

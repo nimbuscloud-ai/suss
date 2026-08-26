@@ -101,7 +101,9 @@ describe("resolveFramework", () => {
     );
     const pack = await resolveFramework(`aws-sqs=${file}`);
     expect(pack.requiresImport).toContain("@acme/async");
-    expect(pack.invocationRecognizers).toHaveLength(3);
+    // Two compiled send declarations, the receive recognizer, and one
+    // per configured producer.
+    expect(pack.invocationRecognizers).toHaveLength(4);
   });
 
   it("stamps a configured pack with a version the config changes", async () => {

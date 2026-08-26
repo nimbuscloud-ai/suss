@@ -420,6 +420,13 @@ export interface ManyIn {
 export interface ChannelPart {
   /** The property the message states this part on. */
   readonly property: string;
+  /**
+   * Where the property is written. A batch command states the queue
+   * once beside the list of messages, so its channel part reads off
+   * the call's input while the messages come one entry at a time.
+   * Defaults to the message.
+   */
+  readonly on?: "theMessage" | "theInput";
   /** What the library uses when the message leaves this part out. */
   readonly whenAbsent?: string;
   /**
