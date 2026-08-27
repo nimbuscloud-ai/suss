@@ -15,13 +15,13 @@
   "dependencies": {
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
-    "@suss/client-axios": "0.14.1",
-    "@suss/client-web": "0.14.1",
+    "@suss/client-axios": "*",
+    "@suss/client-web": "*",
     "@suss/extractor": "*",
     "@suss/framework-aws-dynamodb": "*",
-    "@suss/framework-express": "0.14.1",
-    "@suss/framework-fastify": "0.14.1",
-    "@suss/framework-hono": "0.14.1",
+    "@suss/framework-express": "*",
+    "@suss/framework-fastify": "*",
+    "@suss/framework-hono": "*",
     "@suss/framework-redis": "*"
   },
   "devDependencies": {
