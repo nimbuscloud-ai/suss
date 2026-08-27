@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 60,
-    "packagesWithExports": 60,
-    "exports": 593,
-    "internal": 2193,
-    "consumers": 1025,
-    "pairs": 1009,
+    "packages": 61,
+    "packagesWithExports": 61,
+    "exports": 596,
+    "internal": 2195,
+    "consumers": 1027,
+    "pairs": 1011,
     "unfollowedCalls": 234,
     "findingErrors": 0
   },
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 58,
-      "internal": 739,
+      "internal": 741,
       "consumers": 77,
       "unfollowedCalls": 70
     },
@@ -297,6 +297,13 @@
       "consumers": 2,
       "unfollowedCalls": 0
     },
+    "packages/framework/nestjs-microservices": {
+      "name": "@suss/framework-nestjs-microservices",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 2,
+      "unfollowedCalls": 0
+    },
     "packages/framework/nestjs-rest": {
       "name": "@suss/framework-nestjs-rest",
       "exports": 2,
@@ -383,7 +390,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 30,
+      "exports": 31,
       "internal": 0,
       "consumers": 0,
       "unfollowedCalls": 0

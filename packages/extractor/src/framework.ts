@@ -558,11 +558,45 @@ export type BindingExtraction = {
     | { type: "fromClientMethod" };
 };
 
+/**
+ * Where a declared channel's spelling comes from.
+ *
+ * `decoratorArgument` reads the argument off the same decorator the
+ * match selected the handler by, so `@EventPattern("order.placed")`
+ * gives "order.placed". `literal` is for a wire whose channel the
+ * library fixes. `unstated` says the wire is known and the channel is
+ * not, which pairs the way a null channel always has.
+ */
+export type ChannelSource =
+  | { from: "decoratorArgument"; position: number }
+  | { from: "literal"; value: string }
+  | { from: "unstated" };
+
+/**
+ * A binding the pattern states outright, for a boundary the match
+ * cannot read from the source.
+ *
+ * `bindingExtraction` speaks REST and nothing else, so a declarative
+ * pack whose boundary is a queue or a topic had nowhere to say so and
+ * was pushed into a callback, which pack health then reports as an
+ * ast-link. This is the same vocabulary `DiscoveredCustomUnit` already
+ * has, declared instead of returned. Message bus only for now; the
+ * design note in the proposals directory says what comes next and why
+ * the rest stays put.
+ */
+export type DeclaredBinding = {
+  semantics: "message-bus";
+  messageBus: MessageBusSemantics["messageBus"];
+  channel: ChannelSource;
+};
+
 export interface DiscoveryPattern {
   /** The kind of code unit this discovers: "handler", "loader", "action", "component", etc. */
   kind: string;
   match: DiscoveryMatch;
   bindingExtraction?: BindingExtraction;
+  /** A binding the pattern states outright. See `DeclaredBinding`. */
+  binding?: DeclaredBinding;
   /**
    * How the routable this pattern discovers (Express's `Router()`,
    * Hono's `new Hono()`, and similar) can itself be mounted onto

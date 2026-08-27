@@ -3008,6 +3008,105 @@ function makeDecoratedRoutePattern(
   };
 }
 
+describe("decoratedRoute with a declared binding", () => {
+  const MICRO_SOURCE = `
+    import { Controller } from "@nestjs/common";
+    import { EventPattern } from "@nestjs/microservices";
+
+    @Controller()
+    class Orders {
+      @EventPattern("order.placed")
+      placed() {}
+    }
+  `;
+
+  const pattern = (
+    channel:
+      | { from: "decoratorArgument"; position: number }
+      | { from: "literal"; value: string }
+      | { from: "unstated" },
+  ): DiscoveryPattern => ({
+    kind: "consumer",
+    match: {
+      type: "decoratedRoute",
+      importModule: ["@nestjs/microservices", "@nestjs/common"],
+      classDecorators: ["Controller"],
+      methodDecoratorRouteMap: { EventPattern: "event" },
+    },
+    binding: { semantics: "message-bus", messageBus: "nats", channel },
+  });
+
+  it("reads the channel off the selecting decorator's argument", () => {
+    const file = createProject().createSourceFile("orders.ts", MICRO_SOURCE);
+    const units = discoverUnits(file, [
+      pattern({ from: "decoratorArgument", position: 0 }),
+    ]);
+    expect(units).toHaveLength(1);
+    expect(units[0].channelInfo).toEqual({
+      messageBus: "nats",
+      channel: "order.placed",
+    });
+    expect(units[0].routeInfo).toBeUndefined();
+  });
+
+  it("takes a channel the pack states as a literal", () => {
+    const file = createProject().createSourceFile("orders.ts", MICRO_SOURCE);
+    const units = discoverUnits(file, [
+      pattern({ from: "literal", value: "orders" }),
+    ]);
+    expect(units[0].channelInfo?.channel).toBe("orders");
+  });
+
+  it("leaves the channel unnamed for an unstated source", () => {
+    const file = createProject().createSourceFile("orders.ts", MICRO_SOURCE);
+    const units = discoverUnits(file, [pattern({ from: "unstated" })]);
+    expect(units[0].channelInfo?.channel).toBeNull();
+  });
+
+  it("leaves the channel unnamed when the argument is not a string", () => {
+    // The official NestJS sample writes @MessagePattern({ cmd: "sum" }),
+    // a structured key. The handler is still a consumer on the wire; a
+    // channel spelled from half-read structure would pair wrongly.
+    const file = createProject().createSourceFile(
+      "orders.ts",
+      `
+      import { Controller } from "@nestjs/common";
+      import { EventPattern } from "@nestjs/microservices";
+
+      @Controller()
+      class Orders {
+        @EventPattern({ cmd: "sum" })
+        sum() {}
+      }
+    `,
+    );
+    const units = discoverUnits(file, [
+      pattern({ from: "decoratorArgument", position: 0 }),
+    ]);
+    expect(units[0]?.channelInfo?.channel).toBeNull();
+  });
+
+  it("leaves the channel unnamed when the decorator takes no argument", () => {
+    const file = createProject().createSourceFile(
+      "orders.ts",
+      `
+      import { Controller } from "@nestjs/common";
+      import { EventPattern } from "@nestjs/microservices";
+
+      @Controller()
+      class Orders {
+        @EventPattern()
+        everything() {}
+      }
+    `,
+    );
+    const units = discoverUnits(file, [
+      pattern({ from: "decoratorArgument", position: 0 }),
+    ]);
+    expect(units[0]?.channelInfo?.channel).toBeNull();
+  });
+});
+
 describe("decoratedRoute discovery", () => {
   it("returns no units when the framework module isn't imported", () => {
     const project = createProject();

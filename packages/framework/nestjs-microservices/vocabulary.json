@@ -1,0 +1,10 @@
+{
+  "Controller": "@nestjs/common: the class decorator marking a handler class",
+  "Ctx": "@nestjs/microservices: parameter decorator for the transport context",
+  "EventPattern": "@nestjs/microservices: method decorator subscribing to an event channel",
+  "MessagePattern": "@nestjs/microservices: method decorator answering a request channel",
+  "Payload": "@nestjs/microservices: parameter decorator for the message payload",
+  "event": "suss: label for an @EventPattern handler in a report",
+  "message": "suss: label for an @MessagePattern handler in a report",
+  "nats": "transport name, the NATS broker, this pack's default wire"
+}
