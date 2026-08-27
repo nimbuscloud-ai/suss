@@ -130,7 +130,7 @@ Reference and internals: [Summary format](docs/behavioral-summary-format.md), [I
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
-Thirty packs read code today, reached by name with `-f`:
+Thirty-one packs read code today, reached by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -142,7 +142,7 @@ Thirty packs read code today, reached by name with `-f`:
 | HTTP and GraphQL clients | `fetch` `axios` `apollo-client` |
 | Databases and ORMs | `prisma` `drizzle` `mongoose` `sqlalchemy` `activerecord` `redis` |
 | Object and key-value storage | `aws-s3` `gcs` `aws-dynamodb` |
-| Messaging | `aws-sqs` `aws-eventbridge` |
+| Messaging | `aws-sqs` `aws-eventbridge` `nestjs-microservices` |
 | Runtime surface | `node`, which includes `process.env` |
 
 Eleven contract readers turn a declared artifact into the same format,

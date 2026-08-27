@@ -72,7 +72,9 @@ export {
 export type {
   AccessRecognizer,
   BindingExtraction,
+  ChannelSource,
   ContractPattern,
+  DeclaredBinding,
   DeclaredMatch,
   DiscoveredCustomUnit,
   DiscoveredSubUnit,

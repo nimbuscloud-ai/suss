@@ -154,6 +154,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   react: "@suss/packs/react",
   apollo: "@suss/packs/apollo",
   "nestjs-graphql": "@suss/packs/nestjs-graphql",
+  "nestjs-microservices": "@suss/packs/nestjs-microservices",
   "nestjs-rest": "@suss/packs/nestjs-rest",
   "aws-lambda": "@suss/packs/aws-lambda",
   "cloudflare-workers": "@suss/packs/cloudflare-workers",

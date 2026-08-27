@@ -9,7 +9,11 @@ import { decoratedCallablesOf } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
 import { stringValueOf } from "./resolveValue.js";
 
-import type { DiscoveryPattern } from "@suss/extractor";
+import type {
+  ChannelSource,
+  DeclaredBinding,
+  DiscoveryPattern,
+} from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
@@ -64,11 +68,58 @@ function joinRoutePath(prefix: string, suffix: string): string {
   return `/${segments.join("/")}`;
 }
 
+/**
+ * The channel a declared binding's source reads off the handler's own
+ * decorator. A constant passed by name resolves to its written string,
+ * the same hop a route path gets, and a value the run cannot settle
+ * leaves the channel null rather than spelling something wrong.
+ */
+function declaredChannelOf(
+  source: ChannelSource,
+  decorator: Node,
+  resolution: ResolutionStore | undefined,
+): string | null {
+  if (source.from === "literal") {
+    return source.value;
+  }
+  if (source.from === "unstated") {
+    return null;
+  }
+  if (!Node.isDecorator(decorator)) {
+    return null;
+  }
+  const arg = decorator.getArguments()[source.position];
+  if (arg === undefined) {
+    return null;
+  }
+  const text = literalStringOf(arg, resolution);
+  return text === null || text === "" ? null : text;
+}
+
+/** The string an expression states, following a name one written hop. */
+function literalStringOf(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): string | null {
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node)
+  ) {
+    return node.getLiteralValue();
+  }
+  const written = resolution?.resolveWrittenValue(node) ?? null;
+  if (written === null || written === node) {
+    return null;
+  }
+  return literalStringOf(written, resolution);
+}
+
 export function discoverDecoratedRoutes(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "decoratedRoute" }>,
   kind: string,
   resolution?: ResolutionStore,
+  binding?: DeclaredBinding,
 ): DiscoveredUnit[] {
   // Same gate as decoratedMethod: at least one method-route decorator
   // must be imported from the framework module.
@@ -107,6 +158,26 @@ export function discoverDecoratedRoutes(
 
     const className = cls.getName() ?? "<anon-class>";
     for (const handler of decoratedCallablesOf(cls, routeDecoratorNames)) {
+      if (binding !== undefined) {
+        // The pattern states the boundary outright, so the decorator
+        // that selected the handler gives the channel rather than a
+        // route path.
+        results.push({
+          func: handler.func,
+          kind,
+          name: `${className}.${handler.name}`,
+          channelInfo: {
+            messageBus: binding.messageBus,
+            channel: declaredChannelOf(
+              binding.channel,
+              handler.decorator,
+              resolution,
+            ),
+          },
+        });
+        continue;
+      }
+
       const httpMethod = match.methodDecoratorRouteMap[handler.standsFor];
       const pathSuffix = resolveRoutePathArg(handler.decorator, resolution);
       const routePath = joinRoutePath(pathPrefix, pathSuffix);

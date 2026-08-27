@@ -104,6 +104,10 @@
       "types": "./dist/nestjs-graphql.d.ts",
       "import": "./dist/nestjs-graphql.js"
     },
+    "./nestjs-microservices": {
+      "types": "./dist/nestjs-microservices.d.ts",
+      "import": "./dist/nestjs-microservices.js"
+    },
     "./nestjs-rest": {
       "types": "./dist/nestjs-rest.d.ts",
       "import": "./dist/nestjs-rest.js"
@@ -189,6 +193,7 @@
     "@suss/framework-hono": "*",
     "@suss/framework-mongoose": "*",
     "@suss/framework-nestjs-graphql": "*",
+    "@suss/framework-nestjs-microservices": "*",
     "@suss/framework-nestjs-rest": "*",
     "@suss/framework-nextjs": "*",
     "@suss/framework-prisma": "*",
