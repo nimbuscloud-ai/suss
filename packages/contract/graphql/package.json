@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-graphql",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "type": "module",
   "description": "Generate behavioral summaries from GraphQL sources: a plain SDL file (root fields become resolver-kind summaries) or committed .graphql operation documents (each operation becomes a client-kind summary).",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.14.1",
+    "@suss/behavioral-ir": "0.15.0",
     "graphql": "^16.8.0"
   },
   "devDependencies": {

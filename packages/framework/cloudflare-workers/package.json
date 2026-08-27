@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-cloudflare-workers",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "type": "module",
   "description": "Discover a Cloudflare Workers entrypoint in TypeScript code and emit one unit per trigger it serves.",
   "keywords": [
@@ -48,10 +48,10 @@
     "ts-morph": "^23.0.0"
   },
   "dependencies": {
-    "@suss/adapter-typescript": "0.14.1",
-    "@suss/behavioral-ir": "0.14.1",
-    "@suss/extractor": "0.14.1",
-    "@suss/sql": "0.14.1"
+    "@suss/adapter-typescript": "0.15.0",
+    "@suss/behavioral-ir": "0.15.0",
+    "@suss/extractor": "0.15.0",
+    "@suss/sql": "0.15.0"
   },
   "devDependencies": {
     "@suss/test-project": "*",
