@@ -15,6 +15,7 @@
 
 import { Node } from "ts-morph";
 
+import { importedNamesOf } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -40,15 +41,9 @@ const HOOK_CALLBACK_PROPERTY: Record<string, string> = {
 /** Local spelling to the library hook it imports, aliases included. */
 function importedHooksOf(sourceFile: SourceFile): Map<string, string> {
   const hooks = new Map<string, string>();
-  for (const decl of sourceFile.getImportDeclarations()) {
-    if (!QUERY_MODULES.includes(decl.getModuleSpecifierValue())) {
-      continue;
-    }
-    for (const named of decl.getNamedImports()) {
-      const name = named.getName();
-      if (name in HOOK_CALLBACK_PROPERTY) {
-        hooks.set(named.getAliasNode()?.getText() ?? name, name);
-      }
+  for (const [local, canonical] of importedNamesOf(sourceFile, QUERY_MODULES)) {
+    if (canonical in HOOK_CALLBACK_PROPERTY) {
+      hooks.set(local, canonical);
     }
   }
   return hooks;

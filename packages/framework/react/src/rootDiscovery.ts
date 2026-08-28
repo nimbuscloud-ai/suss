@@ -13,6 +13,8 @@
 
 import { Node } from "ts-morph";
 
+import { importedNamesOf, importedRootsOf } from "@suss/adapter-typescript";
+
 import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
 import type { CallExpression, Identifier, SourceFile } from "ts-morph";
 
@@ -21,14 +23,9 @@ const BOOT_MODULES = ["react-dom/client", "react-dom"];
 
 function importedBootNames(sourceFile: SourceFile): Set<string> {
   const names = new Set<string>();
-  for (const decl of sourceFile.getImportDeclarations()) {
-    if (!BOOT_MODULES.includes(decl.getModuleSpecifierValue())) {
-      continue;
-    }
-    for (const named of decl.getNamedImports()) {
-      if (BOOT_CALLEES.includes(named.getName())) {
-        names.add(named.getAliasNode()?.getText() ?? named.getName());
-      }
+  for (const [local, canonical] of importedNamesOf(sourceFile, BOOT_MODULES)) {
+    if (BOOT_CALLEES.includes(canonical)) {
+      names.add(local);
     }
   }
   return names;
@@ -36,21 +33,7 @@ function importedBootNames(sourceFile: SourceFile): Set<string> {
 
 /** Namespace and default imports of react-dom, for `ReactDOM.render`. */
 function importedDomNamespaces(sourceFile: SourceFile): Set<string> {
-  const names = new Set<string>();
-  for (const decl of sourceFile.getImportDeclarations()) {
-    if (!BOOT_MODULES.includes(decl.getModuleSpecifierValue())) {
-      continue;
-    }
-    const namespace = decl.getNamespaceImport()?.getText();
-    if (namespace !== undefined) {
-      names.add(namespace);
-    }
-    const defaultImport = decl.getDefaultImport()?.getText();
-    if (defaultImport !== undefined) {
-      names.add(defaultImport);
-    }
-  }
-  return names;
+  return importedRootsOf(sourceFile, BOOT_MODULES);
 }
 
 function isBootRender(

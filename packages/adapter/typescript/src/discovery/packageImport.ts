@@ -23,6 +23,7 @@ import {
   type FactoryProvenance,
   trackFactoryBindings,
 } from "./factoryTracking.js";
+import { namedImportsOf } from "./importScan.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 
 /**
@@ -94,27 +95,12 @@ export function discoverPackageImports(
   // import from a targeted package.
   const localToExport = new Map<string, FactoryProvenance>();
 
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    const moduleSpec = importDecl.getModuleSpecifierValue();
-    if (!targetPackages.has(moduleSpec)) {
-      continue;
-    }
-    const { packageName, subPath } = splitPackageSpec(moduleSpec);
-    for (const namedImport of importDecl.getNamedImports()) {
-      const imported = namedImport.getName();
-      const local = namedImport.getAliasNode()?.getText() ?? imported;
-      localToExport.set(local, {
-        packageName,
-        exportPath: [...subPath, imported],
-      });
-    }
-    const defaultImport = importDecl.getDefaultImport();
-    if (defaultImport !== undefined) {
-      localToExport.set(defaultImport.getText(), {
-        packageName,
-        exportPath: [...subPath, "default"],
-      });
-    }
+  for (const one of namedImportsOf(sourceFile, [...targetPackages])) {
+    const { packageName, subPath } = splitPackageSpec(one.specifier);
+    localToExport.set(one.local, {
+      packageName,
+      exportPath: [...subPath, one.canonical],
+    });
   }
 
   if (localToExport.size === 0) {

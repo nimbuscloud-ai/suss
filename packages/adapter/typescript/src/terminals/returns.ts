@@ -12,6 +12,7 @@ import {
   type ReturnStatement,
 } from "ts-morph";
 
+import { importedRootsOf, namedImportsOf } from "../discovery/importScan.js";
 import { endLineOf, startLineOf } from "../lines.js";
 import { parseConditionExpression } from "../predicates.js";
 import { extractShape } from "../shapes/shapes.js";
@@ -528,24 +529,13 @@ function importedFromAny(
   modules: ReadonlyArray<string>,
 ): boolean {
   const name = callee.getText();
-  for (const declaration of callee.getSourceFile().getImportDeclarations()) {
-    const specifier = declaration.getModuleSpecifierValue();
-    const matches = modules.some(
-      (module) => specifier === module || specifier.startsWith(`${module}/`),
-    );
-    if (!matches) {
-      continue;
-    }
-    for (const named of declaration.getNamedImports()) {
-      if ((named.getAliasNode() ?? named.getNameNode()).getText() === name) {
-        return true;
-      }
-    }
-    if (declaration.getDefaultImport()?.getText() === name) {
+  const sourceFile = callee.getSourceFile();
+  for (const one of namedImportsOf(sourceFile, modules, { subpaths: true })) {
+    if (one.local === name) {
       return true;
     }
   }
-  return false;
+  return importedRootsOf(sourceFile, modules, { subpaths: true }).has(name);
 }
 
 /**

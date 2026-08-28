@@ -13,6 +13,7 @@ import {
   resolveGraphqlDocument,
   unreadableDocument,
 } from "./graphqlShared.js";
+import { namedImportsOf } from "./importScan.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -36,18 +37,10 @@ export function discoverGraphqlHookCalls(
   const operationTypeByHook = new Map<string, GraphqlOperationType>(
     match.hooks.map((h) => [h.hookName, h.operationType]),
   );
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    if (importDecl.getModuleSpecifierValue() !== match.importModule) {
-      continue;
-    }
-    for (const named of importDecl.getNamedImports()) {
-      const canonical = named.getName();
-      const operationType = operationTypeByHook.get(canonical);
-      if (operationType === undefined) {
-        continue;
-      }
-      const local = named.getAliasNode()?.getText() ?? canonical;
-      hookByLocal.set(local, { canonical, operationType });
+  for (const one of namedImportsOf(sourceFile, [match.importModule])) {
+    const operationType = operationTypeByHook.get(one.canonical);
+    if (operationType !== undefined) {
+      hookByLocal.set(one.local, { canonical: one.canonical, operationType });
     }
   }
   if (hookByLocal.size === 0) {
