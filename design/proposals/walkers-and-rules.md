@@ -1,5 +1,20 @@
 # What should be facts, and what should stay a walker
 
+This is the one design for the fact layer and its consumers, and the
+foundation 0.20.0 builds on. It was first written from measurements on
+the TypeScript adapter; a full audit across all three adapters
+(2026-08-28) folded in the sections on bypasses, the recognize surface,
+cross-adapter parity, and the migration constraints, and set the order.
+
+The policy the audit settled: when a question is "follow this value,
+name, or module one more step", the answer is a one-hop fact plus a
+rule, never a new walk. A walk that exists only because no fact does is
+debt. What stays imperative is syntax normalization (peeling casts,
+counting application layers, reading a decorator's name), per-function
+structural analysis (the path engine, shape extraction), and any
+closure whose order the language defines (Ruby's method resolution
+order).
+
 The resolution rules are one package. Discovery, terminal matching,
 assembly and the whole checker are imperative TypeScript, and that is
 where the bugs come from. Four recent ones, all traced:
@@ -70,7 +85,7 @@ store; "walks" means it works the same question out itself.
 | `discovery/graphqlShared.ts` | 789 | what document does this argument denote | asks (`resolveWrittenValue`) | 3 graphql recognizers |
 | `discovery/registrationCall.ts` | 382 | what did this registration call hand a route to | asks (`resolveCallable`, `resolveObject`) | none |
 | `discovery/registrationTemplate.ts` | 309 | what routes does one helper call represent | walks | `registrationLoop` |
-| `discovery/resolverMap.ts` | 307 | which function implements which `Type.field` | walks, and is never given the store | `registrationTemplate`, `registrationLoop` |
+| `discovery/resolverMap.ts` | 307 | which function implements which `Type.field` | asks (has the store since #674's round) | `registrationTemplate`, `registrationLoop` |
 | `discovery/packageImport.ts` | 239 | which functions call into a targeted package | walks, never given the store | `factoryTracking` |
 | `discovery/registrationLoop.ts` | 234 | which loop over a route array registers what | walks | `resolverMap` |
 | `discovery/factorySurface.ts` | 183 | what callable surface does a factory expose | walks | none |
@@ -94,6 +109,67 @@ store; "walks" means it works the same question out itself.
 | `checker/coverage/providerCoverage.ts` | 204 | is every status handled | walks | `consumerSatisfaction`, `contractConsistency` |
 | `checker/scope/unitScope.ts` | 88 | does this code run in this unit | predicate, callers supply the path test | 3 call sites |
 | `ir-core/typeShapeMatch.ts` | 204 | does this body satisfy that one | recursive compare | 5 call sites |
+
+### The store is bypassed where it matters most
+
+The 2026-08-28 audit found the sharpest cases are not modules missing
+from the table above but places the store exists and is not asked.
+
+- **`callOps.ts:461` prefers syntax over the store.** The value step
+  every declared pack rides on reads
+  `variableFor(step)?.getInitializer() ?? resolve(step)`: the local
+  initializer wins, and the store is asked only when there is none. A
+  local `const client = wrap(base)` short-circuits the `unwraps`
+  rules, `settled` caps at four hops and returns null in a way that
+  makes a deep chain and a cycle look identical, and the curried
+  creator (`create<T>()(init)`) dies in `rootIdentifier`, which
+  returns null for a callee that is itself a call. One preference
+  flip reaches every declared pack.
+- **`packageImport.ts` and `factoryTracking.ts` are never handed the
+  store.** Their headers enumerate nine recognized call spellings and
+  five out-of-scope ones (reassignment, parameter passthrough,
+  namespace imports, re-exports, receiver chains); every out-of-scope
+  spelling is an existing relation (`moduleExport`, `passesArgument`,
+  `binds`). This walker is why #429 is open, and the injected-client
+  shape from the field report is the same missing edge.
+- **`moduleExports.ts` asks ts-morph instead of `moduleExport/3`.**
+  The file is a stack-machine rewrite of ts-morph's recursive alias
+  resolution, with three `RangeError` catches and the stderr fallback
+  that drops exports (#177). The relation is already derived,
+  terminating, and stackless; deleting the walk deletes the fallback.
+- **`ReceiverOrigin` has two members and needs six.** `factoryMade`,
+  `imported`, `anchored`, `inherits`, and `global` (#542) are each an
+  entry in every adapter's dispatch table today, and all of them are
+  `comesFrom` queries. The recognize ops that exist to compensate for
+  walk distance (`callee()`, the eight-hop receiver budget,
+  `namedCallee`) shrink with them; mongoose's three-way
+  `modelFactoryCall(receiver) ?? callee() ?? receiver.receiver()`
+  disjunction is the pattern at its clearest.
+- **Mount composition is a closure in TypeScript and a one-hop
+  abstention in Python.** `mountPrefix.ts` hand-rolls a memoized,
+  cycle-guarded closure with its own agreement semantics; the Python
+  `routers.ts` abstains one hop deep, which is the unresolved half of
+  #251 and 148 unpathed routes on the field corpus. As
+  `mounted(child, parent, prefix)` facts and one `mountPath` closure,
+  both adapters compute the same paths, and a router mounted twice is
+  two derivations, which is #689's boundary-per-mount falling out of
+  the same rule.
+- **Ruby joins facts out of the `Database` by hand.** The Ruby
+  adapter's `storage.ts` recursively filters `extendsNamed`,
+  `extends`, and `binds` tuples in TypeScript, per call site, over
+  relations already sitting in the engine. Python's `storage.ts` is the
+  same shape one level up: the rules do one hop and imperative code
+  does the star, with hand-rolled demand management. Each becomes two
+  rules (`reachesBase`; `reachesStorage` over `bodyCallsDeep`).
+- **The one-hop origin predicates.** `isImportedFrom` and
+  `methodDeclaredIn` are path-substring tests with a single alias
+  hop; `comesFrom` and `callsInto` already cover both transitively.
+
+The long tail is the same shape at smaller stakes: `readName` at two
+hops, `astResolve` at eight, three separate `.then`-chain walks, the
+GraphQL fragment splice. The structural depth caps (`unwrap`, shape
+extraction, path enumeration) are not on the list; they bound
+recursion over one expression, not a relation.
 
 ### The same question, answered several ways
 
@@ -378,6 +454,13 @@ needs, is a walker and should stay one.
   shares one bucket. That is a bug to fix in place, not a candidate to
   move.
 - **The checker's negative passes**, until resume is per-stratum.
+- **Syntax normalization.** Peeling casts and parentheses, counting
+  the application layers of one expression, reading a decorator's
+  name. Rules never see syntax; this is the fact emitter's own step.
+- **Ruby's method resolution order** (`ancestry.ts`). The closure is
+  order-sensitive by the language's definition, so it stays imperative
+  or becomes a rule with an explicit precedence column, and not
+  before.
 
 ## The questions this has to answer
 
@@ -409,17 +492,61 @@ default-export naming, or the three pins that are blocked on
 stratification and ambiguity. It does not build a control-flow graph.
 It does not touch the evaluator.
 
-## Order
+## What the migration must handle
 
-1. The base facts for the three binding cases the fuzzer pins. It is the
-   smallest, and the fuzzer measures it in CI.
-2. The store in `namedExport`'s default-export pass and in
-   `resolverMap`, with `--datalog-profile` before and after on
-   twenty-front and saleor-storefront.
-3. One path convention, owned in one place, with the three `fileInScope`
-   callbacks deleted.
-4. The seven import readers, retired against `imports`.
-5. Memoise `helperResolution` and resolve its callee through the store,
-   leaving the guard evaluation where it is.
-6. Measure the reassigned-name count on one large corpus. That number
-   decides whether scoped reaching definitions is worth writing.
+- **Negation stays unaffordable** until resume is per-stratum. The
+  mount agreement policy ("two resolved prefixes that disagree mean no
+  answer") is naturally negation-shaped, so the closure derives every
+  mount path and the agreement policy stays a post-processing step
+  over derived tuples, the way the flow pass ships `may*` variants
+  instead of negating.
+- **Recognition needs its facts before it runs.** Recognizers fire
+  synchronously inside the extraction walk, so derived relations must
+  exist when they ask. The store's demand-driven evaluation already
+  covers this at the sites that ask today; the change is wiring, not
+  pipeline surgery: hand the store to discovery the way
+  `registrationTemplate` and `resolverMap` already take it.
+- **Facts have no cache; summaries do.** Every run re-extracts facts
+  from scratch, and the summary cache's dependency edges already come
+  from the store's walk recording, on null answers included. A
+  per-file fact cache is the enabler to measure, not assume: the
+  store's memo plus `fullyExtracted` may already bound the cost
+  within a run, and `--datalog-profile` decides whether persistence
+  pays.
+- **The single-answer discipline survives the move.** The store
+  refuses two candidates rather than picking one; `functionTargetOf`
+  takes the first that resolves. Migrated call sites adopt the
+  store's refusal, and the differential fuzzer catches what that
+  changes.
+
+## Order, for 0.20.0
+
+1. The base facts for the three binding cases the fuzzer pins. It is
+   the smallest, and the fuzzer measures it in CI.
+2. The preference flip in `callOps.ts` and the store into
+   `packageImport` and `factoryTracking`, because they reach every
+   pack and close the injected-client shape (#429).
+3. The store in `namedExport`'s default-export pass, with
+   `--datalog-profile` before and after on twenty-front and
+   saleor-storefront.
+4. `moduleExports` onto `moduleExport/3`. The #177 fallback goes with
+   it.
+5. One path convention, owned in one place, with the three
+   `fileInScope` callbacks deleted.
+6. Python mount facts plus the shared `mountPath` closure, which
+   finishes #251 and unlocks #689.
+7. The seven import readers, retired against `imports`, and the
+   one-hop origin predicates against `comesFrom`.
+8. The `ReceiverOrigin` members as `comesFrom` queries (#542). The
+   recognize ops surface shrinks with them.
+9. Ruby and Python storage closures as rules, the first parity test
+   for the claim that layers above facts come along unchanged.
+10. Memoise `helperResolution` and resolve its callee through the
+    store, leaving the guard evaluation where it is.
+11. Measure the reassigned-name count on one large corpus. That
+    number decides whether scoped reaching definitions is worth
+    writing.
+
+Each step ships behind the existing gates: summaries byte-identical
+where discovery finds the same units, the fuzzer's pinned bugs as the
+retirement list, dogfood counts, and engine time from the profile.
