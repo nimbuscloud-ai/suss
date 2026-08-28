@@ -15,7 +15,7 @@ pack it happened to, and the numbers behind it. The codes are a fixed
 list, so `grep no-output` over a CI log finds every pack it happened to
 with the counts on the same line.
 
-Three of the codes are about the run in front of you and always print. The
+Four of the codes are about the run in front of you and always print. The
 other four are about how a pack was built and wait for `--explain`.
 
 | Code | Prints | What it says |
@@ -23,6 +23,7 @@ other four are about how a pack was built and wait for `--explain`.
 | `threw` | always | A pack's hook threw on a file, and that file was skipped. |
 | `no-output` | always | A pack got as far as one stage and produced nothing at the next. |
 | `double-match` | always | Two patterns in one pack claimed the same unit. |
+| `no-units` | always | A recognizer pack had no units to look inside, because nothing in the run discovers any. |
 | `no-version` | `--explain` | The pack declares no version. |
 | `fn-link` | `--explain` | A declared pack wrote a link as a function instead of data. |
 | `ast-link` | `--explain` | A declared pack reads the syntax tree directly. |
@@ -67,6 +68,18 @@ The pack's hook threw, the run carried the remaining files, and the
 file that threw contributed nothing. Every count for that pack is
 lower than what is in your code, so treat the numbers as a floor. This
 is a bug in the pack rather than in your project.
+
+## `no-units`
+
+```
+no-units  prisma  12 gated files, and no pack in this run discovered a unit in them. ...
+```
+
+A recognizer pack reads calls inside units another pack discovers, so
+running one on its own walks nothing and writes nothing. The line says
+which pack to add: the framework pack that finds this project's
+handlers, or `suss init` to work it out. This is a gap in the command
+line rather than in your code or in the pack.
 
 ## `double-match`
 
