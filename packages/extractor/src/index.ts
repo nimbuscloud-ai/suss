@@ -19,7 +19,9 @@ import {
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 
-import { inputReadsOf } from "./inputReads.js";
+import { type InputRead, inputReadsOf, mergeInputReads } from "./inputReads.js";
+
+export type { InputRead } from "./inputReads.js";
 
 import type {
   BehavioralSummary,
@@ -311,6 +313,12 @@ export interface RawCodeStructure {
    */
   bodyContent?: BodyContent;
   dependencyCalls: RawDependencyCall[];
+  /**
+   * Reads the adapter saw in the body that never flow into a condition
+   * or an output value, a render tree's `props.title` say. Merged into
+   * `inputReads` beside the derived ones.
+   */
+  extraInputReads?: InputRead[];
   declaredContract: RawDeclaredContract | null;
   /** The property a consumer goes through to get at the body, `data` for
    * axios say, so the checker can unwrap it without knowing each pack. */
@@ -549,10 +557,13 @@ export function assembleSummary(
   const inputs: Input[] = raw.parameters.map(paramToInput);
 
   const metadata = buildMetadata(raw);
-  const reads = inputReadsOf({
-    conditions: transitions.map((t) => t.conditions),
-    values: transitions.flatMap((t) => valuesOfOutput(t.output)),
-  });
+  const reads = mergeInputReads(
+    inputReadsOf({
+      conditions: transitions.map((t) => t.conditions),
+      values: transitions.flatMap((t) => valuesOfOutput(t.output)),
+    }),
+    raw.extraInputReads ?? [],
+  );
 
   return {
     kind: raw.identity.kind,

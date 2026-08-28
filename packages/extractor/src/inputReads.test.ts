@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { inputReadsOf } from "./inputReads.js";
+import { inputReadsOf, mergeInputReads } from "./inputReads.js";
 
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
 
@@ -94,5 +94,21 @@ describe("what a unit reads", () => {
     expect(inputReadsOf({ conditions: [[a, b]], values: [] })).toEqual(
       inputReadsOf({ conditions: [[b, a]], values: [] }),
     );
+  });
+});
+
+describe("mergeInputReads", () => {
+  it("keeps each read once, derived first", () => {
+    const merged = mergeInputReads(
+      [{ input: "props", path: ["title"] }],
+      [
+        { input: "props", path: ["title"] },
+        { input: "props", path: ["body"] },
+      ],
+    );
+    expect(merged).toEqual([
+      { input: "props", path: ["title"] },
+      { input: "props", path: ["body"] },
+    ]);
   });
 });
