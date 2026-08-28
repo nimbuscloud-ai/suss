@@ -1466,6 +1466,50 @@ const storagePack: PatternPack = {
 };
 
 describe("createTypeScriptAdapter: reachable closure", () => {
+  it("follows a JSX reference to a component nothing exports", async () => {
+    const componentPack: PatternPack = {
+      name: "test-components",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        { kind: "component", match: { type: "namedExport", names: ["Page"] } },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+    };
+    const project = createTestProject();
+    project.createSourceFile(
+      "page.tsx",
+      `
+      function Avatar({ src }: { src: string }) {
+        return <img src={src} />;
+      }
+
+      export function Page() {
+        return <div><Avatar src="/me.png" /></div>;
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [componentPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const byName = Object.fromEntries(
+      summaries.map((s) => [s.identity.name, s]),
+    );
+
+    expect(byName.Page).toBeDefined();
+    expect(byName.Avatar).toBeDefined();
+    expect(byName.Avatar.kind).toBe("library");
+    expect(byName.Avatar.identity.boundaryBinding?.recognition).toBe(
+      "reachable",
+    );
+  });
+
   it("discovers internal helpers transitively called from a handler", async () => {
     const project = createTestProject();
     project.createSourceFile(
