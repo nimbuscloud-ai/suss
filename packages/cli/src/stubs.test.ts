@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loadStubs, stubOverlayOf, withStubOptions } from "./stubs.js";
+import {
+  loadStubs,
+  stubDeprecationNote,
+  stubOverlayOf,
+  withStubOptions,
+} from "./stubs.js";
 
 const created: string[] = [];
 
@@ -193,5 +198,21 @@ describe("merging the overlay into a pack's options", () => {
     });
 
     expect(withStubOptions("express", { a: 1 }, overlay)).toEqual({ a: 1 });
+  });
+});
+
+describe("the deprecation note for stub-covered options", () => {
+  it("points a configured option at the stub file", () => {
+    const note = stubDeprecationNote("express", {
+      registrationHelpers: [{ helperName: "mountHealth" }],
+    });
+    expect(note).toContain("registrationHelpers option on the express pack");
+    expect(note).toContain("suss stub draft");
+  });
+
+  it("says nothing for uncovered options or packs", () => {
+    expect(stubDeprecationNote("express", { otherOption: 1 })).toBeNull();
+    expect(stubDeprecationNote("react", { anything: 1 })).toBeNull();
+    expect(stubDeprecationNote("express", undefined)).toBeNull();
   });
 });

@@ -32,6 +32,7 @@ import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
 import {
   loadStubs,
   type StubOverlay,
+  stubDeprecationNote,
   stubOverlayOf,
   withStubOptions,
 } from "./stubs.js";
@@ -356,6 +357,11 @@ function withStubbedOptions(
   loaded: LoadedFactory,
   overlay: StubOverlay | undefined,
 ): LoadedFactory {
+  const note = stubDeprecationNote(loaded.name, loaded.options);
+  if (note !== null) {
+    process.stderr.write(note);
+  }
+
   if (overlay === undefined || !overlay.has(loaded.name)) {
     return loaded;
   }

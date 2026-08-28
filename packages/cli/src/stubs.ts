@@ -195,6 +195,57 @@ function routeStatement(
 }
 
 /**
+ * Option keys a dependency stub can state, per pack. A project still
+ * configuring one gets a pointer at load time; the options work
+ * through one more release, then go (#673).
+ */
+const STUB_COVERED_OPTIONS: Record<string, string[]> = {
+  "nestjs-rest": ["classDecorators"],
+  "nestjs-microservices": ["classDecorators"],
+  "nestjs-graphql": ["classDecorators"],
+  express: ["registrationHelpers"],
+  fastify: ["registrationHelpers"],
+  hono: ["registrationHelpers"],
+  "aws-sqs": ["producers"],
+  "aws-eventbridge": ["producers"],
+  "aws-dynamodb": ["requestFunctions"],
+  "aws-lambda": ["subjectFactories"],
+  axios: ["factories"],
+  fastapi: ["wrapperModules"],
+  "flask-restx": ["wrapperModules"],
+  "graphql-ruby": ["baseClassNames"],
+};
+
+/** Null when the pack's supplied options include nothing a stub covers. */
+export function stubDeprecationNote(
+  packName: string,
+  options: unknown,
+): string | null {
+  const covered = STUB_COVERED_OPTIONS[packName];
+  if (
+    covered === undefined ||
+    options === null ||
+    typeof options !== "object"
+  ) {
+    return null;
+  }
+
+  const used = covered.filter(
+    (key) => (options as Record<string, unknown>)[key] !== undefined,
+  );
+  if (used.length === 0) {
+    return null;
+  }
+
+  const plural = used.length > 1;
+  return (
+    `[suss] The ${used.join(" and ")} option${plural ? "s" : ""} on the ${packName} pack ` +
+    `describe${plural ? "" : "s"} a dependency, and a stub file in suss/stubs/ is where that now goes. ` +
+    "Start one with: suss stub draft <package>. The option keeps working for one more release.\n"
+  );
+}
+
+/**
  * The options a pack factory gets, with the overlay's items appended
  * under each routed key. The stated options come first, so a project
  * that configures the same option by hand keeps its entries.
