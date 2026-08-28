@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3804,
-      "covered": 3510,
+      "total": 3819,
+      "covered": 3524,
       "skipped": 0,
       "pct": 92.27
     },
     "statements": {
-      "total": 3911,
-      "covered": 3612,
+      "total": 3925,
+      "covered": 3625,
       "skipped": 0,
       "pct": 92.35
     },
     "functions": {
-      "total": 815,
-      "covered": 764,
+      "total": 819,
+      "covered": 768,
       "skipped": 0,
-      "pct": 93.74
+      "pct": 93.77
     },
     "branches": {
-      "total": 2631,
-      "covered": 2131,
+      "total": 2635,
+      "covered": 2138,
       "skipped": 0,
-      "pct": 80.99
+      "pct": 81.13
     },
     "branchesTrue": {
       "total": 0,
@@ -33,36 +33,36 @@
   },
   "src/ask.ts": {
     "lines": {
-      "total": 192,
-      "covered": 184,
+      "total": 196,
+      "covered": 187,
       "skipped": 0,
-      "pct": 95.83
+      "pct": 95.4
     },
     "functions": {
-      "total": 60,
-      "covered": 57,
+      "total": 61,
+      "covered": 58,
       "skipped": 0,
-      "pct": 95
+      "pct": 95.08
     },
     "statements": {
-      "total": 201,
-      "covered": 193,
+      "total": 205,
+      "covered": 196,
       "skipped": 0,
-      "pct": 96.01
+      "pct": 95.6
     },
     "branches": {
-      "total": 167,
-      "covered": 141,
+      "total": 169,
+      "covered": 145,
       "skipped": 0,
-      "pct": 84.43
+      "pct": 85.79
     }
   },
   "src/askCalls.ts": {
     "lines": {
-      "total": 32,
-      "covered": 31,
+      "total": 31,
+      "covered": 30,
       "skipped": 0,
-      "pct": 96.87
+      "pct": 96.77
     },
     "functions": {
       "total": 8,
@@ -71,42 +71,42 @@
       "pct": 100
     },
     "statements": {
-      "total": 35,
-      "covered": 34,
+      "total": 34,
+      "covered": 33,
       "skipped": 0,
-      "pct": 97.14
+      "pct": 97.05
     },
     "branches": {
-      "total": 24,
-      "covered": 19,
+      "total": 22,
+      "covered": 18,
       "skipped": 0,
-      "pct": 79.16
+      "pct": 81.81
     }
   },
   "src/askCaveats.ts": {
     "lines": {
-      "total": 6,
-      "covered": 6,
+      "total": 18,
+      "covered": 18,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 4,
-      "covered": 4,
-      "skipped": 0,
-      "pct": 100
-    },
-    "statements": {
       "total": 7,
       "covered": 7,
       "skipped": 0,
       "pct": 100
     },
-    "branches": {
-      "total": 4,
-      "covered": 3,
+    "statements": {
+      "total": 18,
+      "covered": 18,
       "skipped": 0,
-      "pct": 75
+      "pct": 100
+    },
+    "branches": {
+      "total": 8,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 87.5
     }
   },
   "src/askGrounding.ts": {
