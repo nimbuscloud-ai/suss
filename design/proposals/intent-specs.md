@@ -479,6 +479,34 @@ warning while the run continues. A doc that fails schema validation is
 broken, and there is no sound way to check part of it, so the author has
 to fix it before the run means anything.
 
+## The frontend joins, seen from intent
+
+The frontend primitives that shipped in late August 2026 (render edges,
+prop reads, client stores, server actions, the query-hook schedule) all
+pair through the same `ir-core` primitives intent uses, so this section
+records how each lines up and what the next frontend build owes this
+layer.
+
+- **Client stores** ride storage semantics, so `boundaryKey` works
+  today: boundary intent can say "only cart actions write
+  `client-store:useCartStore`" and pair with no new machinery. A store
+  is also concept state in the v0.3 sense, with its writers as the
+  concept's actions.
+- **Server actions are keyless.** An action unit gets the fallback
+  `function-call` binding with no module or export name, so intent has
+  nothing stable to reference one by. Giving actions a keyed identity
+  comes before boundary intent can name them.
+- **Form-to-API is workflow-shaped.** The remaining frontend join
+  (form fields against the endpoint that receives them) is an ordered
+  chain of hops, which is what v0.2 workflow intent declares. It gets
+  built as hops the workflow checker can also walk, never as a one-off
+  pass with its own join.
+- **Components are referenced by export identity.** Render edges join
+  on file and name internally, which is fine for the checker; an
+  intent artifact that references a component uses the exported name,
+  because a file path in an intent doc goes stale the way it would in
+  a comment.
+
 ## Out of scope, deferred
 
 - **Backward comparison (concept-shape audit).** "Did we ship a
