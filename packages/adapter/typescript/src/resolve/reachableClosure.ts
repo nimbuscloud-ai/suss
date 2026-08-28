@@ -246,24 +246,45 @@ interface ScanResult {
   readonly stops: UnfollowedCall[];
 }
 
+/**
+ * A JSX reference is a render-time call: `<UserCard/>` runs `UserCard`
+ * the way `userCard()` would, so the closure follows it. Host tags are
+ * lowercase and member tags (`<Foo.Bar/>`) wait on richer resolution.
+ */
+function resolveJsxReference(
+  node: Node,
+): { tag: string; outcome: CallOutcome } | null {
+  if (!Node.isJsxOpeningElement(node) && !Node.isJsxSelfClosingElement(node)) {
+    return null;
+  }
+  const tag = node.getTagNameNode();
+  if (!Node.isIdentifier(tag) || !/^[A-Z]/.test(tag.getText())) {
+    return null;
+  }
+  const name = tag.getText();
+  const declarations = declarationsBehind(tag.getSymbol());
+  for (const decl of declarations) {
+    const resolved = resolveDecl(decl, name);
+    if (resolved !== null) {
+      return { tag: name, outcome: { kind: "followed", candidate: resolved } };
+    }
+  }
+  return {
+    tag: name,
+    outcome: {
+      kind: "stopped",
+      stop: { callee: name, reason: classifyStop(declarations) },
+    },
+  };
+}
+
 function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
   const candidates: ReachableCandidate[] = [];
   const stops: UnfollowedCall[] = [];
   const seen = new Set<string>();
 
-  func.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    const calleeText = normalizeCallee(node.getExpression().getText());
-    const outcome = resolveCallee(node, calleeText, scan);
-    if (outcome === null) {
-      return;
-    }
+  const record = (outcome: CallOutcome): void => {
     if (outcome.kind === "stopped") {
-      // One line per callee, however many times the body calls it: a
-      // loop calling the same unresolved method twenty times is one
-      // thing a reader cannot see, not twenty.
       const stopKey = `${outcome.stop.reason}:${outcome.stop.callee}`;
       if (!seen.has(stopKey) && worthRecording(outcome.stop.reason)) {
         seen.add(stopKey);
@@ -277,6 +298,26 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     }
     seen.add(key);
     candidates.push(outcome.candidate);
+  };
+
+  func.forEachDescendant((node) => {
+    const jsx = resolveJsxReference(node);
+    if (jsx !== null) {
+      record(jsx.outcome);
+      return;
+    }
+    if (!Node.isCallExpression(node)) {
+      return;
+    }
+    const calleeText = normalizeCallee(node.getExpression().getText());
+    const outcome = resolveCallee(node, calleeText, scan);
+    if (outcome === null) {
+      return;
+    }
+    // One record per callee, however many times the body calls it: a
+    // loop calling the same unresolved method twenty times is one
+    // thing a reader cannot see, not twenty.
+    record(outcome);
   });
 
   return { candidates, stops };
