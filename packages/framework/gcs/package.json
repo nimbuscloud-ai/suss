@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-gcs",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "type": "module",
   "description": "Says which Google Cloud Storage buckets and objects a TypeScript service reads and writes.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/recognize": "0.15.0"
+    "@suss/recognize": "0.16.0"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
