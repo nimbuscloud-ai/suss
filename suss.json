@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "read": [
+    {
+      "kind": "extract",
+      "language": "typescript",
+      "project": "tsconfig.suss.json",
+      "packs": ["package-exports"]
+    }
+  ]
+}
