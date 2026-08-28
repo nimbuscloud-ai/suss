@@ -148,6 +148,10 @@ import {
 import { createTimer, type Timer, type TimingReport } from "./timing.js";
 import { adapterCodeStamp, computeAdapterPacksDigest } from "./version.js";
 import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
+import {
+  expandWorkspacePatterns,
+  workspaceExpansionStamp,
+} from "./workspacePatterns.js";
 
 import type {
   BehavioralSummary,
@@ -1843,8 +1847,21 @@ function loadRunFiles(
 }
 
 export function createTypeScriptAdapter(
-  config: TypeScriptAdapterConfig,
+  suppliedConfig: TypeScriptAdapterConfig,
 ): TypeScriptAdapter {
+  // Workspace-marked patterns become concrete per-package ones before
+  // anything else reads the pack list.
+  const config: TypeScriptAdapterConfig = {
+    ...suppliedConfig,
+    frameworks: expandWorkspacePatterns(
+      suppliedConfig.frameworks,
+      suppliedConfig.projectRoot ??
+        (suppliedConfig.tsConfigFilePath !== undefined
+          ? path.dirname(suppliedConfig.tsConfigFilePath)
+          : undefined),
+    ),
+  };
+
   const project =
     config.project ??
     new Project(
@@ -1886,7 +1903,7 @@ export function createTypeScriptAdapter(
         ? { name: p.name, version: p.version }
         : { name: p.name },
     ),
-  )}|${extractionConfigStamp(config)}`;
+  )}|${extractionConfigStamp(config)}|ws:${workspaceExpansionStamp(config.frameworks)}`;
 
   const packWrappers = config.frameworks.flatMap(
     (pack) => pack.transparentWrappers ?? [],
