@@ -43,7 +43,9 @@ suss ask 'why does getOrder reach dynamodb:orders' --dir summaries/
 suss contract --from openapi spec.yaml [-o provider.json]
 suss contract --from openapi https://example.com/openapi.yaml [-o provider.json]
 suss contract --from cloudformation template.yaml [-o provider.json]
-suss contract --from intent intents/ [-o intent.json]
+
+# Check the code against intent docs (*.intent / *.prd)
+suss check --dir summaries/ --intent intents/
 ```
 
 ### Options

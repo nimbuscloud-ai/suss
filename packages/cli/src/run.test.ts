@@ -865,3 +865,57 @@ describe("runCli stub", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("runCli field-report fixes", () => {
+  it("prints the installed version for --version", async () => {
+    const { exit, io } = await capture(() => runCli(["--version"]));
+    expect(exit).toBe(0);
+    expect(io.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it("answers ask --dir on a missing directory with a sentence", async () => {
+    const missing = path.join(tmpDir, "nowhere");
+    const { exit, io } = await capture(() =>
+      runCli(["ask", "what reads x", "--dir", missing]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("No directory at");
+    expect(io.stderr).not.toContain("at readSummariesFromDir");
+  });
+
+  it("answers an unparseable ask --json question as JSON", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    const { exit, io } = await capture(() =>
+      runCli(["ask", "flurble the wombat", "--dir", tmpDir, "--json"]),
+    );
+    expect(exit).toBe(1);
+    const parsed = JSON.parse(io.stdout) as { answer: null; message: string };
+    expect(parsed.answer).toBeNull();
+    expect(parsed.message).toContain("seven questions");
+  });
+
+  it("answers a check --json usage error as JSON on stdout", async () => {
+    const missing = path.join(tmpDir, "nowhere");
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", missing, "--json"]),
+    );
+    expect(exit).toBe(1);
+    const parsed = JSON.parse(io.stdout) as { error: string };
+    expect(parsed.error).toContain("No directory at");
+  });
+
+  it("names the incompleteness note instead of skipping it as unreadable", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    writeJson("consumer.json", [matchingConsumer]);
+    fs.writeFileSync(
+      path.join(tmpDir, "provider.incomplete.json"),
+      JSON.stringify({ filesWithUnreadableExports: ["src/a.ts"] }),
+    );
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("incomplete");
+    expect(io.stderr).not.toContain("could not read as summaries");
+  });
+});

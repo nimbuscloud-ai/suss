@@ -73,6 +73,13 @@ describe("findSuppressionsFile", () => {
   it("returns null when no file exists anywhere up the chain", () => {
     expect(findSuppressionsFile(summaries)).toBeNull();
   });
+
+  it("finds an extensionless .sussignore, the name the docs use", () => {
+    const file = path.join(root, ".sussignore");
+    fs.writeFileSync(file, "version: 1\nrules: []\n");
+    expect(findSuppressionsFile(summaries)).toBe(file);
+    expect(loadSuppressions(file)).toEqual([]);
+  });
 });
 
 describe("loadSuppressions", () => {

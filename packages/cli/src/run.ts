@@ -22,7 +22,7 @@ import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
 import { stubDraft } from "./stubDraftCommand.js";
-import { printUpdateNoticeIfBehind } from "./updateNotice.js";
+import { installedVersion, printUpdateNoticeIfBehind } from "./updateNotice.js";
 import { UsageError } from "./usageError.js";
 
 import type { ContractSource } from "./contract.js";
@@ -43,6 +43,7 @@ Usage:
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
   suss stub draft <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
+  suss --version
 
 Commands:
   init      Work out which packs this project needs and offer to set them up.
@@ -205,6 +206,12 @@ export async function runCli(args: string[]): Promise<number> {
       throw err;
     }
 
+    // A --json caller pipes stdout to a parser, so the reason has to
+    // arrive as JSON there; the sentence stays on stderr for a person.
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ error: sentence })}\n`);
+    }
+
     process.stderr.write(`${sentence}\n`);
     return 1;
   }
@@ -236,6 +243,11 @@ async function dispatch(args: string[]): Promise<number> {
   const flags = args.slice(0, endOfFlags(args));
   if (args.length === 0 || flags.some((a) => a === "--help" || a === "-h")) {
     process.stdout.write(`${USAGE}\n`);
+    return 0;
+  }
+
+  if (flags.some((a) => a === "--version" || a === "-v")) {
+    process.stdout.write(`${installedVersion() ?? "unknown"}\n`);
     return 0;
   }
 

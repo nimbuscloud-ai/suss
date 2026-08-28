@@ -30,8 +30,13 @@ const KNOWN_FINDING_KINDS: ReadonlySet<string> = new Set([
   ...IntentFindingKindSchema.options,
 ]);
 
-/** Candidate filenames checked in order when no --sussignore is given. */
+/**
+ * Candidate filenames checked in order when no --sussignore is given.
+ * The extensionless name is what the docs call the file, and it
+ * parses as YAML.
+ */
 export const DEFAULT_SUPPRESSIONS_FILENAMES = [
+  ".sussignore",
   ".sussignore.yml",
   ".sussignore.yaml",
   ".sussignore.json",
