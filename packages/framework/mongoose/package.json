@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-mongoose",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "type": "module",
   "description": "Recognize Mongoose model calls in TypeScript code and emit storage-access interaction effects.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/recognize": "0.16.0"
+    "@suss/recognize": "0.17.0"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
