@@ -31,6 +31,8 @@ import type { FunctionRoot } from "../conditions.js";
 export interface SummaryLocation {
   file: string;
   range: { start: number; end: number };
+  /** Character offsets, which the index prefers: lines can collide. */
+  span?: { start: number; end: number } | undefined;
 }
 
 export interface SourceFileLookup {
@@ -82,6 +84,12 @@ export function createSourceFileLookup(project: Project): SourceFileLookup {
       const path = sf.getFilePath();
       const index = functionsByFile.get(path) ?? indexFunctions(sf);
       functionsByFile.set(path, index);
+      if (location.span !== undefined) {
+        const bySpan = index.get(spanKey(location.span));
+        if (bySpan !== undefined) {
+          return bySpan;
+        }
+      }
       return index.get(rangeKey(location.range)) ?? null;
     },
   };
@@ -105,7 +113,11 @@ function scanForSuffix(
 }
 
 function rangeKey(range: { start: number; end: number }): string {
-  return `${range.start}:${range.end}`;
+  return `lines ${range.start}:${range.end}`;
+}
+
+function spanKey(span: { start: number; end: number }): string {
+  return `span ${span.start}:${span.end}`;
 }
 
 function indexFunctions(sf: SourceFile): Map<string, FunctionRoot> {
@@ -119,6 +131,8 @@ function indexFunctions(sf: SourceFile): Map<string, FunctionRoot> {
     ) {
       return;
     }
+    const bySpan = spanKey({ start: node.getStart(), end: node.getEnd() });
+    index.set(bySpan, node);
     const key = rangeKey({ start: startLineOf(node), end: endLineOf(node) });
     if (!index.has(key)) {
       index.set(key, node);

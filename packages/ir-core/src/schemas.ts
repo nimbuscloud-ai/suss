@@ -78,7 +78,16 @@ export const ConfidenceInfoSchema = z.object({
 
 export const SourceLocationSchema = z.object({
   file: z.string(),
+  /** Line numbers, for a person reading the summary or an editor link. */
   range: z.object({ start: z.number(), end: z.number() }),
+  /**
+   * Character offsets of the unit in its file. Identity and joins
+   * measure with these, since two functions can share a line and never
+   * an offset range; the line `range` above is the presentation of the
+   * same place. Absent on summaries no source position backs, a
+   * contract artifact's say.
+   */
+  span: z.object({ start: z.number(), end: z.number() }).optional(),
   exportName: z.string().nullable(),
   /**
    * The project the extract was pointed at, by the name that project

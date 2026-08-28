@@ -26,6 +26,7 @@ import {
   methodHasStatements,
   rangeOf,
   readCallArgs,
+  spanOf,
   symbolValue,
 } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
@@ -788,6 +789,7 @@ function buildFieldUnit(
       kind: "resolver",
       file: filePath,
       range: rangeOf(decl.node),
+      span: spanOf(decl.node),
       exportName: null,
       exportPath: null,
     },

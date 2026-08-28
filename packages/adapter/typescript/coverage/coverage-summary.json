@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 8660,
-      "covered": 7460,
+      "total": 8672,
+      "covered": 7471,
       "skipped": 0,
-      "pct": 86.14
+      "pct": 86.15
     },
     "statements": {
-      "total": 8759,
-      "covered": 7555,
+      "total": 8771,
+      "covered": 7566,
       "skipped": 0,
-      "pct": 86.25
+      "pct": 86.26
     },
     "functions": {
-      "total": 1273,
-      "covered": 1179,
+      "total": 1275,
+      "covered": 1180,
       "skipped": 0,
-      "pct": 92.61
+      "pct": 92.54
     },
     "branches": {
-      "total": 6740,
-      "covered": 5299,
+      "total": 6754,
+      "covered": 5306,
       "skipped": 0,
-      "pct": 78.62
+      "pct": 78.56
     },
     "branchesTrue": {
       "total": 0,
@@ -813,28 +813,28 @@
   },
   "src/bootstrap/sourceFileLookup.ts": {
     "lines": {
-      "total": 37,
-      "covered": 37,
+      "total": 44,
+      "covered": 44,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 8,
-      "covered": 8,
+      "total": 9,
+      "covered": 9,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 37,
-      "covered": 37,
+      "total": 44,
+      "covered": 44,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 22,
-      "covered": 21,
+      "total": 26,
+      "covered": 24,
       "skipped": 0,
-      "pct": 95.45
+      "pct": 92.3
     }
   },
   "src/discovery/clientCall.ts": {
@@ -1905,10 +1905,10 @@
   },
   "src/resolve/rethrowEnrichment.ts": {
     "lines": {
-      "total": 140,
-      "covered": 122,
+      "total": 144,
+      "covered": 126,
       "skipped": 0,
-      "pct": 87.14
+      "pct": 87.5
     },
     "functions": {
       "total": 11,
@@ -1917,16 +1917,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 141,
-      "covered": 123,
+      "total": 145,
+      "covered": 127,
       "skipped": 0,
-      "pct": 87.23
+      "pct": 87.58
     },
     "branches": {
-      "total": 86,
-      "covered": 60,
+      "total": 96,
+      "covered": 64,
       "skipped": 0,
-      "pct": 69.76
+      "pct": 66.66
     }
   },
   "src/resolve/routePath.ts": {
@@ -2321,22 +2321,22 @@
   },
   "src/walk/nodeKeys.ts": {
     "lines": {
-      "total": 3,
+      "total": 4,
       "covered": 3,
       "skipped": 0,
-      "pct": 100
+      "pct": 75
     },
     "functions": {
-      "total": 3,
+      "total": 4,
       "covered": 3,
       "skipped": 0,
-      "pct": 100
+      "pct": 75
     },
     "statements": {
-      "total": 3,
+      "total": 4,
       "covered": 3,
       "skipped": 0,
-      "pct": 100
+      "pct": 75
     },
     "branches": {
       "total": 0,

@@ -19,7 +19,22 @@ import type { Node } from "ts-morph";
  * `unitKeyBySummary` is how another pass joins to them.
  */
 export function offsetKeyOf(node: Node): string {
-  return `${node.getSourceFile().getFilePath()}:${node.getStart()}-${node.getEnd()}`;
+  return offsetKeyFor(node.getSourceFile().getFilePath(), {
+    start: node.getStart(),
+    end: node.getEnd(),
+  });
+}
+
+/**
+ * The same key minted from a summary's `location.span`, so a summary
+ * that records its offsets joins the closure's facts without the
+ * closure in the room.
+ */
+export function offsetKeyFor(
+  file: string,
+  span: { start: number; end: number },
+): string {
+  return `${file}:${span.start}-${span.end}`;
 }
 
 /**

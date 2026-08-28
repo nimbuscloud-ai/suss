@@ -47,6 +47,19 @@
             "required": ["start", "end"],
             "additionalProperties": false
           },
+          "span": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "number"
+              },
+              "end": {
+                "type": "number"
+              }
+            },
+            "required": ["start", "end"],
+            "additionalProperties": false
+          },
           "exportName": {
             "anyOf": [
               {
