@@ -1,0 +1,5 @@
+{
+  "read": "suss: storage access kind",
+  "write": "suss: storage access kind",
+  "zustand": "the library, and the module its creators are imported from"
+}

@@ -144,6 +144,10 @@
       "types": "./dist/redis.d.ts",
       "import": "./dist/redis.js"
     },
+    "./zustand": {
+      "types": "./dist/zustand.d.ts",
+      "import": "./dist/zustand.js"
+    },
     "./sqlalchemy": {
       "types": "./dist/sqlalchemy.d.ts",
       "import": "./dist/sqlalchemy.js"
@@ -208,6 +212,7 @@
     "@suss/framework-prisma": "*",
     "@suss/framework-react": "*",
     "@suss/framework-react-query": "*",
+    "@suss/framework-zustand": "*",
     "@suss/framework-react-router": "*",
     "@suss/framework-redis": "*",
     "@suss/framework-sqlalchemy": "*",

@@ -140,6 +140,9 @@
       "path": "packages/framework/react-query/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/zustand/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/prisma/tsconfig.typecheck.json"
     },
     {
