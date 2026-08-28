@@ -97,6 +97,35 @@ Stubs are therefore read by the same loader that feeds the intent
 checker its artifacts, and their statements use the same boundary
 vocabulary.
 
+## Format
+
+YAML and JSON both parse, one schema, chosen by extension. YAML is
+the authoring default and what drafting emits, because a draft's
+marked blanks and a stub's provenance notes are comments, which JSON
+cannot carry; the intent artifacts already committed to YAML, so the
+parser and the precedent exist. A tool that emits stubs
+programmatically writes JSON if it prefers.
+
+## Drafting, and agents as authors
+
+The package suss cannot see inside is still a package suss observes
+from the outside: every import site, every call into it, and the
+argument shapes at each call site are in the unfollowed-call evidence
+and the caller walk. `suss stub draft <package>` (and `suss_stub_draft`
+through the MCP server) turns that into a skeleton: one `performs-call`
+candidate per observed callee with the observed argument shapes filled
+in, and the semantic fields (which system the call reaches, which
+argument is the subject) left as marked blanks.
+
+Agents close the loop suss cannot: a crate written in Rust is
+unreadable to the adapters forever, and readable to an agent in one
+sitting. The intended flow is draft from evidence, read the
+dependency's own source, fill in the semantics, commit the stub. A
+stub records its provenance (`authored: agent, from: crate source at
+1.4.2`), its claims stay declared confidence, and corroboration marks
+the ones it could verify, so a reader can tell a checked statement
+from a trusted one, and why the unchecked ones are unchecked.
+
 ## Out of scope
 
 - Statements about types (that is what `.d.ts` files are).
