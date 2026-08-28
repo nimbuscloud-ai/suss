@@ -93,6 +93,10 @@ Options (extract):
 Options (check):
   --fail-on-empty  Exit non-zero when the run compared nothing, which
                    otherwise reads the same as both sides agreeing
+  --fail-on-unpaired  Exit non-zero when more boundaries went unpaired
+                   than this: a count ("25") or a share ("50%")
+  --fail-on-unreadable  Exit non-zero when a file in --dir could not be
+                   read as summaries, instead of skipping it
 
 Options (inspect):
   --dir            Folder of summary files to read, instead of one file
@@ -505,6 +509,8 @@ function runCheck(args: string[]): number {
       all: { type: "boolean" },
       "fail-on": { type: "string" },
       "fail-on-empty": { type: "boolean" },
+      "fail-on-unpaired": { type: "string" },
+      "fail-on-unreadable": { type: "boolean" },
       sussignore: { type: "string" },
       "no-suppressions": { type: "boolean" },
     },
@@ -543,6 +549,12 @@ function runCheck(args: string[]): number {
       : {}),
     ...(values["no-suppressions"] === true ? { noSuppressions: true } : {}),
     ...(values["fail-on-empty"] === true ? { failOnEmpty: true } : {}),
+    ...(values["fail-on-unpaired"] !== undefined
+      ? { failOnUnpaired: values["fail-on-unpaired"] }
+      : {}),
+    ...(values["fail-on-unreadable"] === true
+      ? { failOnUnreadable: true }
+      : {}),
   };
 
   if (values.at !== undefined && values.dir === undefined) {

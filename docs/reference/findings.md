@@ -664,6 +664,26 @@ It fires only under `--fail-on-empty`, and only when there was something to comp
 
 **Bug when:** both sides are in the directory and still nothing paired. The two sides are spelling the boundary differently, and `suss inspect --dir` over the same files shows both spellings side by side.
 
+### `mostlyUnpaired` *(shipped)*
+
+**Severity:** error • **Emitted by:** `suss check --dir` under `--fail-on-unpaired`
+
+More boundaries had nothing to pair with than the floor allows. A run that pairs three boundaries out of hundreds otherwise exits the same as one that paired everything, and a CI gate on it goes green. The finding gives the counts and the floor; the report's unmatched lists say which side each boundary is missing.
+
+**Legitimate when:** the corpus is one-sided on purpose and the floor was set for a different mix. Raise the floor, or drop the flag for that run.
+
+**Bug when:** both sides were extracted and the share is still high. The usual causes are unpathed providers (their routes have a gap message saying why) and two spellings of one boundary.
+
+### `unreadableInput` *(shipped)*
+
+**Severity:** error • **Emitted by:** `suss check --dir` under `--fail-on-unreadable`
+
+A file in the summaries directory could not be read as summaries. Without the flag the file is skipped with a stderr warning and the run exits by findings alone, so a truncated extract output reads as a pass. The `--json` body lists the skipped files whether or not the flag is on.
+
+**Legitimate when:** the directory deliberately mixes summaries with other JSON a different tool reads. Move the other files, or leave the flag off.
+
+**Bug when:** the skipped file was written by extract. A truncated output means the extract was interrupted; a report written back into the summaries directory means an `-o` path pointed at the wrong place.
+
 ---
 
 ## What this catalog is *not*
