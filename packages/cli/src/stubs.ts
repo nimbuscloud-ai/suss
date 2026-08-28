@@ -95,8 +95,49 @@ export function loadStubs(root: string): StubFile[] {
       );
     }
     files.push(parsed.data);
+
+    const drift = driftNote(root, parsed.data);
+    if (drift !== null) {
+      process.stderr.write(drift);
+    }
   }
   return files;
+}
+
+/**
+ * A stub keeps describing the version its author read while the
+ * project moves to newer ones, so a mismatch between the version in
+ * `from:` and the installed package is worth a line. Null when `from`
+ * has no version in it, the package is not installed where the loader
+ * can see it, or the two agree.
+ */
+function driftNote(root: string, stub: StubFile): string | null {
+  const fromVersion = stub.from?.match(/\d+\.\d+\.\d+[-+.\w]*/)?.[0];
+  if (fromVersion === undefined) {
+    return null;
+  }
+
+  const installed = installedVersionOf(root, stub.package);
+  if (installed === null || installed === fromVersion) {
+    return null;
+  }
+
+  return (
+    `[suss] ${stub.package} is installed at ${installed}, and its stub was written from ${fromVersion}. ` +
+    `Check the stub's claims against the installed version, then update its from: line.\n`
+  );
+}
+
+function installedVersionOf(root: string, packageName: string): string | null {
+  const manifest = path.join(root, "node_modules", packageName, "package.json");
+  try {
+    const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as {
+      version?: unknown;
+    };
+    return typeof parsed.version === "string" ? parsed.version : null;
+  } catch {
+    return null;
+  }
 }
 
 function append(

@@ -216,3 +216,59 @@ describe("the deprecation note for stub-covered options", () => {
     expect(stubDeprecationNote("express", undefined)).toBeNull();
   });
 });
+
+describe("the drift note between a stub and the installed package", () => {
+  function withInstalled(root: string, version: string): void {
+    const dir = path.join(root, "node_modules", "@acme", "http-kit");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "@acme/http-kit", version }),
+    );
+  }
+
+  function stubFrom(from: string): string {
+    return `${DECORATOR_STUB}from: "${from}"\n`;
+  }
+
+  function stderrFrom(run: () => void): string {
+    const chunks: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      run();
+    } finally {
+      process.stderr.write = original;
+    }
+    return chunks.join("");
+  }
+
+  it("points out a stub written from another version", () => {
+    const root = projectWith({
+      "kit.yaml": stubFrom("package source at 1.2.0"),
+    });
+    withInstalled(root, "1.4.2");
+
+    const text = stderrFrom(() => loadStubs(root));
+    expect(text).toContain("installed at 1.4.2");
+    expect(text).toContain("written from 1.2.0");
+  });
+
+  it("says nothing when the versions agree or nothing is comparable", () => {
+    const agreeing = projectWith({ "kit.yaml": stubFrom("source at 1.4.2") });
+    withInstalled(agreeing, "1.4.2");
+    expect(stderrFrom(() => loadStubs(agreeing))).toBe("");
+
+    const noVersion = projectWith({ "kit.yaml": stubFrom("upstream docs") });
+    withInstalled(noVersion, "1.4.2");
+    expect(stderrFrom(() => loadStubs(noVersion))).toBe("");
+
+    const notInstalled = projectWith({
+      "kit.yaml": stubFrom("source at 1.2.0"),
+    });
+    expect(stderrFrom(() => loadStubs(notInstalled))).toBe("");
+  });
+});
