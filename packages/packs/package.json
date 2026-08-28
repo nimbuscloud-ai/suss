@@ -120,6 +120,10 @@
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
     },
+    "./package-exports": {
+      "types": "./dist/package-exports.d.ts",
+      "import": "./dist/package-exports.js"
+    },
     "./prisma": {
       "types": "./dist/prisma.d.ts",
       "import": "./dist/prisma.js"
@@ -196,6 +200,7 @@
     "@suss/framework-nestjs-microservices": "*",
     "@suss/framework-nestjs-rest": "*",
     "@suss/framework-nextjs": "*",
+    "@suss/framework-package-exports": "*",
     "@suss/framework-prisma": "*",
     "@suss/framework-react": "*",
     "@suss/framework-react-router": "*",

@@ -171,6 +171,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   axios: "@suss/packs/axios",
   "apollo-client": "@suss/packs/apollo-client",
   node: "@suss/packs/node",
+  "package-exports": "@suss/packs/package-exports",
   fastapi: "@suss/packs/fastapi",
   "flask-restx": "@suss/packs/flask-restx",
   "graphql-ruby": "@suss/packs/graphql-ruby",

@@ -38,6 +38,7 @@ export const coveragePackages = [
   ["packages/framework/nextjs", "nextjs"],
   ["packages/framework/apollo", "apollo"],
   ["packages/framework/nestjs-microservices", "nestjs-microservices"],
+  ["packages/framework/package-exports", "package-exports"],
   ["packages/framework/nestjs-rest", "nestjs-rest"],
   ["packages/framework/nestjs-graphql", "nestjs-graphql"],
   ["packages/framework/prisma", "prisma"],

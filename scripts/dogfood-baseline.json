@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 61,
-    "packagesWithExports": 61,
-    "exports": 596,
-    "internal": 2199,
-    "consumers": 1030,
-    "pairs": 1014,
+    "packages": 62,
+    "packagesWithExports": 62,
+    "exports": 599,
+    "internal": 2211,
+    "consumers": 1032,
+    "pairs": 1016,
     "unfollowedCalls": 234,
     "findingErrors": 0
   },
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 58,
-      "internal": 743,
+      "internal": 754,
       "consumers": 77,
       "unfollowedCalls": 70
     },
@@ -318,6 +318,13 @@
       "consumers": 2,
       "unfollowedCalls": 0
     },
+    "packages/framework/package-exports": {
+      "name": "@suss/framework-package-exports",
+      "exports": 2,
+      "internal": 1,
+      "consumers": 2,
+      "unfollowedCalls": 0
+    },
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
       "exports": 2,
@@ -390,7 +397,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 31,
+      "exports": 32,
       "internal": 0,
       "consumers": 0,
       "unfollowedCalls": 0
