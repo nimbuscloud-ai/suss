@@ -12,6 +12,13 @@ export {
 export { collectAncestorBranches } from "./conditions.js";
 export { readConfiguredCall, rootIdentifier } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
+export {
+  type ImportScanOptions,
+  importDeclarationsOf,
+  importedNamesOf,
+  importedRootsOf,
+  namedImportsOf,
+} from "./discovery/importScan.js";
 export { discoverUnits } from "./discovery/index.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
 // The store behind the recognizer context's `resolveWrittenValue`.

@@ -18,6 +18,7 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { namedImportsOf } from "./importScan.js";
 import {
   arrayLiteralOf,
   functionValueOf,
@@ -149,14 +150,9 @@ function localNamesFor(
   if (exported.length === 0) {
     return local;
   }
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    if (!modules.includes(importDecl.getModuleSpecifierValue())) {
-      continue;
-    }
-    for (const named of importDecl.getNamedImports()) {
-      if (exported.includes(named.getName())) {
-        local.add(named.getAliasNode()?.getText() ?? named.getName());
-      }
+  for (const one of namedImportsOf(sourceFile, modules)) {
+    if (exported.includes(one.canonical)) {
+      local.add(one.local);
     }
   }
   return local;

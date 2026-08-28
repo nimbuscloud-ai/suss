@@ -14,6 +14,7 @@ import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import { nodeId } from "../facts/extract.js";
 import { pathFromArgument } from "../resolve/routePath.js";
+import { resolveImportedLocalName } from "./resolveImport.js";
 import {
   functionValueOf,
   objectLiteralOf,
@@ -264,43 +265,11 @@ export function registrationSubjectsOf(
   importModule: string,
   importName: string,
 ): Map<string, Node> {
-  let importedLocalName: string | null = null;
-
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    if (importDecl.getModuleSpecifierValue() !== importModule) {
-      continue;
-    }
-
-    for (const namedImport of importDecl.getNamedImports()) {
-      if (
-        namedImport.getName() === importName ||
-        namedImport.getAliasNode()?.getText() === importName
-      ) {
-        importedLocalName =
-          namedImport.getAliasNode()?.getText() ?? namedImport.getName();
-        break;
-      }
-    }
-
-    if (importedLocalName !== null) {
-      break;
-    }
-
-    const defaultImport = importDecl.getDefaultImport();
-    if (defaultImport !== undefined && defaultImport.getText() === importName) {
-      importedLocalName = defaultImport.getText();
-      break;
-    }
-
-    const namespaceImport = importDecl.getNamespaceImport();
-    if (
-      namespaceImport !== undefined &&
-      namespaceImport.getText() === importName
-    ) {
-      importedLocalName = namespaceImport.getText();
-      break;
-    }
-  }
+  const importedLocalName = resolveImportedLocalName(
+    sourceFile,
+    importModule,
+    importName,
+  );
 
   const subjects = new Map<string, Node>();
   if (importedLocalName === null) {

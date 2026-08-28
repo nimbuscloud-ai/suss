@@ -2,10 +2,10 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 610,
-    "internal": 2238,
-    "consumers": 1049,
-    "pairs": 1033,
+    "exports": 614,
+    "internal": 2236,
+    "consumers": 1045,
+    "pairs": 1029,
     "unfollowedCalls": 235,
     "findingErrors": 0
   },
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 58,
-      "internal": 763,
+      "exports": 62,
+      "internal": 764,
       "consumers": 77,
       "unfollowedCalls": 70
     },
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 14,
       "internal": 345,
-      "consumers": 218,
+      "consumers": 211,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
@@ -335,15 +335,15 @@
     "packages/framework/react": {
       "name": "@suss/framework-react",
       "exports": 4,
-      "internal": 7,
-      "consumers": 8,
+      "internal": 5,
+      "consumers": 10,
       "unfollowedCalls": 0
     },
     "packages/framework/react-query": {
       "name": "@suss/framework-react-query",
       "exports": 2,
-      "internal": 5,
-      "consumers": 5,
+      "internal": 4,
+      "consumers": 6,
       "unfollowedCalls": 0
     },
     "packages/framework/react-router": {

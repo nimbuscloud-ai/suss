@@ -10,6 +10,7 @@ import {
   withGraphqlMetadata,
 } from "@suss/behavioral-ir";
 
+import { namedImportsOf } from "./importScan.js";
 import { stringValueOf } from "./resolveValue.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -424,16 +425,11 @@ function localImportName(
   importModule: string,
   importName: string,
 ): string | null {
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    const module = importDecl.getModuleSpecifierValue();
-    if (module !== importModule && !module.startsWith(`${importModule}/`)) {
-      continue;
-    }
-
-    for (const named of importDecl.getNamedImports()) {
-      if (named.getName() === importName) {
-        return named.getAliasNode()?.getText() ?? named.getName();
-      }
+  for (const one of namedImportsOf(sourceFile, [importModule], {
+    subpaths: true,
+  })) {
+    if (one.canonical === importName) {
+      return one.local;
     }
   }
   return null;
@@ -449,18 +445,10 @@ function localNamesFor(
   }>,
 ): Map<string, string> {
   const names = new Map<string, string>();
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    const module = importDecl.getModuleSpecifierValue();
-    for (const spec of specs) {
-      if (module !== spec.importModule) {
-        continue;
-      }
-      for (const named of importDecl.getNamedImports()) {
-        if (named.getName() !== spec.importName) {
-          continue;
-        }
-        const local = named.getAliasNode()?.getText() ?? named.getName();
-        names.set(local, spec.uriProperty);
+  for (const spec of specs) {
+    for (const one of namedImportsOf(sourceFile, [spec.importModule])) {
+      if (one.canonical === spec.importName) {
+        names.set(one.local, spec.uriProperty);
       }
     }
   }

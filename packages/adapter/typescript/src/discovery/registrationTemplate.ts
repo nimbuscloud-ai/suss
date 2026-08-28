@@ -14,6 +14,7 @@
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
+import { importedLocalNameOf } from "./resolveImport.js";
 import {
   functionValueOf,
   objectLiteralOf,
@@ -93,27 +94,7 @@ function resolveImportedLocalName(
   if (match.importModule === undefined) {
     return match.helperName;
   }
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    if (importDecl.getModuleSpecifierValue() !== match.importModule) {
-      continue;
-    }
-    for (const namedImport of importDecl.getNamedImports()) {
-      if (
-        namedImport.getName() === match.helperName ||
-        namedImport.getAliasNode()?.getText() === match.helperName
-      ) {
-        return namedImport.getAliasNode()?.getText() ?? namedImport.getName();
-      }
-    }
-    const defaultImport = importDecl.getDefaultImport();
-    if (
-      defaultImport !== undefined &&
-      defaultImport.getText() === match.helperName
-    ) {
-      return defaultImport.getText();
-    }
-  }
-  return null;
+  return importedLocalNameOf(sourceFile, match.importModule, match.helperName);
 }
 
 function isCallToHelper(call: CallExpression, localName: string): boolean {

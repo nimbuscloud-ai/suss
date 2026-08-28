@@ -19,22 +19,15 @@
 // argument is a parameter rather than a literal. Turning that into a
 // summary per caller is expandWrapperCallers's job, unchanged.
 
-import path from "node:path";
-
 import { Node, type SourceFile } from "ts-morph";
 
-import { commonDirectoryOf } from "../diagnostics.js";
+import { matchingImportDeclarations } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 import { writtenNodeOf } from "./resolveValue.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
-import type {
-  CallExpression,
-  ImportDeclaration,
-  NewExpression,
-  Project,
-} from "ts-morph";
+import type { CallExpression, NewExpression } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -353,140 +346,6 @@ function resolvedImportLocalName(
     }
   }
   return null;
-}
-
-/**
- * This file's own import declarations that name `importModule`.
- *
- * A bare specifier ("axios") is compared as written: two files
- * spelling a package's name the same way mean the same package by
- * definition. A path-shaped specifier (starts with "." or "/") names
- * a location relative to wherever it's written, so a factory
- * configured as "./apiClient" and a file importing it as
- * "../apiClient" can point at the same file without sharing a single
- * character in common; only resolving both to the file they point at
- * decides whether they do.
- *
- * Falls back to the literal comparison when a path-shaped specifier
- * doesn't resolve to a project file at all, rather than answering
- * "nothing imports this": a pattern naming a module that was never
- * meant to resolve (a pack's own test fixture, a module outside the
- * project the type checker can't place) still has calls to match by
- * the text its own file states, the way this pack always has.
- */
-function matchingImportDeclarations(
-  sourceFile: SourceFile,
-  importModule: string,
-  resolution: ResolutionStore | undefined,
-): ImportDeclaration[] {
-  const target = isPathShapedSpecifier(importModule)
-    ? resolvedModuleFile(sourceFile.getProject(), importModule, resolution)
-    : null;
-  if (target !== null) {
-    return sourceFile
-      .getImportDeclarations()
-      .filter((decl) => decl.getModuleSpecifierSourceFile() === target);
-  }
-  return sourceFile
-    .getImportDeclarations()
-    .filter((decl) => decl.getModuleSpecifierValue() === importModule);
-}
-
-/** A relative or absolute specifier points at a location rather than a package. */
-function isPathShapedSpecifier(specifier: string): boolean {
-  return specifier.startsWith(".") || specifier.startsWith("/");
-}
-
-/**
- * Resolved paths, not SourceFile nodes: a caller can reuse the same
- * ts-morph Project across separate runs (a rebuilt fixture in a test,
- * an editor reusing one project between edits), and a Project doing
- * that removes and re-adds files at the same path rather than staying
- * put, so a node cached from an earlier run reports "removed or
- * forgotten" once ts-morph notices the swap. A path never goes stale;
- * looking the current node up by it, fresh, on every hit does.
- *
- * Scoped to the resolution store rather than the project for the same
- * reason: one store is built per extraction run and thrown away after,
- * so nothing here outlives the run whose project it was resolved
- * against. A caller with no store gets no caching, and resolves fresh
- * every time; that only costs a run without cross-file resolution
- * asked for anyway, which had nothing to compose against here either.
- */
-const resolvedModuleFileCache = new WeakMap<
-  ResolutionStore,
-  Map<string, string | null>
->();
-
-/**
- * The project file a path-shaped `importModule` names, resolved once
- * from the project's own root. A relative specifier has no meaning by
- * itself, only relative to wherever it's written, so a pack config's
- * own module path is anchored the same way regardless of which file
- * ends up asking about it, rather than on where that file happens to
- * be.
- */
-function resolvedModuleFile(
-  project: Project,
-  importModule: string,
-  resolution: ResolutionStore | undefined,
-): SourceFile | null {
-  if (resolution === undefined) {
-    return projectFileNamedBy(project, importModule);
-  }
-  let perRun = resolvedModuleFileCache.get(resolution);
-  if (perRun === undefined) {
-    perRun = new Map();
-    resolvedModuleFileCache.set(resolution, perRun);
-  }
-  const cachedPath = perRun.get(importModule);
-  if (cachedPath !== undefined) {
-    return cachedPath === null
-      ? null
-      : (project.getSourceFile(cachedPath) ?? null);
-  }
-  const resolved = projectFileNamedBy(project, importModule);
-  perRun.set(importModule, resolved?.getFilePath() ?? null);
-  return resolved;
-}
-
-/**
- * The project's own source file `specifier` names, resolved from the
- * common directory every loaded file is under (the project root
- * when there's a tsconfig; the same anchor an in-memory fixture
- * project's files are under otherwise). Declaration files are left
- * out of both that directory and the candidate set: a factory is a
- * project's own function, never a `.d.ts`, and a global type root
- * living outside the project tree would otherwise widen the shared
- * directory to somewhere the specifier was never meant to resolve
- * from.
- */
-function projectFileNamedBy(
-  project: Project,
-  specifier: string,
-): SourceFile | null {
-  const files = project
-    .getSourceFiles()
-    .filter((sf) => !sf.isDeclarationFile());
-  const root = commonDirectoryOf(files.map((sf) => sf.getFilePath())) ?? "/";
-  const target = withoutSourceExtension(path.resolve(root, specifier));
-  for (const candidate of files) {
-    if (withoutSourceExtension(candidate.getFilePath()) === target) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-/**
- * Strips a source extension and a trailing implicit-index segment, so
- * "./apiClient" as configured and "/apiClient/index.ts" as resolved
- * compare equal the same way a bundler's own resolution treats them.
- */
-function withoutSourceExtension(filePath: string): string {
-  return filePath
-    .replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, "")
-    .replace(/\/index$/, "");
 }
 
 /**
