@@ -34,7 +34,9 @@
       "types": "./dist/schemas.d.ts",
       "import": "./dist/schemas.js",
       "require": "./dist/schemas.cjs"
-    }
+    },
+    "./schema/behavioral-summary.schema.json": "./schema/behavioral-summary.schema.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",

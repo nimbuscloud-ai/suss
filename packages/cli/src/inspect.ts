@@ -1728,12 +1728,16 @@ export function inspectDiff(options: DiffOptions): void {
 export function readSummariesFromDir(dir: string): BehavioralSummary[] {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-    throw new Error(`Directory not found: ${resolved}`);
+    throw new UsageError(
+      `No directory at ${resolved}. Pass the folder holding the summary files you wrote with \`suss extract -o\`.`,
+    );
   }
 
   const files = fs.readdirSync(resolved).filter((f) => f.endsWith(".json"));
   if (files.length === 0) {
-    throw new Error(`No JSON files found in ${resolved}`);
+    throw new UsageError(
+      `No JSON files in ${resolved}. Write summaries there first with \`suss extract -o ${path.join(dir, "summaries.json")}\`.`,
+    );
   }
 
   const all: BehavioralSummary[] = [];

@@ -138,7 +138,20 @@ export function answerQuestion(options: AskOptions): {
 } {
   const question = parseQuestion(options.question);
   if (question === null) {
-    writeReport(`${HOW_TO_ASK}\n`, options.output);
+    const report =
+      options.json === true
+        ? `${JSON.stringify(
+            {
+              question: options.question,
+              answer: null,
+              message:
+                "Not one of the seven questions suss answers. Run suss --help for the forms.",
+            },
+            null,
+            2,
+          )}\n`
+        : `${HOW_TO_ASK}\n`;
+    writeReport(report, options.output);
     return { exitCode: 1, answer: null };
   }
 

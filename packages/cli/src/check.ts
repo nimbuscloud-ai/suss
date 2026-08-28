@@ -183,11 +183,22 @@ export function checkDirectory(options: {
 
   // .sussignore.json is auto-discovered from this same directory: it's
   // suppression config, not a summaries file, so exclude it from the walk.
-  const files = fs
-    .readdirSync(resolved)
-    .filter(
-      (f) => f.endsWith(".json") && !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
+  const entries = fs.readdirSync(resolved);
+  const files = entries.filter(
+    (f) =>
+      f.endsWith(".json") &&
+      !f.endsWith(".incomplete.json") &&
+      !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
+  );
+
+  // Extract leaves this note beside its output when it could not read
+  // every export, so a check over those summaries is over a partial
+  // picture and has to say so.
+  for (const note of entries.filter((f) => f.endsWith(".incomplete.json"))) {
+    process.stderr.write(
+      `${note} says the extract that wrote these summaries was incomplete, so agreement here covers only what it could read. Fix what the note lists, re-extract, and it disappears.\n`,
     );
+  }
   if (files.length === 0) {
     throw new UsageError(
       `${resolved} has no JSON files in it. Write summaries there first, for example: suss extract -p tsconfig.json -f express -o ${path.join(options.dir, "api.json")}`,

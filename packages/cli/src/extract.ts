@@ -750,7 +750,9 @@ export async function extract(
 
   if (extractionReport === null && options.explain === true) {
     process.stderr.write(
-      "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n",
+      language === "typescript"
+        ? "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n"
+        : `The ${language} reader does not write a file-by-file breakdown yet, so there is nothing more to show.\n`,
     );
   }
 
