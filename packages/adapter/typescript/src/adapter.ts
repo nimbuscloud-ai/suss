@@ -275,7 +275,21 @@ function extractParameters(
       const param = params[i];
       const nameNode = param.getNameNode();
       const boundNames = bindingPatternNames(nameNode);
-      if (boundNames !== null) {
+      if (Node.isObjectBindingPattern(nameNode)) {
+        for (const element of nameNode.getElements()) {
+          // A rest binding collects whatever the caller passed, so its
+          // role says so instead of repeating the variable's name.
+          const rest = element.getDotDotDotToken() !== undefined;
+          result.push({
+            name: element.getName(),
+            position: i,
+            role: rest
+              ? "rest"
+              : (inputMapping.defaultRole ?? element.getName()),
+            typeText: null,
+          });
+        }
+      } else if (boundNames !== null) {
         for (const name of boundNames) {
           result.push({
             name,
