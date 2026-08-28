@@ -27,6 +27,12 @@ function callOps(over: {
   properties?: Record<number, Record<string, string>>;
   /** What each argument states, by position, as plain data. */
   values?: Record<number, unknown>;
+  /** The call the callee was written as. */
+  writtenAs?: CallOps;
+  /** Whether the callee is a bound name. */
+  namedCallee?: boolean;
+  /** What a selector lambda reads, by argument position. */
+  selectorReads?: Record<number, readonly string[]>;
 }): CallOps {
   const args = over.args ?? [];
   const from = over.from ?? [];
@@ -43,7 +49,9 @@ function callOps(over: {
     calleeText: () => over.callee ?? "client.get",
     receiver: () => over.receiver ?? null,
     argument: (index) => over.built?.[index] ?? null,
-    callee: () => null,
+    callee: () => over.writtenAs ?? null,
+    namedCallee: () => over.namedCallee ?? false,
+    parameterReadsAt: (index: number) => over.selectorReads?.[index] ?? null,
     propertyAt: (index, property) =>
       over.properties?.[index]?.[property] ??
       (index in values
@@ -1384,5 +1392,70 @@ describe("naming which export a client was made from", () => {
       origin: "constructed",
       importedFrom: ["@aws-sdk/client-sqs"],
     });
+  });
+});
+
+describe("a bare call of the tracked client", () => {
+  const hookStore = () =>
+    storageCalls({ system: "cassette", client: constructedFrom("tapedeck") })
+      .methods({ get: READ_KEY })
+      .calls({ kind: "read", fields: { selectorParam: 0 } })
+      .example("useDeck((s) => s.sideA)");
+
+  const written = callOps({ from: ["tapedeck"], callee: "makeDeck()" });
+
+  it("matches by what the callee was written as, reading the selector", () => {
+    const effects = run(
+      hookStore(),
+      callOps({
+        callee: "useDeck",
+        namedCallee: true,
+        writtenAs: written,
+        selectorReads: { 0: ["sideA"] },
+      }),
+    );
+
+    expect(effects).toHaveLength(1);
+    expect(effects?.[0]).toMatchObject({
+      callee: "useDeck",
+      interaction: {
+        class: "storage-access",
+        kind: "read",
+        fields: ["sideA"],
+        operation: "useDeck",
+      },
+    });
+  });
+
+  it("leaves a bare call written from another module alone", () => {
+    const effects = run(
+      hookStore(),
+      callOps({
+        callee: "useOther",
+        namedCallee: true,
+        writtenAs: callOps({ from: ["elsewhere"] }),
+      }),
+    );
+    expect(effects).toBeNull();
+  });
+
+  it("leaves an expression called in place alone", () => {
+    const effects = run(
+      hookStore(),
+      callOps({
+        callee: "makeDeck()",
+        namedCallee: false,
+        writtenAs: written,
+      }),
+    );
+    expect(effects).toBeNull();
+  });
+
+  it("still matches the methods table on the same chain", () => {
+    const effects = run(
+      hookStore(),
+      callOps({ method: "get", from: ["tapedeck"], args: ["side_a:1"] }),
+    );
+    expect(effects).toHaveLength(1);
   });
 });

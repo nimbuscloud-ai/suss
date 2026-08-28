@@ -57,6 +57,12 @@ export interface StorageCalls {
     options?: { ignoringCase?: boolean },
   ): StorageCalls;
   /**
+   * What a bare call of the client itself does. A store hook is the
+   * case: `useAppStore((s) => s.bears)` reaches for no method, so the
+   * one meaning here is the whole answer.
+   */
+  calls(meaning: StorageMethod): StorageCalls;
+  /**
    * Which container a call's selector belongs to, as an argument or as
    * the pack's own rule. Without this the first name a call reached is
    * the container.
@@ -116,6 +122,7 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
         table,
         ignoringCase: options?.ignoringCase ?? false,
       }),
+    calls: (meaning) => adding({ asks: "calls", meaning }),
     container: (says) =>
       adding(
         typeof says === "function"

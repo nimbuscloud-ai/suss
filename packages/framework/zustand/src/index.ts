@@ -7,10 +7,10 @@
  * client-store:useAppStore"` reads like the same question about a
  * database. The client is anything built from zustand's `create`, and
  * the store's variable name is the container, since that is what a
- * person calls the store. This covers the imperative surface
- * (`setState`, `getState`, `subscribe`); the hook's selector form
- * (`useAppStore((s) => s.bears)`) waits on the two recognize links
- * described in the pack's issue.
+ * person calls the store. The imperative surface (`setState`,
+ * `getState`, `subscribe`) matches by method; the hook's selector
+ * form (`useAppStore((s) => s.bears)`) matches as a bare call of the
+ * store, with the fields read off the selector's parameter.
  */
 
 import { constructedFrom, pack, storageCalls } from "@suss/recognize";
@@ -51,12 +51,12 @@ const METHODS: Record<string, StorageMethod> = {
 /**
  * The store's own name, read off the callee. `useAppStore.setState`
  * is a call on the store, so everything before the method is what the
- * project calls it.
+ * project calls it, and a bare `useAppStore(...)` is the store whole.
  */
 function storeNameOf(_names: readonly string[], call: CallOps): string | null {
   const callee = call.calleeText();
   const dot = callee.lastIndexOf(".");
-  return dot > 0 ? callee.slice(0, dot) : null;
+  return dot > 0 ? callee.slice(0, dot) : callee;
 }
 
 const STORE_CALLS = storageCalls({
@@ -64,8 +64,9 @@ const STORE_CALLS = storageCalls({
   client: constructedFrom("zustand", "zustand/vanilla"),
 })
   .methods(METHODS)
+  .calls({ kind: "read", fields: { selectorParam: 0 } })
   .container(storeNameOf)
-  .example("useAppStore.setState({ bears: 5 })");
+  .example("useAppStore((s) => s.bears)");
 
 export function zustandFramework(): PatternPack {
   return pack("zustand", [STORE_CALLS], {

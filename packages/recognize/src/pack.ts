@@ -19,6 +19,7 @@ import type {
 } from "@suss/extractor";
 import type {
   ArgumentPick,
+  CallsLink,
   Chain,
   Ending,
   InputRule,
@@ -243,14 +244,22 @@ function isFunctionLink(
   return link.asks === "container" && "from" in link;
 }
 
-/** The questions a rule inside the methods table settles, by name. */
+/** The questions a rule inside a meaning settles, by name. */
 function rulesIn(chain: Chain<MethodMeaning>): WrittenAsCode[] {
   const link = chain.links.find(
     (candidate): candidate is MethodsLink<MethodMeaning> =>
       candidate.asks === "methods",
   );
+  const calls = chain.links.find(
+    (candidate): candidate is CallsLink<MethodMeaning> =>
+      candidate.asks === "calls",
+  );
+  const meanings = [
+    ...Object.values(link?.table ?? {}),
+    ...(calls === undefined ? [] : [calls.meaning]),
+  ];
   const written = new Map<string, InputRule>();
-  for (const method of Object.values(link?.table ?? {})) {
+  for (const method of meanings) {
     for (const asks of ["selector", "fields"] as const) {
       const rule = ruleFor((method as Partial<StorageMethod>)[asks]);
       if (rule !== null) {

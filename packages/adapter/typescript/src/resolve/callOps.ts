@@ -14,6 +14,7 @@
 import { Node } from "ts-morph";
 
 import { rootIdentifier } from "../configuredCall.js";
+import { parameterReads } from "../parameterReads.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
   effectArgOf,
@@ -200,6 +201,8 @@ export function callOpsFor(
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
     calleeText: () => expression.getText(),
+    namedCallee: () => Node.isIdentifier(expression),
+    parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
       callee === null ? null : opsOverCall(callee.getExpression(), resolve),
     argument: (index) => opsOverCall(argumentsOf()[index], resolve),
@@ -374,6 +377,31 @@ function unquoted(name: string): string {
 }
 
 /** The ops for a value, when the value is a call the source wrote. */
+/**
+ * What a selector lambda reads off its first parameter, one name per
+ * distinct first segment; a parameter used whole reads `*`. Null when
+ * the argument is not a function of one plain-named parameter.
+ */
+function selectorReadsOf(argument: Node | undefined): readonly string[] | null {
+  if (
+    argument === undefined ||
+    (!Node.isArrowFunction(argument) && !Node.isFunctionExpression(argument))
+  ) {
+    return null;
+  }
+
+  const parameter = argument.getParameters()[0];
+  if (parameter === undefined || !Node.isIdentifier(parameter.getNameNode())) {
+    return null;
+  }
+
+  const names = new Set<string>();
+  for (const read of parameterReads(argument, [parameter.getName()])) {
+    names.add(read.path[0] ?? "*");
+  }
+  return [...names];
+}
+
 function opsOverCall(
   value: Node | undefined,
   resolve: Resolve,

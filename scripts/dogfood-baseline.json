@@ -2,8 +2,8 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 623,
-    "internal": 2257,
+    "exports": 625,
+    "internal": 2259,
     "consumers": 1049,
     "pairs": 1033,
     "unfollowedCalls": 235,
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 65,
-      "internal": 770,
+      "exports": 67,
+      "internal": 771,
       "consumers": 77,
       "unfollowedCalls": 70
     },
@@ -419,7 +419,7 @@
     "packages/recognize": {
       "name": "@suss/recognize",
       "exports": 12,
-      "internal": 34,
+      "internal": 35,
       "consumers": 6,
       "unfollowedCalls": 5
     },
