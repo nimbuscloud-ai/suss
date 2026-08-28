@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 62,
-    "packagesWithExports": 62,
-    "exports": 599,
-    "internal": 2212,
-    "consumers": 1031,
-    "pairs": 1015,
+    "packages": 63,
+    "packagesWithExports": 63,
+    "exports": 602,
+    "internal": 2217,
+    "consumers": 1035,
+    "pairs": 1019,
     "unfollowedCalls": 234,
     "findingErrors": 0
   },
@@ -339,6 +339,13 @@
       "consumers": 4,
       "unfollowedCalls": 0
     },
+    "packages/framework/react-query": {
+      "name": "@suss/framework-react-query",
+      "exports": 2,
+      "internal": 5,
+      "consumers": 4,
+      "unfollowedCalls": 0
+    },
     "packages/framework/react-router": {
       "name": "@suss/framework-react-router",
       "exports": 2,
@@ -397,7 +404,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 32,
+      "exports": 33,
       "internal": 0,
       "consumers": 0,
       "unfollowedCalls": 0
