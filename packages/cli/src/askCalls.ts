@@ -8,7 +8,8 @@
  * empty list reads as "nothing calls this" only when it is.
  */
 
-import { summaryIdentifier } from "@suss/behavioral-ir";
+import { displayLabel, summaryIdentifier } from "@suss/behavioral-ir";
+import { boundaryKey } from "@suss/checker";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
@@ -94,10 +95,12 @@ export function answerCalls(
 }
 
 /**
- * Callers recorded through a package-export binding instead of an
- * invocation effect. A caller-kind unit the packageImport discovery
- * produces says which export it calls on its own binding, so the scan
- * over invocation effects never sees it.
+ * Callers recorded through their binding instead of an invocation
+ * effect. A caller-kind unit the packageImport discovery produces says
+ * which export it calls on its own binding, so the scan over
+ * invocation effects never sees it. The join is the registry's
+ * identity key, so a unit with a keyless in-process binding (a
+ * component, a bare handler) never matches here.
  */
 function boundCallersInto(
   units: ReadonlyArray<BehavioralSummary>,
@@ -105,16 +108,10 @@ function boundCallersInto(
 ): CallSite[] {
   const exports = new Map<string, BehavioralSummary>();
   for (const unit of units) {
-    const semantics = unit.identity.boundaryBinding?.semantics;
-    if (
-      semantics?.name === "function-call" &&
-      semantics.package !== undefined &&
-      semantics.exportPath !== undefined
-    ) {
-      exports.set(
-        `${semantics.package}\u0000${semantics.exportPath.join("/")}`,
-        unit,
-      );
+    const binding = unit.identity.boundaryBinding;
+    const key = binding === null ? null : boundaryKey(binding);
+    if (key !== null) {
+      exports.set(key, unit);
     }
   }
   if (exports.size === 0) {
@@ -126,23 +123,12 @@ function boundCallersInto(
     if (summary.kind !== "caller") {
       continue;
     }
-    const semantics = summary.identity.boundaryBinding?.semantics;
-    if (
-      semantics?.name !== "function-call" ||
-      semantics.package === undefined ||
-      semantics.exportPath === undefined
-    ) {
+    const binding = summary.identity.boundaryBinding;
+    const key = binding === null ? null : boundaryKey(binding);
+    if (key === null || !exports.has(key) || binding === null) {
       continue;
     }
-    const target = exports.get(
-      `${semantics.package}\u0000${semantics.exportPath.join("/")}`,
-    );
-    if (target !== undefined) {
-      sites.push({
-        caller: summary,
-        callee: `${semantics.package} ${semantics.exportPath.join(".")}`,
-      });
-    }
+    sites.push({ caller: summary, callee: displayLabel(binding) });
   }
   return sites;
 }

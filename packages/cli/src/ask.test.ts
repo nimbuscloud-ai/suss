@@ -1105,7 +1105,7 @@ describe("suss ask what calls", () => {
 
     expect(code).toBe(0);
     expect(output).toContain("loadOrder");
-    expect(output).toContain("@demo/store readRow");
+    expect(output).toContain("fn:@demo/store::readRow");
   });
 
   it("leaves the subject's own internal calls out of the caller list", () => {
