@@ -24,7 +24,9 @@ import {
   INSPECT_DESCRIPTION,
   inspectTool,
   STATUS_DESCRIPTION,
+  STUB_DRAFT_DESCRIPTION,
   statusTool,
+  stubDraftTool,
 } from "./tools.js";
 import { versionFrom } from "./version.js";
 
@@ -99,6 +101,21 @@ export async function createServer(
       inputSchema: {},
     },
     () => attempt("suss_boundaries", () => inspectTool(project)),
+  );
+
+  server.registerTool(
+    "suss_stub_draft",
+    {
+      title: "Draft a dependency stub from observed calls",
+      description: STUB_DRAFT_DESCRIPTION,
+      annotations: READ_ONLY,
+      inputSchema: {
+        package: z
+          .string()
+          .describe('The package to draft for, as imported: "@acme/kit".'),
+      },
+    },
+    (args) => attempt("suss_stub_draft", () => stubDraftTool(project, args)),
   );
 
   server.registerTool(

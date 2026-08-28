@@ -15,6 +15,14 @@ export { extract } from "./extract.js";
 export { inspect, inspectDiff, inspectDir } from "./inspect.js";
 export { LANGUAGES, type Language } from "./language.js";
 export { runCli, USAGE } from "./run.js";
+export {
+  draftYaml,
+  type StubDraftOptions,
+  type StubDraftResult,
+  stubDraft,
+  stubDraftResult,
+} from "./stubDraftCommand.js";
+export { loadStubs, type StubFile, stubOverlayOf } from "./stubs.js";
 
 export type { Answer, AnswerJson, QuestionShape } from "./ask.js";
 export type {

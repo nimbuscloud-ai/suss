@@ -37,6 +37,15 @@ function writeProject(root: string): void {
     ].join("\n"),
   );
   fs.writeFileSync(
+    path.join(root, "src/native.ts"),
+    [
+      'import { publishEntry } from "@acme/ledger-native";',
+      "export function push(entry: object): Promise<void> {",
+      '  return publishEntry("ledger-queue", entry);',
+      "}",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
     path.join(root, "src/client.ts"),
     [
       "export async function loadOrder(id: string): Promise<unknown> {",
@@ -95,13 +104,14 @@ describe("the suss MCP server", () => {
     expect(info?.version).not.toBe("0.0.0-dev");
   });
 
-  it("offers the four read tools", async () => {
+  it("offers the five tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "suss_ask",
       "suss_boundaries",
       "suss_check",
       "suss_status",
+      "suss_stub_draft",
     ]);
   });
 
@@ -140,6 +150,27 @@ describe("the suss MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("seven questions");
+  });
+
+  it("drafts a stub skeleton from the project's calls into a package", async () => {
+    const result = await client.callTool({
+      name: "suss_stub_draft",
+      arguments: { package: "@acme/ledger-native" },
+    });
+    expect(result.isError).toBeUndefined();
+    const text = JSON.stringify(result.content);
+    expect(text).toContain("Save this to");
+    expect(text).toContain("publishEntry");
+    expect(text).toContain("performs-call");
+  });
+
+  it("says there is nothing to draft for a package the project never calls", async () => {
+    const result = await client.callTool({
+      name: "suss_stub_draft",
+      arguments: { package: "@acme/never-imported" },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("nothing to draft");
   });
 
   it("compares the two sides and says so, rather than reporting an empty run", async () => {

@@ -136,6 +136,22 @@ describe("the tools, on a project bigger than one answer", () => {
     project.close();
   }, 60_000);
 
+  it("lists a failed extract entry in the status text", () => {
+    const project = {
+      root: "/nowhere",
+      lastBuild: () => ({
+        configured: true,
+        summaryDir: "/nowhere/.suss",
+        ran: ["extract tsconfig.json"],
+        failed: ["contract openapi.yaml: unreadable"],
+      }),
+    } as unknown as Project;
+
+    const text = textOf(statusTool(project));
+    expect(text).toContain("ran: extract tsconfig.json");
+    expect(text).toContain("failed: contract openapi.yaml: unreadable");
+  });
+
   it("says a project with nothing set up will answer nothing", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-bare-"));
     const project = new Project({ root, watch: false });

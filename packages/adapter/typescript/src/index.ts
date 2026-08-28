@@ -58,6 +58,13 @@ export {
 } from "./resolve/invocationEffects.js";
 export { type ReadNameOptions, readName } from "./resolve/readName.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
+export {
+  type ObservedStubCall,
+  type StubCallEvidence,
+  type StubEvidenceOptions,
+  stubEvidence,
+  stubEvidenceIn,
+} from "./stubEvidence.js";
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
 export { workspaceRootFor } from "./summaryIdentity.js";

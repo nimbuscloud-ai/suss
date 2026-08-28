@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 8672,
-      "covered": 7471,
+      "total": 8692,
+      "covered": 7489,
       "skipped": 0,
       "pct": 86.15
     },
     "statements": {
-      "total": 8771,
-      "covered": 7566,
+      "total": 8791,
+      "covered": 7584,
       "skipped": 0,
-      "pct": 86.26
+      "pct": 86.27
     },
     "functions": {
-      "total": 1275,
-      "covered": 1180,
+      "total": 1280,
+      "covered": 1185,
       "skipped": 0,
-      "pct": 92.54
+      "pct": 92.57
     },
     "branches": {
-      "total": 6754,
-      "covered": 5306,
+      "total": 6768,
+      "covered": 5313,
       "skipped": 0,
-      "pct": 78.56
+      "pct": 78.5
     },
     "branchesTrue": {
       "total": 0,
@@ -577,6 +577,32 @@
       "pct": 0
     }
   },
+  "src/stubEvidence.ts": {
+    "lines": {
+      "total": 17,
+      "covered": 12,
+      "skipped": 0,
+      "pct": 70.58
+    },
+    "functions": {
+      "total": 4,
+      "covered": 3,
+      "skipped": 0,
+      "pct": 75
+    },
+    "statements": {
+      "total": 17,
+      "covered": 12,
+      "skipped": 0,
+      "pct": 70.58
+    },
+    "branches": {
+      "total": 12,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 33.33
+    }
+  },
   "src/subUnitContext.ts": {
     "lines": {
       "total": 82,
@@ -996,9 +1022,9 @@
   "src/discovery/factoryTracking.ts": {
     "lines": {
       "total": 54,
-      "covered": 49,
+      "covered": 50,
       "skipped": 0,
-      "pct": 90.74
+      "pct": 92.59
     },
     "functions": {
       "total": 5,
@@ -1008,15 +1034,15 @@
     },
     "statements": {
       "total": 54,
-      "covered": 49,
+      "covered": 50,
       "skipped": 0,
-      "pct": 90.74
+      "pct": 92.59
     },
     "branches": {
       "total": 35,
-      "covered": 29,
+      "covered": 30,
       "skipped": 0,
-      "pct": 82.85
+      "pct": 85.71
     }
   },
   "src/discovery/fileConvention.ts": {
@@ -1333,28 +1359,28 @@
   },
   "src/discovery/packageImport.ts": {
     "lines": {
-      "total": 93,
-      "covered": 67,
+      "total": 96,
+      "covered": 71,
       "skipped": 0,
-      "pct": 72.04
+      "pct": 73.95
     },
     "functions": {
-      "total": 10,
-      "covered": 8,
+      "total": 11,
+      "covered": 9,
       "skipped": 0,
-      "pct": 80
+      "pct": 81.81
     },
     "statements": {
-      "total": 93,
-      "covered": 67,
+      "total": 96,
+      "covered": 71,
       "skipped": 0,
-      "pct": 72.04
+      "pct": 73.95
     },
     "branches": {
-      "total": 76,
-      "covered": 46,
+      "total": 78,
+      "covered": 48,
       "skipped": 0,
-      "pct": 60.52
+      "pct": 61.53
     }
   },
   "src/discovery/registrationCall.ts": {
@@ -1828,21 +1854,21 @@
   "src/resolve/invocationEffects.ts": {
     "lines": {
       "total": 274,
-      "covered": 245,
+      "covered": 246,
       "skipped": 0,
-      "pct": 89.41
+      "pct": 89.78
     },
     "functions": {
       "total": 37,
-      "covered": 32,
+      "covered": 33,
       "skipped": 0,
-      "pct": 86.48
+      "pct": 89.18
     },
     "statements": {
       "total": 276,
-      "covered": 247,
+      "covered": 248,
       "skipped": 0,
-      "pct": 89.49
+      "pct": 89.85
     },
     "branches": {
       "total": 223,
