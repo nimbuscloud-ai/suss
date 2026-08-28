@@ -139,6 +139,36 @@ function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
  * This is the one check that needs no codebase to decide, and the one
  * that costs a pack author something: it asks for a field.
  */
+/**
+ * A recognizer pack whose gate selected files, in a run where no pack
+ * discovered a unit in any of them.
+ *
+ * A recognizer reads calls inside units other packs discover, so a run
+ * with the recognizer alone walks nothing and writes nothing, and the
+ * funnel's own drop check stays quiet because its first count is
+ * already zero. Somebody who ran `-f prisma` on a working application
+ * saw exactly that silence, and the missing pack is the one thing the
+ * output did not say.
+ */
+function recognizersWithNoUnits(
+  packs: ReadonlyArray<PackFunnel>,
+): HealthViolation[] {
+  return packs
+    .filter(
+      (funnel) =>
+        funnel.recognizes &&
+        !funnel.discovers &&
+        funnel.gates.length > 0 &&
+        funnel.unresolvedGates.length === 0 &&
+        funnel.candidateFiles > 0 &&
+        funnel.unitsInGatedFiles === 0,
+    )
+    .map((funnel) => ({
+      label: funnel.pack,
+      detail: `${funnel.candidateFiles} gated files, and no pack in this run discovered a unit in them. ${funnel.pack} reads calls inside units another pack finds, so add the pack that finds this project's handlers (-f express, -f fastify, ...), or run suss init to work out which.`,
+    }));
+}
+
 function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
   return packs
     .filter((funnel) => funnel.version === null)
@@ -329,6 +359,12 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
       code: "double-match",
       audience: "run",
       violations: selfCollisions(report.packs),
+    },
+    {
+      name: "every recognizer had units to look inside",
+      code: "no-units",
+      audience: "run",
+      violations: recognizersWithNoUnits(report.packs),
     },
     {
       name: "every pack declares a version",

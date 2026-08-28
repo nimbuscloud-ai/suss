@@ -345,3 +345,52 @@ describe("formatPackHealth", () => {
     expect(both).toContain("no-version");
   });
 });
+
+describe("the recognizer-with-no-units check", () => {
+  const noUnits = (packs: PackFunnel[]) =>
+    firedBy("every recognizer had units to look inside", packs);
+
+  const recognizerOnly = (over: Partial<PackFunnel> = {}) =>
+    funnel({
+      discovers: false,
+      recognizes: true,
+      candidateFiles: 12,
+      unitsDiscovered: 0,
+      unitsInGatedFiles: 0,
+      unitsClaimed: 0,
+      summariesProduced: 0,
+      summariesBound: 0,
+      providerSummaries: 0,
+      summariesWithBehavior: 0,
+      ...over,
+    });
+
+  it("says which pack had nothing to look inside, and what to add", () => {
+    // `-f prisma` alone on a working application printed nothing at
+    // all: the recognizer walks units other packs discover, none were
+    // discovered, and the funnel-drop check skips a stage whose first
+    // count is already zero.
+    const violations = noUnits([recognizerOnly()]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.detail).toContain("12 gated files");
+    expect(violations[0]?.detail).toContain("suss init");
+  });
+
+  it("stays quiet when units were walked, whatever came of them", () => {
+    expect(noUnits([recognizerOnly({ unitsInGatedFiles: 5 })])).toEqual([]);
+  });
+
+  it("stays quiet when the gate selected no files", () => {
+    expect(noUnits([recognizerOnly({ candidateFiles: 0 })])).toEqual([]);
+  });
+
+  it("stays quiet for a pack that discovers its own units", () => {
+    expect(noUnits([funnel({ recognizes: true })])).toEqual([]);
+  });
+
+  it("stays quiet while the gate is unresolved, which has its own report", () => {
+    expect(
+      noUnits([recognizerOnly({ unresolvedGates: ["@scope/lib"] })]),
+    ).toEqual([]);
+  });
+});
