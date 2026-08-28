@@ -622,12 +622,30 @@ describe("relativizeSummaryPaths", () => {
         },
         { output: { type: "return" } },
       ],
+      identity: {
+        name: "createOrder",
+        exportPath: ["createOrder"],
+        boundaryBinding: {
+          transport: "http",
+          semantics: {
+            name: "function-call",
+            module: "/repo/src/actions.ts",
+            exportName: "createOrder",
+          },
+          recognition: "nextjs",
+        },
+      },
       metadata: { moduleImports: ["/repo/src/avatar.tsx"] },
     } as unknown as BehavioralSummary;
 
     relativizeSummaryPaths(summary, "/repo");
 
     expect(summary.location.file).toBe("src/page.tsx");
+    expect(
+      summary.identity.boundaryBinding?.semantics.name === "function-call"
+        ? summary.identity.boundaryBinding.semantics.module
+        : undefined,
+    ).toBe("src/actions.ts");
     expect(summary.metadata?.moduleImports).toEqual(["src/avatar.tsx"]);
     const rendered = summary.transitions[0].output;
     expect(

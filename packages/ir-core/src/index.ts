@@ -126,6 +126,7 @@ export {
   reportsUnpairedItself,
   semanticsAgree,
   servesRequest,
+  withRewrittenPaths,
 } from "./boundaryKey.js";
 export {
   type BoundaryName,

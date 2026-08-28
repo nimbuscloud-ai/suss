@@ -79,6 +79,7 @@ export {
   runtimeConfigBinding,
   semconvAttributes,
   storageBinding,
+  withRewrittenPaths,
 } from "@suss/ir-core";
 
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";

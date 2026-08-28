@@ -69,6 +69,13 @@ export interface BoundaryBehavior<S extends { name: string }> {
   displayLabel?(semantics: S): string | null;
 
   /**
+   * The semantics with any filesystem path it states rewritten, for
+   * the pass that makes a summary's paths project-relative. A
+   * protocol that states no path declares nothing here.
+   */
+  rewritePaths?(semantics: S, rewrite: (path: string) => string): S;
+
+  /**
    * The first protocol whose `claims` returns true normalizes a
    * hand-written suppression boundary, and a string nobody claims is
    * compared byte for byte. A protocol whose keys are exact declares

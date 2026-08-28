@@ -19,6 +19,7 @@ import {
   restBinding,
   semanticsAgree,
   storageBinding,
+  withRewrittenPaths,
 } from "./index.js";
 
 describe("normalizePath", () => {
@@ -548,5 +549,51 @@ describe("groundedPairingKey", () => {
       container: "orders",
     });
     expect(groundedPairingKey(store, () => "anything")).toBe(pairingKey(store));
+  });
+});
+
+describe("a function-call binding that states its module", () => {
+  it("keys an in-repo action by module and export name", () => {
+    expect(
+      boundaryKey({
+        transport: "http",
+        semantics: {
+          name: "function-call",
+          module: "app/actions.ts",
+          exportName: "createOrder",
+        },
+        recognition: "nextjs",
+      }),
+    ).toBe("fn:app/actions.ts::createOrder");
+  });
+
+  it("rewrites the module path and leaves a pathless protocol alone", () => {
+    const rewritten = withRewrittenPaths(
+      {
+        transport: "http",
+        semantics: {
+          name: "function-call",
+          module: "/repo/app/actions.ts",
+          exportName: "createOrder",
+        },
+        recognition: "nextjs",
+      },
+      (one) => one.replace("/repo/", ""),
+    );
+    expect(
+      rewritten.semantics.name === "function-call"
+        ? rewritten.semantics.module
+        : undefined,
+    ).toBe("app/actions.ts");
+
+    const untouched = withRewrittenPaths(
+      {
+        transport: "http",
+        semantics: { name: "rest", method: "GET", path: "/x" },
+        recognition: "express",
+      },
+      () => "changed",
+    );
+    expect(untouched.semantics).toMatchObject({ path: "/x" });
   });
 });

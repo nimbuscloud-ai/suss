@@ -132,6 +132,8 @@ export interface DiscoveredUnit {
     packageName: string;
     exportPath: string[];
   };
+  /** A callable identity the pack stated: module and export name. */
+  functionCallInfo?: { module: string; exportName: string };
   /**
    * Populated by `decoratedRoute` discovery (NestJS-style REST
    * controllers). The adapter uses it to build a `rest` binding
