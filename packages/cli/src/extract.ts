@@ -152,6 +152,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   hono: "@suss/packs/hono",
   nextjs: "@suss/packs/nextjs",
   react: "@suss/packs/react",
+  "react-query": "@suss/packs/react-query",
   apollo: "@suss/packs/apollo",
   "nestjs-graphql": "@suss/packs/nestjs-graphql",
   "nestjs-microservices": "@suss/packs/nestjs-microservices",

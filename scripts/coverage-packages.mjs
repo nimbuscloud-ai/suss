@@ -31,6 +31,7 @@ export const coveragePackages = [
   ["packages/framework/ts-rest", "ts-rest"],
   ["packages/framework/react-router", "react-router"],
   ["packages/framework/react", "react"],
+  ["packages/framework/react-query", "react-query"],
   ["packages/framework/express", "express"],
   ["packages/framework/gcs", "gcs"],
   ["packages/framework/fastify", "fastify"],

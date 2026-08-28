@@ -1,0 +1,6 @@
+{
+  "mutationFn": "@tanstack/react-query: the options property whose function a mutation runs",
+  "queryFn": "@tanstack/react-query: the options property whose function a query runs",
+  "useMutation": "@tanstack/react-query: mutation hook",
+  "schedule": "suss: interaction class for a callback a library runs later"
+}

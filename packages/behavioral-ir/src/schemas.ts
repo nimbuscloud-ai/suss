@@ -550,13 +550,13 @@ export const EffectSchema = z.discriminatedUnion("type", [
        */
       z.object({
         class: z.literal("schedule"),
-        via: z.enum([
-          "setImmediate",
-          "setTimeout",
-          "setInterval",
-          "queueMicrotask",
-          "process.nextTick",
-        ]),
+        /**
+         * What scheduled the callback, as the source spells it:
+         * a runtime primitive (`setTimeout`, `process.nextTick`) or a
+         * library hook (`useQuery`). Open, because each pack knows its
+         * own scheduling surface; nothing dispatches on the value.
+         */
+        via: z.string(),
         callbackRef: z.discriminatedUnion("type", [
           z.object({ type: z.literal("literal") }),
           z.object({ type: z.literal("identifier"), name: z.string() }),
