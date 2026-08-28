@@ -31,14 +31,13 @@ import { extractCodeStructure } from "../adapter.js";
 import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { createDependencySink, withDependencySink } from "../depTracking.js";
-import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
 import { offsetKeyOf } from "../walk/nodeKeys.js";
+import { type ReachableCandidate, resolveDecl } from "./functionBehind.js";
 import {
   classifyStop,
   declarationsBehind,
   hasBody,
   isDeclaredShape,
-  isInExternalCode,
   type UnfollowedCall,
   unfollowedCallGap,
   worthRecording,
@@ -51,6 +50,7 @@ import type {
   PatternPack,
 } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { DiscoveredUnit } from "../discovery/index.js";
 import type { ClosureFacts } from "./boundaryEffects.js";
 
 // ---------------------------------------------------------------------------
@@ -92,69 +92,6 @@ function nodeKey(func: FunctionRoot): string {
  * A function-shaped declaration we can follow into. Records the source
  * node (for dedup + extraction) and a display name (for `summary.identity.name`).
  */
-interface ReachableCandidate {
-  func: FunctionRoot;
-  name: string;
-}
-
-/**
- * Follow a declaration node to an underlying function-shaped declaration
- * we can extract from. Returns null for declarations that don't resolve
- * (namespaces, classes without a called method, external-module imports,
- * parameters, etc.): the closure skips those.
- */
-function resolveDecl(
-  decl: Node,
-  calleeName: string,
-): ReachableCandidate | null {
-  if (isInExternalCode(decl.getSourceFile())) {
-    return null;
-  }
-  const fn = toFunctionRoot(decl);
-  if (fn !== null) {
-    if (!hasBody(fn)) {
-      return null;
-    }
-    return { func: fn, name: declName(decl) ?? calleeName };
-  }
-  if (Node.isVariableDeclaration(decl)) {
-    const init = decl.getInitializer();
-    if (
-      init !== undefined &&
-      (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-    ) {
-      return { func: init as FunctionRoot, name: decl.getName() };
-    }
-    return null;
-  }
-  return null;
-}
-
-/**
- * Best-effort name extraction for a reached declaration: used for
- * `summary.identity.name`. FunctionDeclaration / MethodDeclaration have
- * a direct name. Arrow/function expressions bound to a variable borrow
- * the variable name.
- */
-function declName(decl: Node): string | null {
-  if (Node.isFunctionDeclaration(decl) || Node.isMethodDeclaration(decl)) {
-    const n = decl.getName?.();
-    if (typeof n === "string" && n.length > 0) {
-      return n;
-    }
-  }
-  if (Node.isFunctionExpression(decl)) {
-    const n = decl.getName();
-    if (typeof n === "string" && n.length > 0) {
-      return n;
-    }
-  }
-  const parent = decl.getParent();
-  if (parent !== undefined && Node.isVariableDeclaration(parent)) {
-    return parent.getName();
-  }
-  return null;
-}
 
 /**
  * What one call site came to: a function to walk into, or a stop the

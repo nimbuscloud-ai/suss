@@ -13,7 +13,11 @@
 
 import { Node } from "ts-morph";
 
-import { importedNamesOf, importedRootsOf } from "@suss/adapter-typescript";
+import {
+  functionTargetOf,
+  importedNamesOf,
+  importedRootsOf,
+} from "@suss/adapter-typescript";
 
 import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
 import type { CallExpression, Identifier, SourceFile } from "ts-morph";
@@ -77,24 +81,8 @@ function renderedComponentOf(
   if (tag === null || !/^[A-Z]/.test(tag.getText())) {
     return null;
   }
-
-  const symbol = tag.getSymbol();
-  const aliased = symbol?.getAliasedSymbol();
-  for (const decl of (aliased ?? symbol)?.getDeclarations() ?? []) {
-    if (Node.isFunctionDeclaration(decl) && decl.getBody() !== undefined) {
-      return { func: decl, name: decl.getName() ?? tag.getText() };
-    }
-    if (Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer();
-      if (
-        init !== undefined &&
-        (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-      ) {
-        return { func: init, name: decl.getName() };
-      }
-    }
-  }
-  return null;
+  const target = functionTargetOf(tag);
+  return target === null ? null : { func: target.func, name: target.name };
 }
 
 export const reactRootComponents: NonNullable<PatternPack["discoverUnits"]> = (

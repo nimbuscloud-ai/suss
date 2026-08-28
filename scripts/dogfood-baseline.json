@@ -2,10 +2,10 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 615,
-    "internal": 2237,
-    "consumers": 1046,
-    "pairs": 1030,
+    "exports": 616,
+    "internal": 2236,
+    "consumers": 1047,
+    "pairs": 1031,
     "unfollowedCalls": 235,
     "findingErrors": 0
   },
@@ -26,7 +26,7 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 62,
+      "exports": 63,
       "internal": 765,
       "consumers": 77,
       "unfollowedCalls": 70
@@ -335,8 +335,8 @@
     "packages/framework/react": {
       "name": "@suss/framework-react",
       "exports": 4,
-      "internal": 5,
-      "consumers": 10,
+      "internal": 4,
+      "consumers": 11,
       "unfollowedCalls": 0
     },
     "packages/framework/react-query": {
