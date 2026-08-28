@@ -29,6 +29,12 @@ import {
 import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
+import {
+  loadStubs,
+  type StubOverlay,
+  stubOverlayOf,
+  withStubOptions,
+} from "./stubs.js";
 import { UsageError } from "./usageError.js";
 
 import type { PythonPack } from "@suss/adapter-python";
@@ -327,15 +333,45 @@ function assertPackLanguage(name: string, language: Language): void {
   );
 }
 
-export async function resolveFramework(spec: string): Promise<PatternPack> {
+export async function resolveFramework(
+  spec: string,
+  stubOverlay?: StubOverlay,
+): Promise<PatternPack> {
   const loaded = await loadPackFactory(spec);
   assertPackLanguage(loaded.name, "typescript");
-  return instantiatePack(loaded, loaded.specifier, loaded.name);
+  return instantiatePack(
+    withStubbedOptions(loaded, stubOverlay),
+    loaded.specifier,
+    loaded.name,
+  );
+}
+
+/**
+ * The loaded factory with stub statements folded into its options.
+ * Both copies get them: `options` is what the cache digest reads, so
+ * an edited stub invalidates, and `handedOver` is what the factory
+ * gets.
+ */
+function withStubbedOptions(
+  loaded: LoadedFactory,
+  overlay: StubOverlay | undefined,
+): LoadedFactory {
+  if (overlay === undefined || !overlay.has(loaded.name)) {
+    return loaded;
+  }
+  return {
+    ...loaded,
+    options: withStubOptions(loaded.name, loaded.options, overlay),
+    handedOver: withStubOptions(loaded.name, loaded.handedOver, overlay),
+  };
 }
 
 /** No version stamp: the stamp keys a cache the Python adapter does not keep. */
-export async function resolvePythonPack(spec: string): Promise<PythonPack> {
-  const loaded = await loadPackFactory(spec);
+export async function resolvePythonPack(
+  spec: string,
+  stubOverlay?: StubOverlay,
+): Promise<PythonPack> {
+  const loaded = withStubbedOptions(await loadPackFactory(spec), stubOverlay);
   assertPackLanguage(loaded.name, "python");
   return callPackFactory<PythonPack>(
     loaded.factory,
@@ -344,8 +380,11 @@ export async function resolvePythonPack(spec: string): Promise<PythonPack> {
   );
 }
 
-export async function resolveRubyPack(spec: string): Promise<RubyPack> {
-  const loaded = await loadPackFactory(spec);
+export async function resolveRubyPack(
+  spec: string,
+  stubOverlay?: StubOverlay,
+): Promise<RubyPack> {
+  const loaded = withStubbedOptions(await loadPackFactory(spec), stubOverlay);
   assertPackLanguage(loaded.name, "ruby");
   return callPackFactory<RubyPack>(
     loaded.factory,
@@ -481,7 +520,10 @@ async function runTypeScript(
   // Ids and the written summaries' paths are both relative to this
   // root, so a reader can rebuild an id from a summary's own fields.
   const runRoot = workspaceRootFor(source.root);
-  const packs = await Promise.all(options.frameworks.map(resolveFramework));
+  const stubOverlay = stubOverlayOf(loadStubs(runRoot));
+  const packs = await Promise.all(
+    options.frameworks.map((one) => resolveFramework(one, stubOverlay)),
+  );
   process.stderr.write(formatSecondCopies(checkOneTsMorph(packsLoadedSoFar())));
 
   const extractorOptions =
@@ -533,8 +575,11 @@ async function runTypeScript(
 }
 
 async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
+  const stubOverlay = pythonStubOverlay(runOptions);
   const packs = await Promise.all(
-    runOptions.options.frameworks.map(resolvePythonPack),
+    runOptions.options.frameworks.map((one) =>
+      resolvePythonPack(one, stubOverlay),
+    ),
   );
   // A submodule has to be a root of its own, or imports into the shared
   // framework inside it do not resolve.
@@ -564,8 +609,11 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
 }
 
 async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
+  const stubOverlay = pythonStubOverlay(runOptions);
   const packs = await Promise.all(
-    runOptions.options.frameworks.map(resolveRubyPack),
+    runOptions.options.frameworks.map((one) =>
+      resolveRubyPack(one, stubOverlay),
+    ),
   );
   // findRubyFiles skips any directory called .git, but it does not
   // notice that the .git directory means there is a separate repository
@@ -1141,4 +1189,9 @@ export function relativizeRenderTargets(
   for (const child of root.children) {
     relativizeRenderTargets(child, projectRoot);
   }
+}
+
+/** The stub overlay for a run rooted where its options point. */
+function pythonStubOverlay(runOptions: LanguageRunOptions): StubOverlay {
+  return stubOverlayOf(loadStubs(runOptions.root));
 }

@@ -74,6 +74,35 @@ goes when nothing ships it.
    way `types` points at declarations. A consumer repo then configures
    nothing. This is the package-exports direction and needs nothing
    from v1 changed, only a second place the loader looks.
+
+   A package author may prefer to write the facts next to the exports
+   they describe rather than in a parallel file. The place for that is
+   whatever the ecosystem already uses for the export's interface: a
+   JSDoc tag in the `.d.ts` a napi-rs crate ships, a comment on the
+   signature in a `.pyi` stub, a `sig/*.rbs` entry for a native gem,
+   or a doc comment in the implementation source itself:
+
+   ```ts
+   /** @suss performs-call aws.sqs subject=arg0 payload=arg1 */
+   export function publishEntry(queue: string, body: Buffer): Promise<void>;
+   ```
+
+   ```rust
+   /// @suss performs-call aws.sqs subject=arg0 payload=arg1
+   #[napi]
+   pub fn publish_entry(queue: String, body: Buffer) -> Result<()> { ... }
+   ```
+
+   Tags are an authoring surface, not a second runtime input. A
+   publish step projects them into the shipped stub file, so suss
+   never parses the implementation language; digesting, corroboration,
+   and drafting stay single-path over the one schema. The loader can
+   also read tags directly from an interface artifact an adapter
+   already parses, which is the `.d.ts` today. Consumer-side
+   annotations at call sites are deliberately not supported; a stub
+   states facts about a package's exports so every import site
+   benefits, and a per-site spelling of the same fact is the
+   divergence pattern this design exists to remove.
 3. Inference replaces the stub: when a wrapper's source is readable,
    following it beats declaring it, and a category of statement that
    inference learns to cover stops being written.
