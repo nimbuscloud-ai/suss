@@ -1465,6 +1465,53 @@ const storagePack: PatternPack = {
   ],
 };
 
+describe("createTypeScriptAdapter: componentProps roles", () => {
+  it("keeps the passed name through renames and marks a rest binding", async () => {
+    const pack: PatternPack = {
+      name: "test-components",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        { kind: "component", match: { type: "namedExport", names: ["Chip"] } },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      ],
+      inputMapping: { type: "componentProps", paramPosition: 0 },
+    };
+    const project = createTestProject();
+    project.createSourceFile(
+      "chip.tsx",
+      `
+      export function Chip({
+        label,
+        totalCount: _totalCount,
+        "aria-label": ariaLabel,
+        ...rest
+      }: { label: string; totalCount: number; "aria-label": string } & Record<
+        string,
+        unknown
+      >) {
+        return <span {...rest}>{label}{String(_totalCount)}{ariaLabel}</span>;
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [pack] });
+    const summaries = await adapter.extractAll();
+    const chip = summaries.find((one) => one.identity.name === "Chip");
+    expect(
+      chip?.inputs.flatMap((input) =>
+        input.type === "parameter" ? [[input.name, input.role]] : [],
+      ),
+    ).toEqual([
+      ["label", "label"],
+      ["_totalCount", "totalCount"],
+      ["ariaLabel", "aria-label"],
+      ["rest", "rest"],
+    ]);
+  });
+});
+
 describe("createTypeScriptAdapter: reachable closure", () => {
   it("records where a rendered component is declared on the render edge", async () => {
     const componentPack: PatternPack = {

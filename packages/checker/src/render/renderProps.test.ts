@@ -195,6 +195,26 @@ describe("checkRenderProps", () => {
     expect(findings[0].description).toContain('"ghost"');
   });
 
+  it("translates a destructure rename back to the passed name", () => {
+    const parent = component({
+      name: "Row",
+      file: "src/row.tsx",
+      root: rendering(
+        "Avatars",
+        { file: "src/avatars.tsx", name: "Avatars" },
+        { totalCount: "12" },
+      ),
+    });
+    const child = component({
+      name: "Avatars",
+      file: "src/avatars.tsx",
+      inputs: [param("_totalCount", "totalCount")],
+      inputReads: [{ input: "_totalCount", path: [] }],
+    });
+
+    expect(checkRenderProps([parent, child])).toEqual([]);
+  });
+
   it("skips plumbing props and a child with nothing recorded", () => {
     const parent = component({
       name: "Page",

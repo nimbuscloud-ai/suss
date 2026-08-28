@@ -16,6 +16,7 @@
 import path from "node:path";
 
 import {
+  type BindingElement,
   type CallExpression,
   type Identifier,
   Node,
@@ -238,10 +239,30 @@ function componentPropsParameters(
     return {
       name,
       position: mapping.paramPosition,
-      role: name,
+      role: bindingRole(element, name),
       typeText: typeText.length > 0 ? typeText : null,
     };
   });
+}
+
+/**
+ * The name the caller passes, for a destructured binding's role. A
+ * rename (`totalCount: _totalCount`) reads under the binding's name
+ * while the boundary's word is the property's, and a rest binding
+ * collects whatever was passed, so its role says so.
+ */
+function bindingRole(element: BindingElement, name: string): string {
+  if (element.getDotDotDotToken() !== undefined) {
+    return "rest";
+  }
+  const property = element.getPropertyNameNode();
+  if (property === undefined) {
+    return name;
+  }
+  if (Node.isStringLiteral(property)) {
+    return property.getLiteralValue();
+  }
+  return property.getText();
 }
 
 function extractParameters(
@@ -277,15 +298,12 @@ function extractParameters(
       const boundNames = bindingPatternNames(nameNode);
       if (Node.isObjectBindingPattern(nameNode)) {
         for (const element of nameNode.getElements()) {
-          // A rest binding collects whatever the caller passed, so its
-          // role says so instead of repeating the variable's name.
-          const rest = element.getDotDotDotToken() !== undefined;
           result.push({
             name: element.getName(),
             position: i,
-            role: rest
-              ? "rest"
-              : (inputMapping.defaultRole ?? element.getName()),
+            role:
+              inputMapping.defaultRole ??
+              bindingRole(element, element.getName()),
             typeText: null,
           });
         }

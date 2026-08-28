@@ -87,9 +87,13 @@ function readSetOf(child: BehavioralSummary): Set<string> | null {
     return null;
   }
 
-  const parameterNames = new Set(
+  // Reads record the binding's name; the boundary's word is the role,
+  // which is where a destructure rename keeps the passed name.
+  const roleByBinding = new Map(
     child.inputs.flatMap((input) =>
-      input.type === "parameter" ? [input.name] : [],
+      input.type === "parameter"
+        ? [[input.name, input.role ?? input.name]]
+        : [],
     ),
   );
   const objectParams = new Set(
@@ -109,8 +113,9 @@ function readSetOf(child: BehavioralSummary): Set<string> | null {
       used.add(read.path[0]);
       continue;
     }
-    if (parameterNames.has(read.input)) {
-      used.add(read.input);
+    const role = roleByBinding.get(read.input);
+    if (role !== undefined) {
+      used.add(role);
     }
   }
   return used;
