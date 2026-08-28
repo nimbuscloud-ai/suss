@@ -127,3 +127,23 @@ function nested(value: unknown, depth: number): ValueRef[] {
   }
   return valuesIn(value as Predicate, depth + 1);
 }
+
+/**
+ * The union of derived and syntactic reads, once each. The derivation
+ * walk misses a read that only appears in a render tree or a template,
+ * and the syntactic walk cannot see through derived values, so a
+ * summary reports both, deduplicated here.
+ */
+export function mergeInputReads(
+  derived: InputRead[],
+  syntactic: InputRead[],
+): InputRead[] {
+  const found = new Map<string, InputRead>();
+  for (const read of [...derived, ...syntactic]) {
+    const key = `${read.input}\u0000${read.path.join(".")}`;
+    if (!found.has(key)) {
+      found.set(key, read);
+    }
+  }
+  return [...found.values()];
+}

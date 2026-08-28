@@ -122,6 +122,7 @@ import {
   warmExportChains,
 } from "./moduleExports.js";
 import { moduleInitSummary } from "./moduleInit.js";
+import { parameterReads } from "./parameterReads.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import {
   type ClosureFacts,
@@ -653,6 +654,10 @@ function readCodeStructure(
     barriers,
   );
   const depCalls = extractDependencyCalls(func);
+  const paramReads = parameterReads(
+    func,
+    params.map((one) => one.name),
+  );
 
   if (unit.callSite !== undefined) {
     const calleeText = unit.callSite.callExpression.getExpression().getText();
@@ -705,6 +710,7 @@ function readCodeStructure(
     bodyContent: bodyContentOf(func),
     dependencyCalls: depCalls,
     declaredContract: null,
+    ...(paramReads.length > 0 ? { extraInputReads: paramReads } : {}),
     ...accessors,
     ...(unit.callSite !== undefined && pack.failureDelivery !== undefined
       ? { failureDelivery: pack.failureDelivery }

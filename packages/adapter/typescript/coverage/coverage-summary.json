@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 8666,
-      "covered": 7438,
+      "total": 8708,
+      "covered": 7480,
       "skipped": 0,
-      "pct": 85.82
+      "pct": 85.89
     },
     "statements": {
-      "total": 8763,
-      "covered": 7531,
+      "total": 8806,
+      "covered": 7574,
       "skipped": 0,
-      "pct": 85.94
+      "pct": 86
     },
     "functions": {
-      "total": 1255,
-      "covered": 1161,
+      "total": 1262,
+      "covered": 1168,
       "skipped": 0,
-      "pct": 92.5
+      "pct": 92.55
     },
     "branches": {
-      "total": 6790,
-      "covered": 5318,
+      "total": 6828,
+      "covered": 5355,
       "skipped": 0,
-      "pct": 78.32
+      "pct": 78.42
     },
     "branchesTrue": {
       "total": 0,
@@ -33,28 +33,28 @@
   },
   "src/adapter.ts": {
     "lines": {
-      "total": 865,
-      "covered": 620,
+      "total": 867,
+      "covered": 622,
       "skipped": 0,
-      "pct": 71.67
+      "pct": 71.74
     },
     "functions": {
-      "total": 122,
-      "covered": 100,
+      "total": 123,
+      "covered": 101,
       "skipped": 0,
-      "pct": 81.96
+      "pct": 82.11
     },
     "statements": {
-      "total": 879,
-      "covered": 632,
+      "total": 881,
+      "covered": 634,
       "skipped": 0,
-      "pct": 71.89
+      "pct": 71.96
     },
     "branches": {
-      "total": 677,
-      "covered": 435,
+      "total": 679,
+      "covered": 437,
       "skipped": 0,
-      "pct": 64.25
+      "pct": 64.35
     }
   },
   "src/assembly.ts": {
@@ -445,6 +445,32 @@
       "covered": 29,
       "skipped": 0,
       "pct": 74.35
+    }
+  },
+  "src/parameterReads.ts": {
+    "lines": {
+      "total": 40,
+      "covered": 40,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 6,
+      "covered": 6,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 41,
+      "covered": 41,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 36,
+      "covered": 35,
+      "skipped": 0,
+      "pct": 97.22
     }
   },
   "src/perFileCache.ts": {
