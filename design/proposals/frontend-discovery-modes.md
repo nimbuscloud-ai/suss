@@ -1,6 +1,8 @@
 # Proposal: frontend discovery modes and React root-walk
 
-Status: draft, seeking alignment. No implementation yet.
+Status: draft, seeking alignment. No implementation yet. Revised
+2026-08-28: the root-walk section now targets the reachable closure
+the adapter has since grown, instead of a new project-scoped walker.
 
 ## The problem, by example
 
@@ -91,6 +93,39 @@ The dedup key is declaration identity, not name, so a component found by
 both the heuristic (because it is exported) and the walk (because a root
 renders it) collapses to one unit that has the render edges from the
 walk.
+
+## The walk already exists
+
+When the draft above was written, root-walk needed a new project-scoped
+pass, and open question 1 asked how the adapter would schedule one. The
+adapter has since grown exactly that pass for another reason: the
+reachable closure (`resolve/reachableClosure.ts`) walks the call graph
+from seed functions, project-wide, over shared datalog `entry` /
+`calls` / `reachable` facts, and it took an `extraRoots` seam so a
+recognizer-only pack's exports could feed it (#647).
+
+Root-walk should be this closure with two additions, never a second
+walker:
+
+- **Roots feed `extraRoots`.** A pack-declared root pattern
+  (`createRoot(el).render(<App/>)`, `hydrateRoot`, a route element)
+  resolves the rendered component reference and hands that declaration
+  to the closure as a root, through the same seam
+  `recognizerOnlyRoots` uses today. Module-scope boot calls are not
+  units, and the seam exists because roots that are not units already
+  needed a way in.
+- **JSX references are edges.** The closure's edge extraction reads
+  call expressions today. A `<UserCard .../>` opening element is the
+  same kind of edge with a props expression on it: identifier, resolve
+  to declaration, record the edge fact. The resolution cases (local
+  function, imported binding, const bound to a component) are the ones
+  the closure and `subjects.ts` already resolve for calls.
+
+This answers open question 1: the closure already runs after per-file
+discovery, project-scoped, so the mode list only distinguishes
+file-scoped modes from "seeds for the closure", and the adapter
+schedules nothing new. It also shrinks step 2 of the build order from
+"build the walk" to "teach the walk JSX edges and root seeds".
 
 ## What root-walk needs from the adapter
 
