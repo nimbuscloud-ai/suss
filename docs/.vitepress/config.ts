@@ -122,6 +122,7 @@ export default defineConfig({
           { text: "Contracts", link: "/contracts" },
           { text: "Cross-boundary checking", link: "/cross-boundary-checking" },
           { text: "Suppressions (model)", link: "/suppressions" },
+          { text: "Dependency stubs", link: "/dependency-stubs" },
         ],
       },
       {

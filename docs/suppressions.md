@@ -8,9 +8,10 @@ The project root is the usual home for it, next to `package.json`. `suss check -
 
 In each directory it takes the first of these it finds:
 
-1. `.sussignore.yml`
-2. `.sussignore.yaml`
-3. `.sussignore.json`
+1. `.sussignore` (parsed as YAML)
+2. `.sussignore.yml`
+3. `.sussignore.yaml`
+4. `.sussignore.json`
 
 A `.sussignore.json` sitting in the summaries directory is read as suppression config, not as a summaries file.
 
