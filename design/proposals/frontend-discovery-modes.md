@@ -160,7 +160,22 @@ schedules nothing new. It also shrinks step 2 of the build order from
 3. **Render edges with resolved targets.** Attach parent -> child
    identity and the props expression. This renders the tree in inspect
    with actual component names instead of bare element tags.
-4. **Props checking across the render edge.** A new checker pass: the
+4. **Props checking across the render edge.** Shipped through step 3
+   (2026-08-28): JSX references are closure edges, and an element whose
+   tag resolves records the declaration's file and name as `target`, so
+   the parent's attrs and the child's summary join. The check itself
+   has to clear the bar the story check set: TypeScript already rejects
+   a missing required prop and an unknown extra one at compile time, so
+   findings there are noise. What TypeScript does not give:
+   a prop the child declares and never reads (a dead contract field,
+   which needs prop-read collection, the `collectClientFieldAccesses`
+   analog); a pair whose two sides were extracted separately, the way a
+   design-system package is consumed from another repo; and the
+   form-to-API hop, where the attrs on a form element meet an HTTP
+   contract rather than a component. Those three are the build order
+   within this step.
+
+   The original sketch: A new checker pass: the
    props a parent passes vs the props the child reads. The child summary
    already has a `props` parameter input, and prop references
    (`props.name`) are scattered through its conditions and render tree.
