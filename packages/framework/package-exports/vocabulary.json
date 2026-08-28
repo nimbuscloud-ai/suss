@@ -1,0 +1,7 @@
+{
+  "allPositional": "suss: input-mapping kind, one input per declared parameter",
+  "caller": "suss: code-unit kind",
+  "library": "suss: code-unit kind",
+  "packageExports": "suss: discovery-match kind, the provider side of the package boundary",
+  "packageImport": "suss: discovery-match kind, the consumer side of the package boundary"
+}

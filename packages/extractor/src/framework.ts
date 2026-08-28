@@ -203,8 +203,18 @@ export type DiscoveryMatch =
        * `development` conditions are not handled yet.
        */
       type: "packageExports";
-      /** Absolute path to the package's `package.json`. */
-      packageJsonPath: string;
+      /**
+       * Absolute path to the package's `package.json`. Left out when
+       * `workspaces` is set, since the workspace decides the list.
+       */
+      packageJsonPath?: string;
+      /**
+       * One pattern for every package the workspace declares. The pack
+       * cannot list the packages, because they belong to the project
+       * rather than to any library, so the adapter reads the workspace
+       * manifest and applies this pattern once per package it finds.
+       */
+      workspaces?: true;
       /**
        * Restrict to these `exports` keys (without the leading `./`). The
        * root export is keyed `"."`. Leave it unset for every sub-path that
@@ -472,7 +482,14 @@ export type DiscoveryMatch =
        * than the original, because full symbol resolution is not built yet.
        */
       type: "packageImport";
-      packages: string[];
+      /** Left out when `workspaces` is set. */
+      packages?: string[];
+      /**
+       * Track imports of every package the workspace declares. A file
+       * inside one workspace package importing another is the consumer
+       * side of the package-export boundary, whichever two they are.
+       */
+      workspaces?: true;
     };
 
 export type BindingExtraction = {

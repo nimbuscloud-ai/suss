@@ -63,6 +63,12 @@ export function discoverPackageExports(
   match: Extract<DiscoveryPattern["match"], { type: "packageExports" }>,
   kind: string,
 ): DiscoveredUnit[] {
+  // A workspace-marked pattern only reaches dispatch unexpanded when no
+  // workspace manifest was found, and then there is nothing to resolve.
+  if (match.packageJsonPath === undefined) {
+    return [];
+  }
+
   const { entries } = resolvePackageExportsCached(match.packageJsonPath);
   const filePath = sourceFile.getFilePath();
 

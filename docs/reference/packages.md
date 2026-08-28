@@ -74,6 +74,7 @@ the source.
 | [`apollo`](../../packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](../../.github/badges/coverage-apollo.svg) |
 | [`nestjs-microservices`](../../packages/framework/nestjs-microservices) | NestJS microservice handlers: `@EventPattern` and `@MessagePattern` consumers on the channel the decorator states. | ![](../../.github/badges/coverage-nestjs-microservices.svg) |
 | [`nestjs-rest`](../../packages/framework/nestjs-rest) | NestJS REST controllers. | ![](../../.github/badges/coverage-nestjs-rest.svg) |
+| [`package-exports`](../../packages/framework/package-exports) | The boundary between packages in one workspace: public exports on the provider side, imports of them on the consumer side. Reads the workspace manifest, so it needs no per-project package list. | ![](../../.github/badges/coverage-package-exports.svg) |
 | [`nestjs-graphql`](../../packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](../../.github/badges/coverage-nestjs-graphql.svg) |
 | [`prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
 | [`drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |

@@ -134,6 +134,9 @@
       "path": "packages/framework/nextjs/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/package-exports/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/prisma/tsconfig.typecheck.json"
     },
     {
