@@ -21,6 +21,7 @@
 // their own comes later).
 
 import { reactComponentExports } from "./componentExports.js";
+import { reactRootComponents } from "./rootDiscovery.js";
 import { reactSubUnits } from "./subUnits.js";
 
 import type { PatternPack } from "@suss/extractor";
@@ -91,7 +92,10 @@ export function reactFramework(): PatternPack {
     },
 
     subUnits: reactSubUnits,
-    discoverUnits: reactComponentExports,
+    discoverUnits: (sourceFile, ctx) => [
+      ...reactComponentExports(sourceFile, ctx),
+      ...reactRootComponents(sourceFile, ctx),
+    ],
   };
 }
 

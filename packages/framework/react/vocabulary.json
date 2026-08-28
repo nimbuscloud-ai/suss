@@ -1,9 +1,11 @@
 {
-  "react": "pack name, React",
-  "useEffect": "react: the effect hook",
-  "event": "suss: sub-unit kind for a JSX event handler",
   "A": "upper-case range bound, testing whether a prop name is capitalised",
   "Z": "upper-case range bound, testing whether a prop name is capitalised",
+  "createRoot": "react-dom/client: makes the root a React app renders into",
+  "event": "suss: sub-unit kind for a JSX event handler",
+  "hydrateRoot": "react-dom/client: attaches to server-rendered markup",
+  "n": "the second character of the `on` prefix React event props carry",
   "o": "the leading character of the `on` prefix React event props carry",
-  "n": "the second character of the `on` prefix React event props carry"
+  "react": "pack name, React",
+  "useEffect": "react: the effect hook"
 }
