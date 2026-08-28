@@ -56,6 +56,23 @@ describe("parameterReads", () => {
     );
   });
 
+  it("counts a shorthand property as a read of the binding", () => {
+    const func = functionNamed(
+      `
+      function Leave({ roomId }: { roomId: string }) {
+        return run({ variables: { input: { roomId } } });
+      }
+      function run(x: unknown) {
+        return x;
+      }
+    `,
+      "Leave",
+    );
+    expect(parameterReads(func, ["roomId"])).toEqual([
+      { input: "roomId", path: [] },
+    ]);
+  });
+
   it("never attributes a shadowing inner binding to the parameter", () => {
     const func = functionNamed(
       `

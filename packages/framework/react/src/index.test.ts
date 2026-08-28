@@ -697,3 +697,154 @@ describe("reactFramework, a component a barrel re-exports", () => {
     );
   });
 });
+
+describe("destructured prop roles", () => {
+  it("keeps the passed name as the role through a rename and marks a rest", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app/chip.tsx",
+      `
+      export function Chip({
+        label,
+        totalCount: _totalCount,
+        "aria-label": ariaLabel,
+        ...rest
+      }: { label: string; totalCount: number; "aria-label": string } & Record<
+        string,
+        unknown
+      >) {
+        return <span {...rest}>{label}{String(_totalCount)}</span>;
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [reactFramework()],
+    });
+    const summaries = await adapter.extractAll();
+    const chip = summaries.find((one) => one.identity.name === "Chip");
+    expect(
+      chip?.inputs.flatMap((input) =>
+        input.type === "parameter" ? [[input.name, input.role]] : [],
+      ),
+    ).toEqual([
+      ["label", "label"],
+      ["_totalCount", "totalCount"],
+      ["ariaLabel", "aria-label"],
+      ["rest", "rest"],
+    ]);
+  });
+});
+
+describe("root discovery", () => {
+  const DOM_TYPES: Readonly<Record<string, string>> = {
+    "/node_modules/react-dom/package.json": JSON.stringify({
+      name: "react-dom",
+      types: "index.d.ts",
+    }),
+    "/node_modules/react-dom/index.d.ts": `
+      declare const ReactDOM: { render(el: unknown, node: unknown): void };
+      export default ReactDOM;
+    `,
+    "/node_modules/react-dom/client/package.json": JSON.stringify({
+      name: "react-dom-client",
+      types: "index.d.ts",
+    }),
+    "/node_modules/react-dom/client/index.d.ts": `
+      export declare function createRoot(el: unknown): { render(node: unknown): void };
+      export declare function hydrateRoot(el: unknown, node: unknown): { render(node: unknown): void };
+    `,
+  };
+
+  async function extractFiles(
+    files: Record<string, string>,
+  ): Promise<BehavioralSummary[]> {
+    const project = createTestProject();
+    for (const [file, text] of Object.entries({ ...DOM_TYPES, ...files })) {
+      project.createSourceFile(file, text);
+    }
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [reactFramework()],
+    });
+    return await adapter.extractAll();
+  }
+
+  it("discovers the component a createRoot boot renders, exported or not", async () => {
+    const summaries = await extractFiles({
+      "/app/main.tsx": `
+        import { createRoot } from "react-dom/client";
+
+        function App() {
+          return <div>hello</div>;
+        }
+
+        createRoot(document.getElementById("root")).render(<App />);
+      `,
+    });
+
+    const app = summaries.find((one) => one.identity.name === "App");
+    expect(app).toBeDefined();
+    expect(app?.kind).toBe("component");
+  });
+
+  it("follows the boot into an imported component", async () => {
+    const summaries = await extractFiles({
+      "/app/app.tsx": `
+        const App = () => <div>hi</div>;
+        export default App;
+      `,
+      "/app/main.tsx": `
+        import { createRoot } from "react-dom/client";
+        import App from "./app";
+
+        createRoot(document.getElementById("root")).render(<App />);
+      `,
+    });
+
+    expect(
+      summaries.some(
+        (one) => one.identity.name === "App" && one.kind === "component",
+      ),
+    ).toBe(true);
+  });
+
+  it("reads the ReactDOM.render form through a default import", async () => {
+    const summaries = await extractFiles({
+      "/app/legacy.tsx": `
+        import ReactDOM from "react-dom";
+
+        function Legacy() {
+          return <p>old</p>;
+        }
+
+        ReactDOM.render(<Legacy />, document.getElementById("root"));
+      `,
+    });
+
+    expect(summaries.some((one) => one.identity.name === "Legacy")).toBe(true);
+  });
+
+  it("leaves a render call from an unrelated module alone", async () => {
+    const summaries = await extractFiles({
+      "/app/other.tsx": `
+        import { createRoot } from "./ownLib";
+
+        function NotBooted() {
+          return <p>no</p>;
+        }
+
+        createRoot("x").render(<NotBooted />);
+      `,
+      "/app/ownLib.ts": `
+        export function createRoot(x: string) {
+          return { render(node: unknown) {} };
+        }
+      `,
+    });
+
+    expect(summaries.some((one) => one.identity.name === "NotBooted")).toBe(
+      false,
+    );
+  });
+});
