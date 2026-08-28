@@ -14,6 +14,7 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { positionKindKeyOf } from "../walk/nodeKeys.js";
 import { peelSyntax } from "../walk/unwrap.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -66,7 +67,7 @@ function resolve(
   if (ctx.hops >= MAX_HOPS) {
     return null;
   }
-  const key = nodeKey(node);
+  const key = positionKindKeyOf(node);
   if (ctx.seen.has(key)) {
     return null;
   }
@@ -261,7 +262,7 @@ function enterShape(
   extractShape: ShapeExtractor,
   ctx: ResolveContext,
 ): TypeShape | null {
-  const key = nodeKey(node);
+  const key = positionKindKeyOf(node);
   if (ctx.seen.has(key)) {
     return null;
   }
@@ -466,8 +467,4 @@ function singleReturnExpression(body: Node): Node | null {
     return null;
   }
   return stmt.getExpression() ?? null;
-}
-
-function nodeKey(node: Node): string {
-  return `${node.getSourceFile().getFilePath()}:${node.getStart()}:${node.getKind()}`;
 }

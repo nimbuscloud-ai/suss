@@ -32,6 +32,7 @@ import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { createDependencySink, withDependencySink } from "../depTracking.js";
 import { type DiscoveredUnit, toFunctionRoot } from "../discovery/index.js";
+import { offsetKeyOf } from "../walk/nodeKeys.js";
 import {
   classifyStop,
   declarationsBehind,
@@ -80,8 +81,7 @@ const reachablePack: PatternPack = {
 // ---------------------------------------------------------------------------
 
 function nodeKey(func: FunctionRoot): string {
-  const sf = func.getSourceFile();
-  return `${sf.getFilePath()}:${func.getStart()}-${func.getEnd()}`;
+  return offsetKeyOf(func);
 }
 
 // ---------------------------------------------------------------------------
