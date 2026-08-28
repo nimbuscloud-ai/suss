@@ -17,7 +17,11 @@ import {
 } from "@suss/adapter-typescript";
 
 import { corroborateSummary } from "./corroborate.js";
-import { resolveFramework, resolveSource } from "./extract.js";
+import {
+  relativizeSummaryPaths,
+  resolveFramework,
+  resolveSource,
+} from "./extract.js";
 import { writeJson } from "./jsonStream.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -195,9 +199,10 @@ export async function corroborate(
     }
   }
 
-  // Match extract's portability rule: relative paths in anything written.
+  // Extract's portability rule, through the same helper: relative
+  // paths in anything written, bindings and render targets included.
   for (const summary of summaries) {
-    summary.location.file = path.relative(runRoot, summary.location.file);
+    relativizeSummaryPaths(summary, runRoot);
   }
 
   process.stdout.write(formatReport(reports, summaries.length));
