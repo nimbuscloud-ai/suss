@@ -25,12 +25,14 @@ answer rather than rendering one is
 [`inspect --flow`](#suss-inspect-flow), which walks the routing a set of
 summaries declares to work out who serves a request.
 
-Three more commands are outside the pipeline. `suss init` works out which
+Four more commands are outside the pipeline. `suss init` works out which
 packs your project needs and offers to set them up. `suss ask`
 ([below](#suss-ask)) answers one question about one boundary from
 summaries already on disk. `suss corroborate` (experimental,
 [below](#suss-corroborate-experimental)) executes handlers against their
-own summaries.
+own summaries. `suss stub draft` ([below](#suss-stub-draft)) writes the
+skeleton of a [dependency stub](/dependency-stubs) from the project's
+observed calls into a package extraction cannot read.
 
 ## `suss init`
 
@@ -254,6 +256,12 @@ already recognized without you having to list it, because the adapter
 resolves it to the function behind it and sees that calling it calls
 `@Resolver()` or `@Controller()`. What is left for these options is a
 wrapper whose body is not in the project, so there is nothing to read.
+
+Options that describe a dependency are giving way to
+[dependency stubs](/dependency-stubs), which state the same fact once
+for every pack that consumes it. Configuring one of them still works and
+prints a pointer; one release from now they go. `errorHelpers` stays,
+since it describes the project's own helpers.
 
 | Pack | Option | What it specifies |
 | --- | --- | --- |
@@ -994,11 +1002,40 @@ suss corroborate --experimental [-p TSCONFIG | --dir DIR] -f express
 - `0`: every claim that could be tried held up (or nothing was in scope).
 - Non-zero: at least one claim was refuted by execution.
 
+## `suss stub draft`
+
+```bash
+suss stub draft <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
+```
+
+Writes a [dependency stub](/dependency-stubs) skeleton for a package the
+project calls but extraction cannot read into: one `performs-call`
+candidate per export the code reaches, with the argument shapes observed
+at each call site as comments, and the semantic fields (`system`, `spec`)
+left blank for the author to fill from the package's own source.
+
+The draft lands in `suss/stubs/<package>.yaml` under the resolved source
+root; an existing file is never overwritten. `-o` picks another path, and
+`-o -` prints the draft instead. MCP hosts get the same skeleton from the
+`suss_stub_draft` tool.
+
+| Flag | Description |
+|---|---|
+| `-p`, `--project` | Path to the tsconfig covering the code to read. Without it, the nearest tsconfig wins, or the directory is read as-is. |
+| `--dir` | Directory to read when there is no tsconfig. |
+| `-o`, `--output` | Where to write the draft; `-` prints it. |
+
+### Exit codes
+
+- `0`: a draft was written (or printed).
+- `1`: no calls into the package were found, so there was nothing to draft.
+
 ## Top-level flags
 
 | Flag | Description |
 |---|---|
 | `-h`, `--help` | Print usage and exit 0. Running `suss` with no command does the same. |
+| `-v`, `--version` | Print the installed version and exit 0. |
 
 Every exit code is `0` or `1`. There is no third code to branch on: a
 command either did what you asked or it did not.
