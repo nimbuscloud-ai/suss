@@ -36,6 +36,7 @@ import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { endLineOf, startLineOf } from "../lines.js";
+import { lineRangeKey } from "../walk/nodeKeys.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "../conditions.js";
@@ -101,7 +102,7 @@ export function enrichRethrows(
   // through here, so this pass stays internally consistent either way.
   const keyFor = (summary: BehavioralSummary): string =>
     facts?.unitKeyBySummary.get(summary) ??
-    locationKey(
+    lineRangeKey(
       summary.location.file,
       summary.location.range.start,
       summary.location.range.end,
@@ -232,16 +233,12 @@ interface SummaryIndex {
   byFunctionLocation: Map<string, BehavioralSummary>;
 }
 
-function locationKey(file: string, start: number, end: number): string {
-  return `${file}:${start}-${end}`;
-}
-
 function indexSummariesByFunctionLocation(
   summaries: BehavioralSummary[],
 ): SummaryIndex {
   const byFunctionLocation = new Map<string, BehavioralSummary>();
   for (const s of summaries) {
-    const key = locationKey(
+    const key = lineRangeKey(
       s.location.file,
       s.location.range.start,
       s.location.range.end,
