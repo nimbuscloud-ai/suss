@@ -18,9 +18,65 @@ import {
   route,
   routeClient,
 } from "./__fixtures__/oneThing.js";
-import { ask, parseQuestion } from "./ask.js";
+import {
+  ask,
+  hiddenBehindLine,
+  parseQuestion,
+  unfollowedCalls,
+} from "./ask.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+describe("hiddenBehindLine", () => {
+  it("says the one stopped call by its callee", () => {
+    expect(
+      hiddenBehindLine({ count: 1, callees: ["loadCursor"] }, "a writer"),
+    ).toBe(
+      "warning: a writer could be hidden behind an unfollowed call to loadCursor elsewhere in this run.",
+    );
+  });
+
+  it("says one stopped call without a callee as an unfollowed call", () => {
+    expect(hiddenBehindLine({ count: 1, callees: [] }, "a reader")).toBe(
+      "warning: a reader could be hidden behind an unfollowed call elsewhere in this run.",
+    );
+  });
+
+  it("lists up to three stopped calls by callee", () => {
+    expect(
+      hiddenBehindLine({ count: 2, callees: ["a", "b"] }, "a writer"),
+    ).toBe(
+      "warning: a writer could be hidden behind one of 2 unfollowed calls (a, b) elsewhere in this run. Run with --json to see them.",
+    );
+  });
+
+  it("keeps the count and drops the list when there are many", () => {
+    expect(
+      hiddenBehindLine(
+        { count: 159, callees: ["a", "b", "c"] },
+        "a caller of x",
+      ),
+    ).toBe(
+      "warning: a caller of x could be hidden behind one of 159 unfollowed calls elsewhere in this run. Run with --json to see them.",
+    );
+  });
+});
+
+describe("unfollowedCalls", () => {
+  it("counts a stopped call that recorded no callee", () => {
+    const summary = {
+      gaps: [
+        {
+          type: "unfollowedCall",
+          conditions: [],
+          consequence: "unknown",
+          description: "prose",
+        },
+      ],
+    } as unknown as BehavioralSummary;
+    expect(unfollowedCalls([summary])).toEqual({ count: 1, callees: [] });
+  });
+});
 
 describe("parseQuestion", () => {
   it("reads each of the four shapes, whatever the case", () => {
@@ -166,7 +222,9 @@ describe("suss ask", () => {
 
     expect(code).toBe(0);
     expect(output).toContain("2 units read");
-    expect(output).toContain("src/editions/dao.ts::byPublication");
+    expect(output).toContain(
+      "warning: src/editions/dao.ts:30 byPublication: unfollowed call to loadCursor",
+    );
     expect(output).toContain("src/editions/dao.ts:30");
     expect(output).toContain("docClient.query");
   });
@@ -244,15 +302,14 @@ describe("suss ask", () => {
 
     // The name is the point: a count of units reads the same whatever
     // was asked, and stops working as a warning.
-    expect(output).toContain("suss could not follow loadCursor");
-    expect(output).toContain("could be hiding behind it");
+    expect(output).toContain("unfollowed call to loadCursor");
   });
 
   it("says a writer could be hiding when the question was who writes", () => {
     // This used to say "a reader" whatever was asked, so an answer
     // about who writes a table warned about a hidden reader.
     expect(answer("what writes aws.dynamodb:editions").output).toContain(
-      "so a writer could be hiding behind",
+      "a writer could be hidden behind",
     );
   });
 
@@ -1049,7 +1106,7 @@ describe("suss ask what calls", () => {
     expect(output).toContain(
       "Nothing in these summaries calls repo::src/orders.ts::getOrder.",
     );
-    expect(output).not.toContain("could be hiding");
+    expect(output).not.toContain("could be hidden");
   });
 
   it("says a caller could be hiding behind an unfollowed call", () => {
@@ -1060,8 +1117,8 @@ describe("suss ask what calls", () => {
 
     expect(code).toBe(0);
     expect(output).toContain("Nothing in these summaries calls");
-    expect(output).toContain("suss could not follow");
-    expect(output).toContain("could be hiding behind");
+    expect(output).toContain("warning: a caller of");
+    expect(output).toContain("could be hidden behind");
   });
 
   it("exits 1 for a unit no summary spells", () => {

@@ -10,7 +10,7 @@
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
-import { unfollowedCalls } from "./ask.js";
+import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
 import { noUnitSpelled, unitsSpelled } from "./askWhy.js";
 
@@ -129,8 +129,5 @@ function unfollowedCaveat(
   if (stopped.length === 0) {
     return [];
   }
-  const stops = unfollowedCalls(stopped);
-  return [
-    `suss could not follow ${stops.text}, so a caller of ${label} could be hiding behind ${stops.count === 1 ? "it" : "one of them"}.`,
-  ];
+  return [hiddenBehindLine(unfollowedCalls(stopped), `a caller of ${label}`)];
 }

@@ -712,42 +712,54 @@ function runCaveats(
   if (withGaps.length === 0) {
     return [];
   }
-  const stops = unfollowedCalls(withGaps);
-  return [
-    `suss could not follow ${stops.text}, so ${HIDDEN_ACTOR[shape]} could be hiding behind ${stops.count === 1 ? "it" : "one of them"}.`,
-  ];
+  return [hiddenBehindLine(unfollowedCalls(withGaps), HIDDEN_ACTOR[shape])];
 }
 
-/**
- * The calls a run stopped at, said by name. A count of units reads the
- * same whatever the question was, so it stops being a warning and turns
- * into a footer. The names let a reader decide whether any of them
- * could reach what they asked about.
- */
+/** The distinct calls the run stopped at across these units. */
 export function unfollowedCalls(summaries: ReadonlyArray<BehavioralSummary>): {
-  text: string;
   count: number;
+  callees: string[];
 } {
-  const names = new Set<string>();
+  const callees = new Set<string>();
+  let nameless = 0;
   for (const summary of summaries) {
     for (const gap of summary.gaps) {
-      if (gap.type === "unfollowedCall" && gap.callee !== undefined) {
-        names.add(gap.callee);
+      if (gap.type !== "unfollowedCall") {
+        continue;
+      }
+
+      if (gap.callee !== undefined) {
+        callees.add(gap.callee);
+      } else {
+        nameless += 1;
       }
     }
   }
-  const shown = [...names].sort().slice(0, 3);
-  const rest = names.size - shown.length;
-  if (shown.length === 0) {
-    return {
-      text: `a call in ${summaries.length} ${summaries.length === 1 ? "unit" : "units"}`,
-      count: 1,
-    };
-  }
   return {
-    text: `${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}`,
-    count: names.size,
+    count: Math.max(callees.size + nameless, 1),
+    callees: [...callees].sort(),
   };
+}
+
+/**
+ * The one warning under an answer whose gaps sit in units the answer
+ * did not list. A few stopped calls are worth spelling out, so a
+ * reader can judge whether any could reach what they asked about; past
+ * that the list stops working as a warning and the count has to do.
+ */
+export function hiddenBehindLine(
+  stops: { count: number; callees: string[] },
+  actor: string,
+): string {
+  if (stops.count === 1) {
+    const called = stops.callees.length === 1 ? ` to ${stops.callees[0]}` : "";
+    return `warning: ${actor} could be hidden behind an unfollowed call${called} elsewhere in this run.`;
+  }
+  const listed =
+    stops.count <= 3 && stops.callees.length === stops.count
+      ? ` (${stops.callees.join(", ")})`
+      : "";
+  return `warning: ${actor} could be hidden behind one of ${stops.count} unfollowed calls${listed} elsewhere in this run. Run with --json to see them.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -809,8 +821,8 @@ function renderAnswer(answer: Answer, all: boolean): string {
   for (const need of answer.needs) {
     lines.push("", need);
   }
-  for (const caveat of answer.caveats) {
-    lines.push("", caveat);
+  if (answer.caveats.length > 0) {
+    lines.push("", ...answer.caveats);
   }
   return `${lines.join("\n")}\n`;
 }
