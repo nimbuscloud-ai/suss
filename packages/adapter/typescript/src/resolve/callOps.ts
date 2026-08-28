@@ -441,16 +441,13 @@ function argumentsIn(call: Called): Node[] {
  * repository class builds the command a few lines above the call, and
  * that has to be followed.
  *
- * The variable's own initializer comes first, since the source states
- * it outright and reading it costs nothing. The fact layer supplies
- * what is left, which is how a step crosses an import to the file a
- * model or a table was declared in.
- *
- * That fallback was removed while a resolution query could answer
- * differently depending on what had been asked before it (#585). The
- * cause of the case that bit here was a construction resolving on to
- * the class it makes an instance of, fixed in #588, so the fallback is
- * back.
+ * The fact layer can only differ from the initializer when the
+ * initializer is a call, where the `unwraps` rules may see through a
+ * wrapper (`const client = wrap(base)`), so the store is asked first
+ * exactly there and the plain initializer is read directly everywhere
+ * else. History: #585 removed the fact-layer read over
+ * order-dependent answers, #588 fixed the cause, and the
+ * walkers-and-rules design made the store primary for wrapped values.
  */
 function settled(value: Node | undefined, resolve: Resolve): Node | null {
   let step = unwrapped(value ?? null);
@@ -458,7 +455,11 @@ function settled(value: Node | undefined, resolve: Resolve): Node | null {
     if (step === null || !Node.isIdentifier(step)) {
       return step;
     }
-    const written = variableFor(step)?.getInitializer() ?? resolve(step);
+    const initializer = unwrapped(variableFor(step)?.getInitializer() ?? null);
+    const written =
+      initializer !== null && !isCalled(initializer)
+        ? initializer
+        : (resolve(step) ?? initializer);
     if (written === null || written === step) {
       return null;
     }
