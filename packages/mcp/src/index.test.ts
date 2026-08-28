@@ -37,6 +37,15 @@ function writeProject(root: string): void {
     ].join("\n"),
   );
   fs.writeFileSync(
+    path.join(root, "src/native.ts"),
+    [
+      'import { publishEntry } from "@acme/ledger-native";',
+      "export function push(entry: object): Promise<void> {",
+      '  return publishEntry("ledger-queue", entry);',
+      "}",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
     path.join(root, "src/client.ts"),
     [
       "export async function loadOrder(id: string): Promise<unknown> {",
@@ -141,6 +150,18 @@ describe("the suss MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("seven questions");
+  });
+
+  it("drafts a stub skeleton from the project's calls into a package", async () => {
+    const result = await client.callTool({
+      name: "suss_stub_draft",
+      arguments: { package: "@acme/ledger-native" },
+    });
+    expect(result.isError).toBeUndefined();
+    const text = JSON.stringify(result.content);
+    expect(text).toContain("Save this to");
+    expect(text).toContain("publishEntry");
+    expect(text).toContain("performs-call");
   });
 
   it("says there is nothing to draft for a package the project never calls", async () => {
