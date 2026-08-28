@@ -14,6 +14,7 @@
 import { Node } from "ts-morph";
 
 import { rootIdentifier } from "../configuredCall.js";
+import { peelValue } from "../walk/unwrap.js";
 import {
   effectArgOf,
   isImportedFrom,
@@ -444,14 +445,7 @@ function settled(value: Node | undefined, resolve: Resolve): Node | null {
  * inside the await rather than the await itself.
  */
 function unwrapped(value: Node | null): Node | null {
-  let inside = value;
-  while (
-    inside !== null &&
-    (Node.isAwaitExpression(inside) || Node.isParenthesizedExpression(inside))
-  ) {
-    inside = inside.getExpression();
-  }
-  return inside;
+  return value === null ? null : peelValue(value);
 }
 
 /** The variable a name was declared as, when the source declares one. */

@@ -43,6 +43,7 @@ import {
   isModuleScopeStop,
   NO_BARRIERS,
 } from "../walk/descent.js";
+import { peelSyntax } from "../walk/unwrap.js";
 import { callOpsFor } from "./callOps.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -727,18 +728,11 @@ function extractArg(node: Node, depth: number): EffectArg {
   // recursing into the inner expression preserves field/argument
   // capture through `as any` casts in test code and in real-world
   // patterns (e.g. ts-rest body shapes coerced via `as`).
-  if (
-    Node.isAsExpression(node) ||
-    Node.isTypeAssertion(node) ||
-    Node.isSatisfiesExpression(node) ||
-    Node.isNonNullExpression(node)
-  ) {
-    return extractArg(node.getExpression(), depth);
-  }
-  // Parentheses group an expression and change nothing about it, and an
-  // arrow returning an object literal has to write them.
-  if (Node.isParenthesizedExpression(node)) {
-    return extractArg(node.getExpression(), depth);
+  {
+    const bare = peelSyntax(node);
+    if (bare !== node) {
+      return extractArg(bare, depth);
+    }
   }
   if (
     Node.isStringLiteral(node) ||
@@ -988,19 +982,7 @@ function isModuleScoped(decl: Node): boolean {
 }
 
 function unwrapCasts(node: Node): Node {
-  if (Node.isParenthesizedExpression(node)) {
-    return unwrapCasts(node.getExpression());
-  }
-  if (Node.isAsExpression(node)) {
-    return unwrapCasts(node.getExpression());
-  }
-  if (Node.isNonNullExpression(node)) {
-    return unwrapCasts(node.getExpression());
-  }
-  if (Node.isSatisfiesExpression(node)) {
-    return unwrapCasts(node.getExpression());
-  }
-  return node;
+  return peelSyntax(node);
 }
 
 /**

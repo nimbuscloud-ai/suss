@@ -12,13 +12,14 @@ import {
 } from "ts-morph";
 
 import { extractShape, extractShapeWithArguments } from "../shapes/shapes.js";
+import { peelSyntax } from "../walk/unwrap.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { RawTerminal, TerminalExtraction } from "@suss/extractor";
 
 /** Unwrap `expr as const` / `expr as Type` to the inner expression. */
 export function unwrapAs(node: Expression): Expression {
-  return Node.isAsExpression(node) ? unwrapAs(node.getExpression()) : node;
+  return peelSyntax(node) as Expression;
 }
 
 /**
