@@ -15,6 +15,7 @@ import type {
   Decorator,
   MethodDeclaration,
   PropertyDeclaration,
+  SourceFile,
 } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 
@@ -37,6 +38,33 @@ export interface DecoratedCallable {
  * source order. The first name on a member wins, which is what a class
  * that spells two route verbs on one member means anyway.
  */
+/**
+ * The declared decorator names as this file spells them. An import
+ * written `import { Get as HttpGet }` decorates members as `@HttpGet`,
+ * so matching runs on the local spelling and the map gives back the
+ * canonical name a pack's tables are keyed by.
+ */
+export function importedDecoratorLocals(
+  sourceFile: SourceFile,
+  acceptedModules: readonly string[],
+  canonicalNames: readonly string[],
+): Map<string, string> {
+  const localToCanonical = new Map<string, string>();
+  for (const importDecl of sourceFile.getImportDeclarations()) {
+    if (!acceptedModules.includes(importDecl.getModuleSpecifierValue())) {
+      continue;
+    }
+    for (const named of importDecl.getNamedImports()) {
+      const canonical = named.getName();
+      if (canonicalNames.includes(canonical)) {
+        const local = named.getAliasNode()?.getText() ?? canonical;
+        localToCanonical.set(local, canonical);
+      }
+    }
+  }
+  return localToCanonical;
+}
+
 export function decoratedCallablesOf(
   cls: ClassDeclaration,
   decoratorNames: string[],

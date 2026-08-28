@@ -5,7 +5,10 @@
 
 import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 
-import { decoratedCallablesOf } from "./decoratedMembers.js";
+import {
+  decoratedCallablesOf,
+  importedDecoratorLocals,
+} from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
 import { stringValueOf } from "./resolveValue.js";
 
@@ -127,19 +130,12 @@ export function discoverDecoratedRoutes(
     ? match.importModule
     : [match.importModule];
   const routeDecoratorNames = Object.keys(match.methodDecoratorRouteMap);
-  const importedRouteDecorators = new Set<string>();
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    if (!acceptedModules.includes(importDecl.getModuleSpecifierValue())) {
-      continue;
-    }
-    for (const named of importDecl.getNamedImports()) {
-      const local = named.getAliasNode()?.getText() ?? named.getName();
-      if (routeDecoratorNames.includes(local)) {
-        importedRouteDecorators.add(local);
-      }
-    }
-  }
-  if (importedRouteDecorators.size === 0) {
+  const localRouteDecorators = importedDecoratorLocals(
+    sourceFile,
+    acceptedModules,
+    routeDecoratorNames,
+  );
+  if (localRouteDecorators.size === 0) {
     return [];
   }
 
@@ -157,7 +153,9 @@ export function discoverDecoratedRoutes(
     const pathPrefix = routePathOf(marker.args, resolution);
 
     const className = cls.getName() ?? "<anon-class>";
-    for (const handler of decoratedCallablesOf(cls, routeDecoratorNames)) {
+    for (const handler of decoratedCallablesOf(cls, [
+      ...localRouteDecorators.keys(),
+    ])) {
       if (binding !== undefined) {
         // The pattern states the boundary outright, so the decorator
         // that selected the handler gives the channel rather than a
@@ -178,7 +176,10 @@ export function discoverDecoratedRoutes(
         continue;
       }
 
-      const httpMethod = match.methodDecoratorRouteMap[handler.standsFor];
+      const httpMethod =
+        match.methodDecoratorRouteMap[
+          localRouteDecorators.get(handler.standsFor) ?? handler.standsFor
+        ];
       const pathSuffix = resolveRoutePathArg(handler.decorator, resolution);
       const routePath = joinRoutePath(pathPrefix, pathSuffix);
 
