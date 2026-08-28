@@ -1,13 +1,15 @@
 {
-  "nextjs": "pack name, Next.js",
-  "app": "Next.js: App Router source directory",
-  "pages": "Next.js: Pages Router source directory",
-  "route": "Next.js: App Router route handler file basename",
-  "page": "Next.js: App Router page file basename",
-  "index": "Next.js: Pages Router index route basename",
   "Response": "WHATWG Fetch: the global response constructor Next.js returns",
-  "status": "Next.js: NextResponse.json option key, and the Pages res method",
+  "action": "suss: code-unit kind for a server action",
+  "allPositional": "suss: input-mapping kind, one input per declared parameter",
+  "app": "Next.js: App Router source directory",
+  "context": "suss: input role",
+  "index": "Next.js: Pages Router index route basename",
   "json": "Next.js: NextResponse.json, and the Pages res method",
+  "nextjs": "pack name, Next.js",
+  "page": "Next.js: App Router page file basename",
+  "pages": "Next.js: Pages Router source directory",
   "request": "suss: input role",
-  "context": "suss: input role"
+  "route": "Next.js: App Router route handler file basename",
+  "status": "Next.js: NextResponse.json option key, and the Pages res method"
 }

@@ -21,9 +21,12 @@
 // records one. The summary gets the path and no method, which is enough to see
 // the route in an inventory and not enough to match it with a caller.
 //
-// Out of scope for now: server actions, whose identity is a compiler
-// generated ID rather than a URL, and page components, which the React
-// pack already reads.
+// Server actions are read too: a `"use server"` directive makes a
+// function an RPC endpoint the client calls as if it were local, so
+// each becomes an `action` unit whose summary shows what a button
+// press runs on the server. Page components stay with the React pack.
+
+import { nextjsServerActions } from "./serverActions.js";
 
 import type { BindingExtraction, PatternPack } from "@suss/extractor";
 
@@ -105,6 +108,8 @@ export function nextjsFramework(): PatternPack {
         },
       },
     ],
+
+    discoverUnits: nextjsServerActions,
 
     terminals: [
       {

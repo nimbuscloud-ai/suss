@@ -3,7 +3,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { createFixtureProject } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { nextjsFramework } from "./index.js";
 
@@ -111,5 +111,117 @@ describe("nextjsFramework: extraction", () => {
     // because one export serves all of them, so this route does not pair with
     // a caller.
     expect(statusesOf(legacy)).toEqual([200, 405]);
+  });
+});
+
+describe("server actions", () => {
+  async function extract(
+    files: Record<string, string>,
+  ): Promise<BehavioralSummary[]> {
+    const project = createTestProject();
+    for (const [file, text] of Object.entries(files)) {
+      project.createSourceFile(file, text);
+    }
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [nextjsFramework()],
+    });
+    return await adapter.extractAll();
+  }
+
+  function actionsOf(summaries: BehavioralSummary[]): string[] {
+    return summaries
+      .filter((one) => one.kind === "action")
+      .map((one) => one.identity.name)
+      .sort();
+  }
+
+  it("makes every exported function of a use server file an action", async () => {
+    const summaries = await extract({
+      "/app/actions.ts": `
+        "use server";
+
+        export async function createOrder(sku: string, count: number) {
+          return { sku, count };
+        }
+
+        export const cancelOrder = async (id: string) => {
+          return id;
+        };
+
+        async function helper() {
+          return null;
+        }
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual(["cancelOrder", "createOrder"]);
+    const created = summaries.find(
+      (one) => one.identity.name === "createOrder",
+    );
+    expect(
+      created?.inputs.map((input) =>
+        input.type === "parameter" ? input.name : input.type,
+      ),
+    ).toEqual(["sku", "count"]);
+  });
+
+  it("reads a function-level directive, inline actions included", async () => {
+    const summaries = await extract({
+      "/app/page.tsx": `
+        export default function Page() {
+          const submit = async (data: FormData) => {
+            "use server";
+            return data;
+          };
+          return <form action={submit} />;
+        }
+
+        export async function alsoServer() {
+          "use server";
+          return null;
+        }
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual(["alsoServer", "submit"]);
+  });
+
+  it("names an anonymous inline action by position and a property one by key", async () => {
+    const summaries = await extract({
+      "/app/form.tsx": `
+        export default function Page() {
+          const handlers = {
+            submit: async (data: FormData) => {
+              "use server";
+              return data;
+            },
+          };
+          const concise = async () => null;
+          return (
+            <form
+              action={async () => {
+                "use server";
+                return handlers.submit(new FormData());
+              }}
+            />
+          );
+        }
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual(["serverAction#0", "submit"]);
+  });
+
+  it("ignores the directive anywhere but the prologue", async () => {
+    const summaries = await extract({
+      "/app/lib.ts": `
+        export function describeDirective() {
+          return "use server";
+        }
+      `,
+    });
+
+    expect(actionsOf(summaries)).toEqual([]);
   });
 });
