@@ -1466,6 +1466,60 @@ const storagePack: PatternPack = {
 };
 
 describe("createTypeScriptAdapter: reachable closure", () => {
+  it("records where a rendered component is declared on the render edge", async () => {
+    const componentPack: PatternPack = {
+      name: "test-components",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [
+        { kind: "component", match: { type: "namedExport", names: ["Page"] } },
+      ],
+      terminals: [
+        { kind: "render", match: { type: "jsxReturn" }, extraction: {} },
+      ],
+      inputMapping: { type: "positionalParams", params: [] },
+    };
+    const project = createTestProject();
+    project.createSourceFile(
+      "avatar.tsx",
+      `
+      export function Avatar({ src }: { src: string }) {
+        return <img src={src} />;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "page.tsx",
+      `
+      import { Avatar } from "./avatar";
+
+      export function Page() {
+        return <div><Avatar src="/me.png" /></div>;
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [componentPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const page = summaries.find((s) => s.identity.name === "Page");
+    const render = page?.transitions
+      .map((t) => t.output)
+      .find((o) => o.type === "render");
+    expect(render?.type).toBe("render");
+    const avatarNode =
+      render?.type === "render" && render.root?.type === "element"
+        ? render.root.children.find(
+            (child) => child.type === "element" && child.tag === "Avatar",
+          )
+        : undefined;
+    expect(
+      avatarNode?.type === "element" ? avatarNode.target : undefined,
+    ).toEqual({ file: "/avatar.tsx", name: "Avatar" });
+  });
+
   it("follows a JSX reference to a component nothing exports", async () => {
     const componentPack: PatternPack = {
       name: "test-components",

@@ -16,12 +16,15 @@ import {
   languageOfPack,
   languageOfRun,
   parseFrameworkSpec,
+  relativizeRenderTargets,
+  relativizeSummaryPaths,
   resolveFramework,
   resolvePythonPack,
   resolveRubyPack,
 } from "./extract.js";
 
 import type { CacheDiagnostic } from "@suss/adapter-typescript";
+import type { BehavioralSummary, RenderNode } from "@suss/behavioral-ir";
 import type { Language } from "./language.js";
 
 const repoRoot = path.resolve(
@@ -597,5 +600,82 @@ describe("formatCacheDiagnostic", () => {
       missReason: "key-changed",
     });
     expect(out).toContain("key-changed");
+  });
+});
+
+describe("relativizeSummaryPaths", () => {
+  it("rewrites the unit's file, module imports, and the render tree", () => {
+    const summary = {
+      location: { file: "/repo/src/page.tsx", range: { start: 1, end: 2 } },
+      transitions: [
+        {
+          output: {
+            type: "render",
+            component: "Page",
+            root: {
+              type: "element",
+              tag: "Avatar",
+              target: { file: "/repo/src/avatar.tsx", name: "Avatar" },
+              children: [],
+            },
+          },
+        },
+        { output: { type: "return" } },
+      ],
+      metadata: { moduleImports: ["/repo/src/avatar.tsx"] },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo");
+
+    expect(summary.location.file).toBe("src/page.tsx");
+    expect(summary.metadata?.moduleImports).toEqual(["src/avatar.tsx"]);
+    const rendered = summary.transitions[0].output;
+    expect(
+      rendered.type === "render" && rendered.root?.type === "element"
+        ? rendered.root.target?.file
+        : undefined,
+    ).toBe("src/avatar.tsx");
+  });
+});
+
+describe("relativizeRenderTargets", () => {
+  it("rewrites every target in the tree, conditionals included", () => {
+    const root: RenderNode = {
+      type: "element",
+      tag: "div",
+      children: [
+        {
+          type: "element",
+          tag: "Avatar",
+          target: { file: "/repo/src/avatar.tsx", name: "Avatar" },
+          children: [],
+        },
+        {
+          type: "conditional",
+          condition: "ok",
+          whenTrue: {
+            type: "element",
+            tag: "Badge",
+            target: { file: "/repo/src/badge.tsx", name: "Badge" },
+            children: [],
+          },
+          whenFalse: null,
+        },
+        { type: "text", value: "hi" },
+      ],
+    };
+
+    relativizeRenderTargets(root, "/repo");
+
+    const [avatar, conditional] = root.type === "element" ? root.children : [];
+    expect(avatar?.type === "element" ? avatar.target?.file : undefined).toBe(
+      "src/avatar.tsx",
+    );
+    expect(
+      conditional?.type === "conditional" &&
+        conditional.whenTrue.type === "element"
+        ? conditional.whenTrue.target?.file
+        : undefined,
+    ).toBe("src/badge.tsx");
   });
 });

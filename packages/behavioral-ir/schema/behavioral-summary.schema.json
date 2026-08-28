@@ -2031,6 +2031,19 @@
                 "type": "string"
               }
             },
+            "target": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["file", "name"],
+              "additionalProperties": false
+            },
             "children": {
               "type": "array",
               "items": {
