@@ -1,6 +1,6 @@
 {
   "name": "@suss/adapter-typescript",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "type": "module",
   "description": "TypeScript adapter for suss — walks source files with ts-morph and emits raw extractions for the suss pipeline.",
   "keywords": [
@@ -46,10 +46,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.17.0",
-    "@suss/datalog": "0.17.0",
-    "@suss/extractor": "0.17.0",
-    "@suss/resolution": "0.17.0",
+    "@suss/behavioral-ir": "0.18.0",
+    "@suss/datalog": "0.18.0",
+    "@suss/extractor": "0.18.0",
+    "@suss/resolution": "0.18.0",
     "graphql": "^16.8.0",
     "picomatch": "^4.0.4",
     "ts-morph": "^23.0.0"
