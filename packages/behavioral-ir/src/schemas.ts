@@ -133,6 +133,10 @@ export const FindingSeveritySchema = z.enum(["error", "warning", "info"]);
 export const RunFindingKindSchema = z.enum([
   /** The run read summaries and paired nothing, so nothing was checked. */
   "nothingPaired",
+  /** A file in the summaries directory could not be read as summaries. */
+  "unreadableInput",
+  /** More boundaries went unpaired than the caller's floor allows. */
+  "mostlyUnpaired",
 ]);
 
 export const RunFindingSchema = z.object({

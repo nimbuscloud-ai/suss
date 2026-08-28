@@ -98,6 +98,19 @@ export interface CheckDirOptions {
   /** Exit non-zero when the run compared nothing. See CheckOptions. */
   failOnEmpty?: boolean;
   /**
+   * Exit non-zero when more boundaries went unpaired than this allows:
+   * a count ("25") or a share of all boundaries ("50%"). A run that
+   * pairs three boundaries out of hundreds otherwise reads the same as
+   * one that paired everything.
+   */
+  failOnUnpaired?: string;
+  /**
+   * Exit non-zero when a file in the directory could not be read as
+   * summaries. Skipping one silently turns a truncated or malformed
+   * file into a pass.
+   */
+  failOnUnreadable?: boolean;
+  /**
    * Directory of team-authored intent specs (`*.intent` / `*.prd`).
    * When set, each boundary intent is paired against the code summaries
    * from `dir`, adding intent-coverage findings to the result.
@@ -156,6 +169,8 @@ export interface CheckedDirectory {
   summaries: BehavioralSummary[];
   /** Which file each summary came from. */
   sourceFile: Map<BehavioralSummary, string>;
+  /** Files in the directory that could not be read as summaries. */
+  skipped: string[];
   /** The checker's own result, with suppressions already applied. */
   result: CheckAllResult;
   suppressions: SuppressionRule[];
@@ -244,6 +259,7 @@ export function checkDirectory(options: {
   return {
     summaries,
     sourceFile,
+    skipped,
     result: {
       ...rawResult,
       findings: applySuppressions(rawResult.findings, suppressions),
@@ -259,6 +275,7 @@ export function checkDir(
   const {
     summaries: allSummaries,
     sourceFile,
+    skipped,
     result,
     suppressions,
     confidence,
@@ -276,10 +293,14 @@ export function checkDir(
 
   const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
   const summariesWithGaps = countSummariesWithGaps(allSummaries);
-  const run = runFindings(options.failOnEmpty === true, allSummaries, result);
+  const run = [
+    ...runFindings(options.failOnEmpty === true, allSummaries, result),
+    ...unreadableFindings(options.failOnUnreadable === true, skipped),
+    ...unpairedFindings(options.failOnUnpaired, result),
+  ];
 
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, run, intent, pairs: result.pairs, unmatched: result.unmatched, runtimeNamedCrossings, summariesWithGaps, collisions }, null, 2)}\n`
+    ? `${JSON.stringify({ findings: result.findings, run, intent, pairs: result.pairs, unmatched: result.unmatched, skipped, runtimeNamedCrossings, summariesWithGaps, collisions }, null, 2)}\n`
     : renderDirHuman(result, confidence, scopeOf(options)) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
@@ -335,6 +356,70 @@ function runFindings(
         "Check that both sides of at least one boundary are in the directory. " +
         "A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. " +
         "`suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.",
+    },
+  ];
+}
+
+function unreadableFindings(
+  asked: boolean,
+  skipped: readonly string[],
+): RunFinding[] {
+  if (!asked || skipped.length === 0) {
+    return [];
+  }
+  return [
+    {
+      kind: "unreadableInput",
+      severity: "error",
+      description:
+        `${skipped.length} ${skipped.length === 1 ? "file" : "files"} in the directory could not be read as summaries: ` +
+        skipped.join("; "),
+      remedy:
+        "Fix or remove the files, or write summaries somewhere reports are not written back to. " +
+        "A truncated extract output and a report saved into the summaries directory are the usual causes.",
+    },
+  ];
+}
+
+/** "25" allows 25 unpaired boundaries; "50%" allows half of them. */
+function unpairedFindings(
+  threshold: string | undefined,
+  result: CheckAllResult,
+): RunFinding[] {
+  if (threshold === undefined) {
+    return [];
+  }
+
+  const match = threshold.match(/^(\d+)(%?)$/);
+  if (match === null) {
+    throw new UsageError(
+      `--fail-on-unpaired takes a count ("25") or a share ("50%"), not "${threshold}".`,
+    );
+  }
+
+  const unpaired =
+    result.unmatched.providers.length + result.unmatched.consumers.length;
+  const total = unpaired + result.pairs.length;
+  if (total === 0) {
+    return [];
+  }
+
+  const allowed =
+    match[2] === "%" ? (total * Number(match[1])) / 100 : Number(match[1]);
+  if (unpaired <= allowed) {
+    return [];
+  }
+
+  return [
+    {
+      kind: "mostlyUnpaired",
+      severity: "error",
+      description:
+        `${unpaired} of ${total} boundaries had nothing to pair with, over the --fail-on-unpaired floor of ${threshold}. ` +
+        `${result.pairs.length} paired.`,
+      remedy:
+        "The unmatched lists in this report say which side each boundary is missing. " +
+        "Extract the missing side, read its contract with `suss contract`, or raise the floor if this share is expected.",
     },
   ];
 }

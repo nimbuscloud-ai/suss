@@ -384,8 +384,8 @@ suss check PROVIDER.json CONSUMER.json [--all] [--json] [-o OUTPUT] [--fail-on T
 
 # A whole directory, auto-pairs by boundary key
 suss check --dir DIR [--intent INTENT_DIR] [--all] [--json] [-o OUTPUT]
-           [--fail-on THRESHOLD] [--fail-on-empty] [--sussignore PATH]
-           [--no-suppressions]
+           [--fail-on THRESHOLD] [--fail-on-empty] [--fail-on-unpaired N|N%]
+           [--fail-on-unreadable] [--sussignore PATH] [--no-suppressions]
 
 # One thing out of that directory
 suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
@@ -401,6 +401,8 @@ suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
 | `--fail-on THRESHOLD` | `error` (default), exit non-zero when any error-severity finding exists. `warning`, also fail on warnings. `info`, fail on any finding. `none`, never fail (still prints). |
 | `--fail-on-empty` | Fail the run when it paired nothing. Needs `--dir`. A run that never pairs a boundary has nothing to report and reads as a pass, which is what it also prints when both sides agree. With this on, the report gets a `nothingPaired` run finding saying what happened and what to do, and the run exits non-zero. |
+| `--fail-on-unpaired N\|N%` | Fail the run when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). Needs `--dir`. A run that pairs three boundaries out of hundreds otherwise exits the same as one that paired everything; the report gets a `mostlyUnpaired` run finding with the numbers. |
+| `--fail-on-unreadable` | Fail the run when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` output lists the skipped files either way. |
 | `--sussignore PATH` | Use this `.sussignore` file instead of searching for one nearby. |
 | `--no-suppressions` | Report every finding, ignoring any `.sussignore`. Useful for auditing what the suppressions are hiding. |
 

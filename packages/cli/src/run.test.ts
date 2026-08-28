@@ -919,3 +919,62 @@ describe("runCli field-report fixes", () => {
     expect(io.stderr).not.toContain("could not read as summaries");
   });
 });
+
+describe("runCli check floors", () => {
+  it("fails on an unreadable file only when asked", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    writeJson("consumer.json", [matchingConsumer]);
+    fs.writeFileSync(path.join(tmpDir, "broken.json"), "{ not json");
+
+    const lax = await capture(() => runCli(["check", "--dir", tmpDir]));
+    expect(lax.exit).toBe(0);
+
+    const strict = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unreadable"]),
+    );
+    expect(strict.exit).toBe(1);
+    expect(strict.io.stdout).toContain("could not be read as summaries");
+  });
+
+  it("fails when unpaired boundaries pass the floor", async () => {
+    writeJson("provider.json", [minimalSummary]);
+
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "0"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stdout).toContain("--fail-on-unpaired floor of 0");
+  });
+
+  it("passes a floor the run stays under", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    writeJson("consumer.json", [matchingConsumer]);
+
+    const { exit } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "50%"]),
+    );
+    expect(exit).toBe(0);
+  });
+
+  it("rejects a floor it cannot parse", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "lots"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain('not "lots"');
+  });
+
+  it("lists skipped files in the JSON body", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    fs.writeFileSync(path.join(tmpDir, "broken.json"), "{ not json");
+
+    const { io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--json"]),
+    );
+    const body = JSON.parse(io.stdout) as { skipped: string[] };
+    expect(body.skipped.some((one) => one.startsWith("broken.json"))).toBe(
+      true,
+    );
+  });
+});
