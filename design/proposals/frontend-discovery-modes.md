@@ -188,6 +188,49 @@ follow once edges are reliable.
 - **No new authoring surface.** Discovery is extraction. Users write no
   markers to be found.
 
+## Beyond discovery: the joins that make the tree worth having
+
+The render tree and props checking are one of the questions a frontend
+team would ask of this tool. Walking the rest of the question space
+surfaced four more, each a join from the render tree to a boundary suss
+already reads. Agreed 2026-08-28, in this order.
+
+**1. Data-fetching hooks (build first).** The client packs read raw
+`fetch`, axios, and Apollo, but production React apps mostly reach
+APIs through React Query, SWR, or RTK Query. A component calling
+`useQuery({ queryKey: ["orders"], queryFn: fetchOrders })` never shows
+up as a consumer today, so "which component reads GET /orders" comes
+back empty on the apps most teams have. The HTTP call itself lives in
+the query function and the fetch pack already reads it; what is
+missing is the attribution of that call to the component through the
+hook. The hook is pack-declared scheduling: the pack says `queryFn`
+runs, and the walk carries the component through it. Per-library
+config over existing primitives, the same conclusion the GraphQL
+client work reached.
+
+**2. Next.js server actions.** A `"use server"` function called from a
+button is an RPC crossing with no visible HTTP: the types make it look
+like a local call, and nothing in the file says what it writes. The
+nextjs pack reads route handlers and pages but not actions. The most
+suss-shaped gap of the four, a boundary crossing the source hides, and
+App Router apps are where new frontend code is written.
+
+**3. Client state stores.** "What reads this Zustand or Redux slice"
+is the reads/writes question suss already answers for DynamoDB,
+applied to a store. The access-tracing direction treats storage as a
+protocol family; a client store is another member, and the render tree
+makes the answers navigable by component.
+
+**4. Form-to-API field checking.** The fields a form submits against
+the fields the endpoint reads: a provider/consumer pair joining the
+render IR to the HTTP contracts that already exist. The cheapest
+striking demo ("this form submits `phone` and the API drops it"), and
+it waits only on render edges.
+
+The thread through all four: frontend value is the join from UI to the
+boundaries suss already reads, extending the flow story one hop into
+the browser. Stores and forms follow once render edges land.
+
 ## Open questions for alignment
 
 1. Is root-walk a per-file pass or a per-project pass? Roots can render
