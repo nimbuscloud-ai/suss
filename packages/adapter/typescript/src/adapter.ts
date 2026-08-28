@@ -128,7 +128,10 @@ import {
   deriveBoundaryEffects,
 } from "./resolve/boundaryEffects.js";
 import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
-import { expandReachableClosure } from "./resolve/reachableClosure.js";
+import {
+  expandReachableClosure,
+  recognizerOnlyRoots,
+} from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { pathFromArgument } from "./resolve/routePath.js";
 import { withDefinitions } from "./shapes/definitions.js";
@@ -2191,6 +2194,11 @@ export function createTypeScriptAdapter(
                 // Reached units the cache already serves emit nothing,
                 // the way a cold run's seeds do not.
                 reused?.summaries ?? [],
+                // A recognizer-only pack's effects need a function to
+                // live on even when nothing discovers units in its
+                // files, so those files' exports join the walk as
+                // roots.
+                recognizerOnlyRoots(packsByFile),
               ),
             )
           : withSubUnits;
