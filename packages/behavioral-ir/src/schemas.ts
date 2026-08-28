@@ -328,6 +328,13 @@ type RenderNodeT =
        * shorthand such as `<input disabled>` maps to the empty string.
        */
       attrs?: Record<string, string> | undefined;
+      /**
+       * Where the tag's component is declared, when the walk resolved
+       * it: the file and name the child unit's summary is keyed by, so
+       * a checker can join this render edge to that summary. Host tags
+       * and unresolved references leave it unset.
+       */
+      target?: { file: string; name: string } | undefined;
       children: RenderNodeT[];
     }
   | { type: "text"; value: string }
@@ -348,6 +355,7 @@ export const RenderNodeSchema: z.ZodType<RenderNodeT> = z.lazy(() =>
       type: z.literal("element"),
       tag: z.string(),
       attrs: z.record(z.string(), z.string()).optional(),
+      target: z.object({ file: z.string(), name: z.string() }).optional(),
       children: z.array(RenderNodeSchema),
     }),
     z.object({ type: z.literal("text"), value: z.string() }),

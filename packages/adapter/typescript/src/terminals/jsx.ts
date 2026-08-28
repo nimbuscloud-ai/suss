@@ -5,6 +5,10 @@
 import { Node } from "ts-morph";
 
 import { endLineOf, startLineOf } from "../lines.js";
+import {
+  declarationsBehind,
+  isInExternalCode,
+} from "../resolve/unfollowedCall.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type { RenderNode } from "@suss/behavioral-ir";
@@ -70,6 +74,41 @@ export function tryMatchJsxReturn(
 }
 
 /**
+ * Where a component tag's declaration is, for the render edge. The
+ * checker joins this to the child summary's file and name, which is
+ * how a parent's passed props meet the props the child reads.
+ */
+function componentTargetOf(
+  tagNode: Node,
+): { file: string; name: string } | null {
+  if (!Node.isIdentifier(tagNode) || !/^[A-Z]/.test(tagNode.getText())) {
+    return null;
+  }
+  for (const decl of declarationsBehind(tagNode.getSymbol())) {
+    if (isInExternalCode(decl.getSourceFile())) {
+      continue;
+    }
+    const name = Node.isFunctionDeclaration(decl) ? decl.getName() : undefined;
+    if (name !== undefined) {
+      return { file: decl.getSourceFile().getFilePath(), name };
+    }
+    if (Node.isVariableDeclaration(decl)) {
+      const init = decl.getInitializer();
+      if (
+        init !== undefined &&
+        (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
+      ) {
+        return {
+          file: decl.getSourceFile().getFilePath(),
+          name: decl.getName(),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Convert a JSX expression to a RenderNode recursively. Returns null
  * if the expression isn't JSX (callers use that to reject the match).
  */
@@ -78,6 +117,7 @@ function jsxToRenderNode(node: Node): RenderNode | null {
     const opening = node.getOpeningElement();
     const tag = opening.getTagNameNode().getText();
     const attrs = collectJsxAttributes(opening);
+    const target = componentTargetOf(opening.getTagNameNode());
     const children = node
       .getJsxChildren()
       .map(jsxChildToRenderNode)
@@ -87,16 +127,19 @@ function jsxToRenderNode(node: Node): RenderNode | null {
       tag,
       children,
       ...(attrs !== null ? { attrs } : {}),
+      ...(target !== null ? { target } : {}),
     };
   }
   if (Node.isJsxSelfClosingElement(node)) {
     const tag = node.getTagNameNode().getText();
     const attrs = collectJsxAttributes(node);
+    const target = componentTargetOf(node.getTagNameNode());
     return {
       type: "element",
       tag,
       children: [],
       ...(attrs !== null ? { attrs } : {}),
+      ...(target !== null ? { target } : {}),
     };
   }
   if (Node.isJsxFragment(node)) {

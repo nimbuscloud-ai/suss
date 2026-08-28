@@ -36,7 +36,7 @@ import type {
   ExtractionReport,
   TimingReport,
 } from "@suss/adapter-typescript";
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, RenderNode } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 import type { Diagnosis } from "./diagnosis.js";
 import type { Submodule } from "./gitSubmodules.js";
@@ -664,16 +664,7 @@ export async function extract(
 
   const projectRoot = run.root;
   for (const summary of summaries) {
-    summary.location.file = path.relative(projectRoot, summary.location.file);
-    const moduleImports = summary.metadata?.moduleImports;
-    if (Array.isArray(moduleImports)) {
-      summary.metadata = {
-        ...summary.metadata,
-        moduleImports: moduleImports.map((file) =>
-          typeof file === "string" ? path.relative(projectRoot, file) : file,
-        ),
-      };
-    }
+    relativizeSummaryPaths(summary, projectRoot);
     summary.schemaVersion = SUMMARY_SCHEMA_VERSION;
   }
 
@@ -1092,4 +1083,52 @@ function formatTimingBreakdown(report: TimingReport): string {
   }
   lines.push(`  ${report.totalMs.toFixed(0).padStart(6)}ms  100.0%  total`);
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * The adapter writes every path absolute; the written summaries are
+ * project-relative, so anything holding a path rewrites here: the
+ * unit's own file, the module imports, and render-edge targets.
+ */
+export function relativizeSummaryPaths(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  summary.location.file = path.relative(projectRoot, summary.location.file);
+  for (const transition of summary.transitions) {
+    if (transition.output.type === "render" && transition.output.root) {
+      relativizeRenderTargets(transition.output.root, projectRoot);
+    }
+  }
+  const moduleImports = summary.metadata?.moduleImports;
+  if (Array.isArray(moduleImports)) {
+    summary.metadata = {
+      ...summary.metadata,
+      moduleImports: moduleImports.map((file) =>
+        typeof file === "string" ? path.relative(projectRoot, file) : file,
+      ),
+    };
+  }
+}
+
+export function relativizeRenderTargets(
+  root: RenderNode,
+  projectRoot: string,
+): void {
+  if (root.type === "conditional") {
+    relativizeRenderTargets(root.whenTrue, projectRoot);
+    if (root.whenFalse !== null) {
+      relativizeRenderTargets(root.whenFalse, projectRoot);
+    }
+    return;
+  }
+  if (root.type !== "element") {
+    return;
+  }
+  if (root.target !== undefined) {
+    root.target.file = path.relative(projectRoot, root.target.file);
+  }
+  for (const child of root.children) {
+    relativizeRenderTargets(child, projectRoot);
+  }
 }
