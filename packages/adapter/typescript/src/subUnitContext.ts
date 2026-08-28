@@ -21,6 +21,8 @@ import {
   Node,
 } from "ts-morph";
 
+import { isDescentStop } from "./walk/descent.js";
+
 import type { FunctionRoot } from "./conditions.js";
 
 /**
@@ -116,13 +118,7 @@ export function createTsSubUnitContext(): TsSubUnitContext {
 
 function skipNestedFunctions(parent: FunctionRoot) {
   return (node: Node, traversal: { skip: () => void }): boolean => {
-    if (
-      node !== parent &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
+    if (isDescentStop(node, parent)) {
       traversal.skip();
       return true;
     }

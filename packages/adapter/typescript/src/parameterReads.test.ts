@@ -73,6 +73,27 @@ describe("parameterReads", () => {
     ]);
   });
 
+  it("leaves a claimed sub-unit's reads off the parent", () => {
+    const func = functionNamed(
+      `
+      function Panel({ title, onSave }: { title: string; onSave: () => void }) {
+        const handler = () => onSave();
+        return <button onClick={handler}>{title}</button>;
+      }
+    `,
+      "Panel",
+    );
+    const claimed = new Set<unknown>();
+    func.forEachDescendant((node) => {
+      if (node.getKindName() === "ArrowFunction") {
+        claimed.add(node);
+      }
+    });
+    expect(parameterReads(func, ["title", "onSave"], claimed as never)).toEqual(
+      [{ input: "title", path: [] }],
+    );
+  });
+
   it("never attributes a shadowing inner binding to the parameter", () => {
     const func = functionNamed(
       `

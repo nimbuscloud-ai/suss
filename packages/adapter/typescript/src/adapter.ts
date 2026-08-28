@@ -149,7 +149,11 @@ import {
 } from "./summaryIdentity.js";
 import { createTimer, type Timer, type TimingReport } from "./timing.js";
 import { adapterCodeStamp, computeAdapterPacksDigest } from "./version.js";
-import { type DescentBarriers, NO_BARRIERS } from "./walk/descent.js";
+import {
+  type DescentBarriers,
+  isDescentStop,
+  NO_BARRIERS,
+} from "./walk/descent.js";
 import {
   expandWorkspacePatterns,
   workspaceExpansionStamp,
@@ -362,18 +366,14 @@ function extractParameters(
   return result;
 }
 
-function extractDependencyCalls(func: FunctionRoot): RawDependencyCall[] {
+function extractDependencyCalls(
+  func: FunctionRoot,
+  barriers: DescentBarriers = NO_BARRIERS,
+): RawDependencyCall[] {
   const results: RawDependencyCall[] = [];
 
   func.forEachDescendant((node, traversal) => {
-    // A nested function's dependency calls belong to that function.
-    if (
-      node !== func &&
-      (Node.isFunctionDeclaration(node) ||
-        Node.isFunctionExpression(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isMethodDeclaration(node))
-    ) {
+    if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }
@@ -685,10 +685,11 @@ function readCodeStructure(
     extracted.terminals,
     barriers,
   );
-  const depCalls = extractDependencyCalls(func);
+  const depCalls = extractDependencyCalls(func, barriers);
   const paramReads = parameterReads(
     func,
     params.map((one) => one.name),
+    barriers,
   );
 
   if (unit.callSite !== undefined) {

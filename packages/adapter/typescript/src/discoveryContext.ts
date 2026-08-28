@@ -320,6 +320,10 @@ function hasJsxReturn(func: FunctionRoot): boolean {
       traversal.stop();
       return;
     }
+    // Deliberately stricter than isDescentStop: a JSX return inside a
+    // nested arrow (a render prop, a map callback) is that function's
+    // output, and descending would make its parent read as a
+    // component.
     if (
       node !== func &&
       (Node.isFunctionDeclaration(node) ||
