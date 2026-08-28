@@ -4,7 +4,10 @@
 
 import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 
-import { decoratedCallablesOf } from "./decoratedMembers.js";
+import {
+  decoratedCallablesOf,
+  importedDecoratorLocals,
+} from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -103,19 +106,12 @@ export function discoverDecoratedMethods(
   const acceptedModules = Array.isArray(match.importModule)
     ? match.importModule
     : [match.importModule];
-  const methodDecoratorsFromFramework = new Set<string>();
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    if (!acceptedModules.includes(importDecl.getModuleSpecifierValue())) {
-      continue;
-    }
-    for (const named of importDecl.getNamedImports()) {
-      const local = named.getAliasNode()?.getText() ?? named.getName();
-      if (match.methodDecorators.includes(local)) {
-        methodDecoratorsFromFramework.add(local);
-      }
-    }
-  }
-  if (methodDecoratorsFromFramework.size === 0) {
+  const localMethodDecorators = importedDecoratorLocals(
+    sourceFile,
+    acceptedModules,
+    match.methodDecorators,
+  );
+  if (localMethodDecorators.size === 0) {
     return [];
   }
 
@@ -136,12 +132,15 @@ export function discoverDecoratedMethods(
         : null;
 
     const className = cls.getName() ?? "<anon-class>";
-    for (const handler of decoratedCallablesOf(cls, match.methodDecorators)) {
+    for (const handler of decoratedCallablesOf(cls, [
+      ...localMethodDecorators.keys(),
+    ])) {
       const fieldName =
         resolveOperationNameOverride(handler.decorator) ?? handler.name;
       const typeName = resolverTypeName({
         classTypeName,
-        decoratorName: handler.standsFor,
+        decoratorName:
+          localMethodDecorators.get(handler.standsFor) ?? handler.standsFor,
         typeMap: match.methodDecoratorTypeMap,
       });
 

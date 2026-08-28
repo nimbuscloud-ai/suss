@@ -1465,6 +1465,98 @@ const storagePack: PatternPack = {
   ],
 };
 
+describe("createTypeScriptAdapter: aliased decorator imports", () => {
+  const NEST_TYPES: Readonly<Record<string, string>> = {
+    "/node_modules/@nestjs/common/package.json": JSON.stringify({
+      name: "@nestjs/common",
+      types: "index.d.ts",
+    }),
+    "/node_modules/@nestjs/common/index.d.ts": `
+      export declare function Controller(prefix?: string): ClassDecorator;
+      export declare function Get(path?: string): MethodDecorator;
+      export declare function Post(path?: string): MethodDecorator;
+    `,
+  };
+  const decoratedRoutePack: PatternPack = {
+    name: "nest-test",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "handler",
+        match: {
+          type: "decoratedRoute",
+          importModule: "@nestjs/common",
+          classDecorators: ["Controller"],
+          methodDecoratorRouteMap: { Get: "GET", Post: "POST" },
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+
+  async function extractController(source: string) {
+    const project = createTestProject();
+    for (const [file, text] of Object.entries(NEST_TYPES)) {
+      project.createSourceFile(file, text);
+    }
+    project.createSourceFile("/app/orders.controller.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [decoratedRoutePack],
+    });
+    return await adapter.extractAll();
+  }
+
+  it("discovers a handler whose decorator was imported under an alias", async () => {
+    const summaries = await extractController(`
+      import { Controller, Get as HttpGet } from "@nestjs/common";
+
+      @Controller("orders")
+      export class OrdersController {
+        @HttpGet(":id")
+        getOrder() {
+          return { id: 1 };
+        }
+      }
+    `);
+
+    const handler = summaries.find((one) =>
+      one.identity.name.includes("getOrder"),
+    );
+    expect(handler).toBeDefined();
+    expect(handler?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "rest",
+      method: "GET",
+    });
+  });
+
+  it("ignores a foreign export renamed to a decorator's name", async () => {
+    const summaries = await extractController(`
+      import { Controller, Post as Get } from "@nestjs/common";
+
+      @Controller("orders")
+      export class OrdersController {
+        @Get(":id")
+        getOrder() {
+          return { id: 1 };
+        }
+      }
+    `);
+
+    const handler = summaries.find((one) =>
+      one.identity.name.includes("getOrder"),
+    );
+    expect(handler?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "rest",
+      method: "POST",
+    });
+  });
+});
+
 describe("createTypeScriptAdapter: componentProps roles", () => {
   it("keeps the passed name through renames and marks a rest binding", async () => {
     const pack: PatternPack = {
