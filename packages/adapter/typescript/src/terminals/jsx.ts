@@ -5,10 +5,7 @@
 import { Node } from "ts-morph";
 
 import { endLineOf, startLineOf } from "../lines.js";
-import {
-  declarationsBehind,
-  isInExternalCode,
-} from "../resolve/unfollowedCall.js";
+import { functionTargetOf } from "../resolve/functionBehind.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type { RenderNode } from "@suss/behavioral-ir";
@@ -84,28 +81,8 @@ function componentTargetOf(
   if (!Node.isIdentifier(tagNode) || !/^[A-Z]/.test(tagNode.getText())) {
     return null;
   }
-  for (const decl of declarationsBehind(tagNode.getSymbol())) {
-    if (isInExternalCode(decl.getSourceFile())) {
-      continue;
-    }
-    const name = Node.isFunctionDeclaration(decl) ? decl.getName() : undefined;
-    if (name !== undefined) {
-      return { file: decl.getSourceFile().getFilePath(), name };
-    }
-    if (Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer();
-      if (
-        init !== undefined &&
-        (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-      ) {
-        return {
-          file: decl.getSourceFile().getFilePath(),
-          name: decl.getName(),
-        };
-      }
-    }
-  }
-  return null;
+  const target = functionTargetOf(tagNode);
+  return target === null ? null : { file: target.file, name: target.name };
 }
 
 /**
