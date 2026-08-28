@@ -41,7 +41,20 @@ export function answerCalls(
   }
 
   const label = units.length === 1 ? summaryIdentifier(units[0]) : subject;
-  const sites = callSitesInto(units, summaries);
+  // A unit of the subject calling a sibling of the subject is the
+  // subject's own internal behavior, and listing it under "what calls
+  // this" buries the outside callers the question asks for.
+  const subjectUnits = new Set(units);
+  const effectSites = callSitesInto(units, summaries);
+  // A caller the effects already place is not repeated from its
+  // binding, which spells the same call a second way.
+  const placed = new Set(effectSites.map((site) => site.caller));
+  const sites = [
+    ...effectSites,
+    ...boundCallersInto(units, summaries).filter(
+      (site) => !placed.has(site.caller),
+    ),
+  ].filter((site) => !subjectUnits.has(site.caller));
   const callers = [...new Set(sites.map((site) => site.caller))];
 
   if (sites.length === 0) {
@@ -78,6 +91,60 @@ export function answerCalls(
     ],
     found: true,
   };
+}
+
+/**
+ * Callers recorded through a package-export binding instead of an
+ * invocation effect. A caller-kind unit the packageImport discovery
+ * produces says which export it calls on its own binding, so the scan
+ * over invocation effects never sees it.
+ */
+function boundCallersInto(
+  units: ReadonlyArray<BehavioralSummary>,
+  summaries: ReadonlyArray<BehavioralSummary>,
+): CallSite[] {
+  const exports = new Map<string, BehavioralSummary>();
+  for (const unit of units) {
+    const semantics = unit.identity.boundaryBinding?.semantics;
+    if (
+      semantics?.name === "function-call" &&
+      semantics.package !== undefined &&
+      semantics.exportPath !== undefined
+    ) {
+      exports.set(
+        `${semantics.package}\u0000${semantics.exportPath.join("/")}`,
+        unit,
+      );
+    }
+  }
+  if (exports.size === 0) {
+    return [];
+  }
+
+  const sites: CallSite[] = [];
+  for (const summary of summaries) {
+    if (summary.kind !== "caller") {
+      continue;
+    }
+    const semantics = summary.identity.boundaryBinding?.semantics;
+    if (
+      semantics?.name !== "function-call" ||
+      semantics.package === undefined ||
+      semantics.exportPath === undefined
+    ) {
+      continue;
+    }
+    const target = exports.get(
+      `${semantics.package}\u0000${semantics.exportPath.join("/")}`,
+    );
+    if (target !== undefined) {
+      sites.push({
+        caller: summary,
+        callee: `${semantics.package} ${semantics.exportPath.join(".")}`,
+      });
+    }
+  }
+  return sites;
 }
 
 /** Every recorded call that reaches one of these units. */
