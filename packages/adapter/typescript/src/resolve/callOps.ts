@@ -37,7 +37,6 @@ import type {
   PropertyAccessExpression,
   PropertyAssignment,
   TaggedTemplateExpression,
-  VariableDeclaration,
 } from "ts-morph";
 
 /**
@@ -51,13 +50,6 @@ type Called = CallExpression | NewExpression | TaggedTemplateExpression;
 
 /** One-hop lookup from a written name to the value it was bound to. */
 type Resolve = (value: Node) => Node | null;
-
-/**
- * How many variables a step follows before it gives up. A value put
- * in a variable that came from another variable is ordinary; a longer
- * run of them is a program this cannot read anyway.
- */
-const MAX_WRITTEN_HOPS = 4;
 
 /** What every origin check is handed. */
 interface Receiver {
@@ -441,31 +433,18 @@ function argumentsIn(call: Called): Node[] {
  * repository class builds the command a few lines above the call, and
  * that has to be followed.
  *
- * The fact layer can only differ from the initializer when the
- * initializer is a call, where the `unwraps` rules may see through a
- * wrapper (`const client = wrap(base)`), so the store is asked first
- * exactly there and the plain initializer is read directly everywhere
- * else. History: #585 removed the fact-layer read over
- * order-dependent answers, #588 fixed the cause, and the
- * walkers-and-rules design made the store primary for wrapped values.
+ * One store ask: the `isWrittenAs` rules follow bindings, imports,
+ * and wrappers to a fixpoint, so there is no hop loop here. A value
+ * the store leaves unresolved is a missing base fact to emit, per the
+ * walkers-and-rules design, and a syntactic fallback here would hide
+ * exactly those gaps.
  */
 function settled(value: Node | undefined, resolve: Resolve): Node | null {
-  let step = unwrapped(value ?? null);
-  for (let hops = 0; hops < MAX_WRITTEN_HOPS; hops += 1) {
-    if (step === null || !Node.isIdentifier(step)) {
-      return step;
-    }
-    const initializer = unwrapped(variableFor(step)?.getInitializer() ?? null);
-    const written =
-      initializer !== null && !isCalled(initializer)
-        ? initializer
-        : (resolve(step) ?? initializer);
-    if (written === null || written === step) {
-      return null;
-    }
-    step = unwrapped(written);
+  const step = unwrapped(value ?? null);
+  if (step === null || !Node.isIdentifier(step)) {
+    return step;
   }
-  return null;
+  return unwrapped(resolve(step));
 }
 
 /**
@@ -475,19 +454,6 @@ function settled(value: Node | undefined, resolve: Resolve): Node | null {
  */
 function unwrapped(value: Node | null): Node | null {
   return value === null ? null : peelValue(value);
-}
-
-/** The variable a name was declared as, when the source declares one. */
-function variableFor(name: Node): VariableDeclaration | null {
-  if (!Node.isIdentifier(name)) {
-    return null;
-  }
-  for (const declaration of name.getSymbol()?.getDeclarations() ?? []) {
-    if (Node.isVariableDeclaration(declaration)) {
-      return declaration;
-    }
-  }
-  return null;
 }
 
 /** The name one argument gives, or null when nothing settles it. */

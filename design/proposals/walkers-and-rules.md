@@ -523,9 +523,11 @@ It does not touch the evaluator.
 
 1. The base facts for the three binding cases the fuzzer pins. It is
    the smallest, and the fuzzer measures it in CI.
-2. The preference flip in `callOps.ts` and the store into
-   `packageImport` and `factoryTracking`, because they reach every
-   pack and close the injected-client shape (#429).
+2. `settled` in `callOps.ts` becomes one store ask, with no hop loop
+   and no syntactic fallback, and the store into `packageImport` and
+   `factoryTracking`. A value the store leaves unresolved after this
+   is a missing base fact to emit, not a fallback to restore. These
+   reach every pack and close the injected-client shape (#429).
 3. The store in `namedExport`'s default-export pass, with
    `--datalog-profile` before and after on twenty-front and
    saleor-storefront.

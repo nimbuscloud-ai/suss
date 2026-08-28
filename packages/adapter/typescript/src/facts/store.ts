@@ -151,6 +151,10 @@ export class ResolutionStore {
     string,
     { names: string[]; walked: string[] }
   >();
+  private readonly writtenValues = new Map<
+    string,
+    { written: Node | null; walked: string[] }
+  >();
   /** Files the most recent wave walk entered, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   private readonly declarations = new Map<Node, Node>();
@@ -260,9 +264,25 @@ export class ResolutionStore {
    */
   resolveWrittenValue(value: Node): Node | null {
     const target = factKeyOf(value);
-    return this.resolveByWaves(target, "wanted", () =>
+    const key = nodeId(target);
+    const cached = this.writtenValues.get(key);
+    if (cached !== undefined) {
+      // A memo hit walks nothing, but whoever is collecting file
+      // dependencies still read those files through it.
+      for (const walkedPath of cached.walked) {
+        recordFileDependency(walkedPath);
+      }
+      return cached.written;
+    }
+
+    const written = this.resolveByWaves(target, "wanted", () =>
       this.lookupWritten(target),
     );
+    this.writtenValues.set(key, {
+      written,
+      walked: [...this.lastQueryWalked],
+    });
+    return written;
   }
 
   /**
