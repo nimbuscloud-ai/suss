@@ -9,6 +9,7 @@ import { restBinding } from "@suss/behavioral-ir";
 
 import { exportedDeclarationsOf } from "./moduleExports.js";
 import { shapeFromNodeType } from "./shapes/typeShapes.js";
+import { peelSyntax } from "./walk/unwrap.js";
 
 import type { BoundaryBinding, TypeShape } from "@suss/behavioral-ir";
 import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";
@@ -219,10 +220,7 @@ function unwrapContractInit(init: Node | undefined): Node | null {
 
   // `{ ... } as const` and `route as RouteConfig` both leave the object
   // as written; the cast is only there for the type.
-  let node = init;
-  while (Node.isAsExpression(node)) {
-    node = node.getExpression();
-  }
+  const node = peelSyntax(init);
 
   // c.router({ getUser: { ... }, createUser: { ... } })
   if (Node.isCallExpression(node)) {

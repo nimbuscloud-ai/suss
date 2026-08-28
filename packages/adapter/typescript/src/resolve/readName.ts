@@ -10,6 +10,8 @@ import { Node, SyntaxKind } from "ts-morph";
 
 import { patternHole, referenceName } from "@suss/behavioral-ir";
 
+import { peelParens } from "../walk/unwrap.js";
+
 import type { Reference } from "@suss/behavioral-ir";
 
 /** How far this follows a helper that calls a helper. */
@@ -147,7 +149,7 @@ function read(expr: Node, ctx: Context): string | null {
     return fromTemplate(expr, inner);
   }
   if (Node.isParenthesizedExpression(expr)) {
-    return read(expr.getExpression(), inner);
+    return read(peelParens(expr), inner);
   }
   if (Node.isBinaryExpression(expr)) {
     return fromBinary(expr, inner);

@@ -17,6 +17,7 @@
 import { Node } from "ts-morph";
 
 import { writesToBinding } from "../facts/assignments.js";
+import { peelSyntax } from "../walk/unwrap.js";
 
 import type { Expression, Node as TsNode } from "ts-morph";
 
@@ -99,13 +100,5 @@ function numberOf(node: TsNode): number | null {
 }
 
 function unwrap(node: TsNode): TsNode {
-  let current = node;
-  while (
-    Node.isParenthesizedExpression(current) ||
-    Node.isAsExpression(current) ||
-    Node.isNonNullExpression(current)
-  ) {
-    current = current.getExpression();
-  }
-  return current;
+  return peelSyntax(node);
 }

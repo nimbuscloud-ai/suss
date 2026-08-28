@@ -30,6 +30,8 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { peelParens } from "../walk/unwrap.js";
+
 import type { ClassDeclaration, ReturnStatement } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 
@@ -139,10 +141,7 @@ function collectFromObjectLiteral(
   out: SurfacedMethod[],
   seen: Set<string>,
 ): void {
-  let e = node;
-  while (Node.isParenthesizedExpression(e)) {
-    e = e.getExpression();
-  }
+  const e = peelParens(node);
   if (!Node.isObjectLiteralExpression(e)) {
     return;
   }

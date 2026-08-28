@@ -16,6 +16,7 @@ import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
+import { peelParens, peelSyntax } from "./walk/unwrap.js";
 
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
@@ -246,17 +247,7 @@ function configString(
  * value: `as const` / `as T`, `satisfies T`, parentheses, and `!`.
  */
 function peelExpression(node: Node | undefined): Node | undefined {
-  let current = node;
-  while (
-    current !== undefined &&
-    (Node.isAsExpression(current) ||
-      Node.isSatisfiesExpression(current) ||
-      Node.isParenthesizedExpression(current) ||
-      Node.isNonNullExpression(current))
-  ) {
-    current = current.getExpression();
-  }
-  return current;
+  return node === undefined ? undefined : peelSyntax(node);
 }
 
 /**
@@ -345,10 +336,7 @@ function hasJsxReturn(func: FunctionRoot): boolean {
 }
 
 function isJsxOrFragment(node: Node): boolean {
-  let current = node;
-  while (Node.isParenthesizedExpression(current)) {
-    current = current.getExpression();
-  }
+  const current = peelParens(node);
   return (
     Node.isJsxElement(current) ||
     Node.isJsxSelfClosingElement(current) ||

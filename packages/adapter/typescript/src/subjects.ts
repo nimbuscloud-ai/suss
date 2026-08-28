@@ -7,6 +7,7 @@ import {
   thenLikeCall,
   thenParameterLink,
 } from "./promiseThen.js";
+import { peelValue } from "./walk/unwrap.js";
 
 import type { ValueRef } from "@suss/behavioral-ir";
 
@@ -60,11 +61,7 @@ function resolvePromiseValue(expr: Expression, depth: number): ValueRef {
   if (depth >= MAX_RESOLVE_DEPTH) {
     return { type: "unresolved", sourceText: expr.getText() };
   }
-  const inner = Node.isAwaitExpression(expr)
-    ? expr.getExpression()
-    : Node.isParenthesizedExpression(expr)
-      ? expr.getExpression()
-      : expr;
+  const inner = peelValue(expr) as Expression;
 
   if (Node.isCallExpression(inner)) {
     const chained = thenLikeCall(inner);
@@ -121,16 +118,11 @@ export function resolveSubject(expr: Expression, depth = 0): ValueRef {
   }
   const sourceText = expr.getText();
 
-  if (Node.isParenthesizedExpression(expr)) {
-    return resolveSubject(expr.getExpression(), depth + 1);
-  }
-
-  if (Node.isAwaitExpression(expr)) {
-    return resolveSubject(expr.getExpression(), depth + 1);
-  }
-
-  if (Node.isAsExpression(expr)) {
-    return resolveSubject(expr.getExpression(), depth + 1);
+  {
+    const bare = peelValue(expr) as Expression;
+    if (bare !== expr) {
+      return resolveSubject(bare, depth + 1);
+    }
   }
 
   if (Node.isNullLiteral(expr)) {

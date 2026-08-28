@@ -53,3 +53,41 @@ export function peelParens(node: Node): Node {
   }
   return current;
 }
+
+/**
+ * The expression inside every value-preserving wrapper, `await`
+ * included, for a pass asking "what value flows here". A pass reading
+ * types off the checker wants `peelSyntax` instead, so the await stays
+ * where TypeScript reports the resolved type.
+ */
+export function peelValue(node: Node): Node {
+  let current = node;
+  for (let i = 0; i < MAX_LAYERS; i++) {
+    const inner = peelSyntax(current);
+    if (Node.isAwaitExpression(inner)) {
+      current = inner.getExpression();
+      continue;
+    }
+    if (inner === current) {
+      break;
+    }
+    current = inner;
+  }
+  return current;
+}
+
+/**
+ * Whether this node passes its inner value through unchanged: the
+ * wrapper kinds the peelers see through, for a walk that climbs
+ * parents instead of peeling down.
+ */
+export function passesValueThrough(node: Node): boolean {
+  return (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAwaitExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isTypeAssertion(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isSatisfiesExpression(node)
+  );
+}

@@ -2,6 +2,8 @@
 
 import { Node } from "ts-morph";
 
+import { passesValueThrough, peelValue } from "../walk/unwrap.js";
+
 import type { RawCondition, RawTerminal } from "@suss/extractor";
 
 export interface FoundTerminal {
@@ -35,17 +37,7 @@ export interface FoundTerminal {
  * call has to see through the await to find it.
  */
 export function unwrapValue(node: Node): Node {
-  let current: Node = node;
-  while (
-    Node.isParenthesizedExpression(current) ||
-    Node.isAwaitExpression(current) ||
-    Node.isAsExpression(current) ||
-    Node.isNonNullExpression(current) ||
-    Node.isSatisfiesExpression(current)
-  ) {
-    current = current.getExpression();
-  }
-  return current;
+  return peelValue(node);
 }
 
 /**
@@ -71,13 +63,7 @@ export function returnPositionOf(value: Node): Node | null {
     if (Node.isArrowFunction(parent)) {
       return parent.getBody() === current ? current : null;
     }
-    if (
-      Node.isParenthesizedExpression(parent) ||
-      Node.isAwaitExpression(parent) ||
-      Node.isAsExpression(parent) ||
-      Node.isNonNullExpression(parent) ||
-      Node.isSatisfiesExpression(parent)
-    ) {
+    if (passesValueThrough(parent)) {
       current = parent;
       continue;
     }

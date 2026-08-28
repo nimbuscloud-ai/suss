@@ -10,6 +10,7 @@ import {
   withGraphqlMetadata,
 } from "@suss/behavioral-ir";
 
+import { peelSyntax } from "../walk/unwrap.js";
 import { namedImportsOf } from "./importScan.js";
 import { stringValueOf } from "./resolveValue.js";
 
@@ -392,15 +393,7 @@ function resolveToConstructionOf(
 }
 
 function unwrapExpression(node: Node): Node {
-  let current = node;
-  while (
-    Node.isParenthesizedExpression(current) ||
-    Node.isAsExpression(current) ||
-    Node.isNonNullExpression(current)
-  ) {
-    current = current.getExpression();
-  }
-  return current;
+  return peelSyntax(node);
 }
 
 function isConstructionNamed(node: Node, localName: string): boolean {

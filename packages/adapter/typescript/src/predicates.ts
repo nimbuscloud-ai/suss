@@ -4,6 +4,7 @@ import { type Expression, Node, SyntaxKind } from "ts-morph";
 
 import { resolveCallableBody } from "./resolve/astResolve.js";
 import { resolveSubject } from "./subjects.js";
+import { peelParens } from "./walk/unwrap.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
 import type { CallExpression } from "ts-morph";
@@ -68,8 +69,11 @@ export function parseConditionExpression(
   expr: Expression,
   depth = 0,
 ): Predicate | null {
-  if (Node.isParenthesizedExpression(expr)) {
-    return parseConditionExpression(expr.getExpression(), depth);
+  {
+    const bare = peelParens(expr);
+    if (bare !== expr) {
+      return parseConditionExpression(bare as Expression, depth);
+    }
   }
 
   // `!x` and `!!x`
