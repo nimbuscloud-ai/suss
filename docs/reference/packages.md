@@ -68,7 +68,7 @@ the source.
 | [`express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |
 | [`fastify`](../../packages/framework/fastify) | Fastify handlers. | ![](../../.github/badges/coverage-fastify.svg) |
 | [`hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | ![](../../.github/badges/coverage-hono.svg) |
-| [`nextjs`](../../packages/framework/nextjs) | Next.js route handlers and pages; the route comes from where the file is on disk. | ![](../../.github/badges/coverage-nextjs.svg) |
+| [`nextjs`](../../packages/framework/nextjs) | Next.js route handlers, pages, and server actions; the route comes from where the file is on disk, and a `"use server"` function becomes an action unit. | ![](../../.github/badges/coverage-nextjs.svg) |
 | [`react`](../../packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
 | [`react-router`](../../packages/framework/react-router) | React Router loaders / actions / routes. | ![](../../.github/badges/coverage-react-router.svg) |
 | [`react-query`](../../packages/framework/react-query) | TanStack Query hooks: ties a component to the query function its `useQuery` / `useMutation` call runs. | ![](../../.github/badges/coverage-react-query.svg) |

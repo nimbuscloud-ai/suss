@@ -4,8 +4,8 @@
     "packagesWithExports": 63,
     "exports": 602,
     "internal": 2217,
-    "consumers": 1036,
-    "pairs": 1020,
+    "consumers": 1038,
+    "pairs": 1022,
     "unfollowedCalls": 234,
     "findingErrors": 0
   },
@@ -315,7 +315,7 @@
       "name": "@suss/framework-nextjs",
       "exports": 2,
       "internal": 0,
-      "consumers": 2,
+      "consumers": 4,
       "unfollowedCalls": 0
     },
     "packages/framework/package-exports": {
