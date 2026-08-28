@@ -168,6 +168,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "aws-s3": "@suss/packs/aws-s3",
   gcs: "@suss/packs/gcs",
   redis: "@suss/packs/redis",
+  zustand: "@suss/packs/zustand",
   fetch: "@suss/packs/fetch",
   axios: "@suss/packs/axios",
   "apollo-client": "@suss/packs/apollo-client",

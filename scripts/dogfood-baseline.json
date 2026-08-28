@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 63,
-    "packagesWithExports": 63,
-    "exports": 605,
+    "packages": 64,
+    "packagesWithExports": 64,
+    "exports": 608,
     "internal": 2238,
-    "consumers": 1046,
-    "pairs": 1030,
+    "consumers": 1047,
+    "pairs": 1031,
     "unfollowedCalls": 234,
     "findingErrors": 0
   },
@@ -374,6 +374,13 @@
       "consumers": 5,
       "unfollowedCalls": 0
     },
+    "packages/framework/zustand": {
+      "name": "@suss/framework-zustand",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 1,
+      "unfollowedCalls": 0
+    },
     "packages/intent-ir": {
       "name": "@suss/intent-ir",
       "exports": 1,
@@ -404,7 +411,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 33,
+      "exports": 34,
       "internal": 0,
       "consumers": 0,
       "unfollowedCalls": 0
