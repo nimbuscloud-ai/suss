@@ -382,6 +382,57 @@ export interface ClosureRecognizers {
 
 const NO_RECOGNIZERS: ClosureRecognizers = { invocation: [], access: [] };
 
+/**
+ * The exported functions of files that only a recognizer pack applies
+ * to. A recognizer reads calls inside units something else discovers,
+ * so with nothing discovering, its effects had no function to live on
+ * and the run wrote nothing. These become closure roots: walked with
+ * the same recognizers, emitted as the same library summaries, and a
+ * discovery pack added later claims its own units first and only
+ * upgrades the attribution.
+ */
+export function recognizerOnlyRoots(
+  packsByFile: ReadonlyMap<SourceFile, PatternPack[]>,
+): ReachableCandidate[] {
+  const roots: ReachableCandidate[] = [];
+  for (const [sourceFile, packs] of packsByFile) {
+    const recognizerOnly = packs.some(
+      (pack) =>
+        pack.discovery.length === 0 &&
+        pack.discoverUnits === undefined &&
+        ((pack.invocationRecognizers?.length ?? 0) > 0 ||
+          (pack.accessRecognizers?.length ?? 0) > 0),
+    );
+    if (!recognizerOnly) {
+      continue;
+    }
+    for (const declaration of sourceFile.getFunctions()) {
+      if (declaration.isExported() && hasBody(declaration)) {
+        roots.push({
+          func: declaration,
+          name: declaration.getName() ?? "<anon>",
+        });
+      }
+    }
+    for (const variableStatement of sourceFile.getVariableStatements()) {
+      if (!variableStatement.isExported()) {
+        continue;
+      }
+      for (const declaration of variableStatement.getDeclarations()) {
+        const init = declaration.getInitializer();
+        if (
+          init !== undefined &&
+          (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) &&
+          hasBody(init)
+        ) {
+          roots.push({ func: init, name: declaration.getName() });
+        }
+      }
+    }
+  }
+  return roots;
+}
+
 export function expandReachableClosure(
   seeds: BehavioralSummary[],
   project: Project,
@@ -390,6 +441,7 @@ export function expandReachableClosure(
   facts?: ClosureFacts,
   recognizers: ClosureRecognizers = NO_RECOGNIZERS,
   alreadySummarized: BehavioralSummary[] = [],
+  extraRoots: ReadonlyArray<ReachableCandidate> = [],
 ): BehavioralSummary[] {
   // One source-file enumeration and one per-file function index, shared
   // across every seed locate. Without them each seed re-scanned the
@@ -424,6 +476,19 @@ export function expandReachableClosure(
       rememberSummary(summariesByKey, key, seed);
       db.add("entry", [key]);
     }
+  }
+
+  // Roots the caller adds beyond the discovered seeds: the exported
+  // functions of files a recognizer-only pack gated, in a run where
+  // nothing discovers units there. They enter the walk like a seed and
+  // are emitted like a reached function, so a run with only a
+  // recognizer pack still describes the functions its effects live in.
+  for (const root of extraRoots) {
+    const key = nodeKey(root.func);
+    if (!functionByKey.has(key)) {
+      functionByKey.set(key, root);
+    }
+    db.add("entry", [key]);
   }
 
   // Units whose summaries a partial run serves from the cache: still

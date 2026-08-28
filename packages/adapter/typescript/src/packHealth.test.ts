@@ -380,6 +380,13 @@ describe("the recognizer-with-no-units check", () => {
     expect(noUnits([recognizerOnly({ unitsInGatedFiles: 5 })])).toEqual([]);
   });
 
+  it("stays quiet when the closure roots recognized effects", () => {
+    // The gated files' exports joined the walk as roots, so the run
+    // produced summaries and the missing framework pack costs
+    // attribution rather than existence.
+    expect(noUnits([recognizerOnly({ effectsRecognized: 40 })])).toEqual([]);
+  });
+
   it("stays quiet when the gate selected no files", () => {
     expect(noUnits([recognizerOnly({ candidateFiles: 0 })])).toEqual([]);
   });

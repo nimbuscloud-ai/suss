@@ -161,7 +161,11 @@ function recognizersWithNoUnits(
         funnel.gates.length > 0 &&
         funnel.unresolvedGates.length === 0 &&
         funnel.candidateFiles > 0 &&
-        funnel.unitsInGatedFiles === 0,
+        funnel.unitsInGatedFiles === 0 &&
+        // The closure walks a recognizer-only pack's gated exports as
+        // roots, so effects recognized there mean the run worked and
+        // the missing framework pack costs attribution, not existence.
+        funnel.effectsRecognized === 0,
     )
     .map((funnel) => ({
       label: funnel.pack,

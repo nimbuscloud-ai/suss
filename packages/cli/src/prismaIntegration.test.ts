@@ -276,3 +276,29 @@ function relationWrite(
   }
   return writes[0];
 }
+
+describe("prisma with nothing discovering units", () => {
+  // A recognized effect is never invisible for want of a unit (#644).
+  // With no discovery pack in the run, the gated files' exports join
+  // the reachable walk as roots, so the same accesses come out on
+  // library summaries instead of not at all.
+  it("still describes what the code does to the store", async () => {
+    const adapter = createTypeScriptAdapter({
+      tsConfigFilePath: path.join(fixtureRoot, "tsconfig.json"),
+      frameworks: [prismaFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+    const accesses = collectStorageAccesses(summaries);
+
+    expect(accesses.length).toBeGreaterThanOrEqual(2);
+    const tables = accesses
+      .map((a) => readTable(a))
+      .filter((t): t is string => t !== null);
+    expect(tables).toContain("User");
+    expect(tables).toContain("Post");
+    for (const summary of summaries.filter((s) => s.kind === "library")) {
+      expect(summary.identity.boundaryBinding?.recognition).toBe("reachable");
+    }
+  });
+});
