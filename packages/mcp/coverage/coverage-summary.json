@@ -2,15 +2,15 @@
   "total": {
     "lines": {
       "total": 141,
-      "covered": 137,
+      "covered": 135,
       "skipped": 0,
       "pct": 95.74
     },
     "statements": {
       "total": 149,
-      "covered": 143,
+      "covered": 141,
       "skipped": 0,
-      "pct": 95.97
+      "pct": 94.63
     },
     "functions": {
       "total": 47,
@@ -20,9 +20,9 @@
     },
     "branches": {
       "total": 64,
-      "covered": 53,
+      "covered": 52,
       "skipped": 0,
-      "pct": 82.81
+      "pct": 81.25
     },
     "branchesTrue": {
       "total": 0,
@@ -86,9 +86,9 @@
   "src/project.ts": {
     "lines": {
       "total": 72,
-      "covered": 69,
+      "covered": 67,
       "skipped": 0,
-      "pct": 95.83
+      "pct": 93.05
     },
     "functions": {
       "total": 19,
@@ -98,15 +98,15 @@
     },
     "statements": {
       "total": 73,
-      "covered": 70,
+      "covered": 68,
       "skipped": 0,
-      "pct": 95.89
+      "pct": 93.15
     },
     "branches": {
       "total": 30,
-      "covered": 25,
+      "covered": 24,
       "skipped": 0,
-      "pct": 83.33
+      "pct": 80
     }
   },
   "src/tools.ts": {
