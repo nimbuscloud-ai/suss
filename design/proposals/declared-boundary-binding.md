@@ -1,7 +1,7 @@
 # What a pack says about the boundary it found
 
-Status: draft, seeking alignment. One dead variant removed already
-(`decorator`); nothing else here is implemented.
+Status: resolved. Step 1 shipped, step 2 stopped on its own condition,
+step 3 turned out to be already fixed. The outcomes are at the end.
 
 A discovery pack does two things. It finds a code unit, and it says which
 boundary that unit serves. Which of the two ways it says the second one
@@ -199,3 +199,28 @@ mostly optional fields that only one adapter reads.
 `packageImport` have no declaring pack, so nothing a user installs reaches
 them. The first two need a pack option a project fills in with its own helper
 name (#599). The second two are constructed by `tools/differential` instead.
+
+## Outcomes
+
+**Step 1 shipped.** `DiscoveryPattern.binding` exists, message-bus
+only, and `@suss/framework-nestjs-microservices` is the pack that
+proves it: an `@EventPattern` handler is a consumer on the channel its
+decorator states. Against the official NestJS microservices sample the
+handler is found where before there was nothing.
+
+**Step 2 stopped, on the condition written above.** The resolver type
+name is `typeMap[decorator] ?? classTypeName`, the field name is
+`nameOption ?? methodName`, and the class type is read out of an arrow
+function. Declaring those needs three bespoke compound sources that
+fit this one shape, which is the expression language this document
+already argued against. The stronger reason to stop: `decoratedMethod`
+already states the whole reading as data in its match
+(`methodDecoratorTypeMap`), so nestjs-graphql is not a callback,
+pack health does not report it, and a declared form would rename
+fields without deleting any adapter code.
+
+**Step 3 was already fixed.** The `path` side of `BindingExtraction`
+no longer has a `fromRegistration` variant at all; the route-path
+rework replaced it with `fromArgument`. Only `method` still reads from
+the registration, and its `"methodName" | number` type is right for
+what it reads.
