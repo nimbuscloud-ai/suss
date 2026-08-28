@@ -7,8 +7,9 @@ has them, so its accesses come out as `storage-access` effects against
 `client-store:<name>`:
 
 ```ts
-useAppStore.setState({ bears: 5 })   // write of fields [bears]
-useAppStore.getState().bears         // read
+useAppStore.setState({ bears: 5 })    // write of fields [bears]
+useAppStore.getState().bears          // read
+useAppStore((s) => s.bears)           // read of fields [bears]
 ```
 
 `ask "what writes client-store:useAppStore"` then reads like the same
@@ -23,12 +24,12 @@ since that is what the project calls the store.
 suss extract -f react -f zustand -p tsconfig.json
 ```
 
-## What v0 leaves out
+The hook's selector form matches as a bare call of the store, and the
+fields it reads come off the selector's parameter: `(s) => s.bears`
+reads `bears`, and `(s) => s` reads everything.
 
-- The hook's selector form (`useAppStore((s) => s.bears)`), which is a
-  bare call of the store rather than a method on it. The recognize
-  links it needs are written up in the pack's issue, and selector
-  reads land when they do.
+## What this leaves out
+
 - The curried creator (`create<T>()(init)`), which the client origin
   does not follow yet.
 - A functional `setState((s) => ({...}))` states its fields in the

@@ -201,6 +201,7 @@ export type Link<TMeaning> =
   | StartLink
   | SubjectLink
   | MethodsLink<TMeaning>
+  | CallsLink<TMeaning>
   | ContainerLink
   | AccessPathLink
   | ContainersLink
@@ -208,10 +209,30 @@ export type Link<TMeaning> =
   | InterpolatesLink;
 
 /**
+ * The meaning of a bare call of the tracked client itself. A store
+ * hook is the case: `useAppStore((s) => s.bears)` reaches for no
+ * method, so there is no name for a methods table to list; the call
+ * matches by what its callee was written as.
+ */
+export interface CallsLink<TMeaning> {
+  readonly asks: "calls";
+  readonly meaning: TMeaning;
+}
+
+/**
  * Which argument or arguments say what a call reached, and where to go
  * looking. Without `of` the argument belongs to the chain's subject.
  */
 export type ArgumentPick = OneArgument | ArgumentsFrom;
+
+/**
+ * The fields a selector lambda reads off its parameter, one per
+ * distinct first segment: `(s) => s.bears.count` reads `bears`. The
+ * value says which argument the lambda is passed as.
+ */
+export interface SelectorParamPick {
+  readonly selectorParam: number;
+}
 
 /** The argument in one position. */
 export interface OneArgument {
@@ -310,13 +331,23 @@ export interface StorageMethod {
    * wrote, or the plain list a method whose own name settles it states
    * outright: `findById` picks by `_id` however the id is spelt.
    */
-  readonly selector?: readonly string[] | ArgumentPick | InputRule | StatedRule;
+  readonly selector?:
+    | readonly string[]
+    | ArgumentPick
+    | SelectorParamPick
+    | InputRule
+    | StatedRule;
   /**
    * Which fields the call touched, said the same three ways. A delete
    * touches the whole document and states `["*"]`, since nothing in its
    * arguments says so.
    */
-  readonly fields?: readonly string[] | ArgumentPick | InputRule | StatedRule;
+  readonly fields?:
+    | readonly string[]
+    | ArgumentPick
+    | SelectorParamPick
+    | InputRule
+    | StatedRule;
 }
 
 /**

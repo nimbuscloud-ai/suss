@@ -645,3 +645,59 @@ describe("a statement a call was handed as a tagged template", () => {
     expect(ops.valueAt(0)?.holes()).toEqual([]);
   });
 });
+
+describe("a bare call of a bound name", () => {
+  it("says whether the callee is a name the program bound", () => {
+    const named = opsForCall(
+      `
+      import { makeDeck } from "tapedeck";
+      const deck = makeDeck;
+      deck();
+      `,
+      "last",
+    );
+    expect(named.namedCallee?.()).toBe(true);
+
+    const inPlace = opsForCall(
+      `
+      import { makeDeck } from "tapedeck";
+      makeDeck()();
+      `,
+      "first",
+    );
+    expect(inPlace.namedCallee?.()).toBe(false);
+  });
+
+  it("reads a selector lambda's fields, one per first segment", () => {
+    const ops = opsForCall(
+      `
+      import { tape } from "tapedeck";
+      tape((s: { a: { b: number }; c: number }) => s.a.b + s.a.b + s.c);
+      `,
+      "first",
+    );
+    expect(ops.parameterReadsAt?.(0)).toEqual(["a", "c"]);
+  });
+
+  it("reads a whole-parameter selector as everything", () => {
+    const ops = opsForCall(
+      `
+      import { tape } from "tapedeck";
+      tape((s: number) => s);
+      `,
+      "first",
+    );
+    expect(ops.parameterReadsAt?.(0)).toEqual(["*"]);
+  });
+
+  it("has nothing to read off an argument that is not a function", () => {
+    const ops = opsForCall(
+      `
+      import { tape } from "tapedeck";
+      tape("side_a");
+      `,
+      "first",
+    );
+    expect(ops.parameterReadsAt?.(0)).toBeNull();
+  });
+});

@@ -128,6 +128,55 @@ describe("a zustand store access", () => {
     }
   });
 
+  it("reads the hook's selector form as a read of the picked fields", () => {
+    const effects = effectsIn(`
+      ${STORE}
+      export function BearCounter() {
+        const bears = useAppStore((s) => s.bears);
+        return bears;
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    const { semantics, interaction } = storageOf(effects[0]);
+    expect(semantics).toMatchObject({
+      storageSystem: "client-store",
+      container: "useAppStore",
+    });
+    expect(interaction).toMatchObject({
+      class: "storage-access",
+      kind: "read",
+      fields: ["bears"],
+    });
+  });
+
+  it("reads a whole-store call as a read of everything", () => {
+    const effects = effectsIn(`
+      ${STORE}
+      export function everything() {
+        const all = useAppStore((s) => s);
+        return all;
+      }
+    `);
+
+    expect(effects).toHaveLength(1);
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "read",
+      fields: ["*"],
+    });
+  });
+
+  it("leaves the store definition itself alone", () => {
+    const effects = effectsIn(`
+      ${STORE}
+      export function nothingHere() {
+        return 1;
+      }
+    `);
+
+    expect(effects).toHaveLength(0);
+  });
+
   it("leaves a same-named method on an unrelated object alone", () => {
     const effects = effectsIn(`
       const notAStore = {

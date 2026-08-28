@@ -86,8 +86,24 @@ export function compile(
 ): InvocationRecognizer {
   return (_call: unknown, ctx: unknown): Effect[] | null => {
     const ops = opsIn(ctx);
+    if (ops === null) {
+      return null;
+    }
+
+    const bare = bareCall(chain, ops);
+    if (bare !== null) {
+      return YIELD[chain.ending.yields]({
+        ops,
+        subject: ops,
+        method: bare.method,
+        meaning: bare.meaning,
+        chain,
+        recognition,
+      });
+    }
+
     const methods = methodsIn(chain);
-    if (ops === null || methods === null) {
+    if (methods === null) {
       return null;
     }
     for (const subject of subjectsOf(chain, ops)) {
@@ -116,6 +132,31 @@ function linkIn<TAsks extends Link<MethodMeaning>["asks"]>(
 ): Extract<Link<MethodMeaning>, { asks: TAsks }> | null {
   const link = chain.links.find((candidate) => candidate.asks === asks);
   return (link as Extract<Link<MethodMeaning>, { asks: TAsks }>) ?? null;
+}
+
+/**
+ * A bare call of the tracked client itself, when the chain has a calls
+ * link. There is no method name to key a table on, so the link's one
+ * meaning is the whole answer, and the proof is the callee: a bound
+ * name whose written value came from the chain's origin.
+ */
+function bareCall(
+  chain: Chain<MethodMeaning>,
+  ops: CallOps,
+): { method: string; meaning: MethodMeaning } | null {
+  const link = linkIn(chain, "calls");
+  const start = linkIn(chain, "start");
+  if (link === null || start === null || start.at.starts !== "receiver") {
+    return null;
+  }
+  if (ops.method() !== null || ops.namedCallee?.() !== true) {
+    return null;
+  }
+  const written = ops.callee();
+  if (written === null || !written.isFrom(start.at.origin)) {
+    return null;
+  }
+  return { method: ops.calleeText(), meaning: link.meaning };
 }
 
 /** The methods link, which every chain that recognizes calls states. */
@@ -435,6 +476,9 @@ function namesFor(
   if (typeof says === "function") {
     const input = stated.input;
     return input === null ? [] : [...says({ ...stated, input })];
+  }
+  if ("selectorParam" in says) {
+    return [...(subject.parameterReadsAt?.(says.selectorParam) ?? [])];
   }
   const pointed = says as ArgumentPick | StatedRule;
   if (!("by" in pointed)) {

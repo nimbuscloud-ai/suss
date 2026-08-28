@@ -198,6 +198,20 @@ export interface CallOps {
    */
   callee(): CallOps | null;
   /**
+   * Whether the call goes to a name the program bound, rather than to
+   * an expression written in place. `useAppStore(...)` does;
+   * `create()(...)` does not, even though both are bare calls.
+   */
+  namedCallee?(): boolean;
+  /**
+   * The properties the function argument in this position reads off
+   * its first parameter, one per distinct first segment: `(s) =>
+   * s.bears.count` reads `bears`, and a parameter used whole reads
+   * `*`. Null when the argument is not a function of one plain
+   * parameter.
+   */
+  parameterReadsAt?(index: number): readonly string[] | null;
+  /**
    * What a named property of the object an argument states says. A
    * property bag is not a call, so nothing else here reaches into one.
    */

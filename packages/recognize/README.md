@@ -76,6 +76,15 @@ ioredis, and the declaration behind `redis.get` says everything.
 `constructed` asks the receiver itself, so it still works where the
 method is untyped.
 
+A chain can also match a bare call of the tracked value itself, with
+`.calls(meaning)` beside its methods table. A store hook is the case:
+`useAppStore((s) => s.bears)` reaches for no method, so there is no
+name for the table to list; the call matches when its callee is a
+bound name whose written value came from the chain's origin. The
+fields such a call reads are usually stated in a selector lambda, and
+`fields: { selectorParam: 0 }` picks them off the lambda's parameter,
+one per distinct first segment.
+
 ## The gradient
 
 Expressiveness is bought link by link, and the price is printed.
@@ -111,6 +120,8 @@ result on the recognizer context under `ops`.
 | `receiver()` | the call the receiver is, as ops of its own |
 | `argument(index)` | the call that argument is, as ops of its own |
 | `callee()` | the call the callee itself was written as |
+| `namedCallee()` | whether the call goes to a name the program bound (optional) |
+| `parameterReadsAt(index)` | the fields a selector lambda in that position reads off its parameter (optional) |
 | `propertyAt(index, property, unsettled)` | what a named property of that argument says |
 | `valueAt(index)` | the value that argument states, as `ValueOps` |
 
