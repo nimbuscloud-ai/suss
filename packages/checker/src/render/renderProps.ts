@@ -13,7 +13,11 @@
  * `children`) are never reported.
  */
 
-import { functionCallBinding, summaryRef } from "@suss/behavioral-ir";
+import {
+  functionCallBinding,
+  renderTargetKey,
+  summaryRef,
+} from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
@@ -125,15 +129,19 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
   const findings: Finding[] = [];
   const childByKey = new Map<string, BehavioralSummary>();
   for (const summary of summaries) {
-    childByKey.set(
-      `${summary.location.file} ${summary.identity.name}`,
-      summary,
-    );
+    const file = summary.location.file;
+    childByKey.set(renderTargetKey(file, summary.identity.name), summary);
+    const exported = summary.identity.exportPath?.join(".");
+    if (exported !== undefined && exported.length > 0) {
+      childByKey.set(renderTargetKey(file, exported), summary);
+    }
   }
 
   for (const summary of summaries) {
     for (const edge of edgesOf(summary)) {
-      const child = childByKey.get(`${edge.target.file} ${edge.target.name}`);
+      const child = childByKey.get(
+        renderTargetKey(edge.target.file, edge.target.name),
+      );
       if (child === undefined || child === summary) {
         continue;
       }
