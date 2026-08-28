@@ -36,7 +36,7 @@ import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { endLineOf, startLineOf } from "../lines.js";
-import { lineRangeKey } from "../walk/nodeKeys.js";
+import { lineRangeKey, offsetKeyFor } from "../walk/nodeKeys.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "../conditions.js";
@@ -100,13 +100,18 @@ export function enrichRethrows(
   // Summaries the closure never registered (or runs without the
   // closure at all) fall back to the line-based key: every mint goes
   // through here, so this pass stays internally consistent either way.
+  // A summary with a span keys the way the closure keys the same
+  // function, so both fallbacks measure with one ruler; the line key
+  // covers summaries written before spans existed.
   const keyFor = (summary: BehavioralSummary): string =>
     facts?.unitKeyBySummary.get(summary) ??
-    lineRangeKey(
-      summary.location.file,
-      summary.location.range.start,
-      summary.location.range.end,
-    );
+    (summary.location.span !== undefined
+      ? offsetKeyFor(summary.location.file, summary.location.span)
+      : lineRangeKey(
+          summary.location.file,
+          summary.location.range.start,
+          summary.location.range.end,
+        ));
 
   // ---- Fact emission ------------------------------------------------
   const db = facts?.db ?? new Database();
@@ -238,11 +243,14 @@ function indexSummariesByFunctionLocation(
 ): SummaryIndex {
   const byFunctionLocation = new Map<string, BehavioralSummary>();
   for (const s of summaries) {
-    const key = lineRangeKey(
-      s.location.file,
-      s.location.range.start,
-      s.location.range.end,
-    );
+    const key =
+      s.location.span !== undefined
+        ? offsetKeyFor(s.location.file, s.location.span)
+        : lineRangeKey(
+            s.location.file,
+            s.location.range.start,
+            s.location.range.end,
+          );
     byFunctionLocation.set(key, s);
   }
   return { byFunctionLocation };
@@ -375,18 +383,24 @@ function resolveCalleeSummary(
       continue;
     }
     const sf = func.getSourceFile();
-    // The index is keyed by the summary's relative file path; keys in
-    // it may or may not match absolute paths. Try both.
+    // Summary paths are relative to the project root after CLI
+    // processing, or absolute in-process, so files compare by suffix
+    // either way. Positions compare by span when the summary records
+    // one, and by lines only for summaries written before spans.
     const absPath = sf.getFilePath();
-    const start = startLineOf(func);
-    const end = endLineOf(func);
-    // Summary paths are relative to the project root after CLI processing,
-    // or absolute in-process. Match by suffix against either.
-    for (const [key, summary] of index.byFunctionLocation) {
+    const spanStart = func.getStart();
+    const spanEnd = func.getEnd();
+    const lineStart = startLineOf(func);
+    const lineEnd = endLineOf(func);
+    for (const summary of index.byFunctionLocation.values()) {
+      const loc = summary.location;
+      const samePlace =
+        loc.span !== undefined
+          ? loc.span.start === spanStart && loc.span.end === spanEnd
+          : loc.range.start === lineStart && loc.range.end === lineEnd;
       if (
-        key.endsWith(`:${start}-${end}`) &&
-        (absPath.endsWith(summary.location.file) ||
-          summary.location.file.endsWith(absPath))
+        samePlace &&
+        (absPath.endsWith(loc.file) || loc.file.endsWith(absPath))
       ) {
         return summary;
       }

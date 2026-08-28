@@ -295,6 +295,8 @@ export interface RawCodeStructure {
     kind: CodeUnitKind;
     file: string;
     range: { start: number; end: number };
+    /** Character offsets of the unit, when a source position backs it. */
+    span?: { start: number; end: number };
     exportName: string | null;
     exportPath: string[] | null;
   };
@@ -570,6 +572,7 @@ export function assembleSummary(
     location: {
       file: raw.identity.file,
       range: raw.identity.range,
+      ...(raw.identity.span !== undefined ? { span: raw.identity.span } : {}),
       exportName: raw.identity.exportName,
     },
     identity: {

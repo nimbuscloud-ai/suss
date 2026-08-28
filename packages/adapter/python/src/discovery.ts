@@ -35,6 +35,7 @@ import {
   bodyStatements,
   field,
   rangeOf,
+  spanOf,
   stringLiteralValue,
   stripDecorators,
 } from "./ast.js";
@@ -1046,6 +1047,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       kind: "handler",
       file: filePath,
       range: rangeOf(definitionNode),
+      span: spanOf(definitionNode),
       exportName: exportPath[0] ?? name,
       exportPath,
     },

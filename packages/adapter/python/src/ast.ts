@@ -24,6 +24,11 @@ export function rangeOf(node: PyNode): Range {
   };
 }
 
+/** Byte offsets, which identity measures with; lines above are for reading. */
+export function spanOf(node: PyNode): Range {
+  return { start: node.startIndex, end: node.endIndex };
+}
+
 export function field(node: PyNode, name: string): PyNode | null {
   return node.childForFieldName(name);
 }
