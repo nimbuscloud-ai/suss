@@ -1175,14 +1175,7 @@
                                 "const": "schedule"
                               },
                               "via": {
-                                "type": "string",
-                                "enum": [
-                                  "setImmediate",
-                                  "setTimeout",
-                                  "setInterval",
-                                  "queueMicrotask",
-                                  "process.nextTick"
-                                ]
+                                "type": "string"
                               },
                               "callbackRef": {
                                 "oneOf": [

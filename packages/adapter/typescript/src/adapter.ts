@@ -904,16 +904,18 @@ function collectAccessRecognizers(
 }
 
 // Nested functions the body walkers stop at, so a sub-unit's behavior
-// goes on its own summary and not the parent's as well. Has to stay in
-// step with the `subUnits` hook `synthesizeSubUnits` runs later.
+// goes on its own summary and not the parent's as well. Every
+// applicable pack's hook contributes, the way recognizers already come
+// from every pack: a query callback inside a React component is still
+// scheduled work. Has to stay in step with `synthesizeSubUnits`.
 function computeSubUnitBarriers(
   unit: DiscoveredUnit,
-  pack: PatternPack,
+  packs: ReadonlyArray<PatternPack>,
   ctx: TsSubUnitContext,
-  tally: PackTally | undefined,
+  tallies: Map<string, PackTally> | undefined,
   file: string,
 ): DescentBarriers {
-  if (pack.subUnits === undefined || unit.func === null) {
+  if (unit.func === null) {
     return NO_BARRIERS;
   }
   const parentHandle: DiscoveredSubUnitParent = {
@@ -921,27 +923,27 @@ function computeSubUnitBarriers(
     name: unit.name,
     kind: unit.kind,
   };
-  try {
-    const subUnits = pack.subUnits(parentHandle, ctx);
-    if (subUnits.length === 0) {
-      return NO_BARRIERS;
+  const barriers = new Set<Node>();
+  for (const pack of packs) {
+    if (pack.subUnits === undefined) {
+      continue;
     }
-    const barriers = new Set<Node>();
-    for (const su of subUnits) {
-      barriers.add(su.func as Node);
+    try {
+      for (const su of pack.subUnits(parentHandle, ctx)) {
+        barriers.add(su.func as Node);
+      }
+    } catch (err) {
+      process.stderr.write(
+        recordPackFailure(tallies?.get(pack.name), {
+          pack: pack.name,
+          hook: "subUnits",
+          file,
+          error: err,
+        }),
+      );
     }
-    return barriers;
-  } catch (err) {
-    process.stderr.write(
-      recordPackFailure(tally, {
-        pack: pack.name,
-        hook: "subUnits",
-        file,
-        error: err,
-      }),
-    );
-    return NO_BARRIERS;
   }
+  return barriers.size === 0 ? NO_BARRIERS : barriers;
 }
 
 interface ClaimedUnit {
@@ -1069,9 +1071,9 @@ function extractFromSourceFile(
       }
       const barriers = computeSubUnitBarriers(
         unit,
-        pack,
+        frameworks,
         subUnitCtx,
-        tally,
+        tallies,
         sourceFile.getFilePath(),
       );
       const raw = extractCodeStructure(
@@ -2170,6 +2172,7 @@ export function createTypeScriptAdapter(
           pipeline,
           project,
           config.frameworks,
+          packsByFile,
           config.extractorOptions,
           tallies,
           (created, parent) => {
@@ -2645,6 +2648,7 @@ function synthesizeSubUnits(
   summaries: BehavioralSummary[],
   project: Project,
   frameworks: PatternPack[],
+  packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>,
   options?: ExtractorOptions,
   tallies?: Map<string, PackTally>,
   onCreated?: (created: BehavioralSummary, parent: BehavioralSummary) => void,
@@ -2652,6 +2656,12 @@ function synthesizeSubUnits(
   const packByRecognition = new Map<string, PatternPack>();
   for (const pack of frameworks) {
     packByRecognition.set(pack.name, pack);
+  }
+  // `summary.location.file` is absolute until the CLI relativizes it
+  // after extractAll, so the applicability map keys line up.
+  const packsByPath = new Map<string, readonly PatternPack[]>();
+  for (const [sf, packs] of packsByFile) {
+    packsByPath.set(sf.getFilePath(), packs);
   }
   const allInvocationRecognizers = collectInvocationRecognizers(
     frameworks,
@@ -2668,8 +2678,21 @@ function synthesizeSubUnits(
     if (binding === null) {
       continue;
     }
-    const pack = packByRecognition.get(binding.recognition);
-    if (pack?.subUnits === undefined) {
+    // Every applicable pack contributes, the discovering pack first so
+    // a name collision keeps the claimant's sub-unit, the same
+    // precedence unit claims follow. A parent in a file the map does
+    // not know (a wrapper-synthesized one) keeps the discovering pack.
+    const discovering = packByRecognition.get(binding.recognition);
+    const applicable =
+      packsByPath.get(parent.location.file) ??
+      (discovering !== undefined ? [discovering] : []);
+    const hooked = [
+      ...(discovering?.subUnits !== undefined ? [discovering] : []),
+      ...applicable.filter(
+        (one) => one.subUnits !== undefined && one !== discovering,
+      ),
+    ];
+    if (hooked.length === 0) {
       continue;
     }
 
@@ -2685,7 +2708,17 @@ function synthesizeSubUnits(
       kind: parent.kind,
     };
 
-    const subUnits = pack.subUnits(parentHandle, subUnitCtx);
+    const claimedFuncs = new Set<unknown>();
+    const subUnits: DiscoveredSubUnit[] = [];
+    for (const pack of hooked) {
+      for (const subUnit of pack.subUnits?.(parentHandle, subUnitCtx) ?? []) {
+        if (claimedFuncs.has(subUnit.func)) {
+          continue;
+        }
+        claimedFuncs.add(subUnit.func);
+        subUnits.push(subUnit);
+      }
+    }
 
     for (const subUnit of subUnits) {
       const summary = buildSubUnitSummary(
