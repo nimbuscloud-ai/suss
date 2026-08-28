@@ -21,6 +21,7 @@ import { checkMetric } from "./metric/metricPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
+import { checkRenderProps } from "./render/renderProps.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { checkStorage } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
@@ -127,6 +128,7 @@ export {
   type UnpairableSummary,
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
+export { checkRenderProps } from "./render/renderProps.js";
 export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 
 export type { ComparedPair } from "./pairing/comparedPair.js";
@@ -277,6 +279,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   findings.push(...checkContractCompleteness(summaries));
   findings.push(...checkGraphqlContractAgreement(summaries));
   findings.push(...checkComponentStoryAgreement(summaries));
+  findings.push(...checkRenderProps(summaries));
 
   // Indexed once and shared: each pass would otherwise walk every
   // transition's effects itself, and the walks add up per pass.
