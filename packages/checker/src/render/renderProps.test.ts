@@ -215,6 +215,34 @@ describe("checkRenderProps", () => {
     expect(checkRenderProps([parent, child])).toEqual([]);
   });
 
+  it("joins a target written as the child's export path", () => {
+    const parent = component({
+      name: "Page",
+      file: "src/page.tsx",
+      root: rendering(
+        "Widgets.Card",
+        { file: "src/card.tsx", name: "Widgets.Card" },
+        { ghost: "x" },
+      ),
+    });
+    const child = {
+      ...component({
+        name: "Card",
+        file: "src/card.tsx",
+        inputs: [param("title")],
+        inputReads: [{ input: "title", path: [] }],
+      }),
+    } as BehavioralSummary;
+    (child.identity as { exportPath: string[] | null }).exportPath = [
+      "Widgets",
+      "Card",
+    ];
+
+    const findings = checkRenderProps([parent, child]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain('"ghost"');
+  });
+
   it("skips plumbing props and a child with nothing recorded", () => {
     const parent = component({
       name: "Page",

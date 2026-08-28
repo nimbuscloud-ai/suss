@@ -147,6 +147,7 @@ export {
 } from "./routing.js";
 export {
   disambiguateSummaryIds,
+  renderTargetKey,
   type SummaryIdParts,
   summaryIdentifier,
   summaryIdFromParts,

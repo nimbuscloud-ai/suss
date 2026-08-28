@@ -99,3 +99,15 @@ export function summaryIdFromParts(parts: SummaryIdParts): string {
     ? `${parts.file}::${reached}`
     : `${parts.workspace}::${parts.file}::${reached}`;
 }
+
+/**
+ * The key a render edge joins on: the file a component is declared in
+ * and one of its spellings. The producer writes `target` with the
+ * declaration's name, the checker indexes each summary under its name
+ * and its export path, and both sides mint the key here so the two
+ * cannot drift apart. The separator cannot appear in a path, which a
+ * space could.
+ */
+export function renderTargetKey(file: string, name: string): string {
+  return `${file}\u0000${name}`;
+}

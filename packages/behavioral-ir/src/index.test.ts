@@ -15,6 +15,7 @@ import {
   packageExportBinding,
   parseSummaries,
   parseSummary,
+  renderTargetKey,
   restBinding,
   runtimeConfigBinding,
   safeParseSummaries,
@@ -809,5 +810,16 @@ describe("render-tree summaries", () => {
     // @ts-expect-error deliberately invalid node variant
     bad.transitions[0].output.root.children[0] = { type: "marquee" };
     expect(() => parseSummary(bad)).toThrow();
+  });
+});
+
+describe("renderTargetKey", () => {
+  it("keys a file and a spelling with a separator no path contains", () => {
+    expect(renderTargetKey("src/a b.tsx", "Card")).toBe(
+      "src/a b.tsx\u0000Card",
+    );
+    expect(renderTargetKey("src/a.tsx", "Widgets.Card")).not.toBe(
+      renderTargetKey("src/a.tsx Widgets", "Card"),
+    );
   });
 });
