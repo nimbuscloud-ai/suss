@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 426,
-      "covered": 393,
-      "skipped": 0,
-      "pct": 92.25
-    },
-    "statements": {
-      "total": 434,
+      "total": 435,
       "covered": 401,
       "skipped": 0,
-      "pct": 92.39
+      "pct": 92.18
+    },
+    "statements": {
+      "total": 443,
+      "covered": 409,
+      "skipped": 0,
+      "pct": 92.32
     },
     "functions": {
-      "total": 127,
-      "covered": 119,
+      "total": 129,
+      "covered": 121,
       "skipped": 0,
-      "pct": 93.7
+      "pct": 93.79
     },
     "branches": {
-      "total": 364,
-      "covered": 326,
+      "total": 372,
+      "covered": 333,
       "skipped": 0,
-      "pct": 89.56
+      "pct": 89.51
     },
     "branchesTrue": {
       "total": 0,
@@ -33,26 +33,26 @@
   },
   "src/boundaryKey.ts": {
     "lines": {
-      "total": 28,
-      "covered": 28,
+      "total": 32,
+      "covered": 32,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 11,
-      "covered": 11,
+      "total": 12,
+      "covered": 12,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 28,
-      "covered": 28,
+      "total": 32,
+      "covered": 32,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 20,
-      "covered": 20,
+      "total": 22,
+      "covered": 22,
       "skipped": 0,
       "pct": 100
     }
@@ -397,28 +397,28 @@
   },
   "src/semantics/functionCall.ts": {
     "lines": {
-      "total": 6,
-      "covered": 6,
+      "total": 11,
+      "covered": 10,
       "skipped": 0,
-      "pct": 100
+      "pct": 90.9
     },
     "functions": {
-      "total": 2,
-      "covered": 2,
+      "total": 3,
+      "covered": 3,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 6,
-      "covered": 6,
+      "total": 11,
+      "covered": 10,
       "skipped": 0,
-      "pct": 100
+      "pct": 90.9
     },
     "branches": {
-      "total": 5,
-      "covered": 5,
+      "total": 11,
+      "covered": 10,
       "skipped": 0,
-      "pct": 100
+      "pct": 90.9
     }
   },
   "src/semantics/graphqlOperation.ts": {

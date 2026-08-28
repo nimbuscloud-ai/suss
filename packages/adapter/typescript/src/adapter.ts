@@ -1054,6 +1054,9 @@ function extractFromSourceFile(
             ...(cu.deployableUnit !== undefined
               ? { deployableUnit: cu.deployableUnit }
               : {}),
+            ...(cu.functionCallInfo !== undefined
+              ? { functionCallInfo: cu.functionCallInfo }
+              : {}),
             ...(cu.metadata !== undefined ? { metadata: cu.metadata } : {}),
           });
         }
@@ -1296,6 +1299,12 @@ function extractFromSourceFile(
           raw.boundaryBinding = functionCallBinding({
             transport: pack.protocol,
             recognition: pack.name,
+            ...(unit.functionCallInfo !== undefined
+              ? {
+                  module: unit.functionCallInfo.module,
+                  exportName: unit.functionCallInfo.exportName,
+                }
+              : {}),
           });
         }
       }

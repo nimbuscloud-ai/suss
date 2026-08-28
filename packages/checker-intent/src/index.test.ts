@@ -332,12 +332,32 @@ describe("checkIntentAgreement — REST", () => {
     expect(result.findings[0].message).toContain("status 500");
   });
 
+  it("keys an in-repo function intent by module and export name", () => {
+    // Stating module and exportName used to leave the boundary
+    // unkeyable; it now keys the way a server action does, so an
+    // intent nothing implements is the finding.
+    const inRepo = boundaryIntent(
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "intent",
+        module: "src/lookup.ts",
+        exportName: "getUser",
+      }),
+      [response(200, null)],
+      "in-repo",
+    );
+    const result = checkIntentAgreement([inRepo], []);
+    expect(result.findings[0]).toMatchObject({
+      kind: "unimplementedBoundary",
+      boundary: "fn:src/lookup.ts::getUser",
+    });
+  });
+
   it("reports an unkeyable boundary as a warning finding plus unchecked", () => {
     const unkeyable = boundaryIntent(
       functionCallBinding({
         transport: "in-process",
         recognition: "intent",
-        module: "src/lookup.ts",
         exportName: "getUser",
       }),
       [response(200, null)],
@@ -348,7 +368,6 @@ describe("checkIntentAgreement — REST", () => {
     expect(result.findings[0]).toMatchObject({
       kind: "unkeyableBoundary",
       severity: "warning",
-      boundary: "fn:src/lookup.ts::getUser",
       intent: { name: "no-key" },
     });
     expect(result.unchecked).toEqual([

@@ -2,11 +2,11 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 608,
-    "internal": 2238,
-    "consumers": 1047,
-    "pairs": 1031,
-    "unfollowedCalls": 234,
+    "exports": 610,
+    "internal": 2237,
+    "consumers": 1049,
+    "pairs": 1033,
+    "unfollowedCalls": 235,
     "findingErrors": 0
   },
   "packages": {
@@ -33,7 +33,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 69,
+      "exports": 70,
       "internal": 20,
       "consumers": 4,
       "unfollowedCalls": 2
@@ -49,14 +49,14 @@
       "name": "@suss/checker-intent",
       "exports": 2,
       "internal": 13,
-      "consumers": 12,
+      "consumers": 13,
       "unfollowedCalls": 0
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 14,
-      "internal": 346,
-      "consumers": 217,
+      "internal": 345,
+      "consumers": 218,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
@@ -390,10 +390,10 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 61,
+      "exports": 62,
       "internal": 14,
       "consumers": 0,
-      "unfollowedCalls": 9
+      "unfollowedCalls": 10
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",

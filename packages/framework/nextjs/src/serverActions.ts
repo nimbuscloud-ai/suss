@@ -57,13 +57,21 @@ function bodyStartsWithDirective(
   return leadingDirectives((body as Block).getStatements()).includes(DIRECTIVE);
 }
 
-function actionUnit(func: unknown, name: string): DiscoveredCustomUnit {
+function actionUnit(
+  func: unknown,
+  name: string,
+  module: string,
+): DiscoveredCustomUnit {
   return {
     func,
     kind: "action",
     name,
     terminals: ACTION_TERMINALS,
     inputMapping: { type: "allPositional" },
+    // The identity intent and the keyed pairing pass refer to the
+    // action by. The path is absolute here and the CLI makes it
+    // project-relative with every other path on the summary.
+    functionCallInfo: { module, exportName: name },
   };
 }
 
@@ -95,6 +103,7 @@ export function nextjsServerActions(
   const out: DiscoveredCustomUnit[] = [];
   const claimed = new Set<unknown>();
   const fileLevel = fileIsServerModule(sf);
+  const module = sf.getFilePath();
 
   for (const fn of sf.getFunctions()) {
     const name = fn.getName();
@@ -104,7 +113,7 @@ export function nextjsServerActions(
 
     if ((fileLevel && fn.isExported()) || bodyStartsWithDirective(fn)) {
       claimed.add(fn);
-      out.push(actionUnit(fn, name));
+      out.push(actionUnit(fn, name, module));
     }
   }
 
@@ -119,7 +128,7 @@ export function nextjsServerActions(
         (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
       ) {
         claimed.add(init);
-        out.push(actionUnit(init, decl.getName()));
+        out.push(actionUnit(init, decl.getName(), module));
       }
     }
   }
@@ -136,10 +145,10 @@ export function nextjsServerActions(
     claimed.add(fn);
     const name = inlineName(fn);
     if (name === null) {
-      out.push(actionUnit(fn, `serverAction#${inlineIndex}`));
+      out.push(actionUnit(fn, `serverAction#${inlineIndex}`, module));
       inlineIndex += 1;
     } else {
-      out.push(actionUnit(fn, name));
+      out.push(actionUnit(fn, name, module));
     }
   }
 

@@ -63,10 +63,17 @@ export const functionCallSemantics = defineBoundarySemantics({
      */
     canPair: () => true,
     /**
-     * `"fn:<package>::<exportPath>"` when both are set. Other in-process
-     * function-call units, such as components and bare handlers inside
-     * one repo, have no key at all.
+     * `"fn:<package>::<exportPath>"` when both are set, and
+     * `"fn:<module>::<exportName>"` for an in-repo unit that states its
+     * module, the way a server action does. Components and bare
+     * handlers state neither and have no key at all.
      */
+    rewritePaths(semantics, rewrite) {
+      if (semantics.module === undefined) {
+        return semantics;
+      }
+      return { ...semantics, module: rewrite(semantics.module) };
+    },
     identityKey(semantics) {
       if (
         semantics.package !== undefined &&
@@ -74,6 +81,12 @@ export const functionCallSemantics = defineBoundarySemantics({
         semantics.exportPath.length > 0
       ) {
         return fnIdentityKey(semantics.package, semantics.exportPath);
+      }
+      if (
+        semantics.module !== undefined &&
+        semantics.exportName !== undefined
+      ) {
+        return fnIdentityKey(semantics.module, [semantics.exportName]);
       }
       return null;
     },

@@ -1336,6 +1336,13 @@ export interface DiscoveredCustomUnit {
   /** Discovered name (e.g. "UserCard"). */
   name: string;
   /**
+   * The unit's callable identity, when the pack states one: the module
+   * it lives in and the name it goes by there. A server action is the
+   * case, so intent and the keyed pairing pass can refer to it. The
+   * adapter puts both on the unit's function-call binding.
+   */
+  functionCallInfo?: { module: string; exportName: string };
+  /**
    * Terminal patterns to extract from this unit's body. Defaults to
    * the pack-level `terminals` when unset.
    */

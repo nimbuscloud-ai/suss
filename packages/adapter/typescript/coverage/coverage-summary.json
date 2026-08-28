@@ -19,10 +19,10 @@
       "pct": 92.56
     },
     "branches": {
-      "total": 6842,
-      "covered": 5369,
+      "total": 6846,
+      "covered": 5371,
       "skipped": 0,
-      "pct": 78.47
+      "pct": 78.45
     },
     "branchesTrue": {
       "total": 0,
@@ -51,10 +51,10 @@
       "pct": 72.3
     },
     "branches": {
-      "total": 689,
-      "covered": 447,
+      "total": 693,
+      "covered": 449,
       "skipped": 0,
-      "pct": 64.87
+      "pct": 64.79
     }
   },
   "src/assembly.ts": {

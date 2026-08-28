@@ -21,6 +21,25 @@ export function boundaryKey(binding: BoundaryBinding): string | null {
 }
 
 /**
+ * The binding with any filesystem path its semantics state rewritten.
+ * The CLI uses it to make a summary's paths project-relative, and each
+ * protocol says for itself whether it states one.
+ */
+export function withRewrittenPaths(
+  binding: BoundaryBinding,
+  rewrite: (path: string) => string,
+): BoundaryBinding {
+  const behavior = behaviorOf(binding.semantics);
+  if (behavior.rewritePaths === undefined) {
+    return binding;
+  }
+  return {
+    ...binding,
+    semantics: behavior.rewritePaths(binding.semantics, rewrite),
+  };
+}
+
+/**
  * The bucket a boundary pairs in, with any name the deployment fills in
  * put in first.
  *

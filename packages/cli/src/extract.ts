@@ -14,7 +14,10 @@ import {
   formatPackHealth,
   workspaceRootFor,
 } from "@suss/adapter-typescript";
-import { SUMMARY_SCHEMA_VERSION } from "@suss/behavioral-ir";
+import {
+  SUMMARY_SCHEMA_VERSION,
+  withRewrittenPaths,
+} from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
 import { renderDiagnosis } from "./diagnosis.js";
@@ -1096,6 +1099,12 @@ export function relativizeSummaryPaths(
   projectRoot: string,
 ): void {
   summary.location.file = path.relative(projectRoot, summary.location.file);
+  const binding = summary.identity.boundaryBinding;
+  if (binding !== null && binding !== undefined) {
+    summary.identity.boundaryBinding = withRewrittenPaths(binding, (one) =>
+      path.isAbsolute(one) ? path.relative(projectRoot, one) : one,
+    );
+  }
   for (const transition of summary.transitions) {
     if (transition.output.type === "render" && transition.output.root) {
       relativizeRenderTargets(transition.output.root, projectRoot);

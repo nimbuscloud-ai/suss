@@ -156,6 +156,12 @@ describe("server actions", () => {
     });
 
     expect(actionsOf(summaries)).toEqual(["cancelOrder", "createOrder"]);
+    const bound = summaries.find((one) => one.identity.name === "createOrder");
+    expect(bound?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "function-call",
+      module: "/app/actions.ts",
+      exportName: "createOrder",
+    });
     const created = summaries.find(
       (one) => one.identity.name === "createOrder",
     );
