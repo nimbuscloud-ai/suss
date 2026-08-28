@@ -21,6 +21,7 @@ import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
+import { stubDraft } from "./stubDraftCommand.js";
 import { printUpdateNoticeIfBehind } from "./updateNotice.js";
 import { UsageError } from "./usageError.js";
 
@@ -41,6 +42,7 @@ Usage:
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
+  suss stub draft <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
 
 Commands:
   init      Work out which packs this project needs and offer to set them up.
@@ -56,6 +58,9 @@ Commands:
   corroborate  Extract, then run each handler against its own claims
             (experimental). A claim that survives execution is marked
             observed; one that fails carries a concrete counterexample.
+  stub      Work with dependency stubs, the checked-in files that state
+            what a package suss cannot read does. "stub draft" writes a
+            skeleton from the project's observed calls into the package.
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -172,9 +177,16 @@ Options (corroborate):
   --attempts       Sampling attempts per claim before giving up (default 300)
   -o, --output     Write the annotated summaries to a file
 
+Options (stub draft):
+  -p, --project    Path to the tsconfig covering the code to read
+  --dir            Directory to read when there is no tsconfig
+  -o, --output     Where to write the draft. "-" prints it instead.
+                   Default: suss/stubs/<package>.yaml next to the code.
+
 Exit codes:
   check exits non-zero when it finds anything at error severity.
   corroborate exits non-zero when a claim is refuted by execution.
+  stub draft exits non-zero when no calls into the package are found.
 
 An interactive run ends with one line on stderr when a newer suss is on
 the registry. Piped output and CI never see it, and setting
@@ -250,9 +262,12 @@ async function dispatch(args: string[]): Promise<number> {
   if (command === "corroborate") {
     return await runCorroborate(args.slice(1));
   }
+  if (command === "stub") {
+    return runStub(args.slice(1));
+  }
 
   process.stderr.write(
-    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, and corroborate.\n`,
+    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, and stub.\n`,
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
@@ -728,4 +743,41 @@ async function runContract(args: string[]): Promise<number> {
     ...(values.output !== undefined ? { output: values.output } : {}),
   });
   return 0;
+}
+
+function runStub(args: string[]): number {
+  const sub = args[0];
+  if (sub !== "draft") {
+    process.stderr.write(
+      sub === undefined
+        ? "stub needs a subcommand. Try: suss stub draft <package>\n"
+        : `There is no "stub ${sub}". stub has draft.\n`,
+    );
+    return 1;
+  }
+
+  const { values, positionals } = parseArgs({
+    args: args.slice(1),
+    options: {
+      project: { type: "string", short: "p" },
+      dir: { type: "string" },
+      output: { type: "string", short: "o" },
+    },
+    allowPositionals: true,
+  });
+
+  const packageName = positionals[0];
+  if (packageName === undefined) {
+    process.stderr.write(
+      "stub draft needs the package to draft for. Try: suss stub draft @acme/kit\n",
+    );
+    return 1;
+  }
+
+  return stubDraft({
+    package: packageName,
+    ...(values.project !== undefined ? { tsconfig: values.project } : {}),
+    ...(values.dir !== undefined ? { dir: values.dir } : {}),
+    ...(values.output !== undefined ? { output: values.output } : {}),
+  });
 }

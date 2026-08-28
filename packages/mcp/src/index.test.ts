@@ -95,13 +95,14 @@ describe("the suss MCP server", () => {
     expect(info?.version).not.toBe("0.0.0-dev");
   });
 
-  it("offers the four read tools", async () => {
+  it("offers the five tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "suss_ask",
       "suss_boundaries",
       "suss_check",
       "suss_status",
+      "suss_stub_draft",
     ]);
   });
 
@@ -140,6 +141,15 @@ describe("the suss MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("seven questions");
+  });
+
+  it("says there is nothing to draft for a package the project never calls", async () => {
+    const result = await client.callTool({
+      name: "suss_stub_draft",
+      arguments: { package: "@acme/never-imported" },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("nothing to draft");
   });
 
   it("compares the two sides and says so, rather than reporting an empty run", async () => {

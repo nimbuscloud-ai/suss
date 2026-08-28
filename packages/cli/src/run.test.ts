@@ -830,3 +830,38 @@ describe("runCli contract", () => {
     expect(fs.existsSync(out)).toBe(true);
   });
 });
+
+describe("runCli stub", () => {
+  it("asks for a subcommand and rejects unknown ones", async () => {
+    const bare = await capture(() => runCli(["stub"]));
+    expect(bare.exit).toBe(1);
+    expect(bare.io.stderr).toContain("stub draft <package>");
+
+    const unknown = await capture(() => runCli(["stub", "publish"]));
+    expect(unknown.exit).toBe(1);
+    expect(unknown.io.stderr).toContain('no "stub publish"');
+  });
+
+  it("asks for the package when none is given", async () => {
+    const { exit, io } = await capture(() => runCli(["stub", "draft"]));
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("needs the package");
+  });
+
+  it("prints a draft to stdout with -o -", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-stubcli-"));
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(
+      path.join(dir, "src", "go.ts"),
+      'import { send } from "@acme/wire";\nexport const go = () => send("q");\n',
+    );
+
+    const { exit, io } = await capture(() =>
+      runCli(["stub", "draft", "@acme/wire", "--dir", dir, "-o", "-"]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stdout).toContain('package: "@acme/wire"');
+    expect(io.stdout).toContain('export: "send"');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

@@ -17,7 +17,12 @@
 // parameter passthrough, namespace imports, re-exports. See
 // project_packageimport_gaps.md.
 
-import { Node, type PropertyAccessExpression, type SourceFile } from "ts-morph";
+import {
+  type CallExpression,
+  Node,
+  type PropertyAccessExpression,
+  type SourceFile,
+} from "ts-morph";
 
 import {
   type FactoryProvenance,
@@ -84,12 +89,18 @@ function enclosingFunctionName(func: FunctionRoot): string {
   return "<anon>";
 }
 
-export function discoverPackageImports(
+/** One call site attributed to a package export. */
+export interface AttributedCall {
+  readonly call: CallExpression;
+  readonly packageName: string;
+  readonly exportPath: string[];
+}
+
+export function attributedCalls(
   sourceFile: SourceFile,
-  match: Extract<DiscoveryPattern["match"], { type: "packageImport" }>,
-  kind: string,
-): DiscoveredUnit[] {
-  const targetPackages = new Set(match.packages);
+  packages: readonly string[],
+): AttributedCall[] {
+  const targetPackages = new Set(packages);
 
   // Map local-binding-name → {packageName, exportPath} for every
   // import from a targeted package.
@@ -215,31 +226,41 @@ export function discoverPackageImports(
     );
   }
 
-  const results: DiscoveredUnit[] = [];
-  // Dedup: one unit per (enclosing function × consumed exportPath).
-  // Multiple call sites inside the same function targeting the same
-  // export collapse to a single unit, the consumer summary describes
-  // the function's behaviour around the boundary, not each call.
-  const seen = new Set<string>();
-
+  const results: AttributedCall[] = [];
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const callee = node.getExpression();
-    const provenance = attributeCall(callee);
+    const provenance = attributeCall(node.getExpression());
     if (provenance === null) {
       return;
     }
+    results.push({ call: node, ...provenance });
+  });
 
-    const enclosing = findEnclosingFunction(node);
+  return results;
+}
+
+export function discoverPackageImports(
+  sourceFile: SourceFile,
+  match: Extract<DiscoveryPattern["match"], { type: "packageImport" }>,
+  kind: string,
+): DiscoveredUnit[] {
+  const results: DiscoveredUnit[] = [];
+  // One unit per (enclosing function × exportPath): the consumer
+  // summary describes the function's behaviour around the boundary,
+  // not each call site.
+  const seen = new Set<string>();
+
+  for (const one of attributedCalls(sourceFile, match.packages ?? [])) {
+    const enclosing = findEnclosingFunction(one.call);
     if (enclosing === null) {
-      return;
+      continue;
     }
 
-    const key = `${enclosing.getStart()}-${enclosing.getEnd()}-${provenance.packageName}::${provenance.exportPath.join(".")}`;
+    const key = `${enclosing.getStart()}-${enclosing.getEnd()}-${one.packageName}::${one.exportPath.join(".")}`;
     if (seen.has(key)) {
-      return;
+      continue;
     }
     seen.add(key);
 
@@ -248,11 +269,11 @@ export function discoverPackageImports(
       kind,
       name: enclosingFunctionName(enclosing),
       packageExportInfo: {
-        packageName: provenance.packageName,
-        exportPath: provenance.exportPath,
+        packageName: one.packageName,
+        exportPath: one.exportPath,
       },
     });
-  });
+  }
 
   return results;
 }

@@ -2,10 +2,10 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 616,
-    "internal": 2251,
-    "consumers": 1047,
-    "pairs": 1031,
+    "exports": 623,
+    "internal": 2252,
+    "consumers": 1049,
+    "pairs": 1033,
     "unfollowedCalls": 235,
     "findingErrors": 0
   },
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 63,
-      "internal": 769,
+      "exports": 65,
+      "internal": 770,
       "consumers": 77,
       "unfollowedCalls": 70
     },
@@ -54,9 +54,9 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 14,
+      "exports": 19,
       "internal": 354,
-      "consumers": 211,
+      "consumers": 212,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
@@ -406,7 +406,7 @@
       "name": "@suss/mcp",
       "exports": 6,
       "internal": 13,
-      "consumers": 6,
+      "consumers": 7,
       "unfollowedCalls": 2
     },
     "packages/packs": {
