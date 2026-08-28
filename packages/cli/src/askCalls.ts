@@ -8,7 +8,8 @@
  * empty list reads as "nothing calls this" only when it is.
  */
 
-import { summaryIdentifier } from "@suss/behavioral-ir";
+import { displayLabel, summaryIdentifier } from "@suss/behavioral-ir";
+import { boundaryKey } from "@suss/checker";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
@@ -41,7 +42,20 @@ export function answerCalls(
   }
 
   const label = units.length === 1 ? summaryIdentifier(units[0]) : subject;
-  const sites = callSitesInto(units, summaries);
+  // A unit of the subject calling a sibling of the subject is the
+  // subject's own internal behavior, and listing it under "what calls
+  // this" buries the outside callers the question asks for.
+  const subjectUnits = new Set(units);
+  const effectSites = callSitesInto(units, summaries);
+  // A caller the effects already place is not repeated from its
+  // binding, which spells the same call a second way.
+  const placed = new Set(effectSites.map((site) => site.caller));
+  const sites = [
+    ...effectSites,
+    ...boundCallersInto(units, summaries).filter(
+      (site) => !placed.has(site.caller),
+    ),
+  ].filter((site) => !subjectUnits.has(site.caller));
   const callers = [...new Set(sites.map((site) => site.caller))];
 
   if (sites.length === 0) {
@@ -78,6 +92,45 @@ export function answerCalls(
     ],
     found: true,
   };
+}
+
+/**
+ * Callers recorded through their binding instead of an invocation
+ * effect. A caller-kind unit the packageImport discovery produces says
+ * which export it calls on its own binding, so the scan over
+ * invocation effects never sees it. The join is the registry's
+ * identity key, so a unit with a keyless in-process binding (a
+ * component, a bare handler) never matches here.
+ */
+function boundCallersInto(
+  units: ReadonlyArray<BehavioralSummary>,
+  summaries: ReadonlyArray<BehavioralSummary>,
+): CallSite[] {
+  const exports = new Map<string, BehavioralSummary>();
+  for (const unit of units) {
+    const binding = unit.identity.boundaryBinding;
+    const key = binding === null ? null : boundaryKey(binding);
+    if (key !== null) {
+      exports.set(key, unit);
+    }
+  }
+  if (exports.size === 0) {
+    return [];
+  }
+
+  const sites: CallSite[] = [];
+  for (const summary of summaries) {
+    if (summary.kind !== "caller") {
+      continue;
+    }
+    const binding = summary.identity.boundaryBinding;
+    const key = binding === null ? null : boundaryKey(binding);
+    if (key === null || !exports.has(key) || binding === null) {
+      continue;
+    }
+    sites.push({ caller: summary, callee: displayLabel(binding) });
+  }
+  return sites;
 }
 
 /** Every recorded call that reaches one of these units. */

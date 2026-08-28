@@ -1061,6 +1061,73 @@ describe("suss ask what calls", () => {
     }
   }
 
+  it("finds a caller recorded through a package-export binding", () => {
+    const provider: BehavioralSummary = {
+      ...wrapper,
+      identity: {
+        ...wrapper.identity,
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: {
+            name: "function-call",
+            package: "@demo/store",
+            exportPath: ["readRow"],
+          },
+          recognition: "package-exports",
+        },
+      },
+    } as BehavioralSummary;
+    const boundCaller: BehavioralSummary = {
+      ...handler,
+      kind: "caller",
+      location: { ...handler.location, file: "src/web.ts" },
+      identity: {
+        name: "loadOrder",
+        exportPath: ["loadOrder"],
+        id: "repo::src/web.ts::loadOrder",
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: {
+            name: "function-call",
+            package: "@demo/store",
+            exportPath: ["readRow"],
+          },
+          recognition: "package-exports",
+        },
+      },
+      transitions: [],
+    } as BehavioralSummary;
+
+    const { output, code } = askCalls("what calls src/orderStore.ts", [
+      provider,
+      boundCaller,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain("loadOrder");
+    expect(output).toContain("fn:@demo/store::readRow");
+  });
+
+  it("leaves the subject's own internal calls out of the caller list", () => {
+    const sibling: BehavioralSummary = {
+      ...handler,
+      location: { ...handler.location, file: "src/orderStore.ts" },
+      identity: {
+        ...handler.identity,
+        name: "refresh",
+        exportPath: ["refresh"],
+        id: "repo::src/orderStore.ts::refresh",
+      },
+    } as BehavioralSummary;
+
+    const { output } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      sibling,
+    ]);
+
+    expect(output).toContain("Nothing in these summaries calls");
+  });
+
   it("lists the callers with the file, the line, and the call", () => {
     const { output, code } = askCalls("what calls src/orderStore.ts", [
       wrapper,
