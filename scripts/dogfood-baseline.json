@@ -4,8 +4,8 @@
     "packagesWithExports": 63,
     "exports": 602,
     "internal": 2217,
-    "consumers": 1035,
-    "pairs": 1019,
+    "consumers": 1036,
+    "pairs": 1020,
     "unfollowedCalls": 234,
     "findingErrors": 0
   },
@@ -343,7 +343,7 @@
       "name": "@suss/framework-react-query",
       "exports": 2,
       "internal": 5,
-      "consumers": 4,
+      "consumers": 5,
       "unfollowedCalls": 0
     },
     "packages/framework/react-router": {
