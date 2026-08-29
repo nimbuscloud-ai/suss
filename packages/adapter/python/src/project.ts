@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { Database } from "@suss/datalog";
+import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { field } from "./ast.js";
@@ -132,7 +132,11 @@ export async function extractPythonProject(
     ...couldMatch,
     ...storagePatterns.flatMap((pattern) => pattern.queryFunctions ?? []),
   ]);
-  const leadsToStorage = functionsReachingStorage(definitions, startsAQuery);
+  const leadsToStorage = functionsReachingStorage(
+    db,
+    definitions,
+    startsAQuery,
+  );
 
   const routerIndex = buildRouterIndex(bound, options.packs, {
     roots: options.roots,
@@ -311,39 +315,42 @@ function callsUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
   return found;
 }
 
+const REACHES_STORAGE_RULES = [
+  rule(
+    "reachesStorage",
+    [v("f")],
+    [lit("defCallsName", v("f"), v("m")), lit("queryStart", v("m"))],
+  ),
+  rule(
+    "reachesStorage",
+    [v("f")],
+    [lit("defCallsName", v("f"), v("m")), lit("reachesStorage", v("m"))],
+  ),
+];
+
 /**
  * Which functions reach the database, by name, following calls until the set
  * stops growing. A walk that followed every call would ask the rules about
  * every call in the project, which costs a minute on a large one.
  */
 function functionsReachingStorage(
+  db: Database,
   definitions: ReadonlyMap<string, PyNode>,
   couldMatch: ReadonlySet<string>,
 ): Set<string> {
-  const bodies: { name: string; calls: string[] }[] = [];
   for (const node of definitions.values()) {
     const name = field(node, "name");
     if (name === null) {
       continue;
     }
-    bodies.push({ name: name.text, calls: callsUnder(node).map(calledName) });
+    for (const called of callsUnder(node).map(calledName)) {
+      db.add("defCallsName", [name.text, called]);
+    }
   }
 
-  const reaching = new Set<string>();
-  for (const body of bodies) {
-    if (body.calls.some((called) => couldMatch.has(called))) {
-      reaching.add(body.name);
-    }
+  for (const name of couldMatch) {
+    db.add("queryStart", [name]);
   }
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const body of bodies) {
-      if (reaching.has(body.name) || !body.calls.some((c) => reaching.has(c))) {
-        continue;
-      }
-      reaching.add(body.name);
-      grew = true;
-    }
-  }
-  return reaching;
+  evaluate(db, REACHES_STORAGE_RULES);
+  return new Set(db.facts("reachesStorage").map((row) => String(row[0])));
 }
