@@ -14,7 +14,8 @@
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
-import { importedLocalNameOf } from "./resolveImport.js";
+import { ResolutionStore } from "../facts/store.js";
+import { callsResolvingTo } from "./importedCalls.js";
 import {
   functionValueOf,
   objectLiteralOf,
@@ -23,7 +24,6 @@ import {
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
-import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 type TemplateMatch = Extract<
@@ -37,20 +37,9 @@ export function discoverRegistrationTemplates(
   kind: string,
   resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
-  const localName = resolveImportedLocalName(sourceFile, match);
-  if (localName === null) {
-    return [];
-  }
-
   const results: DiscoveredUnit[] = [];
 
-  sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
-    }
-    if (!isCallToHelper(node, localName)) {
-      return;
-    }
+  for (const node of helperCallsOf(sourceFile, match, resolution)) {
     const args = node.getArguments();
 
     for (const reg of match.registrations) {
@@ -75,7 +64,7 @@ export function discoverRegistrationTemplates(
         },
       });
     }
-  });
+  }
 
   return results;
 }
@@ -84,22 +73,36 @@ export function discoverRegistrationTemplates(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function resolveImportedLocalName(
+/**
+ * The helper calls this file makes. With no importModule narrowing the
+ * helper is matched by name wherever it came from, which covers one a
+ * project declares locally; with one, the store follows the callee to
+ * that module's export, through aliases and barrels.
+ */
+function helperCallsOf(
   sourceFile: SourceFile,
   match: TemplateMatch,
-): string | null {
-  // No importModule narrowing → match the helper by name regardless
-  // of where it came from. Useful when the helper is locally
-  // declared.
-  if (match.importModule === undefined) {
-    return match.helperName;
+  resolution: ResolutionStore | undefined,
+): CallExpression[] {
+  if (match.importModule !== undefined) {
+    const store = resolution ?? new ResolutionStore();
+    return callsResolvingTo(sourceFile, store, {
+      module: match.importModule,
+      name: match.helperName,
+    }).filter(Node.isCallExpression);
   }
-  return importedLocalNameOf(sourceFile, match.importModule, match.helperName);
-}
 
-function isCallToHelper(call: CallExpression, localName: string): boolean {
-  const callee = call.getExpression();
-  return Node.isIdentifier(callee) && callee.getText() === localName;
+  const calls: CallExpression[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (!Node.isCallExpression(node)) {
+      return;
+    }
+    const callee = node.getExpression();
+    if (Node.isIdentifier(callee) && callee.getText() === match.helperName) {
+      calls.push(node);
+    }
+  });
+  return calls;
 }
 
 function substitutePath(template: string, args: Node[]): string | null {
