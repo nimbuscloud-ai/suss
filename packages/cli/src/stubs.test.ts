@@ -207,7 +207,7 @@ describe("the deprecation note for stub-covered options", () => {
       registrationHelpers: [{ helperName: "mountHealth" }],
     });
     expect(note).toContain("registrationHelpers option on the express pack");
-    expect(note).toContain("suss stub draft");
+    expect(note).toContain("suss infer stub");
   });
 
   it("says nothing for uncovered options or packs", () => {

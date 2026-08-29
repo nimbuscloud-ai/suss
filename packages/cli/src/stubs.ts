@@ -282,7 +282,7 @@ export function stubDeprecationNote(
   return (
     `[suss] The ${used.join(" and ")} option${plural ? "s" : ""} on the ${packName} pack ` +
     `describe${plural ? "" : "s"} a dependency, and a stub file in suss/stubs/ is where that now goes. ` +
-    "Start one with: suss stub draft <package>. The option keeps working for one more release.\n"
+    "Start one with: suss infer stub <package>. The option keeps working for one more release.\n"
   );
 }
 

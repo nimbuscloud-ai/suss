@@ -30,7 +30,7 @@ packs your project needs and offers to set them up. `suss ask`
 ([below](#suss-ask)) answers one question about one boundary from
 summaries already on disk. `suss corroborate` (experimental,
 [below](#suss-corroborate-experimental)) executes handlers against their
-own summaries. `suss stub draft` ([below](#suss-stub-draft)) writes the
+own summaries. `suss infer stub` ([below](#suss-infer-stub)) writes the
 skeleton of a [dependency stub](/dependency-stubs) from the project's
 observed calls into a package extraction cannot read.
 
@@ -1004,11 +1004,14 @@ suss corroborate --experimental [-p TSCONFIG | --dir DIR] -f express
 - `0`: every claim that could be tried held up (or nothing was in scope).
 - Non-zero: at least one claim was refuted by execution.
 
-## `suss stub draft`
+## `suss infer stub`
 
 ```bash
-suss stub draft <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
+suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
 ```
+
+The 0.20.0 spelling `suss stub draft` still works and prints a notice;
+it goes away in the next release.
 
 Writes a [dependency stub](/dependency-stubs) skeleton for a package the
 project calls but extraction cannot read into: one `performs-call`

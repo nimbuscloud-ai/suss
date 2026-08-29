@@ -1,5 +1,5 @@
 /**
- * `suss stub draft <package>`: turn the project's observed calls into
+ * `suss infer stub <package>`: turn the project's observed calls into
  * a package suss cannot read into a stub skeleton for an author to
  * fill in. The evidence is every call site attributed to the package,
  * with the argument shapes seen there; the semantic blanks (which

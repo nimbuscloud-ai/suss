@@ -831,19 +831,19 @@ describe("runCli contract", () => {
   });
 });
 
-describe("runCli stub", () => {
-  it("asks for a subcommand and rejects unknown ones", async () => {
-    const bare = await capture(() => runCli(["stub"]));
+describe("runCli infer", () => {
+  it("asks for an artifact kind and rejects unknown ones", async () => {
+    const bare = await capture(() => runCli(["infer"]));
     expect(bare.exit).toBe(1);
-    expect(bare.io.stderr).toContain("stub draft <package>");
+    expect(bare.io.stderr).toContain("infer stub <package>");
 
-    const unknown = await capture(() => runCli(["stub", "publish"]));
+    const unknown = await capture(() => runCli(["infer", "publish"]));
     expect(unknown.exit).toBe(1);
-    expect(unknown.io.stderr).toContain('no "stub publish"');
+    expect(unknown.io.stderr).toContain('no "infer publish"');
   });
 
   it("asks for the package when none is given", async () => {
-    const { exit, io } = await capture(() => runCli(["stub", "draft"]));
+    const { exit, io } = await capture(() => runCli(["infer", "stub"]));
     expect(exit).toBe(1);
     expect(io.stderr).toContain("needs the package");
   });
@@ -857,11 +857,28 @@ describe("runCli stub", () => {
     );
 
     const { exit, io } = await capture(() =>
-      runCli(["stub", "draft", "@acme/wire", "--dir", dir, "-o", "-"]),
+      runCli(["infer", "stub", "@acme/wire", "--dir", dir, "-o", "-"]),
     );
     expect(exit).toBe(0);
     expect(io.stdout).toContain('package: "@acme/wire"');
     expect(io.stdout).toContain('export: "send"');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps suss stub draft working with a deprecation line", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-stubcli-"));
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(
+      path.join(dir, "src", "go.ts"),
+      'import { send } from "@acme/wire";\nexport const go = () => send("q");\n',
+    );
+
+    const { exit, io } = await capture(() =>
+      runCli(["stub", "draft", "@acme/wire", "--dir", dir, "-o", "-"]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("now suss infer stub");
+    expect(io.stdout).toContain('package: "@acme/wire"');
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Evidence for drafting a dependency stub: every call the project
  * makes into a named package, grouped by the export it reaches, with
- * the argument shapes observed at each call site. `suss stub draft`
+ * the argument shapes observed at each call site. `suss infer stub`
  * turns this into a stub skeleton for an author to fill in. The
  * package's own code is never read, only the project's calls into it,
  * so this works for packages whose source no adapter can parse.
