@@ -102,9 +102,10 @@ const NOT_BASE_FACTS = new Set([
   "wantedOrigin",
   "wantedCallOrigin",
   "wantedExportsOf",
+  "wantedAnchor",
 ]);
 
-type Question = "wanted" | "wantedOrigin" | "wantedCallOrigin";
+type Question = "wanted" | "wantedOrigin" | "wantedCallOrigin" | "wantedAnchor";
 
 /**
  * Dropped once a query's result has been read, so the next query does
@@ -120,6 +121,7 @@ const QUERY_FACTS: readonly string[] =
         "wantedOrigin",
         "wantedCallOrigin",
         "wantedExportsOf",
+        "wantedAnchor",
       ];
 
 /** Deep enough for barrels of barrels, bounded so a wide graph stays cheap. */
@@ -722,6 +724,30 @@ export class ResolutionStore {
     fileSets: ReadonlyArray<FileSetQuery>,
   ): ReadonlyArray<ReadonlySet<SourceFile>> {
     return this.graph.filesReachingAnyPackage(fileSets);
+  }
+
+  /**
+   * The calls behind a receiver that `matches` accepts, walked out in
+   * waves the way every question is. The wave ends as soon as one file
+   * yields a match, and the caller applies the single-answer policy to
+   * the set; the resolution README's anchor section says why the rules
+   * cannot rank a nearer call above a farther one.
+   */
+  anchorCallsOf(value: Node, matches: (call: Node) => boolean): Node[] {
+    const target = factKeyOf(value);
+    return (
+      this.resolveByWaves(target, "wantedAnchor", () => {
+        this.derive();
+        const found: Node[] = [];
+        for (const id of this.answersFor("wantedAnchorCall", nodeId(target))) {
+          const node = this.table.byId.get(id);
+          if (node !== undefined && matches(node)) {
+            found.push(node);
+          }
+        }
+        return found.length === 0 ? null : found;
+      }) ?? []
+    );
   }
 
   /**
