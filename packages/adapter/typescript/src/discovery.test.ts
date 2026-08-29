@@ -1116,6 +1116,57 @@ function makeAxiosLikePattern(): DiscoveryPattern {
 }
 
 describe("clientCall, an instance imported from another file", () => {
+  it("builds a client from a factory imported through a project barrel", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "barrel.ts",
+      'export { default as axios } from "axios";',
+    );
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import { axios } from "./barrel";
+
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getUser(id: string) {
+        return api.get("/users/" + id);
+      }
+    `,
+    );
+
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("getUser");
+  });
+
+  it("keeps the strict spelling for a bare call on the default import", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "consumer.ts",
+      `
+      import ax from "axios";
+
+      export async function getUser(id: string) {
+        return ax.get("/users/" + id);
+      }
+    `,
+    );
+
+    // The documented same-file convention: a bare call matches only
+    // \`import axios from "axios"\` spelled conventionally.
+    const units = discoverUnits(
+      file,
+      [makeAxiosLikePattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(0);
+  });
+
   it("resolves a subject brought in by a named import", () => {
     const project = createProject();
     project.createSourceFile(
