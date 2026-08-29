@@ -13,32 +13,18 @@ import type {
   SourceFile,
   Symbol as TsSymbol,
 } from "ts-morph";
-
-type ExportedDeclarationMap = ReturnType<SourceFile["getExportedDeclarations"]>;
+import type { ResolutionStore } from "./facts/store.js";
 
 /**
- * What a module exports, by exported name. Cached, because ts-morph
- * rebuilds the map from scratch on every `getExportedDeclarations` call
- * and callee resolution asks the same file the same thing once per
- * import site.
+ * What a module exports, by exported name. The store's rules flatten
+ * re-export chains of any length, and the store memoizes per file.
  */
 export function exportedDeclarationsOf(
   sourceFile: SourceFile,
-): ExportedDeclarationMap {
-  // Reading another module's export table is a cross-file read whether
-  // or not the memo already has it.
-  recordFileDependency(sourceFile.getFilePath());
-  const cached = exportsByFile.get(sourceFile);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const declarations = readExportedDeclarations(sourceFile);
-  exportsByFile.set(sourceFile, declarations);
-  return declarations;
+  resolution: ResolutionStore,
+): Map<string, Node[]> {
+  return resolution.exportsOf(sourceFile);
 }
-
-const exportsByFile = createPerFileCache<ExportedDeclarationMap>();
 
 /**
  * `Symbol.getAliasedSymbol`, with the re-export chains warmed first so
@@ -78,22 +64,6 @@ export function resolveAliasedSymbol(symbol: TsSymbol): TsSymbol | undefined {
 export function warmExportChains(files: ReadonlyArray<SourceFile>): void {
   for (const file of files) {
     warmReExportChains(file, "every import");
-  }
-}
-
-function readExportedDeclarations(
-  sourceFile: SourceFile,
-): ExportedDeclarationMap {
-  warmReExportChains(sourceFile);
-  try {
-    return sourceFile.getExportedDeclarations();
-  } catch (error) {
-    if (!(error instanceof RangeError)) {
-      throw error;
-    }
-
-    reportUnreadableExports(sourceFile);
-    return new Map();
   }
 }
 

@@ -2,6 +2,7 @@
 // layer. Each match-type handler lives in its own sibling file; this
 // file is the dispatch table and dedup pass that callers see.
 
+import { ResolutionStore } from "../facts/store.js";
 import { discoverClientCalls } from "./clientCall.js";
 import { discoverDecoratedMethods } from "./decoratedMethod.js";
 import { discoverDecoratedRoutes } from "./decoratedRoute.js";
@@ -19,7 +20,6 @@ import { discoverResolverMaps } from "./resolverMap.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
-import type { ResolutionStore } from "../facts/store.js";
 import type { MountPrefixIndex } from "./registrationCall.js";
 
 export { clearPackageExportsCache } from "./packageExports.js";
@@ -105,7 +105,12 @@ function runPattern(
     );
   }
   if (pattern.match.type === "packageExports") {
-    return discoverPackageExports(sourceFile, pattern.match, pattern.kind);
+    return discoverPackageExports(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "packageImport") {
     if (resolution === undefined) {
@@ -164,10 +169,13 @@ export function discoverUnits(
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
 ): DiscoveredUnit[] {
+  // The adapter passes its run's store; a bare call gets its own,
+  // since reading an export table needs one.
+  const store = resolution ?? new ResolutionStore();
   const allResults: DiscoveredUnit[] = [];
 
   for (const pattern of patterns) {
-    const found = runPattern(sourceFile, pattern, resolution, mountPrefixes);
+    const found = runPattern(sourceFile, pattern, store, mountPrefixes);
     for (const unit of found) {
       unit.pattern = pattern;
     }

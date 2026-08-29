@@ -16,6 +16,7 @@ import { type DiscoveredUnit, toFunctionRoot } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 
 // The handler fires once per (sourceFile × pattern) pair, so without a
 // cache we read each package.json many times over. This one lives as
@@ -62,6 +63,7 @@ export function discoverPackageExports(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "packageExports" }>,
   kind: string,
+  resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
   // A workspace-marked pattern only reaches dispatch unexpanded when no
   // workspace manifest was found, and then there is nothing to resolve.
@@ -96,8 +98,12 @@ export function discoverPackageExports(
   const results: DiscoveredUnit[] = [];
   const seenNames = new Set<string>();
 
+  if (resolution === undefined) {
+    return [];
+  }
+
   for (const entry of matching) {
-    const exported = exportedDeclarationsOf(sourceFile);
+    const exported = exportedDeclarationsOf(sourceFile, resolution);
     for (const [exportName, decls] of exported) {
       if (exclude.has(exportName)) {
         continue;

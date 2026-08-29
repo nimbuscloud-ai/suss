@@ -15,11 +15,11 @@ import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
 import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
+import { ResolutionStore } from "./facts/store.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
 import { peelParens, peelSyntax } from "./walk/unwrap.js";
 
 import type { FunctionRoot } from "./conditions.js";
-import type { ResolutionStore } from "./facts/store.js";
 
 export interface TsDiscoveryContext {
   /** Full filesystem path of the source file. Useful for excluding
@@ -85,12 +85,13 @@ export interface TsDiscoveryContext {
 export function createTsDiscoveryContext(
   resolution?: ResolutionStore,
 ): TsDiscoveryContext {
+  // The adapter passes its run's store; a bare call gets its own.
+  const store = resolution ?? new ResolutionStore();
   return {
     getFilePath,
-    exportedFunctions: (sourceFile) =>
-      exportedFunctions(sourceFile, resolution),
+    exportedFunctions: (sourceFile) => exportedFunctions(sourceFile, store),
     exportedCallConfigString: (sourceFile, exportName, spec) =>
-      exportedCallConfigString(sourceFile, exportName, spec, resolution),
+      exportedCallConfigString(sourceFile, exportName, spec, store),
     hasJsxReturn,
   };
 }
@@ -101,13 +102,16 @@ function getFilePath(sourceFile: SourceFile): string {
 
 function exportedFunctions(
   sourceFile: SourceFile,
-  resolution?: ResolutionStore,
+  resolution: ResolutionStore,
 ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }> {
   const out: Array<{ name: string; func: FunctionRoot; isDefault: boolean }> =
     [];
   const seen = new Set<string>();
 
-  for (const [name, declarations] of exportedDeclarationsOf(sourceFile)) {
+  for (const [name, declarations] of exportedDeclarationsOf(
+    sourceFile,
+    resolution,
+  )) {
     if (seen.has(name)) {
       continue;
     }
@@ -173,9 +177,11 @@ function exportedCallConfigString(
   sourceFile: SourceFile,
   exportName: string,
   spec: { callees?: string[]; argIndex?: number; property: string },
-  resolution?: ResolutionStore,
+  resolution: ResolutionStore,
 ): string | null {
-  const declarations = exportedDeclarationsOf(sourceFile).get(exportName);
+  const declarations = exportedDeclarationsOf(sourceFile, resolution).get(
+    exportName,
+  );
   if (declarations === undefined) {
     return null;
   }

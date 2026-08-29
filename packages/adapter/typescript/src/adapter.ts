@@ -828,7 +828,7 @@ function extractBindingMethod(
 ): string | undefined {
   const m = binding.method;
   if (m.type === "fromClientMethod") {
-    return resolveContractField(callSite, pack, "method");
+    return resolveContractField(callSite, pack, "method", resolution);
   }
   if (m.type === "fromArgumentProperty") {
     const args = callSite.callExpression.getArguments();
@@ -861,7 +861,7 @@ function extractBindingPath(
 ): string | undefined {
   const p = binding.path;
   if (p.type === "fromClientMethod") {
-    return resolveContractField(callSite, pack, "path");
+    return resolveContractField(callSite, pack, "path", resolution);
   }
   if (p.type === "fromArgument") {
     const arg = callSite.callExpression.getArguments()[p.position];
@@ -874,6 +874,7 @@ function resolveContractField(
   callSite: NonNullable<DiscoveredUnit["callSite"]>,
   pack: PatternPack,
   field: "method" | "path",
+  resolution?: ResolutionStore,
 ): string | undefined {
   if (pack.contractReading === undefined || callSite.methodName === null) {
     return undefined;
@@ -883,6 +884,7 @@ function resolveContractField(
     callSite.methodName,
     pack.contractReading,
     pack.name,
+    resolution,
   );
   if (result === null || result.boundaryBinding === null) {
     return undefined;
@@ -1266,7 +1268,12 @@ function extractFromSourceFile(
           }
         }
       } else if (pack.contractReading !== undefined) {
-        const contract = readContract(unit, pack.contractReading, pack.name);
+        const contract = readContract(
+          unit,
+          pack.contractReading,
+          pack.name,
+          resolution,
+        );
         if (contract !== null) {
           raw.declaredContract = contract.declaredContract;
           if (contract.boundaryBinding !== null) {
@@ -1282,7 +1289,12 @@ function extractFromSourceFile(
         raw.declaredContract === null &&
         pack.contractReading?.endpoint?.from === "registrationArgument"
       ) {
-        const contract = readContract(unit, pack.contractReading, pack.name);
+        const contract = readContract(
+          unit,
+          pack.contractReading,
+          pack.name,
+          resolution,
+        );
         if (contract !== null) {
           raw.declaredContract = contract.declaredContract;
         }

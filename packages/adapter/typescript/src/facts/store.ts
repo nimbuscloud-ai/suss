@@ -171,6 +171,12 @@ export class ResolutionStore {
       extractedAt: number;
     }
   >();
+  /**
+   * A file's table depends only on its re-export closure, which
+   * `collectExports` extracts whole before answering, so later
+   * extraction elsewhere cannot change an entry.
+   */
+  private readonly exportTables = new Map<string, Map<string, Node[]>>();
   /** Files the most recent wave walk entered, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   private readonly declarations = new Map<Node, Node>();
@@ -725,8 +731,17 @@ export class ResolutionStore {
    * chain and nothing beside it, to any depth.
    */
   exportsOf(sourceFile: SourceFile): Map<string, Node[]> {
+    const filePath = sourceFile.getFilePath();
+    const memo = this.exportTables.get(filePath);
+    if (memo !== undefined) {
+      recordFileDependency(filePath);
+      return memo;
+    }
+
     try {
-      return this.collectExports(sourceFile);
+      const table = this.collectExports(sourceFile);
+      this.exportTables.set(filePath, table);
+      return table;
     } finally {
       this.forgetQuery();
     }

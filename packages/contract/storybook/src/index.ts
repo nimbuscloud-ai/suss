@@ -45,7 +45,10 @@ import {
   SyntaxKind,
 } from "ts-morph";
 
-import { exportedDeclarationsOf } from "@suss/adapter-typescript";
+import {
+  exportedDeclarationsOf,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
 import type {
@@ -89,6 +92,7 @@ export function generateSummariesFromStories(
 
   const projectRoot = options.projectRoot ?? process.cwd();
   const summaries: BehavioralSummary[] = [];
+  const resolution = new ResolutionStore();
 
   for (const sf of project.getSourceFiles()) {
     const absPath = sf.getFilePath();
@@ -97,7 +101,7 @@ export function generateSummariesFromStories(
     if (meta === null) {
       continue;
     }
-    const stories = extractStories(sf);
+    const stories = extractStories(sf, resolution);
     for (const story of stories) {
       summaries.push(buildSummary(story, meta, relPath));
     }
@@ -210,13 +214,16 @@ interface StoryInfo {
   line: number;
 }
 
-function extractStories(sf: SourceFile): StoryInfo[] {
+function extractStories(
+  sf: SourceFile,
+  resolution: ResolutionStore,
+): StoryInfo[] {
   const results: StoryInfo[] = [];
 
   // CSF3: each named export is a `const Name: Story = { args: { ... } }`.
   // We don't type-check the `Story` annotation, just look at the
   // shape.
-  for (const [name, decls] of exportedDeclarationsOf(sf)) {
+  for (const [name, decls] of exportedDeclarationsOf(sf, resolution)) {
     if (name === "default") {
       continue;
     }
