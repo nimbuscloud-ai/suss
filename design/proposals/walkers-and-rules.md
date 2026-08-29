@@ -572,8 +572,19 @@ It does not touch the evaluator.
    compose; two landing apart abstain, saying so. `mountPathsOf`
    already states one path per mount, which is what #689's
    boundary-per-mount consumer reads when it is built.
-7. The seven import readers, retired against `imports`, and the
-   one-hop origin predicates against `comesFrom`.
+7. Done for what the store can answer today (#708, #709, #710).
+   resolverMap, registrationTemplate, graphqlHookCall, and the
+   client-construction scan ask one batched origin question per file;
+   a `moduleForwards` rule closes re-export chains so a project
+   barrel matches like a direct import; `isImportedFrom`,
+   `methodDeclaredIn`, and the functionCall terminal's import gate
+   take an `originatesFrom` callback bound to the store, with the
+   syntactic fast paths in front. Two readers stay with their reasons
+   on record: clientCall's default-import spelling rules are
+   documented pack policy that needs its own pass, and jsxElementRoute
+   matches JSX tags, which have no expression facts yet.
+   `resolveAliasedSymbol` is down to its warming and two callers,
+   which step 10 retires.
 8. The `ReceiverOrigin` members as `comesFrom` queries (#542). The
    recognize ops surface shrinks with them.
 9. Ruby and Python storage closures as rules, the first parity test
