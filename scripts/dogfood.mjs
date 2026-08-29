@@ -304,6 +304,7 @@ for (const result of extractResults) {
     internalCount: internal.length,
     consumerCount: consumers.length,
     unfollowedCallCount: unfollowedCalls,
+    reassignedNamesUnstated: result.report?.reassignedNamesUnstated ?? null,
     opaqueRatio: totalConditions === 0 ? null : opaqueCount / totalConditions,
     summaries: summaries.map((s) => ({
       name: s.identity.name,
