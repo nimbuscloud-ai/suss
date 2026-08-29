@@ -13,11 +13,13 @@
 import {
   type BindingElement,
   type Expression,
+  ModuleDeclarationKind,
   Node,
   type ObjectBindingPattern,
   type SourceFile,
   SyntaxKind,
   type Symbol as TsSymbol,
+  ts,
 } from "ts-morph";
 
 import { NAMESPACE_IMPORT_NAME } from "@suss/resolution";
@@ -92,7 +94,29 @@ function moduleKeyOf(
   if (resolved !== undefined) {
     return resolved.getFilePath();
   }
-  return declaration.getModuleSpecifierValue() ?? null;
+
+  const specifier = declaration.getModuleSpecifierValue();
+  if (specifier === undefined) {
+    return null;
+  }
+  // ts-morph only sees files already in the project, but the compiler
+  // can resolve a dependency's declaration file that nothing loaded
+  // yet, and the export-table frontier adds it by this path.
+  return compilerResolvedPathOf(declaration, specifier) ?? specifier;
+}
+
+function compilerResolvedPathOf(
+  declaration: Node,
+  specifier: string,
+): string | null {
+  const project = declaration.getProject();
+  const result = ts.resolveModuleName(
+    specifier,
+    declaration.getSourceFile().getFilePath(),
+    project.getCompilerOptions(),
+    project.getModuleResolutionHost(),
+  );
+  return result.resolvedModule?.resolvedFileName ?? null;
 }
 
 /**
@@ -1080,7 +1104,26 @@ export function extractFileFacts(
  */
 function directExportsOf(sourceFile: SourceFile): Array<[string, Node]> {
   const found: Array<[string, Node]> = [];
-  for (const statement of sourceFile.getStatements()) {
+  collectDirectExports(sourceFile.getStatements(), found);
+  return found;
+}
+
+function collectDirectExports(
+  statements: Node[],
+  found: Array<[string, Node]>,
+): void {
+  for (const statement of statements) {
+    // A `declare module "name"` block wraps a package's whole surface,
+    // so its exported statements are the file's exports.
+    if (
+      Node.isModuleDeclaration(statement) &&
+      statement.getDeclarationKind() === ModuleDeclarationKind.Module &&
+      statement.getBody() !== undefined
+    ) {
+      collectDirectExports(statement.getStatements(), found);
+      continue;
+    }
+
     if (
       Node.isFunctionDeclaration(statement) ||
       Node.isClassDeclaration(statement)
@@ -1119,10 +1162,14 @@ function directExportsOf(sourceFile: SourceFile): Array<[string, Node]> {
     }
 
     if (Node.isExportAssignment(statement) && !statement.isExportEquals()) {
-      found.push(["default", statement.getExpression()]);
+      const expression = statement.getExpression();
+      // A bare name goes through the local-declaration path with the
+      // export lists; anything else is the exported value itself.
+      if (!Node.isIdentifier(expression)) {
+        found.push(["default", expression]);
+      }
     }
   }
-  return found;
 }
 
 /**
@@ -1143,29 +1190,69 @@ function emitLocalExportLists(
     for (const named of exportDecl.getNamedExports()) {
       const alias = named.getAliasNode()?.getText() ?? named.getName();
       for (const declaration of named.getLocalTargetDeclarations()) {
-        const specifier = importSpecifierOf(declaration);
-        if (specifier !== null) {
-          const importDecl = declaration.getFirstAncestorByKind(
-            SyntaxKind.ImportDeclaration,
-          );
-          const moduleKey =
-            importDecl === undefined ? null : moduleKeyOf(importDecl);
-          if (moduleKey !== null) {
-            fact(
-              db,
-              "reExports",
-              filePath,
-              alias,
-              moduleKey,
-              importedNameOf(declaration),
-            );
-          }
-          continue;
-        }
-        emitExportedValue(db, table, filePath, alias, declaration);
+        emitExportedDeclaration(db, table, filePath, alias, declaration);
       }
     }
   }
+
+  // `export default x` takes the value x has where the statement
+  // runs, not the live binding an export list gives, so a reassigned
+  // name is left unstated; the README beside this file says why.
+  for (const assignment of sourceFile.getExportAssignments()) {
+    if (assignment.isExportEquals()) {
+      continue;
+    }
+    const expression = assignment.getExpression();
+    if (!Node.isIdentifier(expression)) {
+      continue;
+    }
+    const declarations = expression.getSymbol()?.getDeclarations() ?? [];
+    for (const declaration of declarations) {
+      if (Node.isVariableDeclaration(declaration)) {
+        if (!isWrittenAgain(declaration)) {
+          emitExportedDeclaration(db, table, filePath, "default", declaration);
+        }
+
+        continue;
+      }
+      emitExportedDeclaration(db, table, filePath, "default", declaration);
+    }
+  }
+}
+
+/**
+ * An exported name backed by an import becomes a `reExports` fact for
+ * the rules to flatten; one backed by a local declaration is stated as
+ * the exported value.
+ */
+function emitExportedDeclaration(
+  db: Database,
+  table: NodeTable,
+  filePath: string,
+  alias: string,
+  declaration: Node,
+): void {
+  const specifier = importSpecifierOf(declaration);
+  if (specifier !== null) {
+    const importDecl = declaration.getFirstAncestorByKind(
+      SyntaxKind.ImportDeclaration,
+    );
+    const moduleKey = importDecl === undefined ? null : moduleKeyOf(importDecl);
+    if (moduleKey !== null) {
+      fact(
+        db,
+        "reExports",
+        filePath,
+        alias,
+        moduleKey,
+        importedNameOf(declaration),
+      );
+    }
+
+    return;
+  }
+
+  emitExportedValue(db, table, filePath, alias, declaration);
 }
 
 function emitExportedValue(

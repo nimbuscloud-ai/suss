@@ -14,6 +14,7 @@ import { peelSyntax } from "./walk/unwrap.js";
 import type { BoundaryBinding, TypeShape } from "@suss/behavioral-ir";
 import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";
 import type { DiscoveredUnit } from "./discovery/index.js";
+import type { ResolutionStore } from "./facts/store.js";
 
 // ---------------------------------------------------------------------------
 // Result type: includes both contract data and extracted binding
@@ -131,7 +132,10 @@ function findRouterCall(unit: DiscoveredUnit): {
  *     routes literal, pick the named property, and recurse on the value
  *     (usually another identifier bound to `subContract.router({ ... })`).
  */
-function resolveContractObject(contractArg: Node): Node | null {
+function resolveContractObject(
+  contractArg: Node,
+  resolution?: ResolutionStore,
+): Node | null {
   if (Node.isObjectLiteralExpression(contractArg)) {
     return contractArg;
   }
@@ -141,7 +145,7 @@ function resolveContractObject(contractArg: Node): Node | null {
   // The property's value is typically another identifier bound to a
   // sub-contract (`internal: internalApi`); recursion handles the chain.
   if (Node.isPropertyAccessExpression(contractArg)) {
-    const base = resolveContractObject(contractArg.getExpression());
+    const base = resolveContractObject(contractArg.getExpression(), resolution);
     if (base === null || !Node.isObjectLiteralExpression(base)) {
       return null;
     }
@@ -161,7 +165,7 @@ function resolveContractObject(contractArg: Node): Node | null {
         return value;
       }
       if (Node.isIdentifier(value) || Node.isPropertyAccessExpression(value)) {
-        return resolveContractObject(value);
+        return resolveContractObject(value, resolution);
       }
       if (Node.isCallExpression(value)) {
         return unwrapContractInit(value);
@@ -190,9 +194,11 @@ function resolveContractObject(contractArg: Node): Node | null {
   if (Node.isImportSpecifier(decl)) {
     const importDecl = decl.getImportDeclaration();
     const sourceFile = importDecl.getModuleSpecifierSourceFile();
-    if (sourceFile !== undefined) {
+    if (sourceFile !== undefined && resolution !== undefined) {
       // Use the original (non-aliased) name to find the export
-      const exported = exportedDeclarationsOf(sourceFile).get(decl.getName());
+      const exported = exportedDeclarationsOf(sourceFile, resolution).get(
+        decl.getName(),
+      );
       if (exported !== undefined && exported.length > 0) {
         const exportedDecl = exported[0];
         if (Node.isVariableDeclaration(exportedDecl)) {
@@ -351,11 +357,13 @@ export function readContract(
   unit: DiscoveredUnit,
   pattern: ContractPattern,
   framework: string,
+  resolution?: ResolutionStore,
 ): ContractReadResult | null {
   if (pattern.endpoint?.from === "registrationArgument") {
     const endpointNode = endpointFromRegistrationArgument(
       unit,
       pattern.endpoint.position,
+      resolution,
     );
     if (endpointNode === null) {
       return null;
@@ -370,7 +378,7 @@ export function readContract(
   }
 
   // Step 2: Resolve the contract argument to the routes object literal
-  const contractObj = resolveContractObject(routerInfo.contractArg);
+  const contractObj = resolveContractObject(routerInfo.contractArg, resolution);
   if (contractObj === null || !Node.isObjectLiteralExpression(contractObj)) {
     return null;
   }
@@ -405,6 +413,7 @@ export function readContract(
 function endpointFromRegistrationArgument(
   unit: DiscoveredUnit,
   position: number,
+  resolution?: ResolutionStore,
 ): Node | null {
   const func = unit.func;
   if (func === null) {
@@ -433,7 +442,7 @@ function endpointFromRegistrationArgument(
   if (Node.isCallExpression(node)) {
     return unwrapContractInit(node);
   }
-  return resolveContractObject(node);
+  return resolveContractObject(node, resolution);
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +461,7 @@ export function readContractForClientCall(
   methodName: string,
   pattern: ContractPattern,
   framework: string,
+  resolution?: ResolutionStore,
 ): ContractReadResult | null {
   // Walk from client.getUser() → client → find the variable declaration
   const callee = Node.isCallExpression(callExpression)
@@ -493,7 +503,7 @@ export function readContractForClientCall(
   }
 
   // First arg is the contract reference
-  const contractObj = resolveContractObject(args[0]);
+  const contractObj = resolveContractObject(args[0], resolution);
   if (contractObj === null || !Node.isObjectLiteralExpression(contractObj)) {
     return null;
   }

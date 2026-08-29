@@ -76,6 +76,54 @@ describe("what exportsOf lists per module shape", () => {
     expect(exportNamesOf(files, "/hop9.ts")).toEqual(["alpha"]);
   });
 
+  it("a default that states a bare name lists its declaration", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/pack.ts",
+      "function makePack() {}\nexport default makePack;\n",
+    );
+    const store = new ResolutionStore();
+    const values = store.exportsOf(file).get("default") ?? [];
+    expect(values).toHaveLength(1);
+    expect(Node.isFunctionDeclaration(values[0])).toBe(true);
+  });
+
+  it("a reassigned default says nothing, a reassigned list name resolves", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/pack.ts",
+      [
+        "let handler = () => 1;",
+        "export default handler;",
+        "export { handler };",
+        "handler = () => 2;",
+        "",
+      ].join("\n"),
+    );
+    const store = new ResolutionStore();
+    const table = store.exportsOf(file);
+    // The default took the value before the later write; the last write
+    // the facts know is the wrong claim, so there is no claim.
+    expect(table.get("default")).toBeUndefined();
+    expect(table.get("handler")).toHaveLength(1);
+  });
+
+  it("a default that states an imported name flattens to its source", () => {
+    const project = createTestProject();
+    project.createSourceFile("/inner.ts", "export function alpha() {}\n");
+    project.createSourceFile(
+      "/barrel.ts",
+      'import { alpha } from "./inner.js";\nexport default alpha;\n',
+    );
+    const store = new ResolutionStore();
+    const values =
+      store
+        .exportsOf(project.getSourceFileOrThrow("/barrel.ts"))
+        .get("default") ?? [];
+    expect(values).toHaveLength(1);
+    expect(values[0]?.getSourceFile().getFilePath()).toBe("/inner.ts");
+  });
+
   it("the value behind a re-exported name is the inner function", () => {
     const project = createTestProject();
     project.createSourceFile("/inner.ts", "export function alpha() {}\n");

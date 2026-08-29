@@ -1,6 +1,7 @@
 import { Node, Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { ResolutionStore } from "./facts/store.js";
 import {
   exportedDeclarationsOf,
   resolveAliasedSymbol,
@@ -39,7 +40,7 @@ describe("exportedDeclarationsOf", () => {
       "src/outer.ts",
       "export { deep } from './inner.js';\nexport const shallow = 1;\n",
     );
-    const exported = exportedDeclarationsOf(sf);
+    const exported = exportedDeclarationsOf(sf, new ResolutionStore());
     expect([...exported.keys()].sort()).toEqual(["deep", "shallow"]);
     expect(exported.get("deep")?.[0].getSourceFile().getBaseName()).toBe(
       "inner.ts",
@@ -49,7 +50,10 @@ describe("exportedDeclarationsOf", () => {
   it("answers a repeated ask with the map it already built", () => {
     const project = new Project({ useInMemoryFileSystem: true });
     const sf = project.createSourceFile("src/a.ts", "export const x = 1;\n");
-    expect(exportedDeclarationsOf(sf)).toBe(exportedDeclarationsOf(sf));
+    const store = new ResolutionStore();
+    expect(exportedDeclarationsOf(sf, store)).toBe(
+      exportedDeclarationsOf(sf, store),
+    );
   });
 
   it("answers a file whose text was replaced from the new parse", () => {
@@ -59,15 +63,16 @@ describe("exportedDeclarationsOf", () => {
       "export const before = 1;\n",
       { overwrite: true },
     );
-    exportedDeclarationsOf(first);
+    exportedDeclarationsOf(first, new ResolutionStore());
     // ts-morph reuses the same wrapper and forgets every node the first
-    // parse produced.
+    // parse produced. A store lives for one run, so the rewritten file
+    // is a new run's ask.
     const second = project.createSourceFile(
       "src/b.ts",
       "export const after = 2;\n",
       { overwrite: true },
     );
-    const exported = exportedDeclarationsOf(second);
+    const exported = exportedDeclarationsOf(second, new ResolutionStore());
     expect([...exported.keys()]).toEqual(["after"]);
     expect(exported.get("after")?.[0].getText()).toContain("after = 2");
   });
@@ -78,7 +83,7 @@ describe("exportedDeclarationsOf", () => {
     // Asking for the top of the chain first is the order that used to
     // overflow the stack.
     const top = project.getSourceFileOrThrow("src/top.ts");
-    const exported = exportedDeclarationsOf(top);
+    const exported = exportedDeclarationsOf(top, new ResolutionStore());
     const handler = exported.get("handler")?.[0];
     expect(handler !== undefined && Node.isFunctionDeclaration(handler)).toBe(
       true,
@@ -102,7 +107,9 @@ describe("exportedDeclarationsOf", () => {
       "src/top.ts",
       `export { handler } from "./m${OVERFLOW_DEPTH}.js";\n`,
     );
-    const handler = exportedDeclarationsOf(top).get("handler")?.[0];
+    const handler = exportedDeclarationsOf(top, new ResolutionStore()).get(
+      "handler",
+    )?.[0];
     expect(handler !== undefined && Node.isFunctionDeclaration(handler)).toBe(
       true,
     );
@@ -131,7 +138,7 @@ describe("exportedDeclarationsOf", () => {
       "src/top.ts",
       'export { handler as handlerA } from "./a3.js";\nexport { handler as handlerB } from "./b3.js";\n',
     );
-    const exported = exportedDeclarationsOf(top);
+    const exported = exportedDeclarationsOf(top, new ResolutionStore());
     for (const name of ["handlerA", "handlerB"]) {
       expect(exported.get(name)?.[0]?.getSourceFile().getBaseName()).toBe(
         "origin.ts",
@@ -147,7 +154,7 @@ describe("exportedDeclarationsOf", () => {
       "src/top.ts",
       'export { x } from "./a.js";\n',
     );
-    const exported = exportedDeclarationsOf(top);
+    const exported = exportedDeclarationsOf(top, new ResolutionStore());
     expect(exported.get("x") ?? []).toEqual([]);
   });
 });

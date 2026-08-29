@@ -10,11 +10,15 @@ function sourceFile(code: string) {
   return project.createSourceFile("Comp.tsx", code);
 }
 
-const ctx = createTsDiscoveryContext();
+// A store keeps per-file state, and each fixture here is its own
+// project under one path, so every ask gets its own context.
+function ctx() {
+  return createTsDiscoveryContext();
+}
 
 describe("createTsDiscoveryContext", () => {
   it("getFilePath returns the source file's path", () => {
-    expect(ctx.getFilePath(sourceFile("export const x = 1;"))).toMatch(
+    expect(ctx().getFilePath(sourceFile("export const x = 1;"))).toMatch(
       /Comp\.tsx$/,
     );
   });
@@ -28,7 +32,7 @@ describe("createTsDiscoveryContext", () => {
       export class Cls {}
       export default function Main() { return null; }
     `);
-    const fns = ctx.exportedFunctions(file);
+    const fns = ctx().exportedFunctions(file);
     const byName = Object.fromEntries(fns.map((f) => [f.name, f.isDefault]));
     expect(Object.keys(byName).sort()).toEqual([
       "Bar",
@@ -42,28 +46,28 @@ describe("createTsDiscoveryContext", () => {
 
   it("detects a concise-arrow JSX body", () => {
     const file = sourceFile("export const C = () => <div />;");
-    const fn = ctx.exportedFunctions(file)[0].func;
-    expect(ctx.hasJsxReturn(fn)).toBe(true);
+    const fn = ctx().exportedFunctions(file)[0].func;
+    expect(ctx().hasJsxReturn(fn)).toBe(true);
   });
 
   it("detects a JSX return statement, unwrapping parentheses and fragments", () => {
     const file = sourceFile("export function C() { return (<><span /></>); }");
-    const fn = ctx.exportedFunctions(file)[0].func;
-    expect(ctx.hasJsxReturn(fn)).toBe(true);
+    const fn = ctx().exportedFunctions(file)[0].func;
+    expect(ctx().hasJsxReturn(fn)).toBe(true);
   });
 
   it("returns false when a function returns no JSX", () => {
     const file = sourceFile("export function C() { return 42; }");
-    const fn = ctx.exportedFunctions(file)[0].func;
-    expect(ctx.hasJsxReturn(fn)).toBe(false);
+    const fn = ctx().exportedFunctions(file)[0].func;
+    expect(ctx().hasJsxReturn(fn)).toBe(false);
   });
 
   it("ignores JSX returned only by a nested function", () => {
     const file = sourceFile(
       "export function C() { const inner = () => <div />; return inner; }",
     );
-    const fn = ctx.exportedFunctions(file)[0].func;
-    expect(ctx.hasJsxReturn(fn)).toBe(false);
+    const fn = ctx().exportedFunctions(file)[0].func;
+    expect(ctx().hasJsxReturn(fn)).toBe(false);
   });
 });
 
@@ -82,7 +86,7 @@ describe("exportedCallConfigString", () => {
         async () => undefined,
       );
     `);
-    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBe(
+    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBe(
       "billing.invoicePaid",
     );
   });
@@ -96,7 +100,7 @@ describe("exportedCallConfigString", () => {
         async () => undefined,
       );
     `);
-    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBeNull();
+    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBeNull();
   });
 
   it("answers null when the callee is not in the list", () => {
@@ -107,12 +111,12 @@ describe("exportedCallConfigString", () => {
         async () => undefined,
       );
     `);
-    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBeNull();
+    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBeNull();
   });
 
   it("answers null when the export is not a call", () => {
     const file = sourceFile("export const handler = async () => undefined;");
-    expect(ctx.exportedCallConfigString(file, "handler", spec)).toBeNull();
+    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBeNull();
   });
 
   it("follows a config variable to the object literal it names", () => {

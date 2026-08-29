@@ -55,7 +55,7 @@ import {
 
 import type { Atom, Proof } from "@suss/datalog";
 import type { TransparentWrapper } from "@suss/extractor";
-import type { SourceFile } from "ts-morph";
+import type { Project, SourceFile } from "ts-morph";
 
 const JS_RULES = [
   // f.bind(...) leads wherever f leads. Stated as a step, so the
@@ -171,6 +171,12 @@ export class ResolutionStore {
       extractedAt: number;
     }
   >();
+  /**
+   * A file's table depends only on its re-export closure, which
+   * `collectExports` extracts whole before answering, so later
+   * extraction elsewhere cannot change an entry.
+   */
+  private readonly exportTables = new Map<string, Map<string, Node[]>>();
   /** Files the most recent wave walk entered, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   private readonly declarations = new Map<Node, Node>();
@@ -725,8 +731,17 @@ export class ResolutionStore {
    * chain and nothing beside it, to any depth.
    */
   exportsOf(sourceFile: SourceFile): Map<string, Node[]> {
+    const filePath = sourceFile.getFilePath();
+    const memo = this.exportTables.get(filePath);
+    if (memo !== undefined) {
+      recordFileDependency(filePath);
+      return memo;
+    }
+
     try {
-      return this.collectExports(sourceFile);
+      const table = this.collectExports(sourceFile);
+      this.exportTables.set(filePath, table);
+      return table;
     } finally {
       this.forgetQuery();
     }
@@ -747,7 +762,7 @@ export class ResolutionStore {
         recordFileDependency(filePath);
         this.extractFile(file);
         for (const target of this.reExportTargetsOf(filePath)) {
-          const targetFile = project.getSourceFile(target);
+          const targetFile = sourceFileFor(project, target);
           if (targetFile !== undefined) {
             next.push(targetFile);
           }
@@ -848,6 +863,31 @@ export class ResolutionStore {
     this.fullyExtracted.add(filePath);
     this.stale = true;
     extractFileFacts(this.db, this.table, sourceFile);
+  }
+}
+
+/**
+ * A re-export target the project has not loaded yet, such as a
+ * dependency's .d.ts, is added by its resolved path. A key that is a
+ * bare specifier never resolved to a file, so there is nothing to add.
+ */
+function sourceFileFor(
+  project: Project,
+  moduleKey: string,
+): SourceFile | undefined {
+  const known = project.getSourceFile(moduleKey);
+  if (known !== undefined) {
+    return known;
+  }
+
+  if (!moduleKey.startsWith("/")) {
+    return undefined;
+  }
+
+  try {
+    return project.addSourceFileAtPathIfExists(moduleKey) ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 

@@ -561,8 +561,9 @@ describe("registrationCall — Express Router style", () => {
     );
 
     const units = discoverUnits(file, [makeExpressPattern()]);
-    // myHandler is an identifier, not an inline arrow/function, should be skipped
-    expect(units).toHaveLength(0);
+    // A named handler resolves through the store to its declaration.
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("get");
   });
 
   it("finds arrow function handler", () => {

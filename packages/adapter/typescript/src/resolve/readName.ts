@@ -165,6 +165,13 @@ function read(expr: Node, ctx: Context): string | null {
       return read(only.node, { ...inner, bindings: only.scope });
     }
   }
+  // A value rooted at a parameter is the caller's to fill in, and the
+  // checker grounds it at the call sites. Asking the store here would
+  // bake one caller's argument into the unit's own summary.
+  if (parameterPath(expr) !== null) {
+    return null;
+  }
+
   const written = ctx.resolve(expr);
   if (written === null || written === expr) {
     return null;

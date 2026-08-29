@@ -197,7 +197,10 @@ export function discoverNamedExports(
       continue;
     }
 
-    const exported = exportedDeclarationsOf(sourceFile).get(targetName);
+    const exported =
+      resolution === undefined
+        ? undefined
+        : exportedDeclarationsOf(sourceFile, resolution).get(targetName);
     if (exported === undefined) {
       continue;
     }
@@ -213,6 +216,15 @@ export function discoverNamedExports(
         (resolution === undefined
           ? null
           : resolutionToFunctionRoot(resolution, decl));
+      // A default reached through a re-export belongs to the file that
+      // declares the function, which discovers it on its own turn.
+      if (
+        fn !== null &&
+        targetName === "default" &&
+        fn.getSourceFile() !== sourceFile
+      ) {
+        continue;
+      }
       if (fn !== null) {
         results.push({
           func: fn,
