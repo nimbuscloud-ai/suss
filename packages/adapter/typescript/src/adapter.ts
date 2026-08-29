@@ -172,6 +172,7 @@ import type {
   AnchorCallsOf,
   OriginatesFrom,
 } from "./resolve/invocationEffects.js";
+import type { ResolveCallee } from "./terminals/helperResolution.js";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -570,6 +571,7 @@ export function extractCodeStructure(
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
+  resolveCallee?: ResolveCallee,
 ): RawCodeStructure {
   // One table per unit: every shape read during this call goes into it.
   const read = withDefinitions(() =>
@@ -582,6 +584,7 @@ export function extractCodeStructure(
       resolveWrittenValue,
       originatesFrom,
       anchorCallsOf,
+      resolveCallee,
     ),
   );
   return read.definitions === null
@@ -671,6 +674,7 @@ function readCodeStructure(
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
+  resolveCallee?: ResolveCallee,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   if (func === null) {
@@ -691,6 +695,7 @@ function readCodeStructure(
     resolveWrittenValue,
     originatesFrom,
     anchorCallsOf,
+    resolveCallee,
   );
   let branches = extracted.branches;
   const unmatchedReturns = countUnmatchedReturns(
@@ -1150,6 +1155,9 @@ function extractFromSourceFile(
         resolution === undefined
           ? undefined
           : (value, matches) => resolution.anchorCallsOf(value, matches),
+        resolution === undefined
+          ? undefined
+          : (value) => resolution.resolveCallable(value),
       );
 
       // Set before the branches below, since both of them overwrite it

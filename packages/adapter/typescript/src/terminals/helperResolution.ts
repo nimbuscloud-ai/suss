@@ -66,14 +66,20 @@ export type HelperResolution =
   /** The callee is in this project, and nothing in it could be read. */
   | { kind: "unreadable" };
 
+/** Resolves a helper callee to its declaration; the adapter binds the store's ask. */
+export type ResolveCallee = (callee: Node) => Node | null;
+
 /** Follow a call in return position and read what the callee returns. */
-export function resolveHelperReturn(call: CallExpression): HelperResolution {
+export function resolveHelperReturn(
+  call: CallExpression,
+  resolveCallee?: ResolveCallee,
+): HelperResolution {
   const callee = call.getExpression();
   if (!Node.isIdentifier(callee)) {
     return { kind: "notLocal" };
   }
 
-  const helper = resolveLocalHelper(callee);
+  const helper = memoizedLocalHelper(callee, resolveCallee);
   if (helper.kind !== "local") {
     return helper.kind === "external"
       ? { kind: "notLocal" }
@@ -256,8 +262,35 @@ type LocalHelper =
  * Covers `function json(...)` and `const json = (...) => ...`, both of
  * which show up as a project's response helper.
  */
-function resolveLocalHelper(callee: Identifier): LocalHelper {
-  for (const declaration of declarationsFor(callee)) {
+const helperBySymbol = new WeakMap<object, LocalHelper>();
+
+/**
+ * One resolution per callee symbol per program. Ten handlers returning
+ * `json(...)` used to re-resolve `json` and re-read its body ten
+ * times; the symbol is the identity every one of those shares.
+ */
+function memoizedLocalHelper(
+  callee: Identifier,
+  resolveCallee: ResolveCallee | undefined,
+): LocalHelper {
+  const symbol = callee.getSymbol();
+  if (symbol === undefined) {
+    return resolveLocalHelper(callee, resolveCallee);
+  }
+  const cached = helperBySymbol.get(symbol);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const helper = resolveLocalHelper(callee, resolveCallee);
+  helperBySymbol.set(symbol, helper);
+  return helper;
+}
+
+function resolveLocalHelper(
+  callee: Identifier,
+  resolveCallee: ResolveCallee | undefined,
+): LocalHelper {
+  for (const declaration of declarationsFor(callee, resolveCallee)) {
     const file = declaration.getSourceFile();
     if (file.isFromExternalLibrary()) {
       return { kind: "external" };
@@ -337,8 +370,20 @@ function implementationBeside(
   return null;
 }
 
-/** Declarations for an identifier, following an import to its source. */
-function declarationsFor(callee: Identifier): TsNode[] {
+/**
+ * Declarations for an identifier, following an import to its source.
+ * With the store's ask bound, the chain runs through the facts, which
+ * follows a project barrel too; without one, the checker's aliasing.
+ */
+function declarationsFor(
+  callee: Identifier,
+  resolveCallee: ResolveCallee | undefined,
+): TsNode[] {
+  if (resolveCallee !== undefined) {
+    const target = resolveCallee(callee);
+    return target === null ? [] : [target];
+  }
+
   const symbol = callee.getSymbol();
   if (symbol === undefined) {
     return [];
