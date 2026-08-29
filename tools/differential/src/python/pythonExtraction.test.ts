@@ -71,26 +71,40 @@ describe("python extraction over generated programs", () => {
           roots: [programDir],
         });
         const { claims } = readSummaryClaims(summaries);
-        const claimByName = new Map(claims.map((claim) => [claim.name, claim]));
+        const claimsByName = new Map<string, typeof claims>();
+        for (const claim of claims) {
+          const list = claimsByName.get(claim.name) ?? [];
+          list.push(claim);
+          claimsByName.set(claim.name, list);
+        }
 
         for (const intent of rendered.intents) {
-          const claim = claimByName.get(intent.name);
+          const named = claimsByName.get(intent.name) ?? [];
           if (intent.expectation === "claim") {
             expect
               .soft(
-                claim,
+                named[0],
                 `${intent.name} is a shape the pack reads today and it extracted no path claim`,
               )
               .toBeDefined();
-            if (claim !== undefined) {
-              expect(claim.method).toBe(intent.method);
-              expect(claim.path).toBe(intent.servedPaths[0]);
+            if (named.length > 0) {
+              for (const claim of named) {
+                expect(claim.method).toBe(intent.method);
+              }
+              // A route served under several mounts claims one boundary
+              // per mount, so the claim set is the served set.
+              expect(new Set(named.map((claim) => claim.path)).size).toBe(
+                named.length,
+              );
+              expect([...named.map((claim) => claim.path)].sort()).toEqual(
+                [...intent.servedPaths].sort(),
+              );
             }
             continue;
           }
           expect
             .soft(
-              claim,
+              named[0],
               `${intent.name} is a documented abstention shape and it now extracts a path claim; if the pack learned to read it, move the shape to the claim tier in the generator`,
             )
             .toBeUndefined();

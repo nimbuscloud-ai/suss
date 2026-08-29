@@ -218,6 +218,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
       graphqlDocument: "query Q { me { id } }",
       graphqlSchemaSdl: "type Query { me: User }",
       sourceDocumentLabel: "server.ts",
+      mount: { siblings: 2, prefix: "/v1" },
     };
 
     const summary = assembleSummary(raw);
@@ -236,6 +237,7 @@ describe("assembleSummary: optional metadata plumbing", () => {
       schemaSdl: "type Query { me: User }",
     });
     expect(summary.metadata?.sourceDocument).toEqual({ label: "server.ts" });
+    expect(summary.metadata?.mount).toEqual({ siblings: 2, prefix: "/v1" });
     const effect = summary.transitions[0].effects[0];
     expect(effect.type).toBe("invocation");
     if (effect.type === "invocation") {

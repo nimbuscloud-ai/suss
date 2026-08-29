@@ -520,6 +520,7 @@ function fastapiGroupRenderers(
     prelude: string[];
     mountLines: string[];
     prefixes: string;
+    claimable?: boolean;
     servedPathsOf?: (route: FastapiRouteSpec, n: number) => string[];
   }): GroupRendering => {
     const modelName = groupModelName(gi, options.routes);
@@ -536,7 +537,7 @@ function fastapiGroupRenderers(
           object: `router_${gi}`,
           modelName,
           prefixes: options.prefixes,
-          claimable: false,
+          claimable: options.claimable ?? false,
           ...(options.servedPathsOf !== undefined
             ? { servedPathsOf: options.servedPathsOf }
             : {}),
@@ -666,6 +667,8 @@ function fastapiGroupRenderers(
         needsModelInMain: modelName !== null,
       };
     },
+    // Both mounts are served at run time, so extraction claims one
+    // boundary per mount rather than abstaining (#689).
     mountedTwice: (group) =>
       routerGroup({
         routes: group.routes,
@@ -676,6 +679,7 @@ function fastapiGroupRenderers(
           `app.include_router(router_${gi}, prefix="/mb${gi}")`,
         ],
         prefixes: "",
+        claimable: true,
         servedPathsOf: (route, n) => [
           servedPath(route, n, `/ma${gi}/g${gi}`),
           servedPath(route, n, `/mb${gi}/g${gi}`),

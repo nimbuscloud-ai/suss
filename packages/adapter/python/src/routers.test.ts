@@ -434,8 +434,8 @@ describe("router prefix composition: abstentions", () => {
     );
   });
 
-  it("abstains when the router is mounted more than once", async () => {
-    const reason = await abstained(
+  it("emits one boundary per mount when the prefixes disagree", async () => {
+    const units = await unitsOf(
       [
         "from fastapi import FastAPI, APIRouter",
         "",
@@ -452,9 +452,18 @@ describe("router prefix composition: abstentions", () => {
         'app.include_router(router, prefix="/v2")',
         "",
       ].join("\n"),
-      "ping",
     );
-    expect(reason).toContain("is mounted more than once");
+    const pings = units.filter((u) => u.identity.name === "ping");
+    const paths = pings
+      .map((u) =>
+        u.boundaryBinding?.semantics?.name === "rest"
+          ? u.boundaryBinding.semantics.path
+          : null,
+      )
+      .sort();
+    expect(paths).toEqual(["/v1/ping", "/v2/ping"]);
+    expect(pings.map((u) => u.mount?.siblings)).toEqual([2, 2]);
+    expect(pings.map((u) => u.mount?.prefix).sort()).toEqual(["/v1", "/v2"]);
   });
 
   it("abstains when the router's name is reassigned to a second construction", async () => {

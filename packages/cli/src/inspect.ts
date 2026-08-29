@@ -14,6 +14,7 @@ import {
   dispatchByType,
   displayLabel,
   readHttpMetadata,
+  readMountMetadata,
   readReactMetadata,
   readStorageContractMetadata,
   safeParseSummaries,
@@ -1164,6 +1165,12 @@ function summaryMetadata(summary: BehavioralSummary): string {
     parts.push(`${binding.recognition} ${unitKindLabel(summary)}`);
   }
   parts.push(`line ${summary.location.range.start}`);
+  // One declaration served under several mounts prints one summary per
+  // mount, and the reader is told which of them this one is.
+  const mount = readMountMetadata(summary);
+  if (mount !== undefined) {
+    parts.push(`mount ${mount.prefix} (1 of ${mount.siblings})`);
+  }
   if (summary.confidence.level !== "high") {
     parts.push(`confidence: ${summary.confidence.level}`);
   }

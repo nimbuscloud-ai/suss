@@ -28,14 +28,16 @@ const SAMPLED: PythonProgramSpec[] = fc.sample(arbPythonProgramSpec, {
 });
 
 describe("renderPythonProgram", () => {
-  it("gives every intent a unique name and every claim intent exactly one served path", () => {
+  it("gives every intent a unique name and every claim intent its served paths", () => {
     for (const spec of SAMPLED) {
       const rendered = renderPythonProgram(spec, "app_0");
       const names = rendered.intents.map((intent) => intent.name);
       expect(new Set(names).size).toBe(names.length);
+      // One served path for a single mount; a doubly-mounted router's
+      // routes claim one boundary per mount (#689).
       for (const intent of rendered.intents) {
         if (intent.expectation === "claim") {
-          expect(intent.servedPaths).toHaveLength(1);
+          expect(intent.servedPaths.length).toBeGreaterThan(0);
         }
       }
     }

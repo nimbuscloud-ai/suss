@@ -70,7 +70,7 @@ import type {
   PythonPack,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
-import type { RouterIndex } from "./routers.js";
+import type { RoutePrefixResolution, RouterIndex } from "./routers.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
 export interface DiscoveryOptions {
@@ -331,7 +331,7 @@ function classRouteUnits(
   ) {
     return [];
   }
-  const routePath = readRoutePath(
+  const entries = readRoutePaths(
     pattern,
     pathArgument,
     classification,
@@ -353,33 +353,36 @@ function classRouteUnits(
     if (verb === undefined || methodName === undefined) {
       continue;
     }
-    units.push(
-      ...routeUnitOrAbstention(
-        {
-          pack,
-          name: `${className}.${methodName}`,
-          exportPath: [className, methodName],
-          method: verb,
-          routePath,
-          requestBodyFromAnnotatedClass:
-            pattern.annotatedClassIsRequestBody === true,
-          readsReturnedStatus: pattern.statusFromReturnedTuple === true,
-          injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
-          definitionNode: maybeMethod,
-          enclosingScope: classScope,
-          module,
-          filePath: options.filePath,
-          skipReceiverParam: true,
-          responseShape: absentReading,
-          statusCode: defaultedStatus(
-            readReturnedStatus(pattern, maybeMethod),
-            pattern,
-          ),
-          storage: options.storage,
-        },
-        options,
-      ),
-    );
+    for (const entry of entries) {
+      units.push(
+        ...routeUnitOrAbstention(
+          {
+            pack,
+            name: `${className}.${methodName}`,
+            exportPath: [className, methodName],
+            method: verb,
+            routePath: entry.routePath,
+            ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
+            requestBodyFromAnnotatedClass:
+              pattern.annotatedClassIsRequestBody === true,
+            readsReturnedStatus: pattern.statusFromReturnedTuple === true,
+            injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
+            definitionNode: maybeMethod,
+            enclosingScope: classScope,
+            module,
+            filePath: options.filePath,
+            skipReceiverParam: true,
+            responseShape: absentReading,
+            statusCode: defaultedStatus(
+              readReturnedStatus(pattern, maybeMethod),
+              pattern,
+            ),
+            storage: options.storage,
+          },
+          options,
+        ),
+      );
+    }
   }
   return units;
 }
@@ -397,6 +400,77 @@ function readRoutePath(
   );
   return andThenReading(composed, (path, range) =>
     readPathTemplate(pattern, path, range),
+  );
+}
+
+interface RoutePathEntry {
+  routePath: Reading<PathTemplateReading>;
+  mount?: { siblings: number; prefix: string };
+}
+
+/**
+ * One route path per mount. A router mounted once, or not at all,
+ * gives one entry with no mount marker; one mounted at prefixes that
+ * do not agree gives an entry per prefix, since both are served at
+ * run time and a summary per mount says so (#689).
+ */
+function readRoutePaths(
+  pattern: PythonDiscoveryPattern,
+  pathArgument: Reading<string>,
+  classification: DecoratorClassification,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): RoutePathEntry[] {
+  const resolution = routerResolutionOf(
+    pattern,
+    classification,
+    module,
+    options,
+  );
+  if (resolution?.kind !== "composedMany") {
+    return [
+      {
+        routePath: readRoutePath(
+          pattern,
+          pathArgument,
+          classification,
+          module,
+          options,
+        ),
+      },
+    ];
+  }
+
+  return resolution.values.map((prefix: string) => ({
+    routePath: andThenReading(
+      andThenReading(pathArgument, (literal, range) =>
+        writtenReading(servedSpelling(pattern, prefix + literal), range),
+      ),
+      (path, range) => readPathTemplate(pattern, path, range),
+    ),
+    mount: { siblings: resolution.values.length, prefix },
+  }));
+}
+
+/** The router index's answer for this decorator's object, or null when nothing composes. */
+function routerResolutionOf(
+  pattern: PythonDiscoveryPattern,
+  classification: DecoratorClassification,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): RoutePrefixResolution | null {
+  if (
+    pattern.routerComposition === undefined ||
+    options.routerIndex === undefined ||
+    classification.objectName === null
+  ) {
+    return null;
+  }
+
+  return options.routerIndex.resolve(
+    pattern,
+    classification.objectModule ?? module,
+    classification.objectName,
   );
 }
 
@@ -804,40 +878,43 @@ function functionRouteUnits(
   }
 
   const ctx = createAnnotationContext(module.scopeFor);
-  return routeUnitOrAbstention(
-    {
-      pack,
-      name: functionName,
-      exportPath: [functionName],
-      method: verb,
-      routePath: readRoutePath(
-        pattern,
-        readPathArgument(classification),
-        classification,
-        module,
-        options,
-      ),
-      requestBodyFromAnnotatedClass:
-        pattern.annotatedClassIsRequestBody === true,
-      readsReturnedStatus: pattern.statusFromReturnedTuple === true,
-      injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
-      definitionNode: functionNode,
-      enclosingScope: module.moduleScope,
-      module,
-      filePath: options.filePath,
-      skipReceiverParam: false,
-      responseShape: readResponseModel(pattern, classification, module, ctx),
-      statusCode: defaultedStatus(
-        declaredOrReturnedStatus(
-          readStatusCode(pattern, classification),
-          readReturnedStatus(pattern, functionNode),
-        ),
-        pattern,
-      ),
-      definitionsCtx: ctx,
-      storage: options.storage,
-    },
+  return readRoutePaths(
+    pattern,
+    readPathArgument(classification),
+    classification,
+    module,
     options,
+  ).flatMap((entry) =>
+    routeUnitOrAbstention(
+      {
+        pack,
+        name: functionName,
+        exportPath: [functionName],
+        method: verb,
+        routePath: entry.routePath,
+        ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
+        requestBodyFromAnnotatedClass:
+          pattern.annotatedClassIsRequestBody === true,
+        readsReturnedStatus: pattern.statusFromReturnedTuple === true,
+        injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
+        definitionNode: functionNode,
+        enclosingScope: module.moduleScope,
+        module,
+        filePath: options.filePath,
+        skipReceiverParam: false,
+        responseShape: readResponseModel(pattern, classification, module, ctx),
+        statusCode: defaultedStatus(
+          declaredOrReturnedStatus(
+            readStatusCode(pattern, classification),
+            readReturnedStatus(pattern, functionNode),
+          ),
+          pattern,
+        ),
+        definitionsCtx: ctx,
+        storage: options.storage,
+      },
+      options,
+    ),
   );
 }
 
@@ -865,6 +942,8 @@ interface BuildRouteUnitOptions {
   /** What a pack needs to say a call talks to the database. Absent when no pack does. */
   storage?: StorageLookup | undefined;
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
+  /** Set when several mounts serve the router and this unit is one of them. */
+  mount?: { siblings: number; prefix: string };
 }
 
 /**
@@ -1070,6 +1149,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     ...(collectedDefinitions(ctx) !== null
       ? { definitions: collectedDefinitions(ctx) }
       : {}),
+    ...(options.mount !== undefined ? { mount: options.mount } : {}),
   };
 }
 

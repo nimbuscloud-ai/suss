@@ -16,6 +16,7 @@ import {
   exchangesHttpResponses,
   withGraphqlMetadata,
   withHttpMetadata,
+  withMountMetadata,
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 
@@ -338,6 +339,8 @@ export interface RawCodeStructure {
   /** The document this unit was read out of, when something else read out of
    * the same document states what this one relies on. */
   sourceDocumentLabel?: string;
+  /** Set when several mounts serve the declaration and this unit is one of them. */
+  mount?: { siblings: number; prefix: string };
   /** The extractor cannot derive this. An adapter that has the SDL and knows
    * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
@@ -614,6 +617,10 @@ function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
     metadata = withSourceDocumentMetadata(metadata, {
       label: raw.sourceDocumentLabel,
     });
+  }
+
+  if (raw.mount !== undefined) {
+    metadata = withMountMetadata(metadata, raw.mount);
   }
   return Object.keys(metadata).length > 0 ? metadata : null;
 }

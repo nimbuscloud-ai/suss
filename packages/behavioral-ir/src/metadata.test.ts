@@ -9,6 +9,7 @@ import {
   readMetricContractMetadata,
   readMetricReadingMetadata,
   readModuleImports,
+  readMountMetadata,
   readReactMetadata,
   readRoutingMetadata,
   readRuntimeContractMetadata,
@@ -18,6 +19,7 @@ import {
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,
+  withMountMetadata,
   withRoutingMetadata,
   withRuntimeContractMetadata,
   withSourceDocumentMetadata,
@@ -61,6 +63,28 @@ function transitionWith(
     ...(metadata !== undefined ? { metadata } : {}),
   };
 }
+
+describe("the mount metadata namespace", () => {
+  it("round-trips the sibling count and the prefix", () => {
+    const summary = summaryWith(
+      withMountMetadata(undefined, { siblings: 2, prefix: "/v1" }),
+    );
+    expect(readMountMetadata(summary)).toEqual({
+      siblings: 2,
+      prefix: "/v1",
+    });
+  });
+
+  it("throws on a field the schema does not declare", () => {
+    expect(() =>
+      withMountMetadata(undefined, {
+        siblings: 2,
+        prefix: "/v1",
+        extra: true,
+      } as never),
+    ).toThrow();
+  });
+});
 
 describe("the messageBus metadata namespace", () => {
   it("round-trips what a writer sets", () => {

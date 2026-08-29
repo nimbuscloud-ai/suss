@@ -120,6 +120,40 @@ export function readMessageBusMetadata(
   return readNamespace(MessageBusMetadataSchema, summary.metadata?.messageBus);
 }
 
+const MountMetadataSchema = z.object({
+  /**
+   * How many mounts serve the declaration this boundary came from.
+   * Every sibling records the same count, so a reader counting
+   * declarations divides by it and a reader counting routes does not.
+   */
+  siblings: z.number(),
+  /** The mount prefix this boundary took, which tells the siblings apart. */
+  prefix: z.string(),
+});
+
+export type MountMetadata = z.infer<typeof MountMetadataSchema>;
+
+/**
+ * One route declaration served under several mounts emits one boundary
+ * per mount, and each records this so nothing reads the siblings as
+ * separate declarations.
+ */
+export function withMountMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: MountMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    mount: MountMetadataSchema.strict().parse(value),
+  };
+}
+
+export function readMountMetadata(
+  summary: BehavioralSummary,
+): MountMetadata | undefined {
+  return readNamespace(MountMetadataSchema, summary.metadata?.mount);
+}
+
 const EnvVarSourceSchema = z.enum(["template", "globals", "platform"]);
 
 /**

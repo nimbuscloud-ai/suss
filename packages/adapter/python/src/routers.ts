@@ -84,6 +84,15 @@ export interface BoundPythonFile {
 export type RoutePrefixResolution =
   | { kind: "notRouter" }
   | { kind: "composed"; value: string }
+  | {
+      /**
+       * The router is mounted more than once, at prefixes that do not
+       * agree. Both are served at run time, so discovery emits one
+       * boundary per prefix rather than none (#689).
+       */
+      kind: "composedMany";
+      values: string[];
+    }
   | { kind: "abstain"; reason: string };
 
 export interface RouterIndex {
@@ -301,6 +310,13 @@ export function buildRouterIndex(
         return composed;
       }
 
+      if (composed.kind === "composedMany") {
+        return {
+          kind: "composedMany",
+          values: composed.values.map((value) => value + ownPrefix.value),
+        };
+      }
+
       return {
         kind: "composed",
         value: composed.value + ownPrefix.value,
@@ -315,10 +331,15 @@ export function buildRouterIndex(
  * abstained compose to nothing; two mounts landing at different paths
  * do not settle which one a route takes.
  */
+type MountPrefixComposition =
+  | { kind: "composed"; value: string }
+  | { kind: "composedMany"; values: string[] }
+  | { kind: "abstain"; reason: string };
+
 function composedMountPrefix(
   index: PatternIndex,
   construction: Construction,
-): OwnPrefixResolution {
+): MountPrefixComposition {
   const paths = mountPathsOf(mountEdgesOf(index), construction.valueKey);
   if (paths === null) {
     return {
@@ -330,11 +351,16 @@ function composedMountPrefix(
 
   const distinct = [...new Set(paths)];
   const only = distinct[0];
-  if (distinct.length !== 1 || only === undefined) {
+  if (only === undefined) {
     return {
       kind: "abstain",
-      reason: "is mounted more than once, at prefixes that do not agree",
+      reason:
+        "is mounted through a chain of routers this reading cannot compose",
     };
+  }
+
+  if (distinct.length > 1) {
+    return { kind: "composedMany", values: distinct };
   }
 
   return { kind: "composed", value: only };
