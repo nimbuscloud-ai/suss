@@ -29,6 +29,7 @@ import {
 import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
+import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
 import {
   loadStubs,
   type StubOverlay,
@@ -709,6 +710,15 @@ export async function extract(
     .filter((submodule) => !submodule.checkedOut)
     .map((submodule) => submodule.declaredPath);
   process.stderr.write(formatMissingSubmodules(submodules));
+
+  // Only when nothing configured this run: a tsconfig at or above the
+  // root covers what is under it, and -p was somebody's choice.
+  if (
+    language === "typescript" &&
+    resolveSource(options).kind === "directory"
+  ) {
+    process.stderr.write(formatProjectsBelow(projectsBelow(root)));
+  }
 
   const runExtraction = (): Promise<LanguageRun> =>
     RUN_BY_LANGUAGE[language]({ options, root, submodules });

@@ -1,0 +1,1 @@
+export { tenantRoutes } from "./routes";
