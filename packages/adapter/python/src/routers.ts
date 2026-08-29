@@ -1524,18 +1524,12 @@ function mountBaseOf(
     };
   }
 
+  // A reassigned includer lands here too: the binder keeps the last
+  // assignment, whose call the construction index never records.
   if (includer === null) {
     return {
       kind: "abstain",
       reason: "is mounted onto a router this reading never saw constructed",
-    };
-  }
-
-  if (includer.reassigned) {
-    return {
-      kind: "abstain",
-      reason:
-        "is mounted onto a router that shares its variable name with a second router construction",
     };
   }
 
