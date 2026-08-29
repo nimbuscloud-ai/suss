@@ -557,8 +557,10 @@ It does not touch the evaluator.
    asks the compiler to resolve specifiers ts-morph has not loaded,
    because a dependency's declaration file only ever entered the
    project as a side effect of the checker walk.
-5. One path convention, owned in one place, with the three
-   `fileInScope` callbacks deleted.
+5. Done before this order was written (#78). `codeScopePath` and
+   `fileInCodeScope` in `@suss/ir-core` own the convention, the three
+   callback sites read them, and route comparison shares
+   `normalizePath` and `boundaryKey` from the same package.
 6. Python mount facts plus the shared `mountPath` closure, which
    finishes #251 and unlocks #689.
 7. The seven import readers, retired against `imports`, and the
