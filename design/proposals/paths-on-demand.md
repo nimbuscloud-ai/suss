@@ -1,97 +1,90 @@
-# Proposal: state the control flow, derive the paths when asked
+# Proposal: state the control flow, work out the paths when asked
 
-Status: draft, seeking alignment. Nothing implemented.
+Status: draft. Nothing built.
 
-## The cap, and why it is there
+## Why there is a cap
 
-`enumerateStructuredPaths` walks a lowered function body and produces
-every control-flow path through it as its own object. Past 256 it throws
-`PathBudgetExceeded`, the caller catches it, and every terminal comes
-back reachable under one condition nobody can read:
+`enumerateStructuredPaths` takes a lowered function body and builds
+every control-flow path through it. Past 256 it throws
+`PathBudgetExceeded`, and then every terminal in that body comes back
+under one condition nobody can read:
 
 ```
 unmodeled control flow (path budget exceeded, more than 256 paths)
 ```
 
-The cap is not a bounded walk of the kind the resolution work replaced.
-Those walks stopped after four hops because somebody picked four, and
-they missed answers that were there. This one stops because its output
-is genuinely exponential: a function with n sequential branches has 2^n
-paths, and the enumeration materialises each one.
+This looks like the bounded walks we took out in 0.20.0, and it is a
+different thing. Those stopped after four hops because somebody picked
+four, and they missed answers that were sitting right there. This one
+stops because a function with n branches in a row really does have 2^n
+paths, and we build each one.
 
-That is a deliberate reading. The engine's own header says a terminal
-reachable along several paths becomes several entries rather than one
-branch with an invented conjunction. Keeping the distinct conjunctions
-is the point, and it is what makes a suss transition say something an
-`if` count cannot.
+We build each one on purpose. When a terminal can be reached three ways,
+we want three entries with their own conditions instead of one entry
+with a made-up conjunction. That is what a transition tells you that a
+count of `if` statements does not.
 
-## Restating it as facts changes nothing
+## Facts do not fix this one
 
-A rule deriving `pathCondition(terminal, conjunction)` derives
-exponentially many tuples for the same function. The datalog engine runs
-to fixpoint with no cap, so a body that trips the budget today would
-grind instead of degrading. Moving the same output onto rules buys
-nothing here, which is worth writing down because the rest of the
-0.20.0 work made the opposite trade and somebody will reasonably ask.
+A rule deriving `pathCondition(terminal, conjunction)` produces
+exponentially many tuples for the same function. The engine has no cap
+and runs to fixpoint, so a body that degrades today would grind. I am
+writing this down because we spent 0.20.0 replacing walks with rules and
+this is the case where that trade does not work.
 
-## What would change it
+## What would fix it
 
-State the control flow rather than its paths:
+State the control flow instead of its paths:
 
 - `edge(from, to)` for each step in the lowered body
 - `guard(edge, condition, polarity)` where a branch chose it
 - `ends(node, terminal)` where a path can stop
 
-That is linear in the size of the body. The conditions on a terminal are
-then a question asked against those facts, and nothing materialises
-until somebody asks. A checker asking whether a terminal is reachable when the status is 404
-gets that answer without the other 2^n paths ever existing.
+That is linear in the size of the body. Ask what conditions apply at a
+terminal and you get that without the other 2^n paths ever being built. A checker that wants to know whether a 404 is reachable asks for
+that one thing.
 
 ## What it costs
 
-The enumerated transitions are the summary. `BehavioralSummary.transitions`
-is what every checker reads, what `inspect` renders, what the intent layer
-compares against, and what a published summary contains. Deriving on
-demand means either a summary contains the graph and consumers derive
-what they need, or it contains both and grows.
+`BehavioralSummary.transitions` is the enumerated paths. Every checker
+reads it, `inspect` renders it, the intent layer compares against it,
+and a published summary contains it. Working out paths on demand means a
+summary contains the graph and consumers derive what they want, or it
+contains both and gets bigger.
 
-So this is a question about the published artifact, not an internal
-refactor. It should be argued on those terms:
+That makes this a change to the artifact we publish. Three things follow:
 
-- A consumer that wants one question answered pays for every path today.
-- A consumer that wants to render every path wants them enumerated, and
-  would now do that work itself.
-- Two suss versions could disagree about what a summary contains, which
-  the schema version exists for but which is still a migration.
+- Today a consumer that wants one question answered pays for every path.
+- A consumer that wants to show every path would now build them itself.
+- Two versions of suss would disagree about what a summary contains. The
+  schema version covers that, and it is still a migration.
 
-## Why it comes up now
+## Why it came up
 
-Composing a meta-function onto a unit (#726) substitutes the wrapped
-unit's paths at the continuation, so the counts multiply. Measured on a
-field service they stay small, a route wrapped in an auth middleware
-composes to about 12 paths against the cap of 256, so #726 does not need
-this. On a graph, composition is adding edges and the multiplication
-never happens at all.
+Composing a meta-function onto a unit (#726) puts the wrapped unit's
+paths at the continuation, so counts multiply. I measured it on a field
+service and they stay small: a route wrapped in an auth middleware comes
+to about 12 paths against a cap of 256. #726 does not need this. On a
+graph, composing is adding edges and the multiplication never happens.
 
-Two other things point the same way. `suss ask` answers one question
-about one boundary and pays full enumeration to do it. The watch-mode
-and agent-facing direction wants a graph that can be queried rather than
-a document that must be read whole.
+`suss ask` reports on one question about one boundary and enumerates
+everything to do it. Watch mode and the agent-facing work want a graph
+you can query rather than a document you read whole.
 
 ## What I am not proposing
 
-Removing the cap without changing the representation. The degradation
-path is the right answer for a body suss cannot read affordably, and it
-says so in the output rather than guessing.
+Taking the cap out and leaving the representation alone. Degrading is
+the right answer for a body we cannot read affordably, and it says so
+instead of guessing.
 
-Nor is this urgent. The heaviest corpus run never degrades a transition,
-so nothing is being lost today. It is worth deciding
-before the summary format settles further, not before the next release.
+This is also not urgent. The heaviest corpus run never degrades a
+transition, so we are losing nothing today. I want it decided before the
+summary format hardens further.
 
 ## What to decide
 
-1. Whether a summary should contain the graph, the paths, or both.
-2. Whether the checkers can be written against questions instead of a
-   list, which is the load the change actually puts on them.
-3. Whether this waits for the intent layer, which reads transitions
-   heavily and would pay the migration twice if it lands first.
+1. Does a summary contain the graph, the paths, or both?
+2. Can the checkers be written to ask questions instead of reading a
+   list? That is where the work in this change actually goes.
+3. Does this wait for the intent layer? It reads transitions heavily and
+   would pay the migration twice if it lands first.
