@@ -1,7 +1,8 @@
-"""A namespace the app mounts twice, under two different paths.
+"""A namespace the app mounts twice, both times where its constructor
+put it.
 
-Which mount a route is served under is not something this reading
-follows, so the routes here name no path.
+Both mounts land the routes at the same path, so the reading composes
+it; two mounts that landed at different paths would say nothing.
 """
 
 from flask_restx import Namespace

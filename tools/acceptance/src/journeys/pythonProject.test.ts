@@ -155,14 +155,11 @@ describe("read a flask-restx service through its own wrapper", () => {
     expect(inspect.stdout).toContain("11 summaries.");
   });
 
-  it("names no path for a route whose namespace is mounted twice", () => {
+  it("names the path for a namespace mounted twice at the one place", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    expect(inspect.stdout).toContain("GET ?");
-    expect(inspect.stdout).toContain(
-      "The router this route is declared on is mounted more than once",
-    );
-    expect(inspect.stdout).not.toContain("/exports/{export_id}");
+    expect(inspect.stdout).toContain("/exports/{export_id}");
+    expect(inspect.stdout).not.toContain("is mounted more than once");
   });
 
   it("canonicalizes a Werkzeug converter into a path parameter", () => {

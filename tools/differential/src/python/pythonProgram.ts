@@ -686,9 +686,8 @@ function fastapiGroupRenderers(
         ...group.innerRoutes,
         ...group.outerRoutes,
       ]);
-      // The inner router is two mount hops from the app, one past
-      // what the prefix reading follows, so its routes abstain while
-      // the outer router's own routes still claim.
+      // The inner router is two mount hops from the app, and the
+      // composition follows the chain, so both routers' routes claim.
       return {
         definitionLines: [
           ...(modelName !== null ? modelLines(modelName) : []),
@@ -701,7 +700,7 @@ function fastapiGroupRenderers(
             object: `inner_${gi}`,
             modelName,
             prefixes: `/m${gi}/out${gi}/in${gi}`,
-            claimable: false,
+            claimable: true,
           }),
           `router_${gi} = APIRouter(prefix="/out${gi}")`,
           "",
@@ -1191,9 +1190,8 @@ function namespaceRenderers(
       moduleMounts: [],
       factoryMounts: [],
     }),
-    // Both mounts register the same resources at the same path, so the
-    // app serves one path and which mount put it there is not written
-    // down: the pack abstains rather than pick one.
+    // Both mounts register the same resources at the same path, so
+    // every mount chain agrees and the pack claims that one path.
     mountedTwice: (namespace) => ({
       file: file([
         constructed(`ns${k}`, `, path="/t${k}"`),
@@ -1204,7 +1202,7 @@ function namespaceRenderers(
           state,
           routeDecorator: "ns.route",
           prefix: `${api.prefix}/t${k}`,
-          claimable: false,
+          claimable: true,
         }),
       ]),
       mainImport,

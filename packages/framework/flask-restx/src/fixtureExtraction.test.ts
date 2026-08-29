@@ -74,13 +74,6 @@ function consumer(
   };
 }
 
-/** Every gap description on a summary, joined into one string to match against. */
-function gapTextOf(summary: BehavioralSummary | undefined): string {
-  return summary === undefined
-    ? ""
-    : summary.gaps.map((gap) => gap.description).join("\n");
-}
-
 async function extractFixture() {
   const files = findPythonFiles(fixtureRoot);
   return extractPythonProject({
@@ -218,7 +211,7 @@ describe("extraction over fixtures/python-webapp", () => {
     ]);
   });
 
-  it("names no path for a namespace mounted more than once", async () => {
+  it("names the path for a namespace mounted twice at the one place", async () => {
     const { summaries } = await extractFixture();
     const exported = summaries.find(
       (s) => s.identity.name === "ExportDetail.get",
@@ -226,9 +219,8 @@ describe("extraction over fixtures/python-webapp", () => {
     expect(exported?.identity.boundaryBinding?.semantics).toEqual({
       name: "rest",
       method: "GET",
-      path: null,
+      path: "/exports/{export_id}",
     });
-    expect(gapTextOf(exported)).toContain("is mounted more than once");
   });
 
   it("every discovered route is low-confidence: v0 reads no body", async () => {

@@ -376,9 +376,9 @@ describe("renderPythonProgram", () => {
       ["Alpha0.get", "abstain", ["/ns0/alpha0"]],
       // Never mounted, so never served at all.
       ["Beta1.get", "abstain", []],
-      // Both mounts land on one path, and which one served it is not
-      // written down.
-      ["Gamma2.get", "abstain", ["/t2/gamma2"]],
+      // Both mounts land on one path, so the chains agree and the
+      // pack claims it.
+      ["Gamma2.get", "claim", ["/t2/gamma2"]],
     ]);
   });
 
