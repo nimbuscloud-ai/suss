@@ -113,6 +113,10 @@ import {
 } from "./discovery/mountPrefix.js";
 import { stringValueOf } from "./discovery/resolveValue.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
+import {
+  forgetReassignedNamesUnstated,
+  reassignedNamesUnstated,
+} from "./facts/extract.js";
 import { ResolutionStore } from "./facts/store.js";
 import { deriveGraphqlContract } from "./graphqlContract.js";
 import { endLineOf, startLineOf } from "./lines.js";
@@ -2047,6 +2051,7 @@ export function createTypeScriptAdapter(
       // Clear the record first: what this run could not read is what
       // this run reports.
       forgetUnreadableExportFiles();
+      forgetReassignedNamesUnstated();
 
       // Read before bootstrap so the cache check below can run against
       // it, and a hit costs no parsing.
@@ -2431,6 +2436,7 @@ export function createTypeScriptAdapter(
               sourceFiles.map((f) => f.getFilePath()),
             ),
             filesWithUnreadableExports: unreadableExportFiles(),
+            reassignedNamesUnstated: reassignedNamesUnstated(),
           }),
         );
       }

@@ -39,6 +39,7 @@ const firedBy = (name: string, packs: PackFunnel[]) =>
     summaries: 0,
     filesWithUnreadableExports: [],
     emptyStage: null,
+    reassignedNamesUnstated: 0,
   }).find((check) => check.name === name)?.violations ?? [];
 
 const drops = (packs: PackFunnel[]) =>
@@ -189,6 +190,7 @@ describe("who a check is addressed to", () => {
       summaries: 0,
       filesWithUnreadableExports: [],
       emptyStage: null,
+      reassignedNamesUnstated: 0,
     });
     const audienceOf = (name: string) =>
       checks.find((check) => check.name === name)?.audience;
@@ -241,6 +243,7 @@ describe("the gradient a declared pack sits on", () => {
       summaries: 0,
       filesWithUnreadableExports: [],
       emptyStage: null,
+      reassignedNamesUnstated: 0,
     });
 
   it("passes over a pack written as a hand-rolled walk", () => {
@@ -303,6 +306,7 @@ describe("the gradient a declared pack sits on", () => {
       summaries: 0,
       filesWithUnreadableExports: [],
       emptyStage: null,
+      reassignedNamesUnstated: 0,
     });
     const audienceOf = (name: string) =>
       checks.find((check) => check.name === name)?.audience;
@@ -324,6 +328,7 @@ describe("formatPackHealth", () => {
       summaries: 0,
       filesWithUnreadableExports: [],
       emptyStage: null,
+      reassignedNamesUnstated: 0,
     });
 
   it("says nothing when the caller asked for an audience that found nothing", () => {

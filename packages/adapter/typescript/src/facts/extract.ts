@@ -556,9 +556,26 @@ function emitBindingValues(
   const { values, inOrder } = writesToBinding(declaration);
   const last = values[values.length - 1];
   if (!inOrder || last === undefined) {
+    reassignedUnstated.add(declarationId);
     return;
   }
   fact(db, "endsHolding", declarationId, emitValue(db, table, last));
+}
+
+const reassignedUnstated = new Set<string>();
+
+/**
+ * How many reassigned names this run stated nothing for, because
+ * control flow decides which write a reader sees. The number says
+ * whether scoped reaching definitions is worth writing; the design's
+ * order ends on measuring it.
+ */
+export function reassignedNamesUnstated(): number {
+  return reassignedUnstated.size;
+}
+
+export function forgetReassignedNamesUnstated(): void {
+  reassignedUnstated.clear();
 }
 
 /**
