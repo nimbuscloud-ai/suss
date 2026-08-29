@@ -5,6 +5,7 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { ResolutionStore } from "../facts/store.js";
 import {
   enclosingFunctionRoot,
   functionNameOrAnon,
@@ -13,10 +14,9 @@ import {
   resolveGraphqlDocument,
   unreadableDocument,
 } from "./graphqlShared.js";
-import { namedImportsOf } from "./importScan.js";
+import { callsByOriginName } from "./importedCalls.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
-import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 interface HookSpec {
@@ -30,53 +30,46 @@ export function discoverGraphqlHookCalls(
   kind: string,
   resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
-  // Resolve each hook's local name by walking named imports on the
-  // target module. A hook imported under an alias is honored:
+  // The store follows each hook call's callee to the module's export,
+  // so an alias and a project barrel both match:
   // `import { useQuery as useFoo } from "@apollo/client"`.
-  const hookByLocal = new Map<string, HookSpec>();
+  const store = resolution ?? new ResolutionStore();
   const operationTypeByHook = new Map<string, GraphqlOperationType>(
     match.hooks.map((h) => [h.hookName, h.operationType]),
   );
-  for (const one of namedImportsOf(sourceFile, [match.importModule])) {
-    const operationType = operationTypeByHook.get(one.canonical);
-    if (operationType !== undefined) {
-      hookByLocal.set(one.local, { canonical: one.canonical, operationType });
-    }
-  }
-  if (hookByLocal.size === 0) {
-    return [];
-  }
+  const hookCalls = callsByOriginName(
+    sourceFile,
+    store,
+    match.importModule,
+    new Set(operationTypeByHook.keys()),
+  );
 
   const results: DiscoveredUnit[] = [];
-  sourceFile.forEachDescendant((node) => {
+  for (const [node, canonical] of hookCalls) {
     if (!Node.isCallExpression(node)) {
-      return;
+      continue;
     }
-    const callee = node.getExpression();
-    if (!Node.isIdentifier(callee)) {
-      return;
+    const operationType = operationTypeByHook.get(canonical);
+    if (operationType === undefined) {
+      continue;
     }
-    const spec = hookByLocal.get(callee.getText());
-    if (spec === undefined) {
-      return;
-    }
+    const spec: HookSpec = { canonical, operationType };
     const args = node.getArguments();
     if (args.length === 0) {
-      return;
+      continue;
     }
     const document =
-      resolveGraphqlDocument(args[0], resolution) ??
-      unreadableDocument(args[0]);
+      resolveGraphqlDocument(args[0], store) ?? unreadableDocument(args[0]);
     const operationInfo = operationInfoFromResolution(
       document,
       spec.operationType,
     );
     if (operationInfo === null) {
-      return;
+      continue;
     }
     const enclosing = enclosingFunctionRoot(node);
     if (enclosing === null) {
-      return;
+      continue;
     }
     // Name the unit after the enclosing function + operation so
     // multiple hook calls inside one component produce distinct
@@ -94,6 +87,6 @@ export function discoverGraphqlHookCalls(
       callSite: { callExpression: node, methodName: spec.canonical },
       operationInfo,
     });
-  });
+  }
   return results;
 }

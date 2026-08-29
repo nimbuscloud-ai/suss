@@ -2,7 +2,13 @@
 // a pack describes and read the endpoint each one is built with.
 
 import picomatch from "picomatch";
-import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
+import {
+  type CallExpression,
+  type NewExpression,
+  Node,
+  type ObjectLiteralExpression,
+  type SourceFile,
+} from "ts-morph";
 
 import {
   isGraphqlOperationBinding,
@@ -10,13 +16,14 @@ import {
   withGraphqlMetadata,
 } from "@suss/behavioral-ir";
 
+import { ResolutionStore } from "../facts/store.js";
 import { peelSyntax } from "../walk/unwrap.js";
+import { callsByOriginName } from "./importedCalls.js";
 import { namedImportsOf } from "./importScan.js";
 import { stringValueOf } from "./resolveValue.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
-import type { ResolutionStore } from "../facts/store.js";
 
 export interface GraphqlClientRef {
   /** The endpoint string when the construction wrote a literal. */
@@ -151,18 +158,23 @@ export function collectGraphqlClientRefs(
     return [];
   }
 
+  const store = resolution ?? new ResolutionStore();
   const refs: GraphqlClientRef[] = [];
   for (const sourceFile of sourceFiles) {
-    const localNames = localNamesFor(sourceFile, specs);
-    if (localNames.size === 0) {
-      continue;
-    }
-    sourceFile.forEachDescendant((node) => {
-      const found = constructionRef(node, localNames, resolution);
-      if (found !== null) {
-        refs.push(found);
+    for (const spec of specs) {
+      const constructions = callsByOriginName(
+        sourceFile,
+        store,
+        spec.importModule,
+        new Set([spec.importName]),
+      );
+      for (const node of constructions.keys()) {
+        const found = constructionRef(node, spec.uriProperty, resolution);
+        if (found !== null) {
+          refs.push(found);
+        }
       }
-    });
+    }
   }
   return refs;
 }
@@ -428,43 +440,11 @@ function localImportName(
   return null;
 }
 
-/** Local names the file binds to a declared constructor or factory, with the uri property each looks for. */
-function localNamesFor(
-  sourceFile: SourceFile,
-  specs: ReadonlyArray<{
-    importModule: string;
-    importName: string;
-    uriProperty: string;
-  }>,
-): Map<string, string> {
-  const names = new Map<string, string>();
-  for (const spec of specs) {
-    for (const one of namedImportsOf(sourceFile, [spec.importModule])) {
-      if (one.canonical === spec.importName) {
-        names.set(one.local, spec.uriProperty);
-      }
-    }
-  }
-  return names;
-}
-
 function constructionRef(
-  node: Node,
-  localNames: ReadonlyMap<string, string>,
+  node: NewExpression | CallExpression,
+  uriProperty: string,
   resolution: ResolutionStore | undefined,
 ): GraphqlClientRef | null {
-  if (!Node.isNewExpression(node) && !Node.isCallExpression(node)) {
-    return null;
-  }
-  const callee = node.getExpression();
-  if (callee === undefined || !Node.isIdentifier(callee)) {
-    return null;
-  }
-  const uriProperty = localNames.get(callee.getText());
-  if (uriProperty === undefined) {
-    return null;
-  }
-
   const optionsArg = node.getArguments()[0];
   if (optionsArg === undefined || !Node.isObjectLiteralExpression(optionsArg)) {
     return null;

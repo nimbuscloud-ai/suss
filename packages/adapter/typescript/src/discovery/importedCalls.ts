@@ -26,6 +26,27 @@ export function callsResolvingTo(
   resolution: ResolutionStore,
   spec: ImportedCallSpec,
 ): Array<CallExpression | NewExpression> {
+  return [
+    ...callsByOriginName(
+      sourceFile,
+      resolution,
+      spec.module,
+      new Set([spec.name]),
+    ).keys(),
+  ];
+}
+
+/**
+ * The calls whose callee comes from one of `names` exported by
+ * `module`, each mapped to the export it resolves to. One batched ask
+ * per file, however many names a pack matches.
+ */
+export function callsByOriginName(
+  sourceFile: SourceFile,
+  resolution: ResolutionStore,
+  module: string,
+  names: ReadonlySet<string>,
+): Map<CallExpression | NewExpression, string> {
   const candidates: Array<CallExpression | NewExpression> = [];
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node) && !Node.isNewExpression(node)) {
@@ -36,19 +57,26 @@ export function callsResolvingTo(
       candidates.push(node);
     }
   });
+
+  const matched = new Map<CallExpression | NewExpression, string>();
   if (candidates.length === 0) {
-    return [];
+    return matched;
   }
 
   const origins = resolution.importOriginsOfMany(
     candidates.map((call) => call.getExpression()),
-    [spec.module],
+    [module],
   );
-  return candidates.filter((call) =>
-    (origins.get(call.getExpression()) ?? []).some(
-      (origin) => origin.path.length === 1 && origin.path[0] === spec.name,
-    ),
-  );
+  for (const call of candidates) {
+    const origin = (origins.get(call.getExpression()) ?? []).find(
+      (one) => one.path.length === 1 && names.has(one.path[0] ?? ""),
+    );
+    const name = origin?.path[0];
+    if (name !== undefined) {
+      matched.set(call, name);
+    }
+  }
+  return matched;
 }
 
 /** Whether every declaration behind a name is this project's own function or class. */
