@@ -216,30 +216,15 @@ function collectionOf(
 /**
  * The `model(...)` call behind the receiver, or null where the receiver
  * came from somewhere this cannot follow. A static call is made on the
- * model itself. A document is one hop further along, because it was
- * either built from the model, `new User({ name })`, or read back off a
- * query, `await User.findById(id)`.
+ * model itself, a construction and a query result are hops further
+ * along, and the anchor op follows all of them through the fact layer.
  */
 function modelCallIn(call: CallOps): CallOps | null {
-  const receiver = call.receiver();
-  if (receiver === null) {
-    return null;
-  }
   return (
-    modelFactoryCall(receiver) ??
-    modelFactoryCall(receiver.callee()) ??
-    modelFactoryCall(receiver.receiver())
+    call.anchorCall?.(
+      constructedFrom({ from: [CLIENT_MODULE], named: [MODEL_FACTORY] }),
+    ) ?? null
   );
-}
-
-/** The call itself, when it is a `model(...)` the library declares. */
-function modelFactoryCall(call: CallOps | null): CallOps | null {
-  if (call === null) {
-    return null;
-  }
-  const named = call.method() ?? call.calleeText();
-  const fromLibrary = call.isFrom(constructedFrom(CLIENT_MODULE));
-  return named === MODEL_FACTORY && fromLibrary ? call : null;
 }
 
 /** The collection a schema's options state, when the model call leaves it there. */

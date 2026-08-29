@@ -44,7 +44,10 @@ import type {
   TerminalPattern,
 } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
-import type { OriginatesFrom } from "./resolve/invocationEffects.js";
+import type {
+  AnchorCallsOf,
+  OriginatesFrom,
+} from "./resolve/invocationEffects.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -161,6 +164,7 @@ export function extractRawBranches(
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): RawBranchResult {
   const terminals = findTerminals(
     func,
@@ -177,6 +181,7 @@ export function extractRawBranches(
       barriers,
       resolveWrittenValue,
       originatesFrom,
+      anchorCallsOf,
     ),
     ...runAccessRecognizers(
       func,
@@ -184,6 +189,7 @@ export function extractRawBranches(
       barriers,
       resolveWrittenValue,
       originatesFrom,
+      anchorCallsOf,
     ),
   ];
 

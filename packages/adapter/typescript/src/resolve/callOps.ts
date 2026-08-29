@@ -17,6 +17,7 @@ import { rootIdentifier } from "../configuredCall.js";
 import { parameterReads } from "../parameterReads.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
+  type AnchorCallsOf,
   effectArgOf,
   isImportedFrom,
   methodDeclaredIn,
@@ -26,6 +27,7 @@ import { readName } from "./readName.js";
 
 import type {
   AstCapableOps,
+  CallOps,
   ReceiverOrigin,
   UnsettledName,
   ValueEntry,
@@ -178,6 +180,7 @@ export function callOpsFor(
   call: Called,
   resolveWrittenValue?: Resolve,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): AstCapableOps {
   const resolve = resolveWrittenValue ?? (() => null);
   const expression = calleeOf(call);
@@ -224,8 +227,64 @@ export function callOpsFor(
       const argument = argumentsOf()[index];
       return argument === undefined ? null : valueOpsFor(argument, resolve);
     },
+    anchorCall: (origin) =>
+      anchorCallBehind(
+        callee === null ? expression : callee.getExpression(),
+        origin,
+        resolve,
+        originatesFrom,
+        anchorCallsOf,
+      ),
     ast: () => call,
   };
+}
+
+/**
+ * The one call behind `subject` the origin accepts. The chain rules
+ * hand back every call they pass; this filters them against the
+ * origin and keeps the single-answer policy: two distinct matches say
+ * nothing, since picking one would depend on fact order.
+ */
+function anchorCallBehind(
+  subject: Node,
+  origin: ReceiverOrigin,
+  resolve: Resolve,
+  originatesFrom: OriginatesFrom | undefined,
+  anchorCallsOf: AnchorCallsOf | undefined,
+): CallOps | null {
+  if (
+    anchorCallsOf === undefined ||
+    originatesFrom === undefined ||
+    origin.origin !== "constructed"
+  ) {
+    return null;
+  }
+
+  const found = anchorCallsOf(subject, (candidate) => {
+    if (!Node.isCallExpression(candidate) && !Node.isNewExpression(candidate)) {
+      return false;
+    }
+    const candidateCallee = calleeOf(candidate as Called);
+    if (
+      origin.named !== undefined &&
+      !origin.named.includes(constructorName(candidate))
+    ) {
+      return false;
+    }
+    const root = rootIdentifier(candidateCallee) ?? candidateCallee;
+    return origin.importedFrom.some((module) => originatesFrom(root, module));
+  });
+
+  const distinct = [...new Set(found)];
+  const only = distinct[0];
+  if (distinct.length !== 1 || only === undefined) {
+    return null;
+  }
+
+  if (!Node.isCallExpression(only) && !Node.isNewExpression(only)) {
+    return null;
+  }
+  return callOpsFor(only, resolve, originatesFrom, anchorCallsOf);
 }
 
 /**

@@ -168,7 +168,10 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
-import type { OriginatesFrom } from "./resolve/invocationEffects.js";
+import type {
+  AnchorCallsOf,
+  OriginatesFrom,
+} from "./resolve/invocationEffects.js";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -566,6 +569,7 @@ export function extractCodeStructure(
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): RawCodeStructure {
   // One table per unit: every shape read during this call goes into it.
   const read = withDefinitions(() =>
@@ -577,6 +581,7 @@ export function extractCodeStructure(
       barriers,
       resolveWrittenValue,
       originatesFrom,
+      anchorCallsOf,
     ),
   );
   return read.definitions === null
@@ -665,6 +670,7 @@ function readCodeStructure(
   barriers: DescentBarriers,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   if (func === null) {
@@ -684,6 +690,7 @@ function readCodeStructure(
     barriers,
     resolveWrittenValue,
     originatesFrom,
+    anchorCallsOf,
   );
   let branches = extracted.branches;
   const unmatchedReturns = countUnmatchedReturns(
@@ -1140,6 +1147,9 @@ function extractFromSourceFile(
           ? undefined
           : (value, module) =>
               resolution.importOriginsOf(value, [module]).length > 0,
+        resolution === undefined
+          ? undefined
+          : (value, matches) => resolution.anchorCallsOf(value, matches),
       );
 
       // Set before the branches below, since both of them overwrite it
@@ -1371,6 +1381,9 @@ function extractFromSourceFile(
         ? undefined
         : (value, module) =>
             resolution.importOriginsOf(value, [module]).length > 0,
+      resolution === undefined
+        ? undefined
+        : (value, matches) => resolution.anchorCallsOf(value, matches),
     ).map((recognized) => recognized.effect),
     options,
   );
