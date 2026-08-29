@@ -94,7 +94,7 @@ export interface PrismaRecognizerOptions {
   /**
    * Storage system the recognized calls target. Must match the
    * `storageSystem` on schema-reader provider summaries; otherwise
-   * pairing keys won't match. Defaults to `"postgres"` since that's
+   * pairing keys won't match. Defaults to `"postgresql"` since that's
    * the dominant Prisma deployment.
    */
   storageSystem?: "postgresql" | "mysql" | "sqlite";

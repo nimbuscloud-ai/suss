@@ -94,6 +94,14 @@ for (const { name, specifier } of builtins) {
       `${bundled} ships inside @suss/packs and is not private, so a release publishes the same code under two names.`,
     );
   }
+
+  // Somebody deciding whether -f <name> reads their code has the pack's
+  // own source and nothing else without this.
+  if (!fs.existsSync(path.join(path.dirname(manifest), "README.md"))) {
+    problems.push(
+      `${bundled} has no README.md, so what it recognizes is written down only in its source.`,
+    );
+  }
 }
 
 const named = new Set(builtins.map((builtin) => builtin.name));
