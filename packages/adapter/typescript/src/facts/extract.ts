@@ -192,6 +192,19 @@ function emitImportFacts(
   }
 }
 
+/** The name the source module exports this import-shaped declaration under. */
+function importedNameOf(declaration: Node): string {
+  if (Node.isImportSpecifier(declaration)) {
+    return declaration.getName();
+  }
+
+  if (Node.isNamespaceImport(declaration)) {
+    return NAMESPACE_IMPORT_NAME;
+  }
+
+  return "default";
+}
+
 /** The module specifier an import-shaped declaration names. */
 function importSpecifierOf(declaration: Node): string | null {
   if (Node.isImportSpecifier(declaration)) {
@@ -1137,11 +1150,15 @@ function emitLocalExportLists(
           );
           const moduleKey =
             importDecl === undefined ? null : moduleKeyOf(importDecl);
-          const importedName = Node.isImportSpecifier(declaration)
-            ? declaration.getName()
-            : "default";
           if (moduleKey !== null) {
-            fact(db, "reExports", filePath, alias, moduleKey, importedName);
+            fact(
+              db,
+              "reExports",
+              filePath,
+              alias,
+              moduleKey,
+              importedNameOf(declaration),
+            );
           }
           continue;
         }
