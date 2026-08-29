@@ -1,4 +1,4 @@
-// routers.ts: router prefix composition, one mount hop deep.
+// routers.ts: router prefix composition, through chains of any length.
 //
 // A route declared on a sub-router (`@router.get("/x")` where `router
 // = APIRouter(prefix="/items")`) is served at a path the route file
@@ -8,9 +8,9 @@
 // every module-level router construction, every mount call whose
 // router argument is a bare name (bound in the same file, or imported
 // from the file that constructed it), and the literal prefixes on
-// both. Everything else abstains with a reason: a non-literal prefix,
-// a router nobody mounts by name, a router mounted twice, a router
-// mounted onto another router (a second hop), or a mount that
+// both, composing chains through the shared mount composition.
+// Everything else abstains with a reason: a non-literal prefix, a
+// router nobody mounts by name, mounts that disagree, or one that
 // overrides the prefix the constructor stated. Discovery turns an
 // abstention into a unit that keeps its name and gives no path, so
 // it pairs with nothing rather than with whatever a guessed path
@@ -29,6 +29,8 @@
 //
 // The object a mount is called on states a prefix of its own where
 // the pack says so, in front of the other two.
+
+import { type MountEdge, mountPathsOf } from "@suss/resolution";
 
 import {
   bodyStatements,
@@ -139,7 +141,15 @@ type OwnPrefixResolution =
   | { kind: "abstain"; reason: string };
 
 type MountState =
-  | { kind: "mounted"; includePrefix: string; site: MountSite }
+  | {
+      kind: "mounted";
+      includePrefix: string;
+      site: MountSite;
+      /** The router construction this mount hangs the child under, or
+       * null when the includer is the app or a carrier, which is a
+       * chain's root. */
+      parentValueKey: string | null;
+    }
   | { kind: "abstain"; reason: string };
 
 /** Where a mount call is written: a module's top level, which runs on import, or one function's body, which runs only if something calls it. */
@@ -171,7 +181,10 @@ interface PatternIndex {
   /** The project's facts, when the caller built them, so a loop over a call can be settled. */
   facts?: Database;
   constructions: ConstructionsByName;
-  mounts: Map<Construction, MountState>;
+  /** Every mount of each construction, one entry per mount call. */
+  mounts: Map<Construction, MountState[]>;
+  /** The mount edges over every construction, built once on first ask. */
+  mountEdges?: ReadonlyMap<string, readonly MountEdge[]>;
   /** Keyed by location, so one loop counts once however many routers ask about it. */
   unenumerableLoops: Map<string, UnenumerableLoop>;
   /** Every construction from the carrier's modules, the app alongside the blueprint, so the two can be told apart. */
@@ -267,26 +280,112 @@ export function buildRouterIndex(
       }
 
       const routerPath = displayPaths.get(module);
-      const mount = index.mounts.get(construction);
-      if (mount === undefined) {
+      const states = index.mounts.get(construction);
+      if (states === undefined || states.length === 0) {
         return { kind: "abstain", reason: unmountedReason(index, routerPath) };
       }
 
-      if (mount.kind === "abstain") {
-        return { kind: "abstain", reason: mount.reason };
+      for (const state of states) {
+        if (state.kind === "abstain") {
+          return { kind: "abstain", reason: state.reason };
+        }
+
+        const rivalled = rivalRegistration(index, state.site, routerPath);
+        if (rivalled !== null) {
+          return { kind: "abstain", reason: rivalled };
+        }
       }
 
-      const rivalled = rivalRegistration(index, mount.site, routerPath);
-      if (rivalled !== null) {
-        return { kind: "abstain", reason: rivalled };
+      const composed = composedMountPrefix(index, construction);
+      if (composed.kind === "abstain") {
+        return composed;
       }
 
       return {
         kind: "composed",
-        value: mount.includePrefix + ownPrefix.value,
+        value: composed.value + ownPrefix.value,
       };
     },
   };
+}
+
+/**
+ * The one prefix every mount chain lands this construction at, through
+ * however many routers in turn. Cycles and chains through a mount that
+ * abstained compose to nothing; two mounts landing at different paths
+ * do not settle which one a route takes.
+ */
+function composedMountPrefix(
+  index: PatternIndex,
+  construction: Construction,
+): OwnPrefixResolution {
+  const paths = mountPathsOf(mountEdgesOf(index), construction.valueKey);
+  if (paths === null) {
+    return {
+      kind: "abstain",
+      reason:
+        "is mounted through a chain of routers this reading cannot compose",
+    };
+  }
+
+  const distinct = [...new Set(paths)];
+  const only = distinct[0];
+  if (distinct.length !== 1 || only === undefined) {
+    return {
+      kind: "abstain",
+      reason: "is mounted more than once, at prefixes that do not agree",
+    };
+  }
+
+  return { kind: "composed", value: only };
+}
+
+/**
+ * A construction whose own mounts abstain, and a router somebody
+ * mounts things on without ever being mounted itself, both get a
+ * self-edge here: the cycle it makes composes to nothing, so every
+ * chain through them abstains instead of dropping the missing hops.
+ */
+function mountEdgesOf(
+  index: PatternIndex,
+): ReadonlyMap<string, readonly MountEdge[]> {
+  if (index.mountEdges !== undefined) {
+    return index.mountEdges;
+  }
+
+  const edges = new Map<string, MountEdge[]>();
+  const push = (childKey: string, edge: MountEdge): void => {
+    const list = edges.get(childKey) ?? [];
+    list.push(edge);
+    edges.set(childKey, list);
+  };
+
+  for (const [target, states] of index.mounts) {
+    for (const state of states) {
+      if (state.kind === "abstain") {
+        push(target.valueKey, { parentId: target.valueKey, prefix: "" });
+        continue;
+      }
+      push(target.valueKey, {
+        parentId: state.parentValueKey ?? rootKeyOf(target),
+        prefix: state.includePrefix,
+      });
+    }
+  }
+
+  for (const [valueKey, construction] of index.byValueKey) {
+    if (!index.mounts.has(construction)) {
+      push(valueKey, { parentId: valueKey, prefix: "" });
+    }
+  }
+
+  index.mountEdges = edges;
+  return edges;
+}
+
+/** A chain root no construction can collide with. */
+function rootKeyOf(target: Construction): string {
+  return `root:${target.valueKey}`;
 }
 
 /**
@@ -860,6 +959,7 @@ const MOUNT_STATE_BY_EFFECT: Record<
     kind: "mounted",
     includePrefix: statedPrefix,
     site,
+    parentValueKey: null,
   }),
   replaces: () => ({
     kind: "abstain",
@@ -873,15 +973,9 @@ function recordMount(
   target: Construction,
   state: MountState,
 ): void {
-  if (index.mounts.has(target)) {
-    index.mounts.set(target, {
-      kind: "abstain",
-      reason: "is mounted more than once",
-    });
-    return;
-  }
-
-  index.mounts.set(target, state);
+  const states = index.mounts.get(target) ?? [];
+  states.push(state);
+  index.mounts.set(target, states);
 }
 
 /** Everything a walk over one file needs, from the file itself down to the index it fills in. */
@@ -960,7 +1054,7 @@ const WALK_DESCENTS: Record<
   decorated_definition: (stmt, position, scan, visit) => {
     walkStatements([stripDecorators(stmt).definition], position, scan, visit);
   },
-  function_definition: (stmt, position, scan, visit) => {
+  function_definition: (stmt, _position, scan, visit) => {
     // The binder skips a `def` written inside a block it does not
     // descend, and reading one against the enclosing scope would take
     // its locals for module names.
@@ -1321,8 +1415,10 @@ function recordMountStatement(
     position.scope,
     scan,
   );
+  const includerKey = nodeId(scan.bound.file, mountCall.includerCall);
   const state = mountStateOf(
     mountCall.includerConstructorName,
+    scan.index.byValueKey.get(includerKey) ?? null,
     keywordArgs,
     objectPrefix,
     scan.composition,
@@ -1342,25 +1438,21 @@ function recordMountStatement(
 /** Where one mount call leaves whatever it mounts, or why nothing can be said about it. */
 function mountStateOf(
   includerConstructorName: string,
+  includer: Construction | null,
   keywordArgs: Record<string, DecoratorArg>,
   objectPrefix: OwnPrefixResolution,
   composition: RouterComposition,
   site: MountSite,
   scope: Scope,
 ): MountState {
-  if (includerConstructorName === composition.routerConstructorName) {
-    return {
-      kind: "abstain",
-      reason:
-        "is mounted onto another router, one hop past what this reading follows",
-    };
-  }
-
-  if (objectPrefix.kind === "abstain") {
-    return {
-      kind: "abstain",
-      reason: `is mounted on an object that ${objectPrefix.reason}`,
-    };
+  const base = mountBaseOf(
+    includerConstructorName,
+    includer,
+    objectPrefix,
+    composition,
+  );
+  if (base.kind === "abstain") {
+    return base;
   }
 
   const mountPrefix = readPrefixKeyword(
@@ -1380,7 +1472,12 @@ function mountStateOf(
   // constructor put it, whichever way the library reads a prefix
   // that is stated.
   if (mountPrefix.kind === "unstated") {
-    return { kind: "mounted", includePrefix: objectPrefix.value, site };
+    return {
+      kind: "mounted",
+      includePrefix: base.value,
+      site,
+      parentValueKey: base.parentValueKey,
+    };
   }
 
   const effect = composition.mountPrefixEffect ?? "prefixes";
@@ -1389,7 +1486,72 @@ function mountStateOf(
     return state;
   }
 
-  return { ...state, includePrefix: objectPrefix.value + state.includePrefix };
+  return {
+    ...state,
+    includePrefix: base.value + state.includePrefix,
+    parentValueKey: base.parentValueKey,
+  };
+}
+
+type MountBase =
+  | { kind: "composed"; value: string; parentValueKey: string | null }
+  | { kind: "abstain"; reason: string };
+
+/**
+ * What goes in front of a mount's own stated prefix. A carrier
+ * contributes its object prefix and roots the chain; a router
+ * contributes its constructor prefix and hands its own mounts on, so
+ * the chain composes hop by hop.
+ */
+function mountBaseOf(
+  includerConstructorName: string,
+  includer: Construction | null,
+  objectPrefix: OwnPrefixResolution,
+  composition: RouterComposition,
+): MountBase {
+  if (includerConstructorName !== composition.routerConstructorName) {
+    if (objectPrefix.kind === "abstain") {
+      return {
+        kind: "abstain",
+        reason: `is mounted on an object that ${objectPrefix.reason}`,
+      };
+    }
+
+    return {
+      kind: "composed",
+      value: objectPrefix.value,
+      parentValueKey: null,
+    };
+  }
+
+  if (includer === null) {
+    return {
+      kind: "abstain",
+      reason: "is mounted onto a router this reading never saw constructed",
+    };
+  }
+
+  if (includer.reassigned) {
+    return {
+      kind: "abstain",
+      reason:
+        "is mounted onto a router that shares its variable name with a second router construction",
+    };
+  }
+
+  const parentOwn = composedOwnPrefix(includer.prefix, composition);
+  if (parentOwn.kind === "abstain") {
+    return {
+      kind: "abstain",
+      reason: `is mounted onto a router that ${parentOwn.reason}`,
+    };
+  }
+
+  return {
+    kind: "composed",
+    value: parentOwn.value,
+    parentValueKey: includer.valueKey,
+  };
 }
 
 /**

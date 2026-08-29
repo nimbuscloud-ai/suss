@@ -483,8 +483,8 @@ describe("router prefix composition: abstentions", () => {
     );
   });
 
-  it("abstains when the router is mounted onto another router", async () => {
-    const reason = await abstained(
+  it("composes through a router mounted onto another router", async () => {
+    const units = await unitsOf(
       [
         "from fastapi import FastAPI, APIRouter",
         "",
@@ -502,9 +502,56 @@ describe("router prefix composition: abstentions", () => {
         'app.include_router(outer, prefix="/outer")',
         "",
       ].join("\n"),
+    );
+    expect(pathOf(units, "ping")).toBe("/outer/inner/ping");
+  });
+
+  it("puts an intermediate router's constructor prefix into the chain", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        'outer = APIRouter(prefix="/o")',
+        'inner = APIRouter(prefix="/i")',
+        "",
+        "",
+        '@inner.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+        "",
+        'outer.include_router(inner, prefix="/inner")',
+        'app.include_router(outer, prefix="/outer")',
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "ping")).toBe("/outer/o/inner/i/ping");
+  });
+
+  it("abstains when a chain ends at a router nothing mounts", async () => {
+    const reason = await abstained(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        "outer = APIRouter()",
+        "inner = APIRouter()",
+        "",
+        "",
+        '@inner.get("/ping")',
+        "def ping():",
+        "    pass",
+        "",
+        "",
+        'outer.include_router(inner, prefix="/inner")',
+        "",
+      ].join("\n"),
       "ping",
     );
-    expect(reason).toContain("is mounted onto another router");
+    expect(reason).toContain(
+      "is mounted through a chain of routers this reading cannot compose",
+    );
   });
 
   it("reads nothing from statements shaped past its one-hop rules", async () => {
@@ -910,7 +957,7 @@ describe("prefix composition for a class-decorator route", () => {
     },
   );
 
-  it("abstains when the same namespace is mounted twice", async () => {
+  it("composes a namespace mounted twice at the one path", async () => {
     const units = await unitsOf(
       mounted([
         '@ns.route("/<int:behavior_id>")',
@@ -924,8 +971,9 @@ describe("prefix composition for a class-decorator route", () => {
       ]),
       [namespaceLike],
     );
-    expect(pathOf(units, "BehaviorDetail.get")).toBeNull();
-    expect(unreadTextOf(units[0])).toContain("is mounted more than once");
+    expect(pathOf(units, "BehaviorDetail.get")).toBe(
+      "/behaviors/{school_id}/{behavior_id}",
+    );
   });
 
   it("abstains when nothing in the files read mounts the namespace", async () => {
