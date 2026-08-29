@@ -76,6 +76,34 @@ describe("what exportsOf lists per module shape", () => {
     expect(exportNamesOf(files, "/hop9.ts")).toEqual(["alpha"]);
   });
 
+  it("a default that states a bare name lists its declaration", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/pack.ts",
+      "function makePack() {}\nexport default makePack;\n",
+    );
+    const store = new ResolutionStore();
+    const values = store.exportsOf(file).get("default") ?? [];
+    expect(values).toHaveLength(1);
+    expect(Node.isFunctionDeclaration(values[0])).toBe(true);
+  });
+
+  it("a default that states an imported name flattens to its source", () => {
+    const project = createTestProject();
+    project.createSourceFile("/inner.ts", "export function alpha() {}\n");
+    project.createSourceFile(
+      "/barrel.ts",
+      'import { alpha } from "./inner.js";\nexport default alpha;\n',
+    );
+    const store = new ResolutionStore();
+    const values =
+      store
+        .exportsOf(project.getSourceFileOrThrow("/barrel.ts"))
+        .get("default") ?? [];
+    expect(values).toHaveLength(1);
+    expect(values[0]?.getSourceFile().getFilePath()).toBe("/inner.ts");
+  });
+
   it("the value behind a re-exported name is the inner function", () => {
     const project = createTestProject();
     project.createSourceFile("/inner.ts", "export function alpha() {}\n");

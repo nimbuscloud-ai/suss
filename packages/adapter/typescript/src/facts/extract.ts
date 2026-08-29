@@ -1119,7 +1119,12 @@ function directExportsOf(sourceFile: SourceFile): Array<[string, Node]> {
     }
 
     if (Node.isExportAssignment(statement) && !statement.isExportEquals()) {
-      found.push(["default", statement.getExpression()]);
+      const expression = statement.getExpression();
+      // A bare name goes through the local-declaration path with the
+      // export lists; anything else is the exported value itself.
+      if (!Node.isIdentifier(expression)) {
+        found.push(["default", expression]);
+      }
     }
   }
   return found;
@@ -1143,29 +1148,61 @@ function emitLocalExportLists(
     for (const named of exportDecl.getNamedExports()) {
       const alias = named.getAliasNode()?.getText() ?? named.getName();
       for (const declaration of named.getLocalTargetDeclarations()) {
-        const specifier = importSpecifierOf(declaration);
-        if (specifier !== null) {
-          const importDecl = declaration.getFirstAncestorByKind(
-            SyntaxKind.ImportDeclaration,
-          );
-          const moduleKey =
-            importDecl === undefined ? null : moduleKeyOf(importDecl);
-          if (moduleKey !== null) {
-            fact(
-              db,
-              "reExports",
-              filePath,
-              alias,
-              moduleKey,
-              importedNameOf(declaration),
-            );
-          }
-          continue;
-        }
-        emitExportedValue(db, table, filePath, alias, declaration);
+        emitExportedDeclaration(db, table, filePath, alias, declaration);
       }
     }
   }
+
+  // `export default x` refers to a local declaration or an import,
+  // the same two cases an export list covers.
+  for (const assignment of sourceFile.getExportAssignments()) {
+    if (assignment.isExportEquals()) {
+      continue;
+    }
+    const expression = assignment.getExpression();
+    if (!Node.isIdentifier(expression)) {
+      continue;
+    }
+    const declarations = expression.getSymbol()?.getDeclarations() ?? [];
+    for (const declaration of declarations) {
+      emitExportedDeclaration(db, table, filePath, "default", declaration);
+    }
+  }
+}
+
+/**
+ * An exported name backed by an import becomes a `reExports` fact for
+ * the rules to flatten; one backed by a local declaration is stated as
+ * the exported value.
+ */
+function emitExportedDeclaration(
+  db: Database,
+  table: NodeTable,
+  filePath: string,
+  alias: string,
+  declaration: Node,
+): void {
+  const specifier = importSpecifierOf(declaration);
+  if (specifier !== null) {
+    const importDecl = declaration.getFirstAncestorByKind(
+      SyntaxKind.ImportDeclaration,
+    );
+    const moduleKey = importDecl === undefined ? null : moduleKeyOf(importDecl);
+    if (moduleKey !== null) {
+      fact(
+        db,
+        "reExports",
+        filePath,
+        alias,
+        moduleKey,
+        importedNameOf(declaration),
+      );
+    }
+
+    return;
+  }
+
+  emitExportedValue(db, table, filePath, alias, declaration);
 }
 
 function emitExportedValue(
