@@ -521,18 +521,30 @@ It does not touch the evaluator.
 
 ## Order, for 0.20.0
 
-1. The base facts for the three binding cases the fuzzer pins. It is
-   the smallest, and the fuzzer measures it in CI.
-2. `settled` in `callOps.ts` becomes one store ask, with no hop loop
-   and no syntactic fallback, and the store into `packageImport` and
-   `factoryTracking`. A value the store leaves unresolved after this
-   is a missing base fact to emit, not a fallback to restore. These
-   reach every pack and close the injected-client shape (#429).
-3. The store in `namedExport`'s default-export pass, with
-   `--datalog-profile` before and after on twenty-front and
-   saleor-storefront.
-4. `moduleExports` onto `moduleExport/3`. The #177 fallback goes with
-   it.
+1. Done before this order was written: the three binding pins are out
+   of the fuzzer's list.
+2. Done (#697, #698). `settled` is one store ask; `packageImport`
+   attribution asks `importOriginsOf`; `factoryTracking` is deleted;
+   the `namespaceImport` and `throughLocalBinding` pins retired.
+   What made it fast enough is worth keeping for every later step: a
+   question with many seeds gets its own demand class, its chains are
+   unrolled to the depth the walk they replace followed, the smallest
+   relation leads each join, and candidates that cannot answer are
+   filtered before seeding. Measured end state: dogfood within eight
+   percent of the pre-change wall time, 28 more consumers paired.
+3. Done before this order was written: the default-export pass asks
+   the store at every site, and the two route pins are retired.
+4. `moduleExports` onto `moduleExport/3`, in two halves the scoping
+   pass found. The export table is circular today: `extractFileFacts`
+   emits `exportsAs` from `exportedDeclarationsOf`, so the facts come
+   from the walk the rules would replace. First the emitter states
+   direct per-file exports syntactically and the `moduleExport` rules
+   do the flattening, behind a `wantedExportsOf` question and a store
+   method whose frontier follows only re-export targets; then
+   `exportedDeclarationsOf` takes the store and its overflow path
+   goes. `resolveAliasedSymbol` keeps the chain warming until step 7
+   replaces its callers, so the #177 fallback narrows here and closes
+   there.
 5. One path convention, owned in one place, with the three
    `fileInScope` callbacks deleted.
 6. Python mount facts plus the shared `mountPath` closure, which
