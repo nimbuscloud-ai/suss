@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 8870,
-      "covered": 7652,
+      "total": 8841,
+      "covered": 7627,
       "skipped": 0,
       "pct": 86.26
     },
     "statements": {
-      "total": 8971,
-      "covered": 7748,
+      "total": 8942,
+      "covered": 7723,
       "skipped": 0,
       "pct": 86.36
     },
     "functions": {
-      "total": 1303,
-      "covered": 1205,
+      "total": 1301,
+      "covered": 1203,
       "skipped": 0,
-      "pct": 92.47
+      "pct": 92.46
     },
     "branches": {
-      "total": 6884,
-      "covered": 5406,
+      "total": 6862,
+      "covered": 5386,
       "skipped": 0,
-      "pct": 78.52
+      "pct": 78.49
     },
     "branchesTrue": {
       "total": 0,
@@ -1255,28 +1255,28 @@
   },
   "src/discovery/mountPrefix.ts": {
     "lines": {
-      "total": 74,
-      "covered": 69,
+      "total": 47,
+      "covered": 46,
       "skipped": 0,
-      "pct": 93.24
+      "pct": 97.87
     },
     "functions": {
-      "total": 7,
-      "covered": 6,
+      "total": 6,
+      "covered": 5,
       "skipped": 0,
-      "pct": 85.71
+      "pct": 83.33
     },
     "statements": {
-      "total": 74,
-      "covered": 69,
+      "total": 47,
+      "covered": 46,
       "skipped": 0,
-      "pct": 93.24
+      "pct": 97.87
     },
     "branches": {
-      "total": 38,
-      "covered": 35,
+      "total": 20,
+      "covered": 19,
       "skipped": 0,
-      "pct": 92.1
+      "pct": 95
     }
   },
   "src/discovery/namedExport.ts": {
@@ -1359,28 +1359,28 @@
   },
   "src/discovery/registrationCall.ts": {
     "lines": {
-      "total": 153,
-      "covered": 134,
+      "total": 151,
+      "covered": 132,
       "skipped": 0,
-      "pct": 87.58
+      "pct": 87.41
     },
     "functions": {
-      "total": 13,
-      "covered": 12,
+      "total": 12,
+      "covered": 11,
       "skipped": 0,
-      "pct": 92.3
+      "pct": 91.66
     },
     "statements": {
-      "total": 154,
-      "covered": 135,
+      "total": 152,
+      "covered": 133,
       "skipped": 0,
-      "pct": 87.66
+      "pct": 87.5
     },
     "branches": {
-      "total": 137,
-      "covered": 109,
+      "total": 133,
+      "covered": 105,
       "skipped": 0,
-      "pct": 79.56
+      "pct": 78.94
     }
   },
   "src/discovery/registrationLoop.ts": {
