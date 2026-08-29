@@ -65,7 +65,7 @@ export interface DrizzleRecognizerOptions {
   /**
    * Storage system the recognized calls target. Must match the
    * `storageSystem` on provider summaries for pairing keys to line
-   * up. Defaults to `"postgres"`, the dominant Drizzle deployment.
+   * up. Defaults to `"postgresql"`, the dominant Drizzle deployment.
    */
   storageSystem?: "postgresql" | "mysql" | "sqlite";
   /** Scope label for the storage binding. Defaults to `"default"`. */
