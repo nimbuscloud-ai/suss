@@ -585,16 +585,35 @@ It does not touch the evaluator.
    matches JSX tags, which have no expression facts yet.
    `resolveAliasedSymbol` is down to its warming and two callers,
    which step 10 retires.
-8. The `ReceiverOrigin` members as `comesFrom` queries (#542). The
-   recognize ops surface shrinks with them.
-9. Ruby and Python storage closures as rules, the first parity test
-   for the claim that layers above facts come along unchanged.
-10. Memoise `helperResolution` and resolve its callee through the
-    store, leaving the guard evaluation where it is.
-11. Measure the reassigned-name count on one large corpus. That
-    number decides whether scoped reaching definitions is worth
-    writing.
+8. First slice done (#712, #713). The `anchorChain` rules follow a
+   receiver back through names, exports, a call's callee, and a
+   method's receiver; `anchorCall` on the ops hands the matching call
+   back under the single-answer policy, and mongoose's three-hop
+   receiver disjunction became one op call. The members with no pack
+   waiting on them (`imported`, `global`, `inherits`) arrive with
+   their first consumer; the ancestry rules from step 9 are what
+   `inherits` reads when it does.
+9. Done (#714, #715). Ruby's ancestry recursion became the shared
+   `ancestryChain` and `wantedBaseName` rules, and Python's
+   grew-until-stable storage loop became `defCallsName` and
+   `queryStart` facts closed by two `reachesStorage` rules. Both
+   languages' pack suites passed untouched, which is the parity claim
+   this step existed to test.
+10. Done (#716). Helper resolution is memoized per callee symbol, and
+    the adapter's `resolveCallee` binding sends the callee through the
+    store, which reaches a helper imported through a project barrel.
+    The guard evaluation stays where it is. `resolveAliasedSymbol` is
+    down to the warming machinery and extract.ts's bare-context
+    fallback.
+11. Done (#717). `reassignedNamesUnstated` rides the extraction
+    report, counted at the one abstention branch in
+    `emitBindingValues`, so every corpus run states the number. The
+    reading that decides on scoped reaching definitions comes off the
+    next large-corpus runs.
 
-Each step ships behind the existing gates: summaries byte-identical
+Each step shipped behind the existing gates: summaries byte-identical
 where discovery finds the same units, the fuzzer's pinned bugs as the
 retirement list, dogfood counts, and engine time from the profile.
+What remains of the order is the engine-side evaluation pass the
+per-step entries deferred: the resume marks that `forgetQuery` nulls,
+so unbounded chains stop re-deriving per batch.
