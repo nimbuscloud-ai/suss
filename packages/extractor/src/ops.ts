@@ -231,10 +231,11 @@ export interface CallOps {
    * The one call behind the receiver the origin accepts, however many
    * name, construction, or query hops separate them. Mongoose's
    * `model(...)` behind a document is the picture. Null when nothing
-   * behind the receiver matches, and null when two distinct calls do,
-   * since picking one would depend on the order facts arrived.
+   * behind the receiver matches, when two distinct calls do (picking
+   * one would depend on the order facts arrived), and for an origin
+   * kind with no construction to hand back.
    */
-  anchorCall?(origin: ConstructedFrom): CallOps | null;
+  anchorCall?(origin: ReceiverOrigin): CallOps | null;
 }
 
 /**
