@@ -756,6 +756,18 @@ export const RESOLUTION_QUESTIONS = [
       lit("callsInto", v("g"), v("m"), v("n")),
     ],
   ),
+
+  // The export table of one module, keyed by the module asked about.
+  // The moduleExport rules flatten re-export chains of any length, and
+  // the demand cone stays on export facts alone.
+  rule(
+    "wantedModuleExport",
+    [v("m"), v("n"), v("value")],
+    [
+      lit("wantedExportsOf", v("m")),
+      lit("moduleExport", v("m"), v("n"), v("value")),
+    ],
+  ),
 ];
 
 /** The relations `RESOLUTION_QUESTIONS` answers into. */

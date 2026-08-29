@@ -101,6 +101,7 @@ const NOT_BASE_FACTS = new Set([
   "wanted",
   "wantedOrigin",
   "wantedCallOrigin",
+  "wantedExportsOf",
 ]);
 
 type Question = "wanted" | "wantedOrigin" | "wantedCallOrigin";
@@ -118,6 +119,7 @@ const QUERY_FACTS: readonly string[] =
         "wanted",
         "wantedOrigin",
         "wantedCallOrigin",
+        "wantedExportsOf",
       ];
 
 /** Deep enough for barrels of barrels, bounded so a wide graph stays cheap. */
@@ -714,6 +716,81 @@ export class ResolutionStore {
     fileSets: ReadonlyArray<FileSetQuery>,
   ): ReadonlyArray<ReadonlySet<SourceFile>> {
     return this.graph.filesReachingAnyPackage(fileSets);
+  }
+
+  /**
+   * Every name a module exports and the values behind each, with
+   * re-export chains flattened by the rules. The frontier follows
+   * re-export targets only, so a barrel of barrels extracts its own
+   * chain and nothing beside it, to any depth.
+   */
+  exportsOf(sourceFile: SourceFile): Map<string, Node[]> {
+    try {
+      return this.collectExports(sourceFile);
+    } finally {
+      this.forgetQuery();
+    }
+  }
+
+  private collectExports(sourceFile: SourceFile): Map<string, Node[]> {
+    const project = sourceFile.getProject();
+    const walked = new Set<string>();
+    let frontier = [sourceFile];
+    while (frontier.length > 0) {
+      const next: SourceFile[] = [];
+      for (const file of frontier) {
+        const filePath = file.getFilePath();
+        if (walked.has(filePath)) {
+          continue;
+        }
+        walked.add(filePath);
+        recordFileDependency(filePath);
+        this.extractFile(file);
+        for (const target of this.reExportTargetsOf(filePath)) {
+          const targetFile = project.getSourceFile(target);
+          if (targetFile !== undefined) {
+            next.push(targetFile);
+          }
+        }
+      }
+      frontier = next;
+    }
+
+    const filePath = sourceFile.getFilePath();
+    if (this.db.add("wantedExportsOf", [filePath]) === "added") {
+      this.stale = true;
+    }
+    this.derive();
+
+    const exports = new Map<string, Node[]>();
+    for (const tuple of this.db.lookup("wantedModuleExport", 0, filePath)) {
+      const node = this.table.byId.get(String(tuple[2]));
+      if (node === undefined) {
+        continue;
+      }
+      const name = String(tuple[1]);
+      const bucket = exports.get(name);
+      if (bucket === undefined) {
+        exports.set(name, [node]);
+      } else if (!bucket.includes(node)) {
+        bucket.push(node);
+      }
+    }
+    return exports;
+  }
+
+  /** Module keys this file re-exports from, read off its own facts. */
+  private reExportTargetsOf(filePath: string): string[] {
+    const targets = new Set<string>();
+    for (const tuple of this.db.lookup("reExports", 0, filePath)) {
+      targets.add(String(tuple[2]));
+    }
+
+    for (const tuple of this.db.lookup("reExportsAll", 0, filePath)) {
+      targets.add(String(tuple[1]));
+    }
+
+    return [...targets];
   }
 
   /**
