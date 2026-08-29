@@ -611,140 +611,52 @@ export const RESOLUTION_QUESTIONS = [
 
   // Call-origin questions, for attribution, in their own demand
   // class. Attribution stops at the import declaration, so nothing
-  // here demands reaches or callsInto, and the alias chain is
-  // unrolled to four hops, the depth the walk it replaced followed,
-  // so each depth derives in one round instead of a fixpoint.
-  rule("callOriginChain0", [v("x"), v("x")], [lit("wantedCallOrigin", v("x"))]),
+  // here demands reaches or callsInto. The chains are closures with
+  // no depth bound: an alias run of any length resolves.
+  rule("callOriginChain", [v("x"), v("x")], [lit("wantedCallOrigin", v("x"))]),
   rule(
-    "callOriginChain1",
+    "callOriginChain",
     [v("x"), v("z")],
-    [lit("callOriginChain0", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+    [lit("callOriginChain", v("x"), v("y")), lit("binds", v("y"), v("z"))],
   ),
   rule(
-    "callOriginChain1",
+    "callOriginChain",
     [v("x"), v("z")],
     [
-      lit("callOriginChain0", v("x"), v("y")),
+      lit("callOriginChain", v("x"), v("y")),
       lit("endsHolding", v("y"), v("z")),
     ],
   ),
   rule(
-    "callOriginChain1",
+    "callOriginChain",
     [v("x"), v("z")],
     [
-      lit("callOriginChain0", v("x"), v("y")),
+      lit("callOriginChain", v("x"), v("y")),
       lit("fallbackBranch", v("y"), v("z")),
     ],
-  ),
-  rule(
-    "callOriginChain2",
-    [v("x"), v("z")],
-    [lit("callOriginChain1", v("x"), v("y")), lit("binds", v("y"), v("z"))],
-  ),
-  rule(
-    "callOriginChain2",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain1", v("x"), v("y")),
-      lit("endsHolding", v("y"), v("z")),
-    ],
-  ),
-  rule(
-    "callOriginChain2",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain1", v("x"), v("y")),
-      lit("fallbackBranch", v("y"), v("z")),
-    ],
-  ),
-  rule(
-    "callOriginChain3",
-    [v("x"), v("z")],
-    [lit("callOriginChain2", v("x"), v("y")), lit("binds", v("y"), v("z"))],
-  ),
-  rule(
-    "callOriginChain3",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain2", v("x"), v("y")),
-      lit("endsHolding", v("y"), v("z")),
-    ],
-  ),
-  rule(
-    "callOriginChain3",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain2", v("x"), v("y")),
-      lit("fallbackBranch", v("y"), v("z")),
-    ],
-  ),
-  rule(
-    "callOriginChain4",
-    [v("x"), v("z")],
-    [lit("callOriginChain3", v("x"), v("y")), lit("binds", v("y"), v("z"))],
-  ),
-  rule(
-    "callOriginChain4",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain3", v("x"), v("y")),
-      lit("endsHolding", v("y"), v("z")),
-    ],
-  ),
-  rule(
-    "callOriginChain4",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain3", v("x"), v("y")),
-      lit("fallbackBranch", v("y"), v("z")),
-    ],
-  ),
-  rule(
-    "callOriginChain",
-    [v("x"), v("y")],
-    [lit("callOriginChain0", v("x"), v("y"))],
-  ),
-  rule(
-    "callOriginChain",
-    [v("x"), v("y")],
-    [lit("callOriginChain1", v("x"), v("y"))],
-  ),
-  rule(
-    "callOriginChain",
-    [v("x"), v("y")],
-    [lit("callOriginChain2", v("x"), v("y"))],
-  ),
-  rule(
-    "callOriginChain",
-    [v("x"), v("y")],
-    [lit("callOriginChain3", v("x"), v("y"))],
-  ),
-  rule(
-    "callOriginChain",
-    [v("x"), v("y")],
-    [lit("callOriginChain4", v("x"), v("y"))],
   ),
   // The chain with at least one hop taken, which is what tells a
   // destructured binding apart from asking about a node directly.
   rule(
     "callOriginChainStepped",
-    [v("x"), v("y")],
-    [lit("callOriginChain1", v("x"), v("y"))],
+    [v("x"), v("z")],
+    [lit("callOriginChain", v("x"), v("y")), lit("binds", v("y"), v("z"))],
   ),
   rule(
     "callOriginChainStepped",
-    [v("x"), v("y")],
-    [lit("callOriginChain2", v("x"), v("y"))],
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain", v("x"), v("y")),
+      lit("endsHolding", v("y"), v("z")),
+    ],
   ),
   rule(
     "callOriginChainStepped",
-    [v("x"), v("y")],
-    [lit("callOriginChain3", v("x"), v("y"))],
-  ),
-  rule(
-    "callOriginChainStepped",
-    [v("x"), v("y")],
-    [lit("callOriginChain4", v("x"), v("y"))],
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain", v("x"), v("y")),
+      lit("fallbackBranch", v("y"), v("z")),
+    ],
   ),
   rule(
     "wantedCallOriginPair",
@@ -776,50 +688,34 @@ export const RESOLUTION_QUESTIONS = [
     ],
   ),
   // What a call made: through the call to its callee, whose own alias
-  // chain leads to the import, two bounded hops.
+  // chain leads to the import.
   rule(
-    "callMadeChain0",
+    "callMadeChain",
     [v("x"), v("f")],
     [lit("callOriginChain", v("x"), v("c")), lit("call", v("c"), v("f"))],
   ),
   rule(
-    "callMadeChain1",
+    "callMadeChain",
     [v("x"), v("z")],
-    [lit("callMadeChain0", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+    [lit("callMadeChain", v("x"), v("y")), lit("binds", v("y"), v("z"))],
   ),
   rule(
-    "callMadeChain2",
+    "callMadeChain",
     [v("x"), v("z")],
-    [lit("callMadeChain1", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+    [lit("callMadeChain", v("x"), v("y")), lit("endsHolding", v("y"), v("z"))],
   ),
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("n")],
     [
-      lit("callMadeChain0", v("x"), v("y")),
-      lit("imports", v("y"), v("m"), v("n")),
-    ],
-  ),
-  rule(
-    "wantedCallOriginPair",
-    [v("x"), v("m"), v("n")],
-    [
-      lit("callMadeChain1", v("x"), v("y")),
-      lit("imports", v("y"), v("m"), v("n")),
-    ],
-  ),
-  rule(
-    "wantedCallOriginPair",
-    [v("x"), v("m"), v("n")],
-    [
-      lit("callMadeChain2", v("x"), v("y")),
+      lit("callMadeChain", v("x"), v("y")),
       lit("imports", v("y"), v("m"), v("n")),
     ],
   ),
   // A member destructured off what a call made keeps the member name
   // as one more path segment.
   rule(
-    "callMemberChain0",
+    "callMemberChain",
     [v("x"), v("f"), v("p")],
     [
       lit("callOriginChainStepped", v("x"), v("e")),
@@ -828,42 +724,26 @@ export const RESOLUTION_QUESTIONS = [
     ],
   ),
   rule(
-    "callMemberChain1",
+    "callMemberChain",
     [v("x"), v("z"), v("p")],
     [
-      lit("callMemberChain0", v("x"), v("y"), v("p")),
+      lit("callMemberChain", v("x"), v("y"), v("p")),
       lit("binds", v("y"), v("z")),
     ],
   ),
   rule(
-    "callMemberChain2",
+    "callMemberChain",
     [v("x"), v("z"), v("p")],
     [
-      lit("callMemberChain1", v("x"), v("y"), v("p")),
-      lit("binds", v("y"), v("z")),
+      lit("callMemberChain", v("x"), v("y"), v("p")),
+      lit("endsHolding", v("y"), v("z")),
     ],
   ),
   rule(
     "wantedCallOriginMember",
     [v("x"), v("m"), v("n"), v("p")],
     [
-      lit("callMemberChain0", v("x"), v("y"), v("p")),
-      lit("imports", v("y"), v("m"), v("n")),
-    ],
-  ),
-  rule(
-    "wantedCallOriginMember",
-    [v("x"), v("m"), v("n"), v("p")],
-    [
-      lit("callMemberChain1", v("x"), v("y"), v("p")),
-      lit("imports", v("y"), v("m"), v("n")),
-    ],
-  ),
-  rule(
-    "wantedCallOriginMember",
-    [v("x"), v("m"), v("n"), v("p")],
-    [
-      lit("callMemberChain2", v("x"), v("y"), v("p")),
+      lit("callMemberChain", v("x"), v("y"), v("p")),
       lit("imports", v("y"), v("m"), v("n")),
     ],
   ),

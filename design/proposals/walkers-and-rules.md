@@ -527,11 +527,17 @@ It does not touch the evaluator.
    attribution asks `importOriginsOf`; `factoryTracking` is deleted;
    the `namespaceImport` and `throughLocalBinding` pins retired.
    What made it fast enough is worth keeping for every later step: a
-   question with many seeds gets its own demand class, its chains are
-   unrolled to the depth the walk they replace followed, the smallest
+   question with many seeds gets its own demand class, the smallest
    relation leads each join, and candidates that cannot answer are
-   filtered before seeding. Measured end state: dogfood within eight
-   percent of the pre-change wall time, 28 more consumers paired.
+   filtered before seeding. The chains themselves are closures with no
+   depth bound, since a bound in a rule is the walker's disease in a
+   new spelling; the cost of unbounded chains is an evaluation
+   concern (dropping demand facts nulls the engine's resume marks, so
+   each batch re-derives), and the optimization pass at the end of the
+   order addresses it in the engine rather than the rules. Measured
+   with bounded chains: dogfood within eight percent of the
+   pre-change wall time, 28 more consumers paired; re-measure after
+   the bound's removal.
 3. Done before this order was written: the default-export pass asks
    the store at every site, and the two route pins are retired.
 4. `moduleExports` onto `moduleExport/3`, in two halves the scoping
