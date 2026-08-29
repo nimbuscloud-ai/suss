@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "./adapter.js";
 import { clearPackageExportsCache, discoverUnits } from "./discovery/index.js";
+import { ResolutionStore } from "./facts/store.js";
 import { resolvePackageExports } from "./packageExports.js";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
@@ -191,7 +192,9 @@ describe("discoverPackageExports", () => {
       match: { type: "packageExports", packageJsonPath: pkgJsonPath },
     };
     return {
-      units: sources.flatMap((sf) => discoverUnits(sf, [pattern])),
+      units: sources.flatMap((sf) =>
+        discoverUnits(sf, [pattern], new ResolutionStore()),
+      ),
       entries,
     };
   }
@@ -337,16 +340,20 @@ describe("discoverPackageExports", () => {
     const project = new Project({ useInMemoryFileSystem: false });
     const { entries } = resolvePackageExports(path.join(root, "package.json"));
     const sf = project.addSourceFileAtPath(entries[0].sourceFile);
-    const units = discoverUnits(sf, [
-      {
-        kind: "library",
-        match: {
-          type: "packageExports",
-          packageJsonPath: path.join(root, "package.json"),
-          excludeNames: ["default"],
+    const units = discoverUnits(
+      sf,
+      [
+        {
+          kind: "library",
+          match: {
+            type: "packageExports",
+            packageJsonPath: path.join(root, "package.json"),
+            excludeNames: ["default"],
+          },
         },
-      },
-    ]);
+      ],
+      new ResolutionStore(),
+    );
     expect(units.map((u) => u.name).sort()).toEqual(["other"]);
   });
 
@@ -511,7 +518,9 @@ describe("discoverPackageExports", () => {
         subPaths: ["schemas"],
       },
     };
-    const units = sources.flatMap((sf) => discoverUnits(sf, [pattern]));
+    const units = sources.flatMap((sf) =>
+      discoverUnits(sf, [pattern], new ResolutionStore()),
+    );
     expect(units.map((u) => u.name)).toEqual(["bar"]);
   });
 });
@@ -766,15 +775,19 @@ describe("discoverPackageImports", () => {
     });
     const sf = project.getSourceFileOrThrow(path.join(root, "src/consumer.ts"));
 
-    const units = discoverUnits(sf, [
-      {
-        kind: "caller",
-        match: {
-          type: "packageImport",
-          packages: ["@suss/behavioral-ir", "@suss/behavioral-ir/schemas"],
+    const units = discoverUnits(
+      sf,
+      [
+        {
+          kind: "caller",
+          match: {
+            type: "packageImport",
+            packages: ["@suss/behavioral-ir", "@suss/behavioral-ir/schemas"],
+          },
         },
-      },
-    ]);
+      ],
+      new ResolutionStore(),
+    );
 
     const summary = units.map((u) => ({
       name: u.name,
@@ -922,12 +935,16 @@ describe("discoverPackageImports — factory / class binding tracking", () => {
     });
     const sf = project.getSourceFileOrThrow(path.join(root, "src/consumer.ts"));
 
-    return discoverUnits(sf, [
-      {
-        kind: "caller",
-        match: { type: "packageImport", packages: ["@ex/lib"] },
-      },
-    ]).map((u) => ({ name: u.name, info: u.packageExportInfo }));
+    return discoverUnits(
+      sf,
+      [
+        {
+          kind: "caller",
+          match: { type: "packageImport", packages: ["@ex/lib"] },
+        },
+      ],
+      new ResolutionStore(),
+    ).map((u) => ({ name: u.name, info: u.packageExportInfo }));
   }
 
   it("tracks `const c = factory(); c.method(...)`", () => {

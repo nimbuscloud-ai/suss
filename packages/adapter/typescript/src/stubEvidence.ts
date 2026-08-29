@@ -12,6 +12,7 @@ import path from "node:path";
 import { Project } from "ts-morph";
 
 import { attributedCalls } from "./discovery/packageImport.js";
+import { ResolutionStore } from "./facts/store.js";
 import { effectArgOf } from "./resolve/invocationEffects.js";
 
 import type { EffectArg } from "@suss/extractor";
@@ -32,13 +33,14 @@ export function stubEvidenceIn(
   packageName: string,
   root: string,
 ): StubCallEvidence[] {
+  const resolution = new ResolutionStore();
   const byExport = new Map<string, StubCallEvidence>();
   for (const sourceFile of project.getSourceFiles()) {
     if (sourceFile.isDeclarationFile()) {
       continue;
     }
 
-    for (const one of attributedCalls(sourceFile, [packageName])) {
+    for (const one of attributedCalls(sourceFile, [packageName], resolution)) {
       const key = one.exportPath.join(".");
       const entry = byExport.get(key) ?? {
         exportPath: one.exportPath,

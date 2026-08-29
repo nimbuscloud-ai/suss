@@ -196,22 +196,7 @@ export const QUEUE_BUGS: ReproducedBug[] = [
  * call site nothing pairs against: the summary set says the package is
  * imported by nobody.
  */
-export const PACKAGE_BUGS: ReproducedBug[] = [
-  {
-    dimension: "form",
-    value: "namespaceImport",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a call through a namespace import produces no caller unit, so the call site pairs with nothing",
-  },
-  {
-    dimension: "form",
-    value: "throughLocalBinding",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a call through a local name bound to the import produces no caller unit",
-  },
-];
+export const PACKAGE_BUGS: ReproducedBug[] = [];
 
 /**
  * Every finding a run is expected to produce. A signature outside this

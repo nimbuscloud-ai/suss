@@ -20,6 +20,8 @@ import {
   type Symbol as TsSymbol,
 } from "ts-morph";
 
+import { NAMESPACE_IMPORT_NAME } from "@suss/resolution";
+
 import {
   declarationCarryingTheBody,
   isFunctionRoot,
@@ -156,6 +158,41 @@ function importOriginsOf(callee: Node): string[] {
     }
   }
   return [...origins];
+}
+
+/**
+ * One import, recorded under every key a question can ask by: the
+ * resolved file path (what `moduleExport` joins on) and, when the
+ * specifier is a package rather than a relative path, the specifier as
+ * written (what origin matching asks with). A workspace dependency
+ * resolves through a symlink to a path with no node_modules in it, so
+ * the resolved key alone cannot say which package it was.
+ */
+function emitImportFacts(
+  db: Database,
+  referenceId: string,
+  declarationId: string,
+  importDecl: Node & {
+    getModuleSpecifierSourceFile(): SourceFile | undefined;
+    getModuleSpecifierValue(): string | undefined;
+  },
+  name: string,
+): void {
+  const moduleKey = moduleKeyOf(importDecl);
+  if (moduleKey === null) {
+    return;
+  }
+  fact(db, "binds", referenceId, declarationId);
+  fact(db, "imports", declarationId, moduleKey, name);
+
+  const specifier = importDecl.getModuleSpecifierValue();
+  if (
+    specifier !== undefined &&
+    specifier !== moduleKey &&
+    !specifier.startsWith(".")
+  ) {
+    fact(db, "imports", declarationId, specifier, name);
+  }
 }
 
 /** The module specifier an import-shaped declaration names. */
@@ -644,11 +681,13 @@ function emitReferenceFacts(
 
     if (Node.isImportSpecifier(declaration)) {
       const importDecl = declaration.getImportDeclaration();
-      const moduleKey = moduleKeyOf(importDecl);
-      if (moduleKey !== null) {
-        fact(db, "binds", referenceId, declarationId);
-        fact(db, "imports", declarationId, moduleKey, declaration.getName());
-      }
+      emitImportFacts(
+        db,
+        referenceId,
+        declarationId,
+        importDecl,
+        declaration.getName(),
+      );
       continue;
     }
 
@@ -658,11 +697,25 @@ function emitReferenceFacts(
         SyntaxKind.ImportDeclaration,
       );
       if (importDecl !== undefined) {
-        const moduleKey = moduleKeyOf(importDecl);
-        if (moduleKey !== null) {
-          fact(db, "binds", referenceId, declarationId);
-          fact(db, "imports", declarationId, moduleKey, "default");
-        }
+        emitImportFacts(db, referenceId, declarationId, importDecl, "default");
+      }
+      continue;
+    }
+
+    if (Node.isNamespaceImport(declaration)) {
+      // `import * as ns`: recorded under "*", so a member read off the
+      // namespace resolves to the module's export of that name.
+      const importDecl = declaration.getFirstAncestorByKind(
+        SyntaxKind.ImportDeclaration,
+      );
+      if (importDecl !== undefined) {
+        emitImportFacts(
+          db,
+          referenceId,
+          declarationId,
+          importDecl,
+          NAMESPACE_IMPORT_NAME,
+        );
       }
       continue;
     }

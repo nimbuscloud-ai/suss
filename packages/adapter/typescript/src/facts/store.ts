@@ -100,9 +100,10 @@ const NOT_BASE_FACTS = new Set([
   ...RESOLUTION_PROGRAM.rules.map((r) => r.head.relation),
   "wanted",
   "wantedOrigin",
+  "wantedCallOrigin",
 ]);
 
-type Question = "wanted" | "wantedOrigin";
+type Question = "wanted" | "wantedOrigin" | "wantedCallOrigin";
 
 /**
  * Dropped once a query's result has been read, so the next query does
@@ -112,7 +113,12 @@ type Question = "wanted" | "wantedOrigin";
 const QUERY_FACTS: readonly string[] =
   RESOLUTION_PROGRAM.demandDriven.length === 0
     ? []
-    : [...RESOLUTION_PROGRAM.demandDriven, "wanted", "wantedOrigin"];
+    : [
+        ...RESOLUTION_PROGRAM.demandDriven,
+        "wanted",
+        "wantedOrigin",
+        "wantedCallOrigin",
+      ];
 
 /** Deep enough for barrels of barrels, bounded so a wide graph stays cheap. */
 const MAX_MODULE_HOPS = 6;
@@ -153,7 +159,15 @@ export class ResolutionStore {
   >();
   private readonly writtenValues = new Map<
     string,
-    { written: Node | null; walked: string[] }
+    { written: Node | null; walked: string[]; extractedAt: number }
+  >();
+  private readonly importOrigins = new Map<
+    string,
+    {
+      origins: Array<{ module: string; path: string[] }>;
+      walked: string[];
+      extractedAt: number;
+    }
   >();
   /** Files the most recent wave walk entered, for the memo to keep. */
   private lastQueryWalked: string[] = [];
@@ -264,9 +278,16 @@ export class ResolutionStore {
    */
   resolveWrittenValue(value: Node): Node | null {
     const target = factKeyOf(value);
-    const key = nodeId(target);
+    const key = nodeId(this.sharedDeclarationFor(target));
     const cached = this.writtenValues.get(key);
-    if (cached !== undefined) {
+    // A cached answer stays true as facts accumulate; a cached miss
+    // was true of a smaller fact set, so it is recomputed once the
+    // store has extracted more files than it had then.
+    if (
+      cached !== undefined &&
+      (cached.written !== null ||
+        cached.extractedAt === this.fullyExtracted.size)
+    ) {
       // A memo hit walks nothing, but whoever is collecting file
       // dependencies still read those files through it.
       for (const walkedPath of cached.walked) {
@@ -275,14 +296,15 @@ export class ResolutionStore {
       return cached.written;
     }
 
-    const written = this.resolveByWaves(target, "wanted", () =>
+    const settled = this.resolveByWaves(target, "wanted", () =>
       this.lookupWritten(target),
     );
     this.writtenValues.set(key, {
-      written,
+      written: settled?.written ?? null,
       walked: [...this.lastQueryWalked],
+      extractedAt: this.fullyExtracted.size,
     });
-    return written;
+    return settled?.written ?? null;
   }
 
   /**
@@ -318,6 +340,197 @@ export class ResolutionStore {
       walked: [...this.lastQueryWalked],
     });
     return found;
+  }
+
+  /**
+   * Which module export this value comes down to, with what made it
+   * included: a value written as `createClient()` is made from the
+   * module exporting `createClient`, and a member destructured off
+   * that result is one path segment further. The module half is the
+   * specifier as the source wrote it, so a subpath import keeps its
+   * subpath.
+   */
+  importOriginsOf(
+    value: Node,
+    modules: string[],
+  ): Array<{ module: string; path: string[] }> {
+    return this.importOriginsOfMany([value], modules).get(value) ?? [];
+  }
+
+  /**
+   * The batched form: one demand set, one derivation, one widening
+   * walk shared by every value. A discovery pass asks about every
+   * callee in a file, and per-value queries would re-pay demand
+   * clearing and re-derivation once per call site.
+   */
+  importOriginsOfMany(
+    values: readonly Node[],
+    modules: string[],
+  ): Map<Node, Array<{ module: string; path: string[] }>> {
+    const results = new Map<Node, Array<{ module: string; path: string[] }>>();
+    const pending: Array<{ value: Node; target: Node; key: string }> = [];
+    for (const value of values) {
+      const target = factKeyOf(value);
+      const key = `origins|${nodeId(this.sharedDeclarationFor(target))}|${modules.join(",")}`;
+      const cached = this.importOrigins.get(key);
+      // An empty result was true of a smaller fact set; recompute it
+      // once the store has extracted more files than it had then.
+      if (
+        cached !== undefined &&
+        (cached.origins.length > 0 ||
+          cached.extractedAt === this.fullyExtracted.size)
+      ) {
+        // A memo hit walks nothing, but whoever is collecting file
+        // dependencies still read those files through it.
+        for (const walkedPath of cached.walked) {
+          recordFileDependency(walkedPath);
+        }
+        results.set(value, cached.origins);
+        continue;
+      }
+      pending.push({ value, target, key });
+    }
+    if (pending.length === 0) {
+      return results;
+    }
+
+    try {
+      for (const one of pending) {
+        this.wantValue("wantedCallOrigin", one.target);
+        this.seedValue(one.target);
+      }
+
+      const walked = new Set<string>();
+      this.lastQueryWalked = [];
+      let frontier: SourceFile[] = [];
+      for (const one of pending) {
+        const file = one.target.getSourceFile();
+        if (!walked.has(file.getFilePath()) && !frontier.includes(file)) {
+          frontier.push(file);
+        }
+      }
+
+      const open = new Set(pending);
+      for (let hop = 0; hop <= MAX_MODULE_HOPS && open.size > 0; hop++) {
+        const next: SourceFile[] = [];
+        for (const sourceFile of frontier) {
+          if (walked.has(sourceFile.getFilePath())) {
+            continue;
+          }
+          walked.add(sourceFile.getFilePath());
+          this.lastQueryWalked.push(sourceFile.getFilePath());
+          // Even a null answer read these files: their content decided
+          // there was nothing to find, so a change to any of them can
+          // change the answer.
+          recordFileDependency(sourceFile.getFilePath());
+          this.extractFile(sourceFile);
+          next.push(...this.graph.importedFilesOf(sourceFile));
+        }
+
+        for (const one of [...open]) {
+          const found = this.lookupImportOrigins(one.target, modules);
+          if (found !== null) {
+            results.set(one.value, found);
+            this.importOrigins.set(one.key, {
+              origins: found,
+              walked: [...this.lastQueryWalked],
+              extractedAt: this.fullyExtracted.size,
+            });
+            open.delete(one);
+          }
+        }
+        if (next.length === 0) {
+          break;
+        }
+        frontier = next;
+      }
+
+      for (const one of open) {
+        results.set(one.value, []);
+        this.importOrigins.set(one.key, {
+          origins: [],
+          walked: [...this.lastQueryWalked],
+          extractedAt: this.fullyExtracted.size,
+        });
+      }
+      return results;
+    } finally {
+      this.forgetQuery();
+    }
+  }
+
+  /**
+   * The node a memo shares across references: a plain name's
+   * declaration, so a hundred call sites of one import pay one walk.
+   * Anything else keys as itself, since `a.foo` and `b.foo` share a
+   * declared `foo` without sharing a value.
+   */
+  private sharedDeclarationFor(target: Node): Node {
+    if (!Node.isIdentifier(target)) {
+      return target;
+    }
+    let refersTo = this.declarations.get(target);
+    if (refersTo === undefined) {
+      refersTo = declarationOf(target);
+      this.declarations.set(target, refersTo);
+    }
+    return refersTo;
+  }
+
+  private lookupImportOrigins(
+    value: Node,
+    modules: string[],
+  ): Array<{ module: string; path: string[] }> | null {
+    this.derive();
+
+    // Its own demand class, without `callsInto`: a local helper that
+    // calls into the package is not itself the package's export, and
+    // that recursion is the expensive half of the rule set.
+    const all: Array<{ module: string; path: string[] }> = [];
+    for (const pair of this.answerPairsFor(
+      "wantedCallOriginPair",
+      nodeId(value),
+    )) {
+      const { module, name } = pairHalves(pair);
+      all.push({ module, path: [name] });
+    }
+    for (const tuple of this.db.lookup(
+      "wantedCallOriginMember",
+      0,
+      nodeId(value),
+    )) {
+      all.push({
+        module: String(tuple[1]),
+        path: [String(tuple[2]), String(tuple[3])],
+      });
+    }
+
+    const matching = all.filter((one) => namesPackage(one.module, modules));
+    // One import is recorded under two module keys, the resolved path
+    // and the specifier, so origins collapse per export path, and the
+    // specifier spelling wins for its subpath.
+    const byPath = new Map<string, { module: string; path: string[] }>();
+    for (const one of matching) {
+      const key = tupleKey(one.path);
+      const kept = byPath.get(key);
+      if (kept === undefined || kept.module.startsWith("/")) {
+        byPath.set(key, one);
+      }
+    }
+    // A member origin is the same derivation as its export pair, one
+    // segment further, so the coarser reading gives way to it.
+    const refined = new Set(
+      [...byPath.values()]
+        .filter((one) => one.path.length > 1)
+        .map((one) => tupleKey(one.path.slice(0, -1))),
+    );
+    const origins = [...byPath.values()]
+      .filter((one) => !refined.has(tupleKey(one.path)))
+      .sort((a, b) => a.path.join(".").localeCompare(b.path.join(".")));
+    if (origins.length > 0) {
+      return origins;
+    }
+    return all.some((one) => namesAPackage(one.module)) ? [] : null;
   }
 
   /**
@@ -466,7 +679,7 @@ export class ResolutionStore {
    * An answer has to be an expression, which leaves out the class a
    * construction makes an instance of. The README says why.
    */
-  private lookupWritten(value: Node): Node | null {
+  private lookupWritten(value: Node): { written: Node | null } | null {
     this.derive();
 
     const candidates = new Set<Node>();
@@ -478,10 +691,18 @@ export class ResolutionStore {
       candidates.add(node);
     }
 
-    if (candidates.size !== 1) {
-      return null;
+    if (candidates.size === 1) {
+      return { written: [...candidates][0] as Node };
     }
-    return [...candidates][0] as Node;
+    // Two candidates is settled refusal, since more files can only add
+    // candidates, never take one away.
+    if (candidates.size > 1) {
+      return { written: null };
+    }
+    if (neverWritable(value)) {
+      return { written: null };
+    }
+    return null;
   }
 
   /**
@@ -581,6 +802,22 @@ function namesAPackage(moduleKey: string): boolean {
  * The key is a resolved file path when the package is installed and the
  * raw specifier when it is not, so both forms have to be looked up.
  */
+/**
+ * Whether no amount of extraction can produce a written value: the
+ * name is declared inside a package, whose body is not here to read.
+ * A parameter is not on this list, since the argument step gives it
+ * the value a caller passes, and the caller can be in a wider file.
+ */
+function neverWritable(value: Node): boolean {
+  if (!Node.isIdentifier(value)) {
+    return false;
+  }
+  const declarations = value.getSymbol()?.getDeclarations() ?? [];
+  return declarations.some((declaration) =>
+    declaration.getSourceFile().getFilePath().includes("/node_modules/"),
+  );
+}
+
 function namesPackage(moduleKey: string, packages: string[]): boolean {
   return namesAnyPackage(
     [moduleKey, ...packagesDeclaring(moduleKey)],

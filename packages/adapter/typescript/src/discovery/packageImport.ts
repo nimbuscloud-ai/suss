@@ -1,21 +1,15 @@
-// packageImport.ts (discovery handler), emit one consumer-side unit
-// per (enclosing function × consumed binding) for any call into a
-// targeted package. Pairs with packageExports-discovered providers.
-//
-// Recognized call shapes:
-//   foo(...)                                 // direct call to named import
-//   const x = foo(...); x.method(...)        // method on factory result
-//   const x = new Foo(...); x.method(...)    // method on class instance
-//   const x = await getX(); x.method(...)    // method on awaited factory result
-//   foo().method(...)                        // one-shot method on call result
-//   new Foo().method(...)                    // method on inline new
-//   (await getX()).method(...)               // method on awaited inline call
-//   Foo.staticMethod(...)                    // method on the import itself
-//   const { method } = foo(); method(...)    // direct call to destructured method
-//
-// Out of scope: receiver-chain walking (factory().a().b()), reassignment,
-// parameter passthrough, namespace imports, re-exports. See
-// project_packageimport_gaps.md.
+/**
+ * packageImport.ts (discovery handler): emit one consumer-side unit
+ * per (enclosing function × consumed binding) for any call into a
+ * targeted package. Pairs with packageExports-discovered providers.
+ *
+ * Attribution asks the resolution store, per the walkers-and-rules
+ * design: `importOriginsOf` derives what a callee or a receiver comes
+ * down to through the comesFrom, callsInto, and madeFrom rules, so a
+ * named import, an alias, a namespace member, a rebound local, and a
+ * factory result are all one question. A shape the store leaves
+ * unresolved is a missing base fact to emit, not a walk to add here.
+ */
 
 import {
   type CallExpression,
@@ -24,12 +18,11 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import {
-  type FactoryProvenance,
-  trackFactoryBindings,
-} from "./factoryTracking.js";
-import { namedImportsOf } from "./importScan.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
+
+import type { DiscoveryPattern } from "@suss/extractor";
+import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 
 /**
  * Whether a file is one of TypeScript's own lib files, which declare
@@ -38,9 +31,6 @@ import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 function isLanguageLib(file: SourceFile): boolean {
   return /[\\/]typescript[\\/]lib[\\/]lib\..*\.d\.ts$/.test(file.getFilePath());
 }
-
-import type { DiscoveryPattern } from "@suss/extractor";
-import type { FunctionRoot } from "../conditions.js";
 
 function splitPackageSpec(spec: string): {
   packageName: string;
@@ -99,152 +89,116 @@ export interface AttributedCall {
 export function attributedCalls(
   sourceFile: SourceFile,
   packages: readonly string[],
+  resolution: ResolutionStore,
 ): AttributedCall[] {
-  const targetPackages = new Set(packages);
-
-  // Map local-binding-name → {packageName, exportPath} for every
-  // import from a targeted package.
-  const localToExport = new Map<string, FactoryProvenance>();
-
-  for (const one of namedImportsOf(sourceFile, [...targetPackages])) {
-    const { packageName, subPath } = splitPackageSpec(one.specifier);
-    localToExport.set(one.local, {
-      packageName,
-      exportPath: [...subPath, one.canonical],
-    });
-  }
-
-  if (localToExport.size === 0) {
+  if (packages.length === 0) {
     return [];
   }
 
-  // Walk variable declarations for bindings whose initializer is a
-  // call/new (optionally awaited) of a tracked import. The returned
-  // table is scope-aware: `resolve(name, fromNode)` walks outward
-  // through enclosing function / file scopes, so two sibling
-  // functions binding the same name to different factories do not
-  // clobber each other.
-  const trackedBindings = trackFactoryBindings(sourceFile, (callee) => {
-    if (!Node.isIdentifier(callee)) {
-      return null;
-    }
-    return localToExport.get(callee.getText()) ?? null;
-  });
-
-  // Resolve the provenance of an arbitrary expression that appears
-  // as the receiver in `<expr>.method(...)`. `fromNode` is the call
-  // site: used as the lookup origin for scope resolution. Returns
-  // null when the receiver doesn't trace to a tracked import or
-  // binding.
-  function resolveReceiverProvenance(
-    node: Node,
-    fromNode: Node,
-  ): FactoryProvenance | null {
-    let n = node;
-    // Peel parentheses: `(await x()).method()` parses as
-    // PropertyAccess { expression: ParenthesizedExpression { ... } }.
-    while (Node.isParenthesizedExpression(n)) {
-      n = n.getExpression();
-    }
-    if (Node.isAwaitExpression(n)) {
-      const inner = n.getExpression();
-      if (inner === undefined) {
-        return null;
-      }
-      n = inner;
-    }
-    if (Node.isIdentifier(n)) {
-      const text = n.getText();
-      return (
-        trackedBindings.resolve(text, fromNode) ??
-        localToExport.get(text) ??
-        null
-      );
-    }
-    if (Node.isCallExpression(n)) {
-      const callee = n.getExpression();
-      if (Node.isIdentifier(callee)) {
-        return localToExport.get(callee.getText()) ?? null;
-      }
-      return null;
-    }
-    if (Node.isNewExpression(n)) {
-      const expr = n.getExpression();
-      if (expr !== undefined && Node.isIdentifier(expr)) {
-        return localToExport.get(expr.getText()) ?? null;
-      }
-      return null;
-    }
-    return null;
+  // A file that cannot reach the package has no call to attribute,
+  // and asking the store per call pays the wave walk for every miss.
+  const [reaching] = resolution.filesImportingTransitively([
+    { sourceFiles: [sourceFile], packages: [...packages] },
+  ]);
+  if (reaching === undefined || !reaching.has(sourceFile)) {
+    return [];
   }
 
-  // Attribute a CallExpression's callee to a (packageName, exportPath)
-  // pair, or return null when the call isn't into a tracked import.
-  function attributeCall(callee: Node): FactoryProvenance | null {
-    if (Node.isIdentifier(callee)) {
-      const text = callee.getText();
-      return (
-        trackedBindings.resolve(text, callee) ?? localToExport.get(text) ?? null
-      );
-    }
-    if (Node.isPropertyAccessExpression(callee)) {
-      const subject = callee.getExpression();
-      const subjectProvenance = resolveReceiverProvenance(subject, callee);
-      if (subjectProvenance === null) {
-        return null;
-      }
-      // `client.send(...)` calls a method the SDK declares, and the
-      // export path runs through it. `readSqlAccess(sql).map(...)` calls
-      // a method the language declares on an array, and that says
-      // nothing about the package, so the path stops at what was called.
-      if (!methodComesFromSource(callee)) {
-        return subjectProvenance;
-      }
-      return {
-        packageName: subjectProvenance.packageName,
-        exportPath: [...subjectProvenance.exportPath, callee.getName()],
-      };
-    }
-    return null;
-  }
-
-  /**
-   * Whether a method is one somebody wrote, rather than one the language
-   * gives every value. `map`, `then`, and `trim` are declared in
-   * TypeScript's own lib files, and a method a package declares is
-   * declared in that package.
-   */
-  function methodComesFromSource(callee: PropertyAccessExpression): boolean {
-    const declarations = callee.getNameNode().getSymbol()?.getDeclarations();
-    if (declarations === undefined || declarations.length === 0) {
-      // Nothing says where it came from, so the path keeps what the
-      // source wrote, which is what it did before this check.
-      return true;
-    }
-    return declarations.some(
-      (declaration) => !isLanguageLib(declaration.getSourceFile()),
-    );
-  }
-
-  const results: AttributedCall[] = [];
+  // Every callee and receiver in the file goes into one batched ask,
+  // so the whole file pays one demand set and one derivation.
+  const calls: CallExpression[] = [];
+  const candidates = new Set<Node>();
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const provenance = attributeCall(node.getExpression());
-    if (provenance === null) {
-      return;
+    calls.push(node);
+    const callee = node.getExpression();
+    candidates.add(callee);
+    if (Node.isPropertyAccessExpression(callee)) {
+      candidates.add(callee.getExpression());
     }
-    results.push({ call: node, ...provenance });
   });
+  const origins = resolution.importOriginsOfMany(
+    [...candidates],
+    [...packages],
+  );
+
+  // The store refuses two candidates rather than picking one, and so
+  // does this: one origin is an attribution, several are an ambiguity.
+  function originOf(
+    value: Node,
+  ): { packageName: string; exportPath: string[] } | null {
+    const found = origins.get(value) ?? [];
+    const first = found[0];
+    if (first === undefined || found.length > 1) {
+      return null;
+    }
+    const { packageName, subPath } = splitPackageSpec(first.module);
+    return { packageName, exportPath: [...subPath, ...first.path] };
+  }
+
+  function attributeCall(
+    callee: Node,
+  ): { packageName: string; exportPath: string[] } | null {
+    const direct = originOf(callee);
+    if (direct !== null) {
+      return direct;
+    }
+
+    if (!Node.isPropertyAccessExpression(callee)) {
+      return null;
+    }
+    const subject = originOf(callee.getExpression());
+    if (subject === null) {
+      return null;
+    }
+    // A method the package declares extends the export path; one the
+    // language gives every value (`.map`, `.then`) says nothing about
+    // the package, so the path stops at what was called.
+    if (!methodComesFromSource(callee)) {
+      return subject;
+    }
+    return {
+      packageName: subject.packageName,
+      exportPath: [...subject.exportPath, callee.getName()],
+    };
+  }
+
+  const results: AttributedCall[] = [];
+  for (const call of calls) {
+    const provenance = attributeCall(call.getExpression());
+    if (provenance !== null) {
+      results.push({ call, ...provenance });
+    }
+  }
 
   return results;
+}
+
+/**
+ * Whether a method is one somebody wrote, rather than one the language
+ * gives every value. `map`, `then`, and `trim` are declared in
+ * TypeScript's own lib files, and a method a package declares is
+ * declared in that package.
+ */
+function methodComesFromSource(callee: PropertyAccessExpression): boolean {
+  const declarations = callee.getNameNode().getSymbol()?.getDeclarations();
+  if (declarations === undefined || declarations.length === 0) {
+    // Nothing says where it came from, so the path keeps what the
+    // source wrote, which is what it did before this check.
+    return true;
+  }
+  return declarations.some(
+    (declaration) => !isLanguageLib(declaration.getSourceFile()),
+  );
 }
 
 export function discoverPackageImports(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "packageImport" }>,
   kind: string,
+  resolution: ResolutionStore,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
   // One unit per (enclosing function × exportPath): the consumer
@@ -252,7 +206,11 @@ export function discoverPackageImports(
   // not each call site.
   const seen = new Set<string>();
 
-  for (const one of attributedCalls(sourceFile, match.packages ?? [])) {
+  for (const one of attributedCalls(
+    sourceFile,
+    match.packages ?? [],
+    resolution,
+  )) {
     const enclosing = findEnclosingFunction(one.call);
     if (enclosing === null) {
       continue;

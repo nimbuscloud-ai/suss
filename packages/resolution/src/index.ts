@@ -73,6 +73,15 @@ import { constant, lit, rule, variable as v } from "@suss/datalog";
 /** A step to the value x is written as. */
 export const VALUE_STEP = constant("value");
 
+/**
+ * The name a whole-module import records itself under, whatever the
+ * language spells it as: `import * as ns` in TypeScript, `import
+ * module` in Python. Adapters emit this name; the member-read rule
+ * joins on it.
+ */
+export const NAMESPACE_IMPORT_NAME = "*";
+export const NAMESPACE_IMPORT = constant(NAMESPACE_IMPORT_NAME);
+
 /** A step to what running the call x is handed back. */
 export const RESULT_STEP = constant("result");
 
@@ -510,15 +519,9 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
-  // Calling f ends up calling the name n that module m exports. One hop
-  // is f's own body, including the closures it declares; the other hop
-  // is a function f's body calls, so a wrapper of a wrapper answers
-  // with what the innermost one reaches.
-  //
-  // Several answers for one function is the normal case, not an
-  // ambiguity: a project decorator that composes two library decorators
-  // applies both. A caller asks whether a particular (m, n) is among
-  // them.
+  // Calling f ends up calling the name n that module m exports, one
+  // hop through f's own body or deeper through a wrapper of a wrapper.
+  // Several results is normal: a composed decorator applies them all.
   rule(
     "callsInto",
     [v("f"), v("m"), v("n")],
@@ -604,6 +607,56 @@ export const RESOLUTION_QUESTIONS = [
     "wantedComesFrom",
     [v("x"), v("m"), v("n")],
     [lit("wantedOrigin", v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
+  ),
+
+  // Call-origin questions: what a callee or receiver comes down to,
+  // for attribution. A separate demand class from wantedOrigin, so
+  // asking about every call site in a file never demands the
+  // callsInto recursion below.
+  rule(
+    "wantedCallOriginPair",
+    [v("x"), v("m"), v("n")],
+    [lit("wantedCallOrigin", v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
+  ),
+  rule(
+    "wantedCallOriginPair",
+    [v("x"), v("m"), v("p")],
+    [
+      lit("wantedCallOrigin", v("x")),
+      lit("readsProperty", v("x"), v("o"), v("p")),
+      lit("imports", v("o"), v("m"), NAMESPACE_IMPORT),
+    ],
+  ),
+  rule(
+    "wantedCallOriginPair",
+    [v("x"), v("m"), v("p")],
+    [
+      lit("wantedCallOrigin", v("x")),
+      lit("readsProperty", v("x"), v("o"), v("p")),
+      lit("binds", v("o"), v("d")),
+      lit("imports", v("d"), v("m"), NAMESPACE_IMPORT),
+    ],
+  ),
+  rule(
+    "wantedCallOriginPair",
+    [v("x"), v("m"), v("n")],
+    [
+      lit("wantedCallOrigin", v("x")),
+      lit("isWrittenAs", v("x"), v("c")),
+      lit("call", v("c"), v("f")),
+      lit("comesFrom", v("f"), v("m"), v("n")),
+    ],
+  ),
+  rule(
+    "wantedCallOriginMember",
+    [v("x"), v("m"), v("n"), v("p")],
+    [
+      lit("wantedCallOrigin", v("x")),
+      lit("binds", v("x"), v("e")),
+      lit("readsProperty", v("e"), v("c"), v("p")),
+      lit("call", v("c"), v("f")),
+      lit("comesFrom", v("f"), v("m"), v("n")),
+    ],
   ),
   rule(
     "wantedCallsInto",
