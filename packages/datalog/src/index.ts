@@ -420,46 +420,67 @@ export function stratify(rules: Rule[]): Rule[][] {
 // Evaluation
 // ---------------------------------------------------------------------------
 
-type Bindings = Map<string, Atom>;
+/**
+ * One variable bound to one value, on top of what was bound before
+ * it. A chain instead of a Map because the join extends bindings once
+ * per matched fact, and copying a Map there was most of the
+ * evaluator's allocation; a body binds a handful of variables, so
+ * walking the chain costs less than the copies did.
+ */
+interface Bindings {
+  readonly name: string;
+  readonly value: Atom;
+  readonly parent: Bindings | null;
+}
+
+function boundValue(bindings: Bindings | null, name: string): Atom | undefined {
+  for (let b = bindings; b !== null; b = b.parent) {
+    if (b.name === name) {
+      return b.value;
+    }
+  }
+  return undefined;
+}
+
+const NO_MATCH = Symbol("no-match");
 
 function unify(
   literal: Literal,
   tuple: Tuple,
-  bindings: Bindings,
-): Bindings | null {
+  bindings: Bindings | null,
+): Bindings | null | typeof NO_MATCH {
   if (literal.terms.length !== tuple.length) {
-    return null;
+    return NO_MATCH;
   }
-  let next: Bindings | null = null;
+  let next = bindings;
   for (let i = 0; i < literal.terms.length; i++) {
     const term = literal.terms[i];
     const value = tuple[i];
     if (term.type === "constant") {
       if (term.value !== value) {
-        return null;
+        return NO_MATCH;
       }
       continue;
     }
-    const bound = (next ?? bindings).get(term.name);
+    const bound = boundValue(next, term.name);
     if (bound === undefined) {
-      next = next ?? new Map(bindings);
-      next.set(term.name, value);
+      next = { name: term.name, value, parent: next };
       continue;
     }
     if (bound !== value) {
-      return null;
+      return NO_MATCH;
     }
   }
-  return next ?? bindings;
+  return next;
 }
 
 /** Instantiate a negated literal's tuple; every variable must be bound. */
-function groundNegated(literal: Literal, bindings: Bindings): Tuple {
+function groundNegated(literal: Literal, bindings: Bindings | null): Tuple {
   return literal.terms.map((term) => {
     if (term.type === "constant") {
       return term.value;
     }
-    const bound = bindings.get(term.name);
+    const bound = boundValue(bindings, term.name);
     if (bound === undefined) {
       throw new Error(
         `unbound variable "${term.name}" in negated literal "${literal.relation}": ` +
@@ -470,12 +491,12 @@ function groundNegated(literal: Literal, bindings: Bindings): Tuple {
   });
 }
 
-function headTuple(head: Rule["head"], bindings: Bindings): Tuple {
+function headTuple(head: Rule["head"], bindings: Bindings | null): Tuple {
   return head.terms.map((term) => {
     if (term.type === "constant") {
       return term.value;
     }
-    const bound = bindings.get(term.name);
+    const bound = boundValue(bindings, term.name);
     if (bound === undefined) {
       throw new Error(
         `unbound variable "${term.name}" in head of "${head.relation}"`,
@@ -501,7 +522,7 @@ function evaluateRule(
   const step = (
     literalIndex: number,
     positiveIndex: number,
-    bindings: Bindings,
+    bindings: Bindings | null,
   ): void => {
     if (literalIndex === r.body.length) {
       results.push(headTuple(r.head, bindings));
@@ -522,13 +543,13 @@ function evaluateRule(
         : boundSource(db, literal, bindings);
     for (const tuple of source) {
       const next = unify(literal, tuple, bindings);
-      if (next !== null) {
+      if (next !== NO_MATCH) {
         step(literalIndex + 1, positiveIndex + 1, next);
       }
     }
   };
 
-  step(0, 0, new Map());
+  step(0, 0, null);
   return results;
 }
 
@@ -541,17 +562,27 @@ function evaluateRule(
 function boundSource(
   db: Database,
   literal: Literal,
-  bindings: Bindings,
+  bindings: Bindings | null,
 ): readonly Tuple[] {
+  // Of the columns already fixed, the one with the fewest facts under
+  // its value feeds the join the fewest candidates to reject.
+  let narrowest: readonly Tuple[] | null = null;
   for (let column = 0; column < literal.terms.length; column++) {
     const term = literal.terms[column];
     const value =
-      term.type === "constant" ? term.value : bindings.get(term.name);
-    if (value !== undefined) {
-      return db.lookup(literal.relation, column, value);
+      term.type === "constant" ? term.value : boundValue(bindings, term.name);
+    if (value === undefined) {
+      continue;
+    }
+    const bucket = db.lookup(literal.relation, column, value);
+    if (bucket.length === 0) {
+      return bucket;
+    }
+    if (narrowest === null || bucket.length < narrowest.length) {
+      narrowest = bucket;
     }
   }
-  return db.facts(literal.relation);
+  return narrowest ?? db.facts(literal.relation);
 }
 
 /** One derived head tuple and the tag its derivation combined to. */
@@ -582,7 +613,7 @@ function evaluateRuleTagged<Tag>(
   const step = (
     literalIndex: number,
     positiveIndex: number,
-    bindings: Bindings,
+    bindings: Bindings | null,
   ): void => {
     if (literalIndex === r.body.length) {
       results.push({
@@ -622,7 +653,7 @@ function evaluateRuleTagged<Tag>(
         : boundSource(db, literal, bindings);
     for (const tuple of source) {
       const next = unify(literal, tuple, bindings);
-      if (next !== null) {
+      if (next !== NO_MATCH) {
         if (readsTags) {
           const stored = db.tagOf(literal.relation, tuple);
           bodyTags.push(
@@ -643,7 +674,7 @@ function evaluateRuleTagged<Tag>(
     }
   };
 
-  step(0, 0, new Map());
+  step(0, 0, null);
   return results;
 }
 
