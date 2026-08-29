@@ -33,8 +33,10 @@ import { declaredExports } from "./declaredSurface.mjs";
  * Sixteen is the sqs factory making the same move.
  * Lowering it is a fix landing; raising it needs saying which call
  * sites arrived and why they are the same shape as the rest.
+ * Nineteen is attribution reading members destructured off factory
+ * results, three sites of the same member-of-a-returned-value shape.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 16;
+const KNOWN_UNPAIRED_CONSUMERS = 19;
 
 /**
  * Every function a package says it exports has a provider summary.

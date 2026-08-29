@@ -724,6 +724,28 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("y")],
     [lit("callOriginChain4", v("x"), v("y"))],
   ),
+  // The chain with at least one hop taken, which is what tells a
+  // destructured binding apart from asking about a node directly.
+  rule(
+    "callOriginChainStepped",
+    [v("x"), v("y")],
+    [lit("callOriginChain1", v("x"), v("y"))],
+  ),
+  rule(
+    "callOriginChainStepped",
+    [v("x"), v("y")],
+    [lit("callOriginChain2", v("x"), v("y"))],
+  ),
+  rule(
+    "callOriginChainStepped",
+    [v("x"), v("y")],
+    [lit("callOriginChain3", v("x"), v("y"))],
+  ),
+  rule(
+    "callOriginChainStepped",
+    [v("x"), v("y")],
+    [lit("callOriginChain4", v("x"), v("y"))],
+  ),
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("n")],
@@ -800,7 +822,7 @@ export const RESOLUTION_QUESTIONS = [
     "callMemberChain0",
     [v("x"), v("f"), v("p")],
     [
-      lit("callOriginChain", v("x"), v("e")),
+      lit("callOriginChainStepped", v("x"), v("e")),
       lit("readsProperty", v("e"), v("c"), v("p")),
       lit("call", v("c"), v("f")),
     ],
