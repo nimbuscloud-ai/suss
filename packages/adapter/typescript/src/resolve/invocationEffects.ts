@@ -181,6 +181,7 @@ export function invocationContextFor(
   call: CallExpression,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): TsInvocationRecognizerContext {
   // Built on the first read rather than up front: most calls reach no
   // declared pack, and following a receiver costs more than the walk.
@@ -195,7 +196,12 @@ export function invocationContextFor(
     // own pattern match runs on the raw node.
     resolveWrittenValue: resolveWrittenValue ?? (() => null),
     get ops(): CallOps {
-      ops ??= callOpsFor(call, resolveWrittenValue, originatesFrom);
+      ops ??= callOpsFor(
+        call,
+        resolveWrittenValue,
+        originatesFrom,
+        anchorCallsOf,
+      );
       return ops;
     },
   };
@@ -207,6 +213,12 @@ export function invocationContextFor(
  * alias resolution.
  */
 export type OriginatesFrom = (value: Node, module: string) => boolean;
+
+/** The calls behind a value that a caller's own check accepts, from the store. */
+export type AnchorCallsOf = (
+  value: Node,
+  matches: (call: Node) => boolean,
+) => Node[];
 
 export function isImportedFrom(
   identifier: Node,
@@ -527,6 +539,7 @@ export function runInvocationRecognizers(
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -542,7 +555,12 @@ export function runInvocationRecognizers(
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const ctx = invocationContextFor(node, resolveWrittenValue, originatesFrom);
+    const ctx = invocationContextFor(
+      node,
+      resolveWrittenValue,
+      originatesFrom,
+      anchorCallsOf,
+    );
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
@@ -590,6 +608,7 @@ export function runAccessRecognizers(
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
   return dispatchAccessRecognizers(
     func,
@@ -597,6 +616,7 @@ export function runAccessRecognizers(
     (node) => isDescentStop(node, func, barriers),
     resolveWrittenValue,
     originatesFrom,
+    anchorCallsOf,
   );
 }
 
@@ -611,6 +631,7 @@ export function runAccessRecognizersAtModuleScope(
   recognizers: AccessRecognizer[],
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
   return dispatchAccessRecognizers(
     sourceFile,
@@ -618,6 +639,7 @@ export function runAccessRecognizersAtModuleScope(
     isModuleScopeStop,
     resolveWrittenValue,
     originatesFrom,
+    anchorCallsOf,
   );
 }
 
@@ -640,6 +662,7 @@ export function accessContextFor(
   sourceFile: SourceFile,
   resolveWrittenValue: (value: Node) => Node | null = () => null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): TsAccessRecognizerContext {
   const given = { access: node, sourceFile, resolveWrittenValue };
   if (Node.isPropertyAccessExpression(node)) {
@@ -649,7 +672,12 @@ export function accessContextFor(
   return {
     ...given,
     get ops(): CallOps {
-      ops ??= callOpsFor(node, resolveWrittenValue, originatesFrom);
+      ops ??= callOpsFor(
+        node,
+        resolveWrittenValue,
+        originatesFrom,
+        anchorCallsOf,
+      );
       return ops;
     },
   };
@@ -661,6 +689,7 @@ function dispatchAccessRecognizers(
   isStop: (node: Node) => boolean,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -693,6 +722,7 @@ function dispatchAccessRecognizers(
       sourceFile,
       resolveWrittenValue,
       originatesFrom,
+      anchorCallsOf,
     );
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {

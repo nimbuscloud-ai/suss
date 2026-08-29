@@ -227,6 +227,14 @@ export interface CallOps {
    * for a pack whose rule has to walk it.
    */
   valueAt(index: number): ValueOps | null;
+  /**
+   * The one call behind the receiver the origin accepts, however many
+   * name, construction, or query hops separate them. Mongoose's
+   * `model(...)` behind a document is the picture. Null when nothing
+   * behind the receiver matches, and null when two distinct calls do,
+   * since picking one would depend on the order facts arrived.
+   */
+  anchorCall?(origin: ConstructedFrom): CallOps | null;
 }
 
 /**

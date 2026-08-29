@@ -115,10 +115,19 @@ function effectsOver(sourceFile: SourceFile, pack: PatternPack): Effect[] {
   const store = new ResolutionStore();
   const resolve = (value: Node): Node | null =>
     store.resolveWrittenValue(value);
+  const originatesFrom = (value: Node, module: string): boolean =>
+    store.importOriginsOf(value, [module]).length > 0;
+  const anchors = (value: Node, matches: (call: Node) => boolean): Node[] =>
+    store.anchorCallsOf(value, matches);
   const effects: Effect[] = [];
   sourceFile.forEachDescendant((node) => {
     if (Node.isCallExpression(node)) {
-      collect(effects, invocations, node, invocationContextFor(node, resolve));
+      collect(
+        effects,
+        invocations,
+        node,
+        invocationContextFor(node, resolve, originatesFrom, anchors),
+      );
     }
     // The access walk reaches a tagged template as well, which is how a
     // statement written as one is read at all.
@@ -131,7 +140,7 @@ function effectsOver(sourceFile: SourceFile, pack: PatternPack): Effect[] {
         effects,
         accesses,
         node,
-        accessContextFor(node, sourceFile, resolve),
+        accessContextFor(node, sourceFile, resolve, originatesFrom, anchors),
       );
     }
   });
