@@ -614,6 +614,19 @@ It does not touch the evaluator.
 Each step shipped behind the existing gates: summaries byte-identical
 where discovery finds the same units, the fuzzer's pinned bugs as the
 retirement list, dogfood counts, and engine time from the profile.
-What remains of the order is the engine-side evaluation pass the
-per-step entries deferred: the resume marks that `forgetQuery` nulls,
-so unbounded chains stop re-deriving per batch.
+
+The deferred evaluation pass was tried and measured (2026-08-29), and
+the measurement went against it. The hypothesis: `forgetQuery` clears
+the question relations after every query, which nulls the engine's
+resume marks, so each query re-derives instead of resuming. The rules
+have no negation, so skipping the clear is sound, and a one-line
+change did it. Dogfood said no, twice: 56.9s and 56.0s wall with the
+clear, 73.8s and 76.5s without it. The mechanism: a query's own
+demand cone is small, so re-deriving it is cheap, while the
+accumulated version makes every semi-naive delta join against
+relations that grow with each query, which is quadratic across a run.
+Per-query clearing is the design, on purpose. A future win here needs
+retract-aware resume, where clearing one rule set's relations keeps
+the marks for what survives, and that is engine work with its own
+complexity budget, taken up only if a profile shows evaluation
+dominating again.
