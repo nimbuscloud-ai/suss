@@ -203,7 +203,7 @@ const resolvedModuleFileCache = new WeakMap<
  * ends up asking about it, rather than on where that file happens to
  * be.
  */
-function resolvedModuleFile(
+export function resolvedModuleFile(
   project: Project,
   importModule: string,
   resolution: ResolutionStore | undefined,
