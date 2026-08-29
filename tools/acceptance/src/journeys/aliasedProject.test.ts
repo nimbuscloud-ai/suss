@@ -105,3 +105,48 @@ describe("point suss at a directory holding several projects", () => {
     expect(routesIn(file)).toEqual([]);
   });
 });
+
+describe("point suss at a directory holding several Python projects", () => {
+  const project = copyOfFixture("python-fastapi", "sibling-python");
+  const parent = path.dirname(project);
+  fs.writeFileSync(
+    path.join(project, "pyproject.toml"),
+    '[project]\nname = "shop"\ndependencies = ["fastapi"]\n',
+  );
+
+  const secondProject = path.join(parent, "job");
+  fs.mkdirSync(secondProject, { recursive: true });
+  fs.writeFileSync(path.join(secondProject, "requirements.txt"), "fastapi\n");
+
+  const file = path.join(workspace("sibling-python-out"), "api.json");
+  const run = runSuss([
+    "extract",
+    "--dir",
+    parent,
+    "--lang",
+    "python",
+    "-f",
+    "fastapi",
+    "-o",
+    file,
+  ]);
+
+  it("names the Python projects it did not read as projects", () => {
+    expect(run.stderr).toContain("job/requirements.txt");
+    expect(run.stderr).toContain("project/pyproject.toml");
+  });
+
+  it("says a module reached nothing, in Python's own terms", () => {
+    expect(run.stderr).toContain("package root reached nothing");
+  });
+
+  it("points at a directory, since Python has no tsconfig to name", () => {
+    expect(run.stderr).toContain("suss extract --dir job");
+    expect(run.stderr).not.toContain("-p ");
+  });
+
+  it("loses the mounted router's paths, which is what the notice is about", () => {
+    expect(run.status).toBe(0);
+    expect(routesIn(file)).not.toContain("GET /api/items/{item_id}");
+  });
+});

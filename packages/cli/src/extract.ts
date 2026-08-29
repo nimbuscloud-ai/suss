@@ -711,13 +711,16 @@ export async function extract(
     .map((submodule) => submodule.declaredPath);
   process.stderr.write(formatMissingSubmodules(submodules));
 
-  // Only when nothing configured this run: a tsconfig at or above the
-  // root covers what is under it, and -p was somebody's choice.
+  // TypeScript alone can be configured out of this: a tsconfig at or
+  // above the root covers what is under it, and -p was somebody's
+  // choice. Python and Ruby resolve against the directory either way.
   if (
-    language === "typescript" &&
+    language !== "typescript" ||
     resolveSource(options).kind === "directory"
   ) {
-    process.stderr.write(formatProjectsBelow(projectsBelow(root)));
+    process.stderr.write(
+      formatProjectsBelow(projectsBelow(root, language), language),
+    );
   }
 
   const runExtraction = (): Promise<LanguageRun> =>
