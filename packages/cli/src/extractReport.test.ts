@@ -36,6 +36,7 @@ function report(overrides: Partial<ExtractionReport> = {}): ExtractionReport {
     summaries: 2,
     filesWithUnreadableExports: [],
     emptyStage: null,
+    reassignedNamesUnstated: 0,
     ...overrides,
   };
 }
