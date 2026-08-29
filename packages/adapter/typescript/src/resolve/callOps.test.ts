@@ -701,3 +701,74 @@ describe("a bare call of a bound name", () => {
     expect(ops.parameterReadsAt?.(0)).toBeNull();
   });
 });
+
+describe("anchorCall", () => {
+  function anchoredOps(source: string): CallOps {
+    const project = withLibrary();
+    const file = project.createSourceFile("/repo.ts", source);
+    const store = new ResolutionStore();
+    const calls: CallExpression[] = [];
+    file.forEachDescendant((node) => {
+      if (Node.isCallExpression(node)) {
+        calls.push(node);
+      }
+    });
+    const under = calls[calls.length - 1];
+    if (under === undefined) {
+      throw new Error("the fixture contains no call");
+    }
+    return callOpsFor(
+      under,
+      (value) => store.resolveWrittenValue(value),
+      (value, module) => store.importOriginsOf(value, [module]).length > 0,
+      (value, matches) => store.anchorCallsOf(value, matches),
+    );
+  }
+
+  const madeDeck: ReceiverOrigin = {
+    origin: "constructed",
+    importedFrom: ["tapedeck"],
+    named: ["makeDeck"],
+  };
+
+  it("hands back the factory call behind a cached receiver", () => {
+    const ops = anchoredOps(`
+      import { makeDeck } from "tapedeck";
+      const deck = makeDeck();
+      export const play = () => deck.play("a");
+    `);
+    expect(ops.anchorCall?.(madeDeck)?.calleeText()).toBe("makeDeck");
+  });
+
+  it("says nothing when two distinct factory calls both match", () => {
+    const ops = anchoredOps(`
+      import { makeDeck } from "tapedeck";
+      declare const cached: ReturnType<typeof makeDeck> | undefined;
+      const deck = cached || makeDeck();
+      const other = makeDeck();
+      const picked = deck || other;
+      export const play = () => picked.play("a");
+    `);
+    expect(ops.anchorCall?.(madeDeck)).toBeNull();
+  });
+
+  it("says nothing for an origin that is not constructed", () => {
+    const ops = anchoredOps(`
+      import { makeDeck } from "tapedeck";
+      const deck = makeDeck();
+      export const play = () => deck.play("a");
+    `);
+    expect(
+      ops.anchorCall?.({ origin: "declaredBy", importedFrom: ["tapedeck"] }),
+    ).toBeNull();
+  });
+
+  it("says nothing when the callbacks are not bound", () => {
+    const ops = opsForLastCall(`
+      import { makeDeck } from "tapedeck";
+      const deck = makeDeck();
+      export const play = () => deck.play("a");
+    `);
+    expect(ops.anchorCall?.(madeDeck)).toBeNull();
+  });
+});
