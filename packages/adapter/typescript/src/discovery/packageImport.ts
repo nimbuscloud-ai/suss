@@ -13,6 +13,7 @@
 
 import {
   type CallExpression,
+  type ImportSpecifier,
   Node,
   type PropertyAccessExpression,
   type SourceFile,
@@ -105,7 +106,8 @@ export function attributedCalls(
   }
 
   // Every callee and receiver in the file goes into one batched ask,
-  // so the whole file pays one demand set and one derivation.
+  // so the whole file pays one demand set and one derivation. Names
+  // that can never be a package's export are not seeded.
   const calls: CallExpression[] = [];
   const candidates = new Set<Node>();
   sourceFile.forEachDescendant((node) => {
@@ -114,8 +116,13 @@ export function attributedCalls(
     }
     calls.push(node);
     const callee = node.getExpression();
-    candidates.add(callee);
-    if (Node.isPropertyAccessExpression(callee)) {
+    if (couldBePackageLinked(callee, packages)) {
+      candidates.add(callee);
+    }
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      couldBePackageLinked(callee.getExpression(), packages)
+    ) {
       candidates.add(callee.getExpression());
     }
   });
@@ -174,6 +181,52 @@ export function attributedCalls(
   }
 
   return results;
+}
+
+/**
+ * Whether this name could possibly come down to a package's export. A
+ * local function, method, or class declaration is the project's own,
+ * and an import from a relative specifier points at a project file,
+ * so neither is worth a store seed. Everything else stays a
+ * candidate.
+ */
+function couldBePackageLinked(
+  value: Node,
+  packages: readonly string[],
+): boolean {
+  if (!Node.isIdentifier(value)) {
+    return true;
+  }
+  const declarations = value.getSymbol()?.getDeclarations() ?? [];
+  if (declarations.length === 0) {
+    return true;
+  }
+  return !declarations.every(
+    (declaration) =>
+      Node.isFunctionDeclaration(declaration) ||
+      Node.isMethodDeclaration(declaration) ||
+      Node.isClassDeclaration(declaration) ||
+      (Node.isImportSpecifier(declaration) &&
+        importAimsElsewhere(declaration, packages)),
+  );
+}
+
+/** A relative import, or one of a package nobody asked about. */
+function importAimsElsewhere(
+  declaration: ImportSpecifier,
+  packages: readonly string[],
+): boolean {
+  const specifier = declaration
+    .getImportDeclaration()
+    .getModuleSpecifierValue();
+  if (specifier.startsWith(".")) {
+    return true;
+  }
+  const { packageName } = splitPackageSpec(specifier);
+  return !packages.some(
+    (one) =>
+      one === specifier || splitPackageSpec(one).packageName === packageName,
+  );
 }
 
 /**

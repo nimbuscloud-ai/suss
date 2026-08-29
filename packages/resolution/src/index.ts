@@ -609,53 +609,240 @@ export const RESOLUTION_QUESTIONS = [
     [lit("wantedOrigin", v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
   ),
 
-  // Call-origin questions: what a callee or receiver comes down to,
-  // for attribution. A separate demand class from wantedOrigin, so
-  // asking about every call site in a file never demands the
-  // callsInto recursion below.
+  // Call-origin questions, for attribution, in their own demand
+  // class. Attribution stops at the import declaration, so nothing
+  // here demands reaches or callsInto, and the alias chain is
+  // unrolled to four hops, the depth the walk it replaced followed,
+  // so each depth derives in one round instead of a fixpoint.
+  rule("callOriginChain0", [v("x"), v("x")], [lit("wantedCallOrigin", v("x"))]),
+  rule(
+    "callOriginChain1",
+    [v("x"), v("z")],
+    [lit("callOriginChain0", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "callOriginChain1",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain0", v("x"), v("y")),
+      lit("endsHolding", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain1",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain0", v("x"), v("y")),
+      lit("fallbackBranch", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain2",
+    [v("x"), v("z")],
+    [lit("callOriginChain1", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "callOriginChain2",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain1", v("x"), v("y")),
+      lit("endsHolding", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain2",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain1", v("x"), v("y")),
+      lit("fallbackBranch", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain3",
+    [v("x"), v("z")],
+    [lit("callOriginChain2", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "callOriginChain3",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain2", v("x"), v("y")),
+      lit("endsHolding", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain3",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain2", v("x"), v("y")),
+      lit("fallbackBranch", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain4",
+    [v("x"), v("z")],
+    [lit("callOriginChain3", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "callOriginChain4",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain3", v("x"), v("y")),
+      lit("endsHolding", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain4",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain3", v("x"), v("y")),
+      lit("fallbackBranch", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callOriginChain",
+    [v("x"), v("y")],
+    [lit("callOriginChain0", v("x"), v("y"))],
+  ),
+  rule(
+    "callOriginChain",
+    [v("x"), v("y")],
+    [lit("callOriginChain1", v("x"), v("y"))],
+  ),
+  rule(
+    "callOriginChain",
+    [v("x"), v("y")],
+    [lit("callOriginChain2", v("x"), v("y"))],
+  ),
+  rule(
+    "callOriginChain",
+    [v("x"), v("y")],
+    [lit("callOriginChain3", v("x"), v("y"))],
+  ),
+  rule(
+    "callOriginChain",
+    [v("x"), v("y")],
+    [lit("callOriginChain4", v("x"), v("y"))],
+  ),
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("n")],
-    [lit("wantedCallOrigin", v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
+    [
+      lit("callOriginChain", v("x"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
+    ],
   ),
+  // A namespace member: the module's export of the member's own name.
+  // The imports literal leads, since it is the smallest relation.
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("p")],
     [
-      lit("wantedCallOrigin", v("x")),
-      lit("readsProperty", v("x"), v("o"), v("p")),
       lit("imports", v("o"), v("m"), NAMESPACE_IMPORT),
+      lit("readsProperty", v("y"), v("o"), v("p")),
+      lit("callOriginChain", v("x"), v("y")),
     ],
   ),
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("p")],
     [
-      lit("wantedCallOrigin", v("x")),
-      lit("readsProperty", v("x"), v("o"), v("p")),
-      lit("binds", v("o"), v("d")),
       lit("imports", v("d"), v("m"), NAMESPACE_IMPORT),
+      lit("binds", v("o"), v("d")),
+      lit("readsProperty", v("y"), v("o"), v("p")),
+      lit("callOriginChain", v("x"), v("y")),
+    ],
+  ),
+  // What a call made: through the call to its callee, whose own alias
+  // chain leads to the import, two bounded hops.
+  rule(
+    "callMadeChain0",
+    [v("x"), v("f")],
+    [lit("callOriginChain", v("x"), v("c")), lit("call", v("c"), v("f"))],
+  ),
+  rule(
+    "callMadeChain1",
+    [v("x"), v("z")],
+    [lit("callMadeChain0", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "callMadeChain2",
+    [v("x"), v("z")],
+    [lit("callMadeChain1", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "wantedCallOriginPair",
+    [v("x"), v("m"), v("n")],
+    [
+      lit("callMadeChain0", v("x"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
     ],
   ),
   rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("n")],
     [
-      lit("wantedCallOrigin", v("x")),
-      lit("isWrittenAs", v("x"), v("c")),
+      lit("callMadeChain1", v("x"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
+    ],
+  ),
+  rule(
+    "wantedCallOriginPair",
+    [v("x"), v("m"), v("n")],
+    [
+      lit("callMadeChain2", v("x"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
+    ],
+  ),
+  // A member destructured off what a call made keeps the member name
+  // as one more path segment.
+  rule(
+    "callMemberChain0",
+    [v("x"), v("f"), v("p")],
+    [
+      lit("callOriginChain", v("x"), v("e")),
+      lit("readsProperty", v("e"), v("c"), v("p")),
       lit("call", v("c"), v("f")),
-      lit("comesFrom", v("f"), v("m"), v("n")),
+    ],
+  ),
+  rule(
+    "callMemberChain1",
+    [v("x"), v("z"), v("p")],
+    [
+      lit("callMemberChain0", v("x"), v("y"), v("p")),
+      lit("binds", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callMemberChain2",
+    [v("x"), v("z"), v("p")],
+    [
+      lit("callMemberChain1", v("x"), v("y"), v("p")),
+      lit("binds", v("y"), v("z")),
     ],
   ),
   rule(
     "wantedCallOriginMember",
     [v("x"), v("m"), v("n"), v("p")],
     [
-      lit("wantedCallOrigin", v("x")),
-      lit("binds", v("x"), v("e")),
-      lit("readsProperty", v("e"), v("c"), v("p")),
-      lit("call", v("c"), v("f")),
-      lit("comesFrom", v("f"), v("m"), v("n")),
+      lit("callMemberChain0", v("x"), v("y"), v("p")),
+      lit("imports", v("y"), v("m"), v("n")),
+    ],
+  ),
+  rule(
+    "wantedCallOriginMember",
+    [v("x"), v("m"), v("n"), v("p")],
+    [
+      lit("callMemberChain1", v("x"), v("y"), v("p")),
+      lit("imports", v("y"), v("m"), v("n")),
+    ],
+  ),
+  rule(
+    "wantedCallOriginMember",
+    [v("x"), v("m"), v("n"), v("p")],
+    [
+      lit("callMemberChain2", v("x"), v("y"), v("p")),
+      lit("imports", v("y"), v("m"), v("n")),
     ],
   ),
   rule(
