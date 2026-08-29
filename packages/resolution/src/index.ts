@@ -59,6 +59,8 @@ export type {
 //   paramOf(f, k, p)            p is f's parameter at position k
 //   paramNamed(f, n, p)         p is f's parameter called n
 //   extends(c, b)               class c is written as extending b
+//   extendsNamed(c, n)          class c extends the name n, where no
+//                               node in the run backs that name
 //   returnsValue(f, v)          f returns v
 //   bodyCalls(f, c)             f's body calls c
 //   containsFn(f, g)            g is declared inside f
@@ -806,6 +808,25 @@ export const RESOLUTION_QUESTIONS = [
   // The calls behind a receiver, for a pack that wants the anchor a
   // chain hangs off; the README's anchor section says which hops and
   // why the asking side applies the single-answer policy.
+  // A class's ancestry, one hop per extends through the binding that
+  // says which class the written base is; the names on the way out
+  // are what a storage pack matches its library's bases against.
+  rule("ancestryChain", [v("c"), v("c")], [lit("wantedAncestry", v("c"))]),
+  rule(
+    "ancestryChain",
+    [v("c"), v("b2")],
+    [
+      lit("ancestryChain", v("c"), v("b")),
+      lit("extends", v("b"), v("x")),
+      lit("binds", v("x"), v("b2")),
+    ],
+  ),
+  rule(
+    "wantedBaseName",
+    [v("c"), v("n")],
+    [lit("ancestryChain", v("c"), v("b")), lit("extendsNamed", v("b"), v("n"))],
+  ),
+
   rule("anchorChain", [v("x"), v("x")], [lit("wantedAnchor", v("x"))]),
   rule(
     "anchorChain",
