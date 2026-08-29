@@ -27,6 +27,7 @@ import { statusChoicesOf } from "./statusBranches.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { OriginatesFrom } from "../resolve/invocationEffects.js";
 import type { FoundTerminal } from "./shared.js";
 
 /**
@@ -527,6 +528,7 @@ function buildReturnTerminal(
 function importedFromAny(
   callee: Identifier,
   modules: ReadonlyArray<string>,
+  originatesFrom?: OriginatesFrom,
 ): boolean {
   const name = callee.getText();
   const sourceFile = callee.getSourceFile();
@@ -535,7 +537,13 @@ function importedFromAny(
       return true;
     }
   }
-  return importedRootsOf(sourceFile, modules, { subpaths: true }).has(name);
+  if (importedRootsOf(sourceFile, modules, { subpaths: true }).has(name)) {
+    return true;
+  }
+  return (
+    originatesFrom !== undefined &&
+    modules.some((module) => originatesFrom(callee, module))
+  );
 }
 
 /**
@@ -585,6 +593,7 @@ export function tryMatchFunctionCall(
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "functionCall" }>,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): FoundTerminal | null {
   // `new Response(body, init)` builds a response the same way
   // `Response.json(body, init)` does, so a pack that declares `Response`
@@ -616,7 +625,7 @@ export function tryMatchFunctionCall(
   if (
     match.requiresImport !== undefined &&
     match.requiresImport.length > 0 &&
-    !importedFromAny(subject, match.requiresImport)
+    !importedFromAny(subject, match.requiresImport, originatesFrom)
   ) {
     return null;
   }

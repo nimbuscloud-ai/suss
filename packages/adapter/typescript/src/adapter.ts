@@ -168,6 +168,7 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
+import type { OriginatesFrom } from "./resolve/invocationEffects.js";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -564,6 +565,7 @@ export function extractCodeStructure(
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): RawCodeStructure {
   // One table per unit: every shape read during this call goes into it.
   const read = withDefinitions(() =>
@@ -574,6 +576,7 @@ export function extractCodeStructure(
       accessRecognizers,
       barriers,
       resolveWrittenValue,
+      originatesFrom,
     ),
   );
   return read.definitions === null
@@ -661,6 +664,7 @@ function readCodeStructure(
   accessRecognizers: AccessRecognizer[],
   barriers: DescentBarriers,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   if (func === null) {
@@ -679,6 +683,7 @@ function readCodeStructure(
     accessRecognizers,
     barriers,
     resolveWrittenValue,
+    originatesFrom,
   );
   let branches = extracted.branches;
   const unmatchedReturns = countUnmatchedReturns(
@@ -1131,6 +1136,10 @@ function extractFromSourceFile(
         resolution === undefined
           ? undefined
           : (value) => resolution.resolveWrittenValue(value),
+        resolution === undefined
+          ? undefined
+          : (value, module) =>
+              resolution.importOriginsOf(value, [module]).length > 0,
       );
 
       // Set before the branches below, since both of them overwrite it
@@ -1358,6 +1367,10 @@ function extractFromSourceFile(
       resolution === undefined
         ? undefined
         : (value) => resolution.resolveWrittenValue(value),
+      resolution === undefined
+        ? undefined
+        : (value, module) =>
+            resolution.importOriginsOf(value, [module]).length > 0,
     ).map((recognized) => recognized.effect),
     options,
   );

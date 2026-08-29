@@ -20,6 +20,7 @@ import {
   effectArgOf,
   isImportedFrom,
   methodDeclaredIn,
+  type OriginatesFrom,
 } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
@@ -58,6 +59,7 @@ interface Receiver {
   /** The whole callee, which is what made the value where there is no receiver. */
   expression: Node;
   resolve: Resolve;
+  originatesFrom?: OriginatesFrom;
 }
 
 /** One check per way a pack can pin down a receiver. */
@@ -68,12 +70,17 @@ const ORIGIN: Record<
   declaredBy: (origin, receiver) =>
     receiver.callee !== null &&
     origin.importedFrom.some((module) =>
-      methodDeclaredIn(receiver.callee as Node, module, receiver.resolve),
+      methodDeclaredIn(
+        receiver.callee as Node,
+        module,
+        receiver.resolve,
+        receiver.originatesFrom,
+      ),
     ),
   constructed: (origin, receiver) =>
     madeFromNamed(origin, madeExpression(receiver)) &&
     origin.importedFrom.some((module) =>
-      isImportedFrom(madeBy(receiver), module),
+      isImportedFrom(madeBy(receiver), module, receiver.originatesFrom),
     ),
 };
 
@@ -127,6 +134,7 @@ const CALL_ORIGIN: Record<
       isImportedFrom(
         rootIdentifier(receiver.expression) ?? receiver.expression,
         module,
+        receiver.originatesFrom,
       ),
     ),
 };
@@ -169,6 +177,7 @@ function madeExpression(receiver: Receiver): Node {
 export function callOpsFor(
   call: Called,
   resolveWrittenValue?: Resolve,
+  originatesFrom?: OriginatesFrom,
 ): AstCapableOps {
   const resolve = resolveWrittenValue ?? (() => null);
   const expression = calleeOf(call);
@@ -186,9 +195,19 @@ export function callOpsFor(
   return {
     method: () => (callee === null ? null : callee.getName()),
     receiverIsFrom: (origin) =>
-      ORIGIN[origin.origin](origin, { callee, expression, resolve }),
+      ORIGIN[origin.origin](origin, {
+        callee,
+        expression,
+        resolve,
+        ...(originatesFrom === undefined ? {} : { originatesFrom }),
+      }),
     isFrom: (origin) =>
-      CALL_ORIGIN[origin.origin](origin, { callee, expression, resolve }),
+      CALL_ORIGIN[origin.origin](origin, {
+        callee,
+        expression,
+        resolve,
+        ...(originatesFrom === undefined ? {} : { originatesFrom }),
+      }),
     argumentCount: () => argumentsOf().length,
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
