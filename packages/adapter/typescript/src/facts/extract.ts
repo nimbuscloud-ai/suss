@@ -26,10 +26,7 @@ import {
   declarationCarryingTheBody,
   isFunctionRoot,
 } from "../discovery/shared.js";
-import {
-  exportedDeclarationsOf,
-  resolveAliasedSymbol,
-} from "../moduleExports.js";
+import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
   isWrittenAgain,
   writesToBinding,
@@ -193,6 +190,19 @@ function emitImportFacts(
   ) {
     fact(db, "imports", declarationId, specifier, name);
   }
+}
+
+/** The name the source module exports this import-shaped declaration under. */
+function importedNameOf(declaration: Node): string {
+  if (Node.isImportSpecifier(declaration)) {
+    return declaration.getName();
+  }
+
+  if (Node.isNamespaceImport(declaration)) {
+    return NAMESPACE_IMPORT_NAME;
+  }
+
+  return "default";
 }
 
 /** The module specifier an import-shaped declaration names. */
@@ -1056,53 +1066,152 @@ export function extractFileFacts(
   extractModuleFacts(db, sourceFile);
   const filePath = sourceFile.getFilePath();
 
-  for (const [name, declarations] of exportedDeclarationsOf(sourceFile)) {
-    for (const spelling of declarations) {
-      const declaration = declarationCarryingTheBody(spelling);
-      if (isFunctionRoot(declaration)) {
-        const id = nodeId(declaration);
-        table.byId.set(id, declaration);
-        fact(db, "func", id);
-        emitFunctionFacts(db, table, declaration);
-        fact(db, "exportsAs", filePath, name, id);
+  for (const [name, spelling] of directExportsOf(sourceFile)) {
+    emitExportedValue(db, table, filePath, name, spelling);
+  }
+
+  emitLocalExportLists(db, table, sourceFile, filePath);
+}
+
+/**
+ * The exports this file states in its own syntax, with no chain
+ * following: the `moduleExport` rules flatten re-exports, so the
+ * emitter's whole job is one file's own statements.
+ */
+function directExportsOf(sourceFile: SourceFile): Array<[string, Node]> {
+  const found: Array<[string, Node]> = [];
+  for (const statement of sourceFile.getStatements()) {
+    if (
+      Node.isFunctionDeclaration(statement) ||
+      Node.isClassDeclaration(statement)
+    ) {
+      if (!statement.hasExportKeyword()) {
         continue;
       }
-
-      if (Node.isClassDeclaration(declaration)) {
-        emitClassFacts(db, table, declaration);
-        fact(db, "exportsAs", filePath, name, nodeId(declaration));
+      if (statement.hasDefaultKeyword()) {
+        found.push(["default", statement]);
         continue;
       }
-
-      if (Node.isVariableDeclaration(declaration)) {
-        const declarationId = nodeId(declaration);
-        table.byId.set(declarationId, declaration);
-        fact(db, "exportsAs", filePath, name, declarationId);
-        emitBindingValues(db, table, declaration);
-        continue;
+      const name = statement.getName();
+      if (name !== undefined && name.length > 0) {
+        found.push([name, statement]);
       }
+      continue;
+    }
 
-      if (Node.isBindingElement(declaration)) {
-        fact(
-          db,
-          "exportsAs",
-          filePath,
-          name,
-          emitBindingElementFacts(db, table, declaration),
-        );
-        continue;
+    if (Node.isVariableStatement(statement) && statement.hasExportKeyword()) {
+      for (const declaration of statement.getDeclarations()) {
+        const nameNode = declaration.getNameNode();
+        if (Node.isIdentifier(nameNode)) {
+          found.push([declaration.getName(), declaration]);
+          continue;
+        }
+        for (const element of nameNode.getDescendantsOfKind(
+          SyntaxKind.BindingElement,
+        )) {
+          const bound = element.getNameNode();
+          if (Node.isIdentifier(bound)) {
+            found.push([bound.getText(), element]);
+          }
+        }
       }
+      continue;
+    }
 
-      if (Node.isExpression(declaration)) {
-        // `export default <expression>`.
-        fact(
-          db,
-          "exportsAs",
-          filePath,
-          name,
-          emitValue(db, table, declaration),
-        );
+    if (Node.isExportAssignment(statement) && !statement.isExportEquals()) {
+      found.push(["default", statement.getExpression()]);
+    }
+  }
+  return found;
+}
+
+/**
+ * `export { a, b as c }` with no module specifier: each name points at
+ * a declaration in this file, or at an import, which makes the export
+ * a re-export the rules flatten.
+ */
+function emitLocalExportLists(
+  db: Database,
+  table: NodeTable,
+  sourceFile: SourceFile,
+  filePath: string,
+): void {
+  for (const exportDecl of sourceFile.getExportDeclarations()) {
+    if (exportDecl.getModuleSpecifier() !== undefined) {
+      continue;
+    }
+    for (const named of exportDecl.getNamedExports()) {
+      const alias = named.getAliasNode()?.getText() ?? named.getName();
+      for (const declaration of named.getLocalTargetDeclarations()) {
+        const specifier = importSpecifierOf(declaration);
+        if (specifier !== null) {
+          const importDecl = declaration.getFirstAncestorByKind(
+            SyntaxKind.ImportDeclaration,
+          );
+          const moduleKey =
+            importDecl === undefined ? null : moduleKeyOf(importDecl);
+          if (moduleKey !== null) {
+            fact(
+              db,
+              "reExports",
+              filePath,
+              alias,
+              moduleKey,
+              importedNameOf(declaration),
+            );
+          }
+          continue;
+        }
+        emitExportedValue(db, table, filePath, alias, declaration);
       }
     }
+  }
+}
+
+function emitExportedValue(
+  db: Database,
+  table: NodeTable,
+  filePath: string,
+  name: string,
+  spelling: Node,
+): void {
+  const declaration = declarationCarryingTheBody(spelling);
+  if (isFunctionRoot(declaration)) {
+    const id = nodeId(declaration);
+    table.byId.set(id, declaration);
+    fact(db, "func", id);
+    emitFunctionFacts(db, table, declaration);
+    fact(db, "exportsAs", filePath, name, id);
+    return;
+  }
+
+  if (Node.isClassDeclaration(declaration)) {
+    emitClassFacts(db, table, declaration);
+    fact(db, "exportsAs", filePath, name, nodeId(declaration));
+    return;
+  }
+
+  if (Node.isVariableDeclaration(declaration)) {
+    const declarationId = nodeId(declaration);
+    table.byId.set(declarationId, declaration);
+    fact(db, "exportsAs", filePath, name, declarationId);
+    emitBindingValues(db, table, declaration);
+    return;
+  }
+
+  if (Node.isBindingElement(declaration)) {
+    fact(
+      db,
+      "exportsAs",
+      filePath,
+      name,
+      emitBindingElementFacts(db, table, declaration),
+    );
+    return;
+  }
+
+  if (Node.isExpression(declaration)) {
+    // `export default <expression>`.
+    fact(db, "exportsAs", filePath, name, emitValue(db, table, declaration));
   }
 }
