@@ -21,7 +21,7 @@ import {
   extractBody,
   extractStatusCode,
 } from "./extract.js";
-import { resolveHelperReturn } from "./helperResolution.js";
+import { type ResolveCallee, resolveHelperReturn } from "./helperResolution.js";
 import { returnPositionOf, unwrapValue } from "./shared.js";
 import { statusChoicesOf } from "./statusBranches.js";
 
@@ -128,6 +128,7 @@ export function tryMatchReturnShape(
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
   resolveWrittenValue?: (value: Node) => Node | null,
+  resolveCallee?: ResolveCallee,
 ): FoundTerminal[] {
   if (Node.isObjectLiteralExpression(node)) {
     const source = returnPositionOf(node);
@@ -183,7 +184,7 @@ export function tryMatchReturnShape(
   // `return json(200, payload)`. Most handlers build the response in a
   // helper rather than at the return site, and the helper belongs to the
   // project, so read it instead of guessing what its arguments mean.
-  const resolved = resolveHelperReturn(returned);
+  const resolved = resolveHelperReturn(returned, resolveCallee);
   if (resolved.kind === "notLocal") {
     return [];
   }

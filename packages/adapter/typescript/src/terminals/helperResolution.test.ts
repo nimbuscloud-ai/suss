@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
+import { ResolutionStore } from "../facts/store.js";
 import { findTerminals } from "./index.js";
 
 import type { TerminalPattern } from "@suss/extractor";
@@ -348,5 +349,46 @@ describe("a pack naming a library's function", () => {
     );
 
     expect(terminals).toHaveLength(1);
+  });
+});
+
+describe("a helper resolved through the store", () => {
+  it("reads a helper imported through a project barrel", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/helpers.ts",
+      `export function json(statusCode: number, payload: unknown) {
+        return { statusCode, body: JSON.stringify(payload) };
+      }`,
+    );
+    project.createSourceFile(
+      "/barrel.ts",
+      'export { json } from "./helpers.js";',
+    );
+    const file = project.createSourceFile(
+      "/handler.ts",
+      `import { json } from "./barrel.js";
+      export function handler() {
+        return json(201, { ok: true });
+      }`,
+    );
+    const handler = file
+      .getDescendantsOfKind(SyntaxKind.FunctionDeclaration)
+      .find((fn) => fn.getName() === "handler") as FunctionRoot;
+
+    const store = new ResolutionStore();
+    const terminals = findTerminals(
+      handler,
+      [RESPONSE_SHAPE],
+      undefined,
+      (value) => store.resolveWrittenValue(value),
+      undefined,
+      (value) => store.resolveCallable(value),
+    );
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.terminal.statusCode).toEqual({
+      type: "literal",
+      value: 201,
+    });
   });
 });

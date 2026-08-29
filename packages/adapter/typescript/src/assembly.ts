@@ -48,6 +48,7 @@ import type {
   AnchorCallsOf,
   OriginatesFrom,
 } from "./resolve/invocationEffects.js";
+import type { ResolveCallee } from "./terminals/helperResolution.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -165,6 +166,7 @@ export function extractRawBranches(
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
+  resolveCallee?: ResolveCallee,
 ): RawBranchResult {
   const terminals = findTerminals(
     func,
@@ -172,6 +174,7 @@ export function extractRawBranches(
     barriers,
     resolveWrittenValue,
     originatesFrom,
+    resolveCallee,
   );
   const invocations = extractInvocationEffects(func, barriers);
   const recognized = [

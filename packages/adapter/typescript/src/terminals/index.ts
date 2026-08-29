@@ -25,6 +25,7 @@ import { tryMatchThrowExpression } from "./throws.js";
 import type { TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { OriginatesFrom } from "../resolve/invocationEffects.js";
+import type { ResolveCallee } from "./helperResolution.js";
 import type { FoundTerminal } from "./shared.js";
 
 export type { FoundTerminal } from "./shared.js";
@@ -58,6 +59,7 @@ export function findTerminals(
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
   originatesFrom?: OriginatesFrom,
+  resolveCallee?: ResolveCallee,
 ): FoundTerminal[] {
   const results: FoundTerminal[] = [];
 
@@ -84,6 +86,7 @@ export function findTerminals(
           pattern,
           pattern.match,
           resolveWrittenValue,
+          resolveCallee,
         );
         if (matches.length > 0) {
           results.push(...matches);
