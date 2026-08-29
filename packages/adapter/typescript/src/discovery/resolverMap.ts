@@ -11,7 +11,8 @@
 
 import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
-import { resolveImportedLocalName } from "./resolveImport.js";
+import { ResolutionStore } from "../facts/store.js";
+import { callsResolvingTo } from "./importedCalls.js";
 import {
   couldNameAValue,
   functionValueOf,
@@ -22,7 +23,6 @@ import {
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
-import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 export function discoverResolverMaps(
@@ -31,65 +31,54 @@ export function discoverResolverMaps(
   kind: string,
   resolution?: ResolutionStore,
 ): DiscoveredUnit[] {
-  const localName = resolveImportedLocalName(
-    sourceFile,
-    match.importModule,
-    match.importName,
-  );
-  if (localName === null) {
-    return [];
-  }
-
+  // A bare call gets its own store; the adapter passes its run's.
+  const store = resolution ?? new ResolutionStore();
   const mapProperty = match.mapProperty;
   const excludeTypes = new Set(match.excludeTypes ?? []);
   const results: DiscoveredUnit[] = [];
 
-  sourceFile.forEachDescendant((node) => {
-    // Match both `new ApolloServer({...})` and `apolloServer({...})`.
-    if (!Node.isCallExpression(node) && !Node.isNewExpression(node)) {
-      return;
-    }
-    const callee = node.getExpression();
-    if (!Node.isIdentifier(callee) || callee.getText() !== localName) {
-      return;
-    }
+  // Both `new ApolloServer({...})` and `apolloServer({...})`.
+  for (const node of callsResolvingTo(sourceFile, store, {
+    module: match.importModule,
+    name: match.importName,
+  })) {
     const args = node.getArguments();
     if (args.length === 0 || !Node.isObjectLiteralExpression(args[0])) {
-      return;
+      continue;
     }
     const config = args[0];
 
     const resolversProp = config.getProperty(mapProperty);
     if (resolversProp === undefined) {
-      return;
+      continue;
     }
 
-    const resolversObj = resolverMapObject(resolversProp, resolution);
+    const resolversObj = resolverMapObject(resolversProp, store);
     if (resolversObj === null) {
-      return;
+      continue;
     }
 
     // typeDefs lives alongside `resolvers` on the same config
     // object. Capture it once per ApolloServer construction; all
     // resolvers discovered below share the same SDL.
-    const schemaSdl = extractTypeDefsSdl(config, resolution);
+    const schemaSdl = extractTypeDefsSdl(config, store);
 
     // Walk type → field → function.
-    for (const typeProp of propertiesOf(resolversObj, resolution)) {
+    for (const typeProp of propertiesOf(resolversObj, store)) {
       const typeName = resolverPropertyName(typeProp);
       if (typeName === null || excludeTypes.has(typeName)) {
         continue;
       }
-      const typeObj = resolverMapObject(typeProp, resolution);
+      const typeObj = resolverMapObject(typeProp, store);
       if (typeObj === null) {
         continue;
       }
-      for (const fieldProp of propertiesOf(typeObj, resolution)) {
+      for (const fieldProp of propertiesOf(typeObj, store)) {
         const fieldName = resolverPropertyName(fieldProp);
         if (fieldName === null) {
           continue;
         }
-        const fn = resolverPropertyFunction(fieldProp, resolution);
+        const fn = resolverPropertyFunction(fieldProp, store);
         if (fn === null) {
           continue;
         }
@@ -110,7 +99,7 @@ export function discoverResolverMaps(
         });
       }
     }
-  });
+  }
 
   return results;
 }

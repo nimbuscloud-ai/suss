@@ -340,6 +340,22 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
+  // Which module's export a re-exported name forwards to, however
+  // many barrels deep the forwarding runs.
+  rule(
+    "moduleForwards",
+    [v("m"), v("n"), v("m2"), v("n2")],
+    [lit("reExports", v("m"), v("n"), v("m2"), v("n2"))],
+  ),
+  rule(
+    "moduleForwards",
+    [v("m"), v("n"), v("m3"), v("n3")],
+    [
+      lit("reExports", v("m"), v("n"), v("m2"), v("n2")),
+      lit("moduleForwards", v("m2"), v("n2"), v("m3"), v("n3")),
+    ],
+  ),
+
   // What a module exports: directly, or through re-export chains.
   rule(
     "moduleExport",
@@ -671,6 +687,17 @@ export const RESOLUTION_QUESTIONS = [
     [
       lit("callOriginChain", v("x"), v("y")),
       lit("imports", v("y"), v("m"), v("n")),
+    ],
+  ),
+  // An import of a project barrel is an import of what the barrel
+  // forwards, so the pair surfaces the module behind the chain.
+  rule(
+    "wantedCallOriginPair",
+    [v("x"), v("m2"), v("n2")],
+    [
+      lit("callOriginChain", v("x"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
+      lit("moduleForwards", v("m"), v("n"), v("m2"), v("n2")),
     ],
   ),
   // A namespace member: the module's export of the member's own name.
