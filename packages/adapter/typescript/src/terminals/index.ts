@@ -24,6 +24,7 @@ import { tryMatchThrowExpression } from "./throws.js";
 
 import type { TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { OriginatesFrom } from "../resolve/invocationEffects.js";
 import type { FoundTerminal } from "./shared.js";
 
 export type { FoundTerminal } from "./shared.js";
@@ -56,6 +57,7 @@ export function findTerminals(
   patterns: TerminalPattern[],
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): FoundTerminal[] {
   const results: FoundTerminal[] = [];
 
@@ -122,6 +124,7 @@ export function findTerminals(
           pattern,
           pattern.match,
           resolveWrittenValue,
+          originatesFrom,
         );
       }
       // `functionFallthrough` is not matched per-node: the assembly

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
+import { ResolutionStore } from "../facts/store.js";
 import { isImportedFrom, methodDeclaredIn } from "./invocationEffects.js";
 
 import type { Node } from "ts-morph";
@@ -206,5 +207,44 @@ describe("methodDeclaredIn", () => {
     `);
 
     expect(methodDeclaredIn(callee, "ioredis")).toBe(false);
+  });
+});
+
+describe("isImportedFrom with the store's origin question", () => {
+  it("follows a project barrel the syntactic paths cannot", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/node_modules/@probe/queue/package.json",
+      JSON.stringify({ name: "@probe/queue", types: "index.d.ts" }),
+    );
+    project.createSourceFile(
+      "/node_modules/@probe/queue/index.d.ts",
+      "export declare class SendCommand { constructor(input: unknown); }\n",
+    );
+    project.createSourceFile(
+      "/barrel.ts",
+      'export { SendCommand } from "@probe/queue";\n',
+    );
+    const use = project.createSourceFile(
+      "/use.ts",
+      'import { SendCommand } from "./barrel.js";\nconst c = new SendCommand({});\n',
+    );
+    const identifier = use
+      .getDescendants()
+      .filter((node) => node.getText() === "SendCommand")
+      .at(-1);
+    if (identifier === undefined) {
+      throw new Error("no use site");
+    }
+
+    const store = new ResolutionStore();
+    const originatesFrom = (value: Node, module: string) =>
+      store.importOriginsOf(value, [module]).length > 0;
+    expect(isImportedFrom(identifier, "@probe/queue", originatesFrom)).toBe(
+      true,
+    );
+    expect(isImportedFrom(identifier, "@probe/other", originatesFrom)).toBe(
+      false,
+    );
   });
 });

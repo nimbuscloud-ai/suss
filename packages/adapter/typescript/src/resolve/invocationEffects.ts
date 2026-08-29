@@ -180,6 +180,7 @@ export interface TsInvocationRecognizerContext {
 export function invocationContextFor(
   call: CallExpression,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): TsInvocationRecognizerContext {
   // Built on the first read rather than up front: most calls reach no
   // declared pack, and following a receiver costs more than the walk.
@@ -188,20 +189,29 @@ export function invocationContextFor(
     call,
     sourceFile: call.getSourceFile(),
     extractArgs: () => extractArgs(call),
-    isImportedFrom,
+    isImportedFrom: (identifier, expectedModule) =>
+      isImportedFrom(identifier, expectedModule, originatesFrom),
     // A context built without a store gives null, and the recognizer's
     // own pattern match runs on the raw node.
     resolveWrittenValue: resolveWrittenValue ?? (() => null),
     get ops(): CallOps {
-      ops ??= callOpsFor(call, resolveWrittenValue);
+      ops ??= callOpsFor(call, resolveWrittenValue, originatesFrom);
       return ops;
     },
   };
 }
 
+/**
+ * Whether a value's chain reaches the module, asked of the store. The
+ * adapter binds it; a context built bare falls back to the checker's
+ * alias resolution.
+ */
+export type OriginatesFrom = (value: Node, module: string) => boolean;
+
 export function isImportedFrom(
   identifier: Node,
   expectedModule: string,
+  originatesFrom?: OriginatesFrom,
 ): boolean {
   if (!Node.isIdentifier(identifier)) {
     return false;
@@ -215,6 +225,10 @@ export function isImportedFrom(
     if (importSpecifierMatches(decl, expectedModule)) {
       return true;
     }
+  }
+
+  if (originatesFrom !== undefined) {
+    return originatesFrom(identifier, expectedModule);
   }
 
   const aliased = resolveAliasedSymbol(symbol) ?? symbol;
@@ -244,6 +258,7 @@ export function methodDeclaredIn(
   callee: Node,
   expectedModule: string,
   resolve?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): boolean {
   if (!Node.isPropertyAccessExpression(callee)) {
     return false;
@@ -265,7 +280,10 @@ export function methodDeclaredIn(
   }
   const written = resolve(callee.getExpression());
   const made = maker(written);
-  return made !== null && isImportedFrom(rootIdentifier(made), expectedModule);
+  return (
+    made !== null &&
+    isImportedFrom(rootIdentifier(made), expectedModule, originatesFrom)
+  );
 }
 
 /** The callee of a construction or call, which says which library it is. */
@@ -508,6 +526,7 @@ export function runInvocationRecognizers(
   recognizers: InvocationRecognizer[],
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -523,7 +542,7 @@ export function runInvocationRecognizers(
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const ctx = invocationContextFor(node, resolveWrittenValue);
+    const ctx = invocationContextFor(node, resolveWrittenValue, originatesFrom);
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
@@ -570,12 +589,14 @@ export function runAccessRecognizers(
   recognizers: AccessRecognizer[],
   barriers: DescentBarriers = NO_BARRIERS,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): RecognizedEffectLocation[] {
   return dispatchAccessRecognizers(
     func,
     recognizers,
     (node) => isDescentStop(node, func, barriers),
     resolveWrittenValue,
+    originatesFrom,
   );
 }
 
@@ -589,12 +610,14 @@ export function runAccessRecognizersAtModuleScope(
   sourceFile: SourceFile,
   recognizers: AccessRecognizer[],
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): RecognizedEffectLocation[] {
   return dispatchAccessRecognizers(
     sourceFile,
     recognizers,
     isModuleScopeStop,
     resolveWrittenValue,
+    originatesFrom,
   );
 }
 
@@ -616,6 +639,7 @@ export function accessContextFor(
   node: Accessed,
   sourceFile: SourceFile,
   resolveWrittenValue: (value: Node) => Node | null = () => null,
+  originatesFrom?: OriginatesFrom,
 ): TsAccessRecognizerContext {
   const given = { access: node, sourceFile, resolveWrittenValue };
   if (Node.isPropertyAccessExpression(node)) {
@@ -625,7 +649,7 @@ export function accessContextFor(
   return {
     ...given,
     get ops(): CallOps {
-      ops ??= callOpsFor(node, resolveWrittenValue);
+      ops ??= callOpsFor(node, resolveWrittenValue, originatesFrom);
       return ops;
     },
   };
@@ -636,6 +660,7 @@ function dispatchAccessRecognizers(
   recognizers: AccessRecognizer[],
   isStop: (node: Node) => boolean,
   resolveWrittenValue?: (value: Node) => Node | null,
+  originatesFrom?: OriginatesFrom,
 ): RecognizedEffectLocation[] {
   if (recognizers.length === 0) {
     return [];
@@ -663,7 +688,12 @@ function dispatchAccessRecognizers(
     ) {
       return;
     }
-    const ctx = accessContextFor(node, sourceFile, resolveWrittenValue);
+    const ctx = accessContextFor(
+      node,
+      sourceFile,
+      resolveWrittenValue,
+      originatesFrom,
+    );
     const line = enclosingStatementLine(node);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
