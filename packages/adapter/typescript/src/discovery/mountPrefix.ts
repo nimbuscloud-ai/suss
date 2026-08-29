@@ -15,11 +15,16 @@
 // Built once per extraction, over every file a pack's own gate already
 // applies to, so a project with no mountable pack pays nothing extra.
 
+import {
+  agreedMountPrefix,
+  type MountEdge,
+  type MountEdges,
+} from "@suss/resolution";
+
 import { recordMountPrefix } from "../depTracking.js";
 import { nodeId } from "../facts/extract.js";
 import {
   discoverMountEdges,
-  joinMountedPath,
   type MountEdgeCandidate,
   type MountPrefixIndex,
   registrationSubjectIdsOf,
@@ -30,11 +35,6 @@ import type { Node, SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 export type { MountPrefixIndex } from "./registrationCall.js";
-
-interface MountEdge {
-  parentId: string;
-  prefix: string;
-}
 
 const NO_MOUNTS: MountPrefixIndex = {
   // Recorded even with no mounts anywhere: a mount added later in some
@@ -143,9 +143,9 @@ export function buildMountPrefixIndex(
     return NO_MOUNTS;
   }
 
-  const memo = new Map<string, string | null>();
+  const edges: MountEdges = edgesByChild;
   const byId = (childId: string): string =>
-    resolvePrefix(edgesByChild, memo, childId, new Set()) ?? "";
+    agreedMountPrefix(edges, childId) ?? "";
   return {
     effectivePrefixFor(routerNode: Node): string {
       const childId = nodeId(routerNode);
@@ -164,72 +164,4 @@ function recordEdge(
   const edges = edgesByChild.get(candidate.childRouterId) ?? [];
   edges.push({ parentId: candidate.parentRouterId, prefix: candidate.prefix });
   edgesByChild.set(candidate.childRouterId, edges);
-}
-
-/**
- * The prefix routes on `childId` are served under, composed through
- * however many routers it was mounted onto in turn. `null` means
- * unresolvable rather than "no prefix": a cycle has nothing sensible to
- * compose, and a router mounted more than once does not settle which
- * prefix a route under it takes, unless every mount agrees once each
- * one's own ancestor chain is resolved.
- *
- * Agreement is checked on the resolved result, not on the literal
- * prefix a mount call gives. Two mounts with the identical local prefix
- * can still land at different full paths if one mount's own router is
- * itself mounted somewhere the other isn't (`app1.use("/api", r)`
- * where `app1` is mounted under `/v1`, next to `app2.use("/api", r)`
- * where `app2` is not mounted anywhere composes `/v1/api` for one and
- * `/api` for the other), and picking one of those arbitrarily would be
- * a wrong result presented as a right one. Comparing full resolutions
- * catches that; comparing the literal prefixes would not.
- */
-function resolvePrefix(
-  edgesByChild: ReadonlyMap<string, MountEdge[]>,
-  memo: Map<string, string | null>,
-  childId: string,
-  visiting: Set<string>,
-): string | null {
-  const cached = memo.get(childId);
-  if (cached !== undefined) {
-    return cached;
-  }
-  if (visiting.has(childId)) {
-    memo.set(childId, null);
-    return null;
-  }
-
-  const edges = edgesByChild.get(childId);
-  if (edges === undefined || edges.length === 0) {
-    memo.set(childId, "");
-    return "";
-  }
-
-  visiting.add(childId);
-  let resolved: string | undefined;
-  let disagrees = false;
-  for (const edge of edges) {
-    const parentPrefix = resolvePrefix(
-      edgesByChild,
-      memo,
-      edge.parentId,
-      visiting,
-    );
-    if (parentPrefix === null) {
-      disagrees = true;
-      break;
-    }
-    const candidate = joinMountedPath(parentPrefix, edge.prefix);
-    if (resolved === undefined) {
-      resolved = candidate;
-    } else if (resolved !== candidate) {
-      disagrees = true;
-      break;
-    }
-  }
-  visiting.delete(childId);
-
-  const result = disagrees || resolved === undefined ? null : resolved;
-  memo.set(childId, result);
-  return result;
 }
