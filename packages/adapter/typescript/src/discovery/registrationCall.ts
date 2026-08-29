@@ -12,6 +12,8 @@
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
+import { joinMountedPath } from "@suss/resolution";
+
 import { nodeId } from "../facts/extract.js";
 import { pathFromArgument } from "../resolve/routePath.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
@@ -227,27 +229,6 @@ function withMountPrefix(
   return prefix === ""
     ? routeInfo
     : { ...routeInfo, path: joinMountedPath(prefix, routeInfo.path) };
-}
-
-/**
- * Compose a mount prefix onto whatever follows it, a route's own path
- * or (walking the chain in `mountPrefix.ts`) another mount's prefix on
- * the way up to the router that started it. Bare concatenation
- * doubles the slash `app.use("/api/orders/", router)` leaves at the
- * seam, and turns a root mount `app.use("/", router)` into a path
- * starting `//`, neither of which `normalizePath` collapses, so
- * neither ever pairs against anything.
- *
- * `path` is assumed to have its own leading slash already, the way
- * every route path and every mount prefix this composes does.
- * Stripping `prefix`'s own trailing slash first, then requiring that
- * leading slash to do the joining, is what keeps the seam single: a
- * root prefix strips down to nothing, and a root prefix composing to
- * `path` unchanged is exactly what mounting under "/" means.
- */
-export function joinMountedPath(prefix: string, path: string): string {
-  const trimmed = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
-  return trimmed === "" ? path : trimmed + path;
 }
 
 /**

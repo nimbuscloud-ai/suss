@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { joinMountedPath } from "@suss/resolution";
 import { createTestProject } from "@suss/test-project";
 
 import { nodeId } from "../facts/extract.js";
@@ -7,7 +8,6 @@ import { ResolutionStore } from "../facts/store.js";
 import {
   discoverMountEdges,
   discoverRegistrationCalls,
-  joinMountedPath,
   type MountPrefixIndex,
   registrationSubjectIdsOf,
 } from "./registrationCall.js";

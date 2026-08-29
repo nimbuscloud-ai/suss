@@ -6,6 +6,13 @@ export {
   explainResolutionProof,
   renderExplanation,
 } from "./explain.js";
+export {
+  agreedMountPrefix,
+  joinMountedPath,
+  type MountEdge,
+  type MountEdges,
+  mountPathsOf,
+} from "./mount.js";
 
 export type {
   CaseFiles,
