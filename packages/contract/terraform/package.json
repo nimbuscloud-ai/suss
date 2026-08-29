@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-terraform",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "type": "module",
   "description": "Read the storage a Terraform configuration declares, for checking code against it.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.19.0",
+    "@suss/behavioral-ir": "0.20.0",
     "hcl2-parser": "^1.0.3",
     "semver": "^7.6.0"
   },
