@@ -61,25 +61,31 @@ describe("shape fuzzer, sound tier (package exports)", () => {
   );
 });
 
-describe("shape fuzzer, call sites that go unreported", () => {
-  for (const bug of PACKAGE_BUGS) {
-    it(
-      `still broken, ${bug.dimension}=${bug.value}: ${bug.wrong}`,
-      { timeout: 60_000 },
-      async () => {
-        const spec = {
-          ...SIMPLEST_PACKAGE_SHAPE,
-          ...bug.alongside,
-          [bug.dimension]: bug.value,
-        } as PackageShapeSpec;
-        const result = await runPackageShapeDifferential(spec);
-        // Asserting the broken behaviour on purpose, so that fixing it
-        // breaks this test and the value moves into the sound tier.
-        expect(
-          result.findings.map(findingSignature),
-          `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${bug.dimension}=${bug.value} into the sound tier above and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
-        ).toContain(bug.signature);
-      },
-    );
-  }
-});
+// PACKAGE_BUGS is empty: every import form is in the sound tier above.
+// A pin added back gets its reproducing test back with it, on the
+// pattern the other shape suites use.
+describe.skipIf(PACKAGE_BUGS.length === 0)(
+  "shape fuzzer, call sites that go unreported",
+  () => {
+    for (const bug of PACKAGE_BUGS) {
+      it(
+        `still broken, ${bug.dimension}=${bug.value}: ${bug.wrong}`,
+        { timeout: 60_000 },
+        async () => {
+          const spec = {
+            ...SIMPLEST_PACKAGE_SHAPE,
+            ...bug.alongside,
+            [bug.dimension]: bug.value,
+          } as PackageShapeSpec;
+          const result = await runPackageShapeDifferential(spec);
+          // Asserting the broken behaviour on purpose, so that fixing
+          // it breaks this test and the value moves into the sound tier.
+          expect(
+            result.findings.map(findingSignature),
+            `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move ${bug.dimension}=${bug.value} into the sound tier above and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
+          ).toContain(bug.signature);
+        },
+      );
+    }
+  },
+);

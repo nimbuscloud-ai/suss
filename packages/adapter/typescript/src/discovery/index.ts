@@ -108,7 +108,15 @@ function runPattern(
     return discoverPackageExports(sourceFile, pattern.match, pattern.kind);
   }
   if (pattern.match.type === "packageImport") {
-    return discoverPackageImports(sourceFile, pattern.match, pattern.kind);
+    if (resolution === undefined) {
+      return [];
+    }
+    return discoverPackageImports(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "decoratedMethod") {
     return discoverDecoratedMethods(

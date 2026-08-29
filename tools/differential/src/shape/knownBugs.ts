@@ -190,28 +190,11 @@ export const QUEUE_BUGS: ReproducedBug[] = [
 ];
 
 /**
- * Wrong behaviour at the package boundary. Every way of publishing a
- * function resolves, so the provider side covers the whole publish
- * dimension. Both of these are on the calling side, and both leave a
- * call site nothing pairs against: the summary set says the package is
- * imported by nobody.
+ * Wrong behaviour at the package boundary. Every publish route and
+ * every import form now resolves, so both sides of the dimension are
+ * in the sound tier and nothing is listed here.
  */
-export const PACKAGE_BUGS: ReproducedBug[] = [
-  {
-    dimension: "form",
-    value: "namespaceImport",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a call through a namespace import produces no caller unit, so the call site pairs with nothing",
-  },
-  {
-    dimension: "form",
-    value: "throughLocalBinding",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a call through a local name bound to the import produces no caller unit",
-  },
-];
+export const PACKAGE_BUGS: ReproducedBug[] = [];
 
 /**
  * Every finding a run is expected to produce. A signature outside this

@@ -2,10 +2,10 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 625,
-    "internal": 2259,
-    "consumers": 1049,
-    "pairs": 1033,
+    "exports": 627,
+    "internal": 2254,
+    "consumers": 1073,
+    "pairs": 1054,
     "unfollowedCalls": 235,
     "findingErrors": 0
   },
@@ -26,9 +26,9 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 67,
-      "internal": 771,
-      "consumers": 77,
+      "exports": 69,
+      "internal": 766,
+      "consumers": 91,
       "unfollowedCalls": 70
     },
     "packages/behavioral-ir": {
@@ -56,14 +56,14 @@
       "name": "@suss/cli",
       "exports": 19,
       "internal": 359,
-      "consumers": 212,
+      "consumers": 221,
       "unfollowedCalls": 39
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
       "exports": 2,
       "internal": 1,
-      "consumers": 21,
+      "consumers": 22,
       "unfollowedCalls": 0
     },
     "packages/client/axios": {
