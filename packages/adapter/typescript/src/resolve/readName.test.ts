@@ -243,6 +243,18 @@ describe("a name the code says is somewhere else", () => {
     ).toBe("{location.bucket}");
   });
 
+  it("states the reference even when the store knows the one caller", () => {
+    expect(
+      referenceInWrapper(`
+        export function wrapper(location: { bucket: string }) {
+          const subject = location.bucket;
+          return subject;
+        }
+        export const caller = () => wrapper({ bucket: "orders-v1" });
+      `),
+    ).toBe("{location.bucket}");
+  });
+
   it("states every field on the way in, however deep", () => {
     expect(
       referenceInWrapper(`
