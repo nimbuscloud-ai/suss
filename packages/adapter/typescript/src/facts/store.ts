@@ -55,7 +55,7 @@ import {
 
 import type { Atom, Proof } from "@suss/datalog";
 import type { TransparentWrapper } from "@suss/extractor";
-import type { SourceFile } from "ts-morph";
+import type { Project, SourceFile } from "ts-morph";
 
 const JS_RULES = [
   // f.bind(...) leads wherever f leads. Stated as a step, so the
@@ -762,7 +762,7 @@ export class ResolutionStore {
         recordFileDependency(filePath);
         this.extractFile(file);
         for (const target of this.reExportTargetsOf(filePath)) {
-          const targetFile = project.getSourceFile(target);
+          const targetFile = sourceFileFor(project, target);
           if (targetFile !== undefined) {
             next.push(targetFile);
           }
@@ -863,6 +863,31 @@ export class ResolutionStore {
     this.fullyExtracted.add(filePath);
     this.stale = true;
     extractFileFacts(this.db, this.table, sourceFile);
+  }
+}
+
+/**
+ * A re-export target the project has not loaded yet, such as a
+ * dependency's .d.ts, is added by its resolved path. A key that is a
+ * bare specifier never resolved to a file, so there is nothing to add.
+ */
+function sourceFileFor(
+  project: Project,
+  moduleKey: string,
+): SourceFile | undefined {
+  const known = project.getSourceFile(moduleKey);
+  if (known !== undefined) {
+    return known;
+  }
+
+  if (!moduleKey.startsWith("/")) {
+    return undefined;
+  }
+
+  try {
+    return project.addSourceFileAtPathIfExists(moduleKey) ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 

@@ -211,3 +211,15 @@ described twice, once in the walk and once next to it, and the copy
 next to it is what hid the closure above. Deleting it meant making the
 walk cover the one node it could not see, which is a smaller thing to
 keep correct.
+
+## Why a reassigned default export says nothing
+
+`export { x }` exports the live binding, so an importer reads whatever
+the last write left in `x`. `export default x` runs once and takes the
+value `x` has at that moment; a write after the statement changes the
+binding but not the default. The facts only record a binding's last
+write (`endsHolding`), which is the right claim for an export list and
+the wrong one for a default whose name is written again afterwards. So
+the emitter states a default through its declaration only when the name
+is written once, and says nothing about a reassigned one, keeping quiet
+over guessing a value that depends on statement order.

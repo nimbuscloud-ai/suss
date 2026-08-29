@@ -88,6 +88,26 @@ describe("what exportsOf lists per module shape", () => {
     expect(Node.isFunctionDeclaration(values[0])).toBe(true);
   });
 
+  it("a reassigned default says nothing, a reassigned list name resolves", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/pack.ts",
+      [
+        "let handler = () => 1;",
+        "export default handler;",
+        "export { handler };",
+        "handler = () => 2;",
+        "",
+      ].join("\n"),
+    );
+    const store = new ResolutionStore();
+    const table = store.exportsOf(file);
+    // The default took the value before the later write; the last write
+    // the facts know is the wrong claim, so there is no claim.
+    expect(table.get("default")).toBeUndefined();
+    expect(table.get("handler")).toHaveLength(1);
+  });
+
   it("a default that states an imported name flattens to its source", () => {
     const project = createTestProject();
     project.createSourceFile("/inner.ts", "export function alpha() {}\n");
