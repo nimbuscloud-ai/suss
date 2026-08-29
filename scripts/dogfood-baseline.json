@@ -3,9 +3,9 @@
     "packages": 64,
     "packagesWithExports": 64,
     "exports": 631,
-    "internal": 2258,
-    "consumers": 1082,
-    "pairs": 1063,
+    "internal": 2261,
+    "consumers": 1083,
+    "pairs": 1064,
     "unfollowedCalls": 235,
     "findingErrors": 0
   },
@@ -13,8 +13,8 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 50,
-      "internal": 165,
-      "consumers": 52,
+      "internal": 168,
+      "consumers": 53,
       "unfollowedCalls": 17
     },
     "packages/adapter/ruby": {
