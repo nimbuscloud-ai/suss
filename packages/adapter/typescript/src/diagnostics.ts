@@ -144,6 +144,13 @@ export interface ExtractionReport {
    * nothing. Null when the run produced summaries.
    */
   emptyStage: EmptyStage | null;
+  /**
+   * Reassigned names the run stated nothing for, because control flow
+   * decides which write a reader sees. Each is a value resolution the
+   * facts decline; the count across a large corpus says whether scoped
+   * reaching definitions is worth writing.
+   */
+  reassignedNamesUnstated: number;
 }
 
 export type EmptyStage =
@@ -398,6 +405,8 @@ export function buildExtractionReport(args: {
   projectRoot: string | undefined;
   /** Files whose exports the checker could not follow. */
   filesWithUnreadableExports?: ReadonlyArray<string>;
+  /** Reassigned names the run stated nothing for. */
+  reassignedNamesUnstated?: number;
 }): ExtractionReport {
   const bySummary = summaryCountsByPack(args.summaries);
 
@@ -438,6 +447,7 @@ export function buildExtractionReport(args: {
     packs: packFunnels,
     summaries: args.summaries.length,
     filesWithUnreadableExports: [...(args.filesWithUnreadableExports ?? [])],
+    reassignedNamesUnstated: args.reassignedNamesUnstated ?? 0,
     emptyStage:
       args.summaries.length === 0 ? firstEmptyStage(packFunnels, args) : null,
   };
