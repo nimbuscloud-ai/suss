@@ -2,7 +2,13 @@
 // says which base class the library gives a model, and a call on a class that
 // reaches that base is a database call. The README says why ancestry.
 
+import { deriveOnDemand, evaluate } from "@suss/datalog";
 import { storageBinding } from "@suss/ir-core";
+import {
+  ANSWER_RELATIONS,
+  RESOLUTION_QUESTIONS,
+  RESOLUTION_RULES,
+} from "@suss/resolution";
 
 import { field } from "./ast.js";
 
@@ -43,40 +49,30 @@ export interface RbStorageOptions {
 }
 
 /**
- * Whether a class reaches one of the named base classes, following what each
- * one extends. A base the project declares is followed through; the one the
- * library gives is matched by the name it is written as, since it has no node
- * in the run to point at.
+ * The rules rewritten so ancestry is derived only for the classes asked
+ * about. Built once, since the rewrite does not depend on the facts.
+ */
+const ANCESTRY_PROGRAM = deriveOnDemand(
+  [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS],
+  ANSWER_RELATIONS,
+);
+
+/**
+ * Whether a class reaches one of the named base classes. The shared
+ * ancestry rules follow what each one extends through the binding
+ * behind it; a base the library gives is matched by the name it is
+ * written as, since it has no node in the run to point at.
  */
 function reachesBase(
   facts: Database,
   classKey: string,
   bases: readonly string[],
-  seen: Set<string> = new Set(),
 ): boolean {
-  if (seen.has(classKey)) {
-    return false;
-  }
-  seen.add(classKey);
-
-  const named = facts
-    .facts("extendsNamed")
-    .filter((row) => String(row[0]) === classKey)
-    .map((row) => String(row[1]));
-  if (named.some((name) => bases.includes(name))) {
-    return true;
-  }
-
+  facts.add("wantedAncestry", [classKey]);
+  evaluate(facts, ANCESTRY_PROGRAM.rules);
   return facts
-    .facts("extends")
-    .filter((row) => String(row[0]) === classKey)
-    .flatMap((row) =>
-      facts
-        .facts("binds")
-        .filter((bound) => String(bound[0]) === String(row[1]))
-        .map((bound) => String(bound[1])),
-    )
-    .some((next) => reachesBase(facts, next, bases, seen));
+    .lookup("wantedBaseName", 0, classKey)
+    .some((row) => bases.includes(String(row[1])));
 }
 
 /**
