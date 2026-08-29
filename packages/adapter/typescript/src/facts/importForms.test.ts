@@ -62,6 +62,18 @@ describe("what importedNamesOf resolves per import form", () => {
     ).toEqual(["alpha"]);
   });
 
+  it("a rebinding run longer than any old walk bound", () => {
+    const hops = Array.from(
+      { length: 9 },
+      (_, i) => `const hop${i + 1} = ${i === 0 ? "alpha" : `hop${i}`};`,
+    ).join("\n");
+    expect(
+      calleeNamesIn(
+        `import { alpha } from "${PACKAGE}";\n${hops}\nexport const run = (n: number) => hop9(n);\n`,
+      ),
+    ).toEqual(["alpha"]);
+  });
+
   it("local rebinding", () => {
     expect(
       calleeNamesIn(
