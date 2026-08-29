@@ -540,17 +540,23 @@ It does not touch the evaluator.
    the bound's removal.
 3. Done before this order was written: the default-export pass asks
    the store at every site, and the two route pins are retired.
-4. `moduleExports` onto `moduleExport/3`, in two halves the scoping
-   pass found. The export table is circular today: `extractFileFacts`
-   emits `exportsAs` from `exportedDeclarationsOf`, so the facts come
-   from the walk the rules would replace. First the emitter states
-   direct per-file exports syntactically and the `moduleExport` rules
-   do the flattening, behind a `wantedExportsOf` question and a store
-   method whose frontier follows only re-export targets; then
-   `exportedDeclarationsOf` takes the store and its overflow path
-   goes. `resolveAliasedSymbol` keeps the chain warming until step 7
-   replaces its callers, so the #177 fallback narrows here and closes
-   there.
+4. Done (#701, #702, #703). The emitter states one file's own export
+   syntax, the `moduleExport` rules flatten chains of any length
+   behind a `wantedExportsOf` question, and `exportedDeclarationsOf`
+   is one line over the store, with the warming walk and its overflow
+   fallback deleted. `resolveAliasedSymbol` keeps its own warming
+   until step 7. The behaviour gates caught what unit tests could
+   not, and each catch is a rule the design now states: a
+   parameter-rooted name stays a reference for the checker, because
+   discovery filling the shared store lets one caller's argument
+   settle what used to stay symbolic by accident of extraction scope;
+   `export default x` goes through the local declaration but is left
+   unstated when the name is written again, since the default takes
+   the value where the statement runs, not the live binding a list
+   exports; and the emitter descends into `declare module` blocks and
+   asks the compiler to resolve specifiers ts-morph has not loaded,
+   because a dependency's declaration file only ever entered the
+   project as a side effect of the checker walk.
 5. One path convention, owned in one place, with the three
    `fileInScope` callbacks deleted.
 6. Python mount facts plus the shared `mountPath` closure, which
