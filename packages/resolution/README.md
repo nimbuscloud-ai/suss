@@ -173,6 +173,33 @@ than a copy of every other. It differs from `callsFunction`, which
 starts from the function because a caller asking for call sites has the
 function in hand.
 
+## The anchor behind a receiver
+
+A pack sometimes wants a call handed back, not a yes or no. Mongoose is
+the picture: `model("User", schema)` is the anchor, and the pack reads
+the model name and the collection off that call's own arguments. The
+receiver in front of a matched method can be the model, a construction
+of it (`new User({...})`), or a document a query returned
+(`await User.findById(id)`), and each is a different number of hops
+from the anchor.
+
+`anchorChain` is the reachability that covers all three. From an asked
+value (`wantedAnchor`) it follows names (`binds`, `endsHolding`,
+`fallbackBranch`), imports through the export table, a call to its
+callee, and a method's callee to its receiver. Every call the chain
+passes lands in `wantedAnchorCall`, keyed by the asked value.
+
+Candidates, not one answer: the chain has no way to rank a nearer call
+above a farther one, and ranking inside the rules would be a depth
+bound in a new spelling. The asking side filters the candidates against
+its own origin (which module, which callee name) and applies the
+single-answer policy: exactly one distinct match is the anchor, none or
+several is a refusal.
+
+The demand cone stays on the base facts named above. Nothing here pulls
+`reaches` or `callsInto`, so asking about a receiver does not price in
+call-graph closure.
+
 ## Explaining an answer
 
 Evaluate the same rules under `@suss/datalog`'s `witnesses` algebra and

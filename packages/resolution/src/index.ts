@@ -802,6 +802,53 @@ export const RESOLUTION_QUESTIONS = [
       lit("moduleExport", v("m"), v("n"), v("value")),
     ],
   ),
+
+  // The calls behind a receiver, for a pack that wants the anchor a
+  // chain hangs off; the README's anchor section says which hops and
+  // why the asking side applies the single-answer policy.
+  rule("anchorChain", [v("x"), v("x")], [lit("wantedAnchor", v("x"))]),
+  rule(
+    "anchorChain",
+    [v("x"), v("z")],
+    [lit("anchorChain", v("x"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "anchorChain",
+    [v("x"), v("z")],
+    [lit("anchorChain", v("x"), v("y")), lit("endsHolding", v("y"), v("z"))],
+  ),
+  rule(
+    "anchorChain",
+    [v("x"), v("z")],
+    [lit("anchorChain", v("x"), v("y")), lit("fallbackBranch", v("y"), v("z"))],
+  ),
+  rule(
+    "anchorChain",
+    [v("x"), v("z")],
+    [
+      lit("anchorChain", v("x"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
+      lit("moduleExport", v("m"), v("n"), v("z")),
+    ],
+  ),
+  rule(
+    "anchorChain",
+    [v("x"), v("c")],
+    [lit("anchorChain", v("x"), v("r")), lit("call", v("r"), v("c"))],
+  ),
+  rule(
+    "anchorChain",
+    [v("x"), v("o")],
+    [
+      lit("anchorChain", v("x"), v("y")),
+      lit("readsProperty", v("y"), v("o"), v("n")),
+    ],
+  ),
+  rule(
+    "wantedAnchorCall",
+    [v("x"), v("r")],
+    [lit("anchorChain", v("x"), v("r")), lit("call", v("r"), v("c"))],
+  ),
 ];
 
 /** The relations `RESOLUTION_QUESTIONS` answers into. */
