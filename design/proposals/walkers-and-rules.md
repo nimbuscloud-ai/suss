@@ -561,8 +561,17 @@ It does not touch the evaluator.
    `fileInCodeScope` in `@suss/ir-core` own the convention, the three
    callback sites read them, and route comparison shares
    `normalizePath` and `boundaryKey` from the same package.
-6. Python mount facts plus the shared `mountPath` closure, which
-   finishes #251 and unlocks #689.
+6. Done (#705, #706), closing #251. Both adapters compose mount
+   chains of any length through `mountPathsOf` and
+   `agreedMountPrefix` in `@suss/resolution`, with each intermediate
+   router's constructor prefix in its place. The composition is a
+   shared function over `mounted(child, parent, prefix)` edges rather
+   than a datalog rule: a rule head cannot build a new atom, and a
+   path-growing closure would never terminate on a mount cycle, so a
+   cycle is an abstention instead. Two mounts landing at the one path
+   compose; two landing apart abstain, saying so. `mountPathsOf`
+   already states one path per mount, which is what #689's
+   boundary-per-mount consumer reads when it is built.
 7. The seven import readers, retired against `imports`, and the
    one-hop origin predicates against `comesFrom`.
 8. The `ReceiverOrigin` members as `comesFrom` queries (#542). The
