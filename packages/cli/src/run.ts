@@ -42,7 +42,7 @@ Usage:
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
-  suss stub draft <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
+  suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
   suss --version
 
 Commands:
@@ -59,9 +59,10 @@ Commands:
   corroborate  Extract, then run each handler against its own claims
             (experimental). A claim that survives execution is marked
             observed; one that fails carries a concrete counterexample.
-  stub      Work with dependency stubs, the checked-in files that state
-            what a package suss cannot read does. "stub draft" writes a
-            skeleton from the project's observed calls into the package.
+  infer     Draft an artifact for you to curate. "infer stub" writes a
+            dependency stub skeleton, the checked-in file that states
+            what a package suss cannot read does, from the project's
+            observed calls into the package.
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -182,7 +183,7 @@ Options (corroborate):
   --attempts       Sampling attempts per claim before giving up (default 300)
   -o, --output     Write the annotated summaries to a file
 
-Options (stub draft):
+Options (infer stub):
   -p, --project    Path to the tsconfig covering the code to read
   --dir            Directory to read when there is no tsconfig
   -o, --output     Where to write the draft. "-" prints it instead.
@@ -191,7 +192,7 @@ Options (stub draft):
 Exit codes:
   check exits non-zero when it finds anything at error severity.
   corroborate exits non-zero when a claim is refuted by execution.
-  stub draft exits non-zero when no calls into the package are found.
+  infer stub exits non-zero when no calls into the package are found.
 
 An interactive run ends with one line on stderr when a newer suss is on
 the registry. Piped output and CI never see it, and setting
@@ -278,12 +279,22 @@ async function dispatch(args: string[]): Promise<number> {
   if (command === "corroborate") {
     return await runCorroborate(args.slice(1));
   }
+  if (command === "infer") {
+    return runInfer(args.slice(1));
+  }
   if (command === "stub") {
-    return runStub(args.slice(1));
+    process.stderr.write(
+      "suss stub draft is now suss infer stub; this spelling goes away in the next release.\n",
+    );
+    if (args[1] !== "draft") {
+      return 1;
+    }
+
+    return runInfer(["stub", ...args.slice(2)]);
   }
 
   process.stderr.write(
-    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, and stub.\n`,
+    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, and infer.\n`,
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
@@ -769,19 +780,28 @@ async function runContract(args: string[]): Promise<number> {
   return 0;
 }
 
-function runStub(args: string[]): number {
+function runInfer(args: string[]): number {
   const sub = args[0];
-  if (sub !== "draft") {
+  const kind = sub === undefined ? undefined : INFER_KINDS[sub];
+  if (kind === undefined) {
     process.stderr.write(
       sub === undefined
-        ? "stub needs a subcommand. Try: suss stub draft <package>\n"
-        : `There is no "stub ${sub}". stub has draft.\n`,
+        ? "infer needs the artifact to draft. Try: suss infer stub <package>\n"
+        : `There is no "infer ${sub}". infer has stub.\n`,
     );
     return 1;
   }
 
+  return kind(args.slice(1));
+}
+
+const INFER_KINDS: Record<string, (args: string[]) => number> = {
+  stub: runInferStub,
+};
+
+function runInferStub(args: string[]): number {
   const { values, positionals } = parseArgs({
-    args: args.slice(1),
+    args,
     options: {
       project: { type: "string", short: "p" },
       dir: { type: "string" },
@@ -793,7 +813,7 @@ function runStub(args: string[]): number {
   const packageName = positionals[0];
   if (packageName === undefined) {
     process.stderr.write(
-      "stub draft needs the package to draft for. Try: suss stub draft @acme/kit\n",
+      "infer stub needs the package to draft for. Try: suss infer stub @acme/kit\n",
     );
     return 1;
   }

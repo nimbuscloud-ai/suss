@@ -39,7 +39,7 @@ A stub is provided by the project today. The direction is package-shipped stubs,
 ## Drafting one
 
 ```
-$ suss stub draft @acme/ledger-native
+$ suss infer stub @acme/ledger-native
 Drafted suss/stubs/acme-ledger-native.yaml: 3 exports from 3 call sites.
 ```
 

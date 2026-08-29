@@ -6,7 +6,7 @@
     "internal": 2269,
     "consumers": 1089,
     "pairs": 1070,
-    "unfollowedCalls": 242,
+    "unfollowedCalls": 243,
     "findingErrors": 0
   },
   "packages": {
@@ -57,7 +57,7 @@
       "exports": 19,
       "internal": 358,
       "consumers": 222,
-      "unfollowedCalls": 39
+      "unfollowedCalls": 40
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
