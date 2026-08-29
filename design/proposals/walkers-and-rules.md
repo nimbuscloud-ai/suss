@@ -615,18 +615,18 @@ Each step shipped behind the existing gates: summaries byte-identical
 where discovery finds the same units, the fuzzer's pinned bugs as the
 retirement list, dogfood counts, and engine time from the profile.
 
-The deferred evaluation pass was tried and measured (2026-08-29), and
-the measurement went against it. The hypothesis: `forgetQuery` clears
-the question relations after every query, which nulls the engine's
-resume marks, so each query re-derives instead of resuming. The rules
-have no negation, so skipping the clear is sound, and a one-line
-change did it. Dogfood said no, twice: 56.9s and 56.0s wall with the
-clear, 73.8s and 76.5s without it. The mechanism: a query's own
-demand cone is small, so re-deriving it is cheap, while the
-accumulated version makes every semi-naive delta join against
-relations that grow with each query, which is quadratic across a run.
-Per-query clearing is the design, on purpose. A future win here needs
-retract-aware resume, where clearing one rule set's relations keeps
-the marks for what survives, and that is engine work with its own
-complexity budget, taken up only if a profile shows evaluation
-dominating again.
+The deferred evaluation pass was tried on 2026-08-29 and made things
+slower, so the code stays as it was. The idea was that the store
+throws away the engine's worked-out answers after every query, which
+also loses the engine's place, its record of what it has processed,
+so every query starts over. The rules use no negation, so keeping the
+answers is safe, and skipping the cleanup was a one-line change.
+Dogfood measured it twice each way: about 56 seconds with the cleanup,
+about 75 without it. The reason is that one query only has a small
+amount of work to redo, while keeping every past answer means each
+new query searches through a pile that grows for the whole run.
+Throwing the answers away per query is the faster design, and now a
+measured one. A future attempt would need the engine to drop one query's
+results without losing its place on everything else, which is
+its own project and only worth starting if a profile shows evaluation
+as the main cost again.
