@@ -266,35 +266,28 @@ export function registrationSubjectsOf(
     return subjects;
   }
 
-  // Which variable is set to the result of calling the imported
-  // function, as in `const s = initServer()` or `const router =
-  // Router()`.
-  for (const varDecl of sourceFile.getVariableDeclarations()) {
-    const init = varDecl.getInitializer();
-    if (init === undefined) {
-      continue;
-    }
-
-    // Might be: initServer() or new Router() etc.
-    let calleeText: string | null = null;
-    if (Node.isCallExpression(init)) {
-      calleeText = init.getExpression().getText();
-    } else if (Node.isNewExpression(init)) {
-      calleeText = init.getExpression().getText();
-    }
-
-    if (calleeText === importedLocalName) {
-      subjects.set(varDecl.getName(), init);
-    }
-  }
-
-  // A function that takes the app as a parameter registers on it the
-  // same way. The type annotation points at the imported class, which is
-  // how a service split across files hands its app around. There is
-  // no single creation site to key a mount edge on here, so a router
-  // mounted under this name composes only the prefix its own mount
-  // call states.
   sourceFile.forEachDescendant((node) => {
+    // A variable set to the result of calling the imported function, as
+    // in `const router = Router()`. A factory builds its app inside its
+    // own body, so the whole file is walked, not only its top level.
+    if (Node.isVariableDeclaration(node)) {
+      const init = node.getInitializer();
+      if (init === undefined) {
+        return;
+      }
+      const calleeText =
+        Node.isCallExpression(init) || Node.isNewExpression(init)
+          ? init.getExpression().getText()
+          : null;
+      if (calleeText === importedLocalName) {
+        subjects.set(node.getName(), init);
+      }
+      return;
+    }
+
+    // A parameter typed with the import is the app a caller passed. No
+    // creation site keys a mount edge on it, so a router mounted under
+    // this name composes only the prefix its own mount call states.
     if (!Node.isParameterDeclaration(node)) {
       return;
     }

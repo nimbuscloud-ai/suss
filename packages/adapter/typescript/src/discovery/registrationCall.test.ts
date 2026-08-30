@@ -699,3 +699,34 @@ describe("joinMountedPath", () => {
     expect(joinMountedPath("/api/orders", "/")).toBe("/api/orders/");
   });
 });
+
+const honoMatch: RegistrationMatch = {
+  type: "registrationCall",
+  importModule: "hono",
+  importName: "Hono",
+  registrationChain: [".get", ".post"],
+};
+
+describe("registrationSubjectsOf: where the routable was built", () => {
+  it("finds a router built inside a factory function, not only at the top level", () => {
+    const sf = sourceFile(`
+      import { Hono } from "hono";
+      export function build(): Hono {
+        const users = new Hono();
+        users.get("/:id", async (c) => c.json({}, 200));
+        return users;
+      }
+    `);
+
+    const units = discoverRegistrationCalls(
+      sf,
+      honoMatch,
+      "handler",
+      httpBinding,
+      new ResolutionStore(),
+    );
+
+    expect(units).toHaveLength(1);
+    expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/:id" });
+  });
+});
