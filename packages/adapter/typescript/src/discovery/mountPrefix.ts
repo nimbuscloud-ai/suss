@@ -104,6 +104,7 @@ export function buildMountPrefixIndex(
       for (const id of registrationSubjectIdsOf(
         sourceFile,
         registrationMatches,
+        resolution,
       )) {
         subjectIds.add(id);
       }

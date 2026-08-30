@@ -10,9 +10,11 @@ import {
   discoverRegistrationCalls,
   type MountPrefixIndex,
   registrationSubjectIdsOf,
+  registrationSubjectsOf,
 } from "./registrationCall.js";
 
 import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
+import type { Node, SourceFile } from "ts-morph";
 
 type RegistrationMatch = Extract<
   DiscoveryPattern["match"],
@@ -697,5 +699,242 @@ describe("joinMountedPath", () => {
     // with "GET /api/orders" even though the composed string has
     // the trailing slash.
     expect(joinMountedPath("/api/orders", "/")).toBe("/api/orders/");
+  });
+});
+
+const honoMatch: RegistrationMatch = {
+  type: "registrationCall",
+  importModule: "hono",
+  importName: "Hono",
+  registrationChain: [".get", ".post"],
+};
+
+/** A project of several files, with the store warmed over all of them. */
+function splitProject(files: Record<string, string>) {
+  const project = createTestProject();
+  const written = new Map<string, SourceFile>();
+  for (const [name, code] of Object.entries(files)) {
+    written.set(name, project.createSourceFile(name, code));
+  }
+  const resolution = new ResolutionStore();
+  resolution.extractFiles(written.values());
+  return {
+    file: (name: string) => written.get(name) as SourceFile,
+    resolution,
+  };
+}
+
+describe("registrationSubjectsOf: an app registered on in another file", () => {
+  it("resolves a parameter to the app the one caller passed it", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import { Hono } from "hono";
+        import { registerRoutes } from "./routes";
+        export function build(): Hono {
+          const app = new Hono();
+          registerRoutes(app);
+          return app;
+        }
+      `,
+      "routes.ts": `
+        import type { Hono } from "hono";
+        export function registerRoutes(app: Hono): void {
+          app.get("/v1/things/:id", async (c) => c.json({}, 200));
+        }
+      `,
+    });
+
+    const created = file("app.ts")
+      .getFunctionOrThrow("build")
+      .getVariableDeclarationOrThrow("app")
+      .getInitializerOrThrow();
+    const subjects = registrationSubjectsOf(
+      file("routes.ts"),
+      "hono",
+      "Hono",
+      resolution,
+    );
+
+    expect(nodeId(subjects.get("app") as Node)).toBe(nodeId(created));
+  });
+
+  it("resolves a parameter to an app handed on at the top of a module", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import { Hono } from "hono";
+        import { registerRoutes } from "./routes";
+        const app = new Hono();
+        registerRoutes(app);
+        export default app;
+      `,
+      "routes.ts": `
+        import type { Hono } from "hono";
+        export function registerRoutes(app: Hono): void {
+          app.get("/v1/things/:id", async (c) => c.json({}, 200));
+        }
+      `,
+    });
+
+    const created = file("app.ts")
+      .getVariableDeclarationOrThrow("app")
+      .getInitializerOrThrow();
+    const subjects = registrationSubjectsOf(
+      file("routes.ts"),
+      "hono",
+      "Hono",
+      resolution,
+    );
+
+    expect(nodeId(subjects.get("app") as Node)).toBe(nodeId(created));
+  });
+
+  it("resolves to nothing when two callers pass two different apps", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import { Hono } from "hono";
+        import { registerRoutes } from "./routes";
+        export function build(): Hono {
+          const publicApp = new Hono();
+          const adminApp = new Hono();
+          registerRoutes(publicApp);
+          registerRoutes(adminApp);
+          return publicApp;
+        }
+      `,
+      "routes.ts": `
+        import type { Hono } from "hono";
+        export function registerRoutes(app: Hono): void {
+          app.get("/v1/things/:id", async (c) => c.json({}, 200));
+        }
+      `,
+    });
+
+    const parameter = file("routes.ts")
+      .getFunctionOrThrow("registerRoutes")
+      .getParameters()[0] as Node;
+    const subjects = registrationSubjectsOf(
+      file("routes.ts"),
+      "hono",
+      "Hono",
+      resolution,
+    );
+
+    expect(nodeId(subjects.get("app") as Node)).toBe(nodeId(parameter));
+  });
+
+  it("leaves a parameter as its own subject when there is no store", () => {
+    const { file } = splitProject({
+      "app.ts": `
+        import { Hono } from "hono";
+        import { registerRoutes } from "./routes";
+        export function build(): Hono {
+          const app = new Hono();
+          registerRoutes(app);
+          return app;
+        }
+      `,
+      "routes.ts": `
+        import type { Hono } from "hono";
+        export function registerRoutes(app: Hono): void {
+          app.get("/v1/things/:id", async (c) => c.json({}, 200));
+        }
+      `,
+    });
+
+    const parameter = file("routes.ts")
+      .getFunctionOrThrow("registerRoutes")
+      .getParameters()[0] as Node;
+    const subjects = registrationSubjectsOf(file("routes.ts"), "hono", "Hono");
+
+    expect(nodeId(subjects.get("app") as Node)).toBe(nodeId(parameter));
+  });
+
+  it("finds a router built inside a factory function, not only at the top level", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import { Hono } from "hono";
+        export function build(): Hono {
+          const users = new Hono();
+          users.get("/:id", async (c) => c.json({}, 200));
+          return users;
+        }
+      `,
+    });
+
+    const units = discoverRegistrationCalls(
+      file("app.ts"),
+      honoMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
+    expect(units).toHaveLength(1);
+    expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/:id" });
+  });
+
+  it("keys a same-file app on its own creation site, as it always did", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import { Hono } from "hono";
+        const app = new Hono();
+        app.get("/v1/things/:id", async (c) => c.json({}, 200));
+        export default app;
+      `,
+    });
+
+    const created = file("app.ts")
+      .getVariableDeclarationOrThrow("app")
+      .getInitializerOrThrow();
+    const subjects = registrationSubjectsOf(
+      file("app.ts"),
+      "hono",
+      "Hono",
+      resolution,
+    );
+
+    expect(nodeId(subjects.get("app") as Node)).toBe(nodeId(created));
+  });
+
+  it("mounts a sub-router built in another file under the prefix stated there", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import { Hono } from "hono";
+        import { mountUsers } from "./users";
+        export function build(): Hono {
+          const app = new Hono();
+          mountUsers(app);
+          return app;
+        }
+      `,
+      "users.ts": `
+        import { Hono } from "hono";
+        export function mountUsers(app: Hono): void {
+          const users = new Hono();
+          users.get("/:id", async (c) => c.json({}, 200));
+          app.route("/v1/users", users);
+        }
+      `,
+    });
+
+    const knownSubjectIds = new Set([
+      ...registrationSubjectIdsOf(file("app.ts"), [honoMatch], resolution),
+      ...registrationSubjectIdsOf(file("users.ts"), [honoMatch], resolution),
+    ]);
+    const edges = discoverMountEdges(
+      file("users.ts"),
+      honoMatch,
+      { method: "route", prefixPosition: 0, targetPosition: 1 },
+      knownSubjectIds,
+      resolution,
+    );
+
+    const created = file("app.ts")
+      .getFunctionOrThrow("build")
+      .getVariableDeclarationOrThrow("app")
+      .getInitializerOrThrow();
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.prefix).toBe("/v1/users");
+    expect(edges[0]?.parentRouterId).toBe(nodeId(created));
   });
 });

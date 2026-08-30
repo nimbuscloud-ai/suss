@@ -220,6 +220,7 @@ export function discoverWrapperRegistrations(
     sourceFile,
     match.importModule,
     match.importName,
+    resolution,
   );
   if (subjects.size === 0) {
     return [];

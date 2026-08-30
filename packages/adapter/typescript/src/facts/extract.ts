@@ -1035,8 +1035,43 @@ function recordBodyNode(
     if (Node.isIdentifier(callee) || Node.isPropertyAccessExpression(callee)) {
       fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
     }
+    emitNamedCall(db, table, call);
   }
   return false;
+}
+
+/**
+ * The facts of a call written as `name(args)`, so an argument reaches
+ * the parameter it lands in. Nothing else records one: extraction
+ * follows a file's exports, and `registerRoutes(app)` is a statement.
+ *
+ * A method call is left out. Those are most of the calls in a body, and
+ * writing down every argument of every one of them slows a run by more
+ * than the handful of extra joins is worth.
+ */
+function emitNamedCall(db: Database, table: NodeTable, call: Node): void {
+  if (
+    Node.isCallExpression(call) &&
+    Node.isIdentifier(unwrapExpression(call.getExpression()))
+  ) {
+    emitValue(db, table, call);
+  }
+}
+
+/**
+ * The calls a module's own body runs, which is where a service that
+ * builds its app at the top level hands it to another file.
+ */
+function emitTopLevelCalls(
+  db: Database,
+  table: NodeTable,
+  sourceFile: SourceFile,
+): void {
+  for (const statement of sourceFile.getStatements()) {
+    if (Node.isExpressionStatement(statement)) {
+      emitNamedCall(db, table, unwrapExpression(statement.getExpression()));
+    }
+  }
 }
 
 /** Whether a nested function expression sits directly under a return. */
@@ -1112,6 +1147,7 @@ export function extractFileFacts(
   }
 
   emitLocalExportLists(db, table, sourceFile, filePath);
+  emitTopLevelCalls(db, table, sourceFile);
 }
 
 /**

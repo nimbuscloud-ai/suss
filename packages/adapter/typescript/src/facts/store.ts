@@ -716,6 +716,20 @@ export class ResolutionStore {
   }
 
   /**
+   * Read these files' facts now, before anything asks a question.
+   *
+   * A query widens along the imports of the file it starts in, which
+   * is where a value's definition is. What a caller passed is the other
+   * direction, so a question about a parameter is answered only by
+   * files the walk never reaches on its own.
+   */
+  extractFiles(sourceFiles: Iterable<SourceFile>): void {
+    for (const sourceFile of sourceFiles) {
+      this.extractFile(sourceFile);
+    }
+  }
+
+  /**
    * Which of these files reach any of these packages, following
    * project-local re-export chains. A barrel package that re-exports an
    * SDK defeats a per-file import check and does not defeat this.
