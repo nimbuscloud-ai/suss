@@ -34,7 +34,7 @@ export interface EnvBindingRecognizerOptions {
    * The name the deployment gives this Worker, recorded on the binding.
    * Pairing goes by the variable name, so this is informational.
    */
-  scriptName?: string;
+  scriptName?: string | undefined;
 }
 
 /**

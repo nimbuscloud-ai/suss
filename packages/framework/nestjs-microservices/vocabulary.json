@@ -6,5 +6,7 @@
   "Payload": "@nestjs/microservices: parameter decorator for the message payload",
   "event": "suss: label for an @EventPattern handler in a report",
   "message": "suss: label for an @MessagePattern handler in a report",
-  "nats": "transport name, the NATS broker, this pack's default wire"
+  "nats": "transport name, the NATS broker, this pack's default wire",
+  "kafka": "transport name, @nestjs/microservices Transport.KAFKA",
+  "bullmq": "transport name, the BullMQ queue a NestJS consumer drains"
 }

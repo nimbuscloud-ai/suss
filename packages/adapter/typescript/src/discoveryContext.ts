@@ -21,6 +21,17 @@ import { peelParens, peelSyntax } from "./walk/unwrap.js";
 
 import type { FunctionRoot } from "./conditions.js";
 
+/**
+ * Which call built an export, and which property of its config to
+ * read. A pack takes this from its own config, so the optional fields
+ * spell `| undefined` the way zod infers an optional field.
+ */
+export interface ExportedCallConfigSpec {
+  property: string;
+  callees?: string[] | undefined;
+  argIndex?: number | undefined;
+}
+
 export interface TsDiscoveryContext {
   /** Full filesystem path of the source file. Useful for excluding
    *  test / story files via the pack's own regex. */
@@ -66,7 +77,7 @@ export interface TsDiscoveryContext {
   exportedCallConfigString(
     sourceFile: SourceFile,
     exportName: string,
-    spec: { callees?: string[]; argIndex?: number; property: string },
+    spec: ExportedCallConfigSpec,
   ): string | null;
 
   /**
@@ -176,7 +187,7 @@ function valueToAskAbout(decl: Node, writtenAgain: boolean): Node | null {
 function exportedCallConfigString(
   sourceFile: SourceFile,
   exportName: string,
-  spec: { callees?: string[]; argIndex?: number; property: string },
+  spec: ExportedCallConfigSpec,
   resolution: ResolutionStore,
 ): string | null {
   const declarations = exportedDeclarationsOf(sourceFile, resolution).get(

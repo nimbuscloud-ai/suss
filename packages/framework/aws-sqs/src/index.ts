@@ -40,9 +40,11 @@
 // runtime-config uses for env-var → instance pairing.
 
 import { type CallExpression, Node as N, type Node } from "ts-morph";
+import { z } from "zod";
 
 import { readConfiguredCall } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
+import { configuredCallOption } from "@suss/extractor";
 import { constructedFrom, messageSends, pack } from "@suss/recognize";
 
 import type {
@@ -301,13 +303,21 @@ function extractDestructuredFields(
  */
 export type SqsProducer = ConfiguredCallSpec;
 
-export interface SqsPackOptions {
-  /**
-   * Dispatchers this project sends through. Each one adds a
-   * recognizer and widens the import gate to the module it names.
-   */
-  producers?: SqsProducer[];
-}
+/**
+ * What `-f aws-sqs=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Dispatchers this project sends through. Each one adds a
+     * recognizer and widens the import gate to the module it points at.
+     */
+    producers: z.array(configuredCallOption).optional(),
+  })
+  .strict();
+
+export type SqsPackOptions = z.infer<typeof optionsSchema>;
 
 /**
  * One recognizer per configured dispatcher method. The subject the

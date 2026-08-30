@@ -12,6 +12,8 @@
  * path.
  */
 
+import { z } from "zod";
+
 import { cloudflareWorkersDiscovery } from "./discovery.js";
 import { envBindingRecognizer } from "./envBindings.js";
 import { storeBindingRecognizer } from "./storeBindings.js";
@@ -23,15 +25,23 @@ export { envBindingRecognizer } from "./envBindings.js";
 export { TRIGGERS, type TriggerShape } from "./handlers.js";
 export { storeBindingRecognizer } from "./storeBindings.js";
 
-export interface CloudflareWorkersPackOptions {
-  /**
-   * The name the deployment gives this Worker, which is `name` in
-   * `wrangler.toml`. Supplying it stamps every unit with the deployable
-   * it runs as, so a runtime-config provider pairs by unit instead of by
-   * directory. Left out, the directory decides.
-   */
-  scriptName?: string;
-}
+/**
+ * What `-f cloudflare-workers=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * The name the deployment gives this Worker, which is `name` in
+     * `wrangler.toml`. Supplying it stamps every unit with the deployable
+     * it runs as, so a runtime-config provider pairs by unit instead of by
+     * directory. Left out, the directory decides.
+     */
+    scriptName: z.string().optional(),
+  })
+  .strict();
+
+export type CloudflareWorkersPackOptions = z.infer<typeof optionsSchema>;
 
 export function cloudflareWorkersFramework(
   options: CloudflareWorkersPackOptions = {},

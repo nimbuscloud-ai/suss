@@ -52,7 +52,8 @@
   },
   "dependencies": {
     "@suss/behavioral-ir": "0.20.0",
-    "@suss/extractor": "0.20.0"
+    "@suss/extractor": "0.20.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@suss/test-project": "*",

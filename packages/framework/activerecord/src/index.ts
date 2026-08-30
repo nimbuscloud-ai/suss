@@ -2,15 +2,27 @@
 // database, for a project on Rails. The adapter matches a call by what its
 // receiver inherits, and the README says why ancestry.
 
+import { z } from "zod";
+
+import { storageSystemOption } from "@suss/extractor";
+
 import type { RbStoragePattern, RubyPack } from "@suss/adapter-ruby";
 
-export interface ActiveRecordPackOptions {
-  /**
-   * Which database is behind the connection. ActiveRecord talks to all of
-   * them and database.yml says which, so the project supplies this.
-   */
-  storageSystem: "postgresql" | "mysql" | "sqlite";
-}
+/**
+ * What `-f activerecord=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Which database is behind the connection. ActiveRecord talks to all of
+     * them and database.yml says which, so the project supplies this.
+     */
+    storageSystem: storageSystemOption,
+  })
+  .strict();
+
+export type ActiveRecordPackOptions = z.infer<typeof optionsSchema>;
 
 /**
  * The base class the library gives a model, and the methods that change what

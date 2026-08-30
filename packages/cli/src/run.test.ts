@@ -418,6 +418,29 @@ describe("runCli extract", () => {
     }
   });
 
+  it("stops on a misspelled pack option instead of extracting nothing", async () => {
+    const config = path.join(tmpDir, "suss.hono.json");
+    fs.writeFileSync(
+      config,
+      JSON.stringify({ registrationHelpes: [{ helperName: "mountHealth" }] }),
+    );
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--lang",
+        "typescript",
+        "--dir",
+        tmpDir,
+        "-f",
+        `hono=${config}`,
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("registrationHelpes");
+    expect(io.stderr).toContain(config);
+    expect(io.stderr).toContain("The hono pack takes: registrationHelpers.");
+  });
+
   it("rejects a --lang nobody has an adapter for, and says which it takes", async () => {
     const { exit, io } = await capture(() =>
       runCli(["extract", "--lang", "perl", "-f", "express"]),

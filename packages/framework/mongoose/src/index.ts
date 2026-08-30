@@ -13,6 +13,9 @@
  * settling one are ordered and what v0 leaves out.
  */
 
+import { z } from "zod";
+
+import { scopeOption } from "@suss/extractor";
 import {
   constructedFrom,
   declaredBy,
@@ -251,14 +254,22 @@ function pluralized(modelName: string): string {
 // The pack
 // ---------------------------------------------------------------------------
 
-export interface MongooseRecognizerOptions {
-  /**
-   * Scope label for the storage binding. Defaults to `"default"`. Set
-   * this when a project keeps more than one MongoDB connection and
-   * wants their accesses paired separately.
-   */
-  scope?: string;
-}
+/**
+ * What `-f mongoose=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Scope label for the storage binding. Defaults to `"default"`. Set
+     * this when a project keeps more than one MongoDB connection and
+     * wants their accesses paired separately.
+     */
+    scope: scopeOption.optional(),
+  })
+  .strict();
+
+export type MongooseRecognizerOptions = z.infer<typeof optionsSchema>;
 
 /** Every model call, whichever of the methods above it goes to. */
 function modelCalls(scope: string) {

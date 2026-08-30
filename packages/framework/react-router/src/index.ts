@@ -1,5 +1,7 @@
 // @suss/framework-react-router: the PatternPack for React Router.
 
+import { z } from "zod";
+
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
 /**
@@ -85,17 +87,25 @@ const JSX_ROUTES: Extract<
   method: "GET",
 };
 
-export interface ReactRouterPackOptions {
-  /**
-   * Helpers this project throws HTTP errors through, as
-   * `throw myHelper(new HttpError.NotFound(), body)`. React Router
-   * declares no such helper, so nothing is assumed by default and a
-   * project that installs this pack never matches a call on a name some
-   * other codebase happened to use. The thrown argument's class name
-   * gives the status, read against the `http-errors` constructors.
-   */
-  errorHelpers?: string[];
-}
+/**
+ * What `-f react-router=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Helpers this project throws HTTP errors through, as
+     * `throw myHelper(new HttpError.NotFound(), body)`. React Router
+     * declares no such helper, so nothing is assumed by default and a
+     * project that installs this pack never matches a call on a name some
+     * other codebase happened to use. The thrown argument's class name
+     * gives the status, read against the `http-errors` constructors.
+     */
+    errorHelpers: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type ReactRouterPackOptions = z.infer<typeof optionsSchema>;
 
 export function reactRouterFramework(
   options: ReactRouterPackOptions = {},

@@ -20,17 +20,27 @@
 // terminals or bodies, and it does not read response marshaling
 // (`@ns.marshal_with`, `@ns.expect`).
 
+import { z } from "zod";
+
 import type { PythonPack } from "@suss/adapter-python";
 
-export interface FlaskRestxPackOptions {
-  /**
-   * Modules a project's own wrapper re-exports flask-restx's route
-   * decorator from. flask-restx's own module is always accepted. The
-   * wrapper's name is the project's own choice, so it is supplied by
-   * whoever configures the pack rather than hardcoded here.
-   */
-  wrapperModules?: string[];
-}
+/**
+ * What `-f flask-restx=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Modules a project's own wrapper re-exports flask-restx's route
+     * decorator from. flask-restx's own module is always accepted. The
+     * wrapper's name is the project's own choice, so it is supplied by
+     * whoever configures the pack rather than hardcoded here.
+     */
+    wrapperModules: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type FlaskRestxPackOptions = z.infer<typeof optionsSchema>;
 
 const VERB_METHOD_NAMES: Record<string, string> = {
   get: "GET",

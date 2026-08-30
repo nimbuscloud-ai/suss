@@ -52,8 +52,9 @@
   },
   "dependencies": {
     "@suss/adapter-typescript": "0.20.0",
+    "@suss/extractor": "0.20.0",
     "@suss/manifest-aws": "0.20.0",
-    "@suss/extractor": "0.20.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",

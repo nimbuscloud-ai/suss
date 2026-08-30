@@ -40,9 +40,11 @@
 //     yet emitted as a second effect; deferred to keep v0 focused.
 
 import { type CallExpression, Node as N, type Node } from "ts-morph";
+import { z } from "zod";
 
 import { resolveAliasedSymbol } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
+import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
   compile,
   constructedFrom,
@@ -61,16 +63,24 @@ const TABLE_FACTORIES = new Set(["pgTable", "mysqlTable", "sqliteTable"]);
 
 const CHAIN_WALK_LIMIT = 12;
 
-export interface DrizzleRecognizerOptions {
-  /**
-   * Storage system the recognized calls target. Must match the
-   * `storageSystem` on provider summaries for pairing keys to line
-   * up. Defaults to `"postgresql"`, the dominant Drizzle deployment.
-   */
-  storageSystem?: "postgresql" | "mysql" | "sqlite";
-  /** Scope label for the storage binding. Defaults to `"default"`. */
-  scope?: string;
-}
+/**
+ * What `-f drizzle=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Storage system the recognized calls target. Must match the
+     * `storageSystem` on provider summaries for pairing keys to line
+     * up. Defaults to `"postgresql"`, the dominant Drizzle deployment.
+     */
+    storageSystem: storageSystemOption.optional(),
+    /** Scope label for the storage binding. Defaults to `"default"`. */
+    scope: scopeOption.optional(),
+  })
+  .strict();
+
+export type DrizzleRecognizerOptions = z.infer<typeof optionsSchema>;
 
 interface RecognizedQuery {
   kind: "read" | "write";

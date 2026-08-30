@@ -66,9 +66,10 @@ for (const { name, specifier } of builtins) {
     );
   }
 
-  const reexported = fs
-    .readFileSync(entry, "utf8")
-    .match(/export \{ default \} from "(@suss\/[\w-]+)"/);
+  const entryText = fs.readFileSync(entry, "utf8");
+  const reexported = entryText.match(
+    /export \{ default(?:, [\w, ]+)? \} from "(@suss\/[\w-]+)"/,
+  );
   if (reexported === null) {
     problems.push(
       `packages/packs/src/${name}.ts re-exports no default, and the default is the factory the CLI loads.`,
@@ -92,6 +93,19 @@ for (const { name, specifier } of builtins) {
   if (JSON.parse(fs.readFileSync(manifest, "utf8")).private !== true) {
     problems.push(
       `${bundled} ships inside @suss/packs and is not private, so a release publishes the same code under two names.`,
+    );
+  }
+
+  // The CLI reads a pack's options declaration through this entry, so a
+  // pack that exports one and does not re-export it here goes back to
+  // accepting a misspelled key in silence.
+  const packSource = path.join(path.dirname(manifest), "src", "index.ts");
+  const declaresOptions =
+    fs.existsSync(packSource) &&
+    /^export const optionsSchema\b/m.test(fs.readFileSync(packSource, "utf8"));
+  if (declaresOptions && !entryText.includes("optionsSchema")) {
+    problems.push(
+      `${bundled} exports optionsSchema and packages/packs/src/${name}.ts does not re-export it, so the CLI validates nothing for -f ${name}.`,
     );
   }
 

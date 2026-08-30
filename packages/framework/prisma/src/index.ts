@@ -51,8 +51,10 @@ import {
   type Node,
   type SourceFile,
 } from "ts-morph";
+import { z } from "zod";
 
 import { storageBinding } from "@suss/behavioral-ir";
+import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
   compile,
   declarationsIn,
@@ -90,20 +92,28 @@ const PRISMA_WRITE_METHODS = new Set([
   "deleteMany",
 ]);
 
-export interface PrismaRecognizerOptions {
-  /**
-   * Storage system the recognized calls target. Must match the
-   * `storageSystem` on schema-reader provider summaries; otherwise
-   * pairing keys won't match. Defaults to `"postgresql"` since that's
-   * the dominant Prisma deployment.
-   */
-  storageSystem?: "postgresql" | "mysql" | "sqlite";
-  /**
-   * Scope label that must match the schema reader's scope. Defaults
-   * to `"default"` to align with `prismaSchemaToSummaries`'s default.
-   */
-  scope?: string;
-}
+/**
+ * What `-f prisma=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Storage system the recognized calls target. Must match the
+     * `storageSystem` on schema-reader provider summaries; otherwise
+     * pairing keys won't match. Defaults to `"postgresql"` since that's
+     * the dominant Prisma deployment.
+     */
+    storageSystem: storageSystemOption.optional(),
+    /**
+     * Scope label that must match the schema reader's scope. Defaults
+     * to `"default"` to align with `prismaSchemaToSummaries`'s default.
+     */
+    scope: scopeOption.optional(),
+  })
+  .strict();
+
+export type PrismaRecognizerOptions = z.infer<typeof optionsSchema>;
 
 function makeRecognizer(opts: PrismaRecognizerOptions): InvocationRecognizer {
   const storageSystem = opts.storageSystem ?? "postgresql";

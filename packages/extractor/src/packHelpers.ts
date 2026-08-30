@@ -7,6 +7,8 @@
  * across packs, and this module collects those so they are written once.
  */
 
+import { z } from "zod";
+
 import type { DiscoveryPattern } from "./framework.js";
 import type { EffectArg } from "./index.js";
 
@@ -143,18 +145,29 @@ const LOOP_ELEMENT_SHAPE = {
 /**
  * One route a project helper registers when called, spelled with `{N}`
  * placeholders for the call's positional arguments.
+ *
+ * Three HTTP packs take this option, so it is declared once here and
+ * each of them puts it in its own `optionsSchema`.
  */
-export interface RegistrationHelper {
-  /** The helper's exported name, as the project's code imports it. */
-  helperName: string;
-  /** The module the helper is imported from, to tell two apart. */
-  importModule?: string;
-  registrations: Array<{
-    method: string;
-    pathTemplate: string;
-    handlerArg: string;
-  }>;
-}
+export const registrationHelperOption = z
+  .object({
+    /** The helper's exported name, as the project's code imports it. */
+    helperName: z.string(),
+    /** The module the helper is imported from, to tell two apart. */
+    importModule: z.string().optional(),
+    registrations: z.array(
+      z
+        .object({
+          method: z.string(),
+          pathTemplate: z.string(),
+          handlerArg: z.string(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type RegistrationHelper = z.infer<typeof registrationHelperOption>;
 
 /**
  * Discovery patterns for a project's own registration helpers.

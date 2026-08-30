@@ -23,17 +23,27 @@
 // annotations). It does not read dependencies, middleware, or mounted
 // sub-apps.
 
+import { z } from "zod";
+
 import type { PythonPack } from "@suss/adapter-python";
 
-export interface FastapiPackOptions {
-  /**
-   * Modules a project's own wrapper re-exports FastAPI's constructors
-   * from. FastAPI's own module is always accepted. The wrapper's name
-   * is the project's own choice, so it is supplied by whoever
-   * configures the pack rather than hardcoded here.
-   */
-  wrapperModules?: string[];
-}
+/**
+ * What `-f fastapi=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Modules a project's own wrapper re-exports FastAPI's constructors
+     * from. FastAPI's own module is always accepted. The wrapper's name
+     * is the project's own choice, so it is supplied by whoever
+     * configures the pack rather than hardcoded here.
+     */
+    wrapperModules: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type FastapiPackOptions = z.infer<typeof optionsSchema>;
 
 const VERB_ATTRIBUTE_NAMES: Record<string, string> = {
   get: "GET",

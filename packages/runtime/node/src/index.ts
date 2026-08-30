@@ -13,6 +13,8 @@
 //
 // See `design/proposals/runtime-node.md` for the design.
 
+import { z } from "zod";
+
 import { envVarRecognizer } from "./envVars.js";
 import {
   fileLocationRecognizer,
@@ -51,18 +53,28 @@ export {
 // emitted effects.
 const PACK_VERSION = "0.1.0";
 
-export interface NodeRuntimePackOptions {
-  /**
-   * Deployment context for runtime-config reads (process.env.X,
-   * process.argv). Defaults to `"lambda"`.
-   */
-  deploymentTarget?: "lambda" | "ecs-task" | "container" | "k8s-deployment";
-  /**
-   * Instance name placeholder for runtime-config bindings the pack
-   * emits. Defaults to `"<unknown>"`.
-   */
-  instanceName?: string;
-}
+/**
+ * What `-f node=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Deployment context for runtime-config reads (process.env.X,
+     * process.argv). Defaults to `"lambda"`.
+     */
+    deploymentTarget: z
+      .enum(["lambda", "ecs-task", "container", "k8s-deployment"])
+      .optional(),
+    /**
+     * Instance name placeholder for runtime-config bindings the pack
+     * emits. Defaults to `"<unknown>"`.
+     */
+    instanceName: z.string().optional(),
+  })
+  .strict();
+
+export type NodeRuntimePackOptions = z.infer<typeof optionsSchema>;
 
 export function nodeRuntimePack(
   options: NodeRuntimePackOptions = {},

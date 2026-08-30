@@ -46,7 +46,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.20.0"
+    "@suss/adapter-python": "0.20.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@suss/checker": "*",

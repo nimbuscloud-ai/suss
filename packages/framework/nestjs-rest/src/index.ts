@@ -37,21 +37,31 @@
 //     abstract base + concrete child are discovered separately but
 //     pairing doesn't yet collapse them.
 
+import { z } from "zod";
+
 import type { PatternPack } from "@suss/extractor";
 
-export interface NestjsRestPackOptions {
-  /**
-   * Class decorators this project composes `@Controller()` into, for
-   * the cases the adapter cannot follow on its own.
-   *
-   * A wrapper written in the project needs no entry here: the adapter
-   * resolves a class decorator to the function behind it and accepts it
-   * when calling that function calls `Controller` from
-   * `@nestjs/common`. What is left for this option is a wrapper whose
-   * body is not in the project, so there is nothing to read.
-   */
-  classDecorators?: string[];
-}
+/**
+ * What `-f nestjs-rest=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Class decorators this project composes `@Controller()` into, for
+     * the cases the adapter cannot follow on its own.
+     *
+     * A wrapper written in the project needs no entry here: the adapter
+     * resolves a class decorator to the function behind it and accepts it
+     * when calling that function calls `Controller` from
+     * `@nestjs/common`. What is left for this option is a wrapper whose
+     * body is not in the project, so there is nothing to read.
+     */
+    classDecorators: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type NestjsRestPackOptions = z.infer<typeof optionsSchema>;
 
 export function nestjsRestFramework(
   options: NestjsRestPackOptions = {},

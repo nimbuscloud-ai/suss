@@ -51,12 +51,23 @@ import type {
 } from "@suss/adapter-typescript";
 import type { BehavioralSummary, RenderNode } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
+import type { z } from "zod";
 import type { Diagnosis } from "./diagnosis.js";
 import type { Submodule } from "./gitSubmodules.js";
 import type { Language } from "./language.js";
 
 /** Each pack types its own options, so the CLI keeps them untyped. */
 type PackFactory = (...args: never[]) => PatternPack;
+
+/**
+ * A loaded pack. `optionsSchema` is what a pack that takes options
+ * exports beside its factory; a pack without one is loaded the way it
+ * always was.
+ */
+interface PackModule {
+  default: PackFactory;
+  optionsSchema?: z.ZodObject<z.ZodRawShape>;
+}
 
 export { UsageError };
 
@@ -287,13 +298,66 @@ export function packsLoadedSoFar(): Array<{
   return [...loadedFrom].map(([name, specifier]) => ({ name, specifier }));
 }
 
+/**
+ * Refuse a config the pack could not have read, before the factory
+ * runs. Without this a misspelled key parses to nothing, the run exits
+ * 0, and the only sign is a boundary that never appears.
+ *
+ * The options moving into dependency stubs are still in the schemas,
+ * so a project on one gets the deprecation note rather than an error.
+ */
+function assertOptionsArePackable(
+  name: string,
+  mod: PackModule,
+  options: unknown,
+  configFile: string | undefined,
+): void {
+  const schema = mod.optionsSchema;
+  if (schema === undefined || options === undefined) {
+    return;
+  }
+
+  const parsed = schema.safeParse(options);
+  if (parsed.success) {
+    return;
+  }
+
+  throw new UsageError(
+    [
+      `The ${name} pack cannot read ${configFile ?? `the config given to -f ${name}`}:`,
+      ...parsed.error.issues.map((issue) => `  ${optionProblem(issue)}`),
+      `The ${name} pack takes: ${Object.keys(schema.shape).join(", ")}.`,
+    ].join("\n"),
+  );
+}
+
+/** One line per problem, leading with the key somebody has to fix. */
+function optionProblem(issue: z.core.$ZodIssue): string {
+  if (issue.code === "unrecognized_keys") {
+    const quoted = issue.keys.map((key) => `"${key}"`).join(", ");
+    if (issue.keys.length > 1) {
+      return `${quoted} are not options this pack takes.`;
+    }
+    return `${quoted} is not an option this pack takes.`;
+  }
+
+  const at = issue.path.length === 0 ? "the config" : issue.path.join(".");
+  if (issue.code === "invalid_value") {
+    const allowed = issue.values.map((value) => JSON.stringify(value));
+    return `${at} has to be one of ${allowed.join(", ")}.`;
+  }
+
+  return `${at}: ${issue.message}`;
+}
+
 async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   const { name, options, configFile } = parseFrameworkSpec(spec);
   const handedOver = optionsForFactory(options, configFile);
 
   const builtin = BUILTIN_FRAMEWORKS[name];
   if (builtin !== undefined) {
-    const mod = (await import(builtin)) as { default: PackFactory };
+    const mod = (await import(builtin)) as PackModule;
+    assertOptionsArePackable(name, mod, options, configFile);
     loadedFrom.set(name, builtin);
     return {
       name,
@@ -310,6 +374,7 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   for (const specifier of candidates) {
     const mod = await importPack(specifier);
     if (mod !== null) {
+      assertOptionsArePackable(name, mod, options, configFile);
       loadedFrom.set(name, specifier);
       return { name, options, handedOver, factory: mod.default, specifier };
     }
@@ -406,11 +471,9 @@ export async function resolveRubyPack(
 const looksLikeAPackage = (name: string): boolean =>
   name.startsWith("@") || name.includes("/");
 
-async function importPack(
-  specifier: string,
-): Promise<{ default: PackFactory } | null> {
+async function importPack(specifier: string): Promise<PackModule | null> {
   try {
-    return (await import(specifier)) as { default: PackFactory };
+    return (await import(specifier)) as PackModule;
   } catch {
     return null;
   }

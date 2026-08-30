@@ -1,21 +1,32 @@
 // @suss/framework-fastify: PatternPack for Fastify
 
+import { z } from "zod";
+
 import {
   httpRouteDiscovery,
   registrationHelperDiscovery,
+  registrationHelperOption,
 } from "@suss/extractor";
 
-import type { PatternPack, RegistrationHelper } from "@suss/extractor";
+import type { PatternPack } from "@suss/extractor";
 
-export interface FastifyPackOptions {
-  /**
-   * The project's own registration helpers, each expanded into the
-   * routes one call registers. A helper's name belongs to one project,
-   * so this arrives through per-project pack config
-   * (`-f fastify=config.json`) rather than being built in here.
-   */
-  registrationHelpers?: RegistrationHelper[];
-}
+/**
+ * What `-f fastify=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * The project's own registration helpers, each expanded into the
+     * routes one call registers. A helper's name belongs to one project,
+     * so this arrives through per-project pack config
+     * (`-f fastify=config.json`) rather than being built in here.
+     */
+    registrationHelpers: z.array(registrationHelperOption).optional(),
+  })
+  .strict();
+
+export type FastifyPackOptions = z.infer<typeof optionsSchema>;
 
 export function fastifyFramework(
   options: FastifyPackOptions = {},

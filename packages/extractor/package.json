@@ -45,7 +45,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.20.0"
+    "@suss/behavioral-ir": "0.20.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "tsup": "*",

@@ -272,7 +272,9 @@ Summaries written before this used `postgres`, `dynamodb`, `sqs`, and
 the metric words above followed at version 6. Pack
 config takes the new name too: a project passing
 `{ "storageSystem": "postgres" }` to the sqlalchemy, activerecord,
-prisma or drizzle pack writes `postgresql` instead.
+prisma or drizzle pack writes `postgresql` instead. The CLI parses a
+pack config against the pack's own declaration, so the old spelling
+stops the run with a sentence rather than pairing with nothing.
 
 ### The field names are ours
 
