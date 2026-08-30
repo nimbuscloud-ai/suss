@@ -20,14 +20,13 @@ import { functionNameOrAnon } from "./graphqlShared.js";
 import { registrationSubjectsOf } from "./registrationCall.js";
 import { functionValueOf, stringValueOf } from "./resolveValue.js";
 
-import type { WrapperMetadata } from "@suss/behavioral-ir";
+import type { WrapperReference } from "@suss/behavioral-ir";
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
-/** A wrapper as a wrapped unit refers to it: where to find its summary. */
-export type WrapperReference = WrapperMetadata["applied"][number];
+export type { WrapperReference };
 
 export interface WrapperIndex {
   /**

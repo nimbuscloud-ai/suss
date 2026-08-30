@@ -114,6 +114,19 @@ describe("the wrappers metadata namespace", () => {
     ).toThrow();
   });
 
+  it("round-trips the wrapper a transition came from", () => {
+    const transition = transitionWith(
+      withWrapperMetadata(undefined, {
+        from: { file: "src/requireCaller.ts", name: "requireCaller" },
+      }),
+    );
+
+    expect(readWrapperMetadata(transition)?.from).toEqual({
+      file: "src/requireCaller.ts",
+      name: "requireCaller",
+    });
+  });
+
   it("gives back nothing when the summary has no wrappers", () => {
     expect(readWrapperMetadata(summaryWith(undefined))).toBeUndefined();
   });

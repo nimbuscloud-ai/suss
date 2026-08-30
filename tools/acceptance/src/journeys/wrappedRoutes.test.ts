@@ -11,7 +11,8 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
  * returns 401 from middleware and 500 from an error handler, and
  * neither status appears in the handler that serves the route, so a
  * reader given the handler alone has nowhere to go looking. Each
- * wrapper gets a summary of its own, and the route points at it.
+ * wrapper gets a summary of its own, the route points at it, and what
+ * the wrapper does is reported as part of what the route does.
  */
 describe("read a service whose statuses come from around the handler", () => {
   const out = workspace("wrapped-routes");
@@ -41,11 +42,9 @@ describe("read a service whose statuses come from around the handler", () => {
 
   it("points the route at each wrapper's own summary", () => {
     const summaries = readJson(summariesFile) as BehavioralSummary[];
-    const route = summaries.find(
-      (one) => one.identity.boundaryBinding?.semantics.name === "rest",
-    );
+    const route = routeFor(summaries, "/v1/tenants/:id");
 
-    expect(route?.metadata?.wrappers).toEqual({
+    expect(route.metadata?.wrappers).toEqual({
       applied: [
         {
           file: "fixtures/wrapped-routes/requireCaller.ts",
@@ -76,4 +75,68 @@ describe("read a service whose statuses come from around the handler", () => {
     expect(statuses).toContainEqual(["requireCaller", [401]]);
     expect(statuses).toContainEqual(["onError", [500]]);
   });
+
+  it("reports the middleware's 401 and the error handler's 500 as the route's own behaviour", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+
+    expect(statusesOf(routeFor(summaries, "/v1/tenants/:id"))).toEqual([
+      401, 404, 200,
+    ]);
+    expect(statusesOf(routeFor(summaries, "/v1/tenants"))).toEqual([
+      401, 201, 500,
+    ]);
+  });
+
+  it("says which wrapper each of those came from", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const route = routeFor(summaries, "/v1/tenants");
+
+    expect(
+      route.transitions.map(
+        (transition) =>
+          (
+            transition.metadata?.wrappers as
+              | { from?: { name: string } }
+              | undefined
+          )?.from?.name,
+      ),
+    ).toEqual(["requireCaller", undefined, "onError"]);
+  });
+
+  it("leaves a route outside the middleware's path pattern alone", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const health = routeFor(summaries, "/health");
+
+    expect(statusesOf(health)).toEqual([200]);
+    expect(health.metadata?.wrappers).toEqual({
+      applied: [
+        {
+          file: "fixtures/wrapped-routes/app.ts",
+          name: "onError",
+          onThrow: true,
+        },
+      ],
+    });
+  });
 });
+
+function routeFor(
+  summaries: BehavioralSummary[],
+  path: string,
+): BehavioralSummary {
+  const route = summaries.find((one) => {
+    const semantics = one.identity.boundaryBinding?.semantics;
+    return semantics?.name === "rest" && semantics.path === path;
+  });
+  expect(route, `no route for ${path}`).toBeDefined();
+  return route as BehavioralSummary;
+}
+
+function statusesOf(summary: BehavioralSummary): number[] {
+  return summary.transitions.flatMap((transition) =>
+    transition.output.type === "response" &&
+    transition.output.statusCode?.type === "literal"
+      ? [Number(transition.output.statusCode.value)]
+      : [],
+  );
+}

@@ -1,8 +1,9 @@
 /**
  * wrapperIndex.test.ts, end to end through createTypeScriptAdapter: a
- * wrapper registered on an app becomes a summary of its own, and every
- * route on that app points at it, whether it is written in the same
- * file or imported from another one.
+ * wrapper registered on an app becomes a summary of its own, every
+ * route on that app points at it whether it is written in the same file
+ * or imported from another one, and what it produces is reported as
+ * part of what those routes produce.
  */
 
 import { describe, expect, it } from "vitest";
@@ -79,6 +80,7 @@ const expressLikePack: PatternPack = {
         body: { from: "argument", position: 0 },
       },
     },
+    { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
   ],
   inputMapping: {
     type: "positionalParams",
@@ -256,6 +258,114 @@ describe("wrapper registrations, end to end", () => {
     const wrapper = summaryNamed(summaries, "requireCaller");
     expect(wrapper.kind).toBe("middleware");
     expect(statusesOf(wrapper)).toEqual([401]);
+  });
+
+  it("ends a middleware's pass-through path at the call that hands control on", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        const app = express();
+        app.use((req, res, next) => {
+          if (!req.headers.authorization) {
+            res.status(401).json({ error: "unauthorized" });
+            return;
+          }
+          next();
+        });
+        app.get("/orders", (req, res) => { res.status(200).json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const wrapper = summaryNamed(summaries, "use");
+    expect(wrapper.transitions.map((t) => t.output.type)).toEqual([
+      "response",
+      "delegate",
+    ]);
+  });
+
+  it("reports what the middleware produces as part of the route's own behaviour", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/requireCaller.ts",
+      `
+        export const requireCaller = (req, res, next) => {
+          if (!req.headers.authorization) {
+            res.status(401).json({ error: "unauthorized" });
+            return;
+          }
+          next();
+        };
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        import { requireCaller } from "./requireCaller";
+        const app = express();
+        app.use(requireCaller);
+        app.get("/orders", (req, res) => { res.status(200).json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const route = summaries.find(
+      (one) => one.identity.boundaryBinding?.semantics.name === "rest",
+    ) as BehavioralSummary;
+    expect(statusesOf(route)).toEqual([401, 200]);
+    expect(
+      route.transitions.map((t) => readWrapperMetadata(t)?.from?.name),
+    ).toEqual(["requireCaller", undefined]);
+  });
+
+  it("reports the error handler's response where the route threw", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        const app = express();
+        app.use((err, req, res, next) => {
+          res.status(500).json({ error: "unavailable" });
+        });
+        app.get("/orders", (req, res) => {
+          if (!req.query.id) {
+            throw new Error("id is required");
+          }
+          res.status(200).json({});
+        });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const route = summaries.find(
+      (one) => one.identity.boundaryBinding?.semantics.name === "rest",
+    ) as BehavioralSummary;
+    expect(statusesOf(route)).toEqual([200, 500]);
+    expect(route.transitions.every((t) => t.output.type === "response")).toBe(
+      true,
+    );
   });
 
   it("reads an error handler's own body past the thrown value it is handed", async () => {

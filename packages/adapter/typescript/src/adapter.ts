@@ -43,6 +43,7 @@ import {
   type AccessRecognizer,
   assembleSummary,
   type BindingExtraction,
+  composeWrappers,
   type DiscoveredSubUnit,
   type DiscoveredSubUnitParent,
   type DiscoveryPattern,
@@ -703,6 +704,26 @@ function rolesPastThrownValue(
 }
 
 /**
+ * The terminal for a wrapper's call to its continuation, when the
+ * pattern that found it says where the continuation is. A path that
+ * reaches it hands control to the wrapped unit, so composition splices
+ * that unit in there; a path that never reaches it ends on its own.
+ */
+function continuationTerminal(unit: DiscoveredUnit): TerminalPattern[] {
+  const at = unit.pattern?.wraps?.continuationParam;
+  if (at === undefined) {
+    return [];
+  }
+  return [
+    {
+      kind: "delegate",
+      match: { type: "parameterCall", parameterPosition: at },
+      extraction: {},
+    },
+  ];
+}
+
+/**
  * The terminals to read this unit's body with. A consumer gets the
  * fall-through terminal whether or not its pack asked for one, because
  * the code around a client call runs off the end of its function all
@@ -715,8 +736,10 @@ function terminalsFor(
 ): TerminalPattern[] {
   // A pack whose units follow more than one convention overrides the
   // pack-level terminals per unit.
-  const declared =
-    unit.terminals ?? pastThrownValue(pack.terminals, thrownValueAt(unit));
+  const declared = [
+    ...(unit.terminals ?? pastThrownValue(pack.terminals, thrownValueAt(unit))),
+    ...continuationTerminal(unit),
+  ];
   if (unit.callSite === undefined) {
     return declared;
   }
@@ -2520,6 +2543,13 @@ export function createTypeScriptAdapter(
         }
       });
 
+      // After the cache write, because what a route's wrappers do is a
+      // function of the whole run and a stored summary of the route
+      // alone stays reusable.
+      const composed = timer.time("composeWrappers", () =>
+        composeWrappers(enriched),
+      );
+
       if (config.onTiming !== undefined) {
         config.onTiming(timer.report());
       }
@@ -2531,7 +2561,7 @@ export function createTypeScriptAdapter(
             tallies,
             filesInProject: tsconfigFileList?.length ?? null,
             filesWalked: walkList.length,
-            summaries: enriched,
+            summaries: composed,
             tsConfigFilePath: config.tsConfigFilePath,
             projectRoot: commonDirectoryOf(
               sourceFiles.map((f) => f.getFilePath()),
@@ -2545,7 +2575,7 @@ export function createTypeScriptAdapter(
       // Naming runs last, so a call can point at anything the run
       // produced.
       return named(
-        enriched,
+        composed,
         config.workspace,
         runRoot ?? commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
       );

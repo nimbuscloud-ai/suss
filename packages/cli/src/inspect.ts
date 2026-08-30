@@ -41,7 +41,7 @@ import type {
   Transition,
   TypeShape,
   ValueRef,
-  WrapperMetadata,
+  WrapperReference,
 } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
@@ -348,6 +348,8 @@ type Leaf = {
   declares: ((status: number) => boolean) | null;
   /** The range spec ("4XX") for a response declared by class. */
   rangeSpec: string | null;
+  /** The wrapper whose body produced this outcome, for one composition brought in. */
+  from: WrapperReference | null;
 };
 
 /**
@@ -482,6 +484,7 @@ function leafKey(leaf: Leaf): string {
     output: leaf.output,
     effects: leaf.effects,
     rangeSpec: leaf.rangeSpec,
+    from: leaf.from,
   });
 }
 
@@ -617,6 +620,7 @@ function buildDecisionTree(transitions: Transition[]): TreeNode {
       isDefault: t.isDefault,
       declares: null, // filled by caller wrapper
       rangeSpec: readHttpMetadata(t)?.statusRange?.spec ?? null,
+      from: readWrapperMetadata(t)?.from ?? null,
     });
   }
   return root;
@@ -669,6 +673,10 @@ function renderLeaf(
       ) {
         line += "  !! undeclared";
       }
+    }
+    // Nothing in this unit's body produces it, so say whose body does.
+    if (leaf.from !== null) {
+      line += `  (from ${leaf.from.name})`;
     }
     lines.push(line);
   }
@@ -1175,9 +1183,9 @@ function summaryMetadata(summary: BehavioralSummary): string {
   }
   // A status this unit's body never produces can come from one of
   // these, so the reader is told where to go looking.
-  const wrappers = readWrapperMetadata(summary);
-  if (wrappers !== undefined && wrappers.applied.length > 0) {
-    parts.push(`wrapped by ${wrapperSummary(wrappers.applied)}`);
+  const applied = readWrapperMetadata(summary)?.applied ?? [];
+  if (applied.length > 0) {
+    parts.push(`wrapped by ${wrapperSummary(applied)}`);
   }
   if (summary.confidence.level !== "high") {
     parts.push(`confidence: ${summary.confidence.level}`);
@@ -1193,13 +1201,13 @@ const WRAPPERS_LISTED = 3;
  * says what it does. A stack of them has to fit one header line, so the
  * first few are listed and the rest are counted.
  */
-function wrapperSummary(applied: WrapperMetadata["applied"]): string {
+function wrapperSummary(applied: readonly WrapperReference[]): string {
   const listed = applied.slice(0, WRAPPERS_LISTED).map(oneWrapper);
   const rest = applied.length - listed.length;
   return rest > 0 ? `${listed.join(", ")}, +${rest} more` : listed.join(", ");
 }
 
-function oneWrapper(wrapper: WrapperMetadata["applied"][number]): string {
+function oneWrapper(wrapper: WrapperReference): string {
   const parts = [`${wrapper.name} (${wrapper.file})`];
   if (wrapper.scope !== undefined) {
     parts.push(`for ${wrapper.scope}`);

@@ -1,10 +1,11 @@
 // shared.ts: types shared between every terminal matcher.
 
-import { Node } from "ts-morph";
+import { Node, type ParameterDeclaration } from "ts-morph";
 
 import { passesValueThrough, peelValue } from "../walk/unwrap.js";
 
 import type { RawCondition, RawTerminal } from "@suss/extractor";
+import type { FunctionRoot } from "../conditions.js";
 
 export interface FoundTerminal {
   node: Node;
@@ -28,6 +29,28 @@ export interface FoundTerminal {
    * share a node, so the path engine gives them the same conditions.
    */
   whenAlso?: RawCondition;
+}
+
+/**
+ * Which of `func`'s parameters this identifier is bound to, or null when
+ * it is bound to something else. A name shadowing a parameter resolves
+ * to its own declaration, so it comes back null rather than passing for
+ * the parameter it hides.
+ */
+export function parameterPositionOf(
+  identifier: Node,
+  func: FunctionRoot,
+): number | null {
+  if (!Node.isIdentifier(identifier)) {
+    return null;
+  }
+  const declaration = identifier.getSymbol()?.getDeclarations()[0];
+  if (declaration === undefined || !Node.isParameterDeclaration(declaration)) {
+    return null;
+  }
+  const params = func.getParameters() as ParameterDeclaration[];
+  const position = params.indexOf(declaration as ParameterDeclaration);
+  return position === -1 ? null : position;
 }
 
 /**

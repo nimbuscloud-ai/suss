@@ -43,12 +43,13 @@ import type {
   Transition,
   TypeShape,
   ValueRef,
-  WrapperMetadata,
+  WrapperReference,
 } from "@suss/behavioral-ir";
 import type { FailureDelivery } from "./framework.js";
 import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
+export { composeWrappers } from "./composeWrappers.js";
 export {
   httpRouteDiscovery,
   type RegistrationHelper,
@@ -59,6 +60,7 @@ export {
 export {
   enumerateOrDegrade,
   enumerateStructuredPaths,
+  MAX_PATHS,
   PathBudgetExceeded,
   UnmodeledFlow,
 } from "./paths/enumeratePaths.js";
@@ -345,7 +347,7 @@ export interface RawCodeStructure {
   /** Set when several mounts serve the declaration and this unit is one of them. */
   mount?: { siblings: number; prefix: string };
   /** The wrappers registered around this unit: middleware, error handlers. */
-  wrappers?: WrapperMetadata["applied"];
+  wrappers?: WrapperReference[];
   /** The extractor cannot derive this. An adapter that has the SDL and knows
    * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
