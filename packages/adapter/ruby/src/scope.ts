@@ -18,7 +18,7 @@
  * `Api` would miss a class the file itself defines.
  */
 
-import { bodyStatements, field } from "./ast.js";
+import { field, runStatements } from "./ast.js";
 
 import type { RbNode } from "./parser.js";
 
@@ -77,7 +77,7 @@ export interface ClassInfo {
   bodyNesting: readonly string[];
 }
 
-/** Every `class` declaration reachable from `root` through direct module/class nesting, in source order. */
+/** Every `class` declaration reachable from `root` through module/class nesting, in source order. */
 export function walkClasses(
   root: RbNode,
   visit: (info: ClassInfo) => void,
@@ -94,7 +94,7 @@ export function walkDefinitions(
   root: RbNode,
   visit: (info: ClassInfo) => void,
 ): void {
-  walkBody(bodyStatements(root), [], visit);
+  walkBody(runStatements(root), [], visit);
 }
 
 function walkBody(
@@ -159,7 +159,7 @@ function visitClass(
   });
 
   if (bodyNode !== null) {
-    walkBody(bodyStatements(bodyNode), identity.bodyNesting, visit);
+    walkBody(runStatements(bodyNode), identity.bodyNesting, visit);
   }
 }
 
@@ -185,7 +185,7 @@ function visitModule(
   });
 
   if (bodyNode !== null) {
-    walkBody(bodyStatements(bodyNode), identity.bodyNesting, visit);
+    walkBody(runStatements(bodyNode), identity.bodyNesting, visit);
   }
 }
 
