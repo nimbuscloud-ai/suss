@@ -57,9 +57,14 @@ subject(x, module, name) :-
   comesFrom(callee, module, name).
 ```
 
-with `construction` the one base fact recording a call or `new` and
-which callee it invokes, and the demand seeded per (module, name) a pack declares, the
-way `wanted` seeds every other question.
+`construction(c, callee)` says only that `c` is a call or a `new`
+expression and `callee` is what it invokes. Nothing about it is
+specific to apps: every call is a construction at the fact level, and
+the join against `comesFrom` is what makes one a subject seed. The
+adapter already emits `call` and callee facts, so this is likelier a
+view over those than a new relation; the one genuine addition is `new`
+expressions, which nothing records today. The demand is and seeded per (module, name) a pack declares, the way `wanted` seeds
+every other question.
 
 The fact layer already covers all ten rows. A class property binds its
 initializer through `emitFieldValues`, a destructured name emits
