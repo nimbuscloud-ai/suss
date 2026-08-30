@@ -2,20 +2,32 @@
 // database, for a project using SQLAlchemy. The adapter matches a call chain
 // on what the method behind it says it returns, and the README says why.
 
+import { z } from "zod";
+
+import { storageSystemOption } from "@suss/extractor";
+
 import type {
   PythonPack,
   RawSqlPattern,
   StoragePattern,
 } from "@suss/adapter-python";
 
-export interface SqlalchemyPackOptions {
-  /**
-   * Which database is behind the connection. SQLAlchemy talks to all of
-   * them and the URL says which, so this is the project's own choice
-   * rather than something the library settles.
-   */
-  storageSystem: "postgresql" | "mysql" | "sqlite";
-}
+/**
+ * What `-f sqlalchemy=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Which database is behind the connection. SQLAlchemy talks to all of
+     * them and the URL says which, so this is the project's own choice
+     * rather than something the library settles.
+     */
+    storageSystem: storageSystemOption,
+  })
+  .strict();
+
+export type SqlalchemyPackOptions = z.infer<typeof optionsSchema>;
 
 /**
  * The types SQLAlchemy hands back from a query, and the methods that change

@@ -14,17 +14,16 @@
 // status is the second argument, and it defaults to 200 when the handler
 // leaves it off.
 
+import { z } from "zod";
+
 import {
   httpRouteDiscovery,
   registrationHelperDiscovery,
+  registrationHelperOption,
   wrapperDiscovery,
 } from "@suss/extractor";
 
-import type {
-  DiscoveryPattern,
-  PatternPack,
-  RegistrationHelper,
-} from "@suss/extractor";
+import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
 /** What Hono registers around a route, on either app constructor. */
 const HONO_WRAPPERS: ReadonlyArray<NonNullable<DiscoveryPattern["wraps"]>> = [
@@ -46,15 +45,23 @@ const HTTP_EXCEPTION_CODES: Record<string, number> = {
   HTTPException: 500,
 };
 
-export interface HonoPackOptions {
-  /**
-   * The project's own registration helpers, each expanded into the
-   * routes one call registers. A helper's name belongs to one project,
-   * so this arrives through per-project pack config
-   * (`-f hono=config.json`) rather than being built in here.
-   */
-  registrationHelpers?: RegistrationHelper[];
-}
+/**
+ * What `-f hono=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * The project's own registration helpers, each expanded into the
+     * routes one call registers. A helper's name belongs to one project,
+     * so this arrives through per-project pack config
+     * (`-f hono=config.json`) rather than being built in here.
+     */
+    registrationHelpers: z.array(registrationHelperOption).optional(),
+  })
+  .strict();
+
+export type HonoPackOptions = z.infer<typeof optionsSchema>;
 
 export function honoFramework(options: HonoPackOptions = {}): PatternPack {
   return {

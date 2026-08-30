@@ -13,6 +13,8 @@
 // An SQS consumer built by a subject-naming handler factory also gets
 // a message-bus binding on that subject, so it pairs with producers.
 
+import { z } from "zod";
+
 import { type HandlerEntry, handlersForFile } from "./templateIndex.js";
 import { NON_HTTP_TERMINALS } from "./terminals.js";
 
@@ -166,22 +168,26 @@ function accountingUnit(
  * @suss/contract-cloudformation reads the template's SQS wiring. What the code
  * adds is which subject this consumer listens for.
  */
-export interface SubjectFactory {
-  /** The property on the factory's config object that contains the subject. */
-  property: string;
-  /**
-   * Factory functions the project builds its consumers with. Naming
-   * them is not required: the adapter reads whatever call built the
-   * export. Name them when two factories in the same service put
-   * different things under the same property.
-   */
-  callees?: string[];
-  /**
-   * Which argument position the config object is in. When this is left out,
-   * every object argument is read.
-   */
-  argIndex?: number;
-}
+export const subjectFactoryOption = z
+  .object({
+    /** The property on the factory's config object that contains the subject. */
+    property: z.string(),
+    /**
+     * Factory functions the project builds its consumers with. Naming
+     * them is not required: the adapter reads whatever call built the
+     * export. Name them when two factories in the same service put
+     * different things under the same property.
+     */
+    callees: z.array(z.string()).optional(),
+    /**
+     * Which argument position the config object is in. When this is left out,
+     * every object argument is read.
+     */
+    argIndex: z.number().optional(),
+  })
+  .strict();
+
+export type SubjectFactory = z.infer<typeof subjectFactoryOption>;
 
 /**
  * The subject a handler's factory config gives, when the template routes SQS to

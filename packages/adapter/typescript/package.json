@@ -52,7 +52,8 @@
     "@suss/resolution": "0.20.0",
     "graphql": "^16.8.0",
     "picomatch": "^4.0.4",
-    "ts-morph": "^23.0.0"
+    "ts-morph": "^23.0.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@suss/resolution": "*",

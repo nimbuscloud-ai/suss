@@ -26,28 +26,38 @@
 
 import path from "node:path";
 
+import { z } from "zod";
+
 import { SCALAR_SHAPES } from "@suss/contract-graphql";
 
 import type { GraphqlObjectFields, RubyPack } from "@suss/adapter-ruby";
 
-export interface GraphqlRubyPackOptions {
-  /**
-   * Directory a `mutation:` / `resolver:` field's referenced class is
-   * looked up under, e.g. `path.join(repoRoot, "app/graphql")`.
-   * Written relative, it is read relative to `configDirectory`, and
-   * relative to the working directory when there is none.
-   */
-  root: string;
-  /**
-   * The directory of the config file these options came from. Whatever read
-   * that file supplies this; it is not written in the file itself.
-   */
-  configDirectory?: string;
-  /** Base classes beyond `Types::BaseObject` that also mark a class as declaring GraphQL fields. */
-  baseClassNames?: string[];
-  /** The schema-wide camelCase default. A `field` or `argument` call's own `camelize:` keyword overrides it for that one name. */
-  camelize?: boolean;
-}
+/**
+ * What `-f graphql-ruby=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Directory a `mutation:` / `resolver:` field's referenced class is
+     * looked up under, e.g. `path.join(repoRoot, "app/graphql")`.
+     * Written relative, it is read relative to `configDirectory`, and
+     * relative to the working directory when there is none.
+     */
+    root: z.string(),
+    /**
+     * The directory of the config file these options came from. Whatever read
+     * that file supplies this; it is not written in the file itself.
+     */
+    configDirectory: z.string().optional(),
+    /** Base classes beyond `Types::BaseObject` that also mark a class as declaring GraphQL fields. */
+    baseClassNames: z.array(z.string()).optional(),
+    /** The schema-wide camelCase default. A `field` or `argument` call's own `camelize:` keyword overrides it for that one name. */
+    camelize: z.boolean().optional(),
+  })
+  .strict();
+
+export type GraphqlRubyPackOptions = z.infer<typeof optionsSchema>;
 
 /**
  * The type-level base classes `rails g graphql:install` scaffolds. A

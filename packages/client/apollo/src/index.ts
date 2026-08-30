@@ -33,6 +33,8 @@
 // in `unmatched` rather than pairing automatically, surfacing the
 // consumer boundary, not joining it.
 
+import { z } from "zod";
+
 import type { PatternPack } from "@suss/extractor";
 
 /**
@@ -57,25 +59,39 @@ const DOCUMENT_HOOKS = [
   { hookName: "useSubscription", operationType: "subscription" },
 ] as const;
 
-export interface ApolloClientPackOptions {
-  /**
-   * Which service each client talks to, keyed by the endpoint the
-   * client is constructed with: the uri string itself, or the written
-   * expression when the value is computed (an env read like
-   * `import.meta.env.VITE_GRAPHQL_URL`). The value is the provider
-   * workspace name. One line per client separates two GraphQL services
-   * that share root field names.
-   */
-  clients?: Record<string, string>;
-  /**
-   * Which service the operations in a set of files talk to, for a
-   * frontend that uses two clients. A hook call does not say which
-   * client it goes through, so these globs decide by file: an
-   * operation whose file matches gets the entry's workspace. First
-   * matching entry wins.
-   */
-  operationScopes?: Array<{ files: string[]; workspace: string }>;
-}
+/**
+ * What `-f apollo-client=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Which service each client talks to, keyed by the endpoint the
+     * client is constructed with: the uri string itself, or the written
+     * expression when the value is computed (an env read like
+     * `import.meta.env.VITE_GRAPHQL_URL`). The value is the provider
+     * workspace name. One line per client separates two GraphQL services
+     * that share root field names.
+     */
+    clients: z.record(z.string(), z.string()).optional(),
+    /**
+     * Which service the operations in a set of files talk to, for a
+     * frontend that uses two clients. A hook call does not say which
+     * client it goes through, so these globs decide by file: an
+     * operation whose file matches gets the entry's workspace. First
+     * matching entry wins.
+     */
+    operationScopes: z
+      .array(
+        z
+          .object({ files: z.array(z.string()), workspace: z.string() })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+
+export type ApolloClientPackOptions = z.infer<typeof optionsSchema>;
 
 export function apolloClientPack(
   options: ApolloClientPackOptions = {},

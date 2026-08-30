@@ -13,6 +13,8 @@
  * pattern like `{stage}-orders-v1`.
  */
 
+import { z } from "zod";
+
 import { constructedFrom, pack, storageCalls } from "@suss/recognize";
 
 import type {
@@ -267,32 +269,44 @@ function keyConditionAttributes(
  * and posts the request itself writes none of them, so the project says
  * which of its own functions does that. The README gives an example.
  */
-export interface DynamoRequestFunction {
-  /** What the function is called where it is called. */
-  name: string;
-  /**
-   * The module specifier a call site imports it from. Leave it out when
-   * call sites reach it by different relative paths; then the name
-   * alone picks it out among the files the import gate admits.
-   */
-  module?: string;
-  /** Which argument says which operation the request performs. */
-  operationArg: number;
-  /** Which argument is the request itself. */
-  requestArg: number;
-  /** What each operation the function accepts does to the table. */
-  operations: Record<string, "read" | "write">;
-}
+const requestFunction = z
+  .object({
+    /** What the function is called where it is called. */
+    name: z.string(),
+    /**
+     * The module specifier a call site imports it from. Leave it out when
+     * call sites reach it by different relative paths; then the name
+     * alone picks it out among the files the import gate admits.
+     */
+    module: z.string().optional(),
+    /** Which argument says which operation the request performs. */
+    operationArg: z.number(),
+    /** Which argument is the request itself. */
+    requestArg: z.number(),
+    /** What each operation the function accepts does to the table. */
+    operations: z.record(z.string(), z.enum(["read", "write"])),
+  })
+  .strict();
 
-export interface DynamoPackOptions {
-  requestFunctions?: DynamoRequestFunction[];
-  /**
-   * Further modules whose presence makes a file worth reading. A helper
-   * imported by a relative path gives the gate nothing to match on; the
-   * signing library that helper imports gives it something.
-   */
-  requiresImport?: string[];
-}
+export type DynamoRequestFunction = z.infer<typeof requestFunction>;
+
+/**
+ * What `-f aws-dynamodb=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    requestFunctions: z.array(requestFunction).optional(),
+    /**
+     * Further modules whose presence makes a file worth reading. A helper
+     * imported by a relative path gives the gate nothing to match on; the
+     * signing library that helper imports gives it something.
+     */
+    requiresImport: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type DynamoPackOptions = z.infer<typeof optionsSchema>;
 
 /**
  * A call to a request function the project configured. The operation

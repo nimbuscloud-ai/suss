@@ -53,9 +53,15 @@ export {
   httpRouteDiscovery,
   type RegistrationHelper,
   registrationHelperDiscovery,
+  registrationHelperOption,
   unwrapJsonStringify,
   wrapperDiscovery,
 } from "./packHelpers.js";
+export {
+  configuredCallOption,
+  scopeOption,
+  storageSystemOption,
+} from "./packOptions.js";
 export {
   enumerateOrDegrade,
   enumerateStructuredPaths,

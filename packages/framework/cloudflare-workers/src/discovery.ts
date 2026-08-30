@@ -42,7 +42,7 @@ export interface CloudflareWorkersDiscoveryOptions {
    * no deployable, and the runtime-config provider from `wrangler.toml`
    * places its code by directory instead.
    */
-  scriptName?: string;
+  scriptName?: string | undefined;
 }
 
 export function cloudflareWorkersDiscovery(

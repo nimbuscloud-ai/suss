@@ -27,31 +27,40 @@
 // return under a wider terminal list (see `terminals.ts`). The
 // message-bus pass in @suss/contract-cloudformation owns SQS consumers.
 
-import { awsLambdaDiscovery } from "./discovery.js";
+import { z } from "zod";
+
+import { awsLambdaDiscovery, subjectFactoryOption } from "./discovery.js";
 import { HTTP_TERMINALS } from "./terminals.js";
 
 import type { PatternPack } from "@suss/extractor";
-import type { SubjectFactory } from "./discovery.js";
 
 export { awsLambdaDiscovery, METADATA_NAMESPACE } from "./discovery.js";
 export { clearTemplateCache } from "./templateIndex.js";
 
 export type { SubjectFactory } from "./discovery.js";
 
-export interface AwsLambdaPackOptions {
-  /**
-   * Where a project's own handler factory states the subject its SQS
-   * consumer expects. A handler built by such a factory gets a
-   * message-bus binding on that subject instead of the fallback.
-   *
-   * The adapter follows the export back to the call that built it, so
-   * an entry only has to say which property contains the subject:
-   * `{ "property": "subject" }`. AWS declares no such factory and nothing here
-   * assumes one, so a service that does not write its consumers this way is
-   * unaffected.
-   */
-  subjectFactories?: SubjectFactory[];
-}
+/**
+ * What `-f aws-lambda=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Where a project's own handler factory states the subject its SQS
+     * consumer expects. A handler built by such a factory gets a
+     * message-bus binding on that subject instead of the fallback.
+     *
+     * The adapter follows the export back to the call that built it, so
+     * an entry only has to say which property contains the subject:
+     * `{ "property": "subject" }`. AWS declares no such factory and nothing here
+     * assumes one, so a service that does not write its consumers this way is
+     * unaffected.
+     */
+    subjectFactories: z.array(subjectFactoryOption).optional(),
+  })
+  .strict();
+
+export type AwsLambdaPackOptions = z.infer<typeof optionsSchema>;
 
 export function awsLambdaFramework(
   options: AwsLambdaPackOptions = {},

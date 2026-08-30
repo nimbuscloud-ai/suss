@@ -20,5 +20,6 @@
   "__filename": "Node: CommonJS module global holding the file path",
   "meta": "JavaScript: the import.meta property",
   "lambda": "AWS deployment target, AWS Lambda",
+  "container": "suss: deployment target for code running as a plain container",
   "schedule": "suss: effect class for a scheduled callback"
 }

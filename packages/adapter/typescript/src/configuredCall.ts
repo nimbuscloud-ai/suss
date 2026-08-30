@@ -16,31 +16,16 @@
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
-import type { EffectArg } from "@suss/extractor";
+import type { configuredCallOption, EffectArg } from "@suss/extractor";
+import type { z } from "zod";
 
 /**
- * A call the project has declared to be its own dispatcher.
- *
- * `receiver` is the type name rather than the variable: a service keeps
- * its dispatcher in a field, a closure or a constructor parameter, and
- * the type is the only thing stable across all three.
+ * A call the project has declared to be its own dispatcher. The
+ * declaration a project config is parsed against lives with the other
+ * shared pack options, so this reader and the packs that take it under
+ * `producers` describe one shape.
  */
-export interface ConfiguredCallSpec {
-  /** Module that declares the receiver's type. */
-  module: string;
-  /** Type name of the receiver, as exported from that module. */
-  receiver: string;
-  /** Method that performs the send. */
-  method: string;
-  /** Argument index carrying the subject. */
-  subjectArg: number;
-  /**
-   * Which argument the message body is. Left out when the method has no
-   * single body argument, as a batch method taking a list of entries
-   * does, and then no body is reported.
-   */
-  bodyArg?: number;
-}
+export type ConfiguredCallSpec = z.infer<typeof configuredCallOption>;
 
 export interface ConfiguredCallRead {
   /** The subject the call sends to, always a literal string. */

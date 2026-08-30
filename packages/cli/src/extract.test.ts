@@ -265,6 +265,76 @@ describe("packs for the other two languages", () => {
     );
   });
 
+  it("refuses a key the pack does not take, by name", async () => {
+    const file = writeConfig(
+      JSON.stringify({
+        registrationHelpes: [{ helperName: "mountHealth" }],
+        nonsense: 42,
+      }),
+    );
+    await expect(resolveFramework(`hono=${file}`)).rejects.toThrow(
+      /"registrationHelpes", "nonsense" are not options this pack takes/,
+    );
+  });
+
+  it("names the config file and what the pack does take", async () => {
+    const file = writeConfig(JSON.stringify({ nonsense: 42 }));
+    const failure = resolveFramework(`hono=${file}`);
+    await expect(failure).rejects.toThrow(file);
+    await expect(failure).rejects.toThrow(
+      /The hono pack takes: registrationHelpers\./,
+    );
+  });
+
+  it("refuses a storage system the checker could not pair, and says which are allowed", async () => {
+    const file = writeConfig(JSON.stringify({ storageSystem: "postgres" }));
+    await expect(resolveFramework(`prisma=${file}`)).rejects.toThrow(
+      /storageSystem has to be one of "postgresql", "mysql", "sqlite"/,
+    );
+  });
+
+  it("takes a config every key of which the pack declares", async () => {
+    const file = writeConfig(
+      JSON.stringify({ storageSystem: "mysql", scope: "reporting" }),
+    );
+    const pack = await resolveFramework(`prisma=${file}`);
+    expect(pack.name).toBe("prisma");
+  });
+
+  it("still takes a deprecated option, and still prints its note", async () => {
+    const file = writeConfig(
+      JSON.stringify({
+        registrationHelpers: [
+          {
+            helperName: "mountHealth",
+            registrations: [
+              { method: "GET", pathTemplate: "/health", handlerArg: "{0}" },
+            ],
+          },
+        ],
+      }),
+    );
+    const written: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const pack = await resolveFramework(`hono=${file}`);
+      expect(pack.name).toBe("hono");
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(written.join("")).toContain("keeps working for one more release");
+  });
+
+  it("leaves a pack that declares no options alone", async () => {
+    const file = writeConfig(JSON.stringify({ whateverItLikes: 1 }));
+    const pack = await resolveFramework(`react=${file}`);
+    expect(pack.name).toBe("react");
+  });
+
   it("says what a pack needs when its required config is missing", async () => {
     await expect(resolveRubyPack("graphql-ruby")).rejects.toThrow(
       /needs `root`[\s\S]*-f graphql-ruby=<config.json>/,

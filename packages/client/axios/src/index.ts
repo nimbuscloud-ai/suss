@@ -1,5 +1,7 @@
 // @suss/client-axios: PatternPack for the axios HTTP client
 
+import { z } from "zod";
+
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
 const HTTP_METHODS = [
@@ -20,23 +22,35 @@ const HTTP_METHODS = [
  * axios.create(...) call at its own use sites, only a call to the
  * helper, so the built-in factoryMethods entry never sees it.
  */
-export interface AxiosClientFactory {
-  /** Module specifier the factory function is imported from. */
-  module: string;
-  /** Name the factory function is exported under. */
-  export: string;
-}
+const clientFactory = z
+  .object({
+    /** Module specifier the factory function is imported from. */
+    module: z.string(),
+    /** Name the factory function is exported under. */
+    export: z.string(),
+  })
+  .strict();
 
-export interface AxiosPackOptions {
-  /**
-   * Project functions this project builds axios instances through,
-   * beyond the built-in axios.create. Each site importing one of
-   * these and calling it is a client instance the same way an
-   * axios.create() result is, wherever the call it delegates to
-   * lives.
-   */
-  factories?: AxiosClientFactory[];
-}
+export type AxiosClientFactory = z.infer<typeof clientFactory>;
+
+/**
+ * What `-f axios=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Project functions this project builds axios instances through,
+     * beyond the built-in axios.create. Each site importing one of
+     * these and calling it is a client instance the same way an
+     * axios.create() result is, wherever the call it delegates to
+     * lives.
+     */
+    factories: z.array(clientFactory).optional(),
+  })
+  .strict();
+
+export type AxiosPackOptions = z.infer<typeof optionsSchema>;
 
 function discoveryForVerb(
   verb: (typeof HTTP_METHODS)[number],

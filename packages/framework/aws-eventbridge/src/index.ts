@@ -59,8 +59,11 @@
 // The `Source` field scopes an event on the bus but does not key
 // pairing in v0, so it rides as the routing key for a reader.
 
+import { z } from "zod";
+
 import { readConfiguredCall } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
+import { configuredCallOption } from "@suss/extractor";
 import { constructedFrom, messageSends, pack } from "@suss/recognize";
 
 import type {
@@ -75,13 +78,21 @@ const EVENTBRIDGE = "@aws-sdk/client-eventbridge";
 
 export type EventBridgeProducer = ConfiguredCallSpec;
 
-export interface EventBridgePackOptions {
-  /**
-   * Publishers this project emits through. Each one adds a recognizer
-   * and widens the import gate to that publisher's module.
-   */
-  producers?: EventBridgeProducer[];
-}
+/**
+ * What `-f aws-eventbridge=config.json` may say. The CLI parses the file against it
+ * before the factory runs.
+ */
+export const optionsSchema = z
+  .object({
+    /**
+     * Publishers this project emits through. Each one adds a recognizer
+     * and widens the import gate to that publisher's module.
+     */
+    producers: z.array(configuredCallOption).optional(),
+  })
+  .strict();
+
+export type EventBridgePackOptions = z.infer<typeof optionsSchema>;
 
 /**
  * One recognizer per configured publisher method. The subject the
