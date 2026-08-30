@@ -201,14 +201,52 @@ describe("python value facts", () => {
         "",
       ].join("\n"),
     );
-    expect(rows(db, "binds").map((row) => row[0])).toEqual([
-      "#First",
-      "#Second",
-    ]);
+    expect(
+      rows(db, "binds")
+        .map((row) => row[0] ?? "")
+        .filter((key) => !key.endsWith("#self")),
+    ).toEqual(["#First", "#Second"]);
     expect(rows(db, "exportsAs").map((row) => row[1])).toEqual([
       "First",
       "Second",
     ]);
+  });
+
+  it("binds a method's receiver to the class it is declared in", async () => {
+    const db = await factsFor(
+      ["class Holder:", "    def wire(self):", "        pass", ""].join("\n"),
+    );
+    const [cls] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "binds")).toContainEqual([`${method?.[0]}#self`, cls?.[0]]);
+  });
+
+  it("puts what a method writes to its receiver on the class", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def __init__(self):",
+        "        self.app = build()",
+        "",
+      ].join("\n"),
+    );
+    const [cls] = rows(db, "objectValue");
+    expect(rows(db, "holdsProperty").map((row) => [row[0], row[1]])).toEqual([
+      [cls?.[0], "app"],
+      [cls?.[0], "__init__"],
+    ]);
+  });
+
+  it("binds a name a method's body assigns", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def build(self):",
+        "        app = make()",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "binds").map((row) => row[0])).toContain("#app");
   });
 
   it("keeps a class attribute under its name", async () => {
@@ -262,6 +300,50 @@ describe("python value facts", () => {
   it("gives a parameter after a splat a name but no position", async () => {
     const db = await factsFor("def build(a, *rest, flag=False):\n    pass\n");
     expect(rows(db, "paramOf").map((row) => row[1])).toEqual(["0"]);
+    expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
+  });
+
+  it("leaves a tuple assignment alone, since neither name holds the pair", async () => {
+    const db = await factsFor("a, b = build()\n");
+    expect(rows(db, "binds")).toEqual([]);
+  });
+
+  it("puts a value on the class only when a method writes it to its own receiver", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def __init__(self, other):",
+        "        self.app = build()",
+        "        other.app = build()",
+        "",
+      ].join("\n"),
+    );
+    // The class keeps its own methods too, so the point is that one
+    // write landed and the write to somebody else's receiver did not.
+    const held = rows(db, "holdsProperty").map((row) => String(row[1]));
+    expect(held.filter((name) => name === "app")).toEqual(["app"]);
+  });
+
+  it("says nothing about a subscript assignment", async () => {
+    const db = await factsFor("registry['app'] = build()\n");
+    expect(rows(db, "binds")).toEqual([]);
+    expect(rows(db, "holdsProperty")).toEqual([]);
+  });
+
+  it("says nothing about an annotation that assigns no value", async () => {
+    const db = await factsFor("app: FastAPI\n");
+    expect(rows(db, "binds")).toEqual([]);
+    expect(rows(db, "exportsAs")).toEqual([]);
+  });
+
+  it("takes a lambda that declares no parameter as a function all the same", async () => {
+    const db = await factsFor("build = lambda: 1\n");
+    expect(db.size("func")).toBe(1);
+    expect(rows(db, "paramNamed")).toEqual([]);
+  });
+
+  it("gives no key to the marker that ends the positional parameters", async () => {
+    const db = await factsFor("def build(a, *, flag=False):\n    pass\n");
     expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
   });
 });

@@ -20,6 +20,25 @@ function nameId(filePath: string, name: string): string {
   return `${filePath}#${name}`;
 }
 
+/**
+ * The key a read of this expression joins on, for a caller that has an
+ * expression in hand and wants to ask the rules about it. `enclosing` is
+ * the function the expression is written in, or null at module level.
+ */
+export function readKey(
+  filePath: string,
+  node: PyNode,
+  enclosing: PyNode | null,
+): string {
+  if (node.type !== "identifier") {
+    return nodeId(filePath, node);
+  }
+  if (enclosing !== null && parameterNames(enclosing).has(node.text)) {
+    return `${nodeId(filePath, enclosing)}#${node.text}`;
+  }
+  return nameId(filePath, node.text);
+}
+
 const FUNCTION_TYPES = new Set(["function_definition", "lambda"]);
 
 /** Written out in the source rather than a name for something written elsewhere. */
@@ -58,6 +77,22 @@ function parameterName(param: PyNode): PyNode | null {
 /** tree-sitter types a named child as nullable; dropping them once keeps every walk below flat. */
 function children(node: PyNode): PyNode[] {
   return node.namedChildren.filter((child): child is PyNode => child !== null);
+}
+
+/** What a function calls its parameters. What follows a `*` is left out, since it can only be passed by keyword. */
+function parameterNames(fn: PyNode): Set<string> {
+  const params = field(fn, "parameters");
+  const declared = new Set<string>();
+  for (const param of params === null ? [] : children(params)) {
+    if (SPLAT_TYPES.has(param.type)) {
+      continue;
+    }
+    const name = parameterName(param);
+    if (name !== null) {
+      declared.add(name.text);
+    }
+  }
+  return declared;
 }
 
 interface Emitter {
@@ -231,6 +266,12 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
   });
 }
 
+/** The class a method belongs to, and what that method calls its receiver. */
+interface MethodReceiver {
+  classKey: string;
+  name: string;
+}
+
 /**
  * A function's parameters by position, its returns, and the calls its body
  * makes. Where its name goes is the caller's to say, because a method belongs
@@ -239,17 +280,18 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
 function emitFunctionFacts(
   emitter: Emitter,
   fn: PyNode,
-  isMethod = false,
+  classKey?: string,
 ): string {
   const funcKey = nodeId(emitter.filePath, fn);
   add(emitter, "func", funcKey);
 
   const params = field(fn, "parameters");
-  const declared = new Set<string>();
+  const declared = parameterNames(fn);
   // A method's first parameter is the receiver, which the caller does not
   // write, so counting it would put the first written argument in it.
-  let position = isMethod ? -1 : 0;
+  let position = classKey === undefined ? 0 : -1;
   let byPosition = true;
+  let receiver: MethodReceiver | null = null;
   for (const param of params === null ? [] : children(params)) {
     if (SPLAT_TYPES.has(param.type)) {
       // What follows a `*` can only be passed by name.
@@ -258,10 +300,15 @@ function emitFunctionFacts(
     }
     const paramName = parameterName(param);
     if (paramName !== null) {
-      declared.add(paramName.text);
       const paramKey = `${funcKey}#${paramName.text}`;
       if (byPosition && position >= 0) {
         add(emitter, "paramOf", funcKey, String(position), paramKey);
+      }
+      // Calling a class makes one of it, so an instance is the class
+      // object, and that is what a method's receiver comes down to.
+      if (classKey !== undefined && position === -1) {
+        receiver = { classKey, name: paramName.text };
+        add(emitter, "binds", paramKey, classKey);
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
     }
@@ -303,25 +350,70 @@ function emitFunctionFacts(
     if (child.type === "call") {
       add(inside, "bodyCalls", funcKey, nodeId(inside.filePath, child));
     }
+    if (child.type === "assignment") {
+      emitBinding(inside, child, receiver);
+    }
     emitExpressionFact(inside, child);
   });
 
   return funcKey;
 }
 
-/** `name = value` at any level, which is what a chain follows one hop of. */
+/**
+ * `name = value` at any level, which is what a chain follows one hop of,
+ * and `self.name = value` inside a method, which puts the value on the
+ * class so a later `self.name` finds it.
+ */
+function emitBinding(
+  emitter: Emitter,
+  assignment: PyNode,
+  receiver: MethodReceiver | null,
+): void {
+  const left = field(assignment, "left");
+  const right = field(assignment, "right");
+  if (left === null || right === null) {
+    return;
+  }
+  if (left.type === "identifier") {
+    add(
+      emitter,
+      "binds",
+      nameId(emitter.filePath, left.text),
+      valueKey(emitter, right),
+    );
+    return;
+  }
+  if (receiver === null || left.type !== "attribute") {
+    return;
+  }
+
+  const object = field(left, "object");
+  const property = field(left, "attribute");
+  if (
+    object?.type !== "identifier" ||
+    object.text !== receiver.name ||
+    property === null
+  ) {
+    return;
+  }
+  add(
+    emitter,
+    "holdsProperty",
+    receiver.classKey,
+    property.text,
+    valueKey(emitter, right),
+  );
+}
+
+/** A module-level or function-level `name = value`, which another file gets by importing the name. */
 function emitAssignment(emitter: Emitter, assignment: PyNode): void {
+  emitBinding(emitter, assignment, null);
+
   const left = field(assignment, "left");
   const right = field(assignment, "right");
   if (left === null || right === null || left.type !== "identifier") {
     return;
   }
-  add(
-    emitter,
-    "binds",
-    nameId(emitter.filePath, left.text),
-    valueKey(emitter, right),
-  );
   add(
     emitter,
     "exportsAs",
@@ -376,7 +468,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
     if (!FUNCTION_TYPES.has(member.type)) {
       continue;
     }
-    const funcKey = emitFunctionFacts(emitter, member, true);
+    const funcKey = emitFunctionFacts(emitter, member, classKey);
     const name = field(member, "name");
     if (name !== null) {
       add(emitter, "holdsProperty", classKey, name.text, funcKey);

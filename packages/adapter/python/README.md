@@ -18,6 +18,38 @@ A pack declares which syntax its library uses for path parameters, under `pathPa
 
 If a pack declares nothing, it gets paths exactly as written and no parameter is treated as a path parameter. If a pack declares a syntax the adapter has no reader for, its routes are still discovered, but they come out with no path and a recorded gap. Packs written against 0.3 assumed brace parsing applied to every path, so those packs now have to declare `"braces"` explicitly.
 
+## Which expression is the app
+
+A route is a decorator on something, and whether it counts depends on what that something is. `@app.get("/x")` is a route when `app` was built by calling what FastAPI exports, and nothing at all when `app` is some other object with a `get` method. So discovery has to answer one question per decorator: what built the object this hangs on?
+
+The lexical binder goes first, and it settles most cases: it follows the name one hop back to the call that built it and reads where that call's constructor was imported from. It is fast, it needs no facts, and it covers the module-level app and the app factory.
+
+The binder only records a name written directly in a body's own statement list, and it has no idea what an attribute refers to. So these two get nothing out of it:
+
+```python
+class Holder:
+    def __init__(self):
+        self.app = FastAPI()
+
+    def wire(self):
+        @self.app.get("/health")     # the binder has no binding for self.app
+        def health(): ...
+
+try:
+    app = FastAPI()
+
+    @app.get("/health")              # the binder skips a name written inside a try
+    def health(): ...
+except RuntimeError:
+    pass
+```
+
+Whatever the binder declines goes to the rules in `@suss/resolution`, as `wantedSubject`. They follow the value however it was moved, through a binding, a property read, an import, or an argument, and come back with the call it was written as and where that call's callee came from. The TypeScript adapter asks the same question of the same rules, so a spelling either language learns to follow, both get.
+
+The rules settle on one construction or on nothing. A name that could be two different constructions comes back with neither, because keying a route on the wrong app is worse than keying it on none, and then the decorator stays unclassified and the route is not discovered.
+
+Three Python facts feed the question. A method's receiver binds to the class it is declared in, which is what makes `self.app` the value the class puts under `app`. An assignment written inside a method body binds its name, which the class walk used to skip. And an import of a package the repo cannot read still records which module a name came from, which is how `FastAPI()` is told apart from a same-named constructor the project wrote itself.
+
 ## How a prefix is read
 
 A mounted route's path comes from prefixes written at up to four places: the object the mount is called on, whatever that object was built from, the router's constructor, and the call that mounts it. All four go through one reader, and a given spelling means the same thing at every one of them. We got this wrong three times by fixing one place or one spelling at a time, so the whole grid is written out here.

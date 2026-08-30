@@ -99,15 +99,16 @@ export async function extractPythonProject(
     });
   }
 
-  // A pack that mounts routers may meet a loop over a call, and only the
-  // rules can say what that call registers. The facts they read are built
-  // once, here, for the packs that could need them.
+  // Discovery asks the rules what an object it cannot name was built by,
+  // a pack that mounts routers asks them what a loop over a call
+  // registers, and both read the value facts, so they are built once here.
   const mountsRouters = options.packs.some((pack) =>
     pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
-  const needsValues = mountsRouters || storagePatterns.length > 0;
+  const discovers = options.packs.some((pack) => pack.discovery.length > 0);
+  const needsValues = discovers || mountsRouters || storagePatterns.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns.
   const definitions = new Map<string, PyNode>();
@@ -152,6 +153,7 @@ export async function extractPythonProject(
       absoluteFile: file,
       routerIndex,
       gapHandling,
+      ...(needsValues ? { facts: db } : {}),
       ...(storagePatterns.length > 0 || rawSqlPatterns.length > 0
         ? {
             storage: {

@@ -49,6 +49,55 @@ export interface DecoratorClassification {
    * resolved there, since that is where the namespace is constructed.
    */
   objectModule?: ModuleBinding;
+  /**
+   * The call the rules say built the object this decorator hangs on, when
+   * the lexical scope could not say. A router prefix is looked up by this
+   * call rather than by a variable name, because there may not be one.
+   */
+  subjectConstruction?: { key: string; constructorName: string };
+}
+
+/** What a decorator hangs on and which of its methods it calls, for `@app.get(...)` and `@self.app.get(...)` alike. */
+export interface DecoratorReceiver {
+  /** The expression the method is called on, whatever kind it is. */
+  object: PyNode;
+  /** The method's own name, `get` in `@app.get("/x")`. */
+  attributeName: string;
+  args: DecoratorArg[];
+  keywordArgs: Record<string, DecoratorArg>;
+  range: Range;
+}
+
+/**
+ * The receiver and method a decorator is written as, without resolving
+ * either. Whoever calls this has another way to say what the receiver is,
+ * so nothing here reads the scope.
+ */
+export function decoratorReceiver(
+  decoratorNode: PyNode,
+): DecoratorReceiver | null {
+  const range = rangeOf(decoratorNode);
+  const expr = decoratorNode.namedChild(0);
+  if (expr === null) {
+    return null;
+  }
+
+  const applied = expr.type === "call" ? field(expr, "function") : expr;
+  if (applied === null || applied.type !== "attribute") {
+    return null;
+  }
+  const object = field(applied, "object");
+  const attribute = field(applied, "attribute");
+  if (object === null || attribute === null) {
+    return null;
+  }
+
+  const argumentList = expr.type === "call" ? field(expr, "arguments") : null;
+  const { args, keywordArgs } =
+    argumentList?.type === "argument_list"
+      ? readCallArguments(argumentList)
+      : { args: [], keywordArgs: {} };
+  return { object, attributeName: attribute.text, args, keywordArgs, range };
 }
 
 function readArg(node: PyNode): DecoratorArg {

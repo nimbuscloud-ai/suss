@@ -102,6 +102,17 @@ export interface RouterIndex {
     objectName: string,
   ): RoutePrefixResolution;
   /**
+   * The same answer for a decorator whose object has no variable name to
+   * look up, such as one written on `self.router`. The rules give the call
+   * that built it, and every construction is already keyed by its call.
+   */
+  resolveConstruction(
+    pattern: PythonDiscoveryPattern,
+    module: ModuleBinding,
+    constructorName: string,
+    constructionKey: string,
+  ): RoutePrefixResolution;
+  /**
    * The module-level def a name in another module refers to, with that
    * module's own bindings, so a decorator written through a project wrapper
    * can be read where the wrapper is written.
@@ -280,49 +291,83 @@ export function buildRouterIndex(
         };
       }
 
-      const ownPrefix = composedOwnPrefix(
-        construction.prefix,
-        index.composition,
-      );
-      if (ownPrefix.kind === "abstain") {
-        return ownPrefix;
+      return composedPrefixOf(index, construction, displayPaths.get(module));
+    },
+
+    resolveConstruction(pattern, module, constructorName, constructionKey) {
+      const index = byPattern.get(pattern);
+      if (index === undefined) {
+        return NOT_ROUTER;
       }
 
-      const routerPath = displayPaths.get(module);
-      const states = index.mounts.get(construction);
-      if (states === undefined || states.length === 0) {
-        return { kind: "abstain", reason: unmountedReason(index, routerPath) };
+      const construction = index.byValueKey.get(constructionKey);
+      if (construction !== undefined) {
+        return composedPrefixOf(index, construction, displayPaths.get(module));
       }
 
-      for (const state of states) {
-        if (state.kind === "abstain") {
-          return { kind: "abstain", reason: state.reason };
-        }
-
-        const rivalled = rivalRegistration(index, state.site, routerPath);
-        if (rivalled !== null) {
-          return { kind: "abstain", reason: rivalled };
-        }
-      }
-
-      const composed = composedMountPrefix(index, construction);
-      if (composed.kind === "abstain") {
-        return composed;
-      }
-
-      if (composed.kind === "composedMany") {
+      // The index only records a construction written at a module's top
+      // level, so a router built anywhere else has no prefix here to
+      // compose and its routes give no path rather than a wrong one.
+      if (constructorName === index.composition.routerConstructorName) {
         return {
-          kind: "composedMany",
-          values: composed.values.map((value) => value + ownPrefix.value),
+          kind: "abstain",
+          reason: unmountedReason(index, displayPaths.get(module)),
         };
       }
 
-      return {
-        kind: "composed",
-        value: composed.value + ownPrefix.value,
-      };
+      if (index.composition.mountObjectPrefix !== undefined) {
+        return {
+          kind: "abstain",
+          reason:
+            "is built where this reading does not read a mount object's prefix",
+        };
+      }
+
+      return NOT_ROUTER;
     },
   };
+}
+
+/** What a construction the index knows composes to, once the caller has found it by name or by call. */
+function composedPrefixOf(
+  index: PatternIndex,
+  construction: Construction,
+  routerPath: string | undefined,
+): RoutePrefixResolution {
+  const ownPrefix = composedOwnPrefix(construction.prefix, index.composition);
+  if (ownPrefix.kind === "abstain") {
+    return ownPrefix;
+  }
+
+  const states = index.mounts.get(construction);
+  if (states === undefined || states.length === 0) {
+    return { kind: "abstain", reason: unmountedReason(index, routerPath) };
+  }
+
+  for (const state of states) {
+    if (state.kind === "abstain") {
+      return { kind: "abstain", reason: state.reason };
+    }
+
+    const rivalled = rivalRegistration(index, state.site, routerPath);
+    if (rivalled !== null) {
+      return { kind: "abstain", reason: rivalled };
+    }
+  }
+
+  const composed = composedMountPrefix(index, construction);
+  if (composed.kind === "abstain") {
+    return composed;
+  }
+
+  if (composed.kind === "composedMany") {
+    return {
+      kind: "composedMany",
+      values: composed.values.map((value) => value + ownPrefix.value),
+    };
+  }
+
+  return { kind: "composed", value: composed.value + ownPrefix.value };
 }
 
 /**

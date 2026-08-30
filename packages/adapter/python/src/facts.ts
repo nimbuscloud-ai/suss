@@ -81,13 +81,13 @@ export function emitModuleImportFacts(
       moduleText,
       resolution.status === "resolved" ? "resolved" : resolution.reason,
     ]);
-    // Which name came from which module, for a library nobody can read. The
-    // `imports` relation says this too, and only once a module resolves to a
-    // file in the repo, which a third-party package never does.
+    const importedName =
+      binding.kind === "import" ? binding.localName : binding.importedName;
+    // Which name came from which module, for a library nobody can read.
     db.add("pyImportedName", [
       `${filePath}#${localName}`,
       moduleText,
-      binding.kind === "import" ? binding.localName : binding.importedName,
+      importedName,
     ]);
     if (resolution.status === "resolved") {
       db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
@@ -96,9 +96,14 @@ export function emitModuleImportFacts(
       db.add("imports", [
         `${filePath}#${localName}`,
         resolution.file,
-        binding.kind === "import" ? binding.localName : binding.importedName,
+        importedName,
       ]);
+      continue;
     }
+    // A third-party package resolves to no file, and the shared rules
+    // still have to say a name came out of it: that is how `FastAPI()`
+    // is told from a same-named constructor the project wrote itself.
+    db.add("imports", [`${filePath}#${localName}`, moduleText, importedName]);
   }
 
   for (const openModule of module.openImports) {
