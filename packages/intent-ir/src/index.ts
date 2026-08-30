@@ -26,7 +26,7 @@ export {
   IntentDocSchema,
   IntentSourceSchema,
 } from "./schema.js";
-export { intentDocToSummary } from "./summary.js";
+export { intentDocToSummary, toBoundaryBinding } from "./summary.js";
 
 export type {
   IntentFinding,
@@ -41,6 +41,7 @@ export type {
   Boundary,
   BoundaryIntent,
   BoundaryTransition,
+  EffectOutcome,
   IntentDoc,
   IntentSource,
   Prd,
@@ -49,6 +50,7 @@ export type {
 } from "./schema.js";
 export type {
   BoundaryIntentSummary,
+  IntentEffect,
   IntentOutcome,
   IntentOutcomeKind,
   IntentSummary,

@@ -10,39 +10,23 @@
  * one index.
  */
 
-import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { storageBoundaryKey } from "@suss/checker";
-import { boundaryLabel, displayLabel } from "@suss/ir-core";
-
-import type {
-  BehavioralSummary,
-  BoundaryBinding,
-  BoundaryRole,
-  Effect,
+import {
+  BOUNDARY_ROLE,
+  goesThroughRelation,
+  OWN_BINDING,
+  relationsOf,
 } from "@suss/behavioral-ir";
+import { displayLabel } from "@suss/ir-core";
 
-type Interaction = Extract<Effect, { type: "interaction" }>["interaction"];
+import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { Relation } from "@suss/ir-core";
 
-/**
- * Protocols that spell a boundary somewhere other than the semantics
- * registry, asked in turn. Each returns null for semantics that are not
- * its own.
- */
-const SPELLED_BY_ITS_OWN_PASS = [storageBoundaryKey];
+export { relationsOf } from "@suss/behavioral-ir";
+
+export type { Relation } from "@suss/ir-core";
 
 /** How a report writes this boundary, and how somebody types it back. */
 export function boundarySpelling(binding: BoundaryBinding): string {
-  const fromRegistry = boundaryLabel(binding);
-  if (fromRegistry !== null) {
-    return fromRegistry;
-  }
-
-  for (const spell of SPELLED_BY_ITS_OWN_PASS) {
-    const spelled = spell(binding.semantics);
-    if (spelled !== null) {
-      return spelled;
-    }
-  }
   return displayLabel(binding);
 }
 
@@ -113,13 +97,6 @@ export function namesBoundary(
   return wanted.every((token) => tokens.has(token));
 }
 
-/**
- * What a unit does at a boundary. A unit that serves the boundary
- * provides it; a unit that goes through it reads it, writes it, or
- * both.
- */
-export type Relation = "provides" | "reads" | "writes";
-
 export interface TouchedBoundary {
   label: string;
   binding: BoundaryBinding;
@@ -128,47 +105,6 @@ export interface TouchedBoundary {
   callee: string | undefined;
   transitionId: string | undefined;
 }
-
-type RelationTable = {
-  [K in Interaction["class"]]: (
-    interaction: Extract<Interaction, { class: K }>,
-  ) => Relation[];
-};
-
-/**
- * A request sends a body out and gets a response back, so a service
- * call both reads and writes. Scheduling a callback crosses no
- * boundary, so it does neither.
- */
-const RELATIONS: RelationTable = {
-  "storage-access": (interaction) =>
-    interaction.kind === "read" ? ["reads"] : ["writes"],
-  "service-call": () => ["reads", "writes"],
-  "message-send": () => ["writes"],
-  "message-receive": () => ["reads"],
-  "config-read": () => ["reads"],
-  schedule: () => [],
-};
-
-export function relationsOf(interaction: Interaction): Relation[] {
-  const handler = (
-    RELATIONS as unknown as Record<string, (i: Interaction) => Relation[]>
-  )[interaction.class];
-  return handler(interaction);
-}
-
-function goesThroughRelation(interaction: Interaction): boolean {
-  return (
-    interaction.class === "storage-access" &&
-    interaction.relationPath !== undefined
-  );
-}
-
-/** What a unit does at the boundary its own identity is bound to. */
-const OWN_BINDING: Record<BoundaryRole, Relation[]> = {
-  provider: ["provides"],
-  consumer: ["reads", "writes"],
-};
 
 /**
  * Every boundary this unit touches: the one it serves, and one entry

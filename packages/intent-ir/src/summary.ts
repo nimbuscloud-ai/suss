@@ -8,8 +8,12 @@
 
 import {
   type BoundaryBinding,
+  boundaryLabel,
+  type EffectRelation,
   functionCallBinding,
+  messageBusBinding,
   restBinding,
+  storageBinding,
   type TypeShape,
 } from "@suss/ir-core";
 
@@ -28,8 +32,21 @@ import type {
 // Normalised types
 // ---------------------------------------------------------------------------
 
-/** How a boundary outcome resolves, the cross-kind unification. */
-export type IntentOutcomeKind = "response" | "return" | "throw";
+/**
+ * How a boundary outcome ends. `effect` is an outcome that declares
+ * only what it did, which is what a queue consumer or a table writer
+ * has to say instead of a status.
+ */
+export type IntentOutcomeKind = "response" | "return" | "throw" | "effect";
+
+/** One effect an outcome has, in the verbs `suss ask` asks with. */
+export interface IntentEffect {
+  does: EffectRelation;
+  /** The boundary it reaches, keeping every field the doc stated. */
+  binding: BoundaryBinding;
+  /** How a report and `suss ask` spell that boundary. */
+  label: string;
+}
 
 export interface IntentOutcome {
   /** Author-declared id PRD scenarios reference. */
@@ -43,6 +60,8 @@ export interface IntentOutcome {
   body: TypeShape | null;
   /** Error type name, set only for `throw` outcomes when declared. */
   errorType: string | null;
+  /** The effects this outcome declares. Empty when it declares none. */
+  effects: IntentEffect[];
 }
 
 export interface BoundaryIntentSummary {
@@ -116,31 +135,75 @@ function prdToSummary(doc: Prd): PrdSummary {
   };
 }
 
-function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
-  if (boundary.semantics === "rest") {
-    return restBinding({
+// One constructor per protocol, each the ir-core one, so an intent
+// boundary and a derived boundary are built by the same code.
+const BINDINGS: {
+  [K in Boundary["semantics"]]: (
+    boundary: Extract<Boundary, { semantics: K }>,
+  ) => BoundaryBinding;
+} = {
+  rest: (boundary) =>
+    restBinding({
       transport: boundary.transport,
       method: boundary.method,
       path: boundary.path,
       recognition: "intent",
-    });
-  }
-  return functionCallBinding({
-    transport: boundary.transport,
-    recognition: "intent",
-    ...(boundary.module !== undefined ? { module: boundary.module } : {}),
-    ...(boundary.exportName !== undefined
-      ? { exportName: boundary.exportName }
-      : {}),
-    ...(boundary.package !== undefined ? { package: boundary.package } : {}),
-    ...(boundary.exportPath !== undefined
-      ? { exportPath: boundary.exportPath }
-      : {}),
-  });
+    }),
+  "function-call": (boundary) =>
+    functionCallBinding({
+      transport: boundary.transport,
+      recognition: "intent",
+      ...(boundary.module !== undefined ? { module: boundary.module } : {}),
+      ...(boundary.exportName !== undefined
+        ? { exportName: boundary.exportName }
+        : {}),
+      ...(boundary.package !== undefined ? { package: boundary.package } : {}),
+      ...(boundary.exportPath !== undefined
+        ? { exportPath: boundary.exportPath }
+        : {}),
+    }),
+  "message-bus": (boundary) =>
+    messageBusBinding({
+      recognition: "intent",
+      messageBus: boundary.messageBus,
+      channel: boundary.channel,
+    }),
+  storage: (boundary) =>
+    storageBinding({
+      recognition: "intent",
+      storageSystem: boundary.storageSystem,
+      scope: boundary.scope,
+      container: boundary.container,
+      accessPath: boundary.accessPath,
+    }),
+};
+
+export function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
+  // The one cast joins the per-protocol table, which narrows, to the
+  // runtime lookup, the same way dispatchByType does it.
+  const build = BINDINGS[boundary.semantics] as (
+    boundary: Boundary,
+  ) => BoundaryBinding;
+  return build(boundary);
+}
+
+function toEffect(declared: {
+  does: EffectRelation;
+  at: Boundary;
+}): IntentEffect {
+  const binding = toBoundaryBinding(declared.at);
+  return {
+    does: declared.does,
+    binding,
+    // A boundary nothing can spell has no effect to compare, and the
+    // checker reports the outcome uncovered rather than guessing.
+    label: boundaryLabel(binding) ?? "",
+  };
 }
 
 function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
-  const base = { id: t.id, when: t.when };
+  const effects = (t.results ?? []).map(toEffect);
+  const base = { id: t.id, when: t.when, effects };
   if (t.response !== undefined) {
     return {
       ...base,
@@ -159,15 +222,18 @@ function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
       errorType: null,
     };
   }
-  // The schema's refine guarantees exactly one outcome is present, so
-  // this is the `throws` case.
-  return {
-    ...base,
-    kind: "throw",
-    status: null,
-    body: null,
-    errorType: t.throws?.errorType ?? null,
-  };
+  if (t.throws !== undefined) {
+    return {
+      ...base,
+      kind: "throw",
+      status: null,
+      body: null,
+      errorType: t.throws.errorType ?? null,
+    };
+  }
+  // The schema's refines leave one case: a transition that says only
+  // what it resulted in.
+  return { ...base, kind: "effect", status: null, body: null, errorType: null };
 }
 
 function bodyToTypeShape(body: BodyShape): TypeShape | null {

@@ -366,7 +366,7 @@ describe("intentDraftResult", () => {
     ]);
   });
 
-  it("says what happened for a boundary the schema has no shape for", () => {
+  it("drafts a queue consumer against the channel its code names", () => {
     const result = intentDraftResult(
       [
         {
@@ -398,8 +398,11 @@ describe("intentDraftResult", () => {
       "code.json",
     );
 
-    expect(result.drafted).toEqual([]);
-    expect(result.undrafted[0].reason).toContain("this one is message-bus");
+    expect(result.undrafted).toEqual([]);
+    expect(result.drafted).toHaveLength(1);
+    expect(result.drafted[0].boundary).toBe("bus:aws_sqs OrdersQueue");
+    expect(result.drafted[0].yaml).toContain("semantics: message-bus");
+    expect(result.drafted[0].yaml).toContain("channel: OrdersQueue");
   });
 
   it("skips a consumer, which calls a boundary rather than providing one", () => {
@@ -556,11 +559,11 @@ describe("intentDraftResult", () => {
 
     expect(result.drafted).toEqual([]);
     expect(result.undrafted.map((one) => one.reason)).toEqual([
-      "boundary intent declares rest and function-call boundaries, and this one is storage",
-      "boundary intent declares rest and function-call boundaries, and this one is runtime-config",
-      "boundary intent declares rest and function-call boundaries, and this one is graphql-resolver",
-      "boundary intent declares rest and function-call boundaries, and this one is graphql-operation",
-      "boundary intent declares rest and function-call boundaries, and this one is metric",
+      "it has no key the checker could pair intent against: a store has no key at all: write `does: writes` at it on an outcome of the boundary that touches it instead",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is runtime-config",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-resolver",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-operation",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is metric",
     ]);
   });
 
@@ -771,5 +774,137 @@ describe("suss infer intent", () => {
 
     expect(exit).toBe(1);
     expect(io.stderr).toContain("infer has stub and intent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Effects: what a transition results in, drafted in `suss ask`'s verbs
+// ---------------------------------------------------------------------------
+
+const invoicesWrite: Transition["effects"][number] = {
+  type: "interaction",
+  binding: {
+    transport: "aws-sdk",
+    semantics: {
+      name: "storage",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
+      container: "Invoices",
+      accessPath: null,
+    },
+    recognition: "test",
+  },
+  callee: "dynamo.send",
+  interaction: {
+    class: "storage-access",
+    kind: "write",
+    fields: ["invoiceId"],
+    operation: "PutItemCommand",
+  },
+};
+
+const queueBinding: BoundaryBinding = {
+  transport: "aws_sqs",
+  semantics: {
+    name: "message-bus",
+    messageBus: "aws_sqs",
+    channel: "billing.invoicePaid",
+  },
+  recognition: "test",
+};
+
+function returnsWriting(id: string): Transition {
+  return {
+    id,
+    conditions: [],
+    output: { type: "return", value: null },
+    effects: [invoicesWrite],
+    location: { start: 1, end: 2 },
+    isDefault: true,
+  };
+}
+
+describe("drafted effects", () => {
+  it("writes what the transition reached beside how it ended", () => {
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [
+        returnsWriting("t-return"),
+      ]),
+    ]);
+
+    expect(parsed.transitions).toEqual([
+      {
+        id: "returns",
+        when: "no earlier condition matched",
+        returns: {},
+        results: [
+          {
+            does: "writes",
+            at: {
+              semantics: "storage",
+              storageSystem: "aws.dynamodb",
+              scope: "default",
+              container: "Invoices",
+              accessPath: null,
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("writes one effect for a boundary a transition reaches twice", () => {
+    const twice = returnsWriting("t-return");
+    twice.effects = [invoicesWrite, invoicesWrite];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [twice]),
+    ]);
+
+    expect(parsed.transitions[0].results).toHaveLength(1);
+  });
+
+  it("makes the effects the whole outcome when the ending is unreadable", () => {
+    const unreadable: Transition = {
+      id: "t-unreadable",
+      conditions: [],
+      output: {
+        type: "response",
+        statusCode: { type: "unresolved", sourceText: "status" },
+        body: null,
+        headers: {},
+      },
+      effects: [invoicesWrite],
+      location: { start: 1, end: 2 },
+      isDefault: true,
+    };
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [unreadable]),
+    ]);
+
+    expect(parsed.transitions[0].id).toBe("writes-aws-dynamodb-invoices");
+    expect(parsed.transitions[0].returns).toBeUndefined();
+    expect(parsed.transitions[0].results).toHaveLength(1);
+  });
+
+  it("leaves out a boundary the authoring schema has no block for", () => {
+    const metricRead = {
+      ...invoicesWrite,
+      binding: {
+        transport: "cloudwatch",
+        semantics: {
+          name: "metric" as const,
+          metricSystem: "cloudwatch",
+          metricType: "latency",
+        },
+        recognition: "test",
+      },
+    };
+    const transition = returnsWriting("t-return");
+    transition.effects = [metricRead];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [transition]),
+    ]);
+
+    expect(parsed.transitions[0].results).toBeUndefined();
   });
 });

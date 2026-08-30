@@ -1087,6 +1087,50 @@ code takes to reach that outcome, and the body from the shape the handler
 produces. A body shape the intent schema has no spelling for is left out
 rather than guessed at.
 
+A boundary that is not HTTP gets a doc the same way. Here is what a queue
+consumer that records what it read looks like:
+
+```yaml
+kind: boundary
+name: bus-aws-sqs-billing-invoice-paid
+purpose: "" # what this boundary is for, in your words
+audience: "" # who observes it: a customer, an operator, another service
+source: inferred
+boundary:
+  semantics: message-bus
+  messageBus: aws_sqs
+  channel: billing.invoicePaid
+transitions:
+  - id: throws-error
+    when: typeof invoiceId !== "string"
+    throws:
+      errorType: Error
+  - id: returns
+    when: '!(typeof invoiceId !== "string")'
+    returns:
+      body:
+        type: object
+        properties:
+          recorded:
+            type: boolean
+    results:
+      - does: writes
+        at:
+          semantics: storage
+          storageSystem: aws.dynamodb
+          scope: default
+          container: Invoices
+          accessPath: null
+```
+
+`results` is what the transition did at other boundaries, written in the
+verbs `suss ask` asks with: `suss ask "what writes aws.dynamodb:Invoices"`
+is the question, and this doc is the assertion. A queue consumer has no
+status worth declaring, so this is the part of its outcome that means
+something. The checker compares it both ways: a declared write the code
+never makes is an error, and a boundary the code reaches that no outcome
+mentions is info.
+
 **Purpose and audience are left blank on purpose.** Neither can be read
 out of code: why the boundary exists and who it is for are what somebody
 supplies while curating. An empty string does not satisfy the schema, so
@@ -1107,10 +1151,15 @@ bare `inferred` intent are downgraded one level, and curation restores
 them.
 
 A boundary that could not be drafted is reported with the reason.
-Boundary intent covers REST and function-call boundaries, so a
-message-bus or storage boundary is reported rather than drafted, as is a
-boundary whose summaries never record a transition producing a response,
-a return, or a throw.
+Boundary intent covers REST, function-call, message-bus and storage
+boundaries, so a GraphQL, runtime-config or metric boundary is reported
+rather than drafted, as is a boundary whose summaries never record a
+transition producing a response, a return, a throw, or an effect.
+
+A store is reported too, for a different reason: storage has no identity
+key, so a doc naming one could never be paired. The reported reason says
+so and points at the alternative, which is to say `does: writes` at the
+store on an outcome of the boundary that touches it.
 
 Pick the boundaries at extract time, with `extract`'s own `--files` and
 `-f`. `infer intent` writes a doc for every boundary in the file it is

@@ -72,6 +72,8 @@ export {
   parseBoundaryName,
   patternHole,
   type Reference,
+  type Relation,
+  RelationSchema,
   referenceFromName,
   referenceName,
   referenceOf,
@@ -141,6 +143,12 @@ export {
   withSourceDocumentMetadata,
   withWrapperMetadata,
 } from "./metadata.js";
+export {
+  goesThroughRelation,
+  type Interaction,
+  OWN_BINDING,
+  relationsOf,
+} from "./relations.js";
 export {
   type DocumentLabelParts,
   type FlowRequest,

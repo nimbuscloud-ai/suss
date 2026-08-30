@@ -571,7 +571,9 @@ Someone declared a boundary in an intent doc and no code in the run produces it.
 
 The code implements the boundary, and none of its transitions produce one of the outcomes the intent declares. A route declared to return 409 on a duplicate has no branch that returns 409.
 
-**Legitimate when:** the outcome is produced somewhere suss cannot follow, in a shared error handler or a framework layer the pack does not read. Check the summary's gaps before treating it as missing.
+An outcome can also declare the effects it results in, and the same finding covers those: a queue consumer whose intent says an outcome results in a write to `aws.dynamodb:Invoices`, where no transition of it writes that table.
+
+**Legitimate when:** the outcome is produced somewhere suss cannot follow, in a shared error handler or a framework layer the pack does not read. Check the summary's gaps before treating it as missing. For a declared effect, an access whose container the code gets handed as an argument is one the storage pass grounds and this pass does not, so it matches nothing here.
 
 **Bug when:** the branch is genuinely absent. The declared behaviour is not implemented, which is the case this checker exists for.
 
@@ -591,23 +593,25 @@ Several branches can produce one status with different bodies, so the check is s
 
 **Severity:** info • **Emitted by:** `compareIntentToImpl`
 
-The code returns a REST status the intent never mentions. One finding per status, so two catch arms both returning 500 produce one finding rather than two.
+The code returns a REST status the intent never mentions, or it reaches a boundary no outcome mentions. One finding per status, so two catch arms both returning 500 produce one finding rather than two, and one per verb and boundary, so a unit writing the same table twice produces one.
 
-It is limited to REST statuses on purpose. Function-call returns are too numerous for every undeclared one to mean something.
+Statuses are limited to REST on purpose. Function-call returns are too numerous for every undeclared one to mean something.
 
-**Legitimate when:** the status is a framework default or an infrastructure response nobody intended to write down. A 500 from an unhandled throw is not a promise anybody made.
+**Legitimate when:** the status is a framework default or an infrastructure response nobody intended to write down. A 500 from an unhandled throw is not a promise anybody made. For a boundary, the intent may be scoped to one part of what the unit does.
 
-**Bug when:** the status is part of the contract callers depend on and the document does not say so. Add it to the intent, since a caller reading the document will not handle it.
+**Bug when:** the status is part of the contract callers depend on and the document does not say so, or the unit writes a store the document never mentions. Add it to the intent, since a person reading the document will not know about it.
 
 ### `unkeyableBoundary` *(shipped)*
 
 **Severity:** warning • **Emitted by:** `checkBoundaryIntent`
 
-The intent doc is well-formed and its boundary cannot be keyed for pairing, so nothing was checked against it. A function-call boundary needs a package and an export path, and without both there is nothing to match the code against.
+The intent doc is well-formed and its boundary cannot be keyed for pairing, so nothing was checked against it. A function-call boundary needs a package and an export path, a message-bus boundary needs a channel, and without them there is nothing to match the code against. The message says what the boundary's own protocol would need.
 
-**Legitimate when:** never, in the sense that it is always worth fixing. The author declared coverage they are not getting.
+A store is the one case where filling fields in does not help. Storage has no identity key by design, because a container name can be a pattern that only a caller or the deployment settles, and the storage pass grounds it before pairing. Say what the store is for by putting `does: writes` on an outcome of the boundary that touches it, and the checker compares that.
 
-**Bug when:** it fires at all. This is a defect in the intent document rather than in the code. Add the missing fields and the boundary starts being checked.
+**Legitimate when:** the boundary is a store, or the intent is written ahead of the keying suss can do. The author declared coverage they are not getting either way, so the finding is worth reading.
+
+**Bug when:** the missing part is a field the author could write. Add it and the boundary starts being checked.
 
 ### `unlinkedScenario` *(shipped)*
 

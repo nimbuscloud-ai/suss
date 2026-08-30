@@ -3,15 +3,24 @@ import { describe, expect, it } from "vitest";
 import {
   type BehavioralSummary,
   type BoundaryBinding,
+  boundaryLabel,
   functionCallBinding,
+  messageBusBinding,
   type Output,
   restBinding,
+  storageBinding,
   type TypeShape,
 } from "@suss/behavioral-ir";
+import { SemanticsSchema } from "@suss/ir-core";
 
-import { applyIntentSuppressions, checkIntentAgreement } from "./index.js";
+import {
+  applyIntentSuppressions,
+  checkIntentAgreement,
+  whatWouldKeyIt,
+} from "./index.js";
 
 import type {
+  IntentEffect,
   IntentOutcome,
   IntentSource,
   IntentSummary,
@@ -55,6 +64,7 @@ function response(status: number, body: TypeShape | null): IntentOutcome {
     status,
     body,
     errorType: null,
+    effects: [],
   };
 }
 
@@ -403,6 +413,7 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: userShape,
         errorType: null,
+        effects: [],
       },
       {
         id: "missing",
@@ -411,6 +422,7 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: null,
         errorType: "NotFoundError",
+        effects: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -429,6 +441,7 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: null,
         errorType: "NotFoundError",
+        effects: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -448,6 +461,7 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: null,
         errorType: null,
+        effects: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -465,6 +479,7 @@ function outcomeById(id: string, status = 200): IntentOutcome {
     status,
     body: null,
     errorType: null,
+    effects: [],
   };
 }
 
@@ -679,6 +694,7 @@ describe("applyIntentSuppressions", () => {
               status: null,
               body: null,
               errorType: "Boom",
+              effects: [],
             },
           ],
           "fn-intent",
@@ -761,5 +777,259 @@ describe("applyIntentSuppressions", () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0].suppressed?.effect).toBe("mark");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Effect outcomes: what a boundary results in, in `suss ask`'s verbs
+// ---------------------------------------------------------------------------
+
+const invoicesTable = storageBinding({
+  recognition: "@suss/framework-aws-dynamodb",
+  storageSystem: "aws.dynamodb",
+  scope: "default",
+  container: "Invoices",
+});
+
+const busIntentBinding = messageBusBinding({
+  recognition: "intent",
+  messageBus: "aws_sqs",
+  channel: "billing.invoicePaid",
+});
+const busCodeBinding = messageBusBinding({
+  recognition: "aws-lambda",
+  messageBus: "aws_sqs",
+  channel: "billing.invoicePaid",
+});
+
+function writes(container: string): IntentEffect {
+  const binding = storageBinding({
+    recognition: "intent",
+    storageSystem: "aws.dynamodb",
+    scope: "default",
+    container,
+  });
+  return {
+    does: "writes",
+    binding,
+    label: boundaryLabel(binding) ?? "",
+  };
+}
+
+function effectOutcome(id: string, effects: IntentEffect[]): IntentOutcome {
+  return {
+    id,
+    when: "an invoice has been paid",
+    kind: "effect",
+    status: null,
+    body: null,
+    errorType: null,
+    effects,
+  };
+}
+
+/** A consumer whose one return also writes the Invoices table. */
+function consumerWritingInvoices(): BehavioralSummary {
+  const summary = codeSummary(
+    busCodeBinding,
+    [{ type: "return", value: null }],
+    "InvoiceWorker.handler",
+  );
+  summary.transitions[0].effects = [
+    {
+      type: "interaction",
+      binding: invoicesTable,
+      callee: "dynamo.send",
+      interaction: {
+        class: "storage-access",
+        kind: "write",
+        fields: ["invoiceId"],
+        operation: "PutItemCommand",
+      },
+    },
+  ];
+  return summary;
+}
+
+describe("effect outcomes", () => {
+  it("passes when the code writes the store the outcome states", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("invoice-recorded", [writes("Invoices")])],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toEqual([]);
+    expect(result.checked).toHaveLength(1);
+  });
+
+  it("reports a declared write the code never makes", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("receipt-written", [writes("Receipts")])],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+    expect(uncovered[0].message).toContain(
+      "results in a write to aws.dynamodb:Receipts",
+    );
+  });
+
+  it("reports a store the code reaches that no outcome declares", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            {
+              id: "returns",
+              when: "",
+              kind: "return",
+              status: null,
+              body: null,
+              errorType: null,
+              effects: [],
+            },
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].kind).toBe("undeclaredOutcome");
+    expect(result.findings[0].severity).toBe("info");
+    expect(result.findings[0].message).toContain(
+      "writes aws.dynamodb:Invoices",
+    );
+  });
+
+  it("leaves out an effect that is not a boundary the code goes through", () => {
+    const summary = consumerWritingInvoices();
+    summary.transitions[0].effects = [
+      { type: "invocation", callee: "recordInvoice", args: [], async: true },
+      {
+        type: "interaction",
+        binding: invoicesTable,
+        callee: "prisma.invoice.create",
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["id"],
+          relationPath: ["customer"],
+        },
+      },
+    ];
+    summary.transitions.push({
+      id: "t-render",
+      conditions: [],
+      output: { type: "render", component: "Page", props: {} },
+      effects: [],
+      location: { start: 6, end: 6 },
+      isDefault: false,
+    });
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("invoice-recorded", [writes("Invoices")])],
+          "invoice-intake",
+        ),
+      ],
+      [summary],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+  });
+
+  it("checks the effects of an outcome against the transitions it ends", () => {
+    const summary = consumerWritingInvoices();
+    summary.transitions.push({
+      id: "t1",
+      conditions: [],
+      output: { type: "throw", exceptionType: "Error", message: null },
+      effects: [],
+      location: { start: 6, end: 6 },
+      isDefault: false,
+    });
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            {
+              id: "invoice-rejected",
+              when: "the message has no invoice id",
+              kind: "throw",
+              status: null,
+              body: null,
+              errorType: "Error",
+              effects: [writes("Invoices")],
+            },
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [summary],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+    expect(uncovered[0].intent.outcomeId).toBe("invoice-rejected");
+  });
+
+  it("says what would key a storage boundary it cannot pair", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          storageBinding({
+            recognition: "intent",
+            storageSystem: "aws.dynamodb",
+            scope: "default",
+            container: "Invoices",
+          }),
+          [effectOutcome("invoice-row-written", [writes("Invoices")])],
+          "invoices-table",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].kind).toBe("unkeyableBoundary");
+    expect(result.findings[0].boundary).toBe("aws.dynamodb:Invoices");
+    expect(result.findings[0].message).toContain("a store has no key at all");
+    expect(result.unchecked).toHaveLength(1);
+  });
+});
+
+describe("whatWouldKeyIt", () => {
+  it("has a sentence for every protocol, so a drafter and a finding agree", () => {
+    for (const definition of SemanticsSchema.options) {
+      const protocol = definition.shape.name.value;
+      expect(whatWouldKeyIt(protocol).length).toBeGreaterThan(0);
+    }
   });
 });

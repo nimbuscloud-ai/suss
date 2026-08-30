@@ -17,6 +17,7 @@
     "@suss/cli": "*"
   },
   "devDependencies": {
+    "@suss/checker-intent": "*",
     "typescript": "*",
     "vitest": "*"
   }

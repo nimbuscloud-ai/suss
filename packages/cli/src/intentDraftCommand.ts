@@ -22,11 +22,16 @@ import YAML from "yaml";
 import {
   BOUNDARY_ROLE,
   boundaryKey,
+  boundaryLabel,
   dispatchByType,
   displayLabel,
+  goesThroughRelation,
+  relationsOf,
 } from "@suss/behavioral-ir";
 import { summaryWithDefinitionsInlined } from "@suss/checker";
+import { whatWouldKeyIt } from "@suss/checker-intent";
 import { loadIntentDoc } from "@suss/contract-intent";
+import { toBoundaryBinding } from "@suss/intent-ir";
 
 import { formatCondition, parseSummaryFile } from "./inspect.js";
 import { UsageError } from "./usageError.js";
@@ -38,7 +43,11 @@ import type {
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { AuthoredShape, BoundaryIntent } from "@suss/intent-ir";
+import type {
+  AuthoredShape,
+  BoundaryIntent,
+  EffectOutcome,
+} from "@suss/intent-ir";
 
 export interface IntentDraftOptions {
   /** Summaries file to read, the output of `suss extract`. */
@@ -84,6 +93,7 @@ interface DraftedOutcome {
   response?: { status: number; body?: AuthoredShape };
   returns?: { body?: AuthoredShape };
   throws?: { errorType?: string };
+  results?: EffectOutcome[];
 }
 
 const UNKNOWN_SHAPE: AuthoredShape = { type: "unknown" };
@@ -157,10 +167,46 @@ function conditionsOf(transition: Transition): string {
     : "the handler always reaches this outcome";
 }
 
+/**
+ * What this transition did at other boundaries, in the words `suss ask`
+ * asks with. A boundary the authoring schema has no block for is left
+ * out rather than written as something the reader would turn down.
+ */
+function draftedEffects(transition: Transition): EffectOutcome[] {
+  const results: EffectOutcome[] = [];
+  const written = new Set<string>();
+  for (const effect of transition.effects) {
+    if (
+      effect.type !== "interaction" ||
+      goesThroughRelation(effect.interaction)
+    ) {
+      continue;
+    }
+    const at = boundaryBlock(effect.binding);
+    if (at === null) {
+      continue;
+    }
+    for (const relation of relationsOf(effect.interaction)) {
+      if (relation === "provides") {
+        continue;
+      }
+      const key = `${relation} ${displayLabel(effect.binding)}`;
+      if (written.has(key)) {
+        continue;
+      }
+      written.add(key);
+      results.push({ does: relation, at });
+    }
+  }
+  return results;
+}
+
 /** Null when the transition's terminal has no intent outcome to declare. */
 function toDraftedOutcome(transition: Transition): DraftedOutcome | null {
   const output = transition.output;
   const when = conditionsOf(transition);
+  const results = draftedEffects(transition);
+  const did = results.length > 0 ? { results } : {};
 
   if (output.type === "response") {
     const status =
@@ -168,19 +214,25 @@ function toDraftedOutcome(transition: Transition): DraftedOutcome | null {
         ? Number(output.statusCode.value)
         : Number.NaN;
     if (!Number.isInteger(status) || status < 100 || status > 599) {
-      return null;
+      return effectOnlyOutcome(when, results);
     }
     const body = declaredBody(output.body);
     return {
       id: statusOutcomeId(status),
       when,
       response: { status, ...(body !== null ? { body } : {}) },
+      ...did,
     };
   }
 
   if (output.type === "return") {
     const body = declaredBody(output.value);
-    return { id: "returns", when, returns: body !== null ? { body } : {} };
+    return {
+      id: "returns",
+      when,
+      returns: body !== null ? { body } : {},
+      ...did,
+    };
   }
 
   if (output.type === "throw") {
@@ -189,10 +241,31 @@ function toDraftedOutcome(transition: Transition): DraftedOutcome | null {
       id: errorType === null ? "throws" : `throws-${slug(errorType)}`,
       when,
       throws: errorType === null ? {} : { errorType },
+      ...did,
     };
   }
 
-  return null;
+  return effectOnlyOutcome(when, results);
+}
+
+/**
+ * A transition whose ending the schema has no words for still says what
+ * it did, and that is the whole outcome for a unit whose ending nobody
+ * declares anyway.
+ */
+function effectOnlyOutcome(
+  when: string,
+  results: EffectOutcome[],
+): DraftedOutcome | null {
+  const first = results[0];
+  if (first === undefined) {
+    return null;
+  }
+  return { id: slug(`${first.does} ${labelOf(first)}`), when, results };
+}
+
+function labelOf(effect: EffectOutcome): string {
+  return boundaryLabel(toBoundaryBinding(effect.at)) ?? "a boundary";
 }
 
 // ---------------------------------------------------------------------------
@@ -228,8 +301,18 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
       ? { exportPath: semantics.exportPath }
       : {}),
   }),
-  "message-bus": () => null,
-  storage: () => null,
+  "message-bus": (semantics) => ({
+    semantics: "message-bus",
+    messageBus: semantics.messageBus,
+    channel: semantics.channel,
+  }),
+  storage: (semantics) => ({
+    semantics: "storage",
+    storageSystem: semantics.storageSystem,
+    scope: semantics.scope,
+    container: semantics.container,
+    accessPath: semantics.accessPath,
+  }),
   "graphql-resolver": () => null,
   "graphql-operation": () => null,
   "runtime-config": () => null,
@@ -280,7 +363,7 @@ function groupByBoundary(summaries: BehavioralSummary[]): {
     if (block === null) {
       sayOnce({
         boundary: displayLabel(binding),
-        reason: `boundary intent declares rest and function-call boundaries, and this one is ${binding.semantics.name}`,
+        reason: `boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is ${binding.semantics.name}`,
       });
       continue;
     }
@@ -288,8 +371,7 @@ function groupByBoundary(summaries: BehavioralSummary[]): {
     if (key === null) {
       sayOnce({
         boundary: displayLabel(binding),
-        reason:
-          "it has no key the checker could pair intent against; a REST boundary needs a method and a path, a function-call boundary a package and an export path or a module and an export name",
+        reason: `it has no key the checker could pair intent against: ${whatWouldKeyIt(binding.semantics.name)}`,
       });
       continue;
     }

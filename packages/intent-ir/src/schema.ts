@@ -15,13 +15,17 @@
 // Design notes:
 //   - Boundaries reuse @suss/ir-core's transport/semantics vocabulary,
 //     so intent and behaviour describe the same boundary the same way.
-//   - A transition's outcome is one of `response` (REST: status + body),
-//     `returns` (a function/handler return value), or `throws` (an
-//     error outcome). REST endpoints use `response`; function-call
-//     boundaries (suss's own surface, and anything non-HTTP) use
-//     `returns` / `throws`. This is what lets suss dogfood itself.
+//   - A transition says how it ends (`response`, `returns` or `throws`)
+//     and what it did (`results`). The README beside this file works
+//     through both halves and why a queue consumer needs the second.
 
 import { z } from "zod";
+
+import {
+  EffectRelationSchema,
+  MessageBusSemanticsSchema,
+  StorageSemanticsSchema,
+} from "@suss/ir-core";
 
 // ---------------------------------------------------------------------------
 // Provenance: how this intent doc came to exist. Findings against
@@ -143,9 +147,31 @@ const FunctionCallBoundarySchema = z.object({
   exportPath: z.array(z.string()).optional(),
 });
 
+// Both fields come off the ir-core schema, so a bus added there is
+// authorable here with no edit. A doc that leaves the channel out is
+// authorable and unpairable, and the checker is what says so.
+const MessageBusBoundarySchema = z.object({
+  semantics: z.literal("message-bus"),
+  messageBus: MessageBusSemanticsSchema.shape.messageBus,
+  channel: MessageBusSemanticsSchema.shape.channel.default(null),
+});
+
+// Same reuse, and the same pending state for a different reason: a
+// store has no identity key at all, so every storage boundary intent
+// is authorable and unpairable. See the README.
+const StorageBoundarySchema = z.object({
+  semantics: z.literal("storage"),
+  storageSystem: StorageSemanticsSchema.shape.storageSystem,
+  scope: StorageSemanticsSchema.shape.scope.default("default"),
+  container: StorageSemanticsSchema.shape.container.default(null),
+  accessPath: StorageSemanticsSchema.shape.accessPath.default(null),
+});
+
 export const BoundarySchema = z.discriminatedUnion("semantics", [
   RestBoundarySchema,
   FunctionCallBoundarySchema,
+  MessageBusBoundarySchema,
+  StorageBoundarySchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -173,6 +199,14 @@ function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess((v) => (v === null ? {} : v), schema);
 }
 
+// One effect the outcome has, written the way `suss ask` asks about
+// it: "results in a write to postgresql:invoices". The verbs and the
+// boundary both come from schemas something else already owns.
+const EffectOutcomeSchema = z.object({
+  does: EffectRelationSchema,
+  at: BoundarySchema,
+});
+
 const BoundaryTransitionSchema = z
   .object({
     id: z.string().min(1),
@@ -180,16 +214,24 @@ const BoundaryTransitionSchema = z
     response: emptyIfNull(ResponseOutcomeSchema).optional(),
     returns: emptyIfNull(ReturnsOutcomeSchema).optional(),
     throws: emptyIfNull(ThrowsOutcomeSchema).optional(),
+    results: z.array(EffectOutcomeSchema).min(1).optional(),
   })
-  .refine(
-    (t) =>
-      [t.response, t.returns, t.throws].filter((o) => o !== undefined)
-        .length === 1,
-    {
-      message:
-        "each transition must declare exactly one outcome: response, returns, or throws",
-    },
-  );
+  .refine((t) => endingsOf(t).length <= 1, {
+    message:
+      "a transition ends one way: give it at most one of response, returns, or throws",
+  })
+  .refine((t) => endingsOf(t).length === 1 || t.results !== undefined, {
+    message:
+      "each transition must declare an outcome: response, returns, throws, or the effects it results in",
+  });
+
+function endingsOf(t: {
+  response?: unknown;
+  returns?: unknown;
+  throws?: unknown;
+}): unknown[] {
+  return [t.response, t.returns, t.throws].filter((o) => o !== undefined);
+}
 
 // ---------------------------------------------------------------------------
 // kind: boundary: system intent for one boundary.
@@ -256,6 +298,7 @@ export type Prd = z.infer<typeof PrdSchema>;
 export type PrdScenario = z.infer<typeof PrdScenarioSchema>;
 export type Boundary = z.infer<typeof BoundarySchema>;
 export type BoundaryTransition = z.infer<typeof BoundaryTransitionSchema>;
+export type EffectOutcome = z.infer<typeof EffectOutcomeSchema>;
 export type BodyShape = z.infer<typeof BodyShapeSchema>;
 export type IntentSource = z.infer<typeof IntentSourceSchema>;
 export type PrimitiveTypeName = z.infer<typeof PrimitiveTypeName>;

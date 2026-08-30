@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  A queue consumer and the table it writes, for the intent round trip.
+  The Lambda reads InvoicesQueue and records what it read in the
+  Invoices table.
+
+Resources:
+  InvoicesQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  InvoiceWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/invoiceWorker.handler
+      Runtime: nodejs20.x
+      Events:
+        FromInvoices:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt InvoicesQueue.Arn
+
+  InvoicesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Invoices
+      AttributeDefinitions:
+        - AttributeName: invoiceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: invoiceId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
