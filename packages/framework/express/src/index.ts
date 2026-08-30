@@ -3,6 +3,7 @@
 import {
   httpRouteDiscovery,
   registrationHelperDiscovery,
+  wrapperDiscovery,
 } from "@suss/extractor";
 
 import type { PatternPack, RegistrationHelper } from "@suss/extractor";
@@ -37,6 +38,23 @@ export function expressFramework(
         importNames: ["Router", "express"],
         methods: [".get", ".post", ".put", ".delete", ".patch", ".all"],
         mount: { method: "use", prefixPosition: 0, targetPosition: 1 },
+      }),
+      // `app.use(fn)` registers middleware, and the same call with a
+      // four-argument function registers an error handler. Arity is the
+      // only thing that tells the two apart.
+      ...wrapperDiscovery({
+        importModule: "express",
+        importNames: ["Router", "express"],
+        wraps: [
+          { method: "use", targetPosition: 0, continuationParam: 2 },
+          {
+            method: "use",
+            targetPosition: 0,
+            continuationParam: 3,
+            throwParam: 0,
+            arity: 4,
+          },
+        ],
       }),
       ...registrationHelperDiscovery(options.registrationHelpers ?? []),
     ],

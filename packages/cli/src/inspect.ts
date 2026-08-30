@@ -17,6 +17,7 @@ import {
   readMountMetadata,
   readReactMetadata,
   readStorageContractMetadata,
+  readWrapperMetadata,
   safeParseSummaries,
 } from "@suss/behavioral-ir";
 import {
@@ -40,6 +41,7 @@ import type {
   Transition,
   TypeShape,
   ValueRef,
+  WrapperMetadata,
 } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
@@ -1171,10 +1173,41 @@ function summaryMetadata(summary: BehavioralSummary): string {
   if (mount !== undefined) {
     parts.push(`mount ${mount.prefix} (1 of ${mount.siblings})`);
   }
+  // A status this unit's body never produces can come from one of
+  // these, so the reader is told where to go looking.
+  const wrappers = readWrapperMetadata(summary);
+  if (wrappers !== undefined && wrappers.applied.length > 0) {
+    parts.push(`wrapped by ${wrapperSummary(wrappers.applied)}`);
+  }
   if (summary.confidence.level !== "high") {
     parts.push(`confidence: ${summary.confidence.level}`);
   }
   return parts.join(" | ");
+}
+
+/** How many wrappers the header lists before it stops. */
+const WRAPPERS_LISTED = 3;
+
+/**
+ * The wrappers a unit runs under, each pointing at the summary that
+ * says what it does. A stack of them has to fit one header line, so the
+ * first few are listed and the rest are counted.
+ */
+function wrapperSummary(applied: WrapperMetadata["applied"]): string {
+  const listed = applied.slice(0, WRAPPERS_LISTED).map(oneWrapper);
+  const rest = applied.length - listed.length;
+  return rest > 0 ? `${listed.join(", ")}, +${rest} more` : listed.join(", ");
+}
+
+function oneWrapper(wrapper: WrapperMetadata["applied"][number]): string {
+  const parts = [`${wrapper.name} (${wrapper.file})`];
+  if (wrapper.scope !== undefined) {
+    parts.push(`for ${wrapper.scope}`);
+  }
+  if (wrapper.onThrow === true) {
+    parts.push("on a throw");
+  }
+  return parts.join(" ");
 }
 
 function unitKindLabel(summary: BehavioralSummary): string {

@@ -96,6 +96,39 @@ export function httpRouteDiscovery(opts: {
 }
 
 /**
+ * Discovery entries for the functions a framework registers around its
+ * handlers: middleware, error handlers, validation hooks.
+ *
+ * A wrapper becomes a unit of its own, summarized like any other, so
+ * these entries carry no `bindingExtraction` and no registration chain.
+ * Their `match` is there for the import and the imported name, which is
+ * how wrapper discovery works out which variables in a file are the
+ * routable. One entry per (import name, wrapper shape) pair, since a
+ * framework can register more than one kind of wrapper on a routable.
+ */
+export function wrapperDiscovery(opts: {
+  importModule: string;
+  importNames: readonly string[];
+  wraps: ReadonlyArray<NonNullable<DiscoveryPattern["wraps"]>>;
+  /** Defaults to "middleware". Override for packs that want another kind. */
+  kind?: string;
+}): DiscoveryPattern[] {
+  return opts.importNames.flatMap((importName) =>
+    opts.wraps.map((wraps) => ({
+      kind: opts.kind ?? "middleware",
+      match: {
+        type: "registrationCall" as const,
+        importModule: opts.importModule,
+        importName,
+        registrationChain: [],
+      },
+      wraps: { ...wraps },
+      requiresImport: [opts.importModule],
+    })),
+  );
+}
+
+/**
  * The property names a route-spec object conventionally uses. One
  * convention across every HTTP framework pack, so a project whose
  * specs spell them differently is out of scope rather than a per-pack

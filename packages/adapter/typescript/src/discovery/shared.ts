@@ -158,6 +158,12 @@ export interface DiscoveredUnit {
     /** Null when the pack knows the wire but not the channel on it. */
     channel: string | null;
   };
+  /**
+   * Identity of the routable this unit was registered on, when a
+   * registration call put it there. What the wrapper index is keyed on,
+   * since a wrapper is registered on the routable and not on the unit.
+   */
+  registrationSubjectId?: string;
   /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit?: DeployableUnit;
   /**

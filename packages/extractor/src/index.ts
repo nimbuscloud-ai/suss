@@ -18,6 +18,7 @@ import {
   withHttpMetadata,
   withMountMetadata,
   withSourceDocumentMetadata,
+  withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
 import { type InputRead, inputReadsOf, mergeInputReads } from "./inputReads.js";
@@ -42,6 +43,7 @@ import type {
   Transition,
   TypeShape,
   ValueRef,
+  WrapperMetadata,
 } from "@suss/behavioral-ir";
 import type { FailureDelivery } from "./framework.js";
 import type { ConditionSource } from "./paths/structuredStatement.js";
@@ -52,6 +54,7 @@ export {
   type RegistrationHelper,
   registrationHelperDiscovery,
   unwrapJsonStringify,
+  wrapperDiscovery,
 } from "./packHelpers.js";
 export {
   enumerateOrDegrade,
@@ -341,6 +344,8 @@ export interface RawCodeStructure {
   sourceDocumentLabel?: string;
   /** Set when several mounts serve the declaration and this unit is one of them. */
   mount?: { siblings: number; prefix: string };
+  /** The wrappers registered around this unit: middleware, error handlers. */
+  wrappers?: WrapperMetadata["applied"];
   /** The extractor cannot derive this. An adapter that has the SDL and knows
    * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
@@ -621,6 +626,9 @@ function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
 
   if (raw.mount !== undefined) {
     metadata = withMountMetadata(metadata, raw.mount);
+  }
+  if (raw.wrappers !== undefined && raw.wrappers.length > 0) {
+    metadata = withWrapperMetadata(metadata, { applied: raw.wrappers });
   }
   return Object.keys(metadata).length > 0 ? metadata : null;
 }

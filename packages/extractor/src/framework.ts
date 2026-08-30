@@ -641,6 +641,52 @@ export interface DiscoveryPattern {
     targetPosition: number;
   };
   /**
+   * How this framework registers a function that runs around a
+   * handler rather than as one: middleware, an error handler, a
+   * validation hook. Like `mount`, this only means anything when
+   * `match.type` is `"registrationCall"`, because wrapper discovery
+   * reuses that match's `importModule` and `importName` to work out
+   * which variables in a file are the routable being registered on.
+   *
+   * When set, the registered function becomes a unit of its own and is
+   * summarized like any other, and every unit registered on the same
+   * routable records a reference to it. A registration whose function
+   * the resolution store cannot follow contributes nothing.
+   */
+  wraps?: {
+    /** Method name that registers a wrapper, e.g. "use" or "onError". */
+    method: string;
+    /** Argument position of the wrapper function. */
+    targetPosition: number;
+    /**
+     * Argument position of a path pattern narrowing which routes the
+     * wrapper runs for, when the method takes one. Absent means the
+     * wrapper runs for every route on the subject.
+     */
+    scopePosition?: number;
+    /**
+     * Parameter position of the continuation inside the wrapper, the one
+     * it calls to hand control on. Absent when the wrapper never
+     * continues, which is how an error handler that always responds is
+     * written.
+     */
+    continuationParam?: number;
+    /**
+     * Parameter position that receives what the wrapped unit threw. A
+     * wrapper that declares one runs only when the wrapped unit's path
+     * ended by throwing, which is a fact about how the framework invokes
+     * it rather than anything its body says. Absent means the wrapper
+     * runs on the ordinary path.
+     */
+    throwParam?: number;
+    /**
+     * Only match a registered function declared with exactly this many
+     * parameters. Express tells its error handlers apart from its
+     * middleware by arity alone, both being `app.use(fn)`.
+     */
+    arity?: number;
+  };
+  /**
    * This pattern only runs against files that import one of these module
    * specifiers, or a sub-path of one. An empty array means no gate at all
    * (the pattern is dispatched against
