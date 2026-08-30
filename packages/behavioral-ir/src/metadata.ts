@@ -164,7 +164,11 @@ const WrapperReferenceSchema = z.object({
    * ended by throwing, which is how an error handler is called.
    */
   onThrow: z.boolean().optional(),
-  /** The path pattern the registration narrowed the wrapper to, if any. */
+  /**
+   * The path pattern the registration narrowed the wrapper to, if any,
+   * under whatever prefix its router was mounted at, so it reads in the
+   * same terms as the paths of the routes it covers.
+   */
   scope: z.string().optional(),
 });
 

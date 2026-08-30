@@ -32,7 +32,7 @@ describe("read a service that registers on an app built in another file", () => 
     const inspect = runSuss(["inspect", summariesFile]);
     expect(inspect.status, inspect.stderr).toBe(0);
     expect(inspect.stdout).toContain(
-      "wrapped by requireCaller (fixtures/split-routes/requireCaller.ts) for /*",
+      "wrapped by requireCaller (fixtures/split-routes/requireCaller.ts) for /api/v1/*",
     );
   });
 

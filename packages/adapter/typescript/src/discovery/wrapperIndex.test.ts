@@ -110,6 +110,7 @@ const honoLikePack: PatternPack = {
         method: { type: "fromRegistration", position: "methodName" },
         path: { type: "fromArgument", position: 0 },
       },
+      mount: { method: "route", prefixPosition: 0, targetPosition: 1 },
       requiresImport: ["hono"],
     },
     {
@@ -449,6 +450,87 @@ describe("wrapper registrations, end to end", () => {
         const app = new Hono();
         app.use("/v1/*", async (c, next) => { await next(); });
         app.get("/v1/orders", (c) => c.json({}));
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/v1/orders")).toEqual([
+      { file: "/app.ts", name: "use", scope: "/v1/*" },
+    ]);
+  });
+
+  it("composes the prefix its router was mounted under into a scope", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const api = new Hono();
+        api.use("/v1/*", async (c, next) => { await next(); });
+        api.get("/v1/orders", (c) => c.json({}));
+        const root = new Hono();
+        root.route("/api", api);
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/api/v1/orders")).toEqual([
+      { file: "/app.ts", name: "use", scope: "/api/v1/*" },
+    ]);
+  });
+
+  it("composes every prefix a two-deep mount chain gives", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const inner = new Hono();
+        inner.use("/v1/*", async (c, next) => { await next(); });
+        inner.get("/v1/orders", (c) => c.json({}));
+        const mid = new Hono();
+        mid.route("/svc", inner);
+        const root = new Hono();
+        root.route("/api", mid);
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/api/svc/v1/orders")).toEqual([
+      { file: "/app.ts", name: "use", scope: "/api/svc/v1/*" },
+    ]);
+  });
+
+  it("leaves a scope as written when two mounts of the same router disagree", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const api = new Hono();
+        api.use("/v1/*", async (c, next) => { await next(); });
+        api.get("/v1/orders", (c) => c.json({}));
+        const root = new Hono();
+        root.route("/api", api);
+        root.route("/other", api);
       `,
     );
 

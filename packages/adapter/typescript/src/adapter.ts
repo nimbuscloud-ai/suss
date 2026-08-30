@@ -2285,7 +2285,7 @@ export function createTypeScriptAdapter(
       // middleware and error handlers registered on the same app get
       // summarized too, and the route points at them.
       const wrappers = timer.time("wrapperIndex", () =>
-        buildWrapperIndex(packsByFile, resolution),
+        buildWrapperIndex(packsByFile, resolution, mountPrefixes),
       );
 
       const caching = cacheDir !== null;
