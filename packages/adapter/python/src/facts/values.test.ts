@@ -302,4 +302,31 @@ describe("python value facts", () => {
     expect(rows(db, "paramOf").map((row) => row[1])).toEqual(["0"]);
     expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
   });
+
+  it("leaves a tuple assignment alone, since neither name holds the pair", async () => {
+    const db = await factsFor("a, b = build()\n");
+    expect(rows(db, "binds")).toEqual([]);
+  });
+
+  it("puts a value on the class only when a method writes it to its own receiver", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def __init__(self, other):",
+        "        self.app = build()",
+        "        other.app = build()",
+        "",
+      ].join("\n"),
+    );
+    // The class keeps its own methods too, so the point is that one
+    // write landed and the write to somebody else's receiver did not.
+    const held = rows(db, "holdsProperty").map((row) => String(row[1]));
+    expect(held.filter((name) => name === "app")).toEqual(["app"]);
+  });
+
+  it("says nothing about a subscript assignment", async () => {
+    const db = await factsFor("registry['app'] = build()\n");
+    expect(rows(db, "binds")).toEqual([]);
+    expect(rows(db, "holdsProperty")).toEqual([]);
+  });
 });
