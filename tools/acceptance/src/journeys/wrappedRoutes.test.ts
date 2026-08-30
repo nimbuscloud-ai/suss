@@ -1,0 +1,79 @@
+import path from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { fixture, readJson, runSuss, workspace } from "../harness.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+/**
+ * A route's wire behaviour is not only its own body. This service
+ * returns 401 from middleware and 500 from an error handler, and
+ * neither status appears in the handler that serves the route, so a
+ * reader given the handler alone has nowhere to go looking. Each
+ * wrapper gets a summary of its own, and the route points at it.
+ */
+describe("read a service whose statuses come from around the handler", () => {
+  const out = workspace("wrapped-routes");
+  const summariesFile = path.join(out, "api.json");
+
+  it("says which wrappers run around the route", () => {
+    const extract = runSuss([
+      "extract",
+      "--dir",
+      fixture("wrapped-routes"),
+      "-f",
+      "hono",
+      "-o",
+      summariesFile,
+    ]);
+    expect(extract.status, extract.stderr).toBe(0);
+
+    const inspect = runSuss(["inspect", summariesFile]);
+    expect(inspect.status, inspect.stderr).toBe(0);
+    expect(inspect.stdout).toContain(
+      "wrapped by requireCaller (fixtures/wrapped-routes/requireCaller.ts) for /v1/*",
+    );
+    expect(inspect.stdout).toContain(
+      "onError (fixtures/wrapped-routes/app.ts) on a throw",
+    );
+  });
+
+  it("points the route at each wrapper's own summary", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const route = summaries.find(
+      (one) => one.identity.boundaryBinding?.semantics.name === "rest",
+    );
+
+    expect(route?.metadata?.wrappers).toEqual({
+      applied: [
+        {
+          file: "fixtures/wrapped-routes/requireCaller.ts",
+          name: "requireCaller",
+          scope: "/v1/*",
+        },
+        {
+          file: "fixtures/wrapped-routes/app.ts",
+          name: "onError",
+          onThrow: true,
+        },
+      ],
+    });
+  });
+
+  it("puts the statuses on the wrappers that produce them", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const statuses = summaries.map((one) => [
+      one.identity.name,
+      one.transitions.flatMap((transition) =>
+        transition.output.type === "response" &&
+        transition.output.statusCode?.type === "literal"
+          ? [transition.output.statusCode.value]
+          : [],
+      ),
+    ]);
+
+    expect(statuses).toContainEqual(["requireCaller", [401]]);
+    expect(statuses).toContainEqual(["onError", [500]]);
+  });
+});

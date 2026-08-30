@@ -654,6 +654,33 @@ describe("relativizeSummaryPaths", () => {
         : undefined,
     ).toBe("src/avatar.tsx");
   });
+
+  it("rewrites the file each wrapper around the unit is declared in", () => {
+    const summary = {
+      location: { file: "/repo/src/app.ts", range: { start: 1, end: 2 } },
+      transitions: [],
+      identity: { name: "get", exportPath: [], boundaryBinding: null },
+      metadata: {
+        wrappers: {
+          applied: [
+            {
+              file: "/repo/src/requireCaller.ts",
+              name: "requireCaller",
+              scope: "/v1/*",
+            },
+          ],
+        },
+      },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo");
+
+    expect(summary.metadata?.wrappers).toEqual({
+      applied: [
+        { file: "src/requireCaller.ts", name: "requireCaller", scope: "/v1/*" },
+      ],
+    });
+  });
 });
 
 describe("relativizeRenderTargets", () => {

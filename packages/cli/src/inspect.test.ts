@@ -4,12 +4,16 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { restBinding } from "@suss/behavioral-ir";
+import { restBinding, withWrapperMetadata } from "@suss/behavioral-ir";
 
-import { inspectDiff } from "./inspect.js";
+import { inspect, inspectDiff } from "./inspect.js";
 import { runCli } from "./run.js";
 
-import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Transition,
+  WrapperMetadata,
+} from "@suss/behavioral-ir";
 
 /** The smallest summary a diff has something to say about. */
 function routeSummary(name: string, routePath: string): BehavioralSummary {
@@ -122,6 +126,71 @@ describe("inspect --diff --json", () => {
       expect(output).toContain("removed handler");
       expect(() => JSON.parse(output)).toThrow();
     });
+  });
+});
+
+describe("inspect, a route the wrappers cover", () => {
+  const withSummaries = (
+    summaries: BehavioralSummary[],
+    run: (file: string) => void,
+  ) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-wrappers-"));
+    const file = path.join(dir, "api.json");
+    fs.writeFileSync(file, JSON.stringify(summaries));
+    try {
+      run(file);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  const wrapped = (applied: WrapperMetadata["applied"]): BehavioralSummary => ({
+    ...routeSummary("getUser", "/users/:id"),
+    metadata: withWrapperMetadata(undefined, { applied }),
+  });
+
+  it("points at each wrapper, with the scope the registration gave it", () => {
+    withSummaries(
+      [
+        wrapped([
+          { file: "src/requireCaller.ts", name: "requireCaller", scope: "/v1" },
+        ]),
+      ],
+      (file) => {
+        const { output } = captureStdout(() => inspect({ file }));
+        expect(output).toContain(
+          "wrapped by requireCaller (src/requireCaller.ts) for /v1",
+        );
+      },
+    );
+  });
+
+  it("says which wrapper only runs when the route throws", () => {
+    withSummaries(
+      [wrapped([{ file: "src/app.ts", name: "onError", onThrow: true }])],
+      (file) => {
+        const { output } = captureStdout(() => inspect({ file }));
+        expect(output).toContain("wrapped by onError (src/app.ts) on a throw");
+      },
+    );
+  });
+
+  it("counts the wrappers it has no room to list", () => {
+    withSummaries(
+      [
+        wrapped([
+          { file: "src/a.ts", name: "a" },
+          { file: "src/b.ts", name: "b" },
+          { file: "src/c.ts", name: "c" },
+          { file: "src/d.ts", name: "d" },
+        ]),
+      ],
+      (file) => {
+        const { output } = captureStdout(() => inspect({ file }));
+        expect(output).toContain("+1 more");
+        expect(output).not.toContain("src/d.ts");
+      },
+    );
   });
 });
 

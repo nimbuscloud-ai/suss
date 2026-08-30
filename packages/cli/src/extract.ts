@@ -15,8 +15,10 @@ import {
   workspaceRootFor,
 } from "@suss/adapter-typescript";
 import {
+  readWrapperMetadata,
   SUMMARY_SCHEMA_VERSION,
   withRewrittenPaths,
+  withWrapperMetadata,
 } from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 
@@ -1188,6 +1190,26 @@ export function relativizeSummaryPaths(
       ),
     };
   }
+  relativizeWrapperPaths(summary, projectRoot);
+}
+
+/** The file each wrapper around this unit is declared in. */
+function relativizeWrapperPaths(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  const wrappers = readWrapperMetadata(summary);
+  if (wrappers === undefined || wrappers.applied.length === 0) {
+    return;
+  }
+  summary.metadata = withWrapperMetadata(summary.metadata, {
+    applied: wrappers.applied.map((wrapper) => ({
+      ...wrapper,
+      file: path.isAbsolute(wrapper.file)
+        ? path.relative(projectRoot, wrapper.file)
+        : wrapper.file,
+    })),
+  });
 }
 
 export function relativizeRenderTargets(
