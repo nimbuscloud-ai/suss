@@ -200,6 +200,32 @@ The demand cone stays on the base facts named above. Nothing here pulls
 `reaches` or `callsInto`, so asking about a receiver does not price in
 call-graph closure.
 
+## The subject behind a registration
+
+Discovery keeps asking one question: is this receiver the app, the
+router, the thing built by calling what a library exports? Which
+`.get(...)` calls are routes and which `.use(...)` calls are mounts
+both hang on the answer, and every language feature that moves a value
+is a place the receiver can be written: a class field, a destructured
+name, a property on an object another file built. Enumerating those
+spellings in a walker loses to the language, so the question is asked
+of the rules instead.
+
+The answer comes back in two relations, both seeded by
+`wantedSubject`.
+`wantedSubjectWritten` is the written-value walk from the asked
+receiver, so the asking side can apply the single-answer policy over
+everything the receiver could be. `wantedSubjectConstruction` keeps
+only the answers that are a call or a `new`, and pairs each with where
+its callee was imported from, through however many aliases the callee
+went. The asking side checks that pair against the (module, name) a
+pack declares: exactly one distinct construction with a matching
+origin is the subject, none or several is a refusal.
+
+The construction end needs no fact of its own. Every call is already a
+`call` fact, a `new` expression included, and the join against
+`comesFrom` is what makes one of them a subject seed.
+
 ## Explaining an answer
 
 Evaluate the same rules under `@suss/datalog`'s `witnesses` algebra and

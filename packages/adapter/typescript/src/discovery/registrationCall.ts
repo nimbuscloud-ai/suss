@@ -82,7 +82,10 @@ export function discoverRegistrationCalls(
     match.importName,
     resolution,
   );
-  if (registrationSubjects.size === 0) {
+  if (
+    registrationSubjects.size === 0 &&
+    !storeCanFindSubjects(sourceFile, match, resolution)
+  ) {
     return results;
   }
 
@@ -107,10 +110,12 @@ export function discoverRegistrationCalls(
     }
 
     // The subject of the call must resolve to our registration variable
-    const subject = callee.getExpression();
-    const subjectName = Node.isIdentifier(subject) ? subject.getText() : null;
-    const subjectNode =
-      subjectName === null ? undefined : registrationSubjects.get(subjectName);
+    const subjectNode = subjectNodeFor(
+      callee.getExpression(),
+      registrationSubjects,
+      match,
+      resolution,
+    );
 
     if (subjectNode === undefined) {
       return;
@@ -271,6 +276,64 @@ export function readRegisteringFiles(
     }
   }
   resolution.extractFiles(files);
+}
+
+/**
+ * The routable a registration call's receiver is, or undefined when it
+ * is not one. The map from `registrationSubjectsOf` settles the common
+ * case in this file's own syntax. A receiver it misses is put to the
+ * store, which follows however the value was moved: a class field, a
+ * destructured name, a property on an object. The store keeps the
+ * single-answer policy, so a receiver that could be two different
+ * constructions is no subject.
+ */
+export function subjectNodeFor(
+  subject: Node,
+  subjects: ReadonlyMap<string, Node>,
+  match: { importModule: string; importName: string },
+  resolution: ResolutionStore | undefined,
+): Node | undefined {
+  if (Node.isIdentifier(subject)) {
+    const known = subjects.get(subject.getText());
+    if (known !== undefined) {
+      return known;
+    }
+  }
+
+  if (
+    resolution === undefined ||
+    !(Node.isIdentifier(subject) || Node.isPropertyAccessExpression(subject))
+  ) {
+    return undefined;
+  }
+  return (
+    resolution.subjectConstructionOf(
+      subject,
+      match.importModule,
+      match.importName,
+    ) ?? undefined
+  );
+}
+
+/**
+ * Whether a file with no syntactic subject is still worth walking: it
+ * imports the library, and there is a store to put receivers to. The
+ * import gate is what keeps the store question from being asked about
+ * every method call in every file.
+ */
+export function storeCanFindSubjects(
+  sourceFile: SourceFile,
+  match: { importModule: string; importName: string },
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return (
+    resolution !== undefined &&
+    resolveImportedLocalName(
+      sourceFile,
+      match.importModule,
+      match.importName,
+    ) !== null
+  );
 }
 
 /**
@@ -441,7 +504,10 @@ export function discoverMountEdges(
     match.importName,
     resolution,
   );
-  if (subjects.size === 0) {
+  if (
+    subjects.size === 0 &&
+    !storeCanFindSubjects(sourceFile, match, resolution)
+  ) {
     return [];
   }
 
@@ -460,10 +526,12 @@ export function discoverMountEdges(
       return;
     }
 
-    const subject = callee.getExpression();
-    const subjectNode = Node.isIdentifier(subject)
-      ? subjects.get(subject.getText())
-      : undefined;
+    const subjectNode = subjectNodeFor(
+      callee.getExpression(),
+      subjects,
+      match,
+      resolution,
+    );
     if (subjectNode === undefined) {
       return;
     }
