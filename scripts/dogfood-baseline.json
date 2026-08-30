@@ -2,11 +2,11 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 636,
-    "internal": 2272,
-    "consumers": 1089,
-    "pairs": 1070,
-    "unfollowedCalls": 243,
+    "exports": 639,
+    "internal": 2283,
+    "consumers": 1097,
+    "pairs": 1078,
+    "unfollowedCalls": 251,
     "findingErrors": 0
   },
   "packages": {
@@ -27,13 +27,13 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 73,
-      "internal": 777,
-      "consumers": 100,
-      "unfollowedCalls": 76
+      "internal": 787,
+      "consumers": 101,
+      "unfollowedCalls": 84
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 73,
+      "exports": 75,
       "internal": 20,
       "consumers": 4,
       "unfollowedCalls": 2
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 19,
-      "internal": 361,
-      "consumers": 222,
+      "internal": 362,
+      "consumers": 226,
       "unfollowedCalls": 40
     },
     "packages/client/apollo": {
@@ -166,9 +166,9 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 28,
+      "exports": 29,
       "internal": 33,
-      "consumers": 5,
+      "consumers": 6,
       "unfollowedCalls": 5
     },
     "packages/framework/activerecord": {
@@ -238,7 +238,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 0,
-      "consumers": 8,
+      "consumers": 9,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
@@ -280,7 +280,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 12,
+      "consumers": 13,
       "unfollowedCalls": 0
     },
     "packages/framework/mongoose": {
