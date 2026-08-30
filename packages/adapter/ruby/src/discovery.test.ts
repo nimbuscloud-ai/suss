@@ -158,13 +158,21 @@ describe("discoverUnits: object type fields", () => {
     expect(units[0]?.graphqlDeclaredContract).toBeUndefined();
   });
 
-  it("skips a field name this module can't read (not a plain symbol literal)", async () => {
+  it("abstains on a field name this module can't read, binding it to nothing and saying why", async () => {
     const units = await discover(
       "class Types::CampaignType < Types::BaseObject\n" +
         "  field name_variable, ID, null: false\n" +
         "end\n",
     );
-    expect(units).toEqual([]);
+    expect(units.map((u) => u.identity.name)).toEqual([
+      "Campaign.name_variable",
+    ]);
+    expect(units[0]?.boundaryBinding).toBeNull();
+    expect(units[0]?.readings?.[0]).toMatchObject({
+      kind: "unreadable",
+      reason:
+        "This field is named by name_variable, which is worked out when the class body runs, so the name the schema exposes it under was not read here",
+    });
   });
 
   it("keeps the last declaration when a field is redefined in the same class body, per graphql-ruby's own last-wins registration", async () => {
@@ -217,6 +225,98 @@ describe("discoverUnits: object type fields", () => {
       type: "ref",
       name: "String",
     });
+  });
+});
+
+describe("discoverUnits: where in a class body the declaration is written", () => {
+  const inside = (body: string) =>
+    `class Types::CampaignType < Types::BaseObject\n${body}\nend\n`;
+
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    ["an if", "  if enabled?\n    field :name, String, null: true\n  end"],
+    [
+      "the else of an if",
+      "  if enabled?\n    nil\n  else\n    field :name, String, null: true\n  end",
+    ],
+    [
+      "an unless",
+      "  unless hidden?\n    field :name, String, null: true\n  end",
+    ],
+    [
+      "a case",
+      '  case tier\n  when "paid"\n    field :name, String, null: true\n  end',
+    ],
+    [
+      "a do block",
+      "  [String].each do |type|\n    field :name, type, null: true\n  end",
+    ],
+    [
+      "a brace block",
+      "  [String].each { |type| field :name, type, null: true }",
+    ],
+    [
+      "a begin",
+      "  begin\n    field :name, String, null: true\n  rescue StandardError\n    nil\n  end",
+    ],
+    [
+      "a while",
+      "  done = false\n  while done == false\n    field :name, String, null: true\n    done = true\n  end",
+    ],
+    ["a modifier if", "  field :name, String, null: true if enabled?"],
+    [
+      "a class_eval block",
+      "  class_eval do\n    field :name, String, null: true\n  end",
+    ],
+  ];
+
+  for (const [where, body] of cases) {
+    it(`reads a field written inside ${where}`, async () => {
+      const units = await discover(inside(body));
+      expect(units.map((u) => u.identity.name)).toEqual(["Campaign.name"]);
+    });
+  }
+
+  it("reads a class written inside an if", async () => {
+    const units = await discover(
+      "if ENV['SCHEMA'] != 'minimal'\n" +
+        "  class Types::CampaignType < Types::BaseObject\n" +
+        "    field :name, String, null: true\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["Campaign.name"]);
+  });
+
+  it("reads the method behind a field when the def is written inside an if", async () => {
+    const units = await discover(
+      inside(
+        "  field :name, String, null: true\n" +
+          "  if enabled?\n" +
+          "    def name\n" +
+          "      object.title\n" +
+          "    end\n" +
+          "  end",
+      ),
+    );
+    expect(units[0]?.bodyContent).toBe("statements");
+  });
+
+  it("leaves an argument declared in a field's own block off the class", async () => {
+    const units = await discover(
+      inside(
+        "  field :name, String, null: true do\n" +
+          "    argument :locale, String, required: false\n" +
+          "  end",
+      ),
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["Campaign.name"]);
+  });
+
+  it("does not read a field declared in a def, which runs when the method is called", async () => {
+    const units = await discover(
+      inside("  def wire\n    field :name, String, null: true\n  end"),
+    );
+    expect(units).toEqual([]);
   });
 });
 

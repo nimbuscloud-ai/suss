@@ -20,12 +20,12 @@ import {
   reachDefinition,
 } from "./ancestry.js";
 import {
-  bodyStatements,
   booleanLiteralValue,
   field,
   methodHasStatements,
   rangeOf,
   readCallArgs,
+  runStatements,
   spanOf,
   symbolValue,
 } from "./ast.js";
@@ -58,7 +58,7 @@ import type {
   MethodLookup,
   ReachedBody,
 } from "./ancestry.js";
-import type { CallArgs, Range } from "./ast.js";
+import type { BlockConfigures, CallArgs, Range } from "./ast.js";
 import type {
   GraphqlObjectFields,
   RubyDiscoveryPattern,
@@ -268,7 +268,10 @@ async function graphqlObjectFieldUnits(
   // body replaces the earlier declaration. Keying this Map on the resolved field
   // name gives the same last-write-wins result.
   const declsByName = new Map<string, FieldDeclaration>();
-  for (const stmt of bodyStatements(info.bodyNode)) {
+  for (const stmt of runStatements(
+    info.bodyNode,
+    blockConfiguresCall(pattern),
+  )) {
     const decl = await readFieldCall(stmt, scope, ctx, ancestry);
     if (decl !== null) {
       declsByName.set(decl.fieldName, decl);
@@ -277,6 +280,28 @@ async function graphqlObjectFieldUnits(
   return [...declsByName.values()].map((decl) =>
     buildFieldUnit(pack, typeName, decl, options.filePath),
   );
+}
+
+/**
+ * A block on one of the pack's own DSL calls configures that call.
+ * `field :x, String do argument :q, String end` declares an argument on
+ * the field, so reading it as a statement of the class body would put
+ * the argument on the wrong thing.
+ */
+function blockConfiguresCall(pattern: GraphqlObjectFields): BlockConfigures {
+  const names = new Set([
+    pattern.fieldCallName,
+    pattern.typeCallName,
+    pattern.argumentCallName,
+  ]);
+  return (call) => {
+    const method = field(call, "method")?.text;
+    return (
+      field(call, "receiver") === null &&
+      method !== undefined &&
+      names.has(method)
+    );
+  };
 }
 
 interface ArgDeclaration {
@@ -300,6 +325,8 @@ interface FieldContract {
 
 interface FieldDeclaration {
   fieldName: string;
+  /** False when the name was computed, so nothing on the wire can be matched against it. */
+  namedOnTheWire: boolean;
   node: RbNode;
   contract: FieldContract | null;
   body: BodyReport;
@@ -411,9 +438,11 @@ function bodyFromLookup(
 }
 
 /**
- * If we cannot read the field's name there is no unit to discover at all. If we
- * can read the name but not the type, the field is still discovered with no
- * declared contract, since the symbol alone tells you the field exists.
+ * A field whose type we cannot read is still discovered with no declared
+ * contract, since the symbol alone tells you the field exists. A field
+ * whose name we cannot read is discovered too, under the expression it
+ * was written as and bound to nothing, because a declaration nobody
+ * mentions is indistinguishable from one that was never written.
  */
 async function readFieldCall(
   stmt: RbNode,
@@ -429,9 +458,12 @@ async function readFieldCall(
   }
   const callArgs = readCallArgs(field(stmt, "arguments"));
   const nameArg = callArgs.positional[0];
-  const symbol = nameArg !== undefined ? symbolValue(nameArg) : null;
-  if (symbol === null) {
+  if (nameArg === undefined) {
     return null;
+  }
+  const symbol = symbolValue(nameArg);
+  if (symbol === null) {
+    return computedNameDeclaration(stmt, nameArg);
   }
   const read = await readFieldShape(
     symbol,
@@ -443,9 +475,32 @@ async function readFieldCall(
   );
   return {
     fieldName: resolvedName(symbol, callArgs, ctx.pattern),
+    namedOnTheWire: true,
     node: stmt,
     contract: read.contract,
     body: read.body,
+  };
+}
+
+/** A field whose name is worked out when the class body runs, so the schema's own name for it is not in this file. */
+function computedNameDeclaration(
+  stmt: RbNode,
+  nameArg: RbNode,
+): FieldDeclaration {
+  const range = rangeOf(stmt);
+  return {
+    fieldName: nameArg.text,
+    namedOnTheWire: false,
+    node: stmt,
+    contract: null,
+    body: {
+      readings: [
+        unreadableReading(
+          `This field is named by ${nameArg.text}, which is worked out when the class body runs, so the name the schema exposes it under was not read here`,
+          range,
+        ),
+      ],
+    },
   };
 }
 
@@ -650,7 +705,10 @@ function readClassContract(
   };
   const handlers = classCallHandlers(pattern);
 
-  for (const { block, statement } of inheritedStatements(ancestry)) {
+  for (const { block, statement } of inheritedStatements(
+    ancestry,
+    blockConfiguresCall(pattern),
+  )) {
     if (statement.type !== "call" || field(statement, "receiver") !== null) {
       continue;
     }
@@ -793,12 +851,14 @@ function buildFieldUnit(
       exportName: null,
       exportPath: null,
     },
-    boundaryBinding: graphqlResolverBinding({
-      transport: pack.protocol,
-      recognition: pack.name,
-      typeName,
-      fieldName: decl.fieldName,
-    }),
+    boundaryBinding: decl.namedOnTheWire
+      ? graphqlResolverBinding({
+          transport: pack.protocol,
+          recognition: pack.name,
+          typeName,
+          fieldName: decl.fieldName,
+        })
+      : null,
     parameters,
     branches: branchesFor(decl.body, rangeOf(decl.node)),
     ...(decl.body.bodyContent !== undefined

@@ -3,12 +3,13 @@
 
 import {
   bareCallArgumentGroups,
-  bodyStatements,
   instanceMethodsByName,
+  runStatements,
 } from "./ast.js";
 import { resolveConstantFile } from "./constantPath.js";
 import { qualifyConstantRef, walkDefinitions } from "./scope.js";
 
+import type { BlockConfigures } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { RbNode } from "./parser.js";
 import type { ClassInfo } from "./scope.js";
@@ -293,6 +294,7 @@ function definitionIn(
 /** Every statement of every body reached, most distant ancestor first, so a nearer declaration overwrites what it inherits. */
 export function inheritedStatements(
   ancestry: Ancestry,
+  blockConfigures?: BlockConfigures,
 ): Array<{ block: ReachedBody; statement: RbNode }> {
   const statements: Array<{ block: ReachedBody; statement: RbNode }> = [];
   for (const entry of [...ancestry].reverse()) {
@@ -304,7 +306,7 @@ export function inheritedStatements(
       if (body === null) {
         continue;
       }
-      for (const statement of bodyStatements(body)) {
+      for (const statement of runStatements(body, blockConfigures)) {
         statements.push({ block, statement });
       }
     }

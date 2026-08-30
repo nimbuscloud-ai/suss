@@ -10,6 +10,7 @@ import {
   methodHasStatements,
   rangeOf,
   readCallArgs,
+  runStatements,
   symbolValue,
 } from "./ast.js";
 import { parseRuby } from "./parser.js";
@@ -63,6 +64,57 @@ describe("bodyStatements", () => {
       "call",
       "call",
     ]);
+  });
+});
+
+describe("runStatements", () => {
+  /** The receiverless calls a body runs, which is what every DSL reader is after. */
+  async function bareCallsIn(
+    source: string,
+    blockConfigures?: (call: RbNode) => boolean,
+  ): Promise<string[]> {
+    const tree = await parseRuby(source);
+    return runStatements(tree.rootNode, blockConfigures)
+      .filter(
+        (node) => node.type === "call" && field(node, "receiver") === null,
+      )
+      .map((node) => must(field(node, "method")).text);
+  }
+
+  it("reaches a call inside an if, a block, a begin and a modifier if", async () => {
+    expect(
+      await bareCallsIn(
+        "if flag\n  in_if :a\nend\n" +
+          "[1].each { |n| in_block :b }\n" +
+          "begin\n  in_begin :c\nrescue StandardError\n  in_rescue :d\nend\n" +
+          "in_modifier :e if flag\n",
+      ),
+    ).toEqual(["in_if", "in_block", "in_begin", "in_rescue", "in_modifier"]);
+  });
+
+  it("stops at a body that belongs to what it declares", async () => {
+    expect(
+      await bareCallsIn(
+        "def helper\n  in_method :a\nend\n" +
+          "class Thing\n  in_class :b\nend\n" +
+          "module Mod\n  in_module :c\nend\n",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads what a call is handed as values rather than as statements", async () => {
+    expect(await bareCallsIn("outer(inner(1))\n")).toEqual(["outer"]);
+  });
+
+  it("leaves the block of a configuring call to that call", async () => {
+    const source = "field :name do\n  argument :locale\nend\n";
+    expect(await bareCallsIn(source)).toEqual(["field", "argument"]);
+    expect(
+      await bareCallsIn(
+        source,
+        (call) => field(call, "method")?.text === "field",
+      ),
+    ).toEqual(["field"]);
   });
 });
 

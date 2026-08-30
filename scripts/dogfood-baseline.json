@@ -2,27 +2,27 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 645,
-    "internal": 2325,
-    "consumers": 1111,
-    "pairs": 1092,
-    "unfollowedCalls": 244,
+    "exports": 646,
+    "internal": 2326,
+    "consumers": 1114,
+    "pairs": 1095,
+    "unfollowedCalls": 248,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 51,
-      "internal": 178,
-      "consumers": 57,
+      "internal": 177,
+      "consumers": 58,
       "unfollowedCalls": 14
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 46,
-      "internal": 109,
-      "consumers": 14,
-      "unfollowedCalls": 9
+      "internal": 111,
+      "consumers": 16,
+      "unfollowedCalls": 11
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -166,10 +166,10 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 30,
+      "exports": 31,
       "internal": 44,
       "consumers": 13,
-      "unfollowedCalls": 5
+      "unfollowedCalls": 7
     },
     "packages/framework/activerecord": {
       "name": "@suss/framework-activerecord",

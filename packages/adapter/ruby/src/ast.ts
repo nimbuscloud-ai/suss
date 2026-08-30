@@ -1,4 +1,4 @@
-import { IdMap, IdSet } from "@suss/extractor";
+import { IdMap, IdSet, SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
 /**
  * Small helpers for reading a tree-sitter-ruby parse tree.
@@ -41,15 +41,64 @@ export function bodyStatements(body: RbNode): RbNode[] {
   return body.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
+/**
+ * A body written in one of these belongs to the thing it declares, so
+ * its statements do not run when the enclosing body runs.
+ */
+export const OWN_BODY_TYPES = new Set([
+  "method",
+  "singleton_method",
+  "lambda",
+  "class",
+  "module",
+  "singleton_class",
+]);
+
+/** A call's arguments are values it is handed, not statements the body runs. */
+const ARGUMENT_LIST_TYPE = "argument_list";
+
+/** A call whose block is the thing being configured rather than a place statements run. */
+export type BlockConfigures = (call: RbNode) => boolean;
+
+/**
+ * Every statement a body runs, in source order. Ruby runs a class body
+ * like any other code, so a declaration can sit inside an `if`, a
+ * `.each` block, a `begin` or a `class_eval`, and taking the body's own
+ * child list finds the first spelling and loses the rest in silence.
+ *
+ * `blockConfigures` says which calls keep their block to themselves.
+ * `field :x, String do argument :q, String end` declares an argument on
+ * the field, not on the class, so that block is not part of the body.
+ */
+export function runStatements(
+  body: RbNode,
+  blockConfigures: BlockConfigures = () => false,
+): RbNode[] {
+  const found: RbNode[] = [];
+  const readsItsChildren = (node: RbNode): boolean => {
+    if (OWN_BODY_TYPES.has(node.type) || node.type === ARGUMENT_LIST_TYPE) {
+      return false;
+    }
+    return !(node.type === "call" && blockConfigures(node));
+  };
+  walkDescendants<RbNode, null>(body, null, {
+    at: (node) => {
+      found.push(node);
+    },
+    into: (node) => (readsItsChildren(node) ? null : SKIP_CHILDREN),
+  });
+  return found;
+}
+
 /** tree-sitter-ruby leaves the leading colon in a `simple_symbol`'s text, but not in a `hash_key_symbol`'s. */
 export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
 }
 
 /**
- * Every instance method a class body defines directly, keyed by the
- * name it is defined under. A name defined twice keeps the later
- * definition, the way Ruby's own redefinition does.
+ * Every instance method a class body defines, keyed by the name it is
+ * defined under. A name defined twice keeps the later definition, the
+ * way Ruby's own redefinition does.
  *
  * `def self.name` parses as a `singleton_method` and is deliberately
  * not one of these: it runs on the class, and what resolves a field is
@@ -57,7 +106,7 @@ export function symbolValue(node: RbNode): string | null {
  */
 export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
   const methods = new Map<string, RbNode>();
-  for (const stmt of bodyStatements(body)) {
+  for (const stmt of runStatements(body)) {
     if (stmt.type !== "method") {
       continue;
     }
@@ -70,14 +119,14 @@ export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
 }
 
 /**
- * The arguments of each receiverless call to `name` written directly in
- * `body`, one group per call, in source order. Grouped rather than
- * flattened because `include A, B` and `include A` then `include B`
- * order their modules differently.
+ * The arguments of each receiverless call to `name` the body runs, one
+ * group per call, in source order. Grouped rather than flattened
+ * because `include A, B` and `include A` then `include B` order their
+ * modules differently.
  */
 export function bareCallArgumentGroups(body: RbNode, name: string): RbNode[][] {
   const groups: RbNode[][] = [];
-  for (const stmt of bodyStatements(body)) {
+  for (const stmt of runStatements(body)) {
     if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
       continue;
     }
