@@ -1230,6 +1230,151 @@ describe("discoverUnits: a router the decorator reaches through an attribute", (
   });
 });
 
+describe("discoverUnits: where in a Python file the app is built", () => {
+  const cases: ReadonlyArray<readonly [string, string[]]> = [
+    [
+      "at the top of a module",
+      [
+        "app = FastAPI()",
+        "",
+        '@app.get("/health")',
+        "def health():",
+        "    pass",
+      ],
+    ],
+    [
+      "inside an if",
+      [
+        "if True:",
+        "    app = FastAPI()",
+        "",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+      ],
+    ],
+    [
+      "inside a with",
+      [
+        "with open('x') as handle:",
+        "    app = FastAPI()",
+        "",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+      ],
+    ],
+    [
+      "inside a for",
+      [
+        "for _ in range(1):",
+        "    app = FastAPI()",
+        "",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+      ],
+    ],
+    [
+      "inside a while",
+      [
+        "while True:",
+        "    app = FastAPI()",
+        "",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+        "    break",
+      ],
+    ],
+    [
+      "inside a match case",
+      [
+        "match 1:",
+        "    case 1:",
+        "        app = FastAPI()",
+        "",
+        '        @app.get("/health")',
+        "        def health():",
+        "            pass",
+      ],
+    ],
+    [
+      "inside an async def",
+      [
+        "async def build():",
+        "    app = FastAPI()",
+        "",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+        "    return app",
+      ],
+    ],
+    [
+      "inside a decorated factory",
+      [
+        "@functools.lru_cache",
+        "def build():",
+        "    app = FastAPI()",
+        "",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+        "    return app",
+      ],
+    ],
+    [
+      "on the receiver of a class declared inside another class",
+      [
+        "class Outer:",
+        "    class Inner:",
+        "        def __init__(self):",
+        "            self.app = FastAPI()",
+        "",
+        "        def wire(self):",
+        '            @self.app.get("/health")',
+        "            def health():",
+        "                pass",
+      ],
+    ],
+  ];
+
+  for (const [where, body] of cases) {
+    it(`finds the route when the app is built ${where}`, async () => {
+      const units = await unitsWithRulesOf(
+        [
+          "from fastapi import FastAPI",
+          "import functools",
+          "",
+          ...body,
+          "",
+        ].join("\n"),
+        [fastapiLike],
+      );
+      expect(units.map((u) => u.identity.name)).toEqual(["health"]);
+    });
+  }
+
+  // A walrus is not an `assignment`, and the fact layer writes down only
+  // assignments, so nothing says what `app` came from.
+  it("does not find the route when the app is bound by a walrus", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "if (app := FastAPI()) is not None:",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units).toEqual([]);
+  });
+});
+
 describe("a route that declares no response but does something", () => {
   const source = [
     "from myapp.wrappers.restx import route",

@@ -435,6 +435,25 @@ function declaredBy(statement: PyNode): PyNode {
 }
 
 /**
+ * What a class body declares under a name: a method, or a class declared
+ * inside another class. Null for anything else, which the class puts no
+ * property under.
+ */
+function declaredMemberKey(
+  emitter: Emitter,
+  member: PyNode,
+  classKey: string,
+): string | null {
+  if (member.type === "class_definition") {
+    return emitClassFacts(emitter, member);
+  }
+  if (FUNCTION_TYPES.has(member.type)) {
+    return emitFunctionFacts(emitter, member, classKey);
+  }
+  return null;
+}
+
+/**
  * A class is an object containing its methods, which is the treatment an
  * object literal gets. That is what lets a method read off an instance
  * resolve to the method the class declares.
@@ -465,13 +484,10 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
       }
       continue;
     }
-    if (!FUNCTION_TYPES.has(member.type)) {
-      continue;
-    }
-    const funcKey = emitFunctionFacts(emitter, member, classKey);
+    const memberKey = declaredMemberKey(emitter, member, classKey);
     const name = field(member, "name");
-    if (name !== null) {
-      add(emitter, "holdsProperty", classKey, name.text, funcKey);
+    if (memberKey !== null && name !== null) {
+      add(emitter, "holdsProperty", classKey, name.text, memberKey);
     }
   }
 

@@ -22,6 +22,7 @@ import {
   mapReading,
   unreadableReading,
   valueToReadFurtherFrom,
+  walkDescendants,
   writtenReading,
 } from "@suss/extractor";
 
@@ -120,34 +121,31 @@ function decoratedStatements(
   module: ModuleBinding,
 ): DecoratedStatement[] {
   const found: DecoratedStatement[] = [];
-  const walk = (
-    node: PyNode,
-    scope: Scope,
-    enclosingFunction: PyNode | null,
-  ): void => {
-    for (const child of node.namedChildren) {
-      if (child === null) {
-        continue;
-      }
-      if (child.type === "decorated_definition") {
+  type Where = Pick<DecoratedStatement, "scope" | "enclosingFunction">;
+  walkDescendants<PyNode, Where>(
+    root,
+    { scope: module.moduleScope, enclosingFunction: null },
+    {
+      at: (node, where) => {
+        if (node.type !== "decorated_definition") {
+          return;
+        }
         found.push({
-          stmt: child,
-          scope,
-          enclosingFunction,
-          decorators: stripDecorators(child).decorators.map((node) => ({
-            node,
-            direct: classifyDecorator(node, scope),
+          stmt: node,
+          ...where,
+          decorators: stripDecorators(node).decorators.map((decorator) => ({
+            node: decorator,
+            direct: classifyDecorator(decorator, where.scope),
           })),
         });
-      }
-      walk(
-        child,
-        module.scopeFor.get(child.id) ?? scope,
-        child.type === "function_definition" ? child : enclosingFunction,
-      );
-    }
-  };
-  walk(root, module.moduleScope, null);
+      },
+      into: (node, where) => ({
+        scope: module.scopeFor.get(node.id) ?? where.scope,
+        enclosingFunction:
+          node.type === "function_definition" ? node : where.enclosingFunction,
+      }),
+    },
+  );
   return found;
 }
 
