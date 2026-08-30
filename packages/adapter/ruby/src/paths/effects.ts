@@ -4,23 +4,13 @@
 
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 
-import { field } from "../ast.js";
+import { field, OWN_BODY_TYPES } from "../ast.js";
 import { lowerRubyBody } from "./lowering.js";
 
 import type { EffectArg, RawEffect } from "@suss/extractor";
 import type { RbNode } from "../parser.js";
 
 type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
-
-/** A body written in one of these belongs to the thing it declares. */
-const DECLARATION_TYPES = new Set([
-  "method",
-  "singleton_method",
-  "lambda",
-  "class",
-  "module",
-  "singleton_class",
-]);
 
 /** `raise` is a call in Ruby, but it leaves the method rather than doing work. */
 const RAISE_NAMES = new Set(["raise", "fail"]);
@@ -89,7 +79,7 @@ function isRaise(node: RbNode): boolean {
 /** Every call this method's own body makes, leaving out property reads and raises. */
 export function bodyCalls(node: RbNode, found: RbNode[] = []): RbNode[] {
   for (const child of children(node)) {
-    if (DECLARATION_TYPES.has(child.type)) {
+    if (OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
     if (child.type === "call" && !isPropertyRead(child) && !isRaise(child)) {

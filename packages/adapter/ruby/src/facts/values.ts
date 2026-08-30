@@ -2,7 +2,7 @@
 // The relation names and shapes come from that package's own header, and the
 // README says which Ruby constructs differ from the other adapters.
 
-import { field } from "../ast.js";
+import { field, OWN_BODY_TYPES } from "../ast.js";
 
 import type { Database } from "@suss/datalog";
 import type { RbNode } from "../parser.js";
@@ -19,16 +19,6 @@ export function nodeId(filePath: string, node: RbNode): string {
 function nameId(filePath: string, name: string): string {
   return `${filePath}#${name}`;
 }
-
-/** A body written in one of these belongs to the thing it declares. */
-const DECLARATION_TYPES = new Set([
-  "method",
-  "singleton_method",
-  "lambda",
-  "class",
-  "module",
-  "singleton_class",
-]);
 
 const WRITTEN_VALUE_TYPES = new Set([
   "string",
@@ -215,7 +205,7 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
 /** Every expression under a node, without crossing into a nested declaration. */
 function walkExpressions(node: RbNode, visit: (child: RbNode) => void): void {
   for (const child of children(node)) {
-    if (DECLARATION_TYPES.has(child.type)) {
+    if (OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
     visit(child);
@@ -286,7 +276,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
 
   const recordNested = (node: RbNode): void => {
     for (const child of children(node)) {
-      if (DECLARATION_TYPES.has(child.type)) {
+      if (OWN_BODY_TYPES.has(child.type)) {
         add(emitter, "containsFn", funcKey, nodeId(emitter.filePath, child));
         continue;
       }
