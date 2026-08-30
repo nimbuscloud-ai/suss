@@ -26,23 +26,23 @@ import type { FunctionRoot } from "../conditions.js";
 /**
  * Why the walk stopped.
  *
- * `noBody` is a declaration the project wrote that states a shape and
- * nothing else: a method on an interface, an abstract method, an ambient
- * declaration. `unsettledValue` is a callee the project declares as
- * something other than a function, a parameter or a field with something
- * in it that could not be read. `multipleSources` is a callee whose
- * chain reaches two different functions, a fallback whose branches both
- * resolve say, so no single body can be followed. `outsideRun` is a
- * declaration in a dependency, whose source this run never read.
- * `noDeclaration` is a callee nothing declares, which is what a call on
- * an untyped value comes to.
+ * `noBody` states a shape and nothing else: a method on an interface, an
+ * abstract method, an ambient declaration. `unsettledValue` is declared
+ * as something other than a function, with something in it that could
+ * not be read. `multipleSources` reaches two different functions, so no
+ * single body can be followed. `outsideRun` is a declaration in a
+ * dependency, whose source this run never read. `noDeclaration` is a
+ * callee nothing declares, which is what a call on an untyped value
+ * comes to. `callerSupplied` is a parameter of the function being
+ * scanned, so the call runs whatever its caller handed in.
  */
 export type UnfollowedReason =
   | "noBody"
   | "unsettledValue"
   | "multipleSources"
   | "outsideRun"
-  | "noDeclaration";
+  | "noDeclaration"
+  | "callerSupplied";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
@@ -173,11 +173,27 @@ export function declarationsBehind(symbol: TsSymbol | undefined): Node[] {
 }
 
 /**
- * Which kind of stop a call site is, given every declaration the type
- * checker offered for its callee. Asked only once the walk has failed to
- * reach a function with a body through any of them.
+ * Whether the callee is one of `scanning`'s own parameters. A call on
+ * one runs the function the caller passed, which no amount of resolving
+ * inside this body can settle.
  */
-export function classifyStop(declarations: readonly Node[]): UnfollowedReason {
+function isParameterOf(declaration: Node, scanning: FunctionRoot): boolean {
+  return (
+    Node.isParameterDeclaration(declaration) &&
+    declaration.getParent() === scanning
+  );
+}
+
+/**
+ * Which kind of stop a call site is, given every declaration the type
+ * checker offered for its callee, and the function whose body the call
+ * is in. Asked only once the walk has failed to reach a function with a
+ * body through any of them.
+ */
+export function classifyStop(
+  declarations: readonly Node[],
+  scanning?: FunctionRoot,
+): UnfollowedReason {
   if (declarations.length === 0) {
     return "noDeclaration";
   }
@@ -187,6 +203,12 @@ export function classifyStop(declarations: readonly Node[]): UnfollowedReason {
     if (!isInExternalCode(declaration.getSourceFile())) {
       recordFileDependency(declaration.getSourceFile().getFilePath());
     }
+  }
+  if (
+    scanning !== undefined &&
+    declarations.some((declaration) => isParameterOf(declaration, scanning))
+  ) {
+    return "callerSupplied";
   }
   if (declarations.every(isExternalDeclaration)) {
     return "outsideRun";
@@ -198,11 +220,12 @@ export function classifyStop(declarations: readonly Node[]): UnfollowedReason {
 }
 
 /**
- * Whether a stop of this kind leaves a gap. The two that are left out
- * fail the same test: nothing about either says the callee is code the
- * project owns, so a gap on them buys volume rather than a place to
+ * Whether a stop of this kind leaves a gap. The three that are left out
+ * fail the same test: nothing about any of them says the callee is code
+ * the project owns, so a gap on them buys volume rather than a place to
  * look. The run already describes a call into a dependency, as a
- * boundary crossing, and a call on an untyped value could go anywhere.
+ * boundary crossing; a call on an untyped value could go anywhere; and a
+ * call on a parameter runs whichever function each caller passes.
  */
 const RECORDED: Record<UnfollowedReason, boolean> = {
   noBody: true,
@@ -210,6 +233,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   multipleSources: true,
   outsideRun: false,
   noDeclaration: false,
+  callerSupplied: false,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -231,6 +255,8 @@ const STOP_SENTENCE: Record<UnfollowedReason, (callee: string) => string> = {
     `The call to ${callee} lands in a package whose source is not in this run, so whatever runs there is missing from this summary`,
   noDeclaration: (callee) =>
     `The call to ${callee} has no declaration this run could find, so whatever runs there is missing from this summary`,
+  callerSupplied: (callee) =>
+    `The call to ${callee} runs the function this unit's caller passed in, so what happens there is decided at the call site`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {

@@ -2,7 +2,7 @@
 // code the project wrote. Each test lays out one callee shape and asks
 // what the closure would say about it.
 
-import { Node } from "ts-morph";
+import { type CallExpression, Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -14,12 +14,8 @@ import {
   worthRecording,
 } from "./unfollowedCall.js";
 
-/**
- * Every declaration the type checker offers for the callee of the last
- * call written in `/use.ts`, which is what the closure hands the
- * classifier once it has failed to reach a body through any of them.
- */
-function calleeDeclarations(files: Record<string, string>): Node[] {
+/** The last call written in `/use.ts`, which every case here ends with. */
+function lastCall(files: Record<string, string>): CallExpression {
   const project = createTestProject();
   for (const [path, contents] of Object.entries(files)) {
     project.createSourceFile(path, contents);
@@ -32,7 +28,16 @@ function calleeDeclarations(files: Record<string, string>): Node[] {
   if (last === undefined) {
     throw new Error("No call expression in /use.ts");
   }
-  return declarationsBehind(last.getExpression().getSymbol());
+  return last;
+}
+
+/**
+ * Every declaration the type checker offers for that call's callee,
+ * which is what the closure hands the classifier once it has failed to
+ * reach a body through any of them.
+ */
+function calleeDeclarations(files: Record<string, string>): Node[] {
+  return declarationsBehind(lastCall(files).getExpression().getSymbol());
 }
 
 describe("classifyStop", () => {
@@ -83,7 +88,7 @@ describe("classifyStop", () => {
     expect(classifyStop(declarations)).toBe("noBody");
   });
 
-  it("calls a parameter a value that was never settled", () => {
+  it("calls a parameter a value that was never settled when nothing says whose body this is", () => {
     const declarations = calleeDeclarations({
       "/use.ts": `
         export function go(next: (id: string) => void, id: string) {
@@ -93,6 +98,46 @@ describe("classifyStop", () => {
     });
 
     expect(classifyStop(declarations)).toBe("unsettledValue");
+  });
+
+  it("calls a parameter of the scanned function a call its caller supplied", () => {
+    const call = lastCall({
+      "/use.ts": `
+        export function go(next: (id: string) => void, id: string) {
+          next(id);
+        }
+      `,
+    });
+    const scanning = call.getFirstAncestorByKindOrThrow(
+      SyntaxKind.FunctionDeclaration,
+    );
+
+    expect(
+      classifyStop(
+        declarationsBehind(call.getExpression().getSymbol()),
+        scanning,
+      ),
+    ).toBe("callerSupplied");
+  });
+
+  it("calls a parameter of an enclosing function a value that was never settled", () => {
+    const call = lastCall({
+      "/use.ts": `
+        export function go(next: (id: string) => void, ids: string[]) {
+          ids.forEach((id) => { next(id); });
+        }
+      `,
+    });
+    const scanning = call.getFirstAncestorByKindOrThrow(
+      SyntaxKind.ArrowFunction,
+    );
+
+    expect(
+      classifyStop(
+        declarationsBehind(call.getExpression().getSymbol()),
+        scanning,
+      ),
+    ).toBe("unsettledValue");
   });
 
   it("calls a field a value that was never settled", () => {
@@ -194,6 +239,10 @@ describe("worthRecording", () => {
   it("leaves out a call on an untyped value, which says nothing about who owns the callee", () => {
     expect(worthRecording("noDeclaration")).toBe(false);
   });
+
+  it("leaves out a call on a parameter, which runs whatever each caller passes", () => {
+    expect(worthRecording("callerSupplied")).toBe(false);
+  });
 });
 
 describe("unfollowedCallGap", () => {
@@ -213,5 +262,12 @@ describe("unfollowedCallGap", () => {
     const gap = unfollowedCallGap({ callee: "next", reason: "unsettledValue" });
 
     expect(gap.description).toContain("could not settle");
+  });
+
+  it("blames nothing on resolution when the caller supplied the callee", () => {
+    const gap = unfollowedCallGap({ callee: "next", reason: "callerSupplied" });
+
+    expect(gap.description).toContain("caller passed in");
+    expect(gap.description).not.toContain("could not settle");
   });
 });

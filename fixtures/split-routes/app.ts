@@ -12,7 +12,7 @@ export function build(): Hono {
   const root = new Hono();
   const api = new Hono();
 
-  api.use("/*", requireCaller);
+  api.use("/v1/*", requireCaller);
 
   registerThings(api);
   mountUsers(api);

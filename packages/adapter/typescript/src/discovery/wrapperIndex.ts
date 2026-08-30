@@ -8,12 +8,13 @@
  * up in a route's contract and in no handler. The function is usually
  * written in another file than the app registering it, so finding it
  * means asking the store the question `registrationCall` already asks.
- *
- * A wrapper found here becomes a unit of its own and is summarized like
- * any other. The edge built here is a reference to that summary.
+ * A wrapper found here becomes a unit of its own, summarized like any
+ * other, and the edge built here is a reference to that summary.
  */
 
 import { Node, type SourceFile } from "ts-morph";
+
+import { joinMountedPath } from "@suss/resolution";
 
 import { nodeId } from "../facts/extract.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
@@ -28,6 +29,7 @@ import type { WrapperReference } from "@suss/behavioral-ir";
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
+import type { MountPrefixIndex } from "./registrationCall.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 export type { WrapperReference };
@@ -94,6 +96,7 @@ export interface WrapperCandidate {
 export function buildWrapperIndex(
   packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>,
   resolution: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
 ): WrapperIndex {
   // Kept per pack, because which registrations one pack's candidates
   // are the narrowest reading of is a question about that pack alone.
@@ -135,6 +138,7 @@ export function buildWrapperIndex(
           match,
           wraps,
           resolution,
+          mountPrefixes,
         ),
       );
     }
@@ -219,6 +223,7 @@ export function discoverWrapperRegistrations(
   match: RegistrationMatch,
   wraps: WrapsPattern,
   resolution?: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
 ): WrapperCandidate[] {
   const subjects = registrationSubjectsOf(
     sourceFile,
@@ -279,9 +284,15 @@ export function discoverWrapperRegistrations(
       return;
     }
 
+    const subjectId = nodeId(subjectNode);
+    const mountedScope =
+      scope === undefined
+        ? undefined
+        : mountedAt(subjectId, mountPrefixes, scope);
+
     const named = functionNameOrAnon(target) !== ANONYMOUS;
     candidates.push({
-      subjectId: nodeId(subjectNode),
+      subjectId,
       callId: nodeId(node),
       targetId: nodeId(target),
       byArity: wraps.arity !== undefined,
@@ -295,12 +306,29 @@ export function discoverWrapperRegistrations(
         // of its own, so it goes by the method that registered it.
         name: named ? functionNameOrAnon(target) : wraps.method,
         ...(wraps.throwParam === undefined ? {} : { onThrow: true }),
-        ...(scope === undefined ? {} : { scope }),
+        ...(mountedScope === undefined ? {} : { scope: mountedScope }),
       },
     });
   });
 
   return candidates;
+}
+
+/**
+ * `scope` with the prefix its router was mounted under folded in, so it
+ * is written in the same terms as the paths of the routes it covers.
+ *
+ * A mount chain that cannot be stated composes to nothing here, which
+ * leaves the scope as written. That is what a route does with its own
+ * path in the same situation, and the two stay comparable.
+ */
+function mountedAt(
+  subjectId: string,
+  mountPrefixes: MountPrefixIndex | undefined,
+  scope: string,
+): string {
+  const prefix = mountPrefixes?.prefixForId?.(subjectId) ?? "";
+  return joinMountedPath(prefix, scope);
 }
 
 /**

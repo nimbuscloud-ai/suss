@@ -3,10 +3,10 @@
     "packages": 64,
     "packagesWithExports": 64,
     "exports": 649,
-    "internal": 2349,
-    "consumers": 1122,
-    "pairs": 1103,
-    "unfollowedCalls": 250,
+    "internal": 2350,
+    "consumers": 1123,
+    "pairs": 1104,
+    "unfollowedCalls": 173,
     "findingErrors": 0
   },
   "packages": {
@@ -15,35 +15,35 @@
       "exports": 51,
       "internal": 177,
       "consumers": 58,
-      "unfollowedCalls": 14
+      "unfollowedCalls": 8
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 46,
       "internal": 111,
       "consumers": 16,
-      "unfollowedCalls": 11
+      "unfollowedCalls": 4
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 75,
-      "internal": 801,
-      "consumers": 105,
-      "unfollowedCalls": 82
+      "internal": 802,
+      "consumers": 106,
+      "unfollowedCalls": 63
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
       "exports": 76,
       "internal": 20,
       "consumers": 4,
-      "unfollowedCalls": 2
+      "unfollowedCalls": 0
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 40,
       "internal": 227,
       "consumers": 145,
-      "unfollowedCalls": 29
+      "unfollowedCalls": 18
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -57,7 +57,7 @@
       "exports": 21,
       "internal": 387,
       "consumers": 234,
-      "unfollowedCalls": 44
+      "unfollowedCalls": 34
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -148,7 +148,7 @@
       "exports": 6,
       "internal": 38,
       "consumers": 18,
-      "unfollowedCalls": 2
+      "unfollowedCalls": 1
     },
     "packages/contract/wrangler": {
       "name": "@suss/contract-wrangler",
@@ -162,14 +162,14 @@
       "exports": 27,
       "internal": 58,
       "consumers": 0,
-      "unfollowedCalls": 11
+      "unfollowedCalls": 6
     },
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 31,
       "internal": 44,
       "consumers": 13,
-      "unfollowedCalls": 7
+      "unfollowedCalls": 3
     },
     "packages/framework/activerecord": {
       "name": "@suss/framework-activerecord",
@@ -225,7 +225,7 @@
       "exports": 5,
       "internal": 27,
       "consumers": 8,
-      "unfollowedCalls": 5
+      "unfollowedCalls": 3
     },
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
@@ -393,21 +393,21 @@
       "exports": 63,
       "internal": 14,
       "consumers": 0,
-      "unfollowedCalls": 11
+      "unfollowedCalls": 10
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
       "exports": 16,
       "internal": 25,
       "consumers": 1,
-      "unfollowedCalls": 1
+      "unfollowedCalls": 0
     },
     "packages/mcp": {
       "name": "@suss/mcp",
       "exports": 6,
       "internal": 13,
       "consumers": 7,
-      "unfollowedCalls": 2
+      "unfollowedCalls": 0
     },
     "packages/packs": {
       "name": "@suss/packs",
@@ -421,14 +421,14 @@
       "exports": 12,
       "internal": 35,
       "consumers": 6,
-      "unfollowedCalls": 5
+      "unfollowedCalls": 2
     },
     "packages/resolution": {
       "name": "@suss/resolution",
       "exports": 6,
       "internal": 8,
       "consumers": 46,
-      "unfollowedCalls": 7
+      "unfollowedCalls": 4
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
