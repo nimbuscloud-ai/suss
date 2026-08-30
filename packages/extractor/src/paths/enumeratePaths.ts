@@ -25,7 +25,7 @@ import type {
 } from "./structuredStatement.js";
 
 /** The cap on how many paths to enumerate. Past it the caller falls back to degraded conditions. */
-const MAX_PATHS = 256;
+export const MAX_PATHS = 256;
 
 /** A construct the lowering step will not model safely, such as switch and case rules the enumeration does not cover. Callers catch this and degrade. */
 export class UnmodeledFlow extends Error {}

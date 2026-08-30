@@ -13,6 +13,7 @@ import {
   isDescentStop,
   NO_BARRIERS,
 } from "../walk/descent.js";
+import { tryMatchParameterCall } from "./continuation.js";
 import { tryMatchJsxReturn } from "./jsx.js";
 import {
   tryMatchFunctionCall,
@@ -129,6 +130,8 @@ export function findTerminals(
           resolveWrittenValue,
           originatesFrom,
         );
+      } else if (pattern.match.type === "parameterCall") {
+        found = tryMatchParameterCall(node, func, pattern, pattern.match);
       }
       // `functionFallthrough` is not matched per-node: the assembly
       // pass emits it as a branch-level fallback when no other

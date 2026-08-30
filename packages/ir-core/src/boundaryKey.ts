@@ -135,3 +135,13 @@ export function servesRequest(
 
   return serves(binding.semantics, method, path);
 }
+
+/**
+ * Whether a wrapper registered for `scope` runs for this boundary.
+ * False for a protocol whose boundaries no pattern addresses, so a
+ * scoped registration reaches nothing it cannot be shown to cover.
+ */
+export function withinScope(binding: BoundaryBinding, scope: string): boolean {
+  const within = behaviorOf(binding.semantics).withinScope;
+  return within === undefined ? false : within(binding.semantics, scope);
+}

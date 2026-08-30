@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { servesRequest } from "../boundaryKey.js";
+import { servesRequest, withinScope } from "../boundaryKey.js";
 import { restSemantics, routePathAdmits } from "./rest.js";
 
 import type { BoundaryBinding } from "../index.js";
@@ -66,6 +66,29 @@ describe("restSemantics servesRequest", () => {
     expect(
       serves({ name: "rest", method: "GET", path: null }, "GET", "/orders"),
     ).toBe("unknown");
+  });
+});
+
+describe("withinScope through the registry", () => {
+  const scoped = (path: string | null): BoundaryBinding => ({
+    transport: "http",
+    semantics: { name: "rest", method: "GET", path },
+    recognition: "test",
+  });
+
+  it("puts a route the pattern admits inside it, and leaves the rest out", () => {
+    expect(withinScope(scoped("/v1/tenants/{id}"), "/v1/*")).toBe(true);
+    expect(withinScope(scoped("/health"), "/v1/*")).toBe(false);
+    expect(withinScope(scoped(null), "/v1/*")).toBe(false);
+  });
+
+  it("leaves a protocol no pattern addresses out of every scope", () => {
+    const binding: BoundaryBinding = {
+      transport: "queue",
+      semantics: { name: "message-bus", messageBus: "aws_sqs", channel: null },
+      recognition: "test",
+    };
+    expect(withinScope(binding, "/v1/*")).toBe(false);
   });
 });
 

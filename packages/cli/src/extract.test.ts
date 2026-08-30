@@ -751,6 +751,32 @@ describe("relativizeSummaryPaths", () => {
       ],
     });
   });
+
+  it("rewrites the file on an outcome a wrapper contributed", () => {
+    const summary = {
+      location: { file: "/repo/src/app.ts", range: { start: 1, end: 2 } },
+      transitions: [
+        {
+          output: { type: "return" },
+          metadata: {
+            wrappers: {
+              from: {
+                file: "/repo/src/requireCaller.ts",
+                name: "requireCaller",
+              },
+            },
+          },
+        },
+      ],
+      identity: { name: "get", exportPath: [], boundaryBinding: null },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo");
+
+    expect(summary.transitions[0].metadata?.wrappers).toEqual({
+      from: { file: "src/requireCaller.ts", name: "requireCaller" },
+    });
+  });
 });
 
 describe("relativizeRenderTargets", () => {

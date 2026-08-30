@@ -8,7 +8,6 @@ import {
   type Identifier,
   Node,
   type ObjectLiteralExpression,
-  type ParameterDeclaration,
   type ReturnStatement,
 } from "ts-morph";
 
@@ -22,7 +21,11 @@ import {
   extractStatusCode,
 } from "./extract.js";
 import { type ResolveCallee, resolveHelperReturn } from "./helperResolution.js";
-import { returnPositionOf, unwrapValue } from "./shared.js";
+import {
+  parameterPositionOf,
+  returnPositionOf,
+  unwrapValue,
+} from "./shared.js";
 import { statusChoicesOf } from "./statusBranches.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
@@ -68,28 +71,7 @@ function unwrapMethodChain(
 
     if (i === 0) {
       // The subject of the innermost method call must be a parameter identifier
-      if (!Node.isIdentifier(subject)) {
-        return null;
-      }
-
-      const symbol = subject.getSymbol();
-      if (symbol === undefined) {
-        return null;
-      }
-
-      const decls = symbol.getDeclarations();
-      if (decls.length === 0) {
-        return null;
-      }
-
-      const decl = decls[0];
-      if (!Node.isParameterDeclaration(decl)) {
-        return null;
-      }
-
-      const params = func.getParameters() as ParameterDeclaration[];
-      const idx = params.indexOf(decl as ParameterDeclaration);
-      if (idx !== paramPos) {
+      if (parameterPositionOf(subject, func) !== paramPos) {
         return null;
       }
     } else {

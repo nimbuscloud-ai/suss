@@ -216,6 +216,14 @@ export const restSemantics = defineBoundarySemantics({
       return routePathAdmits(semantics.path, path) ? "match" : "nomatch";
     },
     /**
+     * A route the registration pattern admits is inside it. A route
+     * whose path this source never gave is left outside, because
+     * nothing here can show it is one the pattern covers.
+     */
+    withinScope(semantics, scope) {
+      return semantics.path !== null && routePathAdmits(scope, semantics.path);
+    },
+    /**
      * A call whose base URL the deployment fills in, resolved to the
      * path it reaches.
      *

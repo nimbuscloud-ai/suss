@@ -58,6 +58,28 @@ const summary = assembleSummary(raw);
 // summary.transitions[0].output.type === "response"
 ```
 
+## Composing the wrappers around a unit
+
+A route's wire behaviour is not only what its own body does. Middleware, error handlers and validation hooks produce responses for it without appearing in it, which is why a service whose auth middleware returns 401 used to look like every route disagreed with its contract.
+
+A wrapper is a meta-function: it takes a unit and returns a unit. Its own body says what it does once you know which call is the continuation, so the adapter reads the call to that parameter as a `delegate` terminal. A path through the wrapper that reaches it hands control to the wrapped unit; a path that ends first responds on its own.
+
+```
+composed = the wrapper's short circuits
+         + (its pass-throughs x the wrapped unit's transitions)
+```
+
+`composeWrappers` runs that over a whole run's summaries. It reads the `wrappers` metadata a unit records, finds each wrapper's summary by file and name, and folds them innermost first, the way `mw1(mw2(handler))` reads. A wrapper the framework only calls on a throw goes on last and replaces the paths that ended by throwing with its own response. Every transition a wrapper contributed records which one, under `wrappers.from`, so a reader asking why a route returns 401 lands in the middleware.
+
+What it does not read:
+
+- **Anything after the continuation returns.** A middleware that inspects the response on the way back out is read up to the `next()` call and no further.
+- **A wrapper whose continuation the pack does not declare, or whose call the walk cannot see.** Nothing says where control passes on, so the wrapper's outcomes are reported beside the unit's own rather than around them.
+- **A throw the walk never saw.** An error handler composes over the paths that end by throwing, so a route whose 500 comes from a call the walk could not follow still does not report 500.
+- **Registration order against route order.** A wrapper registered after a route still composes into it.
+
+Composition multiplies paths, so it is capped by the same `MAX_PATHS` budget path enumeration uses. Past it the two sides are reported side by side and the unit gets a gap saying so.
+
 ## Coverage
 
 ![coverage](../../.github/badges/coverage-extractor.svg)

@@ -49,7 +49,11 @@ import type {
   ExtractionReport,
   TimingReport,
 } from "@suss/adapter-typescript";
-import type { BehavioralSummary, RenderNode } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  RenderNode,
+  WrapperReference,
+} from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 import type { z } from "zod";
 import type { Diagnosis } from "./diagnosis.js";
@@ -1256,23 +1260,41 @@ export function relativizeSummaryPaths(
   relativizeWrapperPaths(summary, projectRoot);
 }
 
-/** The file each wrapper around this unit is declared in. */
+/** The file each wrapper around this unit is declared in, on the unit and on the outcomes it contributed. */
 function relativizeWrapperPaths(
   summary: BehavioralSummary,
   projectRoot: string,
 ): void {
   const wrappers = readWrapperMetadata(summary);
-  if (wrappers === undefined || wrappers.applied.length === 0) {
-    return;
+  const applied = wrappers?.applied ?? [];
+  if (applied.length > 0) {
+    summary.metadata = withWrapperMetadata(summary.metadata, {
+      applied: applied.map((wrapper) =>
+        relativizeWrapper(wrapper, projectRoot),
+      ),
+    });
   }
-  summary.metadata = withWrapperMetadata(summary.metadata, {
-    applied: wrappers.applied.map((wrapper) => ({
-      ...wrapper,
-      file: path.isAbsolute(wrapper.file)
-        ? path.relative(projectRoot, wrapper.file)
-        : wrapper.file,
-    })),
-  });
+  for (const transition of summary.transitions) {
+    const from = readWrapperMetadata(transition)?.from;
+    if (from === undefined) {
+      continue;
+    }
+    transition.metadata = withWrapperMetadata(transition.metadata, {
+      from: relativizeWrapper(from, projectRoot),
+    });
+  }
+}
+
+function relativizeWrapper(
+  wrapper: WrapperReference,
+  projectRoot: string,
+): WrapperReference {
+  return {
+    ...wrapper,
+    file: path.isAbsolute(wrapper.file)
+      ? path.relative(projectRoot, wrapper.file)
+      : wrapper.file,
+  };
 }
 
 export function relativizeRenderTargets(

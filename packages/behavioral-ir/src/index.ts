@@ -79,6 +79,7 @@ export {
   runtimeConfigBinding,
   semconvAttributes,
   storageBinding,
+  withinScope,
   withRewrittenPaths,
 } from "@suss/ir-core";
 
@@ -130,6 +131,7 @@ export {
   type StorageContractMetadata,
   type StorybookMetadata,
   type WrapperMetadata,
+  type WrapperReference,
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,

@@ -169,21 +169,30 @@ const WrapperReferenceSchema = z.object({
 });
 
 const WrapperMetadataSchema = z.object({
-  /** Every wrapper registered on the routable this unit was registered on. */
-  applied: z.array(WrapperReferenceSchema),
+  /** Every wrapper registered on the routable this unit was registered on. Set on a summary. */
+  applied: z.array(WrapperReferenceSchema).optional(),
+  /**
+   * Set on a transition composition brought in: the wrapper whose body
+   * produced this outcome. A transition the unit's own body produced
+   * has none, which is how a reader tells the two apart.
+   */
+  from: WrapperReferenceSchema.optional(),
 });
 
 export type WrapperMetadata = z.infer<typeof WrapperMetadataSchema>;
+
+/** One wrapper as the unit it runs around refers to it. */
+export type WrapperReference = z.infer<typeof WrapperReferenceSchema>;
 
 /**
  * A handler's wire behaviour is not only what its own body does.
  * Middleware, error handlers and validation hooks produce responses for
  * it without appearing in it, so a unit records which ones run around
- * it.
+ * it, and each outcome one of them contributed says which one that was.
  *
- * Each entry points at the wrapper's own summary the way
+ * An `applied` entry points at the wrapper's own summary the way
  * `sourceDocument` points at a schema. What the wrapper does lives on
- * that summary, in its transitions, and is never copied here.
+ * that summary, in its transitions.
  */
 export function withWrapperMetadata(
   metadata: Record<string, unknown> | undefined,
@@ -195,10 +204,16 @@ export function withWrapperMetadata(
   };
 }
 
+/**
+ * The wrappers namespace on a summary or one of its transitions.
+ * `applied` lives on the summary and `from` on the transition, and both
+ * carriers have a `metadata` bag of the same kind, so one reader covers
+ * both.
+ */
 export function readWrapperMetadata(
-  summary: BehavioralSummary,
+  carrier: BehavioralSummary | Transition,
 ): WrapperMetadata | undefined {
-  return readNamespace(WrapperMetadataSchema, summary.metadata?.wrappers);
+  return readNamespace(WrapperMetadataSchema, carrier.metadata?.wrappers);
 }
 
 const EnvVarSourceSchema = z.enum(["template", "globals", "platform"]);

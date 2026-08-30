@@ -175,6 +175,41 @@ describe("inspect, a route the wrappers cover", () => {
     );
   });
 
+  it("says which wrapper produced an outcome the route's own body does not", () => {
+    const route = wrapped([
+      { file: "src/requireCaller.ts", name: "requireCaller" },
+    ]);
+    withSummaries(
+      [
+        {
+          ...route,
+          transitions: [
+            {
+              id: "denied",
+              conditions: [],
+              output: {
+                type: "response",
+                statusCode: { type: "literal", value: 401 },
+                body: null,
+                headers: {},
+              },
+              effects: [],
+              location: { start: 3, end: 3 },
+              isDefault: false,
+              metadata: withWrapperMetadata(undefined, {
+                from: { file: "src/requireCaller.ts", name: "requireCaller" },
+              }),
+            },
+          ],
+        },
+      ],
+      (file) => {
+        const { output } = captureStdout(() => inspect({ file }));
+        expect(output).toContain("-> 401  (from requireCaller)");
+      },
+    );
+  });
+
   it("counts the wrappers it has no room to list", () => {
     withSummaries(
       [

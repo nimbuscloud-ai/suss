@@ -7,6 +7,7 @@ import { requireCaller } from "./requireCaller";
 
 declare const store: {
   read(id: string): Promise<{ id: string; status: string } | null>;
+  create(name: string): Promise<{ id: string; status: string }>;
 };
 
 const app = new Hono();
@@ -25,6 +26,22 @@ app.get("/v1/tenants/:id", async (c) => {
   }
 
   return c.json(tenant, 200);
+});
+
+app.post("/v1/tenants", async (c) => {
+  const body = await c.req.json();
+
+  if (typeof body.name !== "string") {
+    throw new Error("name is required");
+  }
+
+  return c.json(await store.create(body.name), 201);
+});
+
+// Outside the middleware's pattern, so nothing asks this one for a
+// caller and it returns 200 to anybody.
+app.get("/health", (c) => {
+  return c.json({ status: "ok" }, 200);
 });
 
 export default app;

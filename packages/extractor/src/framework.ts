@@ -784,6 +784,18 @@ export type TerminalMatch =
        * `useEffect` bodies, Node `.on(...)` callbacks) should include it.
        */
       type: "functionFallthrough";
+    }
+  | {
+      /**
+       * A call to the parameter at this position, `next()` inside a
+       * middleware. Nothing declares this in a pack: the adapter builds
+       * it from `DiscoveryPattern.wraps.continuationParam`, so a
+       * wrapper's path that hands control on ends in a `delegate`
+       * output and a path that responds first does not. That is how
+       * composition tells the two apart.
+       */
+      type: "parameterCall";
+      parameterPosition: number;
     };
 
 export interface TerminalExtraction {
@@ -821,8 +833,8 @@ export interface TerminalExtraction {
 }
 
 export interface TerminalPattern {
-  /** What kind of output this terminal produces: "response", "throw", "return", "render" */
-  kind: "response" | "throw" | "return" | "render";
+  /** What kind of output this terminal produces: "response", "throw", "return", "render", "delegate" */
+  kind: "response" | "throw" | "return" | "render" | "delegate";
   match: TerminalMatch;
   extraction: TerminalExtraction;
   /**

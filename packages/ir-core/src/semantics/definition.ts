@@ -94,6 +94,17 @@ export interface BoundaryBehavior<S extends { name: string }> {
   servesRequest?(semantics: S, method: string, path: string): MatchResult;
 
   /**
+   * Whether every request this boundary takes falls inside a pattern
+   * something else was registered for. Middleware registered for
+   * `/v1/*` runs for `/v1/tenants/{id}` and not for `/health`, so
+   * composing it into a unit asks this first.
+   *
+   * A protocol whose boundaries no pattern addresses leaves this
+   * undefined, and nothing registered with a pattern reaches them.
+   */
+  withinScope?(semantics: S, scope: string): boolean;
+
+  /**
    * The same boundary with a name the deployment fills in put in.
    *
    * A call written as `fetch(`${process.env.API_BASE}/orders`)` gets
