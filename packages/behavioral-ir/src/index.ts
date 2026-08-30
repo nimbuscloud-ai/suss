@@ -124,10 +124,12 @@ export {
   readSourceDocumentMetadata,
   readStorageContractMetadata,
   readStorybookMetadata,
+  readWrapperMetadata,
   type SourceDocumentMetadata,
   SourceDocumentMetadataSchema,
   type StorageContractMetadata,
   type StorybookMetadata,
+  type WrapperMetadata,
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,
@@ -135,6 +137,7 @@ export {
   withRoutingMetadata,
   withRuntimeContractMetadata,
   withSourceDocumentMetadata,
+  withWrapperMetadata,
 } from "./metadata.js";
 export {
   type DocumentLabelParts,

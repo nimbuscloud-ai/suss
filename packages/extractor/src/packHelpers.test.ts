@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   httpRouteDiscovery,
   registrationHelperDiscovery,
+  wrapperDiscovery,
 } from "./packHelpers.js";
 
 describe("httpRouteDiscovery", () => {
@@ -113,6 +114,47 @@ describe("httpRouteDiscovery", () => {
       methods: [".get"],
     });
     expect(patterns[0].mount).toBeUndefined();
+  });
+});
+
+describe("wrapperDiscovery", () => {
+  it("gives one pattern per import name and wrapper shape", () => {
+    const patterns = wrapperDiscovery({
+      importModule: "express",
+      importNames: ["Router", "express"],
+      wraps: [
+        { method: "use", targetPosition: 0 },
+        { method: "use", targetPosition: 0, throwParam: 0, arity: 4 },
+      ],
+    });
+
+    expect(patterns).toHaveLength(4);
+    expect(patterns.map((one) => one.kind)).toEqual([
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+    ]);
+    expect(patterns[0].wraps).toEqual({ method: "use", targetPosition: 0 });
+    expect(patterns[1].wraps?.arity).toBe(4);
+    expect(patterns[0].requiresImport).toEqual(["express"]);
+  });
+
+  it("registers no routes of its own, so its chain is empty", () => {
+    const patterns = wrapperDiscovery({
+      importModule: "hono",
+      importNames: ["Hono"],
+      wraps: [{ method: "onError", targetPosition: 0, throwParam: 0 }],
+      kind: "handler",
+    });
+
+    expect(patterns[0].kind).toBe("handler");
+    expect(patterns[0].bindingExtraction).toBeUndefined();
+    expect(
+      patterns[0].match.type === "registrationCall"
+        ? patterns[0].match.registrationChain
+        : null,
+    ).toEqual([]);
   });
 });
 

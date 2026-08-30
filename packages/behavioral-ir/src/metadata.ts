@@ -154,6 +154,53 @@ export function readMountMetadata(
   return readNamespace(MountMetadataSchema, summary.metadata?.mount);
 }
 
+const WrapperReferenceSchema = z.object({
+  /** The file the wrapper is declared in, where its own summary is. */
+  file: z.string(),
+  /** The name that summary goes by in that file. */
+  name: z.string(),
+  /**
+   * True when the framework invokes the wrapper only for a request that
+   * ended by throwing, which is how an error handler is called.
+   */
+  onThrow: z.boolean().optional(),
+  /** The path pattern the registration narrowed the wrapper to, if any. */
+  scope: z.string().optional(),
+});
+
+const WrapperMetadataSchema = z.object({
+  /** Every wrapper registered on the routable this unit was registered on. */
+  applied: z.array(WrapperReferenceSchema),
+});
+
+export type WrapperMetadata = z.infer<typeof WrapperMetadataSchema>;
+
+/**
+ * A handler's wire behaviour is not only what its own body does.
+ * Middleware, error handlers and validation hooks produce responses for
+ * it without appearing in it, so a unit records which ones run around
+ * it.
+ *
+ * Each entry points at the wrapper's own summary the way
+ * `sourceDocument` points at a schema. What the wrapper does lives on
+ * that summary, in its transitions, and is never copied here.
+ */
+export function withWrapperMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: WrapperMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    wrappers: WrapperMetadataSchema.strict().parse(value),
+  };
+}
+
+export function readWrapperMetadata(
+  summary: BehavioralSummary,
+): WrapperMetadata | undefined {
+  return readNamespace(WrapperMetadataSchema, summary.metadata?.wrappers);
+}
+
 const EnvVarSourceSchema = z.enum(["template", "globals", "platform"]);
 
 /**

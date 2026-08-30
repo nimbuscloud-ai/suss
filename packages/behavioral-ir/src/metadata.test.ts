@@ -16,6 +16,7 @@ import {
   readSourceDocumentMetadata,
   readStorageContractMetadata,
   readStorybookMetadata,
+  readWrapperMetadata,
   withGraphqlMetadata,
   withHttpMetadata,
   withMessageBusMetadata,
@@ -23,6 +24,7 @@ import {
   withRoutingMetadata,
   withRuntimeContractMetadata,
   withSourceDocumentMetadata,
+  withWrapperMetadata,
 } from "./index.js";
 
 import type { BehavioralSummary, Transition } from "./index.js";
@@ -83,6 +85,37 @@ describe("the mount metadata namespace", () => {
         extra: true,
       } as never),
     ).toThrow();
+  });
+});
+
+describe("the wrappers metadata namespace", () => {
+  it("round-trips a reference to each wrapper around the unit", () => {
+    const summary = summaryWith(
+      withWrapperMetadata(undefined, {
+        applied: [
+          { file: "src/requireCaller.ts", name: "requireCaller", scope: "/v1" },
+          { file: "src/app.ts", name: "onError", onThrow: true },
+        ],
+      }),
+    );
+
+    expect(readWrapperMetadata(summary)?.applied).toEqual([
+      { file: "src/requireCaller.ts", name: "requireCaller", scope: "/v1" },
+      { file: "src/app.ts", name: "onError", onThrow: true },
+    ]);
+  });
+
+  it("throws on a field the schema does not declare", () => {
+    expect(() =>
+      withWrapperMetadata(undefined, {
+        applied: [],
+        extra: true,
+      } as never),
+    ).toThrow();
+  });
+
+  it("gives back nothing when the summary has no wrappers", () => {
+    expect(readWrapperMetadata(summaryWith(undefined))).toBeUndefined();
   });
 });
 
