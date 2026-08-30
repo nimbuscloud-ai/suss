@@ -33,6 +33,37 @@ export const IntentSourceSchema = z
   .enum(["author", "inferred", "inferred, curated"])
   .default("author");
 
+/** The provenance of a doc `suss infer` wrote and nobody has curated. */
+const UNCURATED_SOURCE = "inferred";
+
+/** The fields somebody supplies while curating, which the code cannot. */
+const CURATED_FIELDS = ["purpose", "audience"];
+
+/**
+ * The blanks a draft is still waiting on, given which fields its schema
+ * failures landed on. Empty for a doc that failed some other way, so a
+ * reader can tell an uncurated draft from a broken file.
+ *
+ * `suss infer intent` writes those fields empty, which the schema
+ * rejects on purpose: an uncurated draft is not something to check yet,
+ * and a placeholder that validated would read as finished.
+ */
+export function blanksLeftEmpty(
+  doc: unknown,
+  failedFields: string[],
+): string[] {
+  if ((doc as { source?: unknown }).source !== UNCURATED_SOURCE) {
+    return [];
+  }
+  if (
+    failedFields.length === 0 ||
+    !failedFields.every((field) => CURATED_FIELDS.includes(field))
+  ) {
+    return [];
+  }
+  return CURATED_FIELDS.filter((blank) => failedFields.includes(blank));
+}
+
 // ---------------------------------------------------------------------------
 // Body shapes: friendly authoring form (object with primitive-typed
 // properties). Maps onto @suss/ir-core's TypeShape in ./summary.ts.

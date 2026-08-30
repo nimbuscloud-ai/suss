@@ -25,14 +25,16 @@ answer rather than rendering one is
 [`inspect --flow`](#suss-inspect-flow), which walks the routing a set of
 summaries declares to work out who serves a request.
 
-Four more commands are outside the pipeline. `suss init` works out which
+Five more commands are outside the pipeline. `suss init` works out which
 packs your project needs and offers to set them up. `suss ask`
 ([below](#suss-ask)) answers one question about one boundary from
 summaries already on disk. `suss corroborate` (experimental,
 [below](#suss-corroborate-experimental)) executes handlers against their
 own summaries. `suss infer stub` ([below](#suss-infer-stub)) writes the
 skeleton of a [dependency stub](/dependency-stubs) from the project's
-observed calls into a package extraction cannot read.
+observed calls into a package extraction cannot read. `suss infer intent`
+([below](#suss-infer-intent)) writes starting intent docs from a
+summaries file, one per boundary, for a person to curate.
 
 ## `suss init`
 
@@ -1034,6 +1036,105 @@ root; an existing file is never overwritten. `-o` picks another path, and
 
 - `0`: a draft was written (or printed).
 - `1`: no calls into the package were found, so there was nothing to draft.
+
+## `suss infer intent`
+
+```bash
+suss infer intent --from <summaries.json> [-o <directory> | --into <directory>]
+```
+
+Writes one [boundary intent doc](/contracts) per boundary in a summaries
+file, from what the code does today, for a team adopting the intent layer
+on a codebase that already exists.
+
+```bash
+suss extract -p tsconfig.json -f express -o summaries/code.json
+suss infer intent --from summaries/code.json --out intent/
+```
+
+A drafted doc for `GET /users/:id` reads:
+
+```yaml
+# Inferred from summaries/code.json. Written from what the code does, so it says
+# nothing about why. Fill in purpose and audience, rename the outcome
+# ids to what your team calls them, then set source to
+# "inferred, curated" so findings against it count at full severity.
+#
+# Until the blanks are filled the reader rejects this file and says so,
+# which is what keeps an uncurated draft from passing for finished.
+
+kind: boundary
+name: get-users-id
+purpose: "" # what this boundary is for, in your words
+audience: "" # who observes it: a customer, an operator, another service
+source: inferred
+boundary:
+  transport: http
+  semantics: rest
+  method: GET
+  path: /users/:id
+transitions:
+  - id: 400-bad-request
+    when: "!request.params.id"
+    response:
+      status: 400
+      body:
+        type: object
+        properties:
+          error:
+            type: string
+```
+
+Outcome ids come from the status code, `when` from the branch guard the
+code takes to reach that outcome, and the body from the shape the handler
+produces. A body shape the intent schema has no spelling for is left out
+rather than guessed at.
+
+**Purpose and audience are left blank on purpose.** Neither can be read
+out of code: why the boundary exists and who it is for are what somebody
+supplies while curating. An empty string does not satisfy the schema, so
+`suss check --intent` reads the folder and reports the drafts still
+waiting rather than checking them:
+
+```
+6 intent doc(s) in intent/ are inferred drafts with purpose and audience still blank:
+  - get-users-id.intent.yaml
+  ...
+Write them and set source to "inferred, curated", or take those files out of the intent folder until you do.
+```
+
+Curating a doc means filling in the two blanks, renaming the outcome ids
+to what your team calls them, and setting `source: "inferred, curated"`.
+`source` is what the checker reads to decide severity: findings against
+bare `inferred` intent are downgraded one level, and curation restores
+them.
+
+A boundary that could not be drafted is reported with the reason.
+Boundary intent covers REST and function-call boundaries, so a
+message-bus or storage boundary is reported rather than drafted, as is a
+boundary whose summaries never record a transition producing a response,
+a return, or a throw.
+
+Pick the boundaries at extract time, with `extract`'s own `--files` and
+`-f`. `infer intent` writes a doc for every boundary in the file it is
+given.
+
+| Flag | Description |
+|---|---|
+| `--from PATH` | The summaries file to read, from `suss extract`. |
+| `-o`, `--out PATH` | Folder the docs go in. Default: `intent/`. Docs already there are written over, with a warning first. |
+| `--into PATH` | The same folder, for a re-inference you want kept apart from what you have curated: it refuses to write where intent docs already are. |
+
+Re-inference is naive: it writes the docs again from the current code and
+takes any curation with them. `--into` is there so you can put a fresh
+run beside the curated one and reconcile the two by hand. Merging a
+re-inference against a curated baseline is separate work, sketched in
+`design/proposals/intent-specs.md`.
+
+### Exit codes
+
+- `0`: at least one doc was written.
+- `1`: no boundary in the summaries could be drafted as intent.
 
 ## Top-level flags
 

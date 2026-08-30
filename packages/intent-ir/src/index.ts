@@ -22,6 +22,7 @@ export {
 export {
   BodyShapeSchema,
   BoundarySchema,
+  blanksLeftEmpty,
   IntentDocSchema,
   IntentSourceSchema,
 } from "./schema.js";
@@ -35,6 +36,7 @@ export type {
   IntentRef,
 } from "./findings.js";
 export type {
+  AuthoredShape,
   BodyShape,
   Boundary,
   BoundaryIntent,

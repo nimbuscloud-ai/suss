@@ -140,6 +140,71 @@ describe("loadIntentFile / loadIntentDirectory", () => {
       /not found/,
     );
   });
+
+  it("gathers every unreadable file rather than stopping at the first", () => {
+    fs.writeFileSync(path.join(tmpDir, "a.intent.yaml"), "kind: boundary\n");
+    fs.writeFileSync(path.join(tmpDir, "b.intent.yaml"), "kind: boundary\n");
+
+    expect(() => loadIntentDirectory(tmpDir)).toThrow(
+      /2 intent doc\(s\).*could not be read/s,
+    );
+  });
+});
+
+describe("an inferred draft with its blanks still empty", () => {
+  const draft = {
+    ...boundarySpec,
+    purpose: "",
+    audience: "",
+    source: "inferred",
+  };
+
+  it("is rejected with the blanks named, not as a schema dump", () => {
+    expect(() => loadIntentDoc(draft)).toThrow(
+      /is an inferred draft and purpose and audience are still blank/,
+    );
+  });
+
+  it("says what to do about it", () => {
+    expect(() => loadIntentDoc(draft)).toThrow(
+      /set source to "inferred, curated"/,
+    );
+  });
+
+  it("loads once the blanks are filled", () => {
+    const summary = loadIntentDoc({
+      ...draft,
+      purpose: "Look up a user by id.",
+      audience: "web-client",
+      source: "inferred, curated",
+    }) as BoundaryIntentSummary;
+
+    expect(summary.source).toBe("inferred, curated");
+  });
+
+  it("is told apart from a doc that is broken some other way", () => {
+    expect(() =>
+      loadIntentDoc({ ...draft, purpose: "x", audience: "y", transitions: [] }),
+    ).toThrow(/does not fit the intent schema/);
+  });
+
+  it("groups the drafts in a directory under one sentence", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-intent-draft-"));
+    for (const name of ["a", "b", "c"]) {
+      fs.writeFileSync(
+        path.join(tmpDir, `${name}.intent.json`),
+        JSON.stringify({ ...draft, name }),
+      );
+    }
+
+    try {
+      expect(() => loadIntentDirectory(tmpDir)).toThrow(
+        /3 intent doc\(s\).*are inferred drafts with purpose and audience still blank/s,
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true });
+    }
+  });
 });
 
 const YAML_BOUNDARY = `
