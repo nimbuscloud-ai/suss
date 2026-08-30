@@ -160,7 +160,8 @@ const CONDITION_FORMATTERS: DispatchTable<Predicate, string> = {
   opaque: (p) => normalizeSourceText(p.sourceText),
 };
 
-function formatCondition(p: Predicate): string {
+/** Exported so a drafted intent doc says `when` the way a report does. */
+export function formatCondition(p: Predicate): string {
   return dispatchByType(CONDITION_FORMATTERS, p);
 }
 

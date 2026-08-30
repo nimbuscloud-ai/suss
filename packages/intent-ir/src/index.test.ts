@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  blanksLeftEmpty,
   IntentDocSchema,
   IntentFindingKindSchema,
   intentDocToSummary,
@@ -350,6 +351,37 @@ describe("intentDocToSummary — PRD", () => {
         link: [],
       },
     ]);
+  });
+});
+
+describe("blanksLeftEmpty", () => {
+  const draft = { source: "inferred" };
+
+  it("names both blanks when both failed", () => {
+    expect(blanksLeftEmpty(draft, ["purpose", "audience"])).toEqual([
+      "purpose",
+      "audience",
+    ]);
+  });
+
+  it("names the one blank that failed", () => {
+    expect(blanksLeftEmpty(draft, ["audience"])).toEqual(["audience"]);
+  });
+
+  it("says nothing when the draft failed on something else too", () => {
+    expect(blanksLeftEmpty(draft, ["purpose", "transitions"])).toEqual([]);
+  });
+
+  it("says nothing when nothing failed", () => {
+    expect(blanksLeftEmpty(draft, [])).toEqual([]);
+  });
+
+  it("says nothing about a doc a person wrote or curated", () => {
+    expect(blanksLeftEmpty({ source: "author" }, ["purpose"])).toEqual([]);
+    expect(
+      blanksLeftEmpty({ source: "inferred, curated" }, ["purpose"]),
+    ).toEqual([]);
+    expect(blanksLeftEmpty({}, ["purpose"])).toEqual([]);
   });
 });
 

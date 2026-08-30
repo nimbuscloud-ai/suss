@@ -513,6 +513,17 @@ function renderCollisions(
   return `${lines.join("\n")}\n`;
 }
 
+/** Re-raise as a UsageError, so runCli prints the sentence, not a stack. */
+function attempt<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    throw new UsageError(
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
 function runIntentPass(
   intentDir: string | undefined,
   code: BehavioralSummary[],
@@ -521,11 +532,13 @@ function runIntentPass(
   if (intentDir === undefined) {
     return undefined;
   }
-  const intents = loadIntentDirectory(intentDir);
+  // A doc that fails to load is something the author has to fix, so the
+  // reason reaches them as a sentence rather than as a stack trace.
+  const intents = attempt(() => loadIntentDirectory(intentDir));
   if (intents.length === 0) {
     // Same convention as an empty --dir: pointing at a directory with
     // nothing to load is a usage error, not a clean pass.
-    throw new Error(
+    throw new UsageError(
       `${intentDir} holds no intent docs. suss looks for *.intent.yaml, *.intent.yml, *.intent.json, and the same three for *.prd.`,
     );
   }

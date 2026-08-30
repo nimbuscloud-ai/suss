@@ -20,6 +20,7 @@ import { extract } from "./extract.js";
 import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
+import { intentDraft } from "./intentDraftCommand.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
 import { stubDraft } from "./stubDraftCommand.js";
 import { installedVersion, printUpdateNoticeIfBehind } from "./updateNotice.js";
@@ -43,6 +44,7 @@ Usage:
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
   suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
+  suss infer intent --from <summaries.json> [-o <directory> | --into <directory>]
   suss --version
 
 Commands:
@@ -62,7 +64,10 @@ Commands:
   infer     Draft an artifact for you to curate. "infer stub" writes a
             dependency stub skeleton, the checked-in file that states
             what a package suss cannot read does, from the project's
-            observed calls into the package.
+            observed calls into the package. "infer intent" writes one
+            boundary intent doc per boundary in a summaries file, saying
+            what the code does today, for you to turn into what the team
+            meant.
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -189,10 +194,21 @@ Options (infer stub):
   -o, --output     Where to write the draft. "-" prints it instead.
                    Default: suss/stubs/<package>.yaml next to the code.
 
+Options (infer intent):
+  --from           The summaries file to read, from suss extract. Pick the
+                   boundaries there, with extract's own --files and -f;
+                   infer writes a doc for every boundary it is given.
+  -o, --out        Folder the docs go in. Default: intent/. Docs already
+                   there are written over, with a warning first.
+  --into           The same folder, for a re-inference you want kept apart
+                   from what you have curated: it refuses to write where
+                   intent docs already are.
+
 Exit codes:
   check exits non-zero when it finds anything at error severity.
   corroborate exits non-zero when a claim is refuted by execution.
   infer stub exits non-zero when no calls into the package are found.
+  infer intent exits non-zero when no boundary could be drafted.
 
 An interactive run ends with one line on stderr when a newer suss is on
 the registry. Piped output and CI never see it, and setting
@@ -787,7 +803,7 @@ function runInfer(args: string[]): number {
     process.stderr.write(
       sub === undefined
         ? "infer needs the artifact to draft. Try: suss infer stub <package>\n"
-        : `There is no "infer ${sub}". infer has stub.\n`,
+        : `There is no "infer ${sub}". infer has stub and intent.\n`,
     );
     return 1;
   }
@@ -797,6 +813,7 @@ function runInfer(args: string[]): number {
 
 const INFER_KINDS: Record<string, (args: string[]) => number> = {
   stub: runInferStub,
+  intent: runInferIntent,
 };
 
 function runInferStub(args: string[]): number {
@@ -823,5 +840,29 @@ function runInferStub(args: string[]): number {
     ...(values.project !== undefined ? { tsconfig: values.project } : {}),
     ...(values.dir !== undefined ? { dir: values.dir } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),
+  });
+}
+
+function runInferIntent(args: string[]): number {
+  const { values } = parseArgs({
+    args,
+    options: {
+      from: { type: "string" },
+      out: { type: "string", short: "o" },
+      into: { type: "string" },
+    },
+  });
+
+  if (values.from === undefined) {
+    process.stderr.write(
+      "infer intent needs --from, the summaries to read. Try: suss infer intent --from summaries.json --out intent/\n",
+    );
+    return 1;
+  }
+
+  return intentDraft({
+    from: values.from,
+    ...(values.out !== undefined ? { out: values.out } : {}),
+    ...(values.into !== undefined ? { into: values.into } : {}),
   });
 }

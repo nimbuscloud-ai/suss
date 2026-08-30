@@ -2,11 +2,11 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 646,
-    "internal": 2326,
-    "consumers": 1114,
-    "pairs": 1095,
-    "unfollowedCalls": 248,
+    "exports": 649,
+    "internal": 2349,
+    "consumers": 1122,
+    "pairs": 1103,
+    "unfollowedCalls": 250,
     "findingErrors": 0
   },
   "packages": {
@@ -54,10 +54,10 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 19,
-      "internal": 367,
-      "consumers": 228,
-      "unfollowedCalls": 42
+      "exports": 21,
+      "internal": 387,
+      "consumers": 234,
+      "unfollowedCalls": 44
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -111,8 +111,8 @@
     "packages/contract/intent": {
       "name": "@suss/contract-intent",
       "exports": 3,
-      "internal": 1,
-      "consumers": 2,
+      "internal": 4,
+      "consumers": 4,
       "unfollowedCalls": 0
     },
     "packages/contract/openapi": {
@@ -383,7 +383,7 @@
     },
     "packages/intent-ir": {
       "name": "@suss/intent-ir",
-      "exports": 1,
+      "exports": 2,
       "internal": 2,
       "consumers": 2,
       "unfollowedCalls": 0

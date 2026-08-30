@@ -21,7 +21,11 @@ import path from "node:path";
 
 import YAML from "yaml";
 
-import { IntentDocSchema, intentDocToSummary } from "@suss/intent-ir";
+import {
+  blanksLeftEmpty,
+  IntentDocSchema,
+  intentDocToSummary,
+} from "@suss/intent-ir";
 
 import type { IntentSummary } from "@suss/intent-ir";
 
@@ -42,7 +46,50 @@ export type {
  * dispatches on the discriminator.
  */
 export function loadIntentDoc(raw: unknown): IntentSummary {
-  return intentDocToSummary(IntentDocSchema.parse(raw));
+  return intentDocToSummary(validated(raw, "The intent doc"));
+}
+
+/** What is written for one doc, plus the blanks when that is the reason. */
+class IntentDocRejected extends Error {
+  constructor(
+    readonly blanks: string[],
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function waitingOnBlanks(where: string, blanks: string[]): string {
+  const empty =
+    blanks.length === 1
+      ? `${blanks[0]} is still blank. Write it`
+      : `${blanks.join(" and ")} are still blank. Write them`;
+  return `${where} is an inferred draft and ${empty} and set source to "inferred, curated", or take the file out of the intent folder until you do.`;
+}
+
+function validated(raw: unknown, where: string) {
+  const result = IntentDocSchema.safeParse(raw);
+  if (result.success) {
+    return result.data;
+  }
+
+  const issues = result.error.issues;
+  const blanks = blanksLeftEmpty(
+    raw,
+    issues.map((issue) => String(issue.path[0])),
+  );
+  if (blanks.length > 0) {
+    throw new IntentDocRejected(blanks, waitingOnBlanks(where, blanks));
+  }
+
+  const listed = issues
+    .slice(0, 10)
+    .map((issue) => `  - ${issue.path.join(".") || "<root>"}: ${issue.message}`)
+    .join("\n");
+  throw new IntentDocRejected(
+    [],
+    `${where} does not fit the intent schema:\n${listed}`,
+  );
 }
 
 /**
@@ -70,7 +117,7 @@ export function loadIntentFile(filepath: string): IntentSummary {
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`Intent spec ${resolved} is not an object`);
   }
-  return loadIntentDoc(parsed);
+  return intentDocToSummary(validated(parsed, resolved));
 }
 
 /**
@@ -86,7 +133,65 @@ export function loadIntentDirectory(dir: string): IntentSummary[] {
   if (!fs.statSync(resolved).isDirectory()) {
     throw new Error(`Intent path is not a directory: ${resolved}`);
   }
-  return walkIntentFiles(resolved).map((file) => loadIntentFile(file));
+
+  const loaded: IntentSummary[] = [];
+  const waiting: string[] = [];
+  const broken: string[] = [];
+  for (const file of walkIntentFiles(resolved)) {
+    try {
+      loaded.push(loadIntentFile(file));
+    } catch (err) {
+      const rejected = err instanceof IntentDocRejected ? err : null;
+      if (rejected !== null && rejected.blanks.length > 0) {
+        waiting.push(path.relative(resolved, file));
+        continue;
+      }
+
+      broken.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  if (waiting.length > 0 || broken.length > 0) {
+    throw new Error(everyRejection(resolved, waiting, broken));
+  }
+  return loaded;
+}
+
+/** How many rejected files get written out before a count takes over. */
+const REJECTIONS_SHOWN = 10;
+
+function listed(files: string[]): string {
+  const lines = files.slice(0, REJECTIONS_SHOWN).map((one) => `  - ${one}`);
+  const left = files.length - lines.length;
+  if (left > 0) {
+    lines.push(`  and ${left} more`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * One error for the whole directory, with the drafts waiting on their
+ * blanks kept apart from the files that are actually broken. Inferring
+ * intent leaves every doc waiting on the same two blanks at once, so
+ * reporting the first file and stopping would take one run per file to
+ * get through, and repeating the same sentence for each is no better.
+ */
+function everyRejection(
+  dir: string,
+  waiting: string[],
+  broken: string[],
+): string {
+  const parts: string[] = [];
+  if (waiting.length > 0) {
+    parts.push(
+      `${waiting.length} intent doc(s) in ${dir} are inferred drafts with purpose and audience still blank:\n${listed(waiting)}\nWrite them and set source to "inferred, curated", or take those files out of the intent folder until you do.`,
+    );
+  }
+  if (broken.length > 0) {
+    parts.push(
+      `${broken.length} intent doc(s) in ${dir} could not be read:\n${listed(broken)}`,
+    );
+  }
+  return parts.join("\n\n");
 }
 
 function walkIntentFiles(dir: string): string[] {
