@@ -23,8 +23,9 @@ describe("honoFramework", () => {
     expect(pack.protocol).toBe("http");
     // Two import sources times the verb list, plus app.openapi.
     // Two spreads of two call patterns each, plus the loop pattern
-    // each spread of httpRouteDiscovery emits.
-    expect(pack.discovery).toHaveLength(6);
+    // each spread of httpRouteDiscovery emits, the zod-openapi
+    // registration, and one wrapper pattern per app per wrapper shape.
+    expect(pack.discovery).toHaveLength(12);
     expect(pack.discovery[0]?.requiresImport).toEqual(["hono"]);
   });
 

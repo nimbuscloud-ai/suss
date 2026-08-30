@@ -17,9 +17,25 @@
 import {
   httpRouteDiscovery,
   registrationHelperDiscovery,
+  wrapperDiscovery,
 } from "@suss/extractor";
 
-import type { PatternPack, RegistrationHelper } from "@suss/extractor";
+import type {
+  DiscoveryPattern,
+  PatternPack,
+  RegistrationHelper,
+} from "@suss/extractor";
+
+/** What Hono registers around a route, on either app constructor. */
+const HONO_WRAPPERS: ReadonlyArray<NonNullable<DiscoveryPattern["wraps"]>> = [
+  {
+    method: "use",
+    scopePosition: 0,
+    targetPosition: 1,
+    continuationParam: 1,
+  },
+  { method: "onError", targetPosition: 0, throwParam: 0 },
+];
 
 /**
  * Status codes for Hono's `HTTPException`, thrown rather than returned.
@@ -114,6 +130,19 @@ export function honoFramework(options: HonoPackOptions = {}): PatternPack {
         },
         requiresImport: ["@hono/zod-openapi"],
       },
+      // `app.use(path, mw)` runs the middleware for the routes the
+      // pattern covers, and `app.onError(fn)` produces the response for
+      // a route whose path ended by throwing.
+      ...wrapperDiscovery({
+        importModule: "hono",
+        importNames: ["Hono", "OpenAPIHono"],
+        wraps: HONO_WRAPPERS,
+      }),
+      ...wrapperDiscovery({
+        importModule: "@hono/zod-openapi",
+        importNames: ["OpenAPIHono"],
+        wraps: HONO_WRAPPERS,
+      }),
       ...registrationHelperDiscovery(options.registrationHelpers ?? []),
     ],
 

@@ -35,9 +35,10 @@ describe("expressFramework: pack shape", () => {
     const pack = expressFramework();
     expect(pack.name).toBe("express");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
-    // Two registration-call patterns (Router, express) and the
-    // registration-loop pattern every HTTP pack gets.
-    expect(pack.discovery).toHaveLength(3);
+    // Two registration-call patterns (Router, express), the
+    // registration-loop pattern every HTTP pack gets, and one wrapper
+    // pattern per routable per wrapper shape.
+    expect(pack.discovery).toHaveLength(7);
     expect(pack.contractReading).toBeUndefined();
     expect(pack.inputMapping.type).toBe("positionalParams");
   });
