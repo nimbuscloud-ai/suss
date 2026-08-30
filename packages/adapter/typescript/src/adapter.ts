@@ -112,6 +112,7 @@ import {
   buildMountPrefixIndex,
   type MountPrefixIndex,
 } from "./discovery/mountPrefix.js";
+import { readRegisteringFiles } from "./discovery/registrationCall.js";
 import { stringValueOf } from "./discovery/resolveValue.js";
 import {
   buildWrapperIndex,
@@ -2266,6 +2267,12 @@ export function createTypeScriptAdapter(
       const resolution = new ResolutionStore(packWrappers);
       const packsByFile = timer.time("preFilter", () =>
         computePackApplicability(sourceFiles, config.frameworks, resolution),
+      );
+
+      // An app built in one file and registered on in another is joined
+      // by facts in the file that passed it, which no query reaches.
+      timer.time("registeringFiles", () =>
+        readRegisteringFiles(packsByFile, resolution),
       );
 
       // A route on a mounted router needs the mount's prefix folded into

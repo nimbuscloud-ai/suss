@@ -2,11 +2,11 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 642,
-    "internal": 2302,
+    "exports": 643,
+    "internal": 2313,
     "consumers": 1108,
     "pairs": 1089,
-    "unfollowedCalls": 254,
+    "unfollowedCalls": 244,
     "findingErrors": 0
   },
   "packages": {
@@ -15,21 +15,21 @@
       "exports": 50,
       "internal": 169,
       "consumers": 56,
-      "unfollowedCalls": 18
+      "unfollowedCalls": 14
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 46,
-      "internal": 107,
+      "internal": 109,
       "consumers": 14,
-      "unfollowedCalls": 12
+      "unfollowedCalls": 9
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 73,
-      "internal": 790,
+      "exports": 74,
+      "internal": 798,
       "consumers": 103,
-      "unfollowedCalls": 84
+      "unfollowedCalls": 82
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -97,9 +97,9 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 8,
-      "internal": 73,
+      "internal": 74,
       "consumers": 124,
-      "unfollowedCalls": 2
+      "unfollowedCalls": 1
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",

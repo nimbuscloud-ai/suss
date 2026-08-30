@@ -24,7 +24,11 @@ import {
 } from "./resolveValue.js";
 import { namesAParameter } from "./shared.js";
 
-import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
+import type {
+  BindingExtraction,
+  DiscoveryPattern,
+  PatternPack,
+} from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
 
@@ -76,6 +80,7 @@ export function discoverRegistrationCalls(
     sourceFile,
     match.importModule,
     match.importName,
+    resolution,
   );
   if (registrationSubjects.size === 0) {
     return results;
@@ -241,19 +246,52 @@ function withMountPrefix(
 }
 
 /**
+ * Read the facts of every file a pack that registers handlers applies
+ * to, before anything asks which routable a registration was made on.
+ *
+ * What joins a route registered on a parameter to the app behind it is
+ * the call that passed the app, and that call is in a file importing
+ * this one. A store query widens the other way, along the imports of
+ * the file it starts in, so the caller is somewhere it never arrives.
+ * A run whose packs register nothing reads nothing here.
+ */
+export function readRegisteringFiles(
+  packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>,
+  resolution: ResolutionStore,
+): void {
+  const files: SourceFile[] = [];
+  for (const [sourceFile, packs] of packsByFile) {
+    const registers = packs.some((pack) =>
+      pack.discovery.some(
+        (pattern) => pattern.match.type === "registrationCall",
+      ),
+    );
+    if (registers) {
+      files.push(sourceFile);
+    }
+  }
+  resolution.extractFiles(files);
+}
+
+/**
  * The local variables in `sourceFile` set to the result of calling
  * `importName` (imported from `importModule`), plus any parameter
  * typed with it. This is what a registration call's subject, and a
  * mount call's subject, both have to resolve to: the routable itself.
  *
- * Shared between route discovery and mount discovery so the two ask
+ * Shared between route, mount and wrapper discovery so the three ask
  * "which variable is the routable" the same way rather than growing
  * their own copies of import and call-shape resolution.
+ *
+ * A parameter comes back as the app a caller passed it when the store
+ * settles on one, and as itself when there is no store or the store
+ * settles on nothing.
  */
 export function registrationSubjectsOf(
   sourceFile: SourceFile,
   importModule: string,
   importName: string,
+  resolution?: ResolutionStore,
 ): Map<string, Node> {
   const importedLocalName = resolveImportedLocalName(
     sourceFile,
@@ -285,9 +323,8 @@ export function registrationSubjectsOf(
       return;
     }
 
-    // A parameter typed with the import is the app a caller passed. No
-    // creation site keys a mount edge on it, so a router mounted under
-    // this name composes only the prefix its own mount call states.
+    // A parameter typed with the import is the app a caller passed, and
+    // `creationSiteBehind` asks the store which app that was.
     if (!Node.isParameterDeclaration(node)) {
       return;
     }
@@ -300,11 +337,38 @@ export function registrationSubjectsOf(
       typeText === importedLocalName ||
       typeText.startsWith(`${importedLocalName}<`)
     ) {
-      subjects.set(node.getName(), node);
+      subjects.set(node.getName(), creationSiteBehind(node, resolution));
     }
   });
 
   return subjects;
+}
+
+/**
+ * The app a caller passed this parameter, so a route or a sub-router
+ * registered on it keys on the same creation site as one registered in
+ * the file that built the app.
+ *
+ * Two callers passing two different apps leave the parameter with two
+ * values, and the store settles on neither. The parameter comes back
+ * unchanged then, and a wrapper or a mount edge keyed on it reaches
+ * only the registrations made on this parameter.
+ */
+function creationSiteBehind(
+  parameter: Node,
+  resolution: ResolutionStore | undefined,
+): Node {
+  if (resolution === undefined) {
+    return parameter;
+  }
+  const written = resolution.resolveWrittenValue(parameter);
+  if (
+    written === null ||
+    !(Node.isCallExpression(written) || Node.isNewExpression(written))
+  ) {
+    return parameter;
+  }
+  return written;
 }
 
 /**
@@ -323,6 +387,7 @@ export function registrationSubjectIdsOf(
   matches: ReadonlyArray<
     Extract<DiscoveryPattern["match"], { type: "registrationCall" }>
   >,
+  resolution?: ResolutionStore,
 ): ReadonlySet<string> {
   const seenImports = new Set<string>();
   const ids = new Set<string>();
@@ -336,6 +401,7 @@ export function registrationSubjectIdsOf(
       sourceFile,
       match.importModule,
       match.importName,
+      resolution,
     ).values()) {
       ids.add(nodeId(node));
     }
@@ -373,6 +439,7 @@ export function discoverMountEdges(
     sourceFile,
     match.importModule,
     match.importName,
+    resolution,
   );
   if (subjects.size === 0) {
     return [];

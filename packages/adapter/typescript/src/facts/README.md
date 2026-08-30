@@ -84,6 +84,26 @@ file by file used to walk the same subtree once per file that reached
 it: on a NestJS monorepo of 6,400 files that came to three million
 specifier resolutions for 35,000 distinct edges.
 
+## Reading a caller's file
+
+A query widens outward along the imports of the file it starts in, which
+is where a value's definition is. What a caller passed is the other
+direction: the call is in a file that imports this one, and the walk
+never arrives there.
+
+`ResolutionStore.extractFiles` reads a set of files before anything asks
+a question, so those facts are already in the store. Route discovery
+uses it for the file set the active packs apply to, which is how an app
+built in one file and registered on in another is joined up. A run whose
+packs register nothing reads nothing extra.
+
+The facts on the caller's side are the call's own: `call` and `callArg`.
+Extraction otherwise follows a file's exports, and `registerRoutes(app)`
+is written as a statement, so those calls are written down separately.
+Only a call spelled `name(args)` is; a method call is left out, since
+those are most of the calls in a body and writing every argument of
+every one of them down slows a run measurably.
+
 ## How a value reaches the place it is used
 
 Discovery asks the fact layer what a value at a given position is,
@@ -120,9 +140,12 @@ Three do not:
 - **A factory's object argument.** `const built = build({ handle:
   handler })`, where `build` returns `options.handle`. This is the rule
   that was tried and taken out, described above.
-- **A parameter.** `const register = (handle) => router.get("/p",
-  handle)`. Whoever calls `register` supplies the function, and this
-  file cannot see where it came from.
+- **A parameter, unless the caller's file has been read.** `const
+  register = (handle) => router.get("/p", handle)`. Whoever calls
+  `register` supplies the function, and the call is in a file that
+  imports this one, which a query widening along imports never reaches.
+  A caller that already knows the file set can read it first; see
+  "Reading a caller's file" below.
 
 ## What it over-approximates
 
