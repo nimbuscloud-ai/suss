@@ -2,11 +2,11 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 641,
+    "exports": 642,
     "internal": 2300,
     "consumers": 1108,
     "pairs": 1089,
-    "unfollowedCalls": 253,
+    "unfollowedCalls": 254,
     "findingErrors": 0
   },
   "packages": {
@@ -390,10 +390,10 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 62,
+      "exports": 63,
       "internal": 14,
       "consumers": 0,
-      "unfollowedCalls": 10
+      "unfollowedCalls": 11
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",

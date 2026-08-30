@@ -13,7 +13,7 @@
 
 import {
   readWrapperMetadata,
-  routePathAdmits,
+  withinScope,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
@@ -139,9 +139,9 @@ function merge(before: Composition, step: Composition): Composition {
 
 /**
  * Whether this registration reaches this unit. A wrapper registered
- * with a path pattern runs only for the routes that pattern admits, and
- * a unit whose boundary states no path cannot be shown to be one of
- * them, so the wrapper is left off rather than assumed.
+ * with a pattern runs only for the boundaries inside it, and a unit
+ * whose own boundary cannot be shown to be one of them is left out
+ * rather than assumed in.
  */
 function coversUnit(
   reference: WrapperReference,
@@ -150,11 +150,8 @@ function coversUnit(
   if (reference.scope === undefined) {
     return true;
   }
-  const semantics = summary.identity.boundaryBinding?.semantics;
-  if (semantics?.name !== "rest" || semantics.path === null) {
-    return false;
-  }
-  return routePathAdmits(reference.scope, semantics.path);
+  const binding = summary.identity.boundaryBinding;
+  return binding !== null && withinScope(binding, reference.scope);
 }
 
 /**

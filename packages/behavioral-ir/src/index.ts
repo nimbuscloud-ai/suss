@@ -76,10 +76,10 @@ export {
   referenceName,
   referenceOf,
   restBinding,
-  routePathAdmits,
   runtimeConfigBinding,
   semconvAttributes,
   storageBinding,
+  withinScope,
   withRewrittenPaths,
 } from "@suss/ir-core";
 

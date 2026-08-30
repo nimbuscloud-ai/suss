@@ -126,6 +126,7 @@ export {
   reportsUnpairedItself,
   semanticsAgree,
   servesRequest,
+  withinScope,
   withRewrittenPaths,
 } from "./boundaryKey.js";
 export {

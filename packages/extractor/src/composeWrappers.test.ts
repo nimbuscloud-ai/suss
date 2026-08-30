@@ -226,6 +226,47 @@ describe("composeWrappers", () => {
     expect(fromOf(composed.transitions[1])).toBe("onError");
   });
 
+  it("leaves a route that never throws alone, error handler or not", () => {
+    const onError: WrapperReference = {
+      file: "src/app.ts",
+      name: "onError",
+      onThrow: true,
+    };
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [onError],
+    });
+    const handler = unit("onError", "src/app.ts", [responds("problem", 500)]);
+
+    const [composed] = composeWrappers([route, handler]);
+
+    expect(composed).toBe(route);
+  });
+
+  it("degrades an error handler over more throws than the budget allows", () => {
+    const onError: WrapperReference = {
+      file: "src/app.ts",
+      name: "onError",
+      onThrow: true,
+    };
+    const throwing = Array.from({ length: MAX_PATHS }, (_, i) =>
+      throws(`boom${i}`, [guard(`case${i}`)]),
+    );
+    const route = unit("route", "src/app.ts", throwing, {
+      wrappers: [onError],
+    });
+    const handler = unit("onError", "src/app.ts", [
+      responds("problem", 500, [guard("known")]),
+      responds("unavailable", 503, [
+        { type: "negation", operand: guard("known") },
+      ]),
+    ]);
+
+    const [composed] = composeWrappers([route, handler]);
+
+    expect(composed.transitions).toHaveLength(MAX_PATHS + 2);
+    expect(composed.gaps.map((gap) => gap.type)).toEqual(["unreadOutcome"]);
+  });
+
   it("leaves a route the scope does not cover alone", () => {
     const scoped: WrapperReference = { ...AUTH, scope: "/v1/*" };
     const route = unit("health", "src/app.ts", [responds("ok", 200)], {
