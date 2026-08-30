@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 123,
-      "covered": 123,
+      "total": 125,
+      "covered": 125,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 127,
-      "covered": 127,
+      "total": 129,
+      "covered": 129,
       "skipped": 0,
       "pct": 100
     },
@@ -33,8 +33,8 @@
   },
   "src/discovery.ts": {
     "lines": {
-      "total": 60,
-      "covered": 60,
+      "total": 61,
+      "covered": 61,
       "skipped": 0,
       "pct": 100
     },
@@ -45,8 +45,8 @@
       "pct": 100
     },
     "statements": {
-      "total": 63,
-      "covered": 63,
+      "total": 64,
+      "covered": 64,
       "skipped": 0,
       "pct": 100
     },
@@ -59,8 +59,8 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 1,
-      "covered": 1,
+      "total": 2,
+      "covered": 2,
       "skipped": 0,
       "pct": 100
     },
@@ -71,8 +71,8 @@
       "pct": 100
     },
     "statements": {
-      "total": 1,
-      "covered": 1,
+      "total": 2,
+      "covered": 2,
       "skipped": 0,
       "pct": 100
     },

@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 107,
-      "covered": 106,
-      "skipped": 0,
-      "pct": 99.06
-    },
-    "statements": {
       "total": 109,
       "covered": 108,
       "skipped": 0,
       "pct": 99.08
+    },
+    "statements": {
+      "total": 111,
+      "covered": 110,
+      "skipped": 0,
+      "pct": 99.09
     },
     "functions": {
       "total": 22,
@@ -33,10 +33,10 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 107,
-      "covered": 106,
+      "total": 109,
+      "covered": 108,
       "skipped": 0,
-      "pct": 99.06
+      "pct": 99.08
     },
     "functions": {
       "total": 22,
@@ -45,10 +45,10 @@
       "pct": 100
     },
     "statements": {
-      "total": 109,
-      "covered": 108,
+      "total": 111,
+      "covered": 110,
       "skipped": 0,
-      "pct": 99.08
+      "pct": 99.09
     },
     "branches": {
       "total": 81,

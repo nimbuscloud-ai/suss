@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 435,
-      "covered": 401,
+      "total": 438,
+      "covered": 404,
       "skipped": 0,
-      "pct": 92.18
+      "pct": 92.23
     },
     "statements": {
-      "total": 443,
-      "covered": 409,
+      "total": 446,
+      "covered": 412,
       "skipped": 0,
-      "pct": 92.32
+      "pct": 92.37
     },
     "functions": {
-      "total": 129,
-      "covered": 121,
+      "total": 131,
+      "covered": 123,
       "skipped": 0,
-      "pct": 93.79
+      "pct": 93.89
     },
     "branches": {
-      "total": 372,
-      "covered": 333,
+      "total": 376,
+      "covered": 337,
       "skipped": 0,
-      "pct": 89.51
+      "pct": 89.62
     },
     "branchesTrue": {
       "total": 0,
@@ -33,26 +33,26 @@
   },
   "src/boundaryKey.ts": {
     "lines": {
-      "total": 32,
-      "covered": 32,
+      "total": 34,
+      "covered": 34,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 12,
-      "covered": 12,
+      "total": 13,
+      "covered": 13,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 32,
-      "covered": 32,
+      "total": 34,
+      "covered": 34,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 22,
-      "covered": 22,
+      "total": 24,
+      "covered": 24,
       "skipped": 0,
       "pct": 100
     }
@@ -553,28 +553,28 @@
   },
   "src/semantics/rest.ts": {
     "lines": {
-      "total": 56,
-      "covered": 55,
+      "total": 57,
+      "covered": 56,
       "skipped": 0,
-      "pct": 98.21
+      "pct": 98.24
     },
     "functions": {
-      "total": 16,
-      "covered": 15,
+      "total": 17,
+      "covered": 16,
       "skipped": 0,
-      "pct": 93.75
+      "pct": 94.11
     },
     "statements": {
-      "total": 56,
-      "covered": 55,
+      "total": 57,
+      "covered": 56,
       "skipped": 0,
-      "pct": 98.21
+      "pct": 98.24
     },
     "branches": {
-      "total": 53,
-      "covered": 51,
+      "total": 55,
+      "covered": 53,
       "skipped": 0,
-      "pct": 96.22
+      "pct": 96.36
     }
   },
   "src/semantics/runtimeConfig.ts": {

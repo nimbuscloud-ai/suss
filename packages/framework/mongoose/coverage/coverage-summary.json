@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 67,
-      "covered": 67,
+      "total": 68,
+      "covered": 68,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 72,
-      "covered": 72,
+      "total": 73,
+      "covered": 73,
       "skipped": 0,
       "pct": 100
     },
@@ -33,8 +33,8 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 67,
-      "covered": 67,
+      "total": 68,
+      "covered": 68,
       "skipped": 0,
       "pct": 100
     },
@@ -45,8 +45,8 @@
       "pct": 100
     },
     "statements": {
-      "total": 72,
-      "covered": 72,
+      "total": 73,
+      "covered": 73,
       "skipped": 0,
       "pct": 100
     },
