@@ -39,7 +39,13 @@ import {
   stringLiteralValue,
   stripDecorators,
 } from "./ast.js";
-import { classifyDecorator, unwrapDecorator } from "./decorators.js";
+import {
+  classifyDecorator,
+  decoratorReceiver,
+  unwrapDecorator,
+} from "./decorators.js";
+import { subjectConstructions } from "./facts/resolve.js";
+import { readKey } from "./facts/values.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
 import { predicateOf } from "./paths/predicates.js";
@@ -48,6 +54,7 @@ import { rawSqlEffects } from "./rawSql.js";
 import { type StorageLookup, storageEffects } from "./storage.js";
 
 import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
+import type { Database } from "@suss/datalog";
 import type {
   BodyContent,
   ChosenReading,
@@ -62,6 +69,7 @@ import type {
   SourceRange,
 } from "@suss/extractor";
 import type { DecoratorClassification } from "./decorators.js";
+import type { SubjectConstruction } from "./facts/resolve.js";
 import type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
@@ -85,54 +93,129 @@ export interface DiscoveryOptions {
   storage?: StorageLookup | undefined;
   /** The file's absolute path, which module resolution wants; `filePath` may be shortened for display. */
   absoluteFile?: string | undefined;
+  /** The project's facts, so the rules can say what an object no scope has a binding for was built by. */
+  facts?: Database | undefined;
 }
+
+/** One decorated definition and the scope its decorators are written in. */
+interface DecoratedStatement {
+  stmt: PyNode;
+  scope: Scope;
+  /** The function whose body it is written in, which is part of how a local name is keyed. */
+  enclosingFunction: PyNode | null;
+}
+
+/**
+ * Every decorated definition in the file, wherever it is written. A route
+ * can go anywhere the language allows a statement, and listing the places
+ * loses to the language, so the walk goes everywhere and keeps track of the
+ * scope as it goes.
+ *
+ * The binder opens a scope for every def and class it bound. One it did not
+ * bind, such as a def written inside a try, keeps the enclosing scope.
+ */
+function decoratedStatements(
+  root: PyNode,
+  module: ModuleBinding,
+): DecoratedStatement[] {
+  const found: DecoratedStatement[] = [];
+  const walk = (
+    node: PyNode,
+    scope: Scope,
+    enclosingFunction: PyNode | null,
+  ): void => {
+    for (const child of node.namedChildren) {
+      if (child === null) {
+        continue;
+      }
+      if (child.type === "decorated_definition") {
+        found.push({ stmt: child, scope, enclosingFunction });
+      }
+      walk(
+        child,
+        module.scopeFor.get(child.id) ?? scope,
+        child.type === "function_definition" ? child : enclosingFunction,
+      );
+    }
+  };
+  walk(root, module.moduleScope, null);
+  return found;
+}
+
+/** What the scope made of each decorator, keyed by the decorator's node. */
+type ScopeClassifications = ReadonlyMap<number, DecoratorClassification>;
 
 export function discoverUnits(
   root: PyNode,
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
-  const units: RawCodeStructure[] = [];
-  for (const stmt of bodyStatements(root)) {
-    if (stmt.type === "decorated_definition") {
-      units.push(...decoratedUnits(stmt, module.moduleScope, module, options));
-      continue;
+  const decorated = decoratedStatements(root, module);
+  const classified = new Map<number, DecoratorClassification>();
+  for (const { stmt, scope } of decorated) {
+    for (const decoratorNode of stripDecorators(stmt).decorators) {
+      classified.set(decoratorNode.id, classifyDecorator(decoratorNode, scope));
     }
+  }
 
-    // A route declared inside an app factory, the way both Flask and
-    // FastAPI teach test setup, reads its decorator in the factory's
-    // own scope, where the app it hangs on is constructed (#247).
-    const { definition } = stripDecorators(stmt);
-    if (definition.type !== "function_definition") {
-      continue;
-    }
-    const body = field(definition, "body");
-    const scope = module.scopeFor.get(definition.id);
-    if (body === null || scope === undefined) {
-      continue;
-    }
-    for (const inner of bodyStatements(body)) {
-      if (inner.type === "decorated_definition") {
-        units.push(...decoratedUnits(inner, scope, module, options));
+  const subjects = builtSubjects(decorated, classified, options);
+  return decorated.flatMap((decoratedStatement) =>
+    decoratedUnits(decoratedStatement, classified, module, options, subjects),
+  );
+}
+
+/**
+ * What the rules say built the object behind each decorator the scope could
+ * not classify. Asked for the whole file at once, because the rules run over
+ * the project's facts and asking per decorator would run them per route.
+ */
+function builtSubjects(
+  decorated: readonly DecoratedStatement[],
+  classified: ScopeClassifications,
+  options: DiscoveryOptions,
+): Map<string, SubjectConstruction> {
+  const facts = options.facts;
+  if (facts === undefined) {
+    return new Map();
+  }
+
+  const factsPath = options.absoluteFile ?? options.filePath;
+  const asked = new Set<string>();
+  for (const { stmt, enclosingFunction } of decorated) {
+    for (const decoratorNode of stripDecorators(stmt).decorators) {
+      const direct = classified.get(decoratorNode.id);
+      if (
+        direct?.module != null &&
+        acceptedByAnyPattern(direct.module, options)
+      ) {
+        continue;
+      }
+      const written = decoratorReceiver(decoratorNode);
+      if (written !== null) {
+        asked.add(readKey(factsPath, written.object, enclosingFunction));
       }
     }
   }
-  return units;
+  return subjectConstructions(facts, [...asked]);
 }
 
 function decoratedUnits(
-  stmt: PyNode,
-  scope: Scope,
+  decoratedStatement: DecoratedStatement,
+  classified: ScopeClassifications,
   module: ModuleBinding,
   options: DiscoveryOptions,
+  subjects: ReadonlyMap<string, SubjectConstruction>,
 ): RawCodeStructure[] {
+  const { stmt, scope, enclosingFunction } = decoratedStatement;
   const units: RawCodeStructure[] = [];
   const { definition, decorators } = stripDecorators(stmt);
   for (const decoratorNode of decorators) {
-    const direct = classifyDecorator(decoratorNode, scope);
+    const direct =
+      classified.get(decoratorNode.id) ??
+      classifyDecorator(decoratorNode, scope);
     // A decorator no pattern accepts as written may be a project wrapper
-    // around one a pattern does accept, so the wrapper is read where it is
-    // written and the decorator is classified again as what it returns.
+    // around one a pattern does accept. Failing that, the rules say what
+    // the object it hangs on was built by.
     const classifications =
       direct.module !== null && acceptedByAnyPattern(direct.module, options)
         ? [direct]
@@ -147,7 +230,13 @@ function decoratedUnits(
                   spec,
                   name,
                 ) ?? null,
-            ),
+            ) ??
+              builtSubjectClassification(
+                decoratorNode,
+                enclosingFunction,
+                subjects,
+                options,
+              ),
           ].filter(
             (candidate): candidate is DecoratorClassification =>
               candidate !== null,
@@ -185,6 +274,52 @@ function acceptedByAnyPattern(
   return options.packs.some((pack) =>
     pack.discovery.some((pattern) => pattern.importModule.includes(module)),
   );
+}
+
+/**
+ * The decorator read through what the rules say built the object it hangs
+ * on. `@self.app.get("/x")` says as much about the route as `@app.get("/x")`
+ * does, once something says what `self.app` is.
+ *
+ * Null when the rules settled on nothing, or on a call out of a module no
+ * pack accepts, and then the decorator stays unclassified.
+ */
+function builtSubjectClassification(
+  decoratorNode: PyNode,
+  enclosingFunction: PyNode | null,
+  subjects: ReadonlyMap<string, SubjectConstruction>,
+  options: DiscoveryOptions,
+): DecoratorClassification | null {
+  const written = decoratorReceiver(decoratorNode);
+  if (written === null) {
+    return null;
+  }
+
+  const factsPath = options.absoluteFile ?? options.filePath;
+  const built = subjects.get(
+    readKey(factsPath, written.object, enclosingFunction),
+  );
+  const origin = built?.origins.find((candidate) =>
+    acceptedByAnyPattern(candidate.module, options),
+  );
+  if (built === undefined || origin === undefined) {
+    return null;
+  }
+
+  return {
+    importedName: written.attributeName,
+    module: origin.module,
+    objectName:
+      written.object.type === "identifier" ? written.object.text : null,
+    relativeLevel: 0,
+    args: written.args,
+    keywordArgs: written.keywordArgs,
+    range: written.range,
+    subjectConstruction: {
+      key: built.constructionKey,
+      constructorName: origin.name,
+    },
+  };
 }
 
 function unitsFor(
@@ -459,19 +594,27 @@ function routerResolutionOf(
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RoutePrefixResolution | null {
-  if (
-    pattern.routerComposition === undefined ||
-    options.routerIndex === undefined ||
-    classification.objectName === null
-  ) {
+  const index = options.routerIndex;
+  if (pattern.routerComposition === undefined || index === undefined) {
     return null;
   }
 
-  return options.routerIndex.resolve(
-    pattern,
-    classification.objectModule ?? module,
-    classification.objectName,
-  );
+  const objectModule = classification.objectModule ?? module;
+  const built = classification.subjectConstruction;
+  if (built !== undefined) {
+    return index.resolveConstruction(
+      pattern,
+      objectModule,
+      built.constructorName,
+      built.key,
+    );
+  }
+
+  if (classification.objectName === null) {
+    return null;
+  }
+
+  return index.resolve(pattern, objectModule, classification.objectName);
 }
 
 function composeRoutePath(
@@ -522,19 +665,16 @@ function readRouterPrefix(
   options: DiscoveryOptions,
   range: SourceRange,
 ): Reading<string> {
-  if (
-    pattern.routerComposition === undefined ||
-    options.routerIndex === undefined ||
-    classification.objectName === null
-  ) {
+  const resolution = routerResolutionOf(
+    pattern,
+    classification,
+    module,
+    options,
+  );
+  if (resolution === null) {
     return absentReading;
   }
 
-  const resolution = options.routerIndex.resolve(
-    pattern,
-    classification.objectModule ?? module,
-    classification.objectName,
-  );
   if (resolution.kind === "abstain") {
     return unreadableReading(
       `The router this route is declared on ${resolution.reason}, so the binding names no path and nothing pairs with it`,

@@ -201,14 +201,52 @@ describe("python value facts", () => {
         "",
       ].join("\n"),
     );
-    expect(rows(db, "binds").map((row) => row[0])).toEqual([
-      "#First",
-      "#Second",
-    ]);
+    expect(
+      rows(db, "binds")
+        .map((row) => row[0] ?? "")
+        .filter((key) => !key.endsWith("#self")),
+    ).toEqual(["#First", "#Second"]);
     expect(rows(db, "exportsAs").map((row) => row[1])).toEqual([
       "First",
       "Second",
     ]);
+  });
+
+  it("binds a method's receiver to the class it is declared in", async () => {
+    const db = await factsFor(
+      ["class Holder:", "    def wire(self):", "        pass", ""].join("\n"),
+    );
+    const [cls] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "binds")).toContainEqual([`${method?.[0]}#self`, cls?.[0]]);
+  });
+
+  it("puts what a method writes to its receiver on the class", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def __init__(self):",
+        "        self.app = build()",
+        "",
+      ].join("\n"),
+    );
+    const [cls] = rows(db, "objectValue");
+    expect(rows(db, "holdsProperty").map((row) => [row[0], row[1]])).toEqual([
+      [cls?.[0], "app"],
+      [cls?.[0], "__init__"],
+    ]);
+  });
+
+  it("binds a name a method's body assigns", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def build(self):",
+        "        app = make()",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "binds").map((row) => row[0])).toContain("#app");
   });
 
   it("keeps a class attribute under its name", async () => {

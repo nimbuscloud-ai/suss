@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { discoverUnits } from "./discovery.js";
+import { emitValueFacts } from "./facts/values.js";
+import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 
@@ -134,6 +137,22 @@ async function unitsOf(source: string, packs: PythonPack[]) {
   return discoverUnits(tree.rootNode, binding, {
     packs,
     filePath: "myapp/routes/todos.py",
+  });
+}
+
+/** The same, with the facts the rules read, which is what the project extractor hands discovery. */
+async function unitsWithRulesOf(source: string, packs: PythonPack[]) {
+  const tree = await parsePython(source);
+  const binding = bindModule(tree.rootNode);
+  const db = new Database();
+  const file = "myapp/routes/todos.py";
+  emitModuleImportFacts(db, file, binding, { roots: [] });
+  emitValueFacts(db, file, tree.rootNode);
+  return discoverUnits(tree.rootNode, binding, {
+    packs,
+    filePath: file,
+    absoluteFile: file,
+    facts: db,
   });
 }
 
@@ -897,6 +916,76 @@ describe("discoverUnits: a route declared inside an app factory", () => {
         "        pass",
         "",
         "    return helper",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units).toEqual([]);
+  });
+});
+
+describe("discoverUnits: a route on an app no scope has a binding for", () => {
+  it("finds the route when the app is an attribute of the instance", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "",
+        "class Holder:",
+        "    def __init__(self):",
+        "        self.app = FastAPI()",
+        "",
+        "    def wire(self):",
+        '        @self.app.get("/health")',
+        "        def health():",
+        "            pass",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["health"]);
+    expect(units[0]?.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/health" },
+      recognition: "fastapi-test",
+    });
+  });
+
+  it("finds the route when the app is built inside a try, which the binder skips", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "try:",
+        "    app = FastAPI()",
+        "",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+        "except RuntimeError:",
+        "    pass",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["health"]);
+  });
+
+  it("leaves the route alone when the name could be two different things", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import FastAPI",
+        "from myapp.legacy import build",
+        "",
+        "try:",
+        "    app = FastAPI()",
+        "except RuntimeError:",
+        "    app = build()",
+        "",
+        "if True:",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
         "",
       ].join("\n"),
       [fastapiLike],
