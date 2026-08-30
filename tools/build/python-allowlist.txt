@@ -1,0 +1,16 @@
+# Python that may live in this repo. Everything not listed here is
+# blocked, because a one-off .py script in a TypeScript repo sits
+# outside lint, format and typecheck and leaves a second toolchain to
+# maintain.
+#
+# Fixtures are the exception that matters. suss reads Python, so the
+# Python adapter's tests need Python to read, and it has to be written
+# in the language under test. None of it is executed by this repo; it
+# is input.
+#
+# A trailing slash allows a directory and everything under it.
+
+fixtures/
+packages/adapter/python/src/__fixtures__/
+packages/adapter/ruby/src/__fixtures__/
+tools/differential/fixtures/
