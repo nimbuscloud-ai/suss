@@ -614,6 +614,19 @@ It does not touch the evaluator.
 Each step shipped behind the existing gates: summaries byte-identical
 where discovery finds the same units, the fuzzer's pinned bugs as the
 retirement list, dogfood counts, and engine time from the profile.
-What remains of the order is the engine-side evaluation pass the
-per-step entries deferred: the resume marks that `forgetQuery` nulls,
-so unbounded chains stop re-deriving per batch.
+
+The deferred evaluation pass was tried on 2026-08-29 and made things
+slower, so the code stays as it was. The idea was that the store
+throws away the engine's worked-out answers after every query, which
+also loses the engine's place, its record of what it has processed,
+so every query starts over. The rules use no negation, so keeping the
+answers is safe, and skipping the cleanup was a one-line change.
+Dogfood measured it twice each way: about 56 seconds with the cleanup,
+about 75 without it. The reason is that one query only has a small
+amount of work to redo, while keeping every past answer means each
+new query searches through a pile that grows for the whole run.
+Throwing the answers away per query is the faster design, and now a
+measured one. A future attempt would need the engine to drop one query's
+results without losing its place on everything else, which is
+its own project and only worth starting if a profile shows evaluation
+as the main cost again.
