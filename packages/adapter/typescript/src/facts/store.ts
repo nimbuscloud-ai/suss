@@ -103,9 +103,15 @@ const NOT_BASE_FACTS = new Set([
   "wantedCallOrigin",
   "wantedExportsOf",
   "wantedAnchor",
+  "wantedSubject",
 ]);
 
-type Question = "wanted" | "wantedOrigin" | "wantedCallOrigin" | "wantedAnchor";
+type Question =
+  | "wanted"
+  | "wantedOrigin"
+  | "wantedCallOrigin"
+  | "wantedAnchor"
+  | "wantedSubject";
 
 /**
  * Dropped once a query's result has been read, so the next query does
@@ -122,6 +128,7 @@ const QUERY_FACTS: readonly string[] =
         "wantedCallOrigin",
         "wantedExportsOf",
         "wantedAnchor",
+        "wantedSubject",
       ];
 
 /** Deep enough for barrels of barrels, bounded so a wide graph stays cheap. */
@@ -172,6 +179,10 @@ export class ResolutionStore {
       walked: string[];
       extractedAt: number;
     }
+  >();
+  private readonly subjectConstructions = new Map<
+    string,
+    { construction: Node | null; walked: string[]; extractedAt: number }
   >();
   /**
    * A file's table depends only on its re-export closure, which
@@ -315,6 +326,130 @@ export class ResolutionStore {
       extractedAt: this.fullyExtracted.size,
     });
     return settled?.written ?? null;
+  }
+
+  /**
+   * The construction behind a registration subject: the call or `new`
+   * this value is written as, kept only when its callee comes from
+   * `importModule` under `importName`. A value written as two
+   * different things comes back null, since keying a route on the
+   * wrong app is worse than not keying it.
+   */
+  subjectConstructionOf(
+    value: Node,
+    importModule: string,
+    importName: string,
+  ): Node | null {
+    const target = factKeyOf(value);
+    const shared = nodeId(this.sharedDeclarationFor(target));
+    const key = `subject|${shared}|${importModule}|${importName}`;
+    const cached = this.subjectConstructions.get(key);
+    // A cached answer stays true as facts accumulate; a cached miss
+    // was true of a smaller fact set, so it is recomputed once the
+    // store has extracted more files than it had then.
+    if (
+      cached !== undefined &&
+      (cached.construction !== null ||
+        cached.extractedAt === this.fullyExtracted.size)
+    ) {
+      // A memo hit walks nothing, but whoever is collecting file
+      // dependencies still read those files through it.
+      for (const walkedPath of cached.walked) {
+        recordFileDependency(walkedPath);
+      }
+      return cached.construction;
+    }
+
+    const settled = this.resolveByWaves(target, "wantedSubject", () =>
+      this.lookupSubjectConstruction(target, importModule, importName),
+    );
+    this.subjectConstructions.set(key, {
+      construction: settled?.construction ?? null,
+      walked: [...this.lastQueryWalked],
+      extractedAt: this.fullyExtracted.size,
+    });
+    return settled?.construction ?? null;
+  }
+
+  /**
+   * The single-answer policy over the written-value walk, then the
+   * origin check on the one candidate. A candidate failing the check
+   * is settled refusal rather than a reason to widen: its own file's
+   * import facts are already in, and more files only add candidates.
+   */
+  private lookupSubjectConstruction(
+    value: Node,
+    importModule: string,
+    importName: string,
+  ): { construction: Node | null } | null {
+    this.derive();
+
+    const valueId = nodeId(value);
+    const candidates = new Set<Node>();
+    for (const target of this.answersFor("wantedSubjectWritten", valueId)) {
+      const node = this.table.byId.get(target);
+      if (node === undefined || node === value || !Node.isExpression(node)) {
+        continue;
+      }
+      candidates.add(node);
+    }
+
+    if (candidates.size > 1) {
+      return { construction: null };
+    }
+    const single = [...candidates][0];
+    if (single === undefined) {
+      return neverWritable(value) ? { construction: null } : null;
+    }
+
+    return this.constructionComesFrom(valueId, single, importModule, importName)
+      ? { construction: single }
+      : { construction: null };
+  }
+
+  /**
+   * Whether the construction's callee was imported from this module
+   * under this name. A default import records its name as "default",
+   * and a pack declares a default export by the local name people
+   * give it, so "default" counts when the callee is spelled with the
+   * declared name.
+   */
+  private constructionComesFrom(
+    valueId: string,
+    construction: Node,
+    importModule: string,
+    importName: string,
+  ): boolean {
+    const constructionId = nodeId(construction);
+    for (const tuple of this.db.lookup(
+      "wantedSubjectConstruction",
+      0,
+      valueId,
+    )) {
+      if (String(tuple[1]) !== constructionId) {
+        continue;
+      }
+      const module = String(tuple[2]);
+      if (module !== importModule && !namesPackage(module, [importModule])) {
+        continue;
+      }
+      const name = String(tuple[3]);
+      if (name === importName) {
+        return true;
+      }
+      if (
+        name === "default" &&
+        this.calleeNameOf(constructionId) === importName
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private calleeNameOf(callId: string): string | null {
+    const first = this.db.lookup("calleeName", 0, callId)[0];
+    return first === undefined ? null : String(first[1]);
   }
 
   /**

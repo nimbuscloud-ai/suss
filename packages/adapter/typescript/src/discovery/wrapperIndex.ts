@@ -17,7 +17,11 @@ import { Node, type SourceFile } from "ts-morph";
 
 import { nodeId } from "../facts/extract.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
-import { registrationSubjectsOf } from "./registrationCall.js";
+import {
+  registrationSubjectsOf,
+  storeCanFindSubjects,
+  subjectNodeFor,
+} from "./registrationCall.js";
 import { functionValueOf, stringValueOf } from "./resolveValue.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
@@ -222,7 +226,10 @@ export function discoverWrapperRegistrations(
     match.importName,
     resolution,
   );
-  if (subjects.size === 0) {
+  if (
+    subjects.size === 0 &&
+    !storeCanFindSubjects(sourceFile, match, resolution)
+  ) {
     return [];
   }
 
@@ -241,10 +248,12 @@ export function discoverWrapperRegistrations(
       return;
     }
 
-    const subject = callee.getExpression();
-    const subjectNode = Node.isIdentifier(subject)
-      ? subjects.get(subject.getText())
-      : undefined;
+    const subjectNode = subjectNodeFor(
+      callee.getExpression(),
+      subjects,
+      match,
+      resolution,
+    );
     if (subjectNode === undefined) {
       return;
     }

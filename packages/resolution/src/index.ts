@@ -793,6 +793,24 @@ export const RESOLUTION_QUESTIONS = [
     ],
   ),
 
+  // Subject identity, its own demand class; the README's subject
+  // section says why the origin pair rides on the written-value walk.
+  rule(
+    "wantedSubjectWritten",
+    [v("x"), v("r")],
+    [lit("wantedSubject", v("x")), lit("isWrittenAs", v("x"), v("r"))],
+  ),
+  rule(
+    "wantedSubjectConstruction",
+    [v("x"), v("r"), v("m"), v("n")],
+    [
+      lit("wantedSubject", v("x")),
+      lit("isWrittenAs", v("x"), v("r")),
+      lit("call", v("r"), v("c")),
+      lit("comesFrom", v("c"), v("m"), v("n")),
+    ],
+  ),
+
   // The export table of one module, keyed by the module asked about.
   // The moduleExport rules flatten re-export chains of any length, and
   // the demand cone stays on export facts alone.
