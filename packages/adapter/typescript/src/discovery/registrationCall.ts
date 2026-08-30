@@ -113,6 +113,7 @@ export function discoverRegistrationCalls(
 
     // Step 4: Extract handlers from the call
     const args = node.getArguments();
+    const registrationSubjectId = nodeId(subjectNode);
 
     // ts-rest style: second arg is object literal with handler methods
     let foundObjectArg = false;
@@ -129,6 +130,7 @@ export function discoverRegistrationCalls(
             func: prop,
             kind,
             name: prop.getName(),
+            registrationSubjectId,
           });
           continue;
         }
@@ -144,7 +146,12 @@ export function discoverRegistrationCalls(
 
         const held = functionValueOf(propInit, resolution);
         if (held !== null) {
-          results.push({ func: held, kind, name: prop.getName() });
+          results.push({
+            func: held,
+            kind,
+            name: prop.getName(),
+            registrationSubjectId,
+          });
         }
       }
     }
@@ -181,6 +188,7 @@ export function discoverRegistrationCalls(
           // The verb is there to label the unit for the reader; nothing calls it.
           name: methodName,
           nameKind: "label",
+          registrationSubjectId,
           ...(routeInfo !== null ? { routeInfo } : {}),
         });
         return;
@@ -202,6 +210,7 @@ export function discoverRegistrationCalls(
           kind,
           name: methodName,
           nameKind: "label",
+          registrationSubjectId,
           routeInfo,
         });
       }

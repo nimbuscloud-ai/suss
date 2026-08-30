@@ -112,6 +112,10 @@ import {
   type MountPrefixIndex,
 } from "./discovery/mountPrefix.js";
 import { stringValueOf } from "./discovery/resolveValue.js";
+import {
+  buildWrapperIndex,
+  type WrapperIndex,
+} from "./discovery/wrapperIndex.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
 import {
   forgetReassignedNamesUnstated,
@@ -647,6 +651,58 @@ const FUNCTION_FALLTHROUGH_TERMINAL: TerminalPattern = {
 };
 
 /**
+ * Where the framework puts the thrown value in this unit's parameters,
+ * for a wrapper it only calls when something threw. Undefined for
+ * everything else, which is every unit that is not an error handler.
+ */
+function thrownValueAt(unit: DiscoveredUnit): number | undefined {
+  return unit.pattern?.wraps?.throwParam;
+}
+
+/**
+ * A pack's terminals as they read inside such a wrapper. Express calls
+ * an error handler with `(err, req, res, next)` and a handler with
+ * `(req, res, next)`, so the response object is one parameter further
+ * along than the pack says.
+ */
+function pastThrownValue(
+  terminals: TerminalPattern[],
+  at: number | undefined,
+): TerminalPattern[] {
+  if (at === undefined) {
+    return terminals;
+  }
+  return terminals.map((pattern) =>
+    pattern.match.type === "parameterMethodCall" &&
+    pattern.match.parameterPosition >= at
+      ? {
+          ...pattern,
+          match: {
+            ...pattern.match,
+            parameterPosition: pattern.match.parameterPosition + 1,
+          },
+        }
+      : pattern,
+  );
+}
+
+/** The same shift, for the role the pack gives each parameter. */
+function rolesPastThrownValue(
+  mapping: InputMappingPattern,
+  at: number | undefined,
+): InputMappingPattern {
+  if (at === undefined || mapping.type !== "positionalParams") {
+    return mapping;
+  }
+  return {
+    type: "positionalParams",
+    params: mapping.params.map((param) =>
+      param.position >= at ? { ...param, position: param.position + 1 } : param,
+    ),
+  };
+}
+
+/**
  * The terminals to read this unit's body with. A consumer gets the
  * fall-through terminal whether or not its pack asked for one, because
  * the code around a client call runs off the end of its function all
@@ -659,7 +715,8 @@ function terminalsFor(
 ): TerminalPattern[] {
   // A pack whose units follow more than one convention overrides the
   // pack-level terminals per unit.
-  const declared = unit.terminals ?? pack.terminals;
+  const declared =
+    unit.terminals ?? pastThrownValue(pack.terminals, thrownValueAt(unit));
   if (unit.callSite === undefined) {
     return declared;
   }
@@ -688,7 +745,8 @@ function readCodeStructure(
   // pack-level input mapping per unit.
   const params = extractParameters(
     func,
-    unit.inputMapping ?? pack.inputMapping,
+    unit.inputMapping ??
+      rolesPastThrownValue(pack.inputMapping, thrownValueAt(unit)),
   );
   const extracted = extractRawBranches(
     func,
@@ -1023,6 +1081,7 @@ function extractFromSourceFile(
   tallies?: Map<string, PackTally>,
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
+  wrappers?: WrapperIndex,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   // Recognizers come from every pack, not the discovering one: a Prisma
@@ -1054,6 +1113,13 @@ function extractFromSourceFile(
       pack.discovery,
       resolution,
       mountPrefixes,
+    );
+
+    // The wrapper index settles which registrations are error handlers
+    // and which are middleware before any of them becomes a unit, which
+    // one pattern at a time cannot do.
+    units.push(
+      ...(wrappers?.unitsIn(sourceFile.getFilePath(), pack.name) ?? []),
     );
 
     // A pack no DiscoveryMatch variant fits does its own walking.
@@ -1172,6 +1238,7 @@ function extractFromSourceFile(
       if (unit.unreadBinding !== undefined) {
         raw.unreadBinding = unit.unreadBinding;
       }
+      stampWrappers(raw, unit, wrappers);
 
       const matchedPattern =
         unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind);
@@ -1404,6 +1471,32 @@ function extractFromSourceFile(
   }
 
   return summaries;
+}
+
+/**
+ * Point this unit at the middleware and error handlers that run around
+ * it, each of which has a summary of its own saying what it does.
+ *
+ * The wrapper's file is recorded as a dependency because the reference
+ * says what the wrapper is called there, and a rename changes this
+ * summary without touching the file this walk is reading.
+ */
+function stampWrappers(
+  raw: RawCodeStructure,
+  unit: DiscoveredUnit,
+  wrappers: WrapperIndex | undefined,
+): void {
+  if (wrappers === undefined || unit.registrationSubjectId === undefined) {
+    return;
+  }
+  const applied = wrappers.wrappersFor(unit.registrationSubjectId);
+  if (applied.length === 0) {
+    return;
+  }
+  raw.wrappers = [...applied];
+  for (const wrapper of applied) {
+    recordFileDependency(wrapper.file);
+  }
 }
 
 /**
@@ -2158,6 +2251,13 @@ export function createTypeScriptAdapter(
         buildMountPrefixIndex(packsByFile, resolution),
       );
 
+      // A route's own body is not all of its wire behaviour, so the
+      // middleware and error handlers registered on the same app get
+      // summarized too, and the route points at them.
+      const wrappers = timer.time("wrapperIndex", () =>
+        buildWrapperIndex(packsByFile, resolution),
+      );
+
       const caching = cacheDir !== null;
 
       // Which stored files survive: their own hash and their recorded
@@ -2236,6 +2336,7 @@ export function createTypeScriptAdapter(
                 tallies,
                 resolution,
                 mountPrefixes,
+                wrappers,
               ),
             );
             for (const summary of walked) {
