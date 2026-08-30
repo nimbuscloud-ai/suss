@@ -2,11 +2,11 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 649,
-    "internal": 2350,
-    "consumers": 1123,
-    "pairs": 1104,
-    "unfollowedCalls": 173,
+    "exports": 655,
+    "internal": 2344,
+    "consumers": 1147,
+    "pairs": 1128,
+    "unfollowedCalls": 182,
     "findingErrors": 0
   },
   "packages": {
@@ -33,31 +33,31 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 76,
+      "exports": 78,
       "internal": 20,
       "consumers": 4,
-      "unfollowedCalls": 0
+      "unfollowedCalls": 1
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 40,
-      "internal": 227,
-      "consumers": 145,
-      "unfollowedCalls": 18
+      "internal": 220,
+      "consumers": 152,
+      "unfollowedCalls": 28
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
-      "exports": 2,
-      "internal": 13,
-      "consumers": 13,
+      "exports": 3,
+      "internal": 16,
+      "consumers": 20,
       "unfollowedCalls": 0
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 21,
-      "internal": 387,
-      "consumers": 234,
-      "unfollowedCalls": 34
+      "internal": 385,
+      "consumers": 241,
+      "unfollowedCalls": 31
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -383,14 +383,14 @@
     },
     "packages/intent-ir": {
       "name": "@suss/intent-ir",
-      "exports": 2,
+      "exports": 3,
       "internal": 2,
-      "consumers": 2,
-      "unfollowedCalls": 0
+      "consumers": 5,
+      "unfollowedCalls": 1
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 63,
+      "exports": 65,
       "internal": 14,
       "consumers": 0,
       "unfollowedCalls": 10
