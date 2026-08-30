@@ -29,25 +29,41 @@ we lost". So the closure records the stop as an `unfollowedCall` gap on
 the summary of the body that made the call, saying which callee and why.
 `unfollowedCall.ts:classifyStop` is where that decision is made.
 
-It sorts a stop into one of four, from the declarations the type checker
-offers for the callee. An imported or re-exported name is followed
-through to its last declaration first, or a barrel forwarding a
-dependency's function would look like project code.
+It sorts a stop from the declarations the type checker offers for the
+callee, and from the function whose body made the call. An imported or
+re-exported name is followed through to its last declaration first, or a
+barrel forwarding a dependency's function would look like project code.
 
 | Reason | What it is | Gap? |
 | --- | --- | --- |
 | `noBody` | A declaration the project wrote that states a signature and leaves the body to whoever implements it: a method on an interface, an abstract method, an ambient declaration. | yes |
-| `unsettledValue` | The project declares the callee as something other than a function: a parameter, a field, a variable whose initializer is a call. | yes |
+| `unsettledValue` | The project declares the callee as something other than a function: a field, a variable whose initializer is a call, a parameter of some enclosing function. | yes |
 | `multipleSources` | The resolution store followed the callee to two different functions, a fallback whose branches both resolve, or a field two construction sites fill differently. No single body can be followed, and the gap says so at the call rather than folding into a plain could-not-settle. | yes |
 | `outsideRun` | Every declaration is in a dependency, or inside `declare module "name"`. | no |
 | `noDeclaration` | Nothing declares the callee, which is what a call on an untyped value comes to. | no |
+| `callerSupplied` | The callee is a parameter of the function being scanned, so the call runs whatever that function's caller passed in: a middleware's `next`, a callback handed to a higher-order helper. | no |
 
-The two that leave no gap fail the same test: nothing about either says
-the callee is code the project owns. A codebase makes tens of thousands
-of calls into its dependencies, and `JSON.parse` in a gap list buries
-every stop a reader could act on. The run also already describes a call
-into another package, as a boundary crossing rather than as a body, so
-leaving it out here loses nothing.
+The three that leave no gap fail the same test: nothing about any of them
+says the callee is code the project owns. A codebase makes tens of
+thousands of calls into its dependencies, and `JSON.parse` in a gap list
+buries every stop a reader could act on. The run also already describes a
+call into another package, as a boundary crossing rather than as a body,
+so leaving it out here loses nothing.
+
+`callerSupplied` is the newest of the three and the one that moves the
+count most. A parameter used to come out as `unsettledValue`, which told
+a reader that resolution had failed and sent them looking for a bug that
+was not there: a pack declares a middleware's continuation through
+`wraps.continuationParam`, so the call to `next` is the one call the run
+knows most about. Over the whole dogfood pass, 77 of 250 recorded stops
+were calls to a parameter of the function being scanned. None of them was
+a resolution failure, and none of them was fixable, because what runs
+there is decided by each caller.
+
+That leaves `unfollowedCalls` meaning one thing rather than two: a count
+of the calls better resolution could reach. A count of the calls a
+project makes through a callback would be a different measure, and worth
+having separately if anyone wants it.
 
 A third case belongs on the "gap" side and cannot get here yet: a call
 whose receiver a pack recognized but whose method it did not, a Redis

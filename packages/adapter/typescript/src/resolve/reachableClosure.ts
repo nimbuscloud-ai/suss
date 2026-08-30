@@ -150,7 +150,7 @@ function resolveCallee(
     kind: "stopped",
     stop: {
       callee: calleeName,
-      reason: classifyStop(declarationsBehind(symbol)),
+      reason: classifyStop(declarationsBehind(symbol), scan.scanning),
     },
   };
 }
@@ -170,11 +170,13 @@ function resolveCallee(
 /**
  * What one pass over a function's body has to hand. `reachedFrom` is
  * the file of whoever called this function, which is where a dependency
- * it was handed was constructed.
+ * it was handed was constructed. `scanning` is the function whose body
+ * this pass is reading, which says whose parameters a callee could be.
  */
 interface ScanContext {
   resolveCallableSources?: (value: Node, alsoFrom?: SourceFile) => Node[];
   reachedFrom?: SourceFile;
+  scanning?: FunctionRoot;
 }
 
 /** Everything one pass over a body found: edges to walk, and stops. */
@@ -216,6 +218,7 @@ function resolveJsxReference(
 }
 
 function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
+  const inFunc: ScanContext = { ...scan, scanning: func };
   const candidates: ReachableCandidate[] = [];
   const stops: UnfollowedCall[] = [];
   const seen = new Set<string>();
@@ -247,7 +250,7 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
       return;
     }
     const calleeText = normalizeCallee(node.getExpression().getText());
-    const outcome = resolveCallee(node, calleeText, scan);
+    const outcome = resolveCallee(node, calleeText, inFunc);
     if (outcome === null) {
       return;
     }
