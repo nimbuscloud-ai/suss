@@ -97,12 +97,13 @@ export interface DiscoveryOptions {
   facts?: Database | undefined;
 }
 
-/** One decorated definition and the scope its decorators are written in. */
+/** One decorated definition, and what the scope made of each decorator on it. */
 interface DecoratedStatement {
   stmt: PyNode;
   scope: Scope;
   /** The function whose body it is written in, which is part of how a local name is keyed. */
   enclosingFunction: PyNode | null;
+  decorators: { node: PyNode; direct: DecoratorClassification }[];
 }
 
 /**
@@ -129,7 +130,15 @@ function decoratedStatements(
         continue;
       }
       if (child.type === "decorated_definition") {
-        found.push({ stmt: child, scope, enclosingFunction });
+        found.push({
+          stmt: child,
+          scope,
+          enclosingFunction,
+          decorators: stripDecorators(child).decorators.map((node) => ({
+            node,
+            direct: classifyDecorator(node, scope),
+          })),
+        });
       }
       walk(
         child,
@@ -142,25 +151,15 @@ function decoratedStatements(
   return found;
 }
 
-/** What the scope made of each decorator, keyed by the decorator's node. */
-type ScopeClassifications = ReadonlyMap<number, DecoratorClassification>;
-
 export function discoverUnits(
   root: PyNode,
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
   const decorated = decoratedStatements(root, module);
-  const classified = new Map<number, DecoratorClassification>();
-  for (const { stmt, scope } of decorated) {
-    for (const decoratorNode of stripDecorators(stmt).decorators) {
-      classified.set(decoratorNode.id, classifyDecorator(decoratorNode, scope));
-    }
-  }
-
-  const subjects = builtSubjects(decorated, classified, options);
+  const subjects = builtSubjects(decorated, options);
   return decorated.flatMap((decoratedStatement) =>
-    decoratedUnits(decoratedStatement, classified, module, options, subjects),
+    decoratedUnits(decoratedStatement, module, options, subjects),
   );
 }
 
@@ -171,7 +170,6 @@ export function discoverUnits(
  */
 function builtSubjects(
   decorated: readonly DecoratedStatement[],
-  classified: ScopeClassifications,
   options: DiscoveryOptions,
 ): Map<string, SubjectConstruction> {
   const facts = options.facts;
@@ -181,16 +179,15 @@ function builtSubjects(
 
   const factsPath = options.absoluteFile ?? options.filePath;
   const asked = new Set<string>();
-  for (const { stmt, enclosingFunction } of decorated) {
-    for (const decoratorNode of stripDecorators(stmt).decorators) {
-      const direct = classified.get(decoratorNode.id);
+  for (const { enclosingFunction, decorators } of decorated) {
+    for (const { node, direct } of decorators) {
       if (
-        direct?.module != null &&
+        direct.module !== null &&
         acceptedByAnyPattern(direct.module, options)
       ) {
         continue;
       }
-      const written = decoratorReceiver(decoratorNode);
+      const written = decoratorReceiver(node);
       if (written !== null) {
         asked.add(readKey(factsPath, written.object, enclosingFunction));
       }
@@ -201,18 +198,14 @@ function builtSubjects(
 
 function decoratedUnits(
   decoratedStatement: DecoratedStatement,
-  classified: ScopeClassifications,
   module: ModuleBinding,
   options: DiscoveryOptions,
   subjects: ReadonlyMap<string, SubjectConstruction>,
 ): RawCodeStructure[] {
-  const { stmt, scope, enclosingFunction } = decoratedStatement;
+  const { stmt, scope, enclosingFunction, decorators } = decoratedStatement;
   const units: RawCodeStructure[] = [];
-  const { definition, decorators } = stripDecorators(stmt);
-  for (const decoratorNode of decorators) {
-    const direct =
-      classified.get(decoratorNode.id) ??
-      classifyDecorator(decoratorNode, scope);
+  const { definition } = stripDecorators(stmt);
+  for (const { node: decoratorNode, direct } of decorators) {
     // A decorator no pattern accepts as written may be a project wrapper
     // around one a pattern does accept. Failing that, the rules say what
     // the object it hangs on was built by.

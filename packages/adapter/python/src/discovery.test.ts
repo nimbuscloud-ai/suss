@@ -7,6 +7,7 @@ import { discoverUnits } from "./discovery.js";
 import { emitValueFacts } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
+import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 
 import type { Predicate } from "@suss/behavioral-ir";
@@ -79,6 +80,40 @@ const fastapiLike: PythonPack = {
   ],
 };
 
+const fastapiWithRouters: PythonPack = {
+  ...fastapiLike,
+  discovery: [
+    {
+      ...fastapiLike.discovery[0],
+      routerComposition: {
+        routerConstructorName: "APIRouter",
+        includeMethodName: "include_router",
+        routerKeyword: "router",
+        prefixKeyword: "prefix",
+      },
+    } as PythonPack["discovery"][number],
+  ],
+};
+
+/** flask-restx is the library that puts a prefix on the object a mount is called on. */
+const flaskRestxWithNamespaces: PythonPack = {
+  ...flaskRestxLike,
+  discovery: [
+    {
+      ...flaskRestxLike.discovery[0],
+      importModule: ["flask_restx", "myapp.wrappers.restx"],
+      routerComposition: {
+        routerConstructorName: "Namespace",
+        includeMethodName: "add_namespace",
+        prefixKeyword: "path",
+        mountPrefixEffect: "replaces",
+        constructorPrefixRequired: true,
+        mountObjectPrefix: { prefixKeyword: "prefix" },
+      },
+    } as PythonPack["discovery"][number],
+  ],
+};
+
 const fastapiWithInjection: PythonPack = {
   ...fastapiLike,
   discovery: [
@@ -140,19 +175,35 @@ async function unitsOf(source: string, packs: PythonPack[]) {
   });
 }
 
-/** The same, with the facts the rules read, which is what the project extractor hands discovery. */
-async function unitsWithRulesOf(source: string, packs: PythonPack[]) {
+/**
+ * The same, with the facts the rules read and the router index a project
+ * run builds, which together are what the project extractor hands
+ * discovery. The file is named once and used as both paths, since a run
+ * only shortens the display path when a workspace root was given.
+ */
+async function unitsWithRulesOf(
+  source: string,
+  packs: PythonPack[],
+  options: { routers?: boolean } = {},
+) {
   const tree = await parsePython(source);
   const binding = bindModule(tree.rootNode);
   const db = new Database();
   const file = "myapp/routes/todos.py";
   emitModuleImportFacts(db, file, binding, { roots: [] });
   emitValueFacts(db, file, tree.rootNode);
+  const bound = [
+    { file, displayPath: file, root: tree.rootNode, module: binding },
+  ];
   return discoverUnits(tree.rootNode, binding, {
     packs,
     filePath: file,
-    absoluteFile: file,
     facts: db,
+    ...(options.routers === true
+      ? {
+          routerIndex: buildRouterIndex(bound, packs, { roots: [], facts: db }),
+        }
+      : {}),
   });
 }
 
@@ -971,6 +1022,52 @@ describe("discoverUnits: a route on an app no scope has a binding for", () => {
     expect(units.map((u) => u.identity.name)).toEqual(["health"]);
   });
 
+  it("leaves a decorator on the app alone when its name is no verb the pack lists", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "",
+        "class Holder:",
+        "    def __init__(self):",
+        "        self.app = FastAPI()",
+        "",
+        "    def wire(self):",
+        '        @self.app.middleware("http")',
+        "        def timing(request, call_next):",
+        "            pass",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units).toEqual([]);
+  });
+
+  it("finds the route when the app arrives as an argument", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "",
+        "def register(app):",
+        '    @app.get("/health")',
+        "    def health():",
+        "        pass",
+        "",
+        "",
+        "register(FastAPI())",
+        "",
+      ].join("\n"),
+      [fastapiLike],
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["health"]);
+    expect(units[0]?.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/health" },
+      recognition: "fastapi-test",
+    });
+  });
+
   it("leaves the route alone when the name could be two different things", async () => {
     const units = await unitsWithRulesOf(
       [
@@ -991,6 +1088,145 @@ describe("discoverUnits: a route on an app no scope has a binding for", () => {
       [fastapiLike],
     );
     expect(units).toEqual([]);
+  });
+});
+
+describe("discoverUnits: a router the decorator reaches through an attribute", () => {
+  it("composes the prefix of the router the attribute holds", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import APIRouter, FastAPI",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "app.include_router(router)",
+        "",
+        "",
+        "class Holder:",
+        "    def __init__(self):",
+        "        self.router = router",
+        "",
+        "    def wire(self):",
+        '        @self.router.get("/{item_id}")',
+        "        def read(item_id: str):",
+        "            pass",
+        "",
+      ].join("\n"),
+      [fastapiWithRouters],
+      { routers: true },
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["read"]);
+    expect(units[0]?.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/items/{item_id}" },
+      recognition: "fastapi-test",
+    });
+  });
+
+  it("leaves the path as written when the attribute holds the app rather than a router", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import FastAPI",
+        "",
+        "",
+        "class Holder:",
+        "    def __init__(self):",
+        "        self.app = FastAPI()",
+        "",
+        "    def wire(self):",
+        '        @self.app.get("/health")',
+        "        def health():",
+        "            pass",
+        "",
+      ].join("\n"),
+      [fastapiWithRouters],
+      { routers: true },
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["health"]);
+    expect(units[0]?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/health",
+    });
+  });
+
+  it("gives no path to a router built where nothing mounts it by name", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from fastapi import APIRouter",
+        "",
+        "",
+        "class Holder:",
+        "    def __init__(self):",
+        '        self.router = APIRouter(prefix="/held")',
+        "",
+        "    def wire(self):",
+        '        @self.router.get("/inside")',
+        "        def inside():",
+        "            pass",
+        "",
+      ].join("\n"),
+      [fastapiWithRouters],
+      { routers: true },
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["inside"]);
+    expect(units[0]?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(unreadTextOf(units[0])).toContain(
+      "is never mounted through a single variable binding in the files read",
+    );
+  });
+
+  it("leaves the path as written when the decorator names no object to mount under", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from myapp.wrappers.restx import route",
+        "",
+        "",
+        '@route("/todos")',
+        "class Todos:",
+        "    def get(self):",
+        "        pass",
+        "",
+      ].join("\n"),
+      [flaskRestxWithNamespaces],
+      { routers: true },
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["Todos.get"]);
+    expect(units[0]?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/todos",
+    });
+  });
+
+  it("gives no path to a route on a mount object built where its prefix is not read", async () => {
+    const units = await unitsWithRulesOf(
+      [
+        "from flask_restx import Api",
+        "",
+        "",
+        "class Holder:",
+        "    def __init__(self):",
+        '        self.api = Api(prefix="/v1")',
+        "",
+        "    def wire(self):",
+        '        @self.api.route("/todos")',
+        "        class Todos:",
+        "            def get(self):",
+        "                pass",
+        "",
+      ].join("\n"),
+      [flaskRestxWithNamespaces],
+      { routers: true },
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["Todos.get"]);
+    expect(unreadTextOf(units[0])).toContain(
+      "is built where this reading does not read a mount object's prefix",
+    );
   });
 });
 

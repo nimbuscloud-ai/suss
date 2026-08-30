@@ -329,4 +329,21 @@ describe("python value facts", () => {
     expect(rows(db, "binds")).toEqual([]);
     expect(rows(db, "holdsProperty")).toEqual([]);
   });
+
+  it("says nothing about an annotation that assigns no value", async () => {
+    const db = await factsFor("app: FastAPI\n");
+    expect(rows(db, "binds")).toEqual([]);
+    expect(rows(db, "exportsAs")).toEqual([]);
+  });
+
+  it("takes a lambda that declares no parameter as a function all the same", async () => {
+    const db = await factsFor("build = lambda: 1\n");
+    expect(db.size("func")).toBe(1);
+    expect(rows(db, "paramNamed")).toEqual([]);
+  });
+
+  it("gives no key to the marker that ends the positional parameters", async () => {
+    const db = await factsFor("def build(a, *, flag=False):\n    pass\n");
+    expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
+  });
 });
