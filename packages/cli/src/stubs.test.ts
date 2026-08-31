@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   loadStubs,
-  stubDeprecationNote,
+  stubOnlyOptionRefusal,
+  stubOnlyOptionsOf,
   stubOverlayOf,
   withStubOptions,
 } from "./stubs.js";
@@ -201,19 +202,26 @@ describe("merging the overlay into a pack's options", () => {
   });
 });
 
-describe("the deprecation note for stub-covered options", () => {
-  it("points a configured option at the stub file", () => {
-    const note = stubDeprecationNote("express", {
-      registrationHelpers: [{ helperName: "mountHealth" }],
-    });
-    expect(note).toContain("registrationHelpers option on the express pack");
-    expect(note).toContain("suss infer stub");
+describe("the options only a stub may state", () => {
+  it("lists them for a pack that has them, and nothing for one that does not", () => {
+    expect(stubOnlyOptionsOf("nestjs-rest")).toEqual(["classDecorators"]);
+    expect(stubOnlyOptionsOf("react")).toEqual([]);
   });
 
-  it("says nothing for uncovered options or packs", () => {
-    expect(stubDeprecationNote("express", { otherOption: 1 })).toBeNull();
-    expect(stubDeprecationNote("react", { anything: 1 })).toBeNull();
-    expect(stubDeprecationNote("express", undefined)).toBeNull();
+  it("leaves the options that describe the project's own code out", () => {
+    expect(stubOnlyOptionsOf("express")).toEqual([]);
+    expect(stubOnlyOptionsOf("aws-dynamodb")).toEqual([]);
+    expect(stubOnlyOptionsOf("aws-lambda")).toEqual([]);
+  });
+
+  it("points one at the stub file, and reads as a sentence for two", () => {
+    expect(stubOnlyOptionRefusal(["classDecorators"])).toBe(
+      "The classDecorators option describes a dependency, and a stub file in suss/stubs/ is where that now goes. " +
+        "Start one with: suss infer stub <package>.",
+    );
+    expect(stubOnlyOptionRefusal(["producers", "factories"])).toContain(
+      "The producers and factories options describe a dependency",
+    );
   });
 });
 

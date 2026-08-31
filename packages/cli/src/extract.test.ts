@@ -22,6 +22,7 @@ import {
   resolvePythonPack,
   resolveRubyPack,
 } from "./extract.js";
+import { stubOverlayOf } from "./stubs.js";
 
 import type { CacheDiagnostic } from "@suss/adapter-typescript";
 import type { BehavioralSummary, RenderNode } from "@suss/behavioral-ir";
@@ -90,45 +91,22 @@ describe("resolveFramework", () => {
 
   it("hands a pack the config the flag names", async () => {
     const file = writeConfig(
-      JSON.stringify({
-        producers: [
-          {
-            module: "@acme/async",
-            receiver: "CommandDispatcher",
-            method: "dispatch",
-            subjectArg: 0,
-            bodyArg: 1,
-          },
-        ],
-      }),
+      JSON.stringify({ requiresImport: ["@acme/signing"] }),
     );
-    const pack = await resolveFramework(`aws-sqs=${file}`);
-    expect(pack.requiresImport).toContain("@acme/async");
-    // Two compiled send declarations, the receive recognizer, and one
-    // per configured producer.
-    expect(pack.invocationRecognizers).toHaveLength(4);
+    const pack = await resolveFramework(`aws-dynamodb=${file}`);
+    expect(pack.requiresImport).toContain("@acme/signing");
   });
 
   it("stamps a configured pack with a version the config changes", async () => {
-    const producer = (receiver: string) =>
-      JSON.stringify({
-        producers: [
-          {
-            module: "@acme/async",
-            receiver,
-            method: "dispatch",
-            subjectArg: 0,
-            bodyArg: 1,
-          },
-        ],
-      });
+    const gate = (module: string) =>
+      JSON.stringify({ requiresImport: [module] });
 
-    const plain = await resolveFramework("aws-sqs");
+    const plain = await resolveFramework("aws-dynamodb");
     const configured = await resolveFramework(
-      `aws-sqs=${writeConfig(producer("CommandDispatcher"))}`,
+      `aws-dynamodb=${writeConfig(gate("@acme/signing"))}`,
     );
     const other = await resolveFramework(
-      `aws-sqs=${writeConfig(producer("EventDispatcher"))}`,
+      `aws-dynamodb=${writeConfig(gate("@acme/ledger"))}`,
     );
 
     expect(configured.version).not.toBe(plain.version);
@@ -167,10 +145,12 @@ describe("resolveFramework", () => {
 
   it("keeps the config in the stamp alongside the code", async () => {
     const configured = await resolveFramework(
-      `aws-sqs=${writeConfig('{"producers":[{"module":"@acme/async","receiver":"CommandDispatcher","method":"dispatch","subjectArg":0}]}')}`,
+      `aws-dynamodb=${writeConfig('{"requiresImport":["@acme/signing"]}')}`,
     );
-    const plain = await resolveFramework("aws-sqs");
-    const loaded = fileURLToPath(import.meta.resolve("@suss/packs/aws-sqs"));
+    const plain = await resolveFramework("aws-dynamodb");
+    const loaded = fileURLToPath(
+      import.meta.resolve("@suss/packs/aws-dynamodb"),
+    );
     const code = computeContentHash([loaded]);
 
     expect(plain.version).toContain(code);
@@ -180,10 +160,10 @@ describe("resolveFramework", () => {
 
   it("stamps the same config the same way whatever order it is written in", async () => {
     const one = await resolveFramework(
-      `aws-sqs=${writeConfig('{"producers":[{"module":"@acme/async","receiver":"D","method":"send","subjectArg":0}]}')}`,
+      `prisma=${writeConfig('{"storageSystem":"mysql","scope":"reporting"}')}`,
     );
     const two = await resolveFramework(
-      `aws-sqs=${writeConfig('{"producers":[{"subjectArg":0,"method":"send","receiver":"D","module":"@acme/async"}]}')}`,
+      `prisma=${writeConfig('{"scope":"reporting","storageSystem":"mysql"}')}`,
     );
 
     expect(two.version).toBe(one.version);
@@ -244,11 +224,14 @@ describe("packs for the other two languages", () => {
     expect(pack.discovery.length).toBeGreaterThan(0);
   });
 
-  it("hands a Python pack the wrapper modules the config names", async () => {
-    const file = writeConfig(
-      JSON.stringify({ wrapperModules: ["myapp.wrappers.restx"] }),
-    );
-    const pack = await resolvePythonPack(`flask-restx=${file}`);
+  it("hands a Python pack the wrapper modules a stub states", async () => {
+    const overlay = stubOverlayOf([
+      {
+        package: "myapp.wrappers.restx",
+        statements: [{ kind: "re-exports", of: "flask_restx" }],
+      },
+    ]);
+    const pack = await resolvePythonPack("flask-restx", overlay);
     const pattern = pack.discovery[0];
     expect(pattern?.importModule).toContain("myapp.wrappers.restx");
   });
@@ -277,12 +260,19 @@ describe("packs for the other two languages", () => {
     );
   });
 
-  it("names the config file and what the pack does take", async () => {
+  it("names the config file and what the pack does take, leaving out the stub-only keys", async () => {
     const file = writeConfig(JSON.stringify({ nonsense: 42 }));
-    const failure = resolveFramework(`hono=${file}`);
+    const failure = resolveFramework(`nestjs-microservices=${file}`);
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow(
-      /The hono pack takes: registrationHelpers\./,
+      /The nestjs-microservices pack takes: transport\./,
+    );
+  });
+
+  it("says a pack takes nothing from a config file when every option it has is stub-only", async () => {
+    const file = writeConfig(JSON.stringify({ nonsense: 42 }));
+    await expect(resolveFramework(`nestjs-rest=${file}`)).rejects.toThrow(
+      /The nestjs-rest pack does not take any option from a config file\./,
     );
   });
 
@@ -301,32 +291,100 @@ describe("packs for the other two languages", () => {
     expect(pack.name).toBe("prisma");
   });
 
-  it("still takes a deprecated option, and still prints its note", async () => {
+  it("refuses an option a dependency stub states, and says where it goes", async () => {
     const file = writeConfig(
+      JSON.stringify({ classDecorators: ["ApiController"] }),
+    );
+    const failure = resolveFramework(`nestjs-rest=${file}`);
+    await expect(failure).rejects.toThrow(
+      /The classDecorators option describes a dependency/,
+    );
+    await expect(failure).rejects.toThrow(/suss infer stub <package>/);
+  });
+
+  it("tells apart a stub-only option and a key no pack declares", async () => {
+    const file = writeConfig(
+      JSON.stringify({ classDecorators: [], nonsense: 42 }),
+    );
+    const failure = resolveFramework(`nestjs-microservices=${file}`);
+    await expect(failure).rejects.toThrow(
+      /The classDecorators option describes a dependency/,
+    );
+    await expect(failure).rejects.toThrow(
+      /"nonsense" is not an option this pack takes/,
+    );
+  });
+
+  it("keeps the options that describe the project's own code", async () => {
+    const helper = writeConfig(
       JSON.stringify({
         registrationHelpers: [
           {
-            helperName: "mountHealth",
+            helperName: "registerCrud",
             registrations: [
-              { method: "GET", pathTemplate: "/health", handlerArg: "{0}" },
+              { method: "GET", pathTemplate: "/{1}", handlerArg: "{2}.list" },
             ],
           },
         ],
       }),
     );
-    const written: string[] = [];
-    const original = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-    try {
-      const pack = await resolveFramework(`hono=${file}`);
-      expect(pack.name).toBe("hono");
-    } finally {
-      process.stderr.write = original;
-    }
-    expect(written.join("")).toContain("keeps working for one more release");
+    const express = await resolveFramework(`express=${helper}`);
+    const helperNames = express.discovery.flatMap((pattern) =>
+      pattern.match.type === "registrationTemplate"
+        ? [pattern.match.helperName]
+        : [],
+    );
+    expect(helperNames).toContain("registerCrud");
+
+    const dynamo = await resolveFramework(
+      `aws-dynamodb=${writeConfig(
+        JSON.stringify({
+          requestFunctions: [
+            {
+              name: "sendRequest",
+              operationArg: 2,
+              requestArg: 3,
+              operations: { Query: "read" },
+            },
+          ],
+        }),
+      )}`,
+    );
+    expect(dynamo.name).toBe("aws-dynamodb");
+
+    const lambda = await resolveFramework(
+      `aws-lambda=${writeConfig(
+        JSON.stringify({ subjectFactories: [{ property: "subject" }] }),
+      )}`,
+    );
+    expect(lambda.name).toBe("aws-lambda");
+  });
+
+  it("still hands a pack an option a stub states", async () => {
+    const overlay = stubOverlayOf([
+      {
+        package: "@acme/http-kit",
+        statements: [
+          {
+            kind: "registers-routes",
+            export: "mountHealth",
+            registrations: [
+              { method: "GET", pathTemplate: "/health", handlerArg: "{0}" },
+            ],
+          },
+        ],
+      },
+    ]);
+    const plain = await resolveFramework("hono");
+    const stubbed = await resolveFramework("hono", overlay);
+
+    expect(stubbed.version).not.toBe(plain.version);
+    const helperNames = stubbed.discovery.flatMap((pattern) =>
+      pattern.match.type === "registrationTemplate"
+        ? [pattern.match.helperName]
+        : [],
+    );
+    expect(helperNames).toContain("mountHealth");
   });
 
   it("leaves a pack that declares no options alone", async () => {
@@ -386,17 +444,23 @@ describe("languageOfRun", () => {
 
 describe("extract over a Python project", () => {
   it("reads every route the fixture declares, through the CLI", async () => {
-    const out = path.join(
+    // The wrapper module the routes import is a fact about a dependency,
+    // so the project states it in a stub rather than in pack config.
+    const project = path.join(
       fs.mkdtempSync(path.join(os.tmpdir(), "suss-python-")),
-      "summaries.json",
+      "project",
     );
-    const config = writeConfig(
-      JSON.stringify({ wrapperModules: ["myapp.wrappers.restx"] }),
+    fs.cpSync(pythonFixture, project, { recursive: true });
+    fs.mkdirSync(path.join(project, "suss", "stubs"), { recursive: true });
+    fs.writeFileSync(
+      path.join(project, "suss", "stubs", "restx-wrapper.yaml"),
+      "package: myapp.wrappers.restx\nstatements:\n  - kind: re-exports\n    of: flask_restx\n",
     );
+    const out = path.join(project, "summaries.json");
 
     const summaries = await extract({
-      dir: pythonFixture,
-      frameworks: ["fastapi", `flask-restx=${config}`],
+      dir: project,
+      frameworks: ["fastapi", "flask-restx"],
       output: out,
     });
 

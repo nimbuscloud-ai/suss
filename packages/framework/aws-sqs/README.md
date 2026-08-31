@@ -29,32 +29,33 @@ The producer side reads the env var name out of `QueueUrl`, so `process.env.ORDE
 
 A file is admitted by an import gate on `@aws-sdk/client-sqs` for producer files, `aws-lambda` for consumer files (the `SQSEvent` type comes from there), and every module a configured dispatcher is declared in.
 
-## Options
+## Telling it about your own dispatcher
 
-A service that sends through a dispatcher of its own does not write a `SendMessageCommand`, so the declaration never fires on it. Such a project says which dispatcher does the sending.
+A service that sends through a dispatcher of its own does not write a `SendMessageCommand`, so the declaration never fires on it. Such a project says which dispatcher does the sending, in a dependency stub under `suss/stubs/`.
 
-```json
-{
-  "producers": [
-    {
-      "module": "@acme/async",
-      "receiver": "CommandDispatcher",
-      "method": "dispatch",
-      "subjectArg": 0,
-      "bodyArg": 1
-    }
-  ]
-}
+```yaml
+# suss/stubs/acme-async.yaml
+package: "@acme/async"
+statements:
+  - kind: performs-call
+    system: aws.sqs
+    spec:
+      receiver: CommandDispatcher
+      method: dispatch
+      subjectArg: 0
+      bodyArg: 1
 ```
 
 That reads `dispatcher.dispatch("order.placed", order, { queueUrl })` as a send on channel `order.placed`, the same subject the consumer expects, so the two pair. The pack emits nothing when the subject is not a literal string in the source, because a guessed channel would pair a producer with the wrong consumer.
 
-- `producers`: dispatchers this project sends through. Each one adds a recognizer and widens the import gate to the module it says.
-  - `module`: the module that declares the receiver's type.
-  - `receiver`: the type name of the receiver, as that module exports it.
-  - `method`: the method that performs the send.
-  - `subjectArg`: which argument position the subject is in.
-  - `bodyArg`: which argument the message body is. Leave it out when the method does not take a single body argument, as a batch method taking a list of entries does, and then no body is reported.
+The stub's `package` is the module that declares the receiver's type, and it widens the pack's import gate to that module. In the `spec`:
+
+- `receiver`: the type name of the receiver, as that module exports it.
+- `method`: the method that performs the send.
+- `subjectArg`: which argument position the subject is in.
+- `bodyArg`: which argument the message body is. Leave it out when the method does not take a single body argument, as a batch method taking a list of entries does, and then no body is reported.
+
+The `producers` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ## Where it fits in suss
 

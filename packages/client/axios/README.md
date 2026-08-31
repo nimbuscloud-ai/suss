@@ -40,19 +40,22 @@ class Api {
 
 `Api.get` is discovered as a client boundary whose path is unresolved, because the path is a parameter rather than a literal. Every caller of `Api.get` with a literal path (`Api.get("/pet/1")`) gets its own synthesized summary, the way any other wrapper-style client already does.
 
-A project that wraps `axios.create` in its own factory function, rather than calling it directly, says which factory that is through the pack config:
+A project that wraps `axios.create` in a factory from a package suss cannot read says which factory that is, in a dependency stub under `suss/stubs/`:
 
-```json
-{ "factories": [{ "module": "./src/apiClient", "export": "createApiClient" }] }
+```yaml
+# suss/stubs/acme-http.yaml
+package: "@acme/http"
+statements:
+  - kind: performs-call
+    system: axios
+    export: createApiClient
 ```
 
-```
-npx suss extract -f axios=config.json ...
-```
+Every site that imports `createApiClient` from `@acme/http` and calls it is then a client instance in the same way the result of `axios.create()` is.
 
-Every site that imports `createApiClient` from `./src/apiClient` and calls it is then a client instance in the same way the result of `axios.create()` is, however the importing file spells the path to it (`../apiClient`, `../../src/apiClient`, and so on all resolve to the same configured module).
+A bare package name is matched by that name directly, with the same cheap check `axios` itself uses, so files that never mention it are skipped before anything is parsed. A module written as a path has no such gate: resolving a relative path needs a parsed project, not a file's own import text alone, so every file is walked instead. A project that declares several path-shaped factories pays that cost once for the whole run, not once per factory.
 
-A bare package name (`{ "module": "some-axios-wrapper", "export": "createClient" }`) is matched by that name directly, with the same cheap check `axios` itself uses, so files that never mention it are skipped before anything is parsed. A module written as a path has no such gate: resolving a relative path needs a parsed project, not a file's own import text alone, so every file is walked instead. A project that configures several path-shaped factories pays that cost once for the whole run, not once per factory.
+The `factories` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ### Limitations (v0)
 

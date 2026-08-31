@@ -42,16 +42,20 @@ Depends only on `@suss/extractor`, for the `PatternPack` type. Contains no analy
 
 ## Configuration
 
-```ts
-import { nestjsGraphqlFramework } from "@suss/framework-nestjs-graphql";
+A wrapper around `@Resolver()` whose body is not in your project is declared in a dependency stub under `suss/stubs/`:
 
-const pack = nestjsGraphqlFramework({
-  // A wrapper around `@Resolver()` whose body is not in your project:
-  classDecorators: ["TenantResolver"],
-});
+```yaml
+# suss/stubs/acme-graphql-kit.yaml
+package: "@acme/graphql-kit"
+statements:
+  - kind: composes-decorator
+    export: TenantResolver
+    composes: { module: "@nestjs/graphql", name: Resolver }
 ```
 
-A wrapper written in the project needs no entry here. The adapter resolves a class decorator to the function behind it and accepts it when calling that function calls `Resolver` from `@nestjs/graphql`. `classDecorators` is for a wrapper whose body is somewhere the adapter cannot read.
+A wrapper written in the project needs no statement. The adapter resolves a class decorator to the function behind it and accepts it when calling that function calls `Resolver` from `@nestjs/graphql`. A stub is for a wrapper whose body is somewhere the adapter cannot read.
+
+The `classDecorators` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ## v0 scope
 

@@ -441,6 +441,33 @@ describe("runCli extract", () => {
     expect(io.stderr).toContain("The hono pack takes: registrationHelpers.");
   });
 
+  it("stops on an option a dependency stub states, and says where it goes", async () => {
+    const config = path.join(tmpDir, "suss.nestjs-rest.json");
+    fs.writeFileSync(
+      config,
+      JSON.stringify({ classDecorators: ["ApiController"] }),
+    );
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--lang",
+        "typescript",
+        "--dir",
+        tmpDir,
+        "-f",
+        `nestjs-rest=${config}`,
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain(
+      "The classDecorators option describes a dependency",
+    );
+    expect(io.stderr).toContain("suss infer stub <package>");
+    expect(io.stderr).toContain(
+      "The nestjs-rest pack does not take any option from a config file.",
+    );
+  });
+
   it("rejects a --lang nobody has an adapter for, and says which it takes", async () => {
     const { exit, io } = await capture(() =>
       runCli(["extract", "--lang", "perl", "-f", "express"]),

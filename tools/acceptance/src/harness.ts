@@ -110,6 +110,15 @@ export function writePackConfig(
   return file;
 }
 
+/** Writes one dependency stub where the loader looks for it. */
+export function writeStub(dir: string, name: string, yaml: string): string {
+  const stubs = path.join(dir, "suss", "stubs");
+  fs.mkdirSync(stubs, { recursive: true });
+  const file = path.join(stubs, `${name}.yaml`);
+  fs.writeFileSync(file, yaml);
+  return file;
+}
+
 const temporaryDirectories: string[] = [];
 
 export function removeTemporaryDirectories(): void {

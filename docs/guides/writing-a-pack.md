@@ -76,7 +76,7 @@ export default myPack;
 
 Export both a named function and a default for dynamic imports from the CLI.
 
-**Only hardcode what your library defines.** Every identifier a pack hardcodes has to be one that the library the pack is about declares. A project's own wrapper goes in the pack's options instead, which the CLI fills from `-f <pack>=config.json`:
+**Only hardcode what your library defines.** Every identifier a pack hardcodes has to be one that the library the pack is about declares. A wrapper somebody else wrote goes in the pack's options instead, which the CLI fills from the project's [dependency stubs](/dependency-stubs). An option describing the project's own layout is filled from `-f <pack>=config.json` the same way:
 
 ```typescript
 export interface MyPackOptions {

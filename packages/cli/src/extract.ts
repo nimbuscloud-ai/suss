@@ -35,7 +35,8 @@ import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
 import {
   loadStubs,
   type StubOverlay,
-  stubDeprecationNote,
+  stubOnlyOptionRefusal,
+  stubOnlyOptionsOf,
   stubOverlayOf,
   withStubOptions,
 } from "./stubs.js";
@@ -306,9 +307,6 @@ export function packsLoadedSoFar(): Array<{
  * Refuse a config the pack could not have read, before the factory
  * runs. Without this a misspelled key parses to nothing, the run exits
  * 0, and the only sign is a boundary that never appears.
- *
- * The options moving into dependency stubs are still in the schemas,
- * so a project on one gets the deprecation note rather than an error.
  */
 function assertOptionsArePackable(
   name: string,
@@ -316,11 +314,12 @@ function assertOptionsArePackable(
   options: unknown,
   configFile: string | undefined,
 ): void {
-  const schema = mod.optionsSchema;
-  if (schema === undefined || options === undefined) {
+  const declared = mod.optionsSchema;
+  if (declared === undefined || options === undefined) {
     return;
   }
 
+  const schema = whatAConfigFileMaySay(name, declared);
   const parsed = schema.safeParse(options);
   if (parsed.success) {
     return;
@@ -329,29 +328,70 @@ function assertOptionsArePackable(
   throw new UsageError(
     [
       `The ${name} pack cannot read ${configFile ?? `the config given to -f ${name}`}:`,
-      ...parsed.error.issues.map((issue) => `  ${optionProblem(issue)}`),
-      `The ${name} pack takes: ${Object.keys(schema.shape).join(", ")}.`,
+      ...parsed.error.issues.flatMap((issue) =>
+        optionProblems(name, issue).map((line) => `  ${line}`),
+      ),
+      whatThePackTakes(name, schema),
     ].join("\n"),
   );
 }
 
+/**
+ * The pack's schema with the stub-only keys taken out. A stub writes
+ * those keys into the same options the factory gets, so the factory
+ * still declares them and only a project's own file is refused (#673).
+ */
+function whatAConfigFileMaySay(
+  name: string,
+  declared: z.ZodObject<z.ZodRawShape>,
+): z.ZodObject<z.ZodRawShape> {
+  const stubOnly = stubOnlyOptionsOf(name).filter(
+    (key) => key in declared.shape,
+  );
+  if (stubOnly.length === 0) {
+    return declared;
+  }
+  return declared.omit(Object.fromEntries(stubOnly.map((key) => [key, true])));
+}
+
+function whatThePackTakes(
+  name: string,
+  schema: z.ZodObject<z.ZodRawShape>,
+): string {
+  const keys = Object.keys(schema.shape);
+  if (keys.length === 0) {
+    return `The ${name} pack does not take any option from a config file.`;
+  }
+  return `The ${name} pack takes: ${keys.join(", ")}.`;
+}
+
 /** One line per problem, leading with the key somebody has to fix. */
-function optionProblem(issue: z.core.$ZodIssue): string {
+function optionProblems(name: string, issue: z.core.$ZodIssue): string[] {
   if (issue.code === "unrecognized_keys") {
-    const quoted = issue.keys.map((key) => `"${key}"`).join(", ");
-    if (issue.keys.length > 1) {
-      return `${quoted} are not options this pack takes.`;
-    }
-    return `${quoted} is not an option this pack takes.`;
+    const stubOnly = new Set(stubOnlyOptionsOf(name));
+    const routed = issue.keys.filter((key) => stubOnly.has(key));
+    const unknown = issue.keys.filter((key) => !stubOnly.has(key));
+    return [
+      ...(routed.length > 0 ? [stubOnlyOptionRefusal(routed)] : []),
+      ...(unknown.length > 0 ? [unknownKeys(unknown)] : []),
+    ];
   }
 
   const at = issue.path.length === 0 ? "the config" : issue.path.join(".");
   if (issue.code === "invalid_value") {
     const allowed = issue.values.map((value) => JSON.stringify(value));
-    return `${at} has to be one of ${allowed.join(", ")}.`;
+    return [`${at} has to be one of ${allowed.join(", ")}.`];
   }
 
-  return `${at}: ${issue.message}`;
+  return [`${at}: ${issue.message}`];
+}
+
+function unknownKeys(keys: readonly string[]): string {
+  const quoted = keys.map((key) => `"${key}"`).join(", ");
+  if (keys.length > 1) {
+    return `${quoted} are not options this pack takes.`;
+  }
+  return `${quoted} is not an option this pack takes.`;
 }
 
 async function loadPackFactory(spec: string): Promise<LoadedFactory> {
@@ -429,11 +469,6 @@ function withStubbedOptions(
   loaded: LoadedFactory,
   overlay: StubOverlay | undefined,
 ): LoadedFactory {
-  const note = stubDeprecationNote(loaded.name, loaded.options);
-  if (note !== null) {
-    process.stderr.write(note);
-  }
-
   if (overlay === undefined || !overlay.has(loaded.name)) {
     return loaded;
   }

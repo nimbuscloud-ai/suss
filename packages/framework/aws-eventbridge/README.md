@@ -33,32 +33,33 @@ The bus is nearly always deploy-named, so the code writes `process.env.ORDER_EVE
 
 There is no consumer-side recognizer here yet. A target Lambda gets its message-bus boundary binding from the pass that walks CloudFormation and SAM `AWS::Events::Rule` resources and `Events: { Type: EventBridgeRule | Schedule }` blocks, which lives in `@suss/contract-cloudformation`. An EventBridge target handler reads `event.detail`, and a message-receive recognizer for that shape is a follow-up. Until then body-shape pairing is unavailable for EventBridge, while the orphan, unused, unresolvable, and schedule accounting all work off the CloudFormation summaries.
 
-## Options
+## Telling it about your own publisher
 
-A service that publishes through its own publisher does not write a `PutEventsCommand`, so the declaration never fires on it. Such a project says which publisher does the publishing.
+A service that publishes through its own publisher does not write a `PutEventsCommand`, so the declaration never fires on it. Such a project says which publisher does the publishing, in a dependency stub under `suss/stubs/`.
 
-```json
-{
-  "producers": [
-    {
-      "module": "@acme/async",
-      "receiver": "EventPublisher",
-      "method": "emit",
-      "subjectArg": 0,
-      "bodyArg": 1
-    }
-  ]
-}
+```yaml
+# suss/stubs/acme-async.yaml
+package: "@acme/async"
+statements:
+  - kind: performs-call
+    system: aws.events
+    spec:
+      receiver: EventPublisher
+      method: emit
+      subjectArg: 0
+      bodyArg: 1
 ```
 
 That reads `publisher.emit("user.deleted", data, opts)` as a send on channel `user.deleted`, with no bus segment. A publisher takes its bus from constructor config the call site never states, and the checker treats an unstated bus as agreeing with any, so the subject on its own pairs against the rule that routes it. The pack emits nothing when the subject is not a literal string in the source.
 
-- `producers`: publishers this project emits through. Each one adds a recognizer and widens the import gate to that publisher's module.
-  - `module`: the module that declares the receiver's type.
-  - `receiver`: the type name of the receiver, as that module exports it.
-  - `method`: the method that performs the send.
-  - `subjectArg`: which argument position the subject is in.
-  - `bodyArg`: which argument the message body is. Leave it out when the method does not take a single body argument, as a batch method taking a list of entries does, and then no body is reported.
+The stub's `package` is the module that declares the receiver's type, and it widens the pack's import gate to that module. In the `spec`:
+
+- `receiver`: the type name of the receiver, as that module exports it.
+- `method`: the method that performs the send.
+- `subjectArg`: which argument position the subject is in.
+- `bodyArg`: which argument the message body is. Leave it out when the method does not take a single body argument, as a batch method taking a list of entries does, and then no body is reported.
+
+The `producers` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ## Where it fits in suss
 

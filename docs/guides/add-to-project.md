@@ -327,7 +327,7 @@ npx suss extract --lang python --dir services/orders -f fastapi -o summaries/ord
 npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/schema.json
 ```
 
-Two of these packs need a sentence about your project before they can
+One of these packs needs a sentence about your project before it can
 read it. The built-in TypeScript packs never do. graphql-ruby needs the
 directory a `mutation:` or `resolver:` field's class is looked up
 under, and it reads nothing without one:
@@ -340,17 +340,20 @@ A relative path here is read relative to the config file itself, so a
 config file that lives beside `app/` means the same directory whichever
 directory you run the command from.
 
-flask-restx and fastapi take an optional `wrapperModules`, the modules
-your own code re-exports the route decorator or the router constructor
-from. The library's own module is always read, so leave this out if
-your routes import from it directly:
+Write that to a JSON file and give the file name on the flag:
+`-f graphql-ruby=suss.graphql-ruby.json`.
 
-```json
-{ "wrapperModules": ["myapp.wrappers.restx"] }
+If your routes import the route decorator or the router constructor
+from a module of your own rather than from flask-restx or FastAPI
+directly, say so in a [dependency stub](/dependency-stubs) instead:
+
+```yaml
+# suss/stubs/restx-wrapper.yaml
+package: myapp.wrappers.restx
+statements:
+  - kind: re-exports
+    of: flask_restx
 ```
-
-Write either to a JSON file and give the file name on the flag:
-`-f flask-restx=suss.flask-restx.json`.
 
 If your service imports a shared framework from a git submodule, check
 the submodule out before extracting. suss reads `.gitmodules`, treats

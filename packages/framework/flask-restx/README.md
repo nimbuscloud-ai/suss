@@ -19,15 +19,19 @@ The composition needs the namespace constructed with a literal `path` and mounte
 
 Depends only on `@suss/adapter-python` (for the `PythonPack` type and the Python-language extraction pipeline). Contains no analysis logic of its own.
 
-## The wrapper-module option
+## A module that re-exports flask-restx
 
-Most services wrap flask-restx's route decorator in their own module rather than importing it directly. `wrapperModules` says which wrapper a project uses, alongside flask-restx's own module, which is always accepted:
+Most services wrap flask-restx's route decorator in their own module rather than importing it directly. A dependency stub under `suss/stubs/` says which wrapper a project uses, alongside flask-restx's own module, which is always accepted:
 
-```ts
-import { flaskRestxFramework } from "@suss/framework-flask-restx";
-
-const pack = flaskRestxFramework({ wrapperModules: ["myapp.wrappers.restx"] });
+```yaml
+# suss/stubs/restx-wrapper.yaml
+package: myapp.wrappers.restx
+statements:
+  - kind: re-exports
+    of: flask_restx
 ```
+
+The `wrapperModules` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ## Coverage
 

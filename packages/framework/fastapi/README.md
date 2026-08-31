@@ -27,15 +27,19 @@ The pack never guesses a path. A route keeps its name and has no path when:
 
 Dependencies, middleware, and mounted sub-apps are not read in v0.
 
-## The wrapper-module option
+## A module that re-exports FastAPI
 
-A project that re-exports FastAPI's constructors from its own module lists that module alongside `fastapi`, which is always accepted:
+A project that re-exports FastAPI's constructors from its own module says so in a dependency stub under `suss/stubs/`, and the pack accepts that module alongside `fastapi`, which is always accepted:
 
-```ts
-import { fastapiFramework } from "@suss/framework-fastapi";
-
-const pack = fastapiFramework({ wrapperModules: ["myapp.compat"] });
+```yaml
+# suss/stubs/myapp-compat.yaml
+package: myapp.compat
+statements:
+  - kind: re-exports
+    of: fastapi
 ```
+
+The `wrapperModules` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ## Coverage
 

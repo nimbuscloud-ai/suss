@@ -236,53 +236,38 @@ function routeStatement(
 }
 
 /**
- * Option keys a dependency stub can state, per pack. A project still
- * configuring one gets a pointer at load time; the options work
- * through one more release, then go (#673).
+ * Option keys only a dependency stub may state, per pack. The overlay
+ * above writes these same keys, so a pack factory still reads them;
+ * what the CLI refuses is a project's own config file setting one.
+ *
+ * `registrationHelpers`, `requestFunctions` and `subjectFactories` are
+ * routed here too, and they are deliberately absent: each describes a
+ * function the project wrote itself, so a config file is where it
+ * belongs and a stub keyed by a package cannot spell it.
  */
-const STUB_COVERED_OPTIONS: Record<string, string[]> = {
+const STUB_ONLY_OPTIONS: Record<string, readonly string[]> = {
   "nestjs-rest": ["classDecorators"],
   "nestjs-microservices": ["classDecorators"],
   "nestjs-graphql": ["classDecorators"],
-  express: ["registrationHelpers"],
-  fastify: ["registrationHelpers"],
-  hono: ["registrationHelpers"],
   "aws-sqs": ["producers"],
   "aws-eventbridge": ["producers"],
-  "aws-dynamodb": ["requestFunctions"],
-  "aws-lambda": ["subjectFactories"],
   axios: ["factories"],
   fastapi: ["wrapperModules"],
   "flask-restx": ["wrapperModules"],
   "graphql-ruby": ["baseClassNames"],
 };
 
-/** Null when the pack's supplied options include nothing a stub covers. */
-export function stubDeprecationNote(
-  packName: string,
-  options: unknown,
-): string | null {
-  const covered = STUB_COVERED_OPTIONS[packName];
-  if (
-    covered === undefined ||
-    options === null ||
-    typeof options !== "object"
-  ) {
-    return null;
-  }
+export function stubOnlyOptionsOf(packName: string): readonly string[] {
+  return STUB_ONLY_OPTIONS[packName] ?? [];
+}
 
-  const used = covered.filter(
-    (key) => (options as Record<string, unknown>)[key] !== undefined,
-  );
-  if (used.length === 0) {
-    return null;
-  }
-
+/** What a project reads when its pack config sets one of them. */
+export function stubOnlyOptionRefusal(used: readonly string[]): string {
   const plural = used.length > 1;
   return (
-    `[suss] The ${used.join(" and ")} option${plural ? "s" : ""} on the ${packName} pack ` +
+    `The ${used.join(" and ")} option${plural ? "s" : ""} ` +
     `describe${plural ? "" : "s"} a dependency, and a stub file in suss/stubs/ is where that now goes. ` +
-    "Start one with: suss infer stub <package>. The option keeps working for one more release.\n"
+    "Start one with: suss infer stub <package>."
   );
 }
 

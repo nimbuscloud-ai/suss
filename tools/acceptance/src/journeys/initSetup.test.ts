@@ -28,13 +28,6 @@ describe("set up a Python project", () => {
     expect(init.stdout).toContain("-f fastapi");
     expect(init.stdout).toContain("-f flask-restx");
   });
-
-  it("says what each pack needs told before it will read anything", () => {
-    const init = runSuss(["init", project, "--plain"]);
-
-    expect(init.stdout).toContain("Write that to suss.flask-restx.json");
-    expect(init.stdout).toContain('{"wrapperModules"');
-  });
 });
 
 describe("set up a Ruby project", () => {
