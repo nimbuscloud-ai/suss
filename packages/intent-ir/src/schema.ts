@@ -41,8 +41,17 @@ export const IntentSourceSchema = z
 /** The provenance of a doc `suss infer` wrote and nobody has curated. */
 const UNCURATED_SOURCE = "inferred";
 
-/** The fields somebody supplies while curating, which the code cannot. */
-const CURATED_FIELDS = ["purpose", "audience"];
+/**
+ * The fields somebody supplies while curating, which the code cannot.
+ * A boundary document leaves the first three; a PRD leaves those and
+ * the words of every scenario.
+ */
+const CURATED_FIELDS = ["title", "purpose", "audience", "when", "expect"];
+
+/** A scenario's blank arrives as `scenarios.0.when`, so read the last part. */
+function blankIn(field: string): string {
+  return field.slice(field.lastIndexOf(".") + 1);
+}
 
 /**
  * The blanks a draft is still waiting on, given which fields its schema
@@ -60,13 +69,14 @@ export function blanksLeftEmpty(
   if ((doc as { source?: unknown }).source !== UNCURATED_SOURCE) {
     return [];
   }
+  const blanks = failedFields.map(blankIn);
   if (
-    failedFields.length === 0 ||
-    !failedFields.every((field) => CURATED_FIELDS.includes(field))
+    blanks.length === 0 ||
+    !blanks.every((field) => CURATED_FIELDS.includes(field))
   ) {
     return [];
   }
-  return CURATED_FIELDS.filter((blank) => failedFields.includes(blank));
+  return CURATED_FIELDS.filter((blank) => blanks.includes(blank));
 }
 
 // ---------------------------------------------------------------------------
@@ -201,13 +211,28 @@ function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
 }
 
 /** One effect, written `- writes: postgresql:invoices`. */
-export type DeclaredEffect = Partial<Record<EffectRelation, string>>;
+export type DeclaredEffect = Partial<Record<EffectRelation, string>> & {
+  /** The columns it touches, when the outcome turns on which ones. */
+  fields?: string[];
+  /** What it picks the item out by. */
+  by?: string | string[];
+};
+
+/** One field, or several, so a single one is written on the line. */
+const ONE_OR_MORE = z.union([
+  z.string().min(1),
+  z.array(z.string().min(1)).min(1),
+]);
 
 // The verb is the key and the boundary is the string `suss ask` takes.
 // The members come off ir-core's verbs, so one added there is
 // authorable here with no edit.
 const EFFECT_BY_VERB = EffectRelationSchema.options.map((verb) =>
-  z.strictObject({ [verb]: z.string().min(1) }),
+  z.strictObject({
+    [verb]: z.string().min(1),
+    fields: z.array(z.string().min(1)).min(1).optional(),
+    by: ONE_OR_MORE.optional(),
+  }),
 ) as unknown as [
   z.ZodType<DeclaredEffect>,
   ...Array<z.ZodType<DeclaredEffect>>,

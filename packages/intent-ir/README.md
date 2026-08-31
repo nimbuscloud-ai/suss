@@ -33,11 +33,15 @@ transitions:
       status: 409
 
   - id: invoice-returned
-    when: otherwise
+    when:
+      - reads: aws.dynamodb:Invoices
+        finds: something
+        where: settledAt is missing
     response:
       status: 200
     results:
       - reads: aws.dynamodb:Invoices
+        by: invoiceId
 ```
 
 A clause says which subject, then at most one thing about it.
@@ -46,7 +50,9 @@ The subject is a boundary verb (`reads`, `writes`) whose value is the boundary's
 
 The check is one of `finds` (`nothing` or `something`, what a lookup came back with), `is` (`set`, `missing`, `null`, `a string`), `equals`, or `has`. `where` narrows the clause with whatever the guard said about a deeper read of the same result.
 
-`otherwise` is the fall-through branch, so a document never repeats the branch above it as a negation. A guard that maps to none of this keeps a sentence, and `when` written as one plain string stays valid, which is what existing authored documents use.
+A fall-through branch states its own condition rather than pointing at the ones above it, since the summary records that branch's guards as the negations of theirs. `otherwise` is left for the one case that has none to state, which is a default branch the summary recorded nothing for. A word that means "not the branches above" would change what it claims the moment somebody inserts a transition over it, in a file people hand-edit.
+
+A guard that maps to none of this keeps a sentence, and `when` written as one plain string stays valid, which is what existing authored documents use.
 
 The point of naming the boundary is that the line survives a rename of the variable the source used, and that the checker can compare it. `when: "!doc.send().Item"` could do neither.
 
@@ -67,6 +73,18 @@ transitions:
 ```
 
 `suss ask "what writes aws.dynamodb:Invoices"` is the question and this is the assertion, spelled the same way. The key is the verb, `reads` or `writes`, which are the two `relationsOf` in `@suss/behavioral-ir` gives an effect. The value is the boundary's own name, the string every report writes and `namesBoundary` in `@suss/ir-core` resolves, so what you type in a document and what you type at `ask` pick out the same boundary. Nothing here is per protocol, so a queue consumer and a table writer say what they do without a fourth outcome shape each.
+
+A clause can go further, since the summary does. `fields` is the columns the access touches and `by` is what it picks the item out by:
+
+```yaml
+    results:
+      - reads: aws.dynamodb:Accounts
+        by: accountId
+      - writes: aws.dynamodb:Profiles
+        fields: [email, phone, address]
+```
+
+Both are optional and a clause with only the verb and the name means what it always did. What they buy is that "the customer's contact details are erased" stops being satisfied by any write at all to that table. The checker asks that the access cover every column the clause stated; an access that states none is unread rather than empty (no pack parses a DynamoDB `UpdateExpression`), and one that asked for every column covers whatever the clause stated.
 
 The outcome id stays free-form on purpose. That is where a person writes what the outcome means, and it is what a PRD scenario links to: `invoice-intake.invoice-recorded`, read as "a duplicate delivery changes nothing". A `kind: prd` document is the level where a scenario reads as prose; `kind: boundary` is system intent for engineers, so it stays structural.
 

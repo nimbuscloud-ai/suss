@@ -24,6 +24,9 @@ export const IntentFindingKindSchema = z.enum([
   "unlinkedScenario", // scenario carries no structured link (info — a valid pending state)
   "danglingScenarioLink", // link names an intent / outcome no boundary intent declares
   "ambiguousScenarioLink", // link resolves to two or more boundary intents sharing the name
+  // The same coverage question asked the other way: which declared
+  // behaviour has nobody written a reason for.
+  "undescribedOutcome", // a declared outcome no PRD scenario links to (info)
 ]);
 export type IntentFindingKind = z.infer<typeof IntentFindingKindSchema>;
 

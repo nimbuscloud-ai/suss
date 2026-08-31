@@ -82,6 +82,14 @@ export function storageLabel(semantics: StorageSemantics): string {
   return `${semantics.storageSystem}:${storageContainerLabel(semantics)}`;
 }
 
+/**
+ * What an access writes for its columns when it asked for all of them,
+ * which is a query with no explicit projection. It covers every column
+ * rather than saying which one, so anything comparing column lists has
+ * to tell it apart from a list of columns.
+ */
+export const EVERY_FIELD = "*";
+
 /** The store on its own, which a finding writes without the system. */
 export function storageContainerLabel(semantics: StorageSemantics): string {
   const container = semantics.container ?? "<unnamed container>";

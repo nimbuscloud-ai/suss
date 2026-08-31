@@ -7,8 +7,8 @@
  * used. `boundaryGuardsOf` in `@suss/behavioral-ir` does the join.
  *
  * A guard whose subject is neither a boundary nor an input keeps the
- * sentence `saidPlainly` writes for it, and a fall-through branch is
- * `otherwise` rather than a negated copy of the branch above.
+ * sentence `saidPlainly` writes for it. A fall-through branch states
+ * its own guards; `OTHERWISE` covers the one case that cannot.
  */
 
 import {
@@ -33,7 +33,12 @@ import type {
 } from "@suss/behavioral-ir";
 import type { WhenClause } from "@suss/intent-ir";
 
-/** What the fall-through branch of a chain is, in one word. */
+/**
+ * The last resort for a fall-through branch, for one whose guards the
+ * summary never recorded. A branch whose guards it did record says what
+ * they were, because a word that means "not the ones above" changes
+ * what it claims when somebody inserts a transition over it.
+ */
 const OTHERWISE = "otherwise";
 
 /** What a branch nothing guards is. */
@@ -44,13 +49,6 @@ export function draftedWhen(
   summary: BehavioralSummary,
   isFirst: boolean,
 ): string | WhenClause[] {
-  if (transition.isDefault && !isFirst) {
-    return OTHERWISE;
-  }
-  if (transition.conditions.length === 0) {
-    return ALWAYS;
-  }
-
   const named = boundaryGuardsOf(transition, boundaryCalls(summary));
   const clauses = [
     ...boundaryClauses(named),
@@ -59,7 +57,7 @@ export function draftedWhen(
       .map(unnamedClause),
   ];
   if (clauses.length === 0) {
-    return OTHERWISE;
+    return isFirst ? ALWAYS : OTHERWISE;
   }
   // One guard nothing structural came out of reads better on the line
   // than under a list of one.
@@ -96,11 +94,15 @@ function boundaryClauses(guards: BoundaryGuard[]): WhenClause[] {
   return clauses;
 }
 
-/** The guard as a sentence, with the part the clause already said cut off. */
+/**
+ * The guard as a sentence, with the part the clause already said cut
+ * off. It renders the whole condition, negation included, so the else
+ * arm of a chain says `settledAt is missing` rather than the opposite.
+ */
 function saidOf(guard: BoundaryGuard, shared: number): string {
   const rest = guard.path.slice(shared);
   return saidPlainly(
-    guard.predicate,
+    guard.condition,
     false,
     rest.length > 0 ? rest : guard.path.slice(-1),
   );

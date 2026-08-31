@@ -184,7 +184,39 @@ describe("a clause about what the caller sent", () => {
 });
 
 describe("the fall-through branch", () => {
-  it("is one word, rather than a negated copy of the guard above", () => {
+  it("states its own condition, since it has one", () => {
+    expect(
+      drafted(
+        [
+          {
+            type: "negation",
+            operand: {
+              type: "truthinessCheck",
+              subject: theRow,
+              negated: true,
+            },
+          },
+          {
+            type: "negation",
+            operand: {
+              type: "truthinessCheck",
+              subject: settledAt,
+              negated: false,
+            },
+          },
+        ],
+        true,
+      ),
+    ).toEqual([
+      {
+        reads: "aws.dynamodb:Invoices",
+        finds: "something",
+        where: "settledAt is missing",
+      },
+    ]);
+  });
+
+  it("says the guard positively, whatever the branch above claimed", () => {
     const negated: Predicate = {
       type: "negation",
       operand: {
@@ -194,16 +226,16 @@ describe("the fall-through branch", () => {
         right: { type: "literal", value: "string" },
       },
     };
-    const one = branch([negated], true);
+
+    expect(drafted([negated], true)).toBe("invoiceId is a string");
+  });
+
+  it("falls back to one word only when the summary never recorded a guard", () => {
+    const one = branch([], true);
 
     expect(draftedWhen(one, unitReadingInvoices([one]), false)).toBe(
       "otherwise",
     );
-  });
-
-  it("is what a branch nothing guards gets, when it comes first", () => {
-    const one = branch([], true);
-
     expect(draftedWhen(one, unitReadingInvoices([one]), true)).toBe(
       "every call reaches this outcome",
     );

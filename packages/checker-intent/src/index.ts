@@ -23,9 +23,9 @@
 //             (danglingScenarioLink / ambiguousScenarioLink: a planning
 //             gap). Surfaced for the author, never silent.
 //   info: the code exceeds the declaration (undeclaredOutcome, a status
-//             or a boundary the intent never mentions), or a
-//             scenario isn't linked yet (unlinkedScenario). A valid
-//             pending / deliberate state, not a defect.
+//             or a boundary the intent never mentions), a scenario
+//             isn't linked yet (unlinkedScenario), or an outcome has no
+//             scenario (undescribedOutcome). A valid pending state.
 // Findings against `source: "inferred"` (not-yet-curated) intent are
 // downgraded one level by `withProvenance`; curation restores full severity.
 
@@ -42,6 +42,7 @@ import {
   bodyShapesMatch,
   boundaryKey,
   displayLabel,
+  EVERY_FIELD,
   namesBoundary,
   pairingKey,
   ruleBoundaryMatchesKey,
@@ -52,6 +53,7 @@ import type {
   BehavioralSummary,
   BoundaryCall,
   BoundaryGuard,
+  Interaction,
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
@@ -180,8 +182,54 @@ export function checkIntentAgreement(
     checked.push(...result.checked);
     unchecked.push(...result.unchecked);
   }
+  findings.push(...checkOutcomesDescribed(intents));
 
   return { findings, checked, unchecked };
+}
+
+/**
+ * The coverage question asked from the outcome's side: which declared
+ * behaviour has no scenario saying why it is there. That is what a
+ * product reader wants from the same two artifacts the scenario passes
+ * walk, and nothing else asks it.
+ *
+ * It stays quiet until at least one PRD is loaded. Before that the
+ * answer is "all of them", which tells nobody anything.
+ */
+function checkOutcomesDescribed(intents: IntentSummary[]): IntentFinding[] {
+  const prds = intents.filter((intent) => intent.kind === "prd");
+  if (prds.length === 0) {
+    return [];
+  }
+  const linked = new Set(
+    prds.flatMap((prd) => prd.scenarios.flatMap((scenario) => scenario.link)),
+  );
+  const findings: IntentFinding[] = [];
+  for (const intent of intents) {
+    if (intent.kind !== "boundary") {
+      continue;
+    }
+    for (const outcome of intent.outcomes) {
+      if (linked.has(`${intent.name}.${outcome.id}`)) {
+        continue;
+      }
+      findings.push(
+        ...withProvenance(
+          [
+            {
+              kind: "undescribedOutcome",
+              severity: "info",
+              boundary: boundaryKey(intent.boundary) ?? intent.name,
+              intent: { name: intent.name, outcomeId: outcome.id },
+              message: `Intent "${intent.name}" declares ${outcome.id} and no PRD scenario says why it is there.`,
+            },
+          ],
+          intent.source,
+        ),
+      );
+    }
+  }
+  return findings;
 }
 
 interface IntentPassResult {
@@ -703,8 +751,29 @@ function compareIntentToImpl(
  */
 function effectMatches(declared: IntentEffect, made: CodeEffect): boolean {
   return (
-    declared.does === made.does && namesBoundary(declared.names, made.binding)
+    declared.does === made.does &&
+    namesBoundary(declared.names, made.binding) &&
+    statesAll(declared.fields, made.fields) &&
+    statesAll(declared.by, made.by)
   );
+}
+
+/**
+ * Whether the access covers every column the intent stated. An access
+ * that states none is unread rather than empty: no pack parses a
+ * DynamoDB UpdateExpression, so calling that a mismatch would report
+ * working code for a gap in extraction. One that asked for all of them
+ * covers whatever the intent stated.
+ */
+function statesAll(declared: string[], made: string[]): boolean {
+  if (
+    declared.length === 0 ||
+    made.length === 0 ||
+    made.includes(EVERY_FIELD)
+  ) {
+    return true;
+  }
+  return declared.every((one) => made.includes(one));
 }
 
 /**
@@ -778,6 +847,10 @@ interface CodeEffect {
   binding: BoundaryBinding;
   /** How a report writes that boundary, for a message about it. */
   label: string;
+  /** The columns the access states, empty when it states none. */
+  fields: string[];
+  /** What the access picks the item out by, empty when it states none. */
+  by: string[];
 }
 
 function codeEffectsOf(t: Transition): CodeEffect[] {
@@ -792,11 +865,26 @@ function codeEffectsOf(t: Transition): CodeEffect[] {
       continue;
     }
     const label = displayLabel(effect.binding);
+    const touched = accessDetail(effect.interaction);
     for (const does of relationsOf(effect.interaction)) {
-      reached.push({ does, binding: effect.binding, label });
+      reached.push({ does, binding: effect.binding, label, ...touched });
     }
   }
   return reached;
+}
+
+/** What a storage access states about the columns; nothing for any other class. */
+function accessDetail(interaction: Interaction): {
+  fields: string[];
+  by: string[];
+} {
+  if (interaction.class !== "storage-access") {
+    return { fields: [], by: [] };
+  }
+  return {
+    fields: interaction.fields,
+    by: interaction.selector ?? [],
+  };
 }
 
 function outcomeMatches(intent: IntentOutcome, code: CodeOutcome): boolean {
@@ -853,7 +941,11 @@ function describeOutcome(outcome: IntentOutcome): string {
 }
 
 function describeEffect(effect: IntentEffect): string {
-  return `${EFFECT_PHRASE[effect.does]} ${effect.names}`;
+  const detail = [
+    effect.fields.length > 0 ? `of ${effect.fields.join(", ")}` : null,
+    effect.by.length > 0 ? `by ${effect.by.join(", ")}` : null,
+  ].filter((part) => part !== null);
+  return [EFFECT_PHRASE[effect.does], effect.names, ...detail].join(" ");
 }
 
 const EFFECT_PHRASE: Record<EffectRelation, string> = {

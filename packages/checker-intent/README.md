@@ -26,6 +26,7 @@ the same boundary key, and emits:
 - `outcomeShapeMismatch`: a matched outcome whose body shape disagrees with intent.
 - `undeclaredOutcome`: code produces a REST status, or reaches a boundary, that the intent doesn't declare (info; intent under-specifies).
 - `unkeyableBoundary`: the intent's boundary has no key to pair on, so nothing was compared (warning).
+- `undescribedOutcome`: a declared outcome no PRD scenario links to (info).
 
 v0 checks system intent (`kind: boundary`). PRD outcome intent
 (`kind: prd`), which covers scenarios and links, is a separate pass.
@@ -54,6 +55,12 @@ A `when` clause that says which boundary the branch read is compared too, which 
 `boundaryGuardsOf` in `@suss/behavioral-ir` says, for each branch of the code, which boundary its guards turned on and whether the guard passed because something was there. A declared outcome then narrows to the branches whose guards match every boundary clause the intent stated, and `uncoveredOutcome` reports one that produces the ending on a different condition. So an intent saying "404 when a read of `aws.dynamodb:Invoices` finds nothing" fails when the code's 404 turns on the row being present.
 
 The boundary resolves through `namesBoundary` again, and `finds` has to agree when the clause states it. A clause about an input, and a clause left as a sentence, are prose to this pass and are not compared: the paths and the words have no counterpart in the summary to check against.
+
+## The coverage question, both ways
+
+The three scenario kinds ask whether a scenario points at an outcome that exists. `undescribedOutcome` asks it the other way: which declared behaviour has nobody written down a reason for. That is the question a product reader has, and the two artifacts to answer it from are the same two.
+
+It stays quiet until at least one PRD is loaded, since before that the answer is every outcome. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these and they appear as the boundary documents grow outcomes past what the PRDs cover.
 
 ## Which boundaries can be paired
 

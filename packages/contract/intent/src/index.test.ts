@@ -199,7 +199,7 @@ describe("an inferred draft with its blanks still empty", () => {
 
     try {
       expect(() => loadIntentDirectory(tmpDir)).toThrow(
-        /3 intent doc\(s\).*are inferred drafts with purpose and audience still blank/s,
+        /3 intent doc\(s\).*are inferred drafts with blanks still in them/s,
       );
     } finally {
       fs.rmSync(tmpDir, { recursive: true });

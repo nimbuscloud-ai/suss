@@ -53,6 +53,7 @@ export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
 export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
 export {
+  EVERY_FIELD,
   StorageSemanticsSchema,
   storageContainerLabel,
   storageLabel,

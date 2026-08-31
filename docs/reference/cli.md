@@ -34,7 +34,9 @@ own summaries. `suss infer stub` ([below](#suss-infer-stub)) writes the
 skeleton of a [dependency stub](/dependency-stubs) from the project's
 observed calls into a package extraction cannot read. `suss infer intent`
 ([below](#suss-infer-intent)) writes starting intent docs from a
-summaries file, one per boundary, for a person to curate.
+summaries file, one per boundary, for a person to curate, and
+`suss infer prd` ([below](#suss-infer-prd)) reads those back once they
+are curated and writes a PRD per boundary for a person to fill in.
 
 ## `suss init`
 
@@ -1108,15 +1110,23 @@ A route whose 404 depends on a table lookup finding nothing reads:
         finds: something
         where: settledAt is set
   - id: 200-ok
-    when: otherwise
+    when:
+      - reads: aws.dynamodb:Invoices
+        finds: something
+        where: settledAt is missing
 ```
 
 The subject is a boundary verb whose value is the boundary's name, or
 `input:` with the path the caller sent. The check is one of `finds`,
-`is`, `equals` or `has`, and `where` narrows it. `otherwise` is the
-fall-through branch, so no document repeats the branch above it as a
-negation. A guard that maps to none of that keeps a sentence, and a
-`when` written as one plain string stays valid.
+`is`, `equals` or `has`, and `where` narrows it.
+
+The last branch states its own condition rather than saying `otherwise`,
+since the summary records its guards as the negations of the ones above
+it. A word meaning "not the branches above" changes what it claims when
+somebody inserts a transition over it, and these files are hand-edited.
+`otherwise` is left for a default branch whose guards the summary
+never recorded. A guard that maps to none of that keeps a sentence, and a `when`
+written as one plain string stays valid.
 
 Naming the boundary is what makes the line survive a rename of the
 variable the source used, and what lets `suss check --intent` compare it:
@@ -1145,7 +1155,7 @@ transitions:
     throws:
       errorType: Error
   - id: returns
-    when: otherwise
+    when: invoiceId is a string
     returns:
       body:
         type: object
@@ -1154,6 +1164,7 @@ transitions:
             type: boolean
     results:
       - writes: aws.dynamodb:Invoices
+        by: [invoiceId]
 ```
 
 `results` is what the transition did at other boundaries. The key is the
@@ -1165,6 +1176,12 @@ something. The checker compares it both ways: a declared write the code
 never makes is an error, and a boundary the code reaches that no outcome
 mentions is info.
 
+A clause can also say `fields`, the columns the access touches, and `by`,
+what it picks the item out by. Both are optional and both are drafted
+when the summary has them, which is what stops "the customer's contact
+details are erased" from being satisfied by any write at all to that
+table.
+
 **Purpose and audience are left blank on purpose.** Neither can be read
 out of code: why the boundary exists and who it is for are what somebody
 supplies while curating. An empty string does not satisfy the schema, so
@@ -1172,7 +1189,7 @@ supplies while curating. An empty string does not satisfy the schema, so
 waiting rather than checking them:
 
 ```
-6 intent doc(s) in intent/ are inferred drafts with purpose and audience still blank:
+6 intent doc(s) in intent/ are inferred drafts with blanks still in them:
   - get-users-id.intent.yaml
   ...
 Write them and set source to "inferred, curated", or take those files out of the intent folder until you do.
@@ -1216,6 +1233,87 @@ re-inference against a curated baseline is separate work, sketched in
 
 - `0`: at least one doc was written.
 - `1`: no boundary in the summaries could be drafted as intent.
+
+## `suss infer prd`
+
+```bash
+suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
+```
+
+Writes one PRD per curated boundary intent, with a scenario per outcome
+and the link already filled in. The link is the part a machine can
+supply, since it is the boundary document's `name` and the outcome's
+`id`. The words are not.
+
+```bash
+suss infer intent --from summaries/code.json --out intent/
+# a person fills in purpose and audience, and renames the outcome ids
+suss infer prd --from intent/
+```
+
+For the route above, once its outcomes are renamed:
+
+```yaml
+# Why get-invoices-invoice-id behaves the way it does, for somebody to write.
+# One scenario per outcome it declares, read from intent/.
+#
+# Each link points at an outcome the boundary document declares, and
+# the words beside it are the part nothing but a person can supply:
+# the situation, and what should happen in it.
+#
+# Until the blanks are filled the reader rejects this file and says so,
+# which is what keeps an uncurated draft from passing for finished.
+
+kind: prd
+
+title: "" # what this document covers, in your words
+purpose: "" # why it matters
+audience: "" # who cares about it
+source: inferred
+
+scenarios:
+  - when: "" # the situation, in your words
+    expect: "" # what should happen, in your words
+    link: get-invoices-invoice-id.no-such-invoice
+  - when: "" # the situation, in your words
+    expect: "" # what should happen, in your words
+    link: get-invoices-invoice-id.already-settled
+```
+
+**It reads intent, not summaries, and that ordering is the point.** An
+uncurated boundary document has blank purpose and audience, so it does
+not load and this refuses the whole folder:
+
+```
+2 intent doc(s) in intent/ are inferred drafts with blanks still in them:
+  - get-invoices-invoice-id.intent.yaml
+  ...
+
+A PRD links to outcome ids, so the boundary documents have to be curated before this can write one.
+```
+
+Drafting both at once would link to `200-ok`, and renaming that outcome
+is the first thing curation does. The PRD would then point at an id
+nothing declares, and `danglingScenarioLink` would fire on a file suss
+wrote itself.
+
+Reading intent also means the command needs no summaries at all, which
+matches what the checker does: a PRD can be checked before any code
+exists.
+
+A boundary intent a scenario already points at is left alone, so running
+this again after adding an endpoint writes only what is missing.
+
+| Flag | Description |
+|---|---|
+| `--from PATH` | The folder of curated boundary intent to read. |
+| `-o`, `--out PATH` | Folder the PRDs go in. Default: the folder they were read from. |
+| `--into PATH` | The same folder, for a re-draft you want kept apart: it refuses to write where PRDs already are. |
+
+### Exit codes
+
+- `0`: at least one PRD was written.
+- `1`: every boundary intent already has a scenario pointing at it.
 
 ## Top-level flags
 

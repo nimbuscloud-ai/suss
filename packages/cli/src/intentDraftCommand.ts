@@ -31,6 +31,7 @@ import {
 import { summaryWithDefinitionsInlined } from "@suss/checker";
 import { whatWouldKeyIt } from "@suss/checker-intent";
 import { loadIntentDoc } from "@suss/contract-intent";
+import { EVERY_FIELD } from "@suss/ir-core";
 
 import { parseSummaryFile } from "./inspect.js";
 import { draftedWhen } from "./intentWhen.js";
@@ -40,6 +41,7 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   DispatchTable,
+  Interaction,
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
@@ -177,6 +179,7 @@ function draftedEffects(transition: Transition): EffectOutcome[] {
     if (names === null) {
       continue;
     }
+    const touched = touchedBy(effect.interaction);
     for (const relation of relationsOf(effect.interaction)) {
       if (relation === "provides") {
         continue;
@@ -186,10 +189,32 @@ function draftedEffects(transition: Transition): EffectOutcome[] {
         continue;
       }
       written.add(key);
-      results.push({ [relation]: names });
+      results.push({ [relation]: names, ...touched });
     }
   }
   return results;
+}
+
+/**
+ * The columns an access states, when it states any. A DynamoDB write
+ * records none, because nothing parses an UpdateExpression, so the
+ * clause comes out with the boundary alone.
+ */
+function touchedBy(interaction: Interaction): {
+  fields?: string[];
+  by?: string[];
+} {
+  if (interaction.class !== "storage-access") {
+    return {};
+  }
+  // An access that asked for every column says the same thing as one
+  // that says nothing about columns, so the clause leaves it out.
+  const fields = interaction.fields.filter((one) => one !== EVERY_FIELD);
+  const by = interaction.selector ?? [];
+  return {
+    ...(fields.length > 0 ? { fields } : {}),
+    ...(by.length > 0 ? { by } : {}),
+  };
 }
 
 /** Null when the transition's terminal has no intent outcome to declare. */
@@ -437,26 +462,37 @@ const BLANKS: Record<string, string> = {
 };
 
 /** What the blanks are filled with while the rest of the doc is validated. */
-const FILLED_IN = "curated";
+export const FILLED_IN = "curated";
 
 /** Keys a blank line comes before, so the file reads in parts. */
 const PARAGRAPHS = new Set(["name", "boundary", "transitions"]);
 
-function render(doc: object): string {
+/**
+ * The document as YAML, with the hint for each blank written beside it
+ * wherever it turns up, since a PRD leaves its blanks inside scenarios
+ * rather than at the top.
+ */
+export function render(
+  doc: object,
+  blanks: Record<string, string>,
+  paragraphs: ReadonlySet<string>,
+): string {
   const yamlDoc = new YAML.Document(doc);
-  for (const [key, hint] of Object.entries(BLANKS)) {
-    const node = yamlDoc.get(key, true);
-    if (YAML.isScalar(node)) {
-      node.comment = ` ${hint}`;
-    }
-  }
-  if (YAML.isMap(yamlDoc.contents)) {
-    for (const item of yamlDoc.contents.items) {
-      if (YAML.isScalar(item.key) && PARAGRAPHS.has(String(item.key.value))) {
-        item.key.spaceBefore = true;
+  YAML.visit(yamlDoc, {
+    Pair(_, pair, path) {
+      if (!YAML.isScalar(pair.key)) {
+        return;
       }
-    }
-  }
+      const key = String(pair.key.value);
+      if (paragraphs.has(key) && path.length <= 2) {
+        pair.key.spaceBefore = true;
+      }
+      const hint = blanks[key];
+      if (hint !== undefined && YAML.isScalar(pair.value)) {
+        pair.value.comment = ` ${hint}`;
+      }
+    },
+  });
   return yamlDoc.toString({ lineWidth: 0 });
 }
 
@@ -527,7 +563,7 @@ function draftDocument(
     name,
     boundary: group.key,
     outcomes: outcomes.length,
-    yaml: `${[...header(group, from), ...note].join("\n")}\n\n${render(doc)}`,
+    yaml: `${[...header(group, from), ...note].join("\n")}\n\n${render(doc, BLANKS, PARAGRAPHS)}`,
   };
 }
 
@@ -566,18 +602,19 @@ export function intentDraftResult(
 
 const INTENT_DOC = /\.(intent|prd)\.(yaml|yml|json)$/;
 
-function intentDocsIn(dir: string): string[] {
+/** The documents already in `dir` that `matching` claims. */
+export function docsIn(dir: string, matching = INTENT_DOC): string[] {
   if (!fs.existsSync(dir)) {
     return [];
   }
 
   return fs
     .readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && INTENT_DOC.test(entry.name))
+    .filter((entry) => entry.isFile() && matching.test(entry.name))
     .map((entry) => entry.name);
 }
 
-function destinationOf(options: IntentDraftOptions): {
+export function destinationOf(options: { out?: string; into?: string }): {
   dir: string;
   overExisting: "warn" | "refuse";
 } {
@@ -620,7 +657,7 @@ export function intentDraft(options: IntentDraftOptions): number {
     return 1;
   }
 
-  const existing = intentDocsIn(dir);
+  const existing = docsIn(dir);
   if (existing.length > 0 && destination.overExisting === "refuse") {
     throw new UsageError(
       `${dir} already holds ${existing.length} intent doc(s). --into writes where the curated docs are not, so pick a folder that has none.`,

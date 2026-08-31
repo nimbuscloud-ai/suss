@@ -234,7 +234,7 @@ describe("intentDraftResult", () => {
     expect(parsed.transitions[0].when).toEqual([
       { input: "request.params.id", is: "missing" },
     ]);
-    expect(parsed.transitions[1].when).toBe("every call reaches this outcome");
+    expect(parsed.transitions[1].when).toBe("otherwise");
   });
 
   it("leaves purpose and audience blank, with a hint beside each", () => {
@@ -784,7 +784,7 @@ describe("suss infer intent", () => {
     const { exit, io } = await capture(() => runCli(["infer", "workflow"]));
 
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("infer has stub and intent");
+    expect(io.stderr).toContain("infer has stub, intent and prd");
   });
 });
 
@@ -848,8 +848,55 @@ describe("drafted effects", () => {
         id: "returns",
         when: "every call reaches this outcome",
         returns: {},
-        results: [{ writes: "aws.dynamodb:Invoices" }],
+        results: [{ writes: "aws.dynamodb:Invoices", fields: ["invoiceId"] }],
       },
+    ]);
+  });
+
+  it("says which columns the access fills and what it keys on", () => {
+    const detailed = returnsWriting("t-return");
+    detailed.effects = [
+      {
+        ...invoicesWrite,
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["email", "phone"],
+          selector: ["invoiceId"],
+        },
+      },
+    ];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [detailed]),
+    ]);
+
+    expect(parsed.transitions[0].results).toEqual([
+      {
+        writes: "aws.dynamodb:Invoices",
+        fields: ["email", "phone"],
+        by: ["invoiceId"],
+      },
+    ]);
+  });
+
+  it("leaves the columns out when the access asked for every one", () => {
+    const wildcard = returnsWriting("t-return");
+    wildcard.effects = [
+      {
+        ...invoicesWrite,
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["*"],
+        },
+      },
+    ];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [wildcard]),
+    ]);
+
+    expect(parsed.transitions[0].results).toEqual([
+      { reads: "aws.dynamodb:Invoices" },
     ]);
   });
 
@@ -889,6 +936,7 @@ describe("drafted effects", () => {
   it("names a boundary whose protocol has no block of its own", () => {
     const metricRead = {
       ...invoicesWrite,
+      interaction: { class: "message-send" as const },
       binding: {
         transport: "cloudwatch",
         semantics: {

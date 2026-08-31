@@ -42,7 +42,11 @@ import {
   referenceOf,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
-import { storageContainerLabel, storageLabel } from "@suss/ir-core";
+import {
+  EVERY_FIELD,
+  storageContainerLabel,
+  storageLabel,
+} from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
 import {
@@ -76,8 +80,7 @@ type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   semantics: StorageSemantics;
 };
 
-/** Wildcard convention for default-shape reads (no explicit `select`). */
-const ALL_FIELDS = "*";
+const ALL_FIELDS = EVERY_FIELD;
 
 /**
  * Run the storage pairing pass over every summary in the set.

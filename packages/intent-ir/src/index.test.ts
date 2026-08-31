@@ -348,7 +348,7 @@ describe("intentDocToSummary — message-bus and storage boundaries", () => {
     ) as BoundaryIntentSummary;
 
     expect(summary.outcomes[0].effects).toEqual([
-      { does: "writes", names: "aws.dynamodb:Invoices" },
+      { does: "writes", names: "aws.dynamodb:Invoices", fields: [], by: [] },
     ]);
     expect(summary.outcomes[1].effects).toEqual([]);
   });
@@ -375,7 +375,12 @@ describe("intentDocToSummary — message-bus and storage boundaries", () => {
 
     expect(summary.outcomes[0].conditions).toEqual([
       {
-        at: { does: "reads", names: "aws.dynamodb:Invoices" },
+        at: {
+          does: "reads",
+          names: "aws.dynamodb:Invoices",
+          fields: [],
+          by: [],
+        },
         input: null,
         finds: "something",
         said: "reads aws.dynamodb:Invoices finds something where settledAt is set",
@@ -429,6 +434,37 @@ describe("intentDocToSummary — message-bus and storage boundaries", () => {
         said: "an invoice has been paid",
       },
     ]);
+  });
+
+  it("takes the columns an effect touches, and one key or several", () => {
+    const withColumns = (by: unknown) =>
+      intentDocToSummary(
+        IntentDocSchema.parse({
+          ...storeIntent,
+          transitions: [
+            {
+              ...storeIntent.transitions[0],
+              results: [
+                {
+                  writes: "aws.dynamodb:Invoices",
+                  fields: ["email", "phone"],
+                  by,
+                },
+              ],
+            },
+          ],
+        }),
+      ) as BoundaryIntentSummary;
+
+    expect(withColumns("invoiceId").outcomes[0].effects[0]).toEqual({
+      does: "writes",
+      names: "aws.dynamodb:Invoices",
+      fields: ["email", "phone"],
+      by: ["invoiceId"],
+    });
+    expect(
+      withColumns(["tenantId", "invoiceId"]).outcomes[0].effects[0].by,
+    ).toEqual(["tenantId", "invoiceId"]);
   });
 
   it("gives an outcome that states only its effects the effect kind", () => {

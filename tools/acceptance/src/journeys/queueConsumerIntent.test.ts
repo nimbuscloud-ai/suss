@@ -24,6 +24,7 @@ import type { CheckIntentResult } from "@suss/checker-intent";
 
 const DRAFT = "bus-aws-sqs-billing-invoice-paid.intent.yaml";
 const ROUTE = "get-invoices-invoice-id.intent.yaml";
+const ROUTE_PRD = "get-invoices-invoice-id.prd.yaml";
 
 describe("infer intent for a queue consumer that writes a table", () => {
   const root = workspace("queue-consumer-store");
@@ -141,6 +142,21 @@ describe("infer intent for a queue consumer that writes a table", () => {
     expect(doc).not.toContain("dynamo.send");
   });
 
+  it("gives the fall-through branch its own condition, not its position", () => {
+    const doc = fs.readFileSync(path.join(intent, ROUTE), "utf8");
+
+    expect(doc).toContain(
+      [
+        "  - id: 200-ok",
+        "    when:",
+        "      - reads: aws.dynamodb:Invoices",
+        "        finds: something",
+        "        where: settledAt is missing",
+      ].join("\n"),
+    );
+    expect(doc).not.toContain("otherwise");
+  });
+
   it("says the outcome results in a write, in the words ask asks with", () => {
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
 
@@ -149,12 +165,25 @@ describe("infer intent for a queue consumer that writes a table", () => {
     );
   });
 
-  it("keeps a sentence for a guard no boundary explains", () => {
+  it("keeps a sentence for a guard no boundary explains, and states both arms", () => {
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
 
     expect(doc).toContain("when: invoiceId is not a string");
-    expect(doc).toContain("when: otherwise");
+    expect(doc).toContain("when: invoiceId is a string");
     expect(doc).not.toContain("!(");
+  });
+
+  it("says which store the route reads and what it keys on", () => {
+    const doc = fs.readFileSync(path.join(intent, ROUTE), "utf8");
+
+    expect(doc).toContain(
+      [
+        "    results:",
+        "      - reads: aws.dynamodb:Invoices",
+        "        by:",
+        "          - invoiceId",
+      ].join("\n"),
+    );
   });
 
   it("opens by saying what it is, and reads in parts", () => {
@@ -173,9 +202,17 @@ describe("infer intent for a queue consumer that writes a table", () => {
 
     expect(run.status).toBe(1);
     expect(run.stderr).toContain(
-      "are inferred drafts with purpose and audience still blank",
+      "are inferred drafts with blanks still in them",
     );
     expect(run.stderr).toContain(DRAFT);
+  });
+
+  it("refuses to draft a PRD against outcome ids nobody has renamed yet", () => {
+    const run = runSuss(["infer", "prd", "--from", intent]);
+
+    expect(run.status).toBe(1);
+    expect(run.output).toContain("blanks still in them");
+    expect(run.output).toContain("has to load before this can write one");
   });
 
   it("pairs both curated docs against the code they were drafted from", () => {
@@ -192,6 +229,48 @@ describe("infer intent for a queue consumer that writes a table", () => {
         c.kind === "boundary" ? c.boundary : c.intent,
       ),
     ).toEqual(["bus:aws_sqs billing.invoicePaid", "GET /invoices/{invoiceId}"]);
+  });
+
+  it("drafts a PRD per boundary once the outcome ids are settled", () => {
+    // Curating renamed one outcome, which is what a PRD drafted with the
+    // boundary document would already be pointing past.
+    const renamed = fs
+      .readFileSync(path.join(intent, ROUTE), "utf8")
+      .replace("id: 404-not-found", "id: no-such-invoice");
+    fs.writeFileSync(path.join(intent, ROUTE), renamed);
+
+    const run = runSuss(["infer", "prd", "--from", intent]);
+    expect(run.status, run.stderr).toBe(0);
+
+    const doc = fs.readFileSync(path.join(intent, ROUTE_PRD), "utf8");
+    expect(doc).toContain("kind: prd");
+    expect(doc).toContain('title: "" # what this document covers');
+    expect(doc).toContain('- when: "" # the situation, in your words');
+    expect(doc).toContain("link: get-invoices-invoice-id.no-such-invoice");
+  });
+
+  it("says which outcome nobody has written a scenario for", () => {
+    const short = driftedInto("undescribed", ROUTE_PRD, (doc) =>
+      doc
+        .replace(/^title: "".*$/m, "title: Invoice lookup")
+        .replace(/^purpose: "".*$/m, "purpose: Callers see one invoice.")
+        .replace(/^audience: "".*$/m, "audience: the billing team")
+        .replaceAll(/^(\s*)- when: "".*$/gm, "$1- when: a caller asks")
+        .replaceAll(/^(\s*)expect: "".*$/gm, "$1expect: they are told")
+        .replace(/^source: inferred$/m, 'source: "inferred, curated"')
+        // One outcome left with no scenario pointing at it.
+        .replace(/\n *- when: a caller asks\n.*\n.*409.*$/m, ""),
+    );
+    fs.copyFileSync(path.join(intent, ROUTE), path.join(short, ROUTE));
+
+    const checked = checkIntent(short);
+
+    const reported = checked.intent.findings.filter(
+      (f) => f.kind === "undescribedOutcome",
+    );
+    expect(reported).toHaveLength(1);
+    expect(reported[0].severity).toBe("info");
+    expect(reported[0].message).toContain("no PRD scenario says why");
   });
 
   it("reports a declared write the consumer does not make", () => {

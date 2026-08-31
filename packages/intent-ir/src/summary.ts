@@ -47,6 +47,10 @@ export interface IntentEffect {
   does: EffectRelation;
   /** The boundary it reaches, as the author spelled it. */
   names: string;
+  /** The columns it touches. Empty when the doc states none. */
+  fields: string[];
+  /** What it picks the item out by. Empty when the doc states none. */
+  by: string[];
 }
 
 /**
@@ -206,20 +210,34 @@ export function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
   return build(boundary);
 }
 
-// The schema allows one key, and it is the verb.
+const VERBS = EffectRelationSchema.options;
+
 function toEffect(declared: DeclaredEffect): IntentEffect {
-  const [does, names] = Object.entries(declared)[0] as [EffectRelation, string];
-  return { does, names };
+  // The schema gives every effect one verb, so the find always lands.
+  const [does, names] = Object.entries(declared).find(([key]) =>
+    (VERBS as readonly string[]).includes(key),
+  ) as [EffectRelation, string];
+  return {
+    does,
+    names,
+    fields: declared.fields ?? [],
+    by: oneOrMore(declared.by),
+  };
 }
 
-const VERBS = EffectRelationSchema.options;
+function oneOrMore(written: string | string[] | undefined): string[] {
+  if (written === undefined) {
+    return [];
+  }
+  return typeof written === "string" ? [written] : written;
+}
 
 /** The verb key and the boundary it points at, when a clause has one. */
 function subjectOf(clause: Exclude<WhenClause, string>): IntentEffect | null {
   for (const does of VERBS) {
     const names = clause[does];
     if (names !== undefined) {
-      return { does, names };
+      return { does, names, fields: [], by: [] };
     }
   }
   return null;
@@ -243,8 +261,9 @@ function saidAsOneLine(
   clause: Exclude<WhenClause, string>,
   at: IntentEffect | null,
 ): string {
+  // The schema gives every clause one subject, so one of the two lands.
   const subject =
-    at !== null ? `${at.does} ${at.names}` : `input ${clause.input ?? "?"}`;
+    at !== null ? `${at.does} ${at.names}` : `input ${String(clause.input)}`;
   const check = CHECK_KEYS.map((key) =>
     clause[key] === undefined ? null : `${key} ${String(clause[key])}`,
   ).find((said) => said !== null);

@@ -523,6 +523,11 @@ const implementedCode = [
   codeSummary(restCodeBinding, [restResponse(200, null)]),
 ];
 
+/** The scenario-coverage question, apart from the one asked the other way. */
+function aboutScenarios(findings: IntentFinding[]): IntentFinding[] {
+  return findings.filter((f) => f.kind !== "undescribedOutcome");
+}
+
 describe("checkIntentAgreement — PRD scenario coverage", () => {
   it("emits nothing and accounts a PRD whose links all resolve", () => {
     const result = checkIntentAgreement(
@@ -532,7 +537,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       ],
       implementedCode,
     );
-    expect(result.findings).toHaveLength(0);
+    expect(aboutScenarios(result.findings)).toHaveLength(0);
     expect(result.unchecked).toHaveLength(0);
     expect(result.checked).toContainEqual({
       kind: "prd",
@@ -570,7 +575,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       [usersLookup, prdDoc([scenario(["orders-intake.acknowledged"])])],
       implementedCode,
     );
-    expect(result.findings.map((f) => f.kind)).toEqual([
+    expect(aboutScenarios(result.findings).map((f) => f.kind)).toEqual([
       "danglingScenarioLink",
     ]);
     expect(result.findings[0]).toMatchObject({
@@ -588,7 +593,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       [usersLookup, prdDoc([scenario(["users-lookup.ghost"])])],
       implementedCode,
     );
-    expect(result.findings.map((f) => f.kind)).toEqual([
+    expect(aboutScenarios(result.findings).map((f) => f.kind)).toEqual([
       "danglingScenarioLink",
     ]);
     // Resolved the intent but not the outcome, keyed on the real boundary
@@ -625,7 +630,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       ],
       implementedCode,
     );
-    expect(result.findings.map((f) => f.kind)).toEqual([
+    expect(aboutScenarios(result.findings).map((f) => f.kind)).toEqual([
       "danglingScenarioLink",
     ]);
     expect(result.checked).toContainEqual({
@@ -758,7 +763,7 @@ describe("applyIntentSuppressions", () => {
       [usersLookup, prdDoc([scenario(["orders-intake.acknowledged"])])],
       implementedCode,
     ).findings;
-    const out = applyIntentSuppressions(findings, [
+    const out = applyIntentSuppressions(aboutScenarios(findings), [
       {
         kind: "danglingScenarioLink",
         boundary: "prd:profile-prd",
@@ -775,7 +780,7 @@ describe("applyIntentSuppressions", () => {
       [usersLookup, prdDoc([scenario(["users-lookup.ghost"])])],
       implementedCode,
     ).findings;
-    const out = applyIntentSuppressions(findings, [
+    const out = applyIntentSuppressions(aboutScenarios(findings), [
       {
         kind: "danglingScenarioLink",
         boundary: "GET /users/:id",
@@ -812,7 +817,12 @@ const busCodeBinding = messageBusBinding({
 });
 
 function writes(container: string): IntentEffect {
-  return { does: "writes", names: `aws.dynamodb:${container}` };
+  return {
+    does: "writes",
+    names: `aws.dynamodb:${container}`,
+    fields: [],
+    by: [],
+  };
 }
 
 function effectOutcome(id: string, effects: IntentEffect[]): IntentOutcome {
@@ -875,7 +885,7 @@ describe("effect outcomes", () => {
           busIntentBinding,
           [
             effectOutcome("invoice-recorded", [
-              { does: "writes", names: "Invoices" },
+              { does: "writes", names: "Invoices", fields: [], by: [] },
             ]),
           ],
           "invoice-intake",
@@ -1120,7 +1130,7 @@ function uncovered(findings: IntentFinding[]): IntentFinding[] {
 
 function reads(names: string, finds: "nothing" | "something"): IntentCondition {
   return {
-    at: { does: "reads", names },
+    at: { does: "reads", names, fields: [], by: [] },
     input: null,
     finds,
     said: `reads ${names} finds ${finds}`,
@@ -1212,5 +1222,235 @@ describe("a when clause that says which boundary", () => {
     );
 
     expect(uncovered(result.findings)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Which columns an effect touches, and which outcome nobody explained
+// ---------------------------------------------------------------------------
+
+/** A consumer whose write states the columns it fills and its key. */
+function consumerWritingColumns(
+  fields: string[],
+  selector: string[],
+): BehavioralSummary {
+  const summary = codeSummary(
+    busCodeBinding,
+    [{ type: "return", value: null }],
+    "InvoiceWorker.handler",
+  );
+  summary.transitions[0].effects = [
+    {
+      type: "interaction",
+      binding: invoicesTable,
+      callee: "dynamo.send",
+      interaction: {
+        class: "storage-access",
+        kind: "write",
+        fields,
+        selector,
+      },
+    },
+  ];
+  return summary;
+}
+
+function writesColumns(fields: string[], by: string[]): IntentEffect {
+  return { does: "writes", names: "aws.dynamodb:Invoices", fields, by };
+}
+
+describe("the columns an effect states", () => {
+  it("passes when the access fills every column the intent stated", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("contact-erased", [
+              writesColumns(["email", "phone"], []),
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingColumns(["email", "phone", "address"], [])],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+
+  it("reports a column the intent stated that the access never fills", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("contact-erased", [
+              writesColumns(["email", "phone"], []),
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingColumns(["closedAt"], [])],
+    );
+
+    const reported = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(reported).toHaveLength(1);
+    expect(reported[0].message).toContain("of email, phone");
+  });
+
+  it("compares what the access picks the item out by", () => {
+    const stated = (by: string[]) =>
+      checkIntentAgreement(
+        [
+          boundaryIntent(
+            busIntentBinding,
+            [effectOutcome("recorded", [writesColumns([], by)])],
+            "invoice-intake",
+          ),
+        ],
+        [consumerWritingColumns([], ["invoiceId"])],
+      ).findings.filter((f) => f.kind === "uncoveredOutcome");
+
+    expect(stated(["invoiceId"])).toEqual([]);
+    expect(stated(["customerId"])).toHaveLength(1);
+  });
+
+  it("takes an access that states no columns as unread, not as empty", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("contact-erased", [writesColumns(["email"], [])])],
+          "invoice-intake",
+        ),
+      ],
+      // What a DynamoDB write records today, since nothing parses an
+      // UpdateExpression. Calling that a mismatch reports working code.
+      [consumerWritingColumns([], [])],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+
+  it("takes a query that asked for every column as covering any of them", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("read-back", [writesColumns(["email"], [])])],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingColumns(["*"], [])],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+});
+
+describe("an effect at a boundary that keeps no columns", () => {
+  it("compares the verb and the boundary, and asks nothing about columns", () => {
+    const summary = codeSummary(
+      busCodeBinding,
+      [{ type: "return", value: null }],
+      "InvoiceWorker.handler",
+    );
+    summary.transitions[0].effects = [
+      {
+        type: "interaction",
+        binding: busCodeBinding,
+        callee: "sqs.send",
+        interaction: { class: "message-send" },
+      },
+    ];
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("passed-on", [
+              {
+                does: "writes",
+                names: "bus:aws_sqs billing.invoicePaid",
+                fields: ["invoiceId"],
+                by: [],
+              },
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [summary],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+});
+
+describe("an outcome with no scenario", () => {
+  const twoOutcomes = boundaryIntent(
+    restIntentBinding,
+    [response(200, null), response(404, null)],
+    "users-lookup",
+  );
+  const code = [
+    codeSummary(restCodeBinding, [
+      restResponse(200, null),
+      restResponse(404, null),
+    ]),
+  ];
+
+  it("says which one nobody wrote a reason for", () => {
+    const result = checkIntentAgreement(
+      [twoOutcomes, prdDoc([scenario(["users-lookup.s200"])])],
+      code,
+    );
+
+    const reported = result.findings.filter(
+      (f) => f.kind === "undescribedOutcome",
+    );
+    expect(reported).toHaveLength(1);
+    expect(reported[0].severity).toBe("info");
+    expect(reported[0].boundary).toBe("GET /users/{id}");
+    expect(reported[0].intent).toEqual({
+      name: "users-lookup",
+      outcomeId: "s404",
+    });
+    expect(reported[0].message).toContain("no PRD scenario says why");
+  });
+
+  it("says nothing when every outcome has one", () => {
+    const result = checkIntentAgreement(
+      [
+        twoOutcomes,
+        prdDoc([scenario(["users-lookup.s200", "users-lookup.s404"])]),
+      ],
+      code,
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "undescribedOutcome"),
+    ).toEqual([]);
+  });
+
+  it("stays quiet until a PRD is loaded, when the answer would be all of them", () => {
+    const result = checkIntentAgreement([twoOutcomes], code);
+
+    expect(
+      result.findings.filter((f) => f.kind === "undescribedOutcome"),
+    ).toEqual([]);
   });
 });

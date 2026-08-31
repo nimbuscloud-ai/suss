@@ -3,9 +3,9 @@
     "packages": 64,
     "packagesWithExports": 64,
     "exports": 663,
-    "internal": 2347,
-    "consumers": 1157,
-    "pairs": 1138,
+    "internal": 2352,
+    "consumers": 1161,
+    "pairs": 1142,
     "unfollowedCalls": 182,
     "findingErrors": 0
   },
@@ -48,15 +48,15 @@
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
       "exports": 3,
-      "internal": 16,
-      "consumers": 22,
+      "internal": 18,
+      "consumers": 23,
       "unfollowedCalls": 0
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 21,
-      "internal": 383,
-      "consumers": 250,
+      "internal": 385,
+      "consumers": 253,
       "unfollowedCalls": 31
     },
     "packages/client/apollo": {
@@ -111,7 +111,7 @@
     "packages/contract/intent": {
       "name": "@suss/contract-intent",
       "exports": 3,
-      "internal": 4,
+      "internal": 5,
       "consumers": 4,
       "unfollowedCalls": 0
     },

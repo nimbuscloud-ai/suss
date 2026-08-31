@@ -643,6 +643,18 @@ A scenario links to a name two or more boundary intents share, so the link resol
 
 **Bug when:** it fires. Rename the intents so the link resolves to one.
 
+### `undescribedOutcome` *(shipped)*
+
+**Severity:** info • **Emitted by:** the PRD pass
+
+A boundary intent declares an outcome and no PRD scenario links to it. The other three scenario kinds ask whether a scenario points at something that exists; this asks it the other way, which is the question a product reader has: which of these behaviours has nobody written down a reason for.
+
+It stays quiet until at least one PRD is loaded. Before that the answer is every outcome, which tells nobody anything. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these.
+
+**Legitimate when:** the outcome is one nobody needs a reason for, a 500 from an unhandled throw or a branch that exists for a library's sake. Treat the count as a coverage number rather than a list to empty.
+
+**Bug when:** never on its own. It becomes one when the outcome turns out to be behaviour nobody meant to ship, which is what reading the list is for.
+
 ---
 
 ## Run findings
