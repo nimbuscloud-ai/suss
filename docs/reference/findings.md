@@ -94,6 +94,17 @@ The consumer references a field the provider's contract doesn't declare. Per-dom
     not declare it as an input.
   ```
 
+- **Message bus** (`binding.semantics.name = "message-bus"`, aspect `receive`)
+  ```
+  [WARNING] boundaryFieldUnknown (aspect: receive)
+    PaidWorkerFunction.handler reads "data.invoiceId" off a message on
+    aws_sqs channel "PaidQueue" but no producer in the analysed scope
+    sends "data.invoiceId".
+    provider: template.yaml::PaidWorkerFunction.FromPaid
+    consumer: src/handlers/paidWorker.ts::PaidWorkerFunction.handler
+  ```
+  A queue takes a string, so nothing on either side type-checks the payload and the consumer throws on every message. The read comes from the fields the consumer destructured out of the parsed body, or from what it reaches for off its handler parameter when the framework parsed the message for it. A producer whose body suss cannot read into takes the channel out of the comparison altogether, so a missing finding here is not agreement.
+
 **Legitimate when:** the provider lives in a service / contract source you haven't extracted (microservice boundary, multi-repo). Suppress with `.sussignore` `effect: mark`.
 
 **Bug when:** typo, rename without follow-through, or stale code referencing a removed field. Fix the consumer or restore the contract.
