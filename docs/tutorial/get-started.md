@@ -243,6 +243,7 @@ src/api.ts
 └─ GET /users/{id}  (hono handler | line 5)
        if  !findUser()
          -> 404 { error }
+           + findUser
        else
          -> 200 { id, name }
            + findUser
@@ -259,7 +260,8 @@ src/api.ts
 That is the endpoint's behaviour rather than its types: which condition
 leads to which status, and what the body contains in each case. And
 `c.json(body, status)` was read correctly without anyone telling suss
-which argument is which. `findUser` is declared and never defined here,
+which argument is which. `findUser` runs in the condition itself, so it
+shows up on both paths. `findUser` is declared and never defined here,
 so suss says it could not follow the call rather than reporting the
 handler as fully read.
 

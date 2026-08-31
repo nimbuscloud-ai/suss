@@ -1,12 +1,18 @@
 // assembly.test.ts: Tests for extractRawBranches (Task 2.5)
 
+import { Node } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { storageBinding } from "@suss/behavioral-ir";
 import { createTestProject } from "@suss/test-project";
 
 import { extractRawBranches } from "./assembly.js";
 
-import type { TerminalPattern } from "@suss/extractor";
+import type {
+  InvocationRecognizer,
+  RawBranch,
+  TerminalPattern,
+} from "@suss/extractor";
 import type { Project } from "ts-morph";
 import type { FunctionRoot } from "./conditions.js";
 
@@ -1937,5 +1943,184 @@ describe("edge cases", () => {
       expect(cond.structured).not.toBeNull();
       expect(cond.structured?.type).toBe("truthinessCheck");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Which branch an effect belongs to
+// ---------------------------------------------------------------------------
+
+/** A stand-in for a database pack, so no shipped pack decides what
+ * these tests see. */
+const insertRecognizer: InvocationRecognizer = (call) => {
+  const node = call as Node;
+  if (!Node.isCallExpression(node)) {
+    return null;
+  }
+  if (node.getExpression().getText() !== "db.insert") {
+    return null;
+  }
+  return [
+    {
+      type: "interaction",
+      binding: storageBinding({
+        recognition: "test",
+        storageSystem: "test.db",
+        scope: "test",
+        container: "rows",
+      }),
+      callee: "db.insert",
+      interaction: { class: "storage-access", kind: "write", fields: [] },
+    },
+  ];
+};
+
+/** The statuses whose branch recorded a recognized storage access. */
+function statusesThatStored(branches: RawBranch[]): number[] {
+  return branches
+    .filter((branch) =>
+      (branch.extraEffects ?? []).some(
+        (effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "storage-access",
+      ),
+    )
+    .flatMap((branch) =>
+      branch.terminal.statusCode?.type === "literal"
+        ? [branch.terminal.statusCode.value]
+        : [],
+    )
+    .sort((a, b) => a - b);
+}
+
+describe("which branch an effect belongs to", () => {
+  it("puts a read every answer ran on every one of them", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export async function lookup(db: any, id: string) {
+        const found = db.insert(id);
+        if (!found) {
+          return { status: 404, body: {} };
+        }
+        if (found.settled) {
+          return { status: 409, body: {} };
+        }
+        return { status: 200, body: found };
+      }
+    `,
+    );
+    const branches = extractRawBranches(fn, tsRestTerminals, [
+      insertRecognizer,
+    ]).branches;
+    expect(statusesThatStored(branches)).toEqual([200, 404, 409]);
+  });
+
+  it("keeps a guarded write off the arm that recorded the other way", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export async function save(flag: boolean, db: any, row: any) {
+        if (flag) {
+          db.insert(row);
+          return { status: 200, body: { saved: true } };
+        }
+        return { status: 204, body: {} };
+      }
+    `,
+    );
+    const branches = extractRawBranches(fn, tsRestTerminals, [
+      insertRecognizer,
+    ]).branches;
+    expect(statusesThatStored(branches)).toEqual([200]);
+  });
+
+  it("keeps a write off an early return that left before it", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export async function save(flag: boolean, db: any, row: any) {
+        if (!flag) {
+          return { status: 400, body: {} };
+        }
+        db.insert(row);
+        return { status: 200, body: {} };
+      }
+    `,
+    );
+    const branches = extractRawBranches(fn, tsRestTerminals, [
+      insertRecognizer,
+    ]).branches;
+    expect(statusesThatStored(branches)).toEqual([200]);
+  });
+
+  it("keeps a push the loop guarded, which no branch can speak about", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function check(items: any[]) {
+        const findings: string[] = [];
+        for (const item of items) {
+          if (item.result === "nomatch") {
+            findings.push("unhandledProviderCase");
+          }
+        }
+        return { status: 200, body: findings };
+      }
+    `,
+    );
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
+    const callees = branches.flatMap((b) =>
+      b.effects.flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+    );
+    expect(callees).toContain("findings.push");
+  });
+
+  it("gives cleanup in a finally to the returns written above it", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function parse(source: string, parser: any) {
+        try {
+          if (!source) {
+            return { status: 400, body: {} };
+          }
+          return { status: 200, body: parser.parse(source) };
+        } finally {
+          parser.delete();
+        }
+      }
+    `,
+    );
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
+    for (const branch of branches) {
+      const callees = branch.effects.flatMap((e) =>
+        e.type === "invocation" ? [e.callee] : [],
+      );
+      expect(callees).toContain("parser.delete");
+    }
+  });
+
+  it("still counts an express terminal call once", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler(req: any, res: any) {
+        logger.info("start");
+        res.status(200).json({ users: [] });
+      }
+    `,
+    );
+    const branches = extractRawBranches(fn, expressTerminals).branches;
+    const callees = branches[0].effects.flatMap((e) =>
+      e.type === "invocation" ? [e.callee] : [],
+    );
+    expect(callees).toEqual(["logger.info"]);
   });
 });

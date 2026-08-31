@@ -10,6 +10,8 @@
 
 import { Node } from "ts-morph";
 
+import { guardsHoldOn, runsBefore } from "@suss/extractor";
+
 import {
   type ConditionInfo,
   conditionInfoToRawCondition,
@@ -57,6 +59,29 @@ import type { ResolveCallee } from "./terminals/helperResolution.js";
 // ---------------------------------------------------------------------------
 // Main exported function
 // ---------------------------------------------------------------------------
+
+/** Only an invocation records what had to be true before it ran. */
+const preconditionsOf = (effect: RawEffect): RawCondition[] | undefined =>
+  effect.type === "invocation" ? effect.preconditions : undefined;
+
+/** Where a call is and what it is written under. */
+interface CallSite {
+  line: number;
+  alwaysRuns: boolean;
+  preconditions: RawCondition[] | undefined;
+}
+
+/**
+ * Whether the call at `site` runs on the way to `branch`'s terminal.
+ * Both tests, and why each is needed, are in the `@suss/extractor`
+ * README.
+ */
+function firesOn(site: CallSite, branch: RawBranch): boolean {
+  if (!guardsHoldOn(site.preconditions, branch.conditions)) {
+    return false;
+  }
+  return site.alwaysRuns || runsBefore(site.line, branch.terminal.location.end);
+}
 
 const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
   conditions.length === 0 ||
@@ -286,56 +311,39 @@ export function extractRawBranches(
     return true;
   });
 
-  // Attach invocation effects to the default branch. A default branch
-  // is the code path that runs when no early-return / guard clause
-  // fires: exactly the path every body-top-level call executes on.
-  // Non-default branches (explicit early returns) don't fire those
-  // calls, so they stay effect-free. Calls nested inside `if`/`for`
-  // blocks are attributed to the default branch too, which is coarser
-  // than it should be and waits on branch-scoped effect attribution.
-  //
-  // Exclude calls whose location coincides with a terminal's: e.g.
-  // Express's `res.json(body)` is matched as a `parameterMethodCall`
-  // terminal and shouldn't be double-counted as a side-effect
-  // invocation.
   if (invocations.length > 0) {
-    const defaultBranch = distinctBranches.find((b) => b.isDefault);
-    if (defaultBranch !== undefined) {
-      const terminalLines = new Set(
-        distinctBranches.map((b) => b.terminal.location.start),
-      );
-      // A call the terminal reader itself matched, `res.json(body)`,
-      // is the terminal and would otherwise count twice. A call whose
-      // result a terminal describes, `return toView(row)`, is a
-      // different node and stays.
-      const terminalNodes = new Set(terminals.map(({ node }) => node));
-      // Container-building calls (spread / array-element composition)
-      // are never themselves terminals, so they skip the terminal-line
-      // dedup that catches `res.json(body)`-as-both-terminal-and-call.
-      defaultBranch.effects = invocations
+    // A call the terminal reader itself matched, `res.json(body)`, is
+    // the terminal and would otherwise count twice. A call whose result
+    // a terminal describes, `return toView(row)`, is a different node.
+    const terminalNodes = new Set(terminals.map(({ node }) => node));
+    const terminalLines = new Set(
+      distinctBranches.map((b) => b.terminal.location.start),
+    );
+    // A container-building call is never a terminal, so the line dedup
+    // would cost single-line orchestrators their effects.
+    const sideEffects = invocations.filter((i) =>
+      i.node !== undefined
+        ? !terminalNodes.has(i.node)
+        : i.neverTerminal || !terminalLines.has(i.line),
+    );
+    for (const branch of distinctBranches) {
+      branch.effects = sideEffects
         .filter((i) =>
-          i.node !== undefined
-            ? !terminalNodes.has(i.node)
-            : i.neverTerminal || !terminalLines.has(i.line),
+          firesOn({ ...i, preconditions: preconditionsOf(i.effect) }, branch),
         )
         .map((i) => i.effect);
     }
   }
 
-  // Recognized typed effects (interaction(class: ...)) attach to
-  // the same default branch. They bypass the terminal-line dedup
-  // because they're additive to the invocation effect: a Prisma
-  // call that's also somehow a terminal would emit BOTH a typed
-  // interaction (paired against the schema) AND any terminal-
-  // shaped invocation, and that's the right behavior.
-  if (recognized.length > 0) {
-    const defaultBranch = distinctBranches.find((b) => b.isDefault);
-    if (defaultBranch !== undefined) {
-      const extra: Effect[] = recognized.map((r) => r.effect);
-      defaultBranch.extraEffects = [
-        ...(defaultBranch.extraEffects ?? []),
-        ...extra,
-      ];
+  // A recognized effect is additive to the invocation effect from the
+  // same call, so it skips the terminal dedup and only takes the two
+  // branch tests.
+  for (const branch of distinctBranches) {
+    const extra: Effect[] = recognized
+      .filter((r) => firesOn(r, branch))
+      .map((r) => r.effect);
+    if (extra.length > 0) {
+      branch.extraEffects = [...(branch.extraEffects ?? []), ...extra];
     }
   }
 

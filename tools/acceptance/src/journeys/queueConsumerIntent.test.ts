@@ -186,6 +186,33 @@ describe("infer intent for a queue consumer that writes a table", () => {
     );
   });
 
+  it("gives the 404 outcome the read it ran before answering", () => {
+    // All three statuses come out of the same one read, so a doc that
+    // gave the read only to the 200 would argue with the 404 the moment
+    // somebody wrote down what that branch does.
+    const doc = fs.readFileSync(path.join(intent, ROUTE), "utf8");
+
+    expect(doc).toContain(
+      [
+        "  - id: 404-not-found",
+        "    when:",
+        "      - reads: aws.dynamodb:Invoices",
+        "        finds: nothing",
+        "    response:",
+        "      status: 404",
+        "      body:",
+        "        type: object",
+        "        properties:",
+        "          error:",
+        "            type: string",
+        "    results:",
+        "      - reads: aws.dynamodb:Invoices",
+        "        by:",
+        "          - invoiceId",
+      ].join("\n"),
+    );
+  });
+
   it("opens by saying what it is, and reads in parts", () => {
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
 

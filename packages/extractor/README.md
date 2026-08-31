@@ -80,6 +80,31 @@ What it does not read:
 
 Composition multiplies paths, so it is capped by the same `MAX_PATHS` budget path enumeration uses. Past it the two sides are reported side by side and the unit gets a gap saying so.
 
+## Which branch an effect belongs to
+
+An adapter finds the calls a body makes once, and it finds the branches separately. Something then has to say which branch each call runs on. `guardsHoldOn` and `runsBefore` in `effectGuards.ts` are that decision, and both adapters that make it call these rather than keeping a copy.
+
+A call belongs to a branch when two things are true of it.
+
+- **No guard the call is written under was recorded the other way around on the branch.** A call inside `if (flag)` stays off every branch that recorded `!flag`. A call written above every guard has none, so it reaches all of them.
+- **The call is written no later than the terminal's last line.** A call written after an early return did not run on that early return's path. The terminal's last line and not its first, because `return new Promise((resolve) => resolve(read()))` runs the call inside its own expression.
+
+Neither test is enough on its own, and the two ways to get it wrong are both ordinary code.
+
+```ts
+const found = await dynamo.send(new GetItemCommand({ TableName: "Invoices" }));
+if (!found.Item) {
+  return { statusCode: 404, body: JSON.stringify({ error: "no invoice" }) };
+}
+return { statusCode: 200, body: JSON.stringify({ invoice: found.Item }) };
+```
+
+The read is under no guard, so guards alone put it on both branches, which is right. Source order alone would too. But `JSON.stringify` inside the 404 return is under `!found.Item`, and its line comes before the 200 return, so source order alone would put it on the 200 branch, where it never ran. Guards catch that. Turn the example around, put the read after the 404 return, and guards alone put it on the 404 branch, where it also never ran. Source order catches that.
+
+The first test asks whether the branch contradicts the guard, not whether the branch repeats it. That matters because a branch often cannot speak about a guard at all. The path engine opacifies a loop, so a terminal after the loop records nothing about an `if` inside the loop body, and the same goes for a call inside a `catch` or inside a callback the walk descended into. The commonest shape in this repo is an accumulator: a loop that pushes into an array under a condition, then returns the array. Requiring the branch to repeat the guard takes those pushes off the only branch there is, and the unit comes out calling nothing at all. So silence on the branch leaves the effect in place, and only a guard written down the other way around takes it off.
+
+Comparison is by the condition's polarity and the text it was written as, the same key a transition id is built from. An adapter therefore has to spell a guard on an effect the way it spells the same guard on a branch, or the two never meet and the guard is treated as silence.
+
 ## Coverage
 
 ![coverage](../../.github/badges/coverage-extractor.svg)

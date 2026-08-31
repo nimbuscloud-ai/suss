@@ -30,8 +30,10 @@ import {
   type TaggedTemplateExpression,
 } from "ts-morph";
 
+import { rawConditionToPredicate } from "@suss/extractor";
+
 import {
-  collectAncestorConditionInfos,
+  collectAncestorConditionInfosBelow,
   conditionInfoToRawCondition,
   type FunctionRoot,
 } from "../conditions.js";
@@ -79,6 +81,11 @@ export interface InvocationEffectLocation {
    * them: otherwise single-line orchestrators lose their effects.
    */
   neverTerminal: boolean;
+  /**
+   * True for a call in a `finally` body, which runs on every path
+   * through the try, including the ones that left before it.
+   */
+  alwaysRuns: boolean;
 }
 
 /**
@@ -90,6 +97,14 @@ export interface InvocationEffectLocation {
 export interface RecognizedEffectLocation {
   effect: Effect;
   line: number;
+  /**
+   * What has to be true before the call runs, in the form a branch
+   * records its conditions, so the assembly pass can compare the two
+   * without going back to the AST.
+   */
+  preconditions: RawCondition[];
+  /** True for a call in a `finally` body. See `InvocationEffectLocation`. */
+  alwaysRuns: boolean;
 }
 
 /**
@@ -365,6 +380,7 @@ export function extractInvocationEffects(
           },
           line: startLineOf(node),
           neverTerminal: false,
+          alwaysRuns: runsOnEveryPath(node, func),
         });
       }
       return;
@@ -394,6 +410,7 @@ export function extractInvocationEffects(
             },
             line: enclosingStatementLine(node),
             neverTerminal: true,
+            alwaysRuns: runsOnEveryPath(node, func),
           });
         }
       }
@@ -421,6 +438,7 @@ export function extractInvocationEffects(
             },
             line: enclosingStatementLine(node),
             neverTerminal: true,
+            alwaysRuns: runsOnEveryPath(node, func),
           });
         }
       }
@@ -449,6 +467,7 @@ export function extractInvocationEffects(
           },
           line: startLineOf(node),
           neverTerminal: false,
+          alwaysRuns: runsOnEveryPath(node, func),
           node: call,
         });
       }
@@ -476,6 +495,7 @@ export function extractInvocationEffects(
           },
           line: startLineOf(node),
           neverTerminal: false,
+          alwaysRuns: runsOnEveryPath(node, func),
           node: call,
         });
       }
@@ -507,6 +527,7 @@ export function extractInvocationEffects(
           },
           line: enclosingStatementLine(node),
           neverTerminal: true,
+          alwaysRuns: runsOnEveryPath(node, func),
         });
       }
     }
@@ -562,6 +583,8 @@ export function runInvocationRecognizers(
       anchorCallsOf,
     );
     const line = enclosingStatementLine(node);
+    const preconditions = collectPreconditions(node, func);
+    const alwaysRuns = runsOnEveryPath(node, func);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -583,7 +606,12 @@ export function runInvocationRecognizers(
         continue;
       }
       for (const eff of emitted) {
-        out.push({ effect: eff, line });
+        out.push({
+          effect: withPreconditions(eff, preconditions),
+          line,
+          preconditions,
+          alwaysRuns,
+        });
       }
     }
   });
@@ -725,6 +753,8 @@ function dispatchAccessRecognizers(
       anchorCallsOf,
     );
     const line = enclosingStatementLine(node);
+    const preconditions = collectPreconditions(node, root);
+    const alwaysRuns = runsOnEveryPath(node, root);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -741,12 +771,13 @@ function dispatchAccessRecognizers(
         continue;
       }
       for (const eff of emitted) {
-        const key = `${line}:${JSON.stringify(eff)}`;
+        const effect = withPreconditions(eff, preconditions);
+        const key = `${line}:${JSON.stringify(effect)}`;
         if (seenEffects.has(key)) {
           continue;
         }
         seenEffects.add(key);
-        out.push({ effect: eff, line });
+        out.push({ effect, line, preconditions, alwaysRuns });
       }
     }
   });
@@ -954,18 +985,67 @@ function mapCallbackReturn(call: CallExpression): Node | null {
 
 /**
  * Collect the ancestor if/switch/ternary conditions that gate
- * reaching `node` within `func`. Reuses the same walker transitions
+ * reaching `node` within `root`. Reuses the same walker transitions
  * use for `conditions`; produces RawConditions that downstream
  * convert to Predicates in the IR.
  *
  * For a call inside `if (result === "nomatch") { findings.push(...) }`
  * this returns `[result === "nomatch"]` as a positive RawCondition.
  * For a call inside an else branch, the condition is negated.
+ *
+ * `root` is the function body for a call inside a unit, and the source
+ * file for a read that happens when the module loads.
  */
-function collectPreconditions(node: Node, func: FunctionRoot): RawCondition[] {
-  return collectAncestorConditionInfos(node, func).map(
+function collectPreconditions(node: Node, root: Node): RawCondition[] {
+  return collectAncestorConditionInfosBelow(node, root).map(
     conditionInfoToRawCondition,
   );
+}
+
+/**
+ * Whether `node` is inside a `finally` body below `root`. Cleanup
+ * written there runs on the paths that returned or threw above it, so
+ * where it is in the file says nothing about which branches reach it.
+ */
+function runsOnEveryPath(node: Node, root: Node): boolean {
+  let current: Node | undefined = node;
+  while (current !== undefined && current !== root) {
+    const parent: Node | undefined = current.getParent();
+    if (
+      parent !== undefined &&
+      Node.isTryStatement(parent) &&
+      parent.getFinallyBlock() === current
+    ) {
+      return true;
+    }
+    current = parent;
+  }
+  return false;
+}
+
+/**
+ * The same effect, saying what had to be true for it to happen. Only
+ * an invocation and an interaction have somewhere to put that, so
+ * every other kind comes back as it went in, and a recognizer that
+ * worked its own guards out keeps them.
+ */
+function withPreconditions(
+  effect: Effect,
+  preconditions: RawCondition[],
+): Effect {
+  if (preconditions.length === 0) {
+    return effect;
+  }
+  if (effect.type !== "invocation" && effect.type !== "interaction") {
+    return effect;
+  }
+  if (effect.preconditions !== undefined) {
+    return effect;
+  }
+  return {
+    ...effect,
+    preconditions: preconditions.map(rawConditionToPredicate),
+  };
 }
 
 /**
