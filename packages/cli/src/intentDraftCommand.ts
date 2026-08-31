@@ -47,6 +47,7 @@ import type {
   AuthoredBoundary,
   AuthoredShape,
   EffectOutcome,
+  When,
 } from "@suss/intent-ir";
 
 export interface IntentDraftOptions {
@@ -89,7 +90,7 @@ const DEFAULT_OUT = "intent";
 
 interface DraftedOutcome {
   id: string;
-  when: string;
+  when: When;
   response?: { status: number; body?: AuthoredShape };
   returns?: { body?: AuthoredShape };
   throws?: { errorType?: string };
@@ -194,10 +195,11 @@ function draftedEffects(transition: Transition): EffectOutcome[] {
 /** Null when the transition's terminal has no intent outcome to declare. */
 function toDraftedOutcome(
   transition: Transition,
+  summary: BehavioralSummary,
   isFirst: boolean,
 ): DraftedOutcome | null {
   const output = transition.output;
-  const when = draftedWhen(transition, isFirst);
+  const when = draftedWhen(transition, summary, isFirst);
   const results = draftedEffects(transition);
   const did = results.length > 0 ? { results } : {};
 
@@ -247,7 +249,7 @@ function toDraftedOutcome(
  * declares anyway.
  */
 function effectOnlyOutcome(
-  when: string,
+  when: When,
   results: EffectOutcome[],
 ): DraftedOutcome | null {
   const first = results[0];
@@ -420,9 +422,8 @@ function header(group: BoundaryGroup, from: string): string[] {
     "#",
     "# Written from what the code does, so it says nothing about why. Fill in",
     "# purpose and audience, rename this document and its outcome ids to what",
-    "# your team calls them, put the conditions in your own words, then set",
-    '# source to "inferred, curated" so findings against it count at full',
-    "# severity.",
+    '# your team calls them, then set source to "inferred, curated" so findings',
+    "# against it count at full severity.",
     "#",
     "# Until the blanks are filled the reader rejects this file and says so,",
     "# which is what keeps an uncurated draft from passing for finished.",
@@ -467,12 +468,14 @@ function draftDocument(
   const transitions = group.summaries.flatMap((s) => s.transitions);
   const outcomeIds = new Set<string>();
   const outcomes: DraftedOutcome[] = [];
-  transitions.forEach((transition, index) => {
-    const outcome = toDraftedOutcome(transition, index === 0);
-    if (outcome !== null) {
-      outcomes.push({ ...outcome, id: unique(outcome.id, outcomeIds) });
-    }
-  });
+  for (const summary of group.summaries) {
+    summary.transitions.forEach((transition, index) => {
+      const outcome = toDraftedOutcome(transition, summary, index === 0);
+      if (outcome !== null) {
+        outcomes.push({ ...outcome, id: unique(outcome.id, outcomeIds) });
+      }
+    });
+  }
 
   if (outcomes.length === 0) {
     return {

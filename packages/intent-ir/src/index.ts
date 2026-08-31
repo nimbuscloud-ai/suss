@@ -48,9 +48,12 @@ export type {
   Prd,
   PrdScenario,
   PrimitiveTypeName,
+  When,
+  WhenClause,
 } from "./schema.js";
 export type {
   BoundaryIntentSummary,
+  IntentCondition,
   IntentEffect,
   IntentOutcome,
   IntentOutcomeKind,

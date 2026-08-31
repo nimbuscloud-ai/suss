@@ -31,6 +31,8 @@
 
 import {
   BOUNDARY_ROLE,
+  boundaryCalls,
+  boundaryGuardsOf,
   goesThroughRelation,
   relationsOf,
   summaryRef,
@@ -48,11 +50,14 @@ import {
 
 import type {
   BehavioralSummary,
+  BoundaryCall,
+  BoundaryGuard,
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
 import type {
   BoundaryIntentSummary,
+  IntentCondition,
   IntentEffect,
   IntentFinding,
   IntentFindingSeverity,
@@ -79,6 +84,8 @@ interface CodeOutcome {
   errorType: string | null;
   /** What the transition that ends this way did at other boundaries. */
   effects: CodeEffect[];
+  /** The boundaries the branch leading here turned on. */
+  turnsOn: BoundaryGuard[];
 }
 
 /** A boundary intent that was paired and compared against code. */
@@ -529,8 +536,9 @@ function compareIntentToImpl(
 ): IntentFinding[] {
   const findings: IntentFinding[] = [];
   const ref = codeRef(impl);
+  const calls = boundaryCalls(impl);
   const codeOutcomes = impl.transitions
-    .map(toCodeOutcome)
+    .map((t) => toCodeOutcome(t, calls))
     .filter((o): o is CodeOutcome => o !== null);
   const everyEffect = impl.transitions.flatMap(codeEffectsOf);
 
@@ -559,8 +567,8 @@ function compareIntentToImpl(
     if (outcome.kind === "effect") {
       continue;
     }
-    const matches = codeOutcomes.filter((co) => outcomeMatches(outcome, co));
-    if (matches.length === 0) {
+    const ending = codeOutcomes.filter((co) => outcomeMatches(outcome, co));
+    if (ending.length === 0) {
       findings.push({
         kind: "uncoveredOutcome",
         severity: "error",
@@ -568,6 +576,32 @@ function compareIntentToImpl(
         intent: { name: intent.name, outcomeId: outcome.id },
         code: ref,
         message: `Intent "${intent.name}" declares ${describeOutcome(outcome)} at ${boundary}; ${impl.identity.name} has no transition that produces it.`,
+      });
+      continue;
+    }
+    // A `when` clause that says which boundary the branch read is the
+    // one part of the condition this pass can settle, so a declared
+    // outcome narrows to the branches that turn on what it said.
+    const stated = outcome.conditions.filter(
+      (c): c is IntentCondition & { at: IntentEffect } => c.at !== null,
+    );
+    const matches =
+      stated.length === 0
+        ? ending
+        : ending.filter((co) =>
+            stated.every((c) => conditionMet(c, co.turnsOn)),
+          );
+    if (matches.length === 0) {
+      const unmet = stated.find(
+        (c) => !ending.some((co) => conditionMet(c, co.turnsOn)),
+      );
+      findings.push({
+        kind: "uncoveredOutcome",
+        severity: "error",
+        boundary,
+        intent: { name: intent.name, outcomeId: outcome.id },
+        code: ref,
+        message: `Intent "${intent.name}" declares ${describeOutcome(outcome)} at ${boundary} when ${unmet?.said ?? outcome.when}; ${impl.identity.name} produces it on a different condition.`,
       });
       continue;
     }
@@ -673,9 +707,34 @@ function effectMatches(declared: IntentEffect, made: CodeEffect): boolean {
   );
 }
 
-function toCodeOutcome(t: Transition): CodeOutcome | null {
+/**
+ * Whether the branch reaching an outcome turns on what the intent's
+ * `when` said. The boundary resolves through `namesBoundary`, the same
+ * matcher a declared effect and `suss ask` use, and `finds` has to
+ * agree when the clause states it.
+ *
+ * Only a clause that says which boundary gets here; the rest are prose
+ * to this pass, and the README says so.
+ */
+function conditionMet(
+  declared: IntentCondition & { at: IntentEffect },
+  turnsOn: BoundaryGuard[],
+): boolean {
+  return turnsOn.some(
+    (guard) =>
+      guard.does === declared.at.does &&
+      namesBoundary(declared.at.names, guard.binding) &&
+      (declared.finds === null || declared.finds === guard.polarity),
+  );
+}
+
+function toCodeOutcome(
+  t: Transition,
+  calls: Map<string, BoundaryCall>,
+): CodeOutcome | null {
   const output = t.output;
   const effects = codeEffectsOf(t);
+  const turnsOn = boundaryGuardsOf(t, calls);
   if (output.type === "response") {
     const status =
       output.statusCode !== null && output.statusCode.type === "literal"
@@ -687,6 +746,7 @@ function toCodeOutcome(t: Transition): CodeOutcome | null {
       body: output.body ?? null,
       errorType: null,
       effects,
+      turnsOn,
     };
   }
   if (output.type === "return") {
@@ -696,6 +756,7 @@ function toCodeOutcome(t: Transition): CodeOutcome | null {
       body: output.value,
       errorType: null,
       effects,
+      turnsOn,
     };
   }
   if (output.type === "throw") {
@@ -705,6 +766,7 @@ function toCodeOutcome(t: Transition): CodeOutcome | null {
       body: null,
       errorType: output.exceptionType,
       effects,
+      turnsOn,
     };
   }
   return null;

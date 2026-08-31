@@ -23,6 +23,7 @@ import type { CheckIntentResult } from "@suss/checker-intent";
  */
 
 const DRAFT = "bus-aws-sqs-billing-invoice-paid.intent.yaml";
+const ROUTE = "get-invoices-invoice-id.intent.yaml";
 
 describe("infer intent for a queue consumer that writes a table", () => {
   const root = workspace("queue-consumer-store");
@@ -39,6 +40,21 @@ describe("infer intent for a queue consumer that writes a table", () => {
         .replace(/^audience: "".*$/m, "audience: the billing team")
         .replace(/^source: inferred$/m, 'source: "inferred, curated"'),
     );
+  };
+
+  /** One curated doc with one thing changed, in a folder of its own. */
+  const driftedInto = (
+    label: string,
+    file: string,
+    change: (doc: string) => string,
+  ): string => {
+    const dir = path.join(root, label);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, file),
+      change(fs.readFileSync(path.join(intent, file), "utf8")),
+    );
+    return dir;
   };
 
   const checkIntent = (
@@ -92,13 +108,37 @@ describe("infer intent for a queue consumer that writes a table", () => {
     expect(drafted.status, drafted.stderr).toBe(0);
   }, 120_000);
 
-  it("writes one doc, named after the channel the code expects", () => {
-    expect(fs.readdirSync(intent)).toEqual([DRAFT]);
+  it("writes a doc per boundary, the queue one on its channel", () => {
+    expect(fs.readdirSync(intent).sort()).toEqual([DRAFT, ROUTE]);
 
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
     expect(doc).toContain("semantics: message-bus");
     expect(doc).toContain("messageBus: aws_sqs");
     expect(doc).toContain("channel: billing.invoicePaid");
+  });
+
+  it("says which store a branch read, and what it came back with", () => {
+    const doc = fs.readFileSync(path.join(intent, ROUTE), "utf8");
+
+    expect(doc).toContain(
+      [
+        "  - id: 404-not-found",
+        "    when:",
+        "      - reads: aws.dynamodb:Invoices",
+        "        finds: nothing",
+      ].join("\n"),
+    );
+    expect(doc).toContain(
+      [
+        "  - id: 409-conflict",
+        "    when:",
+        "      - reads: aws.dynamodb:Invoices",
+        "        finds: something",
+        "        where: settledAt is set",
+      ].join("\n"),
+    );
+    // The name of the call, which a rename would break, stays out of it.
+    expect(doc).not.toContain("dynamo.send");
   });
 
   it("says the outcome results in a write, in the words ask asks with", () => {
@@ -109,7 +149,7 @@ describe("infer intent for a queue consumer that writes a table", () => {
     );
   });
 
-  it("says each branch as a sentence, and the else arm in one word", () => {
+  it("keeps a sentence for a guard no boundary explains", () => {
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
 
     expect(doc).toContain("when: invoiceId is not a string");
@@ -138,34 +178,25 @@ describe("infer intent for a queue consumer that writes a table", () => {
     expect(run.stderr).toContain(DRAFT);
   });
 
-  it("pairs the curated doc against the code it was drafted from", () => {
+  it("pairs both curated docs against the code they were drafted from", () => {
     curate(path.join(intent, DRAFT));
+    curate(path.join(intent, ROUTE));
 
     const checked = checkIntent(intent);
 
     expect(checked.status).toBe(0);
     expect(checked.intent.findings).toEqual([]);
     expect(checked.intent.unchecked).toEqual([]);
-    expect(checked.intent.checked).toEqual([
-      {
-        kind: "boundary",
-        intent: "bus-aws-sqs-billing-invoice-paid",
-        boundary: "bus:aws_sqs billing.invoicePaid",
-        implementations: [
-          "fixtures/queue-consumer-store/src/handlers/invoiceWorker.ts::InvoiceWorkerFunction.handler",
-        ],
-      },
-    ]);
+    expect(
+      checked.intent.checked.map((c) =>
+        c.kind === "boundary" ? c.boundary : c.intent,
+      ),
+    ).toEqual(["bus:aws_sqs billing.invoicePaid", "GET /invoices/{invoiceId}"]);
   });
 
   it("reports a declared write the consumer does not make", () => {
-    const drift = path.join(root, "drift");
-    fs.mkdirSync(drift, { recursive: true });
-    fs.writeFileSync(
-      path.join(drift, DRAFT),
-      fs
-        .readFileSync(path.join(intent, DRAFT), "utf8")
-        .replaceAll("aws.dynamodb:Invoices", "aws.dynamodb:Receipts"),
+    const drift = driftedInto("write", DRAFT, (doc) =>
+      doc.replaceAll("aws.dynamodb:Invoices", "aws.dynamodb:Receipts"),
     );
 
     const checked = checkIntent(drift);
@@ -181,6 +212,24 @@ describe("infer intent for a queue consumer that writes a table", () => {
     expect(checked.intent.findings[1].message).toContain(
       "writes aws.dynamodb:Invoices",
     );
+  });
+
+  it("reports a 404 the route produces on the opposite condition", () => {
+    const drift = driftedInto("condition", ROUTE, (doc) =>
+      doc.replace("        finds: nothing\n", "        finds: something\n"),
+    );
+
+    const checked = checkIntent(drift);
+
+    expect(checked.status).toBe(1);
+    const reported = checked.intent.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(reported).toHaveLength(1);
+    expect(reported[0].message).toContain(
+      "when reads aws.dynamodb:Invoices finds something",
+    );
+    expect(reported[0].message).toContain("on a different condition");
   });
 
   it("takes a boundary intent for the store, and reports it unkeyable", () => {

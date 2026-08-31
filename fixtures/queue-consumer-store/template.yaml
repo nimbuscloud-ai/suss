@@ -22,6 +22,19 @@ Resources:
           Properties:
             Queue: !GetAtt InvoicesQueue.Arn
 
+  InvoiceLookupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/invoiceLookup.handler
+      Runtime: nodejs20.x
+      Events:
+        Get:
+          Type: HttpApi
+          Properties:
+            Method: GET
+            Path: /invoices/{invoiceId}
+
   InvoicesTable:
     Type: AWS::DynamoDB::Table
     Properties:

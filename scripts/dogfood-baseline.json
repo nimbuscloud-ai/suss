@@ -2,10 +2,10 @@
   "totals": {
     "packages": 64,
     "packagesWithExports": 64,
-    "exports": 659,
-    "internal": 2340,
-    "consumers": 1144,
-    "pairs": 1125,
+    "exports": 663,
+    "internal": 2347,
+    "consumers": 1157,
+    "pairs": 1138,
     "unfollowedCalls": 182,
     "findingErrors": 0
   },
@@ -33,8 +33,8 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 78,
-      "internal": 20,
+      "exports": 82,
+      "internal": 25,
       "consumers": 4,
       "unfollowedCalls": 1
     },
@@ -49,14 +49,14 @@
       "name": "@suss/checker-intent",
       "exports": 3,
       "internal": 16,
-      "consumers": 19,
+      "consumers": 22,
       "unfollowedCalls": 0
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 21,
-      "internal": 381,
-      "consumers": 240,
+      "internal": 383,
+      "consumers": 250,
       "unfollowedCalls": 31
     },
     "packages/client/apollo": {

@@ -47,6 +47,14 @@ For the other direction, the pass walks every boundary the unit's transitions re
 
 An access whose container the code cannot settle (a wrapper handed its table as an argument) spells a name with a hole in it and matches nothing here, because grounding that name is the storage pass's job and this pass loads no contracts.
 
+## How a declared condition is compared
+
+A `when` clause that says which boundary the branch read is compared too, which is what makes `when` more than prose.
+
+`boundaryGuardsOf` in `@suss/behavioral-ir` says, for each branch of the code, which boundary its guards turned on and whether the guard passed because something was there. A declared outcome then narrows to the branches whose guards match every boundary clause the intent stated, and `uncoveredOutcome` reports one that produces the ending on a different condition. So an intent saying "404 when a read of `aws.dynamodb:Invoices` finds nothing" fails when the code's 404 turns on the row being present.
+
+The boundary resolves through `namesBoundary` again, and `finds` has to agree when the clause states it. A clause about an input, and a clause left as a sentence, are prose to this pass and are not compared: the paths and the words have no counterpart in the summary to check against.
+
 ## Which boundaries can be paired
 
 `whatWouldKeyIt` says, per protocol, what an intent doc needs before it can be paired, and the message on an `unkeyableBoundary` finding and the reason `suss infer intent` reports for a boundary it skipped both come from it.

@@ -9,6 +9,7 @@ import {
   restBinding,
   storageBinding,
   type TypeShape,
+  type ValueRef,
 } from "@suss/behavioral-ir";
 import { SemanticsSchema } from "@suss/ir-core";
 
@@ -19,7 +20,9 @@ import {
 } from "./index.js";
 
 import type {
+  IntentCondition,
   IntentEffect,
+  IntentFinding,
   IntentOutcome,
   IntentSource,
   IntentSummary,
@@ -64,6 +67,7 @@ function response(status: number, body: TypeShape | null): IntentOutcome {
     body,
     errorType: null,
     effects: [],
+    conditions: [],
   };
 }
 
@@ -413,6 +417,7 @@ describe("checkIntentAgreement — function-call", () => {
         body: userShape,
         errorType: null,
         effects: [],
+        conditions: [],
       },
       {
         id: "missing",
@@ -422,6 +427,7 @@ describe("checkIntentAgreement — function-call", () => {
         body: null,
         errorType: "NotFoundError",
         effects: [],
+        conditions: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -441,6 +447,7 @@ describe("checkIntentAgreement — function-call", () => {
         body: null,
         errorType: "NotFoundError",
         effects: [],
+        conditions: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -461,6 +468,7 @@ describe("checkIntentAgreement — function-call", () => {
         body: null,
         errorType: null,
         effects: [],
+        conditions: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -479,6 +487,7 @@ function outcomeById(id: string, status = 200): IntentOutcome {
     body: null,
     errorType: null,
     effects: [],
+    conditions: [],
   };
 }
 
@@ -694,6 +703,7 @@ describe("applyIntentSuppressions", () => {
               body: null,
               errorType: "Boom",
               effects: [],
+              conditions: [],
             },
           ],
           "fn-intent",
@@ -809,6 +819,7 @@ function effectOutcome(id: string, effects: IntentEffect[]): IntentOutcome {
   return {
     id,
     when: "an invoice has been paid",
+    conditions: [],
     kind: "effect",
     status: null,
     body: null,
@@ -911,6 +922,7 @@ describe("effect outcomes", () => {
               body: null,
               errorType: null,
               effects: [],
+              conditions: [],
             },
           ],
           "invoice-intake",
@@ -993,6 +1005,7 @@ describe("effect outcomes", () => {
               body: null,
               errorType: "Error",
               effects: [writes("Invoices")],
+              conditions: [],
             },
           ],
           "invoice-intake",
@@ -1039,5 +1052,165 @@ describe("whatWouldKeyIt", () => {
       const protocol = definition.shape.name.value;
       expect(whatWouldKeyIt(protocol).length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A `when` clause that says which boundary the branch read
+// ---------------------------------------------------------------------------
+
+/** `dynamo.send` read the Invoices table, however the guard tested it. */
+const invoiceRead: Extract<
+  BehavioralSummary["transitions"][number]["effects"][number],
+  { type: "interaction" }
+> = {
+  type: "interaction",
+  binding: invoicesTable,
+  callee: "dynamo.send",
+  interaction: { class: "storage-access", kind: "read", fields: ["invoiceId"] },
+};
+
+/** The result of that call, read down to `.Item`. */
+const theRow: ValueRef = {
+  type: "derived",
+  from: { type: "dependency", name: "dynamo.send", accessChain: [] },
+  derivation: { type: "propertyAccess", property: "Item" },
+};
+
+/** A route whose 404 turns on the read finding nothing, and whose 200 does not. */
+function lookupHandler(): BehavioralSummary {
+  const summary = codeSummary(
+    restCodeBinding,
+    [restResponse(404, null), restResponse(200, null)],
+    "getInvoice",
+  );
+  summary.transitions[0].conditions = [
+    { type: "truthinessCheck", subject: theRow, negated: true },
+  ];
+  summary.transitions[1].conditions = [
+    {
+      type: "negation",
+      operand: { type: "truthinessCheck", subject: theRow, negated: true },
+    },
+  ];
+  summary.transitions[1].effects = [invoiceRead];
+  return summary;
+}
+
+function whenOutcome(
+  status: number,
+  conditions: IntentCondition[],
+): IntentOutcome {
+  return {
+    id: `s${status}`,
+    when: conditions.map((c) => c.said).join(" and "),
+    conditions,
+    kind: "response",
+    status,
+    body: null,
+    errorType: null,
+    effects: [],
+  };
+}
+
+/** The findings that say a declared outcome is missing, which is what these ask about. */
+function uncovered(findings: IntentFinding[]): IntentFinding[] {
+  return findings.filter((f) => f.kind === "uncoveredOutcome");
+}
+
+function reads(names: string, finds: "nothing" | "something"): IntentCondition {
+  return {
+    at: { does: "reads", names },
+    input: null,
+    finds,
+    said: `reads ${names} finds ${finds}`,
+  };
+}
+
+describe("a when clause that says which boundary", () => {
+  it("passes when the branch turns on that read finding nothing", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("aws.dynamodb:Invoices", "nothing")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toEqual([]);
+  });
+
+  it("reports a 404 the code produces on the opposite condition", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("aws.dynamodb:Invoices", "something")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    const reported = uncovered(result.findings);
+    expect(reported).toHaveLength(1);
+    expect(reported[0].message).toContain(
+      "when reads aws.dynamodb:Invoices finds something",
+    );
+    expect(reported[0].message).toContain("on a different condition");
+  });
+
+  it("reports a clause naming a store the branch never read", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("aws.dynamodb:Receipts", "nothing")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toHaveLength(1);
+  });
+
+  it("resolves the boundary the way suss ask resolves what somebody types", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("Invoices", "nothing")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toEqual([]);
+  });
+
+  it("leaves a clause that says no boundary to the reader", () => {
+    const prose: IntentCondition = {
+      at: null,
+      input: "request.params.id",
+      finds: null,
+      said: "input request.params.id is set",
+    };
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [prose])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toEqual([]);
   });
 });

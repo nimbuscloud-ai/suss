@@ -9,6 +9,7 @@
 import {
   type BoundaryBinding,
   type EffectRelation,
+  EffectRelationSchema,
   functionCallBinding,
   messageBusBinding,
   restBinding,
@@ -26,6 +27,8 @@ import type {
   IntentSource,
   Prd,
   PrimitiveTypeName,
+  When,
+  WhenClause,
 } from "./schema.js";
 
 // ---------------------------------------------------------------------------
@@ -46,11 +49,29 @@ export interface IntentEffect {
   names: string;
 }
 
+/**
+ * One clause of what a branch turned on. A clause whose subject is a
+ * boundary is the one the checker compares; the rest carry through for
+ * a reader.
+ */
+export interface IntentCondition {
+  /** The boundary the guard read, when the clause says one. */
+  at: IntentEffect | null;
+  /** What the caller sent, when the clause says that instead. */
+  input: string | null;
+  /** Whether the lookup came back with something, when the clause says. */
+  finds: "nothing" | "something" | null;
+  /** The clause as one line, for a finding to quote. */
+  said: string;
+}
+
 export interface IntentOutcome {
   /** Author-declared id PRD scenarios reference. */
   id: string;
-  /** The condition, in human terms (opaque to the checker). */
+  /** What the branch turned on, as one line, for a reader. */
   when: string;
+  /** The same, clause by clause, for the checker to compare. */
+  conditions: IntentCondition[];
   kind: IntentOutcomeKind;
   /** Set only for `response` outcomes (REST status code). */
   status: number | null;
@@ -191,9 +212,68 @@ function toEffect(declared: DeclaredEffect): IntentEffect {
   return { does, names };
 }
 
+const VERBS = EffectRelationSchema.options;
+
+/** The verb key and the boundary it points at, when a clause has one. */
+function subjectOf(clause: Exclude<WhenClause, string>): IntentEffect | null {
+  for (const does of VERBS) {
+    const names = clause[does];
+    if (names !== undefined) {
+      return { does, names };
+    }
+  }
+  return null;
+}
+
+function toCondition(clause: WhenClause): IntentCondition {
+  if (typeof clause === "string") {
+    return { at: null, input: null, finds: null, said: clause };
+  }
+  const at = subjectOf(clause);
+  return {
+    at,
+    input: clause.input ?? null,
+    finds: clause.finds ?? null,
+    said: saidAsOneLine(clause, at),
+  };
+}
+
+/** A clause on one line, the way a finding quotes it back. */
+function saidAsOneLine(
+  clause: Exclude<WhenClause, string>,
+  at: IntentEffect | null,
+): string {
+  const subject =
+    at !== null ? `${at.does} ${at.names}` : `input ${clause.input ?? "?"}`;
+  const check = CHECK_KEYS.map((key) =>
+    clause[key] === undefined ? null : `${key} ${String(clause[key])}`,
+  ).find((said) => said !== null);
+  const narrows = clause.where === undefined ? null : `where ${clause.where}`;
+  return [subject, check, narrows].filter((part) => part !== null).join(" ");
+}
+
+const CHECK_KEYS = ["finds", "is", "equals", "has"] as const;
+
+function toConditions(when: When): IntentCondition[] {
+  return (typeof when === "string" ? [when] : when).map(toCondition);
+}
+
+function whenAsOneLine(when: When): string {
+  return typeof when === "string"
+    ? when
+    : toConditions(when)
+        .map((condition) => condition.said)
+        .join(" and ");
+}
+
 function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
   const effects = (t.results ?? []).map(toEffect);
-  const base = { id: t.id, when: t.when, effects };
+  const base = {
+    id: t.id,
+    when: whenAsOneLine(t.when),
+    conditions: toConditions(t.when),
+    effects,
+  };
   if (t.response !== undefined) {
     return {
       ...base,

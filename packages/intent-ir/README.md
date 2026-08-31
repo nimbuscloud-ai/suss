@@ -11,7 +11,44 @@ Two citizens, discriminated by `kind`, both built on `@suss/ir-core` so intent a
 
 ## What an outcome is
 
-A transition says two things, and it needs at least one of them.
+A transition says three things: what it turned on, how it ends, and what it did.
+
+**What it turned on**: `when`, a list of clauses in the same verbs `results` uses.
+
+```yaml
+transitions:
+  - id: invoice-not-found
+    when:
+      - reads: aws.dynamodb:Invoices
+        finds: nothing
+    response:
+      status: 404
+
+  - id: invoice-settled
+    when:
+      - reads: aws.dynamodb:Invoices
+        finds: something
+        where: settledAt is set
+    response:
+      status: 409
+
+  - id: invoice-returned
+    when: otherwise
+    response:
+      status: 200
+    results:
+      - reads: aws.dynamodb:Invoices
+```
+
+A clause says which subject, then at most one thing about it.
+
+The subject is a boundary verb (`reads`, `writes`) whose value is the boundary's name, or `input:` with the path the caller sent. Those come from the IR's own subject types: a guard on the result of a call that crossed a boundary becomes the boundary form, one on an input becomes `input:`, and anything else falls back.
+
+The check is one of `finds` (`nothing` or `something`, what a lookup came back with), `is` (`set`, `missing`, `null`, `a string`), `equals`, or `has`. `where` narrows the clause with whatever the guard said about a deeper read of the same result.
+
+`otherwise` is the fall-through branch, so a document never repeats the branch above it as a negation. A guard that maps to none of this keeps a sentence, and `when` written as one plain string stays valid, which is what existing authored documents use.
+
+The point of naming the boundary is that the line survives a rename of the variable the source used, and that the checker can compare it. `when: "!doc.send().Item"` could do neither.
 
 **How it ends**: at most one of `response` (a status and a body), `returns` (a function or handler return value), or `throws` (an error).
 
@@ -31,7 +68,7 @@ transitions:
 
 `suss ask "what writes aws.dynamodb:Invoices"` is the question and this is the assertion, spelled the same way. The key is the verb, `reads` or `writes`, which are the two `relationsOf` in `@suss/behavioral-ir` gives an effect. The value is the boundary's own name, the string every report writes and `namesBoundary` in `@suss/ir-core` resolves, so what you type in a document and what you type at `ask` pick out the same boundary. Nothing here is per protocol, so a queue consumer and a table writer say what they do without a fourth outcome shape each.
 
-The id and the `when` stay free-form on purpose. That is where a person writes what the outcome means, and it is what a PRD scenario links to: `invoice-intake.invoice-recorded`, read as "a duplicate delivery changes nothing", rather than a code word for the mechanism that carried it.
+The outcome id stays free-form on purpose. That is where a person writes what the outcome means, and it is what a PRD scenario links to: `invoice-intake.invoice-recorded`, read as "a duplicate delivery changes nothing". A `kind: prd` document is the level where a scenario reads as prose; `kind: boundary` is system intent for engineers, so it stays structural.
 
 Adding `results` changes nothing about `response`, `returns` and `throws`. A doc that states only those parses and pairs the way it always did.
 

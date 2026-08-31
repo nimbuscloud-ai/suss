@@ -1057,9 +1057,8 @@ A drafted doc for `GET /users/:id` reads:
 #
 # Written from what the code does, so it says nothing about why. Fill in
 # purpose and audience, rename this document and its outcome ids to what
-# your team calls them, put the conditions in your own words, then set
-# source to "inferred, curated" so findings against it count at full
-# severity.
+# your team calls them, then set source to "inferred, curated" so findings
+# against it count at full severity.
 #
 # Until the blanks are filled the reader rejects this file and says so,
 # which is what keeps an uncurated draft from passing for finished.
@@ -1079,7 +1078,9 @@ boundary:
 
 transitions:
   - id: 400-bad-request
-    when: request.params.id is missing
+    when:
+      - input: request.params.id
+        is: missing
     response:
       status: 400
       body:
@@ -1093,11 +1094,34 @@ Outcome ids come from the status code and the body from the shape the
 handler produces. A body shape the intent schema has no spelling for is
 left out rather than guessed at.
 
-`when` is a sentence about the branch the code takes. It is free-form
-text the author owns, the same as the outcome id, so the draft puts
-something readable there and you rewrite it. The else arm of a chain is
-`otherwise` rather than a negated copy of the guard above it, which is
-not a thing anybody would write.
+`when` says what the branch turned on, in the same verbs `results` takes.
+A route whose 404 depends on a table lookup finding nothing reads:
+
+```yaml
+  - id: 404-not-found
+    when:
+      - reads: aws.dynamodb:Invoices
+        finds: nothing
+  - id: 409-conflict
+    when:
+      - reads: aws.dynamodb:Invoices
+        finds: something
+        where: settledAt is set
+  - id: 200-ok
+    when: otherwise
+```
+
+The subject is a boundary verb whose value is the boundary's name, or
+`input:` with the path the caller sent. The check is one of `finds`,
+`is`, `equals` or `has`, and `where` narrows it. `otherwise` is the
+fall-through branch, so no document repeats the branch above it as a
+negation. A guard that maps to none of that keeps a sentence, and a
+`when` written as one plain string stays valid.
+
+Naming the boundary is what makes the line survive a rename of the
+variable the source used, and what lets `suss check --intent` compare it:
+an intent saying 404 on a read finding nothing fails when the code's 404
+turns on the row being there.
 
 A boundary that is not HTTP gets a doc the same way. Here is what a queue
 consumer that records what it read looks like, with the header left off:

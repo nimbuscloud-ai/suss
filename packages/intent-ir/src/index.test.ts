@@ -215,6 +215,60 @@ describe("IntentDocSchema validation", () => {
     expect(() => IntentDocSchema.parse(bad)).toThrow();
   });
 
+  it("takes a when written as clauses, and one written as a sentence", () => {
+    const clauses = {
+      ...storeIntent,
+      transitions: [
+        {
+          ...storeIntent.transitions[0],
+          when: [
+            { reads: "aws.dynamodb:Invoices", finds: "nothing" },
+            "the caller asked for the settled ones",
+          ],
+        },
+      ],
+    };
+    expect(() => IntentDocSchema.parse(clauses)).not.toThrow();
+    expect(() => IntentDocSchema.parse(storeIntent)).not.toThrow();
+  });
+
+  it("rejects a clause that says two things about its subject", () => {
+    const bad = {
+      ...storeIntent,
+      transitions: [
+        {
+          ...storeIntent.transitions[0],
+          when: [
+            { reads: "aws.dynamodb:Invoices", finds: "nothing", is: "missing" },
+          ],
+        },
+      ],
+    };
+    expect(() => IntentDocSchema.parse(bad)).toThrow();
+  });
+
+  it("rejects a clause with no subject and a finds nobody spells", () => {
+    expect(() =>
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          { ...storeIntent.transitions[0], when: [{ finds: "nothing" }] },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          {
+            ...storeIntent.transitions[0],
+            when: [{ reads: "aws.dynamodb:Invoices", finds: "a row" }],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("rejects an effect that gives two verbs at once", () => {
     const bad = {
       ...storeIntent,
@@ -297,6 +351,84 @@ describe("intentDocToSummary — message-bus and storage boundaries", () => {
       { does: "writes", names: "aws.dynamodb:Invoices" },
     ]);
     expect(summary.outcomes[1].effects).toEqual([]);
+  });
+
+  it("normalises a when clause into the boundary it says and one line", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          {
+            ...storeIntent.transitions[0],
+            when: [
+              {
+                reads: "aws.dynamodb:Invoices",
+                finds: "something",
+                where: "settledAt is set",
+              },
+              "the caller asked for the settled ones",
+            ],
+          },
+        ],
+      }),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].conditions).toEqual([
+      {
+        at: { does: "reads", names: "aws.dynamodb:Invoices" },
+        input: null,
+        finds: "something",
+        said: "reads aws.dynamodb:Invoices finds something where settledAt is set",
+      },
+      {
+        at: null,
+        input: null,
+        finds: null,
+        said: "the caller asked for the settled ones",
+      },
+    ]);
+    expect(summary.outcomes[0].when).toBe(
+      "reads aws.dynamodb:Invoices finds something where settledAt is set and the caller asked for the settled ones",
+    );
+  });
+
+  it("normalises a clause about what the caller sent", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          {
+            ...storeIntent.transitions[0],
+            when: [{ input: "request.params.id", is: "missing" }],
+          },
+        ],
+      }),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].conditions).toEqual([
+      {
+        at: null,
+        input: "request.params.id",
+        finds: null,
+        said: "input request.params.id is missing",
+      },
+    ]);
+  });
+
+  it("keeps a when written as one sentence exactly as written", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(storeIntent),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].when).toBe("an invoice has been paid");
+    expect(summary.outcomes[0].conditions).toEqual([
+      {
+        at: null,
+        input: null,
+        finds: null,
+        said: "an invoice has been paid",
+      },
+    ]);
   });
 
   it("gives an outcome that states only its effects the effect kind", () => {

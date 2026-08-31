@@ -226,12 +226,14 @@ describe("intentDraftResult", () => {
     ]);
   });
 
-  it("says the branch the code takes as a sentence, not as its source", () => {
+  it("says which input the branch turned on, rather than its source", () => {
     const { parsed } = firstDocOf([
       restProvider("GET", "/users/:id", [missingId, notFound]),
     ]);
 
-    expect(parsed.transitions[0].when).toBe("request.params.id is missing");
+    expect(parsed.transitions[0].when).toEqual([
+      { input: "request.params.id", is: "missing" },
+    ]);
     expect(parsed.transitions[1].when).toBe("every call reaches this outcome");
   });
 
@@ -258,7 +260,7 @@ describe("intentDraftResult", () => {
     expect(doc.yaml).toContain(
       "# Read from src/routes.ts, by way of summaries/code.json.",
     );
-    expect(doc.yaml).toContain('# source to "inferred, curated"');
+    expect(doc.yaml).toContain('set source to "inferred, curated"');
   });
 
   it("puts a blank line between the parts of the document", () => {

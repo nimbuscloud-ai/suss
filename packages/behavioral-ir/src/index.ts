@@ -85,6 +85,16 @@ export {
   withRewrittenPaths,
 } from "@suss/ir-core";
 
+export {
+  type BoundaryCall,
+  type BoundaryGuard,
+  boundaryCalls,
+  boundaryGuardsOf,
+  type GuardSubject,
+  guardSubject,
+  type Polarity,
+  polarityOf,
+} from "./conditions.js";
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 export {
   type CodeScopeMetadata,

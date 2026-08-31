@@ -215,10 +215,75 @@ const EFFECT_BY_VERB = EffectRelationSchema.options.map((verb) =>
 
 const EffectOutcomeSchema = z.union(EFFECT_BY_VERB);
 
+// ---------------------------------------------------------------------------
+// when: what the branch turned on, in the same verbs `results` takes.
+// ---------------------------------------------------------------------------
+
+/** The words a clause has for what was true of its subject. */
+const CHECKS = {
+  /** What a lookup came back with. */
+  finds: z.enum(["nothing", "something"]),
+  /** What state the value was in: `set`, `missing`, `null`, `a string`. */
+  is: z.string().min(1),
+  /** The value it was equal to. */
+  equals: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  /** A property it had. */
+  has: z.string().min(1),
+} as const;
+
+/** Which value the clause is about: a boundary, or something the caller sent. */
+const SUBJECT_KEYS: ReadonlyArray<EffectRelation | "input"> = [
+  ...EffectRelationSchema.options,
+  "input",
+];
+
+/**
+ * A clause says which subject, says at most one thing about it, and can
+ * narrow that with `where`. A guard that maps to none of this stays the
+ * sentence the drafter wrote.
+ */
+const WHEN_CLAUSE_BY_SUBJECT = SUBJECT_KEYS.map((key) =>
+  z
+    .strictObject({
+      [key]: z.string().min(1),
+      where: z.string().min(1).optional(),
+      ...Object.fromEntries(
+        Object.entries(CHECKS).map(([check, schema]) => [
+          check,
+          schema.optional(),
+        ]),
+      ),
+    })
+    .refine(
+      (clause) =>
+        Object.keys(CHECKS).filter(
+          (check) => (clause as Record<string, unknown>)[check] !== undefined,
+        ).length <= 1,
+      {
+        message: `a when clause says at most one of ${Object.keys(CHECKS).join(", ")} about its subject`,
+      },
+    ),
+) as unknown as [z.ZodType<WhenClause>, ...Array<z.ZodType<WhenClause>>];
+
+/** One clause of a structured `when`, or the sentence for a guard that maps to none. */
+export type WhenClause =
+  | string
+  | ({ where?: string } & Partial<Record<EffectRelation | "input", string>> & {
+        finds?: "nothing" | "something";
+        is?: string;
+        equals?: string | number | boolean | null;
+        has?: string;
+      });
+
+const WhenSchema = z.union([
+  z.string().min(1),
+  z.array(z.union([z.string().min(1), ...WHEN_CLAUSE_BY_SUBJECT])).min(1),
+]);
+
 const BoundaryTransitionSchema = z
   .object({
     id: z.string().min(1),
-    when: z.string().min(1),
+    when: WhenSchema,
     response: emptyIfNull(ResponseOutcomeSchema).optional(),
     returns: emptyIfNull(ReturnsOutcomeSchema).optional(),
     throws: emptyIfNull(ThrowsOutcomeSchema).optional(),
@@ -304,6 +369,7 @@ export type IntentDoc = z.infer<typeof IntentDocSchema>;
 export type BoundaryIntent = z.infer<typeof BoundaryIntentSchema>;
 export type Prd = z.infer<typeof PrdSchema>;
 export type PrdScenario = z.infer<typeof PrdScenarioSchema>;
+export type When = z.infer<typeof WhenSchema>;
 export type Boundary = z.infer<typeof BoundarySchema>;
 /** A boundary block as somebody writes it, before defaults are put in. */
 export type AuthoredBoundary = z.input<typeof BoundarySchema>;
