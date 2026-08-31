@@ -226,15 +226,15 @@ describe("intentDraftResult", () => {
     ]);
   });
 
-  it("draws `when` from the branch the code takes", () => {
+  it("says which input the branch turned on, rather than its source", () => {
     const { parsed } = firstDocOf([
       restProvider("GET", "/users/:id", [missingId, notFound]),
     ]);
 
-    expect(parsed.transitions[0].when).toBe("!request.params.id");
-    expect(parsed.transitions[1].when).toBe(
-      "the handler always reaches this outcome",
-    );
+    expect(parsed.transitions[0].when).toEqual([
+      { input: "request.params.id", is: "missing" },
+    ]);
+    expect(parsed.transitions[1].when).toBe("otherwise");
   });
 
   it("leaves purpose and audience blank, with a hint beside each", () => {
@@ -253,11 +253,22 @@ describe("intentDraftResult", () => {
     );
   });
 
-  it("says where the draft came from and what to do with it", () => {
+  it("opens by saying which boundary this is and where it was read", () => {
     const { doc } = firstDocOf([restProvider("GET", "/users/:id", [found])]);
 
-    expect(doc.yaml).toContain("# Inferred from summaries/code.json.");
-    expect(doc.yaml).toContain('set source to\n# "inferred, curated"');
+    expect(doc.yaml).toContain("# GET /users/{id}, as the code has it today.");
+    expect(doc.yaml).toContain(
+      "# Read from src/routes.ts, by way of summaries/code.json.",
+    );
+    expect(doc.yaml).toContain('set source to "inferred, curated"');
+  });
+
+  it("puts a blank line between the parts of the document", () => {
+    const { doc } = firstDocOf([restProvider("GET", "/users/:id", [found])]);
+
+    expect(doc.yaml).toContain("kind: boundary\n\nname: ");
+    expect(doc.yaml).toContain("source: inferred\n\nboundary:");
+    expect(doc.yaml).toMatch(/\n\ntransitions:/);
   });
 
   it("writes a draft the reader rejects until the blanks are filled", () => {
@@ -366,7 +377,7 @@ describe("intentDraftResult", () => {
     ]);
   });
 
-  it("says what happened for a boundary the schema has no shape for", () => {
+  it("drafts a queue consumer against the channel its code names", () => {
     const result = intentDraftResult(
       [
         {
@@ -398,8 +409,11 @@ describe("intentDraftResult", () => {
       "code.json",
     );
 
-    expect(result.drafted).toEqual([]);
-    expect(result.undrafted[0].reason).toContain("this one is message-bus");
+    expect(result.undrafted).toEqual([]);
+    expect(result.drafted).toHaveLength(1);
+    expect(result.drafted[0].boundary).toBe("bus:aws_sqs OrdersQueue");
+    expect(result.drafted[0].yaml).toContain("semantics: message-bus");
+    expect(result.drafted[0].yaml).toContain("channel: OrdersQueue");
   });
 
   it("skips a consumer, which calls a boundary rather than providing one", () => {
@@ -556,11 +570,11 @@ describe("intentDraftResult", () => {
 
     expect(result.drafted).toEqual([]);
     expect(result.undrafted.map((one) => one.reason)).toEqual([
-      "boundary intent declares rest and function-call boundaries, and this one is storage",
-      "boundary intent declares rest and function-call boundaries, and this one is runtime-config",
-      "boundary intent declares rest and function-call boundaries, and this one is graphql-resolver",
-      "boundary intent declares rest and function-call boundaries, and this one is graphql-operation",
-      "boundary intent declares rest and function-call boundaries, and this one is metric",
+      "it has no key the checker could pair intent against: a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is runtime-config",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-resolver",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-operation",
+      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is metric",
     ]);
   });
 
@@ -770,6 +784,195 @@ describe("suss infer intent", () => {
     const { exit, io } = await capture(() => runCli(["infer", "workflow"]));
 
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("infer has stub and intent");
+    expect(io.stderr).toContain("infer has stub, intent and prd");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Effects: what a transition results in, drafted in `suss ask`'s verbs
+// ---------------------------------------------------------------------------
+
+const invoicesWrite: Transition["effects"][number] = {
+  type: "interaction",
+  binding: {
+    transport: "aws-sdk",
+    semantics: {
+      name: "storage",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
+      container: "Invoices",
+      accessPath: null,
+    },
+    recognition: "test",
+  },
+  callee: "dynamo.send",
+  interaction: {
+    class: "storage-access",
+    kind: "write",
+    fields: ["invoiceId"],
+    operation: "PutItemCommand",
+  },
+};
+
+const queueBinding: BoundaryBinding = {
+  transport: "aws_sqs",
+  semantics: {
+    name: "message-bus",
+    messageBus: "aws_sqs",
+    channel: "billing.invoicePaid",
+  },
+  recognition: "test",
+};
+
+function returnsWriting(id: string): Transition {
+  return {
+    id,
+    conditions: [],
+    output: { type: "return", value: null },
+    effects: [invoicesWrite],
+    location: { start: 1, end: 2 },
+    isDefault: true,
+  };
+}
+
+describe("drafted effects", () => {
+  it("writes what the transition reached beside how it ended", () => {
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [
+        returnsWriting("t-return"),
+      ]),
+    ]);
+
+    expect(parsed.transitions).toEqual([
+      {
+        id: "returns",
+        when: "every call reaches this outcome",
+        returns: {},
+        results: [{ writes: "aws.dynamodb:Invoices", fields: ["invoiceId"] }],
+      },
+    ]);
+  });
+
+  it("says which columns the access fills and what it keys on", () => {
+    const detailed = returnsWriting("t-return");
+    detailed.effects = [
+      {
+        ...invoicesWrite,
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["email", "phone"],
+          selector: ["invoiceId"],
+        },
+      },
+    ];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [detailed]),
+    ]);
+
+    expect(parsed.transitions[0].results).toEqual([
+      {
+        writes: "aws.dynamodb:Invoices",
+        fields: ["email", "phone"],
+        by: ["invoiceId"],
+      },
+    ]);
+  });
+
+  it("leaves the columns out when the access asked for every one", () => {
+    const wildcard = returnsWriting("t-return");
+    wildcard.effects = [
+      {
+        ...invoicesWrite,
+        interaction: {
+          class: "storage-access",
+          kind: "read",
+          fields: ["*"],
+        },
+      },
+    ];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [wildcard]),
+    ]);
+
+    expect(parsed.transitions[0].results).toEqual([
+      { reads: "aws.dynamodb:Invoices" },
+    ]);
+  });
+
+  it("writes one effect for a boundary a transition reaches twice", () => {
+    const twice = returnsWriting("t-return");
+    twice.effects = [invoicesWrite, invoicesWrite];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [twice]),
+    ]);
+
+    expect(parsed.transitions[0].results).toHaveLength(1);
+  });
+
+  it("makes the effects the whole outcome when the ending is unreadable", () => {
+    const unreadable: Transition = {
+      id: "t-unreadable",
+      conditions: [],
+      output: {
+        type: "response",
+        statusCode: { type: "unresolved", sourceText: "status" },
+        body: null,
+        headers: {},
+      },
+      effects: [invoicesWrite],
+      location: { start: 1, end: 2 },
+      isDefault: true,
+    };
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [unreadable]),
+    ]);
+
+    expect(parsed.transitions[0].id).toBe("writes-aws-dynamodb-invoices");
+    expect(parsed.transitions[0].returns).toBeUndefined();
+    expect(parsed.transitions[0].results).toHaveLength(1);
+  });
+
+  it("names a boundary whose protocol has no block of its own", () => {
+    const metricRead = {
+      ...invoicesWrite,
+      interaction: { class: "message-send" as const },
+      binding: {
+        transport: "cloudwatch",
+        semantics: {
+          name: "metric" as const,
+          metricSystem: "cloudwatch",
+          metricType: "latency",
+        },
+        recognition: "test",
+      },
+    };
+    const transition = returnsWriting("t-return");
+    transition.effects = [metricRead];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [transition]),
+    ]);
+
+    expect(parsed.transitions[0].results).toEqual([
+      { writes: "metric:cloudwatch latency" },
+    ]);
+  });
+
+  it("leaves out a boundary with no name of its own to write", () => {
+    const unnamed = {
+      ...invoicesWrite,
+      binding: {
+        transport: "http",
+        semantics: { name: "rest" as const, method: null, path: null },
+        recognition: "test",
+      },
+    };
+    const transition = returnsWriting("t-return");
+    transition.effects = [unnamed];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [transition]),
+    ]);
+
+    expect(parsed.transitions[0].results).toBeUndefined();
   });
 });

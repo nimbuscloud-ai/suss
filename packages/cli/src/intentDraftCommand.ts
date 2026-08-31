@@ -22,23 +22,35 @@ import YAML from "yaml";
 import {
   BOUNDARY_ROLE,
   boundaryKey,
+  boundaryLabel,
   dispatchByType,
   displayLabel,
+  goesThroughRelation,
+  relationsOf,
 } from "@suss/behavioral-ir";
 import { summaryWithDefinitionsInlined } from "@suss/checker";
+import { whatWouldKeyIt } from "@suss/checker-intent";
 import { loadIntentDoc } from "@suss/contract-intent";
+import { EVERY_FIELD } from "@suss/ir-core";
 
-import { formatCondition, parseSummaryFile } from "./inspect.js";
+import { parseSummaryFile } from "./inspect.js";
+import { draftedWhen } from "./intentWhen.js";
 import { UsageError } from "./usageError.js";
 
 import type {
   BehavioralSummary,
   BoundaryBinding,
   DispatchTable,
+  Interaction,
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
-import type { AuthoredShape, BoundaryIntent } from "@suss/intent-ir";
+import type {
+  AuthoredBoundary,
+  AuthoredShape,
+  EffectOutcome,
+  When,
+} from "@suss/intent-ir";
 
 export interface IntentDraftOptions {
   /** Summaries file to read, the output of `suss extract`. */
@@ -80,10 +92,11 @@ const DEFAULT_OUT = "intent";
 
 interface DraftedOutcome {
   id: string;
-  when: string;
+  when: When;
   response?: { status: number; body?: AuthoredShape };
   returns?: { body?: AuthoredShape };
   throws?: { errorType?: string };
+  results?: EffectOutcome[];
 }
 
 const UNKNOWN_SHAPE: AuthoredShape = { type: "unknown" };
@@ -146,21 +159,74 @@ export function statusOutcomeId(status: number): string {
   return name === undefined ? String(status) : `${status}-${slug(name)}`;
 }
 
-function conditionsOf(transition: Transition): string {
-  const written = transition.conditions.map(formatCondition).join(" and ");
-  if (written !== "") {
-    return written;
+/**
+ * What this transition did at other boundaries, written the way
+ * `suss ask` asks about one: `- writes: aws.dynamodb:Invoices`. A
+ * boundary with no name of its own is left out rather than written as
+ * a string nobody would type back.
+ */
+function draftedEffects(transition: Transition): EffectOutcome[] {
+  const results: EffectOutcome[] = [];
+  const written = new Set<string>();
+  for (const effect of transition.effects) {
+    if (
+      effect.type !== "interaction" ||
+      goesThroughRelation(effect.interaction)
+    ) {
+      continue;
+    }
+    const names = boundaryLabel(effect.binding);
+    if (names === null) {
+      continue;
+    }
+    const touched = touchedBy(effect.interaction);
+    for (const relation of relationsOf(effect.interaction)) {
+      if (relation === "provides") {
+        continue;
+      }
+      const key = `${relation} ${names}`;
+      if (written.has(key)) {
+        continue;
+      }
+      written.add(key);
+      results.push({ [relation]: names, ...touched });
+    }
   }
+  return results;
+}
 
-  return transition.isDefault
-    ? "no earlier condition matched"
-    : "the handler always reaches this outcome";
+/**
+ * The columns an access states, when it states any. A DynamoDB write
+ * records none, because nothing parses an UpdateExpression, so the
+ * clause comes out with the boundary alone.
+ */
+function touchedBy(interaction: Interaction): {
+  fields?: string[];
+  by?: string[];
+} {
+  if (interaction.class !== "storage-access") {
+    return {};
+  }
+  // An access that asked for every column says the same thing as one
+  // that says nothing about columns, so the clause leaves it out.
+  const fields = interaction.fields.filter((one) => one !== EVERY_FIELD);
+  const by = interaction.selector ?? [];
+  return {
+    ...(fields.length > 0 ? { fields } : {}),
+    ...(by.length > 0 ? { by } : {}),
+  };
 }
 
 /** Null when the transition's terminal has no intent outcome to declare. */
-function toDraftedOutcome(transition: Transition): DraftedOutcome | null {
+function toDraftedOutcome(
+  transition: Transition,
+  summary: BehavioralSummary,
+  isFirst: boolean,
+): DraftedOutcome | null {
   const output = transition.output;
-  const when = conditionsOf(transition);
+  const when = draftedWhen(transition, summary, isFirst);
+  const results = draftedEffects(transition);
+  const did = results.length > 0 ? { results } : {};
 
   if (output.type === "response") {
     const status =
@@ -168,19 +234,25 @@ function toDraftedOutcome(transition: Transition): DraftedOutcome | null {
         ? Number(output.statusCode.value)
         : Number.NaN;
     if (!Number.isInteger(status) || status < 100 || status > 599) {
-      return null;
+      return effectOnlyOutcome(when, results);
     }
     const body = declaredBody(output.body);
     return {
       id: statusOutcomeId(status),
       when,
       response: { status, ...(body !== null ? { body } : {}) },
+      ...did,
     };
   }
 
   if (output.type === "return") {
     const body = declaredBody(output.value);
-    return { id: "returns", when, returns: body !== null ? { body } : {} };
+    return {
+      id: "returns",
+      when,
+      returns: body !== null ? { body } : {},
+      ...did,
+    };
   }
 
   if (output.type === "throw") {
@@ -189,10 +261,28 @@ function toDraftedOutcome(transition: Transition): DraftedOutcome | null {
       id: errorType === null ? "throws" : `throws-${slug(errorType)}`,
       when,
       throws: errorType === null ? {} : { errorType },
+      ...did,
     };
   }
 
-  return null;
+  return effectOnlyOutcome(when, results);
+}
+
+/**
+ * A transition whose ending the schema has no words for still says what
+ * it did, and that is the whole outcome for a unit whose ending nobody
+ * declares anyway.
+ */
+function effectOnlyOutcome(
+  when: When,
+  results: EffectOutcome[],
+): DraftedOutcome | null {
+  const first = results[0];
+  if (first === undefined) {
+    return null;
+  }
+  const [verb, names] = Object.entries(first)[0] as [string, string];
+  return { id: slug(`${verb} ${names}`), when, results };
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +296,7 @@ type BoundaryBlocks = {
   [K in Semantics["name"]]: (
     semantics: Extract<Semantics, { name: K }>,
     binding: BoundaryBinding,
-  ) => BoundaryIntent["boundary"] | null;
+  ) => AuthoredBoundary | null;
 };
 
 const BOUNDARY_BLOCKS: BoundaryBlocks = {
@@ -228,8 +318,23 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
       ? { exportPath: semantics.exportPath }
       : {}),
   }),
-  "message-bus": () => null,
-  storage: () => null,
+  // A field the source left unset stays out of the file. The schema
+  // defaults it, and a key with nothing after it is one more thing for
+  // the person curating the draft to read past.
+  "message-bus": (semantics) => ({
+    semantics: "message-bus",
+    messageBus: semantics.messageBus,
+    ...(semantics.channel !== null ? { channel: semantics.channel } : {}),
+  }),
+  storage: (semantics) => ({
+    semantics: "storage",
+    storageSystem: semantics.storageSystem,
+    ...(semantics.scope !== "default" ? { scope: semantics.scope } : {}),
+    ...(semantics.container !== null ? { container: semantics.container } : {}),
+    ...(semantics.accessPath !== null
+      ? { accessPath: semantics.accessPath }
+      : {}),
+  }),
   "graphql-resolver": () => null,
   "graphql-operation": () => null,
   "runtime-config": () => null,
@@ -237,21 +342,19 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
 };
 
 /** Null when boundary intent has no shape for this protocol yet. */
-function boundaryBlock(
-  binding: BoundaryBinding,
-): BoundaryIntent["boundary"] | null {
+function boundaryBlock(binding: BoundaryBinding): AuthoredBoundary | null {
   // The one cast joins the per-protocol table, which narrows, to the
   // runtime lookup, the same way dispatchByType does it.
   const write = BOUNDARY_BLOCKS[binding.semantics.name] as (
     semantics: Semantics,
     binding: BoundaryBinding,
-  ) => BoundaryIntent["boundary"] | null;
+  ) => AuthoredBoundary | null;
   return write(binding.semantics, binding);
 }
 
 interface BoundaryGroup {
   key: string;
-  block: BoundaryIntent["boundary"];
+  block: AuthoredBoundary;
   summaries: BehavioralSummary[];
 }
 
@@ -280,7 +383,7 @@ function groupByBoundary(summaries: BehavioralSummary[]): {
     if (block === null) {
       sayOnce({
         boundary: displayLabel(binding),
-        reason: `boundary intent declares rest and function-call boundaries, and this one is ${binding.semantics.name}`,
+        reason: `boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is ${binding.semantics.name}`,
       });
       continue;
     }
@@ -288,8 +391,7 @@ function groupByBoundary(summaries: BehavioralSummary[]): {
     if (key === null) {
       sayOnce({
         boundary: displayLabel(binding),
-        reason:
-          "it has no key the checker could pair intent against; a REST boundary needs a method and a path, a function-call boundary a package and an export path or a module and an export name",
+        reason: `it has no key the checker could pair intent against: ${whatWouldKeyIt(binding.semantics.name)}`,
       });
       continue;
     }
@@ -331,12 +433,22 @@ function unique(candidate: string, taken: Set<string>): string {
 // Drafting
 // ---------------------------------------------------------------------------
 
-function header(from: string): string[] {
+/** How many source files a header lists before a count takes over. */
+const FILES_SHOWN = 3;
+
+function header(group: BoundaryGroup, from: string): string[] {
+  const files = [...new Set(group.summaries.map((s) => s.location.file))];
+  const shown = files.slice(0, FILES_SHOWN).join(", ");
+  const rest = files.length - Math.min(files.length, FILES_SHOWN);
+  const read = rest > 0 ? `${shown} and ${rest} more` : shown;
   return [
-    `# Inferred from ${from}. Written from what the code does, so it says`,
-    "# nothing about why. Fill in purpose and audience, rename the outcome",
-    "# ids to what your team calls them, then set source to",
-    '# "inferred, curated" so findings against it count at full severity.',
+    `# ${group.key}, as the code has it today.`,
+    `# Read from ${read}, by way of ${from}.`,
+    "#",
+    "# Written from what the code does, so it says nothing about why. Fill in",
+    "# purpose and audience, rename this document and its outcome ids to what",
+    '# your team calls them, then set source to "inferred, curated" so findings',
+    "# against it count at full severity.",
     "#",
     "# Until the blanks are filled the reader rejects this file and says so,",
     "# which is what keeps an uncurated draft from passing for finished.",
@@ -350,16 +462,37 @@ const BLANKS: Record<string, string> = {
 };
 
 /** What the blanks are filled with while the rest of the doc is validated. */
-const FILLED_IN = "curated";
+export const FILLED_IN = "curated";
 
-function render(doc: object): string {
+/** Keys a blank line comes before, so the file reads in parts. */
+const PARAGRAPHS = new Set(["name", "boundary", "transitions"]);
+
+/**
+ * The document as YAML, with the hint for each blank written beside it
+ * wherever it turns up, since a PRD leaves its blanks inside scenarios
+ * rather than at the top.
+ */
+export function render(
+  doc: object,
+  blanks: Record<string, string>,
+  paragraphs: ReadonlySet<string>,
+): string {
   const yamlDoc = new YAML.Document(doc);
-  for (const [key, hint] of Object.entries(BLANKS)) {
-    const node = yamlDoc.get(key, true);
-    if (YAML.isScalar(node)) {
-      node.comment = ` ${hint}`;
-    }
-  }
+  YAML.visit(yamlDoc, {
+    Pair(_, pair, path) {
+      if (!YAML.isScalar(pair.key)) {
+        return;
+      }
+      const key = String(pair.key.value);
+      if (paragraphs.has(key) && path.length <= 2) {
+        pair.key.spaceBefore = true;
+      }
+      const hint = blanks[key];
+      if (hint !== undefined && YAML.isScalar(pair.value)) {
+        pair.value.comment = ` ${hint}`;
+      }
+    },
+  });
   return yamlDoc.toString({ lineWidth: 0 });
 }
 
@@ -371,11 +504,13 @@ function draftDocument(
   const transitions = group.summaries.flatMap((s) => s.transitions);
   const outcomeIds = new Set<string>();
   const outcomes: DraftedOutcome[] = [];
-  for (const transition of transitions) {
-    const outcome = toDraftedOutcome(transition);
-    if (outcome !== null) {
-      outcomes.push({ ...outcome, id: unique(outcome.id, outcomeIds) });
-    }
+  for (const summary of group.summaries) {
+    summary.transitions.forEach((transition, index) => {
+      const outcome = toDraftedOutcome(transition, summary, index === 0);
+      if (outcome !== null) {
+        outcomes.push({ ...outcome, id: unique(outcome.id, outcomeIds) });
+      }
+    });
   }
 
   if (outcomes.length === 0) {
@@ -428,7 +563,7 @@ function draftDocument(
     name,
     boundary: group.key,
     outcomes: outcomes.length,
-    yaml: `${[...header(from), ...note].join("\n")}\n\n${render(doc)}`,
+    yaml: `${[...header(group, from), ...note].join("\n")}\n\n${render(doc, BLANKS, PARAGRAPHS)}`,
   };
 }
 
@@ -467,18 +602,19 @@ export function intentDraftResult(
 
 const INTENT_DOC = /\.(intent|prd)\.(yaml|yml|json)$/;
 
-function intentDocsIn(dir: string): string[] {
+/** The documents already in `dir` that `matching` claims. */
+export function docsIn(dir: string, matching = INTENT_DOC): string[] {
   if (!fs.existsSync(dir)) {
     return [];
   }
 
   return fs
     .readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && INTENT_DOC.test(entry.name))
+    .filter((entry) => entry.isFile() && matching.test(entry.name))
     .map((entry) => entry.name);
 }
 
-function destinationOf(options: IntentDraftOptions): {
+export function destinationOf(options: { out?: string; into?: string }): {
   dir: string;
   overExisting: "warn" | "refuse";
 } {
@@ -521,7 +657,7 @@ export function intentDraft(options: IntentDraftOptions): number {
     return 1;
   }
 
-  const existing = intentDocsIn(dir);
+  const existing = docsIn(dir);
   if (existing.length > 0 && destination.overExisting === "refuse") {
     throw new UsageError(
       `${dir} already holds ${existing.length} intent doc(s). --into writes where the curated docs are not, so pick a folder that has none.`,

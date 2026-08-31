@@ -61,6 +61,50 @@ const fnIntent = {
   ],
 };
 
+const busIntent = {
+  kind: "boundary",
+  name: "invoice-intake",
+  purpose: "Record every paid invoice once.",
+  audience: "the billing team",
+  boundary: {
+    semantics: "message-bus",
+    messageBus: "aws_sqs",
+    channel: "billing.invoicePaid",
+  },
+  transitions: [
+    {
+      id: "invoice-recorded",
+      when: "the message names an invoice we have not recorded",
+      returns: { body: { properties: { recorded: { type: "boolean" } } } },
+      results: [{ writes: "aws.dynamodb:Invoices" }],
+    },
+    {
+      id: "invoice-rejected",
+      when: "the message has no invoice id",
+      throws: { errorType: "Error" },
+    },
+  ],
+};
+
+const storeIntent = {
+  kind: "boundary",
+  name: "invoices-table",
+  purpose: "Keep one row per paid invoice.",
+  audience: "the billing team",
+  boundary: {
+    semantics: "storage",
+    storageSystem: "aws.dynamodb",
+    container: "Invoices",
+  },
+  transitions: [
+    {
+      id: "invoice-row-written",
+      when: "an invoice has been paid",
+      results: [{ writes: "aws.dynamodb:Invoices" }],
+    },
+  ],
+};
+
 const prd = {
   kind: "prd",
   title: "User profile lookup",
@@ -121,6 +165,124 @@ describe("IntentDocSchema validation", () => {
     const parsed = IntentDocSchema.parse(restIntent);
     expect(parsed.source).toBe("author");
   });
+
+  it("accepts a message-bus boundary intent", () => {
+    expect(() => IntentDocSchema.parse(busIntent)).not.toThrow();
+  });
+
+  it("accepts a storage boundary intent", () => {
+    expect(() => IntentDocSchema.parse(storeIntent)).not.toThrow();
+  });
+
+  it("rejects a bus the ir-core schema does not name", () => {
+    const bad = {
+      ...busIntent,
+      boundary: { ...busIntent.boundary, messageBus: "rabbitmq" },
+    };
+    expect(() => IntentDocSchema.parse(bad)).toThrow();
+  });
+
+  it("takes a bus channel and a store scope as written, or their defaults", () => {
+    const bus = IntentDocSchema.parse({
+      ...busIntent,
+      boundary: { semantics: "message-bus", messageBus: "kafka" },
+    });
+    const store = IntentDocSchema.parse(storeIntent);
+    expect(bus.kind === "boundary" && bus.boundary).toEqual({
+      semantics: "message-bus",
+      messageBus: "kafka",
+      channel: null,
+    });
+    expect(store.kind === "boundary" && store.boundary).toEqual({
+      semantics: "storage",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
+      container: "Invoices",
+      accessPath: null,
+    });
+  });
+
+  it("rejects an effect verb that is not one a unit does at a boundary", () => {
+    const bad = {
+      ...storeIntent,
+      transitions: [
+        {
+          ...storeIntent.transitions[0],
+          results: [{ provides: "aws.dynamodb:Invoices" }],
+        },
+      ],
+    };
+    expect(() => IntentDocSchema.parse(bad)).toThrow();
+  });
+
+  it("takes a when written as clauses, and one written as a sentence", () => {
+    const clauses = {
+      ...storeIntent,
+      transitions: [
+        {
+          ...storeIntent.transitions[0],
+          when: [
+            { reads: "aws.dynamodb:Invoices", finds: "nothing" },
+            "the caller asked for the settled ones",
+          ],
+        },
+      ],
+    };
+    expect(() => IntentDocSchema.parse(clauses)).not.toThrow();
+    expect(() => IntentDocSchema.parse(storeIntent)).not.toThrow();
+  });
+
+  it("rejects a clause that says two things about its subject", () => {
+    const bad = {
+      ...storeIntent,
+      transitions: [
+        {
+          ...storeIntent.transitions[0],
+          when: [
+            { reads: "aws.dynamodb:Invoices", finds: "nothing", is: "missing" },
+          ],
+        },
+      ],
+    };
+    expect(() => IntentDocSchema.parse(bad)).toThrow();
+  });
+
+  it("rejects a clause with no subject and a finds nobody spells", () => {
+    expect(() =>
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          { ...storeIntent.transitions[0], when: [{ finds: "nothing" }] },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          {
+            ...storeIntent.transitions[0],
+            when: [{ reads: "aws.dynamodb:Invoices", finds: "a row" }],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an effect that gives two verbs at once", () => {
+    const bad = {
+      ...storeIntent,
+      transitions: [
+        {
+          ...storeIntent.transitions[0],
+          results: [
+            { reads: "aws.dynamodb:Invoices", writes: "aws.dynamodb:Invoices" },
+          ],
+        },
+      ],
+    };
+    expect(() => IntentDocSchema.parse(bad)).toThrow();
+  });
 });
 
 describe("intentDocToSummary — REST boundary", () => {
@@ -160,6 +322,160 @@ describe("intentDocToSummary — function-call boundary", () => {
     expect(byId.summaries.status).toBeNull();
     expect(byId["unknown-source"].kind).toBe("throw");
     expect(byId["unknown-source"].errorType).toBe("Error");
+  });
+});
+
+describe("intentDocToSummary — message-bus and storage boundaries", () => {
+  it("builds the message-bus binding the ir-core constructor builds", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(busIntent),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.boundary).toEqual({
+      transport: "aws_sqs",
+      semantics: {
+        name: "message-bus",
+        messageBus: "aws_sqs",
+        channel: "billing.invoicePaid",
+      },
+      recognition: "intent",
+    });
+  });
+
+  it("reads the verb off the key and the boundary off the value", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(busIntent),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].effects).toEqual([
+      { does: "writes", names: "aws.dynamodb:Invoices", fields: [], by: [] },
+    ]);
+    expect(summary.outcomes[1].effects).toEqual([]);
+  });
+
+  it("normalises a when clause into the boundary it says and one line", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          {
+            ...storeIntent.transitions[0],
+            when: [
+              {
+                reads: "aws.dynamodb:Invoices",
+                finds: "something",
+                where: "settledAt is set",
+              },
+              "the caller asked for the settled ones",
+            ],
+          },
+        ],
+      }),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].conditions).toEqual([
+      {
+        at: {
+          does: "reads",
+          names: "aws.dynamodb:Invoices",
+          fields: [],
+          by: [],
+        },
+        input: null,
+        finds: "something",
+        said: "reads aws.dynamodb:Invoices finds something where settledAt is set",
+      },
+      {
+        at: null,
+        input: null,
+        finds: null,
+        said: "the caller asked for the settled ones",
+      },
+    ]);
+    expect(summary.outcomes[0].when).toBe(
+      "reads aws.dynamodb:Invoices finds something where settledAt is set and the caller asked for the settled ones",
+    );
+  });
+
+  it("normalises a clause about what the caller sent", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...storeIntent,
+        transitions: [
+          {
+            ...storeIntent.transitions[0],
+            when: [{ input: "request.params.id", is: "missing" }],
+          },
+        ],
+      }),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].conditions).toEqual([
+      {
+        at: null,
+        input: "request.params.id",
+        finds: null,
+        said: "input request.params.id is missing",
+      },
+    ]);
+  });
+
+  it("keeps a when written as one sentence exactly as written", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(storeIntent),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].when).toBe("an invoice has been paid");
+    expect(summary.outcomes[0].conditions).toEqual([
+      {
+        at: null,
+        input: null,
+        finds: null,
+        said: "an invoice has been paid",
+      },
+    ]);
+  });
+
+  it("takes the columns an effect touches, and one key or several", () => {
+    const withColumns = (by: unknown) =>
+      intentDocToSummary(
+        IntentDocSchema.parse({
+          ...storeIntent,
+          transitions: [
+            {
+              ...storeIntent.transitions[0],
+              results: [
+                {
+                  writes: "aws.dynamodb:Invoices",
+                  fields: ["email", "phone"],
+                  by,
+                },
+              ],
+            },
+          ],
+        }),
+      ) as BoundaryIntentSummary;
+
+    expect(withColumns("invoiceId").outcomes[0].effects[0]).toEqual({
+      does: "writes",
+      names: "aws.dynamodb:Invoices",
+      fields: ["email", "phone"],
+      by: ["invoiceId"],
+    });
+    expect(
+      withColumns(["tenantId", "invoiceId"]).outcomes[0].effects[0].by,
+    ).toEqual(["tenantId", "invoiceId"]);
+  });
+
+  it("gives an outcome that states only its effects the effect kind", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(storeIntent),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.outcomes[0].kind).toBe("effect");
+    expect(summary.outcomes[0].status).toBeNull();
+    expect(summary.outcomes[0].body).toBeNull();
+    expect(summary.boundary.semantics.name).toBe("storage");
   });
 });
 

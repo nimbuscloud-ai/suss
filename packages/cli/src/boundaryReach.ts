@@ -1,124 +1,36 @@
 /**
- * What a unit does at a boundary, and how somebody spells a boundary
- * they want to ask about.
+ * What a unit does at each boundary a summary mentions.
  *
- * `suss check --at` and `suss ask` both start by working out which
- * boundary the words in front of them mean. Those words get cut into
- * tokens, the boundary does too, and a boundary matches when it has
- * every token somebody wrote. So `aws.dynamodb:editions` matches the table
- * and every index on it, and adding `#by-publication` narrows it to the
- * one index.
+ * How somebody spells a boundary, and whether what they wrote picks one
+ * out, is `boundarySpelling.ts` in `@suss/ir-core`, which the intent
+ * checker reads too.
  */
 
-import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { storageBoundaryKey } from "@suss/checker";
-import { boundaryLabel, displayLabel } from "@suss/ir-core";
-
-import type {
-  BehavioralSummary,
-  BoundaryBinding,
-  BoundaryRole,
-  Effect,
+import {
+  BOUNDARY_ROLE,
+  goesThroughRelation,
+  OWN_BINDING,
+  relationsOf,
 } from "@suss/behavioral-ir";
+import { displayLabel } from "@suss/ir-core";
 
-type Interaction = Extract<Effect, { type: "interaction" }>["interaction"];
+import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { Relation } from "@suss/ir-core";
 
-/**
- * Protocols that spell a boundary somewhere other than the semantics
- * registry, asked in turn. Each returns null for semantics that are not
- * its own.
- */
-const SPELLED_BY_ITS_OWN_PASS = [storageBoundaryKey];
+export { relationsOf } from "@suss/behavioral-ir";
+export {
+  bindingTokens,
+  namesBoundary,
+  namesBoundaryExactly,
+  spellingTokens,
+} from "@suss/ir-core";
+
+export type { Relation } from "@suss/ir-core";
 
 /** How a report writes this boundary, and how somebody types it back. */
 export function boundarySpelling(binding: BoundaryBinding): string {
-  const fromRegistry = boundaryLabel(binding);
-  if (fromRegistry !== null) {
-    return fromRegistry;
-  }
-
-  for (const spell of SPELLED_BY_ITS_OWN_PASS) {
-    const spelled = spell(binding.semantics);
-    if (spelled !== null) {
-      return spelled;
-    }
-  }
   return displayLabel(binding);
 }
-
-/**
- * The words in a boundary spelling. Separators between parts of a name
- * are cut, and the characters inside one part are left alone, so
- * `by-publication` stays one word and `{id}` and `:id` both come out as
- * `id`.
- */
-export function spellingTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[{}]/g, " ")
-    .split(/[\s:#,()/]+/)
-    .filter((token) => token.length > 0);
-}
-
-/** Every word this boundary can be asked about by. */
-export function bindingTokens(binding: BoundaryBinding): Set<string> {
-  const tokens = new Set(spellingTokens(boundarySpelling(binding)));
-  for (const value of Object.values(binding.semantics)) {
-    if (typeof value === "string") {
-      for (const token of spellingTokens(value)) {
-        tokens.add(token);
-      }
-    }
-  }
-  // A word OpenTelemetry spells with a dot in it, "aws.dynamodb", is
-  // askable by its parts too, so somebody types the product name.
-  for (const token of [...tokens]) {
-    for (const part of token.split(".")) {
-      tokens.add(part);
-    }
-  }
-  return tokens;
-}
-
-/**
- * Whether what somebody typed is the whole of this boundary's name
- * rather than part of it. `POST /articles` is exactly the collection
- * route and only part of `POST /articles/{slug}/comments`.
- */
-export function namesBoundaryExactly(
-  subject: string,
-  binding: BoundaryBinding,
-): boolean {
-  const wanted = new Set(spellingTokens(subject));
-  if (wanted.size === 0) {
-    return false;
-  }
-  const spelled = new Set(spellingTokens(boundarySpelling(binding)));
-  if (spelled.size !== wanted.size) {
-    return false;
-  }
-  return [...spelled].every((token) => wanted.has(token));
-}
-
-/** Whether what somebody typed picks out this boundary. */
-export function namesBoundary(
-  subject: string,
-  binding: BoundaryBinding,
-): boolean {
-  const wanted = spellingTokens(subject);
-  if (wanted.length === 0) {
-    return false;
-  }
-  const tokens = bindingTokens(binding);
-  return wanted.every((token) => tokens.has(token));
-}
-
-/**
- * What a unit does at a boundary. A unit that serves the boundary
- * provides it; a unit that goes through it reads it, writes it, or
- * both.
- */
-export type Relation = "provides" | "reads" | "writes";
 
 export interface TouchedBoundary {
   label: string;
@@ -128,47 +40,6 @@ export interface TouchedBoundary {
   callee: string | undefined;
   transitionId: string | undefined;
 }
-
-type RelationTable = {
-  [K in Interaction["class"]]: (
-    interaction: Extract<Interaction, { class: K }>,
-  ) => Relation[];
-};
-
-/**
- * A request sends a body out and gets a response back, so a service
- * call both reads and writes. Scheduling a callback crosses no
- * boundary, so it does neither.
- */
-const RELATIONS: RelationTable = {
-  "storage-access": (interaction) =>
-    interaction.kind === "read" ? ["reads"] : ["writes"],
-  "service-call": () => ["reads", "writes"],
-  "message-send": () => ["writes"],
-  "message-receive": () => ["reads"],
-  "config-read": () => ["reads"],
-  schedule: () => [],
-};
-
-export function relationsOf(interaction: Interaction): Relation[] {
-  const handler = (
-    RELATIONS as unknown as Record<string, (i: Interaction) => Relation[]>
-  )[interaction.class];
-  return handler(interaction);
-}
-
-function goesThroughRelation(interaction: Interaction): boolean {
-  return (
-    interaction.class === "storage-access" &&
-    interaction.relationPath !== undefined
-  );
-}
-
-/** What a unit does at the boundary its own identity is bound to. */
-const OWN_BINDING: Record<BoundaryRole, Relation[]> = {
-  provider: ["provides"],
-  consumer: ["reads", "writes"],
-};
 
 /**
  * Every boundary this unit touches: the one it serves, and one entry

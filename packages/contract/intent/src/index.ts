@@ -63,8 +63,13 @@ function waitingOnBlanks(where: string, blanks: string[]): string {
   const empty =
     blanks.length === 1
       ? `${blanks[0]} is still blank. Write it`
-      : `${blanks.join(" and ")} are still blank. Write them`;
+      : `${andLast(blanks)} are still blank. Write them`;
   return `${where} is an inferred draft and ${empty} and set source to "inferred, curated", or take the file out of the intent folder until you do.`;
+}
+
+/** `a, b and c`, so a list of five reads as one. */
+function andLast(names: string[]): string {
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 function validated(raw: unknown, where: string) {
@@ -74,9 +79,11 @@ function validated(raw: unknown, where: string) {
   }
 
   const issues = result.error.issues;
+  // The whole path, since a PRD leaves its blanks inside scenarios and
+  // `blanksLeftEmpty` is what reads which part of one is a blank.
   const blanks = blanksLeftEmpty(
     raw,
-    issues.map((issue) => String(issue.path[0])),
+    issues.map((issue) => issue.path.join(".")),
   );
   if (blanks.length > 0) {
     throw new IntentDocRejected(blanks, waitingOnBlanks(where, blanks));
@@ -183,7 +190,7 @@ function everyRejection(
   const parts: string[] = [];
   if (waiting.length > 0) {
     parts.push(
-      `${waiting.length} intent doc(s) in ${dir} are inferred drafts with purpose and audience still blank:\n${listed(waiting)}\nWrite them and set source to "inferred, curated", or take those files out of the intent folder until you do.`,
+      `${waiting.length} intent doc(s) in ${dir} are inferred drafts with blanks still in them:\n${listed(waiting)}\nWrite them and set source to "inferred, curated", or take those files out of the intent folder until you do.`,
     );
   }
   if (broken.length > 0) {

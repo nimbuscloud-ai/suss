@@ -42,6 +42,11 @@ import {
   referenceOf,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
+import {
+  EVERY_FIELD,
+  storageContainerLabel,
+  storageLabel,
+} from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
 import {
@@ -75,8 +80,7 @@ type StorageAccessRecord = InteractionRecord<"storage-access"> & {
   semantics: StorageSemantics;
 };
 
-/** Wildcard convention for default-shape reads (no explicit `select`). */
-const ALL_FIELDS = "*";
+const ALL_FIELDS = EVERY_FIELD;
 
 /**
  * Run the storage pairing pass over every summary in the set.
@@ -811,37 +815,16 @@ function readStorageContract(
 
 /**
  * How a report spells this store: `aws.dynamodb:editions#by-publication`.
- *
- * The semantics registry has no label for storage, so `boundaryLabel`
- * returns null and this pass is the only place the spelling exists.
- * Somebody who saw that key in a report will type it back to ask about
- * the store, so whatever resolves what they typed calls this instead of
- * keeping a second copy of the formula. Returns null for semantics from
- * any other protocol.
+ * The formula is the protocol's own `displayLabel` in `@suss/ir-core`,
+ * so a reader who types the key back and this pass's index agree.
+ * Returns null for semantics from any other protocol.
  */
 export function storageBoundaryKey(semantics: Semantics): string | null {
   return semantics.name === "storage" ? keyOf(semantics) : null;
 }
 
-function keyOf(semantics: StorageSemantics): string {
-  return `${semantics.storageSystem}:${containerLabel(semantics)}`;
-}
-
-function containerLabel(semantics: StorageSemantics): string {
-  const container = semantics.container ?? "<unnamed container>";
-  // A secondary way in gets written after the container it belongs to,
-  // since a query through an index is a different access.
-  const addressed =
-    semantics.accessPath === null
-      ? container
-      : `${container}#${semantics.accessPath}`;
-  // `(scope, container)` for default-scope users collapses to the bare
-  // container; non-default scopes keep the disambiguation visible.
-  if (semantics.scope === "default") {
-    return addressed;
-  }
-  return `${semantics.scope}/${addressed}`;
-}
+const keyOf = storageLabel;
+const containerLabel = storageContainerLabel;
 
 /**
  * Two containers, both declared under a name covering what one access

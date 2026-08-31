@@ -68,5 +68,40 @@ export const storageSemantics = defineBoundarySemantics({
     exchangesHttpResponses: false,
     reportsUnpairedItself: false,
     identityKey: () => null,
+    displayLabel: storageLabel,
   },
 });
+
+/**
+ * `postgresql:invoices`, `aws.dynamodb:editions#by-publication`. The
+ * pairing pass has no key to fall back on here, so a reader who types
+ * this back at `suss ask`, the pass that indexes accesses by it, and an
+ * intent doc that says which store a write reaches all read this one.
+ */
+export function storageLabel(semantics: StorageSemantics): string {
+  return `${semantics.storageSystem}:${storageContainerLabel(semantics)}`;
+}
+
+/**
+ * What an access writes for its columns when it asked for all of them,
+ * which is a query with no explicit projection. It covers every column
+ * rather than saying which one, so anything comparing column lists has
+ * to tell it apart from a list of columns.
+ */
+export const EVERY_FIELD = "*";
+
+/** The store on its own, which a finding writes without the system. */
+export function storageContainerLabel(semantics: StorageSemantics): string {
+  const container = semantics.container ?? "<unnamed container>";
+  // A secondary way in gets written after the container it belongs to,
+  // since a query through an index is a different access.
+  const addressed =
+    semantics.accessPath === null
+      ? container
+      : `${container}#${semantics.accessPath}`;
+  // A default-scope store collapses to the bare container; another
+  // scope keeps the part that tells two of them apart.
+  return semantics.scope === "default"
+    ? addressed
+    : `${semantics.scope}/${addressed}`;
+}

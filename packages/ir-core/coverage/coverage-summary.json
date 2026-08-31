@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 438,
-      "covered": 404,
+      "total": 468,
+      "covered": 434,
       "skipped": 0,
-      "pct": 92.23
+      "pct": 92.73
     },
     "statements": {
-      "total": 446,
-      "covered": 412,
+      "total": 478,
+      "covered": 444,
       "skipped": 0,
-      "pct": 92.37
+      "pct": 92.88
     },
     "functions": {
-      "total": 131,
-      "covered": 123,
+      "total": 140,
+      "covered": 132,
       "skipped": 0,
-      "pct": 93.89
+      "pct": 94.28
     },
     "branches": {
-      "total": 376,
-      "covered": 337,
+      "total": 390,
+      "covered": 351,
       "skipped": 0,
-      "pct": 89.62
+      "pct": 90
     },
     "branchesTrue": {
       "total": 0,
@@ -79,6 +79,32 @@
     "branches": {
       "total": 46,
       "covered": 46,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "src/boundarySpelling.ts": {
+    "lines": {
+      "total": 23,
+      "covered": 23,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 7,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 25,
+      "covered": 25,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 8,
+      "covered": 8,
       "skipped": 0,
       "pct": 100
     }
@@ -237,6 +263,32 @@
       "covered": 22,
       "skipped": 0,
       "pct": 91.66
+    }
+  },
+  "src/relation.ts": {
+    "lines": {
+      "total": 2,
+      "covered": 2,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 2,
+      "covered": 2,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
     }
   },
   "src/schemas.ts": {
@@ -605,26 +657,26 @@
   },
   "src/semantics/storage.ts": {
     "lines": {
-      "total": 3,
-      "covered": 3,
+      "total": 8,
+      "covered": 8,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 1,
-      "covered": 1,
-      "skipped": 0,
-      "pct": 100
-    },
-    "statements": {
       "total": 3,
       "covered": 3,
       "skipped": 0,
       "pct": 100
     },
+    "statements": {
+      "total": 8,
+      "covered": 8,
+      "skipped": 0,
+      "pct": 100
+    },
     "branches": {
-      "total": 0,
-      "covered": 0,
+      "total": 6,
+      "covered": 6,
       "skipped": 0,
       "pct": 100
     }

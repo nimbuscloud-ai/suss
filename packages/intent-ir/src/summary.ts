@@ -8,8 +8,12 @@
 
 import {
   type BoundaryBinding,
+  type EffectRelation,
+  EffectRelationSchema,
   functionCallBinding,
+  messageBusBinding,
   restBinding,
+  storageBinding,
   type TypeShape,
 } from "@suss/ir-core";
 
@@ -18,24 +22,60 @@ import type {
   BodyShape,
   Boundary,
   BoundaryIntent,
+  DeclaredEffect,
   IntentDoc,
   IntentSource,
   Prd,
   PrimitiveTypeName,
+  When,
+  WhenClause,
 } from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Normalised types
 // ---------------------------------------------------------------------------
 
-/** How a boundary outcome resolves, the cross-kind unification. */
-export type IntentOutcomeKind = "response" | "return" | "throw";
+/**
+ * How a boundary outcome ends. `effect` is an outcome that declares
+ * only what it did, which is what a queue consumer or a table writer
+ * has to say instead of a status.
+ */
+export type IntentOutcomeKind = "response" | "return" | "throw" | "effect";
+
+/** One effect an outcome has, in the verbs `suss ask` asks with. */
+export interface IntentEffect {
+  does: EffectRelation;
+  /** The boundary it reaches, as the author spelled it. */
+  names: string;
+  /** The columns it touches. Empty when the doc states none. */
+  fields: string[];
+  /** What it picks the item out by. Empty when the doc states none. */
+  by: string[];
+}
+
+/**
+ * One clause of what a branch turned on. A clause whose subject is a
+ * boundary is the one the checker compares; the rest carry through for
+ * a reader.
+ */
+export interface IntentCondition {
+  /** The boundary the guard read, when the clause says one. */
+  at: IntentEffect | null;
+  /** What the caller sent, when the clause says that instead. */
+  input: string | null;
+  /** Whether the lookup came back with something, when the clause says. */
+  finds: "nothing" | "something" | null;
+  /** The clause as one line, for a finding to quote. */
+  said: string;
+}
 
 export interface IntentOutcome {
   /** Author-declared id PRD scenarios reference. */
   id: string;
-  /** The condition, in human terms (opaque to the checker). */
+  /** What the branch turned on, as one line, for a reader. */
   when: string;
+  /** The same, clause by clause, for the checker to compare. */
+  conditions: IntentCondition[];
   kind: IntentOutcomeKind;
   /** Set only for `response` outcomes (REST status code). */
   status: number | null;
@@ -43,6 +83,8 @@ export interface IntentOutcome {
   body: TypeShape | null;
   /** Error type name, set only for `throw` outcomes when declared. */
   errorType: string | null;
+  /** The effects this outcome declares. Empty when it declares none. */
+  effects: IntentEffect[];
 }
 
 export interface BoundaryIntentSummary {
@@ -116,31 +158,141 @@ function prdToSummary(doc: Prd): PrdSummary {
   };
 }
 
-function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
-  if (boundary.semantics === "rest") {
-    return restBinding({
+// One constructor per protocol, each the ir-core one, so an intent
+// boundary and a derived boundary are built by the same code.
+const BINDINGS: {
+  [K in Boundary["semantics"]]: (
+    boundary: Extract<Boundary, { semantics: K }>,
+  ) => BoundaryBinding;
+} = {
+  rest: (boundary) =>
+    restBinding({
       transport: boundary.transport,
       method: boundary.method,
       path: boundary.path,
       recognition: "intent",
-    });
+    }),
+  "function-call": (boundary) =>
+    functionCallBinding({
+      transport: boundary.transport,
+      recognition: "intent",
+      ...(boundary.module !== undefined ? { module: boundary.module } : {}),
+      ...(boundary.exportName !== undefined
+        ? { exportName: boundary.exportName }
+        : {}),
+      ...(boundary.package !== undefined ? { package: boundary.package } : {}),
+      ...(boundary.exportPath !== undefined
+        ? { exportPath: boundary.exportPath }
+        : {}),
+    }),
+  "message-bus": (boundary) =>
+    messageBusBinding({
+      recognition: "intent",
+      messageBus: boundary.messageBus,
+      channel: boundary.channel,
+    }),
+  storage: (boundary) =>
+    storageBinding({
+      recognition: "intent",
+      storageSystem: boundary.storageSystem,
+      scope: boundary.scope,
+      container: boundary.container,
+      accessPath: boundary.accessPath,
+    }),
+};
+
+export function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
+  // The one cast joins the per-protocol table, which narrows, to the
+  // runtime lookup, the same way dispatchByType does it.
+  const build = BINDINGS[boundary.semantics] as (
+    boundary: Boundary,
+  ) => BoundaryBinding;
+  return build(boundary);
+}
+
+const VERBS = EffectRelationSchema.options;
+
+function toEffect(declared: DeclaredEffect): IntentEffect {
+  // The schema gives every effect one verb, so the find always lands.
+  const [does, names] = Object.entries(declared).find(([key]) =>
+    (VERBS as readonly string[]).includes(key),
+  ) as [EffectRelation, string];
+  return {
+    does,
+    names,
+    fields: declared.fields ?? [],
+    by: oneOrMore(declared.by),
+  };
+}
+
+function oneOrMore(written: string | string[] | undefined): string[] {
+  if (written === undefined) {
+    return [];
   }
-  return functionCallBinding({
-    transport: boundary.transport,
-    recognition: "intent",
-    ...(boundary.module !== undefined ? { module: boundary.module } : {}),
-    ...(boundary.exportName !== undefined
-      ? { exportName: boundary.exportName }
-      : {}),
-    ...(boundary.package !== undefined ? { package: boundary.package } : {}),
-    ...(boundary.exportPath !== undefined
-      ? { exportPath: boundary.exportPath }
-      : {}),
-  });
+  return typeof written === "string" ? [written] : written;
+}
+
+/** The verb key and the boundary it points at, when a clause has one. */
+function subjectOf(clause: Exclude<WhenClause, string>): IntentEffect | null {
+  for (const does of VERBS) {
+    const names = clause[does];
+    if (names !== undefined) {
+      return { does, names, fields: [], by: [] };
+    }
+  }
+  return null;
+}
+
+function toCondition(clause: WhenClause): IntentCondition {
+  if (typeof clause === "string") {
+    return { at: null, input: null, finds: null, said: clause };
+  }
+  const at = subjectOf(clause);
+  return {
+    at,
+    input: clause.input ?? null,
+    finds: clause.finds ?? null,
+    said: saidAsOneLine(clause, at),
+  };
+}
+
+/** A clause on one line, the way a finding quotes it back. */
+function saidAsOneLine(
+  clause: Exclude<WhenClause, string>,
+  at: IntentEffect | null,
+): string {
+  // The schema gives every clause one subject, so one of the two lands.
+  const subject =
+    at !== null ? `${at.does} ${at.names}` : `input ${String(clause.input)}`;
+  const check = CHECK_KEYS.map((key) =>
+    clause[key] === undefined ? null : `${key} ${String(clause[key])}`,
+  ).find((said) => said !== null);
+  const narrows = clause.where === undefined ? null : `where ${clause.where}`;
+  return [subject, check, narrows].filter((part) => part !== null).join(" ");
+}
+
+const CHECK_KEYS = ["finds", "is", "equals", "has"] as const;
+
+function toConditions(when: When): IntentCondition[] {
+  return (typeof when === "string" ? [when] : when).map(toCondition);
+}
+
+function whenAsOneLine(when: When): string {
+  return typeof when === "string"
+    ? when
+    : toConditions(when)
+        .map((condition) => condition.said)
+        .join(" and ");
 }
 
 function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
-  const base = { id: t.id, when: t.when };
+  const effects = (t.results ?? []).map(toEffect);
+  const base = {
+    id: t.id,
+    when: whenAsOneLine(t.when),
+    conditions: toConditions(t.when),
+    effects,
+  };
   if (t.response !== undefined) {
     return {
       ...base,
@@ -159,15 +311,18 @@ function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
       errorType: null,
     };
   }
-  // The schema's refine guarantees exactly one outcome is present, so
-  // this is the `throws` case.
-  return {
-    ...base,
-    kind: "throw",
-    status: null,
-    body: null,
-    errorType: t.throws?.errorType ?? null,
-  };
+  if (t.throws !== undefined) {
+    return {
+      ...base,
+      kind: "throw",
+      status: null,
+      body: null,
+      errorType: t.throws.errorType ?? null,
+    };
+  }
+  // The schema's refines leave one case: a transition that says only
+  // what it resulted in.
+  return { ...base, kind: "effect", status: null, body: null, errorType: null };
 }
 
 function bodyToTypeShape(body: BodyShape): TypeShape | null {

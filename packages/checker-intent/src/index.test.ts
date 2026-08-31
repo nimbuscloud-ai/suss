@@ -4,14 +4,25 @@ import {
   type BehavioralSummary,
   type BoundaryBinding,
   functionCallBinding,
+  messageBusBinding,
   type Output,
   restBinding,
+  storageBinding,
   type TypeShape,
+  type ValueRef,
 } from "@suss/behavioral-ir";
+import { SemanticsSchema } from "@suss/ir-core";
 
-import { applyIntentSuppressions, checkIntentAgreement } from "./index.js";
+import {
+  applyIntentSuppressions,
+  checkIntentAgreement,
+  whatWouldKeyIt,
+} from "./index.js";
 
 import type {
+  IntentCondition,
+  IntentEffect,
+  IntentFinding,
   IntentOutcome,
   IntentSource,
   IntentSummary,
@@ -55,6 +66,8 @@ function response(status: number, body: TypeShape | null): IntentOutcome {
     status,
     body,
     errorType: null,
+    effects: [],
+    conditions: [],
   };
 }
 
@@ -403,6 +416,8 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: userShape,
         errorType: null,
+        effects: [],
+        conditions: [],
       },
       {
         id: "missing",
@@ -411,6 +426,8 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: null,
         errorType: "NotFoundError",
+        effects: [],
+        conditions: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -429,6 +446,8 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: null,
         errorType: "NotFoundError",
+        effects: [],
+        conditions: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -448,6 +467,8 @@ describe("checkIntentAgreement — function-call", () => {
         status: null,
         body: null,
         errorType: null,
+        effects: [],
+        conditions: [],
       },
     ]);
     const code = codeSummary(fnCodeBinding, [
@@ -465,6 +486,8 @@ function outcomeById(id: string, status = 200): IntentOutcome {
     status,
     body: null,
     errorType: null,
+    effects: [],
+    conditions: [],
   };
 }
 
@@ -500,6 +523,11 @@ const implementedCode = [
   codeSummary(restCodeBinding, [restResponse(200, null)]),
 ];
 
+/** The scenario-coverage question, apart from the one asked the other way. */
+function aboutScenarios(findings: IntentFinding[]): IntentFinding[] {
+  return findings.filter((f) => f.kind !== "undescribedOutcome");
+}
+
 describe("checkIntentAgreement — PRD scenario coverage", () => {
   it("emits nothing and accounts a PRD whose links all resolve", () => {
     const result = checkIntentAgreement(
@@ -509,7 +537,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       ],
       implementedCode,
     );
-    expect(result.findings).toHaveLength(0);
+    expect(aboutScenarios(result.findings)).toHaveLength(0);
     expect(result.unchecked).toHaveLength(0);
     expect(result.checked).toContainEqual({
       kind: "prd",
@@ -547,7 +575,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       [usersLookup, prdDoc([scenario(["orders-intake.acknowledged"])])],
       implementedCode,
     );
-    expect(result.findings.map((f) => f.kind)).toEqual([
+    expect(aboutScenarios(result.findings).map((f) => f.kind)).toEqual([
       "danglingScenarioLink",
     ]);
     expect(result.findings[0]).toMatchObject({
@@ -565,7 +593,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       [usersLookup, prdDoc([scenario(["users-lookup.ghost"])])],
       implementedCode,
     );
-    expect(result.findings.map((f) => f.kind)).toEqual([
+    expect(aboutScenarios(result.findings).map((f) => f.kind)).toEqual([
       "danglingScenarioLink",
     ]);
     // Resolved the intent but not the outcome, keyed on the real boundary
@@ -602,7 +630,7 @@ describe("checkIntentAgreement — PRD scenario coverage", () => {
       ],
       implementedCode,
     );
-    expect(result.findings.map((f) => f.kind)).toEqual([
+    expect(aboutScenarios(result.findings).map((f) => f.kind)).toEqual([
       "danglingScenarioLink",
     ]);
     expect(result.checked).toContainEqual({
@@ -679,6 +707,8 @@ describe("applyIntentSuppressions", () => {
               status: null,
               body: null,
               errorType: "Boom",
+              effects: [],
+              conditions: [],
             },
           ],
           "fn-intent",
@@ -733,7 +763,7 @@ describe("applyIntentSuppressions", () => {
       [usersLookup, prdDoc([scenario(["orders-intake.acknowledged"])])],
       implementedCode,
     ).findings;
-    const out = applyIntentSuppressions(findings, [
+    const out = applyIntentSuppressions(aboutScenarios(findings), [
       {
         kind: "danglingScenarioLink",
         boundary: "prd:profile-prd",
@@ -750,7 +780,7 @@ describe("applyIntentSuppressions", () => {
       [usersLookup, prdDoc([scenario(["users-lookup.ghost"])])],
       implementedCode,
     ).findings;
-    const out = applyIntentSuppressions(findings, [
+    const out = applyIntentSuppressions(aboutScenarios(findings), [
       {
         kind: "danglingScenarioLink",
         boundary: "GET /users/:id",
@@ -761,5 +791,666 @@ describe("applyIntentSuppressions", () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0].suppressed?.effect).toBe("mark");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Effect outcomes: what a boundary results in, in `suss ask`'s verbs
+// ---------------------------------------------------------------------------
+
+const invoicesTable = storageBinding({
+  recognition: "@suss/framework-aws-dynamodb",
+  storageSystem: "aws.dynamodb",
+  scope: "default",
+  container: "Invoices",
+});
+
+const busIntentBinding = messageBusBinding({
+  recognition: "intent",
+  messageBus: "aws_sqs",
+  channel: "billing.invoicePaid",
+});
+const busCodeBinding = messageBusBinding({
+  recognition: "aws-lambda",
+  messageBus: "aws_sqs",
+  channel: "billing.invoicePaid",
+});
+
+function writes(container: string): IntentEffect {
+  return {
+    does: "writes",
+    names: `aws.dynamodb:${container}`,
+    fields: [],
+    by: [],
+  };
+}
+
+function effectOutcome(id: string, effects: IntentEffect[]): IntentOutcome {
+  return {
+    id,
+    when: "an invoice has been paid",
+    conditions: [],
+    kind: "effect",
+    status: null,
+    body: null,
+    errorType: null,
+    effects,
+  };
+}
+
+/** A consumer whose one return also writes the Invoices table. */
+function consumerWritingInvoices(): BehavioralSummary {
+  const summary = codeSummary(
+    busCodeBinding,
+    [{ type: "return", value: null }],
+    "InvoiceWorker.handler",
+  );
+  summary.transitions[0].effects = [
+    {
+      type: "interaction",
+      binding: invoicesTable,
+      callee: "dynamo.send",
+      interaction: {
+        class: "storage-access",
+        kind: "write",
+        fields: ["invoiceId"],
+        operation: "PutItemCommand",
+      },
+    },
+  ];
+  return summary;
+}
+
+describe("effect outcomes", () => {
+  it("passes when the code writes the store the outcome states", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("invoice-recorded", [writes("Invoices")])],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toEqual([]);
+    expect(result.checked).toHaveLength(1);
+  });
+
+  it("resolves the boundary the way suss ask resolves what somebody types", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("invoice-recorded", [
+              { does: "writes", names: "Invoices", fields: [], by: [] },
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports a declared write the code never makes", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("receipt-written", [writes("Receipts")])],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+    expect(uncovered[0].message).toContain(
+      "results in a write to aws.dynamodb:Receipts",
+    );
+  });
+
+  it("reports a store the code reaches that no outcome declares", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            {
+              id: "returns",
+              when: "",
+              kind: "return",
+              status: null,
+              body: null,
+              errorType: null,
+              effects: [],
+              conditions: [],
+            },
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].kind).toBe("undeclaredOutcome");
+    expect(result.findings[0].severity).toBe("info");
+    expect(result.findings[0].message).toContain(
+      "writes aws.dynamodb:Invoices",
+    );
+  });
+
+  it("leaves out an effect that is not a boundary the code goes through", () => {
+    const summary = consumerWritingInvoices();
+    summary.transitions[0].effects = [
+      { type: "invocation", callee: "recordInvoice", args: [], async: true },
+      {
+        type: "interaction",
+        binding: invoicesTable,
+        callee: "prisma.invoice.create",
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["id"],
+          relationPath: ["customer"],
+        },
+      },
+    ];
+    summary.transitions.push({
+      id: "t-render",
+      conditions: [],
+      output: { type: "render", component: "Page", props: {} },
+      effects: [],
+      location: { start: 6, end: 6 },
+      isDefault: false,
+    });
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("invoice-recorded", [writes("Invoices")])],
+          "invoice-intake",
+        ),
+      ],
+      [summary],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+  });
+
+  it("checks the effects of an outcome against the transitions it ends", () => {
+    const summary = consumerWritingInvoices();
+    summary.transitions.push({
+      id: "t1",
+      conditions: [],
+      output: { type: "throw", exceptionType: "Error", message: null },
+      effects: [],
+      location: { start: 6, end: 6 },
+      isDefault: false,
+    });
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            {
+              id: "invoice-rejected",
+              when: "the message has no invoice id",
+              kind: "throw",
+              status: null,
+              body: null,
+              errorType: "Error",
+              effects: [writes("Invoices")],
+              conditions: [],
+            },
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [summary],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+    expect(uncovered[0].intent.outcomeId).toBe("invoice-rejected");
+  });
+
+  it("says what would key a storage boundary it cannot pair", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          storageBinding({
+            recognition: "intent",
+            storageSystem: "aws.dynamodb",
+            scope: "default",
+            container: "Invoices",
+          }),
+          [effectOutcome("invoice-row-written", [writes("Invoices")])],
+          "invoices-table",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].kind).toBe("unkeyableBoundary");
+    expect(result.findings[0].boundary).toBe("aws.dynamodb:Invoices");
+    expect(result.findings[0].message).toContain("a store has no key at all");
+    expect(result.unchecked).toHaveLength(1);
+  });
+});
+
+describe("whatWouldKeyIt", () => {
+  it("has a sentence for every protocol, so a drafter and a finding agree", () => {
+    for (const definition of SemanticsSchema.options) {
+      const protocol = definition.shape.name.value;
+      expect(whatWouldKeyIt(protocol).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A `when` clause that says which boundary the branch read
+// ---------------------------------------------------------------------------
+
+/** `dynamo.send` read the Invoices table, however the guard tested it. */
+const invoiceRead: Extract<
+  BehavioralSummary["transitions"][number]["effects"][number],
+  { type: "interaction" }
+> = {
+  type: "interaction",
+  binding: invoicesTable,
+  callee: "dynamo.send",
+  interaction: { class: "storage-access", kind: "read", fields: ["invoiceId"] },
+};
+
+/** The result of that call, read down to `.Item`. */
+const theRow: ValueRef = {
+  type: "derived",
+  from: { type: "dependency", name: "dynamo.send", accessChain: [] },
+  derivation: { type: "propertyAccess", property: "Item" },
+};
+
+/** A route whose 404 turns on the read finding nothing, and whose 200 does not. */
+function lookupHandler(): BehavioralSummary {
+  const summary = codeSummary(
+    restCodeBinding,
+    [restResponse(404, null), restResponse(200, null)],
+    "getInvoice",
+  );
+  summary.transitions[0].conditions = [
+    { type: "truthinessCheck", subject: theRow, negated: true },
+  ];
+  summary.transitions[1].conditions = [
+    {
+      type: "negation",
+      operand: { type: "truthinessCheck", subject: theRow, negated: true },
+    },
+  ];
+  summary.transitions[1].effects = [invoiceRead];
+  return summary;
+}
+
+function whenOutcome(
+  status: number,
+  conditions: IntentCondition[],
+): IntentOutcome {
+  return {
+    id: `s${status}`,
+    when: conditions.map((c) => c.said).join(" and "),
+    conditions,
+    kind: "response",
+    status,
+    body: null,
+    errorType: null,
+    effects: [],
+  };
+}
+
+/** The findings that say a declared outcome is missing, which is what these ask about. */
+function uncovered(findings: IntentFinding[]): IntentFinding[] {
+  return findings.filter((f) => f.kind === "uncoveredOutcome");
+}
+
+function reads(names: string, finds: "nothing" | "something"): IntentCondition {
+  return {
+    at: { does: "reads", names, fields: [], by: [] },
+    input: null,
+    finds,
+    said: `reads ${names} finds ${finds}`,
+  };
+}
+
+describe("a when clause that says which boundary", () => {
+  it("passes when the branch turns on that read finding nothing", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("aws.dynamodb:Invoices", "nothing")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toEqual([]);
+  });
+
+  it("reports a 404 the code produces on the opposite condition", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("aws.dynamodb:Invoices", "something")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    const reported = uncovered(result.findings);
+    expect(reported).toHaveLength(1);
+    expect(reported[0].message).toContain(
+      "when reads aws.dynamodb:Invoices finds something",
+    );
+    expect(reported[0].message).toContain("on a different condition");
+  });
+
+  it("reports a clause naming a store the branch never read", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("aws.dynamodb:Receipts", "nothing")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toHaveLength(1);
+  });
+
+  it("resolves the boundary the way suss ask resolves what somebody types", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("Invoices", "nothing")])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toEqual([]);
+  });
+
+  it("leaves a clause that says no boundary to the reader", () => {
+    const prose: IntentCondition = {
+      at: null,
+      input: "request.params.id",
+      finds: null,
+      said: "input request.params.id is set",
+    };
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [prose])],
+          "invoice-lookup",
+        ),
+      ],
+      [lookupHandler()],
+    );
+
+    expect(uncovered(result.findings)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Which columns an effect touches, and which outcome nobody explained
+// ---------------------------------------------------------------------------
+
+/** A consumer whose write states the columns it fills and its key. */
+function consumerWritingColumns(
+  fields: string[],
+  selector: string[],
+): BehavioralSummary {
+  const summary = codeSummary(
+    busCodeBinding,
+    [{ type: "return", value: null }],
+    "InvoiceWorker.handler",
+  );
+  summary.transitions[0].effects = [
+    {
+      type: "interaction",
+      binding: invoicesTable,
+      callee: "dynamo.send",
+      interaction: {
+        class: "storage-access",
+        kind: "write",
+        fields,
+        selector,
+      },
+    },
+  ];
+  return summary;
+}
+
+function writesColumns(fields: string[], by: string[]): IntentEffect {
+  return { does: "writes", names: "aws.dynamodb:Invoices", fields, by };
+}
+
+describe("the columns an effect states", () => {
+  it("passes when the access fills every column the intent stated", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("contact-erased", [
+              writesColumns(["email", "phone"], []),
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingColumns(["email", "phone", "address"], [])],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+
+  it("reports a column the intent stated that the access never fills", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("contact-erased", [
+              writesColumns(["email", "phone"], []),
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingColumns(["closedAt"], [])],
+    );
+
+    const reported = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(reported).toHaveLength(1);
+    expect(reported[0].message).toContain("of email, phone");
+  });
+
+  it("compares what the access picks the item out by", () => {
+    const stated = (by: string[]) =>
+      checkIntentAgreement(
+        [
+          boundaryIntent(
+            busIntentBinding,
+            [effectOutcome("recorded", [writesColumns([], by)])],
+            "invoice-intake",
+          ),
+        ],
+        [consumerWritingColumns([], ["invoiceId"])],
+      ).findings.filter((f) => f.kind === "uncoveredOutcome");
+
+    expect(stated(["invoiceId"])).toEqual([]);
+    expect(stated(["customerId"])).toHaveLength(1);
+  });
+
+  it("takes an access that states no columns as unread, not as empty", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("contact-erased", [writesColumns(["email"], [])])],
+          "invoice-intake",
+        ),
+      ],
+      // What a DynamoDB write records today, since nothing parses an
+      // UpdateExpression. Calling that a mismatch reports working code.
+      [consumerWritingColumns([], [])],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+
+  it("takes a query that asked for every column as covering any of them", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("read-back", [writesColumns(["email"], [])])],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingColumns(["*"], [])],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+});
+
+describe("an effect at a boundary that keeps no columns", () => {
+  it("compares the verb and the boundary, and asks nothing about columns", () => {
+    const summary = codeSummary(
+      busCodeBinding,
+      [{ type: "return", value: null }],
+      "InvoiceWorker.handler",
+    );
+    summary.transitions[0].effects = [
+      {
+        type: "interaction",
+        binding: busCodeBinding,
+        callee: "sqs.send",
+        interaction: { class: "message-send" },
+      },
+    ];
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("passed-on", [
+              {
+                does: "writes",
+                names: "bus:aws_sqs billing.invoicePaid",
+                fields: ["invoiceId"],
+                by: [],
+              },
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [summary],
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "uncoveredOutcome"),
+    ).toEqual([]);
+  });
+});
+
+describe("an outcome with no scenario", () => {
+  const twoOutcomes = boundaryIntent(
+    restIntentBinding,
+    [response(200, null), response(404, null)],
+    "users-lookup",
+  );
+  const code = [
+    codeSummary(restCodeBinding, [
+      restResponse(200, null),
+      restResponse(404, null),
+    ]),
+  ];
+
+  it("says which one nobody wrote a reason for", () => {
+    const result = checkIntentAgreement(
+      [twoOutcomes, prdDoc([scenario(["users-lookup.s200"])])],
+      code,
+    );
+
+    const reported = result.findings.filter(
+      (f) => f.kind === "undescribedOutcome",
+    );
+    expect(reported).toHaveLength(1);
+    expect(reported[0].severity).toBe("info");
+    expect(reported[0].boundary).toBe("GET /users/{id}");
+    expect(reported[0].intent).toEqual({
+      name: "users-lookup",
+      outcomeId: "s404",
+    });
+    expect(reported[0].message).toContain("no PRD scenario says why");
+  });
+
+  it("says nothing when every outcome has one", () => {
+    const result = checkIntentAgreement(
+      [
+        twoOutcomes,
+        prdDoc([scenario(["users-lookup.s200", "users-lookup.s404"])]),
+      ],
+      code,
+    );
+
+    expect(
+      result.findings.filter((f) => f.kind === "undescribedOutcome"),
+    ).toEqual([]);
+  });
+
+  it("stays quiet until a PRD is loaded, when the answer would be all of them", () => {
+    const result = checkIntentAgreement([twoOutcomes], code);
+
+    expect(
+      result.findings.filter((f) => f.kind === "undescribedOutcome"),
+    ).toEqual([]);
   });
 });

@@ -22,17 +22,28 @@
 //             scenario refers to an outcome no system intent declares
 //             (danglingScenarioLink / ambiguousScenarioLink: a planning
 //             gap). Surfaced for the author, never silent.
-//   info: the code exceeds the declaration (undeclaredOutcome), or a
-//             scenario isn't linked yet (unlinkedScenario). A valid
-//             pending / deliberate state, not a defect.
+//   info: the code exceeds the declaration (undeclaredOutcome, a status
+//             or a boundary the intent never mentions), a scenario
+//             isn't linked yet (unlinkedScenario), or an outcome has no
+//             scenario (undescribedOutcome). A valid pending state.
 // Findings against `source: "inferred"` (not-yet-curated) intent are
 // downgraded one level by `withProvenance`; curation restores full severity.
 
-import { BOUNDARY_ROLE, summaryRef } from "@suss/behavioral-ir";
+import {
+  BOUNDARY_ROLE,
+  boundaryCalls,
+  boundaryGuardsOf,
+  goesThroughRelation,
+  relationsOf,
+  summaryRef,
+} from "@suss/behavioral-ir";
 import {
   applySuppressionsToFindings,
   bodyShapesMatch,
   boundaryKey,
+  displayLabel,
+  EVERY_FIELD,
+  namesBoundary,
   pairingKey,
   ruleBoundaryMatchesKey,
   semanticsAgree,
@@ -40,11 +51,16 @@ import {
 
 import type {
   BehavioralSummary,
+  BoundaryCall,
+  BoundaryGuard,
+  Interaction,
   Transition,
   TypeShape,
 } from "@suss/behavioral-ir";
 import type {
   BoundaryIntentSummary,
+  IntentCondition,
+  IntentEffect,
   IntentFinding,
   IntentFindingSeverity,
   IntentOutcome,
@@ -52,7 +68,13 @@ import type {
   IntentSummary,
   PrdSummary,
 } from "@suss/intent-ir";
-import type { BoundaryBinding, SuppressionRule } from "@suss/ir-core";
+import type {
+  BoundaryBinding,
+  EffectRelation,
+  Relation,
+  Semantics,
+  SuppressionRule,
+} from "@suss/ir-core";
 
 export type { IntentFinding } from "@suss/intent-ir";
 
@@ -62,6 +84,10 @@ interface CodeOutcome {
   status: number | null;
   body: TypeShape | null;
   errorType: string | null;
+  /** What the transition that ends this way did at other boundaries. */
+  effects: CodeEffect[];
+  /** The boundaries the branch leading here turned on. */
+  turnsOn: BoundaryGuard[];
 }
 
 /** A boundary intent that was paired and compared against code. */
@@ -156,8 +182,54 @@ export function checkIntentAgreement(
     checked.push(...result.checked);
     unchecked.push(...result.unchecked);
   }
+  findings.push(...checkOutcomesDescribed(intents));
 
   return { findings, checked, unchecked };
+}
+
+/**
+ * The coverage question asked from the outcome's side: which declared
+ * behaviour has no scenario saying why it is there. That is what a
+ * product reader wants from the same two artifacts the scenario passes
+ * walk, and nothing else asks it.
+ *
+ * It stays quiet until at least one PRD is loaded. Before that the
+ * answer is "all of them", which tells nobody anything.
+ */
+function checkOutcomesDescribed(intents: IntentSummary[]): IntentFinding[] {
+  const prds = intents.filter((intent) => intent.kind === "prd");
+  if (prds.length === 0) {
+    return [];
+  }
+  const linked = new Set(
+    prds.flatMap((prd) => prd.scenarios.flatMap((scenario) => scenario.link)),
+  );
+  const findings: IntentFinding[] = [];
+  for (const intent of intents) {
+    if (intent.kind !== "boundary") {
+      continue;
+    }
+    for (const outcome of intent.outcomes) {
+      if (linked.has(`${intent.name}.${outcome.id}`)) {
+        continue;
+      }
+      findings.push(
+        ...withProvenance(
+          [
+            {
+              kind: "undescribedOutcome",
+              severity: "info",
+              boundary: boundaryKey(intent.boundary) ?? intent.name,
+              intent: { name: intent.name, outcomeId: outcome.id },
+              message: `Intent "${intent.name}" declares ${outcome.id} and no PRD scenario says why it is there.`,
+            },
+          ],
+          intent.source,
+        ),
+      );
+    }
+  }
+  return findings;
 }
 
 interface IntentPassResult {
@@ -181,9 +253,9 @@ function checkBoundaryIntent(
         {
           kind: "unkeyableBoundary",
           severity: "warning",
-          boundary: unkeyedBoundaryLabel(intent.boundary),
+          boundary: displayLabel(intent.boundary),
           intent: { name: intent.name },
-          message: `Intent "${intent.name}" has a ${intent.boundary.semantics.name} boundary that can't be keyed for pairing (function-call boundaries need package + exportPath); it was not checked against code.`,
+          message: `Intent "${intent.name}" has a ${intent.boundary.semantics.name} boundary that can't be keyed for pairing (${whatWouldKeyIt(intent.boundary.semantics.name)}); it was not checked against code.`,
         },
       ],
       checked: [],
@@ -512,13 +584,39 @@ function compareIntentToImpl(
 ): IntentFinding[] {
   const findings: IntentFinding[] = [];
   const ref = codeRef(impl);
+  const calls = boundaryCalls(impl);
   const codeOutcomes = impl.transitions
-    .map(toCodeOutcome)
+    .map((t) => toCodeOutcome(t, calls))
     .filter((o): o is CodeOutcome => o !== null);
+  const everyEffect = impl.transitions.flatMap(codeEffectsOf);
 
   for (const outcome of intent.outcomes) {
-    const matches = codeOutcomes.filter((co) => outcomeMatches(outcome, co));
-    if (matches.length === 0) {
+    // An outcome that says only what it resulted in has no terminal to
+    // narrow by, so its effects are checked against the whole unit.
+    const reached =
+      outcome.kind === "effect"
+        ? everyEffect
+        : codeOutcomes
+            .filter((co) => outcomeMatches(outcome, co))
+            .flatMap((co) => co.effects);
+    for (const effect of outcome.effects) {
+      if (reached.some((made) => effectMatches(effect, made))) {
+        continue;
+      }
+      findings.push({
+        kind: "uncoveredOutcome",
+        severity: "error",
+        boundary,
+        intent: { name: intent.name, outcomeId: outcome.id },
+        code: ref,
+        message: `Intent "${intent.name}" declares that ${outcome.id} results in ${describeEffect(effect)} at ${boundary}; no transition of ${impl.identity.name} does that.`,
+      });
+    }
+    if (outcome.kind === "effect") {
+      continue;
+    }
+    const ending = codeOutcomes.filter((co) => outcomeMatches(outcome, co));
+    if (ending.length === 0) {
       findings.push({
         kind: "uncoveredOutcome",
         severity: "error",
@@ -526,6 +624,32 @@ function compareIntentToImpl(
         intent: { name: intent.name, outcomeId: outcome.id },
         code: ref,
         message: `Intent "${intent.name}" declares ${describeOutcome(outcome)} at ${boundary}; ${impl.identity.name} has no transition that produces it.`,
+      });
+      continue;
+    }
+    // A `when` clause that says which boundary the branch read is the
+    // one part of the condition this pass can settle, so a declared
+    // outcome narrows to the branches that turn on what it said.
+    const stated = outcome.conditions.filter(
+      (c): c is IntentCondition & { at: IntentEffect } => c.at !== null,
+    );
+    const matches =
+      stated.length === 0
+        ? ending
+        : ending.filter((co) =>
+            stated.every((c) => conditionMet(c, co.turnsOn)),
+          );
+    if (matches.length === 0) {
+      const unmet = stated.find(
+        (c) => !ending.some((co) => conditionMet(c, co.turnsOn)),
+      );
+      findings.push({
+        kind: "uncoveredOutcome",
+        severity: "error",
+        boundary,
+        intent: { name: intent.name, outcomeId: outcome.id },
+        code: ref,
+        message: `Intent "${intent.name}" declares ${describeOutcome(outcome)} at ${boundary} when ${unmet?.said ?? outcome.when}; ${impl.identity.name} produces it on a different condition.`,
       });
       continue;
     }
@@ -592,11 +716,94 @@ function compareIntentToImpl(
     });
   }
 
+  // An intent listing three writes on a unit doing four has one nobody
+  // wrote down, the same open-specification case an undeclared status
+  // is, so it gets the same severity.
+  const declaredEffects = intent.outcomes.flatMap((o) => o.effects);
+  const said = new Set<string>();
+  for (const made of everyEffect) {
+    const spelled = `${made.does} ${made.label}`;
+    if (
+      said.has(spelled) ||
+      declaredEffects.some((effect) => effectMatches(effect, made))
+    ) {
+      continue;
+    }
+    said.add(spelled);
+    findings.push({
+      kind: "undeclaredOutcome",
+      severity: "info",
+      boundary,
+      intent: { name: intent.name },
+      code: ref,
+      message: `${impl.identity.name} ${spelled} at ${boundary}; intent "${intent.name}" does not declare it.`,
+    });
+  }
+
   return findings;
 }
 
-function toCodeOutcome(t: Transition): CodeOutcome | null {
+/**
+ * Whether an effect the code makes is the one the intent declared. The
+ * boundary is resolved with `namesBoundary`, the matcher that resolves
+ * what somebody types at `suss ask`, so a document and a question that
+ * spell a store the same way pick out the same one.
+ */
+function effectMatches(declared: IntentEffect, made: CodeEffect): boolean {
+  return (
+    declared.does === made.does &&
+    namesBoundary(declared.names, made.binding) &&
+    statesAll(declared.fields, made.fields) &&
+    statesAll(declared.by, made.by)
+  );
+}
+
+/**
+ * Whether the access covers every column the intent stated. An access
+ * that states none is unread rather than empty: no pack parses a
+ * DynamoDB UpdateExpression, so calling that a mismatch would report
+ * working code for a gap in extraction. One that asked for all of them
+ * covers whatever the intent stated.
+ */
+function statesAll(declared: string[], made: string[]): boolean {
+  if (
+    declared.length === 0 ||
+    made.length === 0 ||
+    made.includes(EVERY_FIELD)
+  ) {
+    return true;
+  }
+  return declared.every((one) => made.includes(one));
+}
+
+/**
+ * Whether the branch reaching an outcome turns on what the intent's
+ * `when` said. The boundary resolves through `namesBoundary`, the same
+ * matcher a declared effect and `suss ask` use, and `finds` has to
+ * agree when the clause states it.
+ *
+ * Only a clause that says which boundary gets here; the rest are prose
+ * to this pass, and the README says so.
+ */
+function conditionMet(
+  declared: IntentCondition & { at: IntentEffect },
+  turnsOn: BoundaryGuard[],
+): boolean {
+  return turnsOn.some(
+    (guard) =>
+      guard.does === declared.at.does &&
+      namesBoundary(declared.at.names, guard.binding) &&
+      (declared.finds === null || declared.finds === guard.polarity),
+  );
+}
+
+function toCodeOutcome(
+  t: Transition,
+  calls: Map<string, BoundaryCall>,
+): CodeOutcome | null {
   const output = t.output;
+  const effects = codeEffectsOf(t);
+  const turnsOn = boundaryGuardsOf(t, calls);
   if (output.type === "response") {
     const status =
       output.statusCode !== null && output.statusCode.type === "literal"
@@ -607,6 +814,8 @@ function toCodeOutcome(t: Transition): CodeOutcome | null {
       status: status !== null && Number.isFinite(status) ? status : null,
       body: output.body ?? null,
       errorType: null,
+      effects,
+      turnsOn,
     };
   }
   if (output.type === "return") {
@@ -615,6 +824,8 @@ function toCodeOutcome(t: Transition): CodeOutcome | null {
       status: null,
       body: output.value,
       errorType: null,
+      effects,
+      turnsOn,
     };
   }
   if (output.type === "throw") {
@@ -623,9 +834,57 @@ function toCodeOutcome(t: Transition): CodeOutcome | null {
       status: null,
       body: null,
       errorType: output.exceptionType,
+      effects,
+      turnsOn,
     };
   }
   return null;
+}
+
+/** One verb and one boundary this transition reaches. */
+interface CodeEffect {
+  does: Relation;
+  binding: BoundaryBinding;
+  /** How a report writes that boundary, for a message about it. */
+  label: string;
+  /** The columns the access states, empty when it states none. */
+  fields: string[];
+  /** What the access picks the item out by, empty when it states none. */
+  by: string[];
+}
+
+function codeEffectsOf(t: Transition): CodeEffect[] {
+  const reached: CodeEffect[] = [];
+  for (const effect of t.effects) {
+    if (effect.type !== "interaction") {
+      continue;
+    }
+    // The container an access written under a relation reaches comes
+    // from the provider's contract, which this pass never loads.
+    if (goesThroughRelation(effect.interaction)) {
+      continue;
+    }
+    const label = displayLabel(effect.binding);
+    const touched = accessDetail(effect.interaction);
+    for (const does of relationsOf(effect.interaction)) {
+      reached.push({ does, binding: effect.binding, label, ...touched });
+    }
+  }
+  return reached;
+}
+
+/** What a storage access states about the columns; nothing for any other class. */
+function accessDetail(interaction: Interaction): {
+  fields: string[];
+  by: string[];
+} {
+  if (interaction.class !== "storage-access") {
+    return { fields: [], by: [] };
+  }
+  return {
+    fields: interaction.fields,
+    by: interaction.selector ?? [],
+  };
 }
 
 function outcomeMatches(intent: IntentOutcome, code: CodeOutcome): boolean {
@@ -648,18 +907,26 @@ function outcomeMatches(intent: IntentOutcome, code: CodeOutcome): boolean {
 }
 
 /**
- * Best-effort label for a boundary that has no key, enough for the
- * reader of an unkeyableBoundary finding to locate the intent doc's
- * boundary block, without pretending to be a pairing key.
+ * What each protocol needs before an intent doc written against one of
+ * its boundaries can be paired, in the doc author's terms. The
+ * drafter says the same thing about a boundary it could not write.
  */
-function unkeyedBoundaryLabel(binding: BoundaryBinding): string {
-  const semantics = binding.semantics;
-  if (semantics.name === "function-call") {
-    const target = semantics.module ?? semantics.package ?? "?";
-    return `fn:${target}::${semantics.exportName ?? "?"}`;
-  }
-  return semantics.name;
+export function whatWouldKeyIt(protocol: Semantics["name"]): string {
+  return WHAT_KEYS[protocol];
 }
+
+const WHAT_KEYS: Record<Semantics["name"], string> = {
+  rest: "a REST boundary needs a method and a path",
+  "function-call": "a function-call boundary needs package + exportPath",
+  "message-bus": "a message-bus boundary needs a channel",
+  storage:
+    "a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead",
+  "graphql-resolver": "a resolver needs a type name and a field name",
+  "graphql-operation": "an operation pairs by document rather than by key",
+  "runtime-config":
+    "a runtime-config boundary needs a deployment target and an instance name",
+  metric: "a metric needs a system and a type",
+};
 
 function describeOutcome(outcome: IntentOutcome): string {
   if (outcome.kind === "response") {
@@ -672,3 +939,16 @@ function describeOutcome(outcome: IntentOutcome): string {
   }
   return "a return value";
 }
+
+function describeEffect(effect: IntentEffect): string {
+  const detail = [
+    effect.fields.length > 0 ? `of ${effect.fields.join(", ")}` : null,
+    effect.by.length > 0 ? `by ${effect.by.join(", ")}` : null,
+  ].filter((part) => part !== null);
+  return [EFFECT_PHRASE[effect.does], effect.names, ...detail].join(" ");
+}
+
+const EFFECT_PHRASE: Record<EffectRelation, string> = {
+  reads: "a read of",
+  writes: "a write to",
+};

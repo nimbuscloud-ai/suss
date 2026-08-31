@@ -6,12 +6,13 @@ import { describe, expect, it } from "vitest";
 
 import { restBinding, withWrapperMetadata } from "@suss/behavioral-ir";
 
-import { inspect, inspectDiff } from "./inspect.js";
+import { formatCondition, inspect, inspectDiff } from "./inspect.js";
 import { runCli } from "./run.js";
 
 import type {
   BehavioralSummary,
   Transition,
+  ValueRef,
   WrapperMetadata,
 } from "@suss/behavioral-ir";
 
@@ -319,5 +320,78 @@ describe("inspect --diff, human output", () => {
       const { output } = captureStdout(() => inspectDiff(paths));
       expect(output).toContain("No behavioral changes.");
     });
+  });
+});
+
+describe("formatCondition", () => {
+  const id: ValueRef = {
+    type: "input",
+    inputRef: "request.params.id",
+    path: [],
+  };
+
+  it("takes a double negation back off", () => {
+    expect(
+      formatCondition({
+        type: "negation",
+        operand: {
+          type: "negation",
+          operand: { type: "truthinessCheck", subject: id, negated: false },
+        },
+      }),
+    ).toBe("request.params.id");
+  });
+
+  it("flips a truthiness or null check rather than wrapping it", () => {
+    expect(
+      formatCondition({
+        type: "negation",
+        operand: { type: "truthinessCheck", subject: id, negated: false },
+      }),
+    ).toBe("!request.params.id");
+    expect(
+      formatCondition({
+        type: "negation",
+        operand: { type: "nullCheck", subject: id, negated: false },
+      }),
+    ).toBe("request.params.id != null");
+  });
+
+  it("wraps anything else it cannot flip", () => {
+    expect(
+      formatCondition({
+        type: "negation",
+        operand: {
+          type: "comparison",
+          left: id,
+          op: "eq",
+          right: { type: "literal", value: "x" },
+        },
+      }),
+    ).toBe('!(request.params.id === "x")');
+  });
+
+  it("writes a call, a property check and a compound as the code has them", () => {
+    expect(
+      formatCondition({ type: "call", callee: "isAdmin", args: [id] }),
+    ).toBe("isAdmin(request.params.id)");
+    expect(
+      formatCondition({
+        type: "propertyExists",
+        subject: id,
+        property: "role",
+        negated: true,
+      }),
+    ).toBe('!request.params.id.has("role")');
+    expect(
+      formatCondition({
+        type: "compound",
+        op: "or",
+        operands: [
+          { type: "truthinessCheck", subject: id, negated: false },
+          { type: "truthinessCheck", subject: id, negated: true },
+        ],
+      }),
+    ).toBe("request.params.id || !request.params.id");
   });
 });

@@ -52,7 +52,12 @@ export { MetricSemanticsSchema } from "./semantics/metric.js";
 export { SemanticsSchema } from "./semantics/registry.js";
 export { RestSemanticsSchema } from "./semantics/rest.js";
 export { RuntimeConfigSemanticsSchema } from "./semantics/runtimeConfig.js";
-export { StorageSemanticsSchema } from "./semantics/storage.js";
+export {
+  EVERY_FIELD,
+  StorageSemanticsSchema,
+  storageContainerLabel,
+  storageLabel,
+} from "./semantics/storage.js";
 export { semconvAttributes } from "./semconv.js";
 
 export type {
@@ -147,6 +152,12 @@ export {
   referenceOf,
 } from "./boundaryName.js";
 export {
+  bindingTokens,
+  namesBoundary,
+  namesBoundaryExactly,
+  spellingTokens,
+} from "./boundarySpelling.js";
+export {
   busesAgree,
   type Channel,
   channelsPair,
@@ -156,6 +167,12 @@ export {
 } from "./channel.js";
 export { codeScopePath, fileInCodeScope } from "./codeScope.js";
 export { type DispatchTable, dispatchByType } from "./dispatch.js";
+export {
+  type EffectRelation,
+  EffectRelationSchema,
+  type Relation,
+  RelationSchema,
+} from "./relation.js";
 export {
   methodsAgree,
   normalizePath,

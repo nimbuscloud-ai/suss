@@ -22,6 +22,7 @@ import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { intentDraft } from "./intentDraftCommand.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
+import { prdDraft } from "./prdDraftCommand.js";
 import { stubDraft } from "./stubDraftCommand.js";
 import { installedVersion, printUpdateNoticeIfBehind } from "./updateNotice.js";
 import { UsageError } from "./usageError.js";
@@ -45,6 +46,7 @@ Usage:
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
   suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
   suss infer intent --from <summaries.json> [-o <directory> | --into <directory>]
+  suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
   suss --version
 
 Commands:
@@ -67,7 +69,9 @@ Commands:
             observed calls into the package. "infer intent" writes one
             boundary intent doc per boundary in a summaries file, saying
             what the code does today, for you to turn into what the team
-            meant.
+            meant. "infer prd" reads those once they are curated and
+            writes a PRD per boundary, one scenario per outcome, for you
+            to say why each is there.
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -792,7 +796,7 @@ function runInfer(args: string[]): number {
     process.stderr.write(
       sub === undefined
         ? "infer needs the artifact to draft. Try: suss infer stub <package>\n"
-        : `There is no "infer ${sub}". infer has stub and intent.\n`,
+        : `There is no "infer ${sub}". infer has stub, intent and prd.\n`,
     );
     return 1;
   }
@@ -803,6 +807,7 @@ function runInfer(args: string[]): number {
 const INFER_KINDS: Record<string, (args: string[]) => number> = {
   stub: runInferStub,
   intent: runInferIntent,
+  prd: runInferPrd,
 };
 
 function runInferStub(args: string[]): number {
@@ -850,6 +855,30 @@ function runInferIntent(args: string[]): number {
   }
 
   return intentDraft({
+    from: values.from,
+    ...(values.out !== undefined ? { out: values.out } : {}),
+    ...(values.into !== undefined ? { into: values.into } : {}),
+  });
+}
+
+function runInferPrd(args: string[]): number {
+  const { values } = parseArgs({
+    args,
+    options: {
+      from: { type: "string" },
+      out: { type: "string", short: "o" },
+      into: { type: "string" },
+    },
+  });
+
+  if (values.from === undefined) {
+    process.stderr.write(
+      "infer prd needs --from, the curated boundary intent to read. Try: suss infer prd --from intent/\n",
+    );
+    return 1;
+  }
+
+  return prdDraft({
     from: values.from,
     ...(values.out !== undefined ? { out: values.out } : {}),
     ...(values.into !== undefined ? { into: values.into } : {}),

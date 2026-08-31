@@ -15,13 +15,18 @@
 // Design notes:
 //   - Boundaries reuse @suss/ir-core's transport/semantics vocabulary,
 //     so intent and behaviour describe the same boundary the same way.
-//   - A transition's outcome is one of `response` (REST: status + body),
-//     `returns` (a function/handler return value), or `throws` (an
-//     error outcome). REST endpoints use `response`; function-call
-//     boundaries (suss's own surface, and anything non-HTTP) use
-//     `returns` / `throws`. This is what lets suss dogfood itself.
+//   - A transition says how it ends (`response`, `returns` or `throws`)
+//     and what it did (`results`). The README beside this file works
+//     through both halves and why a queue consumer needs the second.
 
 import { z } from "zod";
+
+import {
+  type EffectRelation,
+  EffectRelationSchema,
+  MessageBusSemanticsSchema,
+  StorageSemanticsSchema,
+} from "@suss/ir-core";
 
 // ---------------------------------------------------------------------------
 // Provenance: how this intent doc came to exist. Findings against
@@ -36,8 +41,17 @@ export const IntentSourceSchema = z
 /** The provenance of a doc `suss infer` wrote and nobody has curated. */
 const UNCURATED_SOURCE = "inferred";
 
-/** The fields somebody supplies while curating, which the code cannot. */
-const CURATED_FIELDS = ["purpose", "audience"];
+/**
+ * The fields somebody supplies while curating, which the code cannot.
+ * A boundary document leaves the first three; a PRD leaves those and
+ * the words of every scenario.
+ */
+const CURATED_FIELDS = ["title", "purpose", "audience", "when", "expect"];
+
+/** A scenario's blank arrives as `scenarios.0.when`, so read the last part. */
+function blankIn(field: string): string {
+  return field.slice(field.lastIndexOf(".") + 1);
+}
 
 /**
  * The blanks a draft is still waiting on, given which fields its schema
@@ -55,13 +69,14 @@ export function blanksLeftEmpty(
   if ((doc as { source?: unknown }).source !== UNCURATED_SOURCE) {
     return [];
   }
+  const blanks = failedFields.map(blankIn);
   if (
-    failedFields.length === 0 ||
-    !failedFields.every((field) => CURATED_FIELDS.includes(field))
+    blanks.length === 0 ||
+    !blanks.every((field) => CURATED_FIELDS.includes(field))
   ) {
     return [];
   }
-  return CURATED_FIELDS.filter((blank) => failedFields.includes(blank));
+  return CURATED_FIELDS.filter((blank) => blanks.includes(blank));
 }
 
 // ---------------------------------------------------------------------------
@@ -143,9 +158,31 @@ const FunctionCallBoundarySchema = z.object({
   exportPath: z.array(z.string()).optional(),
 });
 
+// Both fields come off the ir-core schema, so a bus added there is
+// authorable here with no edit. A doc that leaves the channel out is
+// authorable and unpairable, and the checker is what says so.
+const MessageBusBoundarySchema = z.object({
+  semantics: z.literal("message-bus"),
+  messageBus: MessageBusSemanticsSchema.shape.messageBus,
+  channel: MessageBusSemanticsSchema.shape.channel.default(null),
+});
+
+// Same reuse, and the same pending state for a different reason: a
+// store has no identity key at all, so every storage boundary intent
+// is authorable and unpairable. See the README.
+const StorageBoundarySchema = z.object({
+  semantics: z.literal("storage"),
+  storageSystem: StorageSemanticsSchema.shape.storageSystem,
+  scope: StorageSemanticsSchema.shape.scope.default("default"),
+  container: StorageSemanticsSchema.shape.container.default(null),
+  accessPath: StorageSemanticsSchema.shape.accessPath.default(null),
+});
+
 export const BoundarySchema = z.discriminatedUnion("semantics", [
   RestBoundarySchema,
   FunctionCallBoundarySchema,
+  MessageBusBoundarySchema,
+  StorageBoundarySchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -173,23 +210,126 @@ function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess((v) => (v === null ? {} : v), schema);
 }
 
+/** One effect, written `- writes: postgresql:invoices`. */
+export type DeclaredEffect = Partial<Record<EffectRelation, string>> & {
+  /** The columns it touches, when the outcome turns on which ones. */
+  fields?: string[];
+  /** What it picks the item out by. */
+  by?: string | string[];
+};
+
+/** One field, or several, so a single one is written on the line. */
+const ONE_OR_MORE = z.union([
+  z.string().min(1),
+  z.array(z.string().min(1)).min(1),
+]);
+
+// The verb is the key and the boundary is the string `suss ask` takes.
+// The members come off ir-core's verbs, so one added there is
+// authorable here with no edit.
+const EFFECT_BY_VERB = EffectRelationSchema.options.map((verb) =>
+  z.strictObject({
+    [verb]: z.string().min(1),
+    fields: z.array(z.string().min(1)).min(1).optional(),
+    by: ONE_OR_MORE.optional(),
+  }),
+) as unknown as [
+  z.ZodType<DeclaredEffect>,
+  ...Array<z.ZodType<DeclaredEffect>>,
+];
+
+const EffectOutcomeSchema = z.union(EFFECT_BY_VERB);
+
+// ---------------------------------------------------------------------------
+// when: what the branch turned on, in the same verbs `results` takes.
+// ---------------------------------------------------------------------------
+
+/** The words a clause has for what was true of its subject. */
+const CHECKS = {
+  /** What a lookup came back with. */
+  finds: z.enum(["nothing", "something"]),
+  /** What state the value was in: `set`, `missing`, `null`, `a string`. */
+  is: z.string().min(1),
+  /** The value it was equal to. */
+  equals: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  /** A property it had. */
+  has: z.string().min(1),
+} as const;
+
+/** Which value the clause is about: a boundary, or something the caller sent. */
+const SUBJECT_KEYS: ReadonlyArray<EffectRelation | "input"> = [
+  ...EffectRelationSchema.options,
+  "input",
+];
+
+/**
+ * A clause says which subject, says at most one thing about it, and can
+ * narrow that with `where`. A guard that maps to none of this stays the
+ * sentence the drafter wrote.
+ */
+const WHEN_CLAUSE_BY_SUBJECT = SUBJECT_KEYS.map((key) =>
+  z
+    .strictObject({
+      [key]: z.string().min(1),
+      where: z.string().min(1).optional(),
+      ...Object.fromEntries(
+        Object.entries(CHECKS).map(([check, schema]) => [
+          check,
+          schema.optional(),
+        ]),
+      ),
+    })
+    .refine(
+      (clause) =>
+        Object.keys(CHECKS).filter(
+          (check) => (clause as Record<string, unknown>)[check] !== undefined,
+        ).length <= 1,
+      {
+        message: `a when clause says at most one of ${Object.keys(CHECKS).join(", ")} about its subject`,
+      },
+    ),
+) as unknown as [z.ZodType<WhenClause>, ...Array<z.ZodType<WhenClause>>];
+
+/** One clause of a structured `when`, or the sentence for a guard that maps to none. */
+export type WhenClause =
+  | string
+  | ({ where?: string } & Partial<Record<EffectRelation | "input", string>> & {
+        finds?: "nothing" | "something";
+        is?: string;
+        equals?: string | number | boolean | null;
+        has?: string;
+      });
+
+const WhenSchema = z.union([
+  z.string().min(1),
+  z.array(z.union([z.string().min(1), ...WHEN_CLAUSE_BY_SUBJECT])).min(1),
+]);
+
 const BoundaryTransitionSchema = z
   .object({
     id: z.string().min(1),
-    when: z.string().min(1),
+    when: WhenSchema,
     response: emptyIfNull(ResponseOutcomeSchema).optional(),
     returns: emptyIfNull(ReturnsOutcomeSchema).optional(),
     throws: emptyIfNull(ThrowsOutcomeSchema).optional(),
+    results: z.array(EffectOutcomeSchema).min(1).optional(),
   })
-  .refine(
-    (t) =>
-      [t.response, t.returns, t.throws].filter((o) => o !== undefined)
-        .length === 1,
-    {
-      message:
-        "each transition must declare exactly one outcome: response, returns, or throws",
-    },
-  );
+  .refine((t) => endingsOf(t).length <= 1, {
+    message:
+      "a transition ends one way: give it at most one of response, returns, or throws",
+  })
+  .refine((t) => endingsOf(t).length === 1 || t.results !== undefined, {
+    message:
+      "each transition must declare an outcome: response, returns, throws, or the effects it results in",
+  });
+
+function endingsOf(t: {
+  response?: unknown;
+  returns?: unknown;
+  throws?: unknown;
+}): unknown[] {
+  return [t.response, t.returns, t.throws].filter((o) => o !== undefined);
+}
 
 // ---------------------------------------------------------------------------
 // kind: boundary: system intent for one boundary.
@@ -254,8 +394,12 @@ export type IntentDoc = z.infer<typeof IntentDocSchema>;
 export type BoundaryIntent = z.infer<typeof BoundaryIntentSchema>;
 export type Prd = z.infer<typeof PrdSchema>;
 export type PrdScenario = z.infer<typeof PrdScenarioSchema>;
+export type When = z.infer<typeof WhenSchema>;
 export type Boundary = z.infer<typeof BoundarySchema>;
+/** A boundary block as somebody writes it, before defaults are put in. */
+export type AuthoredBoundary = z.input<typeof BoundarySchema>;
 export type BoundaryTransition = z.infer<typeof BoundaryTransitionSchema>;
+export type EffectOutcome = z.infer<typeof EffectOutcomeSchema>;
 export type BodyShape = z.infer<typeof BodyShapeSchema>;
 export type IntentSource = z.infer<typeof IntentSourceSchema>;
 export type PrimitiveTypeName = z.infer<typeof PrimitiveTypeName>;

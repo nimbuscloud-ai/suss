@@ -489,6 +489,47 @@ describe("boundaryLabel fallbacks", () => {
   });
 });
 
+describe("how a store is spelled", () => {
+  const store = (opts: {
+    scope?: string;
+    container?: string | null;
+    accessPath?: string | null;
+  }) =>
+    storageBinding({
+      recognition: "prisma",
+      storageSystem: "postgresql",
+      scope: opts.scope ?? "default",
+      container: opts.container === undefined ? "invoices" : opts.container,
+      accessPath: opts.accessPath ?? null,
+    });
+
+  it("writes the system and the container a reader types back", () => {
+    expect(boundaryLabel(store({}))).toBe("postgresql:invoices");
+  });
+
+  it("keeps a scope that is not the default, which tells two apart", () => {
+    expect(boundaryLabel(store({ scope: "billing" }))).toBe(
+      "postgresql:billing/invoices",
+    );
+  });
+
+  it("writes a secondary way in after the container it belongs to", () => {
+    expect(boundaryLabel(store({ accessPath: "by-customer" }))).toBe(
+      "postgresql:invoices#by-customer",
+    );
+  });
+
+  it("says so when the source states a container it could not settle", () => {
+    expect(boundaryLabel(store({ container: null }))).toBe(
+      "postgresql:<unnamed container>",
+    );
+  });
+
+  it("still has no key, because grounding is what pairs one", () => {
+    expect(boundaryKey(store({}))).toBeNull();
+  });
+});
+
 describe("a metric boundary", () => {
   const metric = (metricType: string | null) =>
     metricBinding({

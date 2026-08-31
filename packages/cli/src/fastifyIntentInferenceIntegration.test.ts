@@ -132,7 +132,7 @@ describe("extract, infer intent, check", () => {
     expect(checked.exit).toBe(1);
     expect(checked.stderr).toContain(`6 intent doc(s) in ${intentDir}`);
     expect(checked.stderr).toContain(
-      "are inferred drafts with purpose and audience still blank",
+      "are inferred drafts with blanks still in them",
     );
     expect(checked.stderr).toContain("get-users-id.intent.yaml");
     expect(checked.stderr).toContain('set source to "inferred, curated"');
