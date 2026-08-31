@@ -301,12 +301,6 @@ const BY_DEPENDENCY: Array<{
     packageName: "@suss/framework-fastapi",
     kind: "framework",
     language: "python",
-    configuration: {
-      file: "suss.fastapi.json",
-      example: { wrapperModules: ["myapp.wrappers.api"] },
-      required: false,
-      why: "the modules your own code re-exports the router and app constructors from. FastAPI's own module is always read, so leave this out if your routes import from it directly.",
-    },
   },
   {
     ecosystem: "pypi",
@@ -315,12 +309,6 @@ const BY_DEPENDENCY: Array<{
     packageName: "@suss/framework-flask-restx",
     kind: "framework",
     language: "python",
-    configuration: {
-      file: "suss.flask-restx.json",
-      example: { wrapperModules: ["myapp.wrappers.restx"] },
-      required: false,
-      why: "the modules your own code re-exports the route decorator from. The library's own module is always read, so leave this out if your resources import from it directly.",
-    },
   },
   {
     ecosystem: "rubygems",

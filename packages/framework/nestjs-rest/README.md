@@ -12,15 +12,20 @@ Framework pack for [NestJS](https://nestjs.com/) REST controllers built on `@nes
 
 ## Options
 
-One option, for controllers that do not use `@Controller` by that name at the call site.
+A controller that does not use `@Controller` by that name at the call site is declared in a dependency stub under `suss/stubs/`:
 
-```json
-{
-  "classDecorators": ["ApiController"]
-}
+```yaml
+# suss/stubs/acme-http-kit.yaml
+package: "@acme/http-kit"
+statements:
+  - kind: composes-decorator
+    export: ApiController
+    composes: { module: "@nestjs/common", name: Controller }
 ```
 
-- `classDecorators`: extra class decorators this project composes `@Controller()` into. A wrapper written inside the project needs no entry, because the adapter resolves a class decorator to the function behind it and accepts that function when its body calls `Controller` from `@nestjs/common`. What this option is for is a wrapper whose body is not in the project, so there is nothing to read. The framework's own `Controller` is tried first, then the entries here in order, and the first match wins.
+A wrapper written inside the project needs no statement, because the adapter resolves a class decorator to the function behind it and accepts that function when its body calls `Controller` from `@nestjs/common`. What a stub is for is a wrapper whose body is not in the project, so there is nothing to read. The framework's own `Controller` is tried first, then the stubbed decorators in order, and the first match wins.
+
+The `classDecorators` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ## Not covered yet
 

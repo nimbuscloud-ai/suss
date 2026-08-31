@@ -59,11 +59,15 @@ Filling the blanks takes the package's own source. That is a job for whoever can
 
 The loader compares the version in a stub's `from:` line against the installed package and prints one line when they differ, so a stub written against 1.2.0 gets re-checked when the project moves to 1.4.2.
 
-## The options stubs replace
+## The options stubs replaced
 
-Fourteen pack options stated dependency facts before stubs existed: `classDecorators` on the NestJS packs, `registrationHelpers` on express, fastify, and hono, `producers` on aws-sqs and aws-eventbridge, `requestFunctions` on aws-dynamodb, `subjectFactories` on aws-lambda, `factories` on axios, `wrapperModules` on fastapi and flask-restx, and `baseClassNames` on graphql-ruby.
+Nine pack options stated dependency facts before stubs existed: `classDecorators` on the NestJS packs, `producers` on aws-sqs and aws-eventbridge, `factories` on axios, `wrapperModules` on fastapi and flask-restx, and `baseClassNames` on graphql-ruby.
 
-They still work, and a project configuring one sees a pointer at load time. One release from now they go. The difference is more than location: an option configures one pack, while a stub states the fact once and every pack that consumes it is fed, hand-written entries first.
+0.20.0 routed them through stubs and printed a pointer for a project still configuring one. 0.21.0 removed them, so a pack config setting one stops the run and says which stub kind takes it over. The difference is more than location: an option configures one pack, while a stub states the fact once and every pack that consumes it is fed, hand-written entries first.
+
+The stub statement feeds the pack through the same option key, which is why a pack still declares it. What went away is your config file setting it.
+
+Three options were listed alongside those nine when stubs shipped, and they stay in pack config: `registrationHelpers` on express, fastify and hono, `requestFunctions` on aws-dynamodb, and `subjectFactories` on aws-lambda. Each describes a function the project wrote itself, which is the case the section below says a stub is not for. A stub is keyed by a package, so it cannot spell a helper reached by a relative import at all.
 
 Editing a stub invalidates the extraction cache the same way editing pack config does.
 

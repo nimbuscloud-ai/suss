@@ -304,8 +304,9 @@ function extractDestructuredFields(
 export type SqsProducer = ConfiguredCallSpec;
 
 /**
- * What `-f aws-sqs=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * What this pack's options may say. The CLI parses a
+ * `-f aws-sqs=config.json` file against it, minus the keys a dependency
+ * stub fills, which a config file may not set.
  */
 export const optionsSchema = z
   .object({

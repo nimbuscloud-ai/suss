@@ -28,8 +28,9 @@ import { z } from "zod";
 import type { PythonPack } from "@suss/adapter-python";
 
 /**
- * What `-f fastapi=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * What this pack's options may say. The CLI parses a
+ * `-f fastapi=config.json` file against it, minus the keys a dependency
+ * stub fills, which a config file may not set.
  */
 export const optionsSchema = z
   .object({

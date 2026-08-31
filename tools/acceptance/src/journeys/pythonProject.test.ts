@@ -7,7 +7,7 @@ import {
   fixture,
   runSuss,
   workspace,
-  writePackConfig,
+  writeStub,
 } from "../harness.js";
 
 const FASTAPI_ROUTES = [
@@ -95,7 +95,7 @@ describe("read a flask-restx service through its own wrapper", () => {
   const project = copyOfFixture("python-webapp");
   const summariesFile = path.join(project, "summaries", "code.json");
 
-  it("reads nothing in the wrapped route files until the wrapper module is named", () => {
+  it("reads nothing in the wrapped route files until a stub declares the wrapper", () => {
     const extract = runSuss(
       [
         "extract",
@@ -128,10 +128,12 @@ describe("read a flask-restx service through its own wrapper", () => {
     }
   });
 
-  it("finds every route once the wrapper is named", () => {
-    const config = writePackConfig(project, "flask-restx", {
-      wrapperModules: ["myapp.wrappers.restx"],
-    });
+  it("finds every route once a stub says what the wrapper re-exports", () => {
+    writeStub(
+      project,
+      "restx-wrapper",
+      "package: myapp.wrappers.restx\nstatements:\n  - kind: re-exports\n    of: flask_restx\n",
+    );
 
     const extract = runSuss(
       [
@@ -139,7 +141,7 @@ describe("read a flask-restx service through its own wrapper", () => {
         "--lang",
         "python",
         "-f",
-        `flask-restx=${path.basename(config)}`,
+        "flask-restx",
         "-o",
         "summaries/code.json",
       ],

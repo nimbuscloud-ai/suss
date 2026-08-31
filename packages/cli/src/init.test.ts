@@ -252,7 +252,7 @@ describe("formatInitReport", () => {
     const output = formatInitReport({
       root: "/project",
       tsconfig: null,
-      languages: ["typescript", "python"],
+      languages: ["typescript", "ruby"],
       suggestions: [
         {
           name: "hono",
@@ -262,16 +262,16 @@ describe("formatInitReport", () => {
           language: "typescript",
         },
         {
-          name: "flask-restx",
-          packageName: "@suss/framework-flask-restx",
-          because: "flask-restx in requirements.txt",
+          name: "graphql-ruby",
+          packageName: "@suss/framework-graphql-ruby",
+          because: "graphql in Gemfile.lock",
           kind: "framework",
-          language: "python",
+          language: "ruby",
           configuration: {
-            file: "suss.flask-restx.json",
-            example: { wrapperModules: ["myapp.wrappers.restx"] },
-            required: false,
-            why: "the modules your own code re-exports the route decorator from.",
+            file: "suss.graphql-ruby.json",
+            example: { root: "app/graphql" },
+            required: true,
+            why: "the directory your schema lives in.",
           },
         },
       ],
@@ -281,9 +281,9 @@ describe("formatInitReport", () => {
       "suss extract -f hono -o summaries/typescript.json",
     );
     expect(output).toContain(
-      "suss extract --lang python -f flask-restx=suss.flask-restx.json",
+      "suss extract --lang ruby -f graphql-ruby=suss.graphql-ruby.json",
     );
-    expect(output).toContain('{"wrapperModules":["myapp.wrappers.restx"]}');
+    expect(output).toContain('{"root":"app/graphql"}');
   });
 
   it("says what it could not read, so an empty answer is not mistaken for none", () => {

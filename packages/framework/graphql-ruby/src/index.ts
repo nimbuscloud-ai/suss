@@ -33,8 +33,9 @@ import { SCALAR_SHAPES } from "@suss/contract-graphql";
 import type { GraphqlObjectFields, RubyPack } from "@suss/adapter-ruby";
 
 /**
- * What `-f graphql-ruby=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * What this pack's options may say. The CLI parses a
+ * `-f graphql-ruby=config.json` file against it, minus the keys a dependency
+ * stub fills, which a config file may not set.
  */
 export const optionsSchema = z
   .object({

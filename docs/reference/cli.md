@@ -145,14 +145,14 @@ where the name resolves rather than something to install.
 
 Three of them read another language, so you run them with `--lang` or
 point them at a directory suss treats as that language, and they cannot
-run alongside a TypeScript pack. Two of them need you to tell them
+run alongside a TypeScript pack. One of them needs you to tell it
 something about your project, which you pass through
 `-f NAME=config.json`:
 
 | Name | Package | What it discovers |
 |---|---|---|
-| `fastapi` | `@suss/packs/fastapi` | FastAPI routes (Python): the verb comes from the decorator's attribute name, and router prefixes are composed one mount hop deep. `wrapperModules` is optional. |
-| `flask-restx` | `@suss/packs/flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. `wrapperModules` is optional. |
+| `fastapi` | `@suss/packs/fastapi` | FastAPI routes (Python): the verb comes from the decorator's attribute name, and router prefixes are composed one mount hop deep. |
+| `flask-restx` | `@suss/packs/flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. |
 | `graphql-ruby` | `@suss/packs/graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. It needs `root`, and reads nothing without it. |
 
 Five more names are built in the same way, and discover no units of
@@ -174,42 +174,20 @@ that name: `-f @acme/suss-pack` imports it as written, and
 ### Configuring a pack
 
 Write `-f <pack>=<config.json>` and the file's contents go to the pack
-as its options. Each pack documents what it accepts; the CLI passes the
-JSON through without reading it.
+as its options. The CLI parses the file against the pack's own schema
+before the pack runs, so a key nobody declared stops the run by name
+instead of reading as nothing.
 
-The message-bus packs use this to learn a project's own dispatcher. A
-service that sends every message through a wrapper writes no
-`SendMessageCommand`, so the pack sees nothing until it is told which
-call to read:
+A pack config says something about your own project: which database is
+behind a connection, which directory your schema lives in, which
+modules make a file worth reading. A fact about a package you depend on
+goes in a [dependency stub](/dependency-stubs) instead, and every pack
+that consumes it reads it from there.
 
-```json
-{
-  "producers": [
-    {
-      "module": "@acme/async",
-      "receiver": "CommandDispatcher",
-      "method": "dispatch",
-      "subjectArg": 0,
-      "bodyArg": 1
-    }
-  ]
-}
-```
-
-`module` is where the dispatcher's type is declared, `receiver` is that
-type's name, `method` is the call that sends, and the two indexes say
-which argument is the subject and which is the body. Leave
-`bodyArg` out for a batch method that takes a list of entries. Run it
-with `-f aws-sqs=packs/sqs.json`.
-
-The subject becomes the channel the producer sends on, so it pairs with
-the handler that uses the same subject. If the source does not write the
-subject as a string, suss records no effect at all: pairing on a guessed
-channel would point at the wrong consumer.
-
-The DynamoDB pack takes a project's own request helper the same way. A
-service that signs and posts the request itself writes no command
-class, and the body it posts is the same object the command takes:
+The DynamoDB pack takes a request helper the project wrote itself. A
+service that signs and posts the request without the SDK never writes a
+command class, and the body it posts is the same object the command
+takes:
 
 ```ts
 await sendRequest(env, signer, "Query", {
@@ -251,37 +229,14 @@ at different depths, so leave `module` out there and use
 or through a file the project imports, makes a file worth reading.
 Above, that is the signing library the helper itself imports.
 
-Several other packs take a project's own wrappers the same way. A pack
-ships only what its own library defines, and these options are what a
-project uses when the adapter cannot follow the wrapper itself.
-
-Reach for them second. A NestJS decorator written in the project is
-already recognized without you having to list it, because the adapter
-resolves it to the function behind it and sees that calling it calls
-`@Resolver()` or `@Controller()`. What is left for these options is a
-wrapper whose body is not in the project, so there is nothing to read.
-
-Options that describe a dependency are giving way to
-[dependency stubs](/dependency-stubs), which state the same fact once
-for every pack that consumes it. Configuring one of them still works and
-prints a pointer; one release from now they go. `errorHelpers` stays,
-since it describes the project's own helpers.
-
-| Pack | Option | What it specifies |
-| --- | --- | --- |
-| `nestjs-rest` | `classDecorators` | Decorators composing `@Controller()` the adapter cannot follow |
-| `nestjs-graphql` | `classDecorators` | Decorators composing `@Resolver()` the adapter cannot follow |
-| `react-router` | `errorHelpers` | Helpers a loader throws HTTP errors through |
-| `aws-lambda` | `subjectFactories` | The config property where a project's handler factory puts its subject |
+Two more options work the same way, because each also describes code the
+project wrote. `registrationHelpers` on express, fastify and hono says
+what a helper of yours registers, and `subjectFactories` on aws-lambda
+says where your handler factory puts the subject its SQS consumer
+expects:
 
 ```json
-{ "classDecorators": ["WidgetController", "InternalController"] }
-```
-
-```json
-{
-  "subjectFactories": [{ "property": "subject" }]
-}
+{ "subjectFactories": [{ "property": "subject" }] }
 ```
 
 `property` is the key under which the factory's config object puts the
@@ -290,6 +245,49 @@ argument was the config by following the export back to the call that
 built it, so you do not have to list either one. Add `callees` or
 `argIndex` when two factories in one service put different things under
 the same property.
+
+Nine options used to state facts about a dependency here, and 0.21.0
+removed them. Setting one now stops the run and says which stub kind
+takes it over:
+
+| Pack | Option was | States it now |
+| --- | --- | --- |
+| `nestjs-rest`, `nestjs-graphql`, `nestjs-microservices` | `classDecorators` | `composes-decorator` |
+| `aws-sqs`, `aws-eventbridge` | `producers` | `performs-call` |
+| `axios` | `factories` | `performs-call` |
+| `fastapi`, `flask-restx` | `wrapperModules` | `re-exports` |
+| `graphql-ruby` | `baseClassNames` | `extends-base` |
+
+The message-bus dispatcher the `producers` option used to describe now
+reads like this. A service that sends every message through a wrapper
+never writes a `SendMessageCommand`, so the pack cannot see the send
+until the stub says which call performs it:
+
+```yaml
+# suss/stubs/acme-async.yaml
+package: "@acme/async"
+statements:
+  - kind: performs-call
+    system: aws.sqs
+    spec:
+      receiver: CommandDispatcher
+      method: dispatch
+      subjectArg: 0
+      bodyArg: 1
+```
+
+`receiver` is the name of the dispatcher's type, `method` is the call
+that sends, and the two indexes say which argument is the subject and
+which is the body. Leave `bodyArg` out for a batch method that takes a
+list of entries.
+
+The subject becomes the channel the producer sends on, so it pairs with
+the handler that uses the same subject. If the source does not write the
+subject as a string, suss does not record the effect at all: pairing on
+a guessed channel would point at the wrong consumer.
+
+`errorHelpers` on `react-router` stays a pack option, since it describes
+the project's own helpers rather than a package it depends on.
 
 ### Exit codes
 

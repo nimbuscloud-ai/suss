@@ -145,26 +145,30 @@ Parsing is tree-sitter compiled to WASM and shipped in the package.
 ### Configuring a pack
 
 Every built-in TypeScript pack needs nothing from you, because
-everything it matches on is something its library defines. Two of these
-three want a sentence about your project. Write it to a JSON file and
+everything it matches on is something its library defines. One of these
+three wants a sentence about your project. Write it to a JSON file and
 give the file name on the flag, which is how every pack takes
 configuration:
 
 ```bash
-npx suss extract --dir services/shop -f flask-restx=suss.flask-restx.json
+npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json
 ```
 
-`suss.flask-restx.json` contains what the pack documents, and nothing
+`suss.graphql-ruby.json` contains what the pack documents, and nothing
 else reads it:
 
 ```json
-{ "wrapperModules": ["myapp.wrappers.restx"] }
+{ "root": "app/graphql" }
 ```
 
 A pack that cannot work without a value says so and stops, rather than
 reading half a project quietly. Where an option gives a directory, a
 relative path is read relative to the config file itself, so the same
 file works whichever directory you run the command from.
+
+A pack config says something about your own project. A fact about a
+package you depend on, such as a module of yours that re-exports a
+framework, goes in a [dependency stub](/dependency-stubs) instead.
 
 You can still drive the adapters from a Node script, which is what to
 do when you want something the CLI does not expose. `extractPythonProject`
@@ -196,13 +200,22 @@ class TodoList:
     def post(self): ...
 ```
 
-`wrapperModules: ["myapp.wrappers.restx"]` points at that module, and
-the pack accepts a `route` decorator imported from it alongside one
-imported from `flask_restx` itself, which is always accepted. The pack
-hardcodes only what flask-restx defines. Your wrapper's name is your
-project's choice, so it arrives as configuration. An aliased import
-(`from myapp.wrappers.restx import route as api_route`) resolves the
-same way.
+A [dependency stub](/dependency-stubs) points at that module:
+
+```yaml
+# suss/stubs/restx-wrapper.yaml
+package: myapp.wrappers.restx
+statements:
+  - kind: re-exports
+    of: flask_restx
+```
+
+The pack then accepts a `route` decorator imported from your wrapper
+alongside one imported from `flask_restx` itself, which is always
+accepted. The pack hardcodes only what flask-restx defines. Your
+wrapper's name is your project's choice, so it arrives in the stub. An
+aliased import (`from myapp.wrappers.restx import route as api_route`)
+resolves the same way.
 
 Each HTTP-verb-named method on the class becomes its own route, with
 the verb from the method name and the path from the decorator's first
@@ -243,9 +256,9 @@ against a running app.
 
 ### What FastAPI reads
 
-`fastapiFramework()` takes the same `wrapperModules` option, for a
-module that re-exports FastAPI's own constructors, and most projects
-need none of it.
+The fastapi pack reads the same `re-exports` stub, for a module of
+yours that re-exports FastAPI's own constructors, and most projects
+never write one.
 
 - The verb comes from the decorator's own attribute name, so
   `@app.post("/orders")` is a POST. The app or router is recognized by
@@ -286,13 +299,31 @@ you say so outright. The walk reads every `.rb` file, skipping
 through class and module nesting, and suss does not follow `require`,
 so there is nothing here matching Python's import roots.
 
-The pack takes three options:
+The pack takes two options:
 
 | Option | Default | What it does |
 |---|---|---|
 | `root` | required | The directory a `mutation:` or `resolver:` reference resolves against, through Rails' constant-to-path convention. `Mutations::CampaignUpdate` is read from `<root>/mutations/campaign_update.rb`. Your layout is your project's, so there is no default, and the pack reads nothing without one. Written as a relative path, it is read relative to the config file it was written in. |
-| `baseClassNames` | the generated bases | Adds a base class of your own. The defaults cover every type-level base `rails g graphql:install` generates, the interface base included, and the adapter follows a class's whole ancestry, so an intermediate base of yours that leads to a generated one needs nothing here. What you pass is added to the defaults, not swapped for them. |
 | `camelize` | `true` | graphql-ruby's schema-wide default for exposing a snake_case symbol camelCased. Set it to `false` when your schema does. A `field` or `argument` call's own `camelize:` keyword still wins for that one name, the same as it does at runtime. |
+
+The base classes it reads are every type-level base `rails g
+graphql:install` generates, the interface base included, and the
+adapter follows a class's whole ancestry, so an intermediate base of
+yours that leads to a generated one needs nothing said about it. A base
+class that comes from a gem is one you add in a
+[dependency stub](/dependency-stubs):
+
+```yaml
+# suss/stubs/acme-graphql.yaml
+package: acme-graphql
+statements:
+  - kind: extends-base
+    class: Acme::GraphQL::AuthenticatedObject
+    extends: Acme::GraphQL::BaseObject
+```
+
+The pack then reads a class of yours that extends
+`Acme::GraphQL::BaseObject` as a set of resolvers.
 
 A class extending one of those base classes has each `field` call in
 its body turned into a resolver. The name is `Campaign.id`, from the

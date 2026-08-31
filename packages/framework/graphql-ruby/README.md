@@ -26,8 +26,6 @@ import { graphqlRubyFramework } from "@suss/framework-graphql-ruby";
 
 const pack = graphqlRubyFramework({
   root: path.join(repoRoot, "app/graphql"),
-  // A base class of your own that the generated ones do not lead to:
-  baseClassNames: ["Types::AuthenticatedObject"],
   // A schema that turns off graphql-ruby's own camelCase default:
   camelize: false,
 });
@@ -36,9 +34,23 @@ const pack = graphqlRubyFramework({
 The defaults cover every type-level base class `rails g graphql:install`
 generates, the interface base included, and the adapter follows a
 class's whole ancestry, so a project base between a type and
-`Types::BaseObject` needs no configuration. `baseClassNames` is for a
-base the walk cannot reach a generated one from, such as one that
-extends the library directly under another name.
+`Types::BaseObject` needs nothing said about it. A base the walk cannot
+reach a generated one from, such as one a gem defines under another
+name, goes in a dependency stub under `suss/stubs/`:
+
+```yaml
+# suss/stubs/acme-graphql.yaml
+package: acme-graphql
+statements:
+  - kind: extends-base
+    class: Acme::GraphQL::AuthenticatedObject
+    extends: Acme::GraphQL::BaseObject
+```
+
+The pack then reads a class extending `Acme::GraphQL::BaseObject` as a
+set of resolvers. The `baseClassNames` pack option said the same thing
+until 0.21.0 removed it. A config file setting it now stops the run and
+points here.
 
 ## Coverage
 

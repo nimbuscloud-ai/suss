@@ -15,8 +15,8 @@ const HTTP_METHODS = [
 ] as const;
 
 /**
- * A project function that builds an axios instance the way
- * axios.create(...) does, named through pack config rather than
+ * A function that builds an axios instance the way axios.create(...)
+ * does, declared in a dependency stub rather than
  * shipped as a default. A project that wraps axios.create in its
  * own helper, to set shared defaults across every service, writes no
  * axios.create(...) call at its own use sites, only a call to the
@@ -34,8 +34,9 @@ const clientFactory = z
 export type AxiosClientFactory = z.infer<typeof clientFactory>;
 
 /**
- * What `-f axios=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * What this pack's options may say. The CLI parses a
+ * `-f axios=config.json` file against it, minus the keys a dependency
+ * stub fills, which a config file may not set.
  */
 export const optionsSchema = z
   .object({
