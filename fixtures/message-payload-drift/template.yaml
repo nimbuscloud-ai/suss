@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Three queues, each with one producer and one consumer, for the check
+  that compares what a consumer reads off a message against what the
+  producers on that channel send.
+
+  PaidQueue disagrees: the producer sends data.id and the consumer
+  reads data.invoiceId. VoidedQueue agrees. RefundedQueue's consumer
+  passes the message on whole, so its read list is incomplete and
+  nothing should be reported about it.
+
+Resources:
+  PaidQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  VoidedQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  RefundedQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  PaidProducerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/paidProducer.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          PAID_QUEUE_URL: !Ref PaidQueue
+
+  PaidWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/paidWorker.handler
+      Runtime: nodejs20.x
+      Events:
+        FromPaid:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt PaidQueue.Arn
+
+  VoidedProducerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/voidedProducer.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          VOIDED_QUEUE_URL: !Ref VoidedQueue
+
+  VoidedWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/voidedWorker.handler
+      Runtime: nodejs20.x
+      Events:
+        FromVoided:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt VoidedQueue.Arn
+
+  RefundedProducerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/refundedProducer.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          REFUNDED_QUEUE_URL: !Ref RefundedQueue
+
+  RefundedWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/refundedWorker.handler
+      Runtime: nodejs20.x
+      Events:
+        FromRefunded:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt RefundedQueue.Arn

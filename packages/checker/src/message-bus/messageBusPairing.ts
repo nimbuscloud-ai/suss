@@ -6,11 +6,11 @@
  * queue through an env var and the template refers to it by CFN resource,
  * so pairing collapses that chain first and only then compares
  * channels. Comparison is on the subject, with the bus required to
- * agree only when both sides carry one; channelPairing.ts says why.
+ * agree only when both sides give one; channelPairing.ts says why.
  *
- * Message bodies are compared too, producer object literals against
- * consumer destructuring. Either side can be opaque, and then the
- * comparison is skipped, so a missing finding is not agreement.
+ * Message bodies are compared too: what a producer writes at the send
+ * against what the consumer reads off the message. Either side can be
+ * opaque, and then nothing is compared, so silence is not agreement.
  */
 
 import {
@@ -29,6 +29,11 @@ import {
   interactionsOf,
   providersOf,
 } from "../interactions/dispatcher.js";
+import {
+  compareSupplied,
+  formatPath,
+  readSetOf,
+} from "../receive/inputContract.js";
 import {
   runsIn,
   type UnitScope,
@@ -53,6 +58,7 @@ import type {
   MessageBusSemantics,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
+import type { CarriesPayload, ReadSet } from "../receive/inputContract.js";
 
 type ProducerRecord = InteractionRecord<"message-send"> & {
   /** Null when no env var resolved to a template resource. */
@@ -633,16 +639,24 @@ function makeSide(
 // Body-shape pairing
 // ---------------------------------------------------------------------------
 
+/**
+ * A message arrives through the handler's event parameter. Every pack
+ * that discovers a message handler gives that parameter this role.
+ */
+const isTheMessageParameter: CarriesPayload = (input) =>
+  input.type === "parameter" && input.role === "event";
+
 interface ReceiveRecord {
   summary: BehavioralSummary;
-  transitionId: string;
-  fields: string[];
-  effectCallee?: string;
+  transitionId?: string;
+  reads: ReadSet;
 }
 
 /**
  * An opaque body on either side is skipped without a finding, so a
- * missing finding here does not mean the two sides agree.
+ * missing finding here does not mean the two sides agree. The rule
+ * itself, and the rest of what it declines to compare, is in
+ * `receive/inputContract.ts`.
  */
 function checkBodyShapes(opts: {
   cfnConsumers: BehavioralSummary[];
@@ -678,18 +692,20 @@ function checkBodyShapes(opts: {
       continue;
     }
 
-    const producerFields = collectProducerFields(opts.producers, channel);
-    if (producerFields === null) {
-      continue;
-    }
-
+    const supplied = suppliedBodies(opts.producers, channel);
     for (const receive of receives) {
-      for (const field of receive.fields) {
-        if (producerFields.has(field)) {
-          continue;
-        }
+      const result = compareSupplied(receive.reads, supplied);
+      if (!result.compared) {
+        continue;
+      }
+      for (const path of result.unsupplied) {
         findings.push(
-          makeBodyShapeFinding(cfnConsumer, semantics, receive, field),
+          makeBodyShapeFinding(
+            cfnConsumer,
+            semantics,
+            receive,
+            formatPath(path),
+          ),
         );
       }
     }
@@ -708,6 +724,14 @@ function readCodeScope(summary: BehavioralSummary): string | null {
   return scope.path;
 }
 
+/**
+ * What the code deployed as this consumer reads out of a message.
+ *
+ * A destructure of the parsed body is the better reading, because it
+ * starts at what the producer wrote. The handler's own parameter is
+ * used only when there is no such destructure, and then it may be the
+ * platform's envelope instead, which the rule allows for.
+ */
 function collectReceives(
   summaries: BehavioralSummary[],
   scope: UnitScope,
@@ -718,58 +742,80 @@ function collectReceives(
     if (!runsIn(summary, scope, byFile)) {
       continue;
     }
-    for (const transition of summary.transitions) {
-      for (const effect of transition.effects) {
-        if (
-          effect.type !== "interaction" ||
-          effect.interaction.class !== "message-receive"
-        ) {
-          continue;
-        }
-        const fields = readObjectBodyFields(effect.interaction.body);
-        if (fields === null) {
-          continue;
-        }
-        out.push({
-          summary,
-          transitionId: transition.id,
-          fields,
-          ...(effect.callee !== undefined
-            ? { effectCallee: effect.callee }
-            : {}),
-        });
-      }
+    const destructured = destructuredReceives(summary);
+    if (destructured.length > 0) {
+      out.push(...destructured);
+      continue;
+    }
+    const parameter = parameterReceive(summary);
+    if (parameter !== null) {
+      out.push(parameter);
     }
   }
   return out;
 }
 
-/** Null when no producer on the channel has a body that can be compared. */
-function collectProducerFields(
+/** The fields a `message-receive` effect pulled out of the parsed body. */
+function destructuredReceives(summary: BehavioralSummary): ReceiveRecord[] {
+  const out: ReceiveRecord[] = [];
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (
+        effect.type !== "interaction" ||
+        effect.interaction.class !== "message-receive"
+      ) {
+        continue;
+      }
+      const fields = readObjectBodyFields(effect.interaction.body);
+      if (fields === null) {
+        continue;
+      }
+      out.push({
+        summary,
+        transitionId: transition.id,
+        reads: {
+          paths: fields.map((field) => [field]),
+          rootedAtPayload: true,
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The message-bus binding is what makes this unit the receiver rather
+ * than a helper deployed beside it, whose inputs come from its caller.
+ */
+function parameterReceive(summary: BehavioralSummary): ReceiveRecord | null {
+  if (summary.identity.boundaryBinding?.semantics.name !== "message-bus") {
+    return null;
+  }
+  const result = readSetOf(summary, isTheMessageParameter);
+  if (!result.read) {
+    return null;
+  }
+  return { summary, reads: result.reads };
+}
+
+/** Every body sent to this channel, opaque ones included. */
+function suppliedBodies(
   producers: ProducerRecord[],
   channel: string,
-): Set<string> | null {
-  const out = new Set<string>();
-  let anyExtractable = false;
+): unknown[] {
+  const out: unknown[] = [];
   for (const producer of producers) {
     const producerChannel = effectiveChannel(producer);
     if (producerChannel === null || !channelsPair(producerChannel, channel)) {
       continue;
     }
-    const body = producer.effect.interaction;
-    if (body.class !== "message-send") {
+    const sent = producer.effect.interaction;
+    if (sent.class !== "message-send") {
       continue;
     }
-    const fields = readObjectBodyFields(body.body);
-    if (fields === null) {
-      continue;
-    }
-    anyExtractable = true;
-    for (const f of fields) {
-      out.add(f);
-    }
+    out.push(sent.body);
   }
-  return anyExtractable ? out : null;
+  return out;
 }
 
 /** Null for any body that is not an object literal, which is opaque here. */
@@ -797,7 +843,7 @@ function makeBodyShapeFinding(
     boundary: binding,
     provider: makeSide(cfnConsumer),
     consumer: makeSide(receive.summary, receive.transitionId),
-    description: `${receive.summary.identity.name} reads field "${missingField}" from a message on ${semantics.messageBus} channel "${semantics.channel}" but no producer in the analysed scope sends "${missingField}". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.`,
+    description: `${receive.summary.identity.name} reads "${missingField}" off a message on ${semantics.messageBus} channel "${semantics.channel}" but no producer in the analysed scope sends "${missingField}". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.`,
     severity: "warning",
   };
 }

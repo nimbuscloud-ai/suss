@@ -19,6 +19,8 @@ import {
   summaryRef,
 } from "@suss/behavioral-ir";
 
+import { readSetOf } from "../receive/inputContract.js";
+
 import type {
   BehavioralSummary,
   Finding,
@@ -71,58 +73,20 @@ function edgesOf(summary: BehavioralSummary): RenderEdge[] {
 }
 
 /**
- * The prop names a child observably uses: a destructured binding it
- * reads, or the first segment of a chain off an object parameter.
- * Null when the read set could be incomplete, and the caller stands
- * down rather than reporting against a partial list.
+ * The prop names a child observably uses. A prop is one segment deep,
+ * so the outermost segment of each read path is the whole answer. Null
+ * when the read set could be incomplete, and the caller reports
+ * nothing rather than judging a partial list.
  */
-function readSetOf(child: BehavioralSummary): Set<string> | null {
-  const reads = child.inputReads;
-  if (reads === undefined || reads.length === 0) {
+function propsUsedBy(child: BehavioralSummary): Set<string> | null {
+  const result = readSetOf(
+    child,
+    (input) => input.type === "parameter" && input.role === "props",
+  );
+  if (!result.read) {
     return null;
   }
-
-  // A rest binding collects whatever the caller passed, so every attr
-  // could be consumed through it.
-  const hasRest = child.inputs.some(
-    (input) => input.type === "parameter" && input.role === "rest",
-  );
-  if (hasRest) {
-    return null;
-  }
-
-  // Reads record the binding's name; the boundary's word is the role,
-  // which is where a destructure rename keeps the passed name.
-  const roleByBinding = new Map(
-    child.inputs.flatMap((input) =>
-      input.type === "parameter"
-        ? [[input.name, input.role ?? input.name]]
-        : [],
-    ),
-  );
-  const objectParams = new Set(
-    child.inputs.flatMap((input) =>
-      input.type === "parameter" && input.role === "props" ? [input.name] : [],
-    ),
-  );
-
-  const used = new Set<string>();
-  for (const read of reads) {
-    if (objectParams.has(read.input)) {
-      if (read.path.length === 0) {
-        // The whole object is used somewhere, so any prop could be
-        // consumed through it.
-        return null;
-      }
-      used.add(read.path[0]);
-      continue;
-    }
-    const role = roleByBinding.get(read.input);
-    if (role !== undefined) {
-      used.add(role);
-    }
-  }
-  return used;
+  return new Set(result.reads.paths.map((path) => path[0]));
 }
 
 export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
@@ -145,7 +109,7 @@ export function checkRenderProps(summaries: BehavioralSummary[]): Finding[] {
       if (child === undefined || child === summary) {
         continue;
       }
-      const used = readSetOf(child);
+      const used = propsUsedBy(child);
       if (used === null) {
         continue;
       }

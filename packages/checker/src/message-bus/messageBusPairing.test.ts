@@ -62,22 +62,26 @@ function producerSummary(opts: {
   /** Null is a send whose queue the code only works out at runtime. */
   channel: string | null;
   bodyFields?: string[] | null;
+  /** A body written out in full, for a send whose fields nest. */
+  bodyShape?: unknown;
   messageBus?: "aws_sqs" | "eventbridge";
 }): BehavioralSummary {
   const body =
-    opts.bodyFields === null
-      ? undefined
-      : opts.bodyFields !== undefined
-        ? {
-            kind: "object" as const,
-            fields: Object.fromEntries(
-              opts.bodyFields.map((f) => [
-                f,
-                { kind: "identifier" as const, name: f },
-              ]),
-            ),
-          }
-        : undefined;
+    opts.bodyShape !== undefined
+      ? opts.bodyShape
+      : opts.bodyFields === null
+        ? undefined
+        : opts.bodyFields !== undefined
+          ? {
+              kind: "object" as const,
+              fields: Object.fromEntries(
+                opts.bodyFields.map((f) => [
+                  f,
+                  { kind: "identifier" as const, name: f },
+                ]),
+              ),
+            }
+          : undefined;
   const sendEffect: Effect = {
     type: "interaction",
     binding: {
@@ -325,6 +329,186 @@ describe("body-shape pairing", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The consumer whose framework parsed the message for it, so the
+ * handler's own parameter is what the producer wrote and `inputReads`
+ * is the list of fields it wants.
+ */
+describe("what a handler reads off its parameter", () => {
+  const nested = (fields: Record<string, string>): unknown => ({
+    kind: "object",
+    fields: {
+      subject: { kind: "string", value: "billing.invoicePaid" },
+      data: {
+        kind: "object",
+        fields: Object.fromEntries(
+          Object.entries(fields).map(([name, from]) => [
+            name,
+            { kind: "identifier", name: from },
+          ]),
+        ),
+      },
+    },
+  });
+
+  const setup = (opts: {
+    producerSends: Record<string, string>;
+    reads: Array<{ input: string; path: string[] }>;
+  }): BehavioralSummary[] => [
+    queueProvider("PaidQueue"),
+    producerSummary({
+      name: "PaidProducer",
+      filePath: "src/paid-producer/index.ts",
+      channel: "PaidQueue",
+      bodyShape: nested(opts.producerSends),
+    }),
+    consumerSummary({
+      name: "PaidWorker.FromPaid",
+      channel: "PaidQueue",
+      codeScopePath: "src/paid-worker/",
+    }),
+    handlerReadingItsParameter({
+      name: "PaidWorker.handler",
+      filePath: "src/paid-worker/index.ts",
+      reads: opts.reads,
+    }),
+  ];
+
+  const receiveFindings = (summaries: BehavioralSummary[]) =>
+    checkMessageBus(summaries).filter(
+      (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "receive",
+    );
+
+  it("reports a nested field the producer renamed", () => {
+    const findings = receiveFindings(
+      setup({
+        producerSends: { id: "invoiceId" },
+        reads: [{ input: "message", path: ["data", "invoiceId"] }],
+      }),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.description).toContain('reads "data.invoiceId"');
+    expect(findings[0]?.description).toContain("PaidQueue");
+    expect(findings[0]?.severity).toBe("warning");
+  });
+
+  it("reports nothing when the producer sends the field", () => {
+    expect(
+      receiveFindings(
+        setup({
+          producerSends: { invoiceId: "invoiceId" },
+          reads: [{ input: "message", path: ["data", "invoiceId"] }],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports nothing when the handler passes the message on whole", () => {
+    expect(
+      receiveFindings(
+        setup({
+          producerSends: { id: "invoiceId" },
+          reads: [{ input: "message", path: [] }],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports nothing when the handler is reading the platform's envelope", () => {
+    expect(
+      receiveFindings(
+        setup({
+          producerSends: { id: "invoiceId" },
+          reads: [{ input: "message", path: ["Records"] }],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a helper deployed beside the handler alone", () => {
+    const summaries = setup({
+      producerSends: { id: "invoiceId" },
+      reads: [{ input: "message", path: ["data", "invoiceId"] }],
+    });
+    const handler = summaries[3] as BehavioralSummary;
+    handler.identity.boundaryBinding = null;
+    expect(receiveFindings(summaries)).toEqual([]);
+  });
+
+  it("prefers the destructured message over the handler's parameter", () => {
+    const summaries = setup({
+      producerSends: { id: "invoiceId" },
+      reads: [{ input: "message", path: ["data", "invoiceId"] }],
+    });
+    const handler = summaries[3] as BehavioralSummary;
+    handler.transitions = [
+      emptyTransition("t-0", [
+        {
+          type: "interaction",
+          binding: {
+            transport: "aws_sqs",
+            semantics: {
+              name: "message-bus",
+              messageBus: "aws_sqs",
+              channel: null,
+            },
+            recognition: "@suss/framework-aws-sqs",
+          },
+          interaction: {
+            class: "message-receive",
+            body: {
+              kind: "object",
+              fields: { subject: { kind: "identifier", name: "subject" } },
+            },
+          },
+        },
+      ]),
+    ];
+    expect(receiveFindings(summaries)).toEqual([]);
+  });
+});
+
+function handlerReadingItsParameter(opts: {
+  name: string;
+  filePath: string;
+  reads: Array<{ input: string; path: string[] }>;
+}): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: opts.filePath,
+      range: { start: 0, end: 0 },
+      exportName: "handler",
+    },
+    identity: {
+      name: opts.name,
+      exportPath: null,
+      boundaryBinding: {
+        transport: "aws_sqs",
+        semantics: {
+          name: "message-bus",
+          messageBus: "aws_sqs",
+          channel: "billing.invoicePaid",
+        },
+        recognition: "aws-lambda",
+      },
+    },
+    inputs: [
+      {
+        type: "parameter",
+        name: "message",
+        position: 0,
+        role: "event",
+        shape: null,
+      },
+    ],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+    inputReads: opts.reads,
+  };
+}
 
 function eventBridgeProducer(opts: {
   name: string;
