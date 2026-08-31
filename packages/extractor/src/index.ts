@@ -943,7 +943,7 @@ export function terminalToOutput(terminal: RawTerminal): Output {
 
 /** A condition the adapter left unstructured becomes an opaque predicate
  * rather than being dropped, so the branch keeps its guard. */
-function rawConditionToPredicate(c: RawCondition): Predicate {
+export function rawConditionToPredicate(c: RawCondition): Predicate {
   const pred: Predicate =
     c.structured !== null
       ? c.structured
