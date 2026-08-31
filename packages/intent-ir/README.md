@@ -26,14 +26,10 @@ transitions:
         properties:
           recorded: { type: boolean }
     results:
-      - does: writes
-        at:
-          semantics: storage
-          storageSystem: aws.dynamodb
-          container: Invoices
+      - writes: aws.dynamodb:Invoices
 ```
 
-`suss ask "what writes aws.dynamodb:Invoices"` is the question and "this outcome results in a write to aws.dynamodb:Invoices" is the assertion. `does` is `reads` or `writes`, the two verbs `relationsOf` in `@suss/behavioral-ir` gives an effect, and `at` is a boundary in the same vocabulary as the doc's own. Nothing here is per protocol, so a queue consumer and a table writer say what they do without a fourth outcome shape each.
+`suss ask "what writes aws.dynamodb:Invoices"` is the question and this is the assertion, spelled the same way. The key is the verb, `reads` or `writes`, which are the two `relationsOf` in `@suss/behavioral-ir` gives an effect. The value is the boundary's own name, the string every report writes and `namesBoundary` in `@suss/ir-core` resolves, so what you type in a document and what you type at `ask` pick out the same boundary. Nothing here is per protocol, so a queue consumer and a table writer say what they do without a fourth outcome shape each.
 
 The id and the `when` stay free-form on purpose. That is where a person writes what the outcome means, and it is what a PRD scenario links to: `invoice-intake.invoice-recorded`, read as "a duplicate delivery changes nothing", rather than a code word for the mechanism that carried it.
 
@@ -45,7 +41,9 @@ A boundary intent pairs when its boundary has a key. REST has one from its metho
 
 A store has none. `storage.ts` in `@suss/ir-core` returns null for a storage identity key on purpose: a container name can be a pattern with holes that only a caller or the deployment settles, and the storage pass in `@suss/checker` grounds it before pairing. So a `kind: boundary` doc whose boundary is a store is authorable, and the checker reports it as `unkeyableBoundary` and puts it in `unchecked` rather than pretending to have compared it. That is the same pending state a module-level function-call boundary is in.
 
-What does pair today is a store named as the target of an effect: put `does: writes` / `at: {semantics: storage, ...}` on an outcome of the boundary that touches the store, and the checker compares it against the storage accesses on that boundary's transitions.
+What does pair today is a store named as the target of an effect: put `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store, and the checker compares it against the storage accesses on that boundary's transitions.
+
+Every boundary kind has a name of its own in `@suss/ir-core`, `storageLabel` being the one this change added, so an effect always takes a label and never a structured block. A binding with no name at all, a REST call whose method and path the code never settles, is left out of a draft rather than written as a string nobody would type back.
 
 ```ts
 import { IntentDocSchema, intentDocToSummary } from "@suss/intent-ir";

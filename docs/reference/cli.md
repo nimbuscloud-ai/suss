@@ -1052,27 +1052,34 @@ suss infer intent --from summaries/code.json --out intent/
 A drafted doc for `GET /users/:id` reads:
 
 ```yaml
-# Inferred from summaries/code.json. Written from what the code does, so it says
-# nothing about why. Fill in purpose and audience, rename the outcome
-# ids to what your team calls them, then set source to
-# "inferred, curated" so findings against it count at full severity.
+# GET /users/{id}, as the code has it today.
+# Read from src/handlers.ts, by way of summaries/code.json.
+#
+# Written from what the code does, so it says nothing about why. Fill in
+# purpose and audience, rename this document and its outcome ids to what
+# your team calls them, put the conditions in your own words, then set
+# source to "inferred, curated" so findings against it count at full
+# severity.
 #
 # Until the blanks are filled the reader rejects this file and says so,
 # which is what keeps an uncurated draft from passing for finished.
 
 kind: boundary
+
 name: get-users-id
 purpose: "" # what this boundary is for, in your words
 audience: "" # who observes it: a customer, an operator, another service
 source: inferred
+
 boundary:
   transport: http
   semantics: rest
   method: GET
   path: /users/:id
+
 transitions:
   - id: 400-bad-request
-    when: "!request.params.id"
+    when: request.params.id is missing
     response:
       status: 400
       body:
@@ -1082,31 +1089,39 @@ transitions:
             type: string
 ```
 
-Outcome ids come from the status code, `when` from the branch guard the
-code takes to reach that outcome, and the body from the shape the handler
-produces. A body shape the intent schema has no spelling for is left out
-rather than guessed at.
+Outcome ids come from the status code and the body from the shape the
+handler produces. A body shape the intent schema has no spelling for is
+left out rather than guessed at.
+
+`when` is a sentence about the branch the code takes. It is free-form
+text the author owns, the same as the outcome id, so the draft puts
+something readable there and you rewrite it. The else arm of a chain is
+`otherwise` rather than a negated copy of the guard above it, which is
+not a thing anybody would write.
 
 A boundary that is not HTTP gets a doc the same way. Here is what a queue
-consumer that records what it read looks like:
+consumer that records what it read looks like, with the header left off:
 
 ```yaml
 kind: boundary
+
 name: bus-aws-sqs-billing-invoice-paid
 purpose: "" # what this boundary is for, in your words
 audience: "" # who observes it: a customer, an operator, another service
 source: inferred
+
 boundary:
   semantics: message-bus
   messageBus: aws_sqs
   channel: billing.invoicePaid
+
 transitions:
   - id: throws-error
-    when: typeof invoiceId !== "string"
+    when: invoiceId is not a string
     throws:
       errorType: Error
   - id: returns
-    when: '!(typeof invoiceId !== "string")'
+    when: otherwise
     returns:
       body:
         type: object
@@ -1114,18 +1129,13 @@ transitions:
           recorded:
             type: boolean
     results:
-      - does: writes
-        at:
-          semantics: storage
-          storageSystem: aws.dynamodb
-          scope: default
-          container: Invoices
-          accessPath: null
+      - writes: aws.dynamodb:Invoices
 ```
 
-`results` is what the transition did at other boundaries, written in the
-verbs `suss ask` asks with: `suss ask "what writes aws.dynamodb:Invoices"`
-is the question, and this doc is the assertion. A queue consumer has no
+`results` is what the transition did at other boundaries. The key is the
+verb and the value is the boundary's own name, which is the string
+`suss ask` takes: `suss ask "what writes aws.dynamodb:Invoices"` is the
+question and this document is the assertion. A queue consumer has no
 status worth declaring, so this is the part of its outcome that means
 something. The checker compares it both ways: a declared write the code
 never makes is an error, and a boundary the code reaches that no outcome
@@ -1158,8 +1168,9 @@ transition producing a response, a return, a throw, or an effect.
 
 A store is reported too, for a different reason: storage has no identity
 key, so a doc naming one could never be paired. The reported reason says
-so and points at the alternative, which is to say `does: writes` at the
-store on an outcome of the boundary that touches it.
+so and points at the alternative, which is to write
+`- writes: aws.dynamodb:Invoices` on an outcome of the boundary that
+touches the store.
 
 Pick the boundaries at extract time, with `extract`'s own `--files` and
 `-f`. `infer intent` writes a doc for every boundary in the file it is

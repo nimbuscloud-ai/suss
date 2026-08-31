@@ -40,6 +40,7 @@ import {
   bodyShapesMatch,
   boundaryKey,
   displayLabel,
+  namesBoundary,
   pairingKey,
   ruleBoundaryMatchesKey,
   semanticsAgree,
@@ -60,7 +61,13 @@ import type {
   IntentSummary,
   PrdSummary,
 } from "@suss/intent-ir";
-import type { EffectRelation, Semantics, SuppressionRule } from "@suss/ir-core";
+import type {
+  BoundaryBinding,
+  EffectRelation,
+  Relation,
+  Semantics,
+  SuppressionRule,
+} from "@suss/ir-core";
 
 export type { IntentFinding } from "@suss/intent-ir";
 
@@ -71,7 +78,7 @@ interface CodeOutcome {
   body: TypeShape | null;
   errorType: string | null;
   /** What the transition that ends this way did at other boundaries. */
-  effects: string[];
+  effects: CodeEffect[];
 }
 
 /** A boundary intent that was paired and compared against code. */
@@ -525,7 +532,7 @@ function compareIntentToImpl(
   const codeOutcomes = impl.transitions
     .map(toCodeOutcome)
     .filter((o): o is CodeOutcome => o !== null);
-  const everyEffect = new Set(impl.transitions.flatMap(codeEffectsOf));
+  const everyEffect = impl.transitions.flatMap(codeEffectsOf);
 
   for (const outcome of intent.outcomes) {
     // An outcome that says only what it resulted in has no terminal to
@@ -533,13 +540,11 @@ function compareIntentToImpl(
     const reached =
       outcome.kind === "effect"
         ? everyEffect
-        : new Set(
-            codeOutcomes
-              .filter((co) => outcomeMatches(outcome, co))
-              .flatMap((co) => co.effects),
-          );
+        : codeOutcomes
+            .filter((co) => outcomeMatches(outcome, co))
+            .flatMap((co) => co.effects);
     for (const effect of outcome.effects) {
-      if (reached.has(effectKey(effect.does, effect.label))) {
+      if (reached.some((made) => effectMatches(effect, made))) {
         continue;
       }
       findings.push({
@@ -632,26 +637,40 @@ function compareIntentToImpl(
   // An intent listing three writes on a unit doing four has one nobody
   // wrote down, the same open-specification case an undeclared status
   // is, so it gets the same severity.
-  const declaredEffects = new Set(
-    intent.outcomes.flatMap((o) =>
-      o.effects.map((e) => effectKey(e.does, e.label)),
-    ),
-  );
-  for (const reached of everyEffect) {
-    if (declaredEffects.has(reached)) {
+  const declaredEffects = intent.outcomes.flatMap((o) => o.effects);
+  const said = new Set<string>();
+  for (const made of everyEffect) {
+    const spelled = `${made.does} ${made.label}`;
+    if (
+      said.has(spelled) ||
+      declaredEffects.some((effect) => effectMatches(effect, made))
+    ) {
       continue;
     }
+    said.add(spelled);
     findings.push({
       kind: "undeclaredOutcome",
       severity: "info",
       boundary,
       intent: { name: intent.name },
       code: ref,
-      message: `${impl.identity.name} ${reached} at ${boundary}; intent "${intent.name}" does not declare it.`,
+      message: `${impl.identity.name} ${spelled} at ${boundary}; intent "${intent.name}" does not declare it.`,
     });
   }
 
   return findings;
+}
+
+/**
+ * Whether an effect the code makes is the one the intent declared. The
+ * boundary is resolved with `namesBoundary`, the matcher that resolves
+ * what somebody types at `suss ask`, so a document and a question that
+ * spell a store the same way pick out the same one.
+ */
+function effectMatches(declared: IntentEffect, made: CodeEffect): boolean {
+  return (
+    declared.does === made.does && namesBoundary(declared.names, made.binding)
+  );
 }
 
 function toCodeOutcome(t: Transition): CodeOutcome | null {
@@ -691,14 +710,16 @@ function toCodeOutcome(t: Transition): CodeOutcome | null {
   return null;
 }
 
-/**
- * `writes postgresql:invoices` for each boundary this transition
- * reaches. One string per verb and boundary, so comparing what the
- * intent stated against what the code does is a set membership test
- * over the spelling both sides already use.
- */
-function codeEffectsOf(t: Transition): string[] {
-  const reached: string[] = [];
+/** One verb and one boundary this transition reaches. */
+interface CodeEffect {
+  does: Relation;
+  binding: BoundaryBinding;
+  /** How a report writes that boundary, for a message about it. */
+  label: string;
+}
+
+function codeEffectsOf(t: Transition): CodeEffect[] {
+  const reached: CodeEffect[] = [];
   for (const effect of t.effects) {
     if (effect.type !== "interaction") {
       continue;
@@ -709,15 +730,11 @@ function codeEffectsOf(t: Transition): string[] {
       continue;
     }
     const label = displayLabel(effect.binding);
-    for (const relation of relationsOf(effect.interaction)) {
-      reached.push(effectKey(relation, label));
+    for (const does of relationsOf(effect.interaction)) {
+      reached.push({ does, binding: effect.binding, label });
     }
   }
   return reached;
-}
-
-function effectKey(does: string, label: string): string {
-  return `${does} ${label}`;
 }
 
 function outcomeMatches(intent: IntentOutcome, code: CodeOutcome): boolean {
@@ -753,7 +770,7 @@ const WHAT_KEYS: Record<Semantics["name"], string> = {
   "function-call": "a function-call boundary needs package + exportPath",
   "message-bus": "a message-bus boundary needs a channel",
   storage:
-    "a store has no key at all: write `does: writes` at it on an outcome of the boundary that touches it instead",
+    "a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead",
   "graphql-resolver": "a resolver needs a type name and a field name",
   "graphql-operation": "an operation pairs by document rather than by key",
   "runtime-config":
@@ -774,7 +791,7 @@ function describeOutcome(outcome: IntentOutcome): string {
 }
 
 function describeEffect(effect: IntentEffect): string {
-  return `${EFFECT_PHRASE[effect.does]} ${effect.label}`;
+  return `${EFFECT_PHRASE[effect.does]} ${effect.names}`;
 }
 
 const EFFECT_PHRASE: Record<EffectRelation, string> = {

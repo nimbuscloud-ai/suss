@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   type BehavioralSummary,
   type BoundaryBinding,
-  boundaryLabel,
   functionCallBinding,
   messageBusBinding,
   type Output,
@@ -803,17 +802,7 @@ const busCodeBinding = messageBusBinding({
 });
 
 function writes(container: string): IntentEffect {
-  const binding = storageBinding({
-    recognition: "intent",
-    storageSystem: "aws.dynamodb",
-    scope: "default",
-    container,
-  });
-  return {
-    does: "writes",
-    binding,
-    label: boundaryLabel(binding) ?? "",
-  };
+  return { does: "writes", names: `aws.dynamodb:${container}` };
 }
 
 function effectOutcome(id: string, effects: IntentEffect[]): IntentOutcome {
@@ -866,6 +855,25 @@ describe("effect outcomes", () => {
 
     expect(result.findings).toEqual([]);
     expect(result.checked).toHaveLength(1);
+  });
+
+  it("resolves the boundary the way suss ask resolves what somebody types", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("invoice-recorded", [
+              { does: "writes", names: "Invoices" },
+            ]),
+          ],
+          "invoice-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings).toEqual([]);
   });
 
   it("reports a declared write the code never makes", () => {

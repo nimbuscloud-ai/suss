@@ -36,6 +36,7 @@ export type {
   IntentRef,
 } from "./findings.js";
 export type {
+  AuthoredBoundary,
   AuthoredShape,
   BodyShape,
   Boundary,

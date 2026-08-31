@@ -76,16 +76,7 @@ const busIntent = {
       id: "invoice-recorded",
       when: "the message names an invoice we have not recorded",
       returns: { body: { properties: { recorded: { type: "boolean" } } } },
-      results: [
-        {
-          does: "writes",
-          at: {
-            semantics: "storage",
-            storageSystem: "aws.dynamodb",
-            container: "Invoices",
-          },
-        },
-      ],
+      results: [{ writes: "aws.dynamodb:Invoices" }],
     },
     {
       id: "invoice-rejected",
@@ -109,16 +100,7 @@ const storeIntent = {
     {
       id: "invoice-row-written",
       when: "an invoice has been paid",
-      results: [
-        {
-          does: "writes",
-          at: {
-            semantics: "storage",
-            storageSystem: "aws.dynamodb",
-            container: "Invoices",
-          },
-        },
-      ],
+      results: [{ writes: "aws.dynamodb:Invoices" }],
     },
   ],
 };
@@ -226,8 +208,21 @@ describe("IntentDocSchema validation", () => {
       transitions: [
         {
           ...storeIntent.transitions[0],
+          results: [{ provides: "aws.dynamodb:Invoices" }],
+        },
+      ],
+    };
+    expect(() => IntentDocSchema.parse(bad)).toThrow();
+  });
+
+  it("rejects an effect that gives two verbs at once", () => {
+    const bad = {
+      ...storeIntent,
+      transitions: [
+        {
+          ...storeIntent.transitions[0],
           results: [
-            { does: "provides", at: storeIntent.transitions[0].results[0].at },
+            { reads: "aws.dynamodb:Invoices", writes: "aws.dynamodb:Invoices" },
           ],
         },
       ],
@@ -293,27 +288,13 @@ describe("intentDocToSummary — message-bus and storage boundaries", () => {
     });
   });
 
-  it("spells a declared effect the way a report spells that boundary", () => {
+  it("reads the verb off the key and the boundary off the value", () => {
     const summary = intentDocToSummary(
       IntentDocSchema.parse(busIntent),
     ) as BoundaryIntentSummary;
 
     expect(summary.outcomes[0].effects).toEqual([
-      {
-        does: "writes",
-        binding: {
-          transport: "aws.dynamodb",
-          semantics: {
-            name: "storage",
-            storageSystem: "aws.dynamodb",
-            scope: "default",
-            container: "Invoices",
-            accessPath: null,
-          },
-          recognition: "intent",
-        },
-        label: "aws.dynamodb:Invoices",
-      },
+      { does: "writes", names: "aws.dynamodb:Invoices" },
     ]);
     expect(summary.outcomes[1].effects).toEqual([]);
   });

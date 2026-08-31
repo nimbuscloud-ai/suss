@@ -8,7 +8,6 @@
 
 import {
   type BoundaryBinding,
-  boundaryLabel,
   type EffectRelation,
   functionCallBinding,
   messageBusBinding,
@@ -22,6 +21,7 @@ import type {
   BodyShape,
   Boundary,
   BoundaryIntent,
+  DeclaredEffect,
   IntentDoc,
   IntentSource,
   Prd,
@@ -42,10 +42,8 @@ export type IntentOutcomeKind = "response" | "return" | "throw" | "effect";
 /** One effect an outcome has, in the verbs `suss ask` asks with. */
 export interface IntentEffect {
   does: EffectRelation;
-  /** The boundary it reaches, keeping every field the doc stated. */
-  binding: BoundaryBinding;
-  /** How a report and `suss ask` spell that boundary. */
-  label: string;
+  /** The boundary it reaches, as the author spelled it. */
+  names: string;
 }
 
 export interface IntentOutcome {
@@ -187,18 +185,10 @@ export function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
   return build(boundary);
 }
 
-function toEffect(declared: {
-  does: EffectRelation;
-  at: Boundary;
-}): IntentEffect {
-  const binding = toBoundaryBinding(declared.at);
-  return {
-    does: declared.does,
-    binding,
-    // A boundary nothing can spell has no effect to compare, and the
-    // checker reports the outcome uncovered rather than guessing.
-    label: boundaryLabel(binding) ?? "",
-  };
+// The schema allows one key, and it is the verb.
+function toEffect(declared: DeclaredEffect): IntentEffect {
+  const [does, names] = Object.entries(declared)[0] as [EffectRelation, string];
+  return { does, names };
 }
 
 function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {

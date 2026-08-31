@@ -607,7 +607,7 @@ Statuses are limited to REST on purpose. Function-call returns are too numerous 
 
 The intent doc is well-formed and its boundary cannot be keyed for pairing, so nothing was checked against it. A function-call boundary needs a package and an export path, a message-bus boundary needs a channel, and without them there is nothing to match the code against. The message says what the boundary's own protocol would need.
 
-A store is the one case where filling fields in does not help. Storage has no identity key by design, because a container name can be a pattern that only a caller or the deployment settles, and the storage pass grounds it before pairing. Say what the store is for by putting `does: writes` on an outcome of the boundary that touches it, and the checker compares that.
+A store is the one case where filling fields in does not help. Storage has no identity key by design, because a container name can be a pattern that only a caller or the deployment settles, and the storage pass grounds it before pairing. Say what the store is for by putting `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches it, and the checker compares that.
 
 **Legitimate when:** the boundary is a store, or the intent is written ahead of the keying suss can do. The author declared coverage they are not getting either way, so the finding is worth reading.
 

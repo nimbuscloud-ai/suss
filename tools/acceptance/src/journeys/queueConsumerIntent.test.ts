@@ -101,13 +101,31 @@ describe("infer intent for a queue consumer that writes a table", () => {
     expect(doc).toContain("channel: billing.invoicePaid");
   });
 
-  it("says the outcome results in a write to the table the code writes", () => {
+  it("says the outcome results in a write, in the words ask asks with", () => {
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
 
-    expect(doc).toContain("results:");
-    expect(doc).toContain("does: writes");
-    expect(doc).toContain("storageSystem: aws.dynamodb");
-    expect(doc).toContain("container: Invoices");
+    expect(doc).toContain(
+      "    results:\n      - writes: aws.dynamodb:Invoices",
+    );
+  });
+
+  it("says each branch as a sentence, and the else arm in one word", () => {
+    const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
+
+    expect(doc).toContain("when: invoiceId is not a string");
+    expect(doc).toContain("when: otherwise");
+    expect(doc).not.toContain("!(");
+  });
+
+  it("opens by saying what it is, and reads in parts", () => {
+    const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
+
+    expect(doc).toContain(
+      "# bus:aws_sqs billing.invoicePaid, as the code has it today.",
+    );
+    expect(doc).toContain("src/handlers/invoiceWorker.ts");
+    expect(doc).toContain("kind: boundary\n\nname: ");
+    expect(doc).toContain("source: inferred\n\nboundary:");
   });
 
   it("says the draft is still waiting on its blanks", () => {
@@ -147,7 +165,7 @@ describe("infer intent for a queue consumer that writes a table", () => {
       path.join(drift, DRAFT),
       fs
         .readFileSync(path.join(intent, DRAFT), "utf8")
-        .replaceAll("container: Invoices", "container: Receipts"),
+        .replaceAll("aws.dynamodb:Invoices", "aws.dynamodb:Receipts"),
     );
 
     const checked = checkIntent(drift);
@@ -184,11 +202,7 @@ describe("infer intent for a queue consumer that writes a table", () => {
         "  - id: invoice-row-written",
         "    when: an invoice has been paid",
         "    results:",
-        "      - does: writes",
-        "        at:",
-        "          semantics: storage",
-        "          storageSystem: aws.dynamodb",
-        "          container: Invoices",
+        "      - writes: aws.dynamodb:Invoices",
         "",
       ].join("\n"),
     );

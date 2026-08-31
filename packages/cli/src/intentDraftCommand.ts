@@ -31,9 +31,9 @@ import {
 import { summaryWithDefinitionsInlined } from "@suss/checker";
 import { whatWouldKeyIt } from "@suss/checker-intent";
 import { loadIntentDoc } from "@suss/contract-intent";
-import { toBoundaryBinding } from "@suss/intent-ir";
 
-import { formatCondition, parseSummaryFile } from "./inspect.js";
+import { parseSummaryFile } from "./inspect.js";
+import { draftedWhen } from "./intentWhen.js";
 import { UsageError } from "./usageError.js";
 
 import type {
@@ -44,8 +44,8 @@ import type {
   TypeShape,
 } from "@suss/behavioral-ir";
 import type {
+  AuthoredBoundary,
   AuthoredShape,
-  BoundaryIntent,
   EffectOutcome,
 } from "@suss/intent-ir";
 
@@ -156,21 +156,11 @@ export function statusOutcomeId(status: number): string {
   return name === undefined ? String(status) : `${status}-${slug(name)}`;
 }
 
-function conditionsOf(transition: Transition): string {
-  const written = transition.conditions.map(formatCondition).join(" and ");
-  if (written !== "") {
-    return written;
-  }
-
-  return transition.isDefault
-    ? "no earlier condition matched"
-    : "the handler always reaches this outcome";
-}
-
 /**
- * What this transition did at other boundaries, in the words `suss ask`
- * asks with. A boundary the authoring schema has no block for is left
- * out rather than written as something the reader would turn down.
+ * What this transition did at other boundaries, written the way
+ * `suss ask` asks about one: `- writes: aws.dynamodb:Invoices`. A
+ * boundary with no name of its own is left out rather than written as
+ * a string nobody would type back.
  */
 function draftedEffects(transition: Transition): EffectOutcome[] {
   const results: EffectOutcome[] = [];
@@ -182,29 +172,32 @@ function draftedEffects(transition: Transition): EffectOutcome[] {
     ) {
       continue;
     }
-    const at = boundaryBlock(effect.binding);
-    if (at === null) {
+    const names = boundaryLabel(effect.binding);
+    if (names === null) {
       continue;
     }
     for (const relation of relationsOf(effect.interaction)) {
       if (relation === "provides") {
         continue;
       }
-      const key = `${relation} ${displayLabel(effect.binding)}`;
+      const key = `${relation} ${names}`;
       if (written.has(key)) {
         continue;
       }
       written.add(key);
-      results.push({ does: relation, at });
+      results.push({ [relation]: names });
     }
   }
   return results;
 }
 
 /** Null when the transition's terminal has no intent outcome to declare. */
-function toDraftedOutcome(transition: Transition): DraftedOutcome | null {
+function toDraftedOutcome(
+  transition: Transition,
+  isFirst: boolean,
+): DraftedOutcome | null {
   const output = transition.output;
-  const when = conditionsOf(transition);
+  const when = draftedWhen(transition, isFirst);
   const results = draftedEffects(transition);
   const did = results.length > 0 ? { results } : {};
 
@@ -261,11 +254,8 @@ function effectOnlyOutcome(
   if (first === undefined) {
     return null;
   }
-  return { id: slug(`${first.does} ${labelOf(first)}`), when, results };
-}
-
-function labelOf(effect: EffectOutcome): string {
-  return boundaryLabel(toBoundaryBinding(effect.at)) ?? "a boundary";
+  const [verb, names] = Object.entries(first)[0] as [string, string];
+  return { id: slug(`${verb} ${names}`), when, results };
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +269,7 @@ type BoundaryBlocks = {
   [K in Semantics["name"]]: (
     semantics: Extract<Semantics, { name: K }>,
     binding: BoundaryBinding,
-  ) => BoundaryIntent["boundary"] | null;
+  ) => AuthoredBoundary | null;
 };
 
 const BOUNDARY_BLOCKS: BoundaryBlocks = {
@@ -301,17 +291,22 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
       ? { exportPath: semantics.exportPath }
       : {}),
   }),
+  // A field the source left unset stays out of the file. The schema
+  // defaults it, and a key with nothing after it is one more thing for
+  // the person curating the draft to read past.
   "message-bus": (semantics) => ({
     semantics: "message-bus",
     messageBus: semantics.messageBus,
-    channel: semantics.channel,
+    ...(semantics.channel !== null ? { channel: semantics.channel } : {}),
   }),
   storage: (semantics) => ({
     semantics: "storage",
     storageSystem: semantics.storageSystem,
-    scope: semantics.scope,
-    container: semantics.container,
-    accessPath: semantics.accessPath,
+    ...(semantics.scope !== "default" ? { scope: semantics.scope } : {}),
+    ...(semantics.container !== null ? { container: semantics.container } : {}),
+    ...(semantics.accessPath !== null
+      ? { accessPath: semantics.accessPath }
+      : {}),
   }),
   "graphql-resolver": () => null,
   "graphql-operation": () => null,
@@ -320,21 +315,19 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
 };
 
 /** Null when boundary intent has no shape for this protocol yet. */
-function boundaryBlock(
-  binding: BoundaryBinding,
-): BoundaryIntent["boundary"] | null {
+function boundaryBlock(binding: BoundaryBinding): AuthoredBoundary | null {
   // The one cast joins the per-protocol table, which narrows, to the
   // runtime lookup, the same way dispatchByType does it.
   const write = BOUNDARY_BLOCKS[binding.semantics.name] as (
     semantics: Semantics,
     binding: BoundaryBinding,
-  ) => BoundaryIntent["boundary"] | null;
+  ) => AuthoredBoundary | null;
   return write(binding.semantics, binding);
 }
 
 interface BoundaryGroup {
   key: string;
-  block: BoundaryIntent["boundary"];
+  block: AuthoredBoundary;
   summaries: BehavioralSummary[];
 }
 
@@ -413,12 +406,23 @@ function unique(candidate: string, taken: Set<string>): string {
 // Drafting
 // ---------------------------------------------------------------------------
 
-function header(from: string): string[] {
+/** How many source files a header lists before a count takes over. */
+const FILES_SHOWN = 3;
+
+function header(group: BoundaryGroup, from: string): string[] {
+  const files = [...new Set(group.summaries.map((s) => s.location.file))];
+  const shown = files.slice(0, FILES_SHOWN).join(", ");
+  const rest = files.length - Math.min(files.length, FILES_SHOWN);
+  const read = rest > 0 ? `${shown} and ${rest} more` : shown;
   return [
-    `# Inferred from ${from}. Written from what the code does, so it says`,
-    "# nothing about why. Fill in purpose and audience, rename the outcome",
-    "# ids to what your team calls them, then set source to",
-    '# "inferred, curated" so findings against it count at full severity.',
+    `# ${group.key}, as the code has it today.`,
+    `# Read from ${read}, by way of ${from}.`,
+    "#",
+    "# Written from what the code does, so it says nothing about why. Fill in",
+    "# purpose and audience, rename this document and its outcome ids to what",
+    "# your team calls them, put the conditions in your own words, then set",
+    '# source to "inferred, curated" so findings against it count at full',
+    "# severity.",
     "#",
     "# Until the blanks are filled the reader rejects this file and says so,",
     "# which is what keeps an uncurated draft from passing for finished.",
@@ -434,12 +438,22 @@ const BLANKS: Record<string, string> = {
 /** What the blanks are filled with while the rest of the doc is validated. */
 const FILLED_IN = "curated";
 
+/** Keys a blank line comes before, so the file reads in parts. */
+const PARAGRAPHS = new Set(["name", "boundary", "transitions"]);
+
 function render(doc: object): string {
   const yamlDoc = new YAML.Document(doc);
   for (const [key, hint] of Object.entries(BLANKS)) {
     const node = yamlDoc.get(key, true);
     if (YAML.isScalar(node)) {
       node.comment = ` ${hint}`;
+    }
+  }
+  if (YAML.isMap(yamlDoc.contents)) {
+    for (const item of yamlDoc.contents.items) {
+      if (YAML.isScalar(item.key) && PARAGRAPHS.has(String(item.key.value))) {
+        item.key.spaceBefore = true;
+      }
     }
   }
   return yamlDoc.toString({ lineWidth: 0 });
@@ -453,12 +467,12 @@ function draftDocument(
   const transitions = group.summaries.flatMap((s) => s.transitions);
   const outcomeIds = new Set<string>();
   const outcomes: DraftedOutcome[] = [];
-  for (const transition of transitions) {
-    const outcome = toDraftedOutcome(transition);
+  transitions.forEach((transition, index) => {
+    const outcome = toDraftedOutcome(transition, index === 0);
     if (outcome !== null) {
       outcomes.push({ ...outcome, id: unique(outcome.id, outcomeIds) });
     }
-  }
+  });
 
   if (outcomes.length === 0) {
     return {
@@ -510,7 +524,7 @@ function draftDocument(
     name,
     boundary: group.key,
     outcomes: outcomes.length,
-    yaml: `${[...header(from), ...note].join("\n")}\n\n${render(doc)}`,
+    yaml: `${[...header(group, from), ...note].join("\n")}\n\n${render(doc)}`,
   };
 }
 

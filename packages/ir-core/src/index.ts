@@ -151,6 +151,12 @@ export {
   referenceOf,
 } from "./boundaryName.js";
 export {
+  bindingTokens,
+  namesBoundary,
+  namesBoundaryExactly,
+  spellingTokens,
+} from "./boundarySpelling.js";
+export {
   busesAgree,
   type Channel,
   channelsPair,

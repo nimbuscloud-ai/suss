@@ -226,15 +226,13 @@ describe("intentDraftResult", () => {
     ]);
   });
 
-  it("draws `when` from the branch the code takes", () => {
+  it("says the branch the code takes as a sentence, not as its source", () => {
     const { parsed } = firstDocOf([
       restProvider("GET", "/users/:id", [missingId, notFound]),
     ]);
 
-    expect(parsed.transitions[0].when).toBe("!request.params.id");
-    expect(parsed.transitions[1].when).toBe(
-      "the handler always reaches this outcome",
-    );
+    expect(parsed.transitions[0].when).toBe("request.params.id is missing");
+    expect(parsed.transitions[1].when).toBe("every call reaches this outcome");
   });
 
   it("leaves purpose and audience blank, with a hint beside each", () => {
@@ -253,11 +251,22 @@ describe("intentDraftResult", () => {
     );
   });
 
-  it("says where the draft came from and what to do with it", () => {
+  it("opens by saying which boundary this is and where it was read", () => {
     const { doc } = firstDocOf([restProvider("GET", "/users/:id", [found])]);
 
-    expect(doc.yaml).toContain("# Inferred from summaries/code.json.");
-    expect(doc.yaml).toContain('set source to\n# "inferred, curated"');
+    expect(doc.yaml).toContain("# GET /users/{id}, as the code has it today.");
+    expect(doc.yaml).toContain(
+      "# Read from src/routes.ts, by way of summaries/code.json.",
+    );
+    expect(doc.yaml).toContain('# source to "inferred, curated"');
+  });
+
+  it("puts a blank line between the parts of the document", () => {
+    const { doc } = firstDocOf([restProvider("GET", "/users/:id", [found])]);
+
+    expect(doc.yaml).toContain("kind: boundary\n\nname: ");
+    expect(doc.yaml).toContain("source: inferred\n\nboundary:");
+    expect(doc.yaml).toMatch(/\n\ntransitions:/);
   });
 
   it("writes a draft the reader rejects until the blanks are filled", () => {
@@ -559,7 +568,7 @@ describe("intentDraftResult", () => {
 
     expect(result.drafted).toEqual([]);
     expect(result.undrafted.map((one) => one.reason)).toEqual([
-      "it has no key the checker could pair intent against: a store has no key at all: write `does: writes` at it on an outcome of the boundary that touches it instead",
+      "it has no key the checker could pair intent against: a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead",
       "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is runtime-config",
       "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-resolver",
       "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-operation",
@@ -835,20 +844,9 @@ describe("drafted effects", () => {
     expect(parsed.transitions).toEqual([
       {
         id: "returns",
-        when: "no earlier condition matched",
+        when: "every call reaches this outcome",
         returns: {},
-        results: [
-          {
-            does: "writes",
-            at: {
-              semantics: "storage",
-              storageSystem: "aws.dynamodb",
-              scope: "default",
-              container: "Invoices",
-              accessPath: null,
-            },
-          },
-        ],
+        results: [{ writes: "aws.dynamodb:Invoices" }],
       },
     ]);
   });
@@ -886,7 +884,7 @@ describe("drafted effects", () => {
     expect(parsed.transitions[0].results).toHaveLength(1);
   });
 
-  it("leaves out a boundary the authoring schema has no block for", () => {
+  it("names a boundary whose protocol has no block of its own", () => {
     const metricRead = {
       ...invoicesWrite,
       binding: {
@@ -901,6 +899,26 @@ describe("drafted effects", () => {
     };
     const transition = returnsWriting("t-return");
     transition.effects = [metricRead];
+    const { parsed } = firstDocOf([
+      provider("InvoiceWorker.handler", queueBinding, [transition]),
+    ]);
+
+    expect(parsed.transitions[0].results).toEqual([
+      { writes: "metric:cloudwatch latency" },
+    ]);
+  });
+
+  it("leaves out a boundary with no name of its own to write", () => {
+    const unnamed = {
+      ...invoicesWrite,
+      binding: {
+        transport: "http",
+        semantics: { name: "rest" as const, method: null, path: null },
+        recognition: "test",
+      },
+    };
+    const transition = returnsWriting("t-return");
+    transition.effects = [unnamed];
     const { parsed } = firstDocOf([
       provider("InvoiceWorker.handler", queueBinding, [transition]),
     ]);

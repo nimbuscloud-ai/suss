@@ -22,6 +22,7 @@
 import { z } from "zod";
 
 import {
+  type EffectRelation,
   EffectRelationSchema,
   MessageBusSemanticsSchema,
   StorageSemanticsSchema,
@@ -199,13 +200,20 @@ function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess((v) => (v === null ? {} : v), schema);
 }
 
-// One effect the outcome has, written the way `suss ask` asks about
-// it: "results in a write to postgresql:invoices". The verbs and the
-// boundary both come from schemas something else already owns.
-const EffectOutcomeSchema = z.object({
-  does: EffectRelationSchema,
-  at: BoundarySchema,
-});
+/** One effect, written `- writes: postgresql:invoices`. */
+export type DeclaredEffect = Partial<Record<EffectRelation, string>>;
+
+// The verb is the key and the boundary is the string `suss ask` takes.
+// The members come off ir-core's verbs, so one added there is
+// authorable here with no edit.
+const EFFECT_BY_VERB = EffectRelationSchema.options.map((verb) =>
+  z.strictObject({ [verb]: z.string().min(1) }),
+) as unknown as [
+  z.ZodType<DeclaredEffect>,
+  ...Array<z.ZodType<DeclaredEffect>>,
+];
+
+const EffectOutcomeSchema = z.union(EFFECT_BY_VERB);
 
 const BoundaryTransitionSchema = z
   .object({
@@ -297,6 +305,8 @@ export type BoundaryIntent = z.infer<typeof BoundaryIntentSchema>;
 export type Prd = z.infer<typeof PrdSchema>;
 export type PrdScenario = z.infer<typeof PrdScenarioSchema>;
 export type Boundary = z.infer<typeof BoundarySchema>;
+/** A boundary block as somebody writes it, before defaults are put in. */
+export type AuthoredBoundary = z.input<typeof BoundarySchema>;
 export type BoundaryTransition = z.infer<typeof BoundaryTransitionSchema>;
 export type EffectOutcome = z.infer<typeof EffectOutcomeSchema>;
 export type BodyShape = z.infer<typeof BodyShapeSchema>;

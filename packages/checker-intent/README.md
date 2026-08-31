@@ -32,13 +32,20 @@ v0 checks system intent (`kind: boundary`). PRD outcome intent
 
 ## How a declared effect is compared
 
-An outcome can declare the effects it has, in the verbs `suss ask` asks with: `does: writes` at a boundary. Both directions are checked.
+An outcome can declare the effects it has, written the way `suss ask` asks about one:
 
-For each declared effect, the pass collects what the matching code transitions reached, as `<verb> <boundary label>` pairs built from `relationsOf` and `displayLabel`, and reports `uncoveredOutcome` when the pair the intent stated is not among them. An outcome that declares an ending narrows to the transitions that end that way; an outcome that declares only effects is checked against every transition of the unit.
+```yaml
+results:
+  - writes: aws.dynamodb:Invoices
+```
 
-For the other direction, the pass collects every pair the unit's transitions reach and reports `undeclaredOutcome` for each one no outcome declares. An intent listing three writes on a unit doing four has one nobody wrote down. It is info rather than an error for the same reason an undeclared status is: an intent doc declares the floor rather than a closed list, so code beyond it usually means somebody has not written that part down yet.
+Both directions are checked, and both resolve the boundary with `namesBoundary` in `@suss/ir-core`, the same matcher that settles what somebody types at `suss ask`. So `writes: Invoices` and `writes: aws.dynamodb:Invoices` both pick out the table, exactly as the two spellings do at the command line, and there is no second parser here to drift from that one.
 
-Both sides read one spelling of a boundary, the protocol's own `displayLabel` in `@suss/ir-core`, which is the same string `suss ask` and the storage pass print. An access whose container the code cannot settle (a wrapper handed its table as an argument) spells a name with a hole in it and matches nothing here, because grounding that name is the storage pass's job and this pass loads no contracts.
+For each declared effect, the pass walks what the matching code transitions reached, each a verb from `relationsOf` and the binding it reached, and reports `uncoveredOutcome` when nothing there matches what the intent said. An outcome that declares an ending narrows to the transitions that end that way; an outcome that declares only effects is checked against every transition of the unit.
+
+For the other direction, the pass walks every boundary the unit's transitions reach and reports `undeclaredOutcome` for each one no outcome declares. An intent listing three writes on a unit doing four has one nobody wrote down. It is info rather than an error for the same reason an undeclared status is: an intent doc declares the floor rather than a closed list, so code beyond it usually means somebody has not written that part down yet.
+
+An access whose container the code cannot settle (a wrapper handed its table as an argument) spells a name with a hole in it and matches nothing here, because grounding that name is the storage pass's job and this pass loads no contracts.
 
 ## Which boundaries can be paired
 

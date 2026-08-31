@@ -200,7 +200,8 @@ const REF_FORMATTERS: DispatchTable<ValueRef, string> = {
   unresolved: (v) => normalizeSourceText(v.sourceText),
 };
 
-function formatRef(v: ValueRef): string {
+/** Exported so a drafted intent doc writes a value the way a report does. */
+export function formatRef(v: ValueRef): string {
   return dispatchByType(REF_FORMATTERS, v);
 }
 
