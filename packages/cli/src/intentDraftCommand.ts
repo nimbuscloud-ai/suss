@@ -33,7 +33,7 @@ import { whatWouldKeyIt } from "@suss/checker-intent";
 import { loadIntentDoc } from "@suss/contract-intent";
 import { EVERY_FIELD } from "@suss/ir-core";
 
-import { parseSummaryFile } from "./inspect.js";
+import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import { draftedWhen } from "./intentWhen.js";
 import { UsageError } from "./usageError.js";
 
@@ -631,15 +631,20 @@ export function destinationOf(options: { out?: string; into?: string }): {
   return { dir: options.out ?? DEFAULT_OUT, overExisting: "warn" };
 }
 
+/**
+ * A folder reads the same as a file, because extracting one file per
+ * pack and pointing commands at the folder is the flow the docs teach.
+ */
 function readSummariesFile(from: string): BehavioralSummary[] {
   const resolved = path.resolve(from);
   if (!fs.existsSync(resolved)) {
-    throw new UsageError(`No file at ${resolved}.`);
+    throw new UsageError(`No file or folder at ${resolved}.`);
   }
 
-  return parseSummaryFile(resolved, fs.readFileSync(resolved, "utf-8")).map(
-    summaryWithDefinitionsInlined,
-  );
+  const read = fs.statSync(resolved).isDirectory()
+    ? readSummariesFromDir(resolved)
+    : parseSummaryFile(resolved, fs.readFileSync(resolved, "utf-8"));
+  return read.map(summaryWithDefinitionsInlined);
 }
 
 export function intentDraft(options: IntentDraftOptions): number {

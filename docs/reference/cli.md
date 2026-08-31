@@ -1037,12 +1037,14 @@ root; an existing file is never overwritten. `-o` picks another path, and
 ## `suss infer intent`
 
 ```bash
-suss infer intent --from <summaries.json> [-o <directory> | --into <directory>]
+suss infer intent --from <summaries.json | directory> [-o <directory> | --into <directory>]
 ```
 
 Writes one [boundary intent doc](/contracts) per boundary in a summaries
 file, from what the code does today, for a team adopting the intent layer
-on a codebase that already exists.
+on a codebase that already exists. `--from` takes a folder as well, and
+reads every `.json` in it, which is what a project with one file per pack
+has.
 
 ```bash
 suss extract -p tsconfig.json -f express -o summaries/code.json
