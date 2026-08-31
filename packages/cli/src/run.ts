@@ -45,7 +45,7 @@ Usage:
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
   suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
-  suss infer intent --from <summaries.json> [-o <directory> | --into <directory>]
+  suss infer intent --from <summaries.json | directory> [-o <directory> | --into <directory>]
   suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
   suss --version
 

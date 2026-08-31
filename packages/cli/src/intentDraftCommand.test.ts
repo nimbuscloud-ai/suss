@@ -681,6 +681,29 @@ describe("intentDraft", () => {
     expect(io.stdout).toContain("purpose and audience left blank");
   });
 
+  it("reads a folder of summaries, one file per pack", async () => {
+    const root = tempDir();
+    const from = path.join(root, "summaries");
+    fs.mkdirSync(from);
+    fs.writeFileSync(
+      path.join(from, "routes.json"),
+      JSON.stringify([TWO_ROUTES[0]]),
+    );
+    fs.writeFileSync(
+      path.join(from, "more.json"),
+      JSON.stringify([TWO_ROUTES[1]]),
+    );
+    const out = path.join(root, "intent");
+
+    const { exit } = await capture(async () => intentDraft({ from, out }));
+
+    expect(exit).toBe(0);
+    expect(fs.readdirSync(out).sort()).toEqual([
+      "get-users-id.intent.yaml",
+      "post-users.intent.yaml",
+    ]);
+  });
+
   it("warns before writing over intent docs that are already there", async () => {
     const root = tempDir();
     const from = summariesFile(root, TWO_ROUTES);
@@ -751,7 +774,7 @@ describe("intentDraft", () => {
 
   it("reports a summaries file that is not there", () => {
     expect(() => intentDraft({ from: "/nope/code.json" })).toThrow(
-      /No file at/,
+      /No file or folder at/,
     );
   });
 });
