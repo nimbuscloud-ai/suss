@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 4439,
-      "covered": 4135,
+      "total": 4444,
+      "covered": 4141,
       "skipped": 0,
-      "pct": 93.15
+      "pct": 93.18
     },
     "statements": {
-      "total": 4558,
-      "covered": 4249,
+      "total": 4567,
+      "covered": 4259,
       "skipped": 0,
-      "pct": 93.22
+      "pct": 93.25
     },
     "functions": {
-      "total": 969,
-      "covered": 915,
+      "total": 977,
+      "covered": 923,
       "skipped": 0,
-      "pct": 94.42
+      "pct": 94.47
     },
     "branches": {
-      "total": 3124,
-      "covered": 2558,
+      "total": 3125,
+      "covered": 2562,
       "skipped": 0,
-      "pct": 81.88
+      "pct": 81.98
     },
     "branchesTrue": {
       "total": 0,
@@ -397,28 +397,28 @@
   },
   "src/extract.ts": {
     "lines": {
-      "total": 371,
-      "covered": 352,
+      "total": 382,
+      "covered": 364,
       "skipped": 0,
-      "pct": 94.87
+      "pct": 95.28
     },
     "functions": {
-      "total": 92,
-      "covered": 89,
+      "total": 100,
+      "covered": 97,
       "skipped": 0,
-      "pct": 96.73
+      "pct": 97
     },
     "statements": {
-      "total": 385,
-      "covered": 365,
+      "total": 400,
+      "covered": 381,
       "skipped": 0,
-      "pct": 94.8
+      "pct": 95.25
     },
     "branches": {
-      "total": 285,
-      "covered": 235,
+      "total": 291,
+      "covered": 242,
       "skipped": 0,
-      "pct": 82.45
+      "pct": 83.16
     }
   },
   "src/flow.ts": {
@@ -865,10 +865,10 @@
   },
   "src/stubs.ts": {
     "lines": {
-      "total": 89,
-      "covered": 88,
+      "total": 83,
+      "covered": 82,
       "skipped": 0,
-      "pct": 98.87
+      "pct": 98.79
     },
     "functions": {
       "total": 9,
@@ -877,16 +877,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 89,
-      "covered": 88,
+      "total": 83,
+      "covered": 82,
       "skipped": 0,
-      "pct": 98.87
+      "pct": 98.79
     },
     "branches": {
-      "total": 58,
-      "covered": 52,
+      "total": 53,
+      "covered": 49,
       "skipped": 0,
-      "pct": 89.65
+      "pct": 92.45
     }
   },
   "src/style.ts": {
