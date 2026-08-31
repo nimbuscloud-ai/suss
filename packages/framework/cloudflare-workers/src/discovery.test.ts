@@ -272,12 +272,19 @@ describe("envBindingRecognizer", () => {
 
   it("reads the argument whatever the project calls it", async () => {
     const units = inFile(await run(), "named.ts");
-    const reads = (units[0]?.transitions ?? [])
-      .flatMap((t) => t.effects)
-      .filter(
-        (e) =>
-          e.type === "interaction" && e.interaction.class === "config-read",
-      );
+    // One read reaches every branch it ran on, so the same read comes
+    // back once per transition.
+    const reads = [
+      ...new Map(
+        (units[0]?.transitions ?? [])
+          .flatMap((t) => t.effects)
+          .filter(
+            (e) =>
+              e.type === "interaction" && e.interaction.class === "config-read",
+          )
+          .map((e) => [JSON.stringify(e), e] as const),
+      ).values(),
+    ];
     expect(reads).toHaveLength(1);
     expect(reads[0]).toMatchObject({
       interaction: { name: "SERVICE_ORIGIN" },

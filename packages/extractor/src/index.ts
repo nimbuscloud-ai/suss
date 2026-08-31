@@ -50,6 +50,7 @@ import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
 export { composeWrappers } from "./composeWrappers.js";
+export { guardsHoldOn, runsBefore } from "./effectGuards.js";
 export {
   httpRouteDiscovery,
   type RegistrationHelper,

@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 9089,
-      "covered": 7873,
+      "total": 9115,
+      "covered": 7897,
       "skipped": 0,
-      "pct": 86.62
+      "pct": 86.63
     },
     "statements": {
-      "total": 9193,
-      "covered": 7973,
+      "total": 9216,
+      "covered": 7994,
       "skipped": 0,
-      "pct": 86.72
+      "pct": 86.74
     },
     "functions": {
-      "total": 1364,
-      "covered": 1262,
+      "total": 1368,
+      "covered": 1266,
       "skipped": 0,
-      "pct": 92.52
+      "pct": 92.54
     },
     "branches": {
-      "total": 7098,
-      "covered": 5601,
+      "total": 7115,
+      "covered": 5616,
       "skipped": 0,
-      "pct": 78.9
+      "pct": 78.93
     },
     "branchesTrue": {
       "total": 0,
@@ -59,28 +59,28 @@
   },
   "src/assembly.ts": {
     "lines": {
-      "total": 75,
-      "covered": 74,
+      "total": 82,
+      "covered": 81,
       "skipped": 0,
-      "pct": 98.66
+      "pct": 98.78
     },
     "functions": {
-      "total": 20,
-      "covered": 20,
+      "total": 22,
+      "covered": 22,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 80,
-      "covered": 79,
+      "total": 84,
+      "covered": 83,
       "skipped": 0,
-      "pct": 98.75
+      "pct": 98.8
     },
     "branches": {
-      "total": 64,
-      "covered": 59,
+      "total": 66,
+      "covered": 61,
       "skipped": 0,
-      "pct": 92.18
+      "pct": 92.42
     }
   },
   "src/cache.ts": {
@@ -1879,28 +1879,28 @@
   },
   "src/resolve/invocationEffects.ts": {
     "lines": {
-      "total": 277,
-      "covered": 248,
+      "total": 296,
+      "covered": 265,
       "skipped": 0,
-      "pct": 89.53
+      "pct": 89.52
     },
     "functions": {
-      "total": 38,
-      "covered": 33,
+      "total": 40,
+      "covered": 35,
       "skipped": 0,
-      "pct": 86.84
+      "pct": 87.5
     },
     "statements": {
-      "total": 279,
-      "covered": 250,
+      "total": 298,
+      "covered": 267,
       "skipped": 0,
-      "pct": 89.6
+      "pct": 89.59
     },
     "branches": {
-      "total": 225,
-      "covered": 198,
+      "total": 240,
+      "covered": 211,
       "skipped": 0,
-      "pct": 88
+      "pct": 87.91
     }
   },
   "src/resolve/reachableClosure.ts": {

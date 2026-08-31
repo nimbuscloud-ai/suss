@@ -122,18 +122,31 @@ async function run(): Promise<BehavioralSummary[]> {
   return await adapter.extractAll();
 }
 
+/**
+ * The distinct storage accesses a file's units make. One call reaches
+ * every branch it ran on, so reading the transitions end to end would
+ * count the same access once per branch.
+ */
 function storageEffects(
   summaries: BehavioralSummary[],
   basename: string,
 ): Effect[] {
-  return summaries
-    .filter((s) => s.location.file.endsWith(basename))
-    .flatMap((s) => s.transitions)
-    .flatMap((t) => t.effects)
-    .filter(
-      (e) =>
-        e.type === "interaction" && e.interaction.class === "storage-access",
-    );
+  const distinct = new Map<string, Effect>();
+  for (const summary of summaries.filter((s) =>
+    s.location.file.endsWith(basename),
+  )) {
+    for (const transition of summary.transitions) {
+      for (const effect of transition.effects) {
+        if (
+          effect.type === "interaction" &&
+          effect.interaction.class === "storage-access"
+        ) {
+          distinct.set(JSON.stringify(effect), effect);
+        }
+      }
+    }
+  }
+  return [...distinct.values()];
 }
 
 describe("storeBindingRecognizer", () => {

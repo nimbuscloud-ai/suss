@@ -19,6 +19,7 @@ import {
   andThenReading,
   enumerateOrDegrade,
   firstWrittenReading,
+  guardsHoldOn,
   mapReading,
   unreadableReading,
   valueToReadFurtherFrom,
@@ -782,13 +783,8 @@ function effectsReaching(
   effects: readonly InvocationEffect[],
   conditions: readonly RawCondition[],
 ): RawEffect[] {
-  const key = (condition: RawCondition): string =>
-    `${condition.polarity}:${condition.sourceText}`;
-  const onPath = new Set(conditions.map(key));
   return effects.filter((effect) =>
-    (effect.preconditions ?? []).every((precondition) =>
-      onPath.has(key(precondition)),
-    ),
+    guardsHoldOn(effect.preconditions, conditions),
   );
 }
 

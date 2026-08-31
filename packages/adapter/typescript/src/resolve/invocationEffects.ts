@@ -81,6 +81,11 @@ export interface InvocationEffectLocation {
    * them: otherwise single-line orchestrators lose their effects.
    */
   neverTerminal: boolean;
+  /**
+   * True for a call in a `finally` body, which runs on every path
+   * through the try, including the ones that left before it.
+   */
+  alwaysRuns: boolean;
 }
 
 /**
@@ -98,6 +103,8 @@ export interface RecognizedEffectLocation {
    * without going back to the AST.
    */
   preconditions: RawCondition[];
+  /** True for a call in a `finally` body. See `InvocationEffectLocation`. */
+  alwaysRuns: boolean;
 }
 
 /**
@@ -373,6 +380,7 @@ export function extractInvocationEffects(
           },
           line: startLineOf(node),
           neverTerminal: false,
+          alwaysRuns: runsOnEveryPath(node, func),
         });
       }
       return;
@@ -402,6 +410,7 @@ export function extractInvocationEffects(
             },
             line: enclosingStatementLine(node),
             neverTerminal: true,
+            alwaysRuns: runsOnEveryPath(node, func),
           });
         }
       }
@@ -429,6 +438,7 @@ export function extractInvocationEffects(
             },
             line: enclosingStatementLine(node),
             neverTerminal: true,
+            alwaysRuns: runsOnEveryPath(node, func),
           });
         }
       }
@@ -457,6 +467,7 @@ export function extractInvocationEffects(
           },
           line: startLineOf(node),
           neverTerminal: false,
+          alwaysRuns: runsOnEveryPath(node, func),
           node: call,
         });
       }
@@ -484,6 +495,7 @@ export function extractInvocationEffects(
           },
           line: startLineOf(node),
           neverTerminal: false,
+          alwaysRuns: runsOnEveryPath(node, func),
           node: call,
         });
       }
@@ -515,6 +527,7 @@ export function extractInvocationEffects(
           },
           line: enclosingStatementLine(node),
           neverTerminal: true,
+          alwaysRuns: runsOnEveryPath(node, func),
         });
       }
     }
@@ -571,6 +584,7 @@ export function runInvocationRecognizers(
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, func);
+    const alwaysRuns = runsOnEveryPath(node, func);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -596,6 +610,7 @@ export function runInvocationRecognizers(
           effect: withPreconditions(eff, preconditions),
           line,
           preconditions,
+          alwaysRuns,
         });
       }
     }
@@ -739,6 +754,7 @@ function dispatchAccessRecognizers(
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, root);
+    const alwaysRuns = runsOnEveryPath(node, root);
     for (const recognizer of recognizers) {
       let emitted: Effect[] | null = null;
       try {
@@ -761,7 +777,7 @@ function dispatchAccessRecognizers(
           continue;
         }
         seenEffects.add(key);
-        out.push({ effect, line, preconditions });
+        out.push({ effect, line, preconditions, alwaysRuns });
       }
     }
   });
@@ -984,6 +1000,27 @@ function collectPreconditions(node: Node, root: Node): RawCondition[] {
   return collectAncestorConditionInfosBelow(node, root).map(
     conditionInfoToRawCondition,
   );
+}
+
+/**
+ * Whether `node` is inside a `finally` body below `root`. Cleanup
+ * written there runs on the paths that returned or threw above it, so
+ * where it is in the file says nothing about which branches reach it.
+ */
+function runsOnEveryPath(node: Node, root: Node): boolean {
+  let current: Node | undefined = node;
+  while (current !== undefined && current !== root) {
+    const parent: Node | undefined = current.getParent();
+    if (
+      parent !== undefined &&
+      Node.isTryStatement(parent) &&
+      parent.getFinallyBlock() === current
+    ) {
+      return true;
+    }
+    current = parent;
+  }
+  return false;
 }
 
 /**
