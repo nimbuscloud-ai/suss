@@ -888,21 +888,13 @@ describe("runCli infer", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("keeps suss stub draft working with a deprecation line", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-stubcli-"));
-    fs.mkdirSync(path.join(dir, "src"));
-    fs.writeFileSync(
-      path.join(dir, "src", "go.ts"),
-      'import { send } from "@acme/wire";\nexport const go = () => send("q");\n',
-    );
-
+  it("says stub is not a command, and lists the ones that are", async () => {
     const { exit, io } = await capture(() =>
-      runCli(["stub", "draft", "@acme/wire", "--dir", dir, "-o", "-"]),
+      runCli(["stub", "draft", "@acme/wire"]),
     );
-    expect(exit).toBe(0);
-    expect(io.stderr).toContain("now suss infer stub");
-    expect(io.stdout).toContain('package: "@acme/wire"');
-    fs.rmSync(dir, { recursive: true, force: true });
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain('There is no "stub" command');
+    expect(io.stderr).toContain("infer");
   });
 });
 
