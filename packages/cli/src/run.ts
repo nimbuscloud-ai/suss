@@ -298,17 +298,6 @@ async function dispatch(args: string[]): Promise<number> {
   if (command === "infer") {
     return runInfer(args.slice(1));
   }
-  if (command === "stub") {
-    process.stderr.write(
-      "suss stub draft is now suss infer stub; this spelling goes away in the next release.\n",
-    );
-    if (args[1] !== "draft") {
-      return 1;
-    }
-
-    return runInfer(["stub", ...args.slice(2)]);
-  }
-
   process.stderr.write(
     `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, and infer.\n`,
   );

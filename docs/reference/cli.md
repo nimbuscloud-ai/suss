@@ -1012,9 +1012,6 @@ suss corroborate --experimental [-p TSCONFIG | --dir DIR] -f express
 suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
 ```
 
-The 0.20.0 spelling `suss stub draft` still works and prints a notice;
-it goes away in the next release.
-
 Writes a [dependency stub](/dependency-stubs) skeleton for a package the
 project calls but extraction cannot read into: one `performs-call`
 candidate per export the code reaches, with the argument shapes observed
