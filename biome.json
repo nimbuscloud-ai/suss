@@ -7,6 +7,7 @@
       "!**/public/**",
       "!**/build/**",
       "!**/dist/**",
+      "!**/.tsbuild/**",
       "!fixtures/**",
       "!**/coverage/**",
       "!**/.suss/**",
