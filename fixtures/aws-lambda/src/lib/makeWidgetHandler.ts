@@ -1,5 +1,5 @@
 // A service-local handler factory in the shape production message
-// consumers use: the config names the subject the consumer expects,
+// consumers use: the config says which subject the consumer expects,
 // and the second argument is the body run per message.
 
 export interface WidgetHandlerConfig<S extends string> {

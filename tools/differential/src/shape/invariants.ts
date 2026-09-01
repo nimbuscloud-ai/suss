@@ -30,12 +30,6 @@ export interface ShapeExpectation {
    */
   configReads?: ExpectedConfigRead[];
   /**
-   * The subject a message consumer listens for, when the program states
-   * one. A consumer whose subject nothing reports pairs with no
-   * producer.
-   */
-  channel?: string | null;
-  /**
    * The GraphQL field the program says this resolver serves. A null
    * `typeName` is a program that gives the field but not the type it
    * belongs to, where the answer is a binding with no type plus a gap
@@ -332,30 +326,6 @@ const aDefaultedReadSaysSo: Invariant = (summaries, expectation) => {
   });
 };
 
-const everyConsumerNamesItsChannel: Invariant = (summaries, expectation) => {
-  const channel = expectation.channel;
-  if (channel === undefined || channel === null) {
-    return [];
-  }
-  const matching = ofKind(summaries, expectation);
-  const bound = matching.filter((summary) => {
-    const binding = summary.identity.boundaryBinding;
-    return (
-      binding !== null &&
-      binding.semantics.name === "message-bus" &&
-      binding.semantics.channel === channel
-    );
-  });
-  return bound.length > 0
-    ? []
-    : violation(
-        "everyConsumerNamesItsChannel",
-        `the program says this consumer answers to ${JSON.stringify(channel)} and no summary binds to that channel, so it pairs with no producer (bindings: ${matching
-          .map((s) => JSON.stringify(s.identity.boundaryBinding?.semantics))
-          .join(", ")})`,
-      );
-};
-
 export const INVARIANTS: Record<string, Invariant> = {
   everyAnnouncedBoundaryIsSummarized,
   noBoundarySummarizedTwice,
@@ -368,7 +338,6 @@ export const INVARIANTS: Record<string, Invariant> = {
   everyExportKeepsItsPath,
   everyConfigReadIsReported,
   aDefaultedReadSaysSo,
-  everyConsumerNamesItsChannel,
 };
 
 export function checkInvariants(

@@ -191,14 +191,10 @@ export async function minimizeEnvShape(
   return reduce(spec, target, envCandidates, run);
 }
 
-const queueCandidates = (spec: QueueShapeSpec): QueueShapeSpec[] => [
-  ...(spec.build === SIMPLEST_QUEUE_SHAPE.build
+const queueCandidates = (spec: QueueShapeSpec): QueueShapeSpec[] =>
+  spec.build === SIMPLEST_QUEUE_SHAPE.build
     ? []
-    : [{ ...spec, build: SIMPLEST_QUEUE_SHAPE.build }]),
-  ...(spec.config === SIMPLEST_QUEUE_SHAPE.config
-    ? []
-    : [{ ...spec, config: SIMPLEST_QUEUE_SHAPE.config }]),
-];
+    : [{ ...spec, build: SIMPLEST_QUEUE_SHAPE.build }];
 
 export async function minimizeQueueShape(
   spec: QueueShapeSpec,

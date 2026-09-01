@@ -169,7 +169,6 @@ const CALL_CONSUMERS: Record<string, { pack: string; option: string }> = {
   "aws.sqs": { pack: "aws-sqs", option: "producers" },
   "aws.events": { pack: "aws-eventbridge", option: "producers" },
   "aws.dynamodb": { pack: "aws-dynamodb", option: "requestFunctions" },
-  "aws.lambda": { pack: "aws-lambda", option: "subjectFactories" },
   axios: { pack: "axios", option: "factories" },
 };
 
@@ -240,10 +239,12 @@ function routeStatement(
  * above writes these same keys, so a pack factory still reads them;
  * what the CLI refuses is a project's own config file setting one.
  *
- * `registrationHelpers`, `requestFunctions` and `subjectFactories` are
- * routed here too, and they are deliberately absent: each describes a
- * function the project wrote itself, so a config file is where it
- * belongs and a stub keyed by a package cannot spell it.
+ * `registrationHelpers` and `requestFunctions` are routed here too, and
+ * they are deliberately absent: each describes a function the project
+ * wrote itself, so a config file is where it belongs and a stub keyed
+ * by a package cannot spell it. An option that went because suss reads
+ * the same fact off the code is refused through the retired table
+ * instead, which says what happens now rather than where to put it.
  */
 const STUB_ONLY_OPTIONS: Record<string, readonly string[]> = {
   "nestjs-rest": ["classDecorators"],

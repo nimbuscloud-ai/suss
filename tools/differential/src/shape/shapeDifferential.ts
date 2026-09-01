@@ -631,7 +631,7 @@ async function extractQueueShape(
   clearTemplateCache();
   return extractFromDisk({
     files: typeScriptFiles(rendered.files),
-    pack: awsLambdaFramework({ subjectFactories: rendered.subjectFactories }),
+    pack: awsLambdaFramework(),
   });
 }
 
@@ -645,15 +645,14 @@ export async function runQueueShapeDifferential(
     kind: "handler",
     boundaryCount: 1,
     unitName: null,
-    channel: rendered.channel,
   }).map((violation) => ({
     oracle: "invariant" as const,
     detail: `${violation.invariant}: ${violation.detail}`,
   }));
 
   // A consumer-side program alone gives the checker nothing to accuse:
-  // handlers bound to subjects are not orphans, and nothing here is
-  // an unused queue.
+  // a consumer whose channel the template supplies is not an orphan,
+  // and nothing here is an unused queue.
   findings.push(
     ...checkerFindings(summaries, {
       none: [
@@ -664,12 +663,11 @@ export async function runQueueShapeDifferential(
     }),
   );
 
-  // A consumer built by no factory states no subject, so it is a
-  // different program rather than another spelling of this one.
+  // A consumer with no factory in front of it writes a different body,
+  // so it is a different program rather than another spelling of this
+  // one.
   const baseline =
-    spec.build === "bareFunction" ||
-    (spec.build === SIMPLEST_QUEUE_SHAPE.build &&
-      spec.config === SIMPLEST_QUEUE_SHAPE.config)
+    spec.build === "bareFunction" || spec.build === SIMPLEST_QUEUE_SHAPE.build
       ? null
       : SIMPLEST_QUEUE_SHAPE;
   const baselineRendered = renderQueueShape(baseline ?? spec);
@@ -688,7 +686,7 @@ export async function runQueueShapeDifferential(
 
   return {
     spec,
-    label: `${spec.build} / ${spec.config}`,
+    label: spec.build,
     files: rendered.files,
     baselineFiles: baselineRendered.files,
     summaries,

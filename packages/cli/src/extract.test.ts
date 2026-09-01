@@ -351,13 +351,21 @@ describe("packs for the other two languages", () => {
       )}`,
     );
     expect(dynamo.name).toBe("aws-dynamodb");
+  });
 
-    const lambda = await resolveFramework(
-      `aws-lambda=${writeConfig(
-        JSON.stringify({ subjectFactories: [{ property: "subject" }] }),
-      )}`,
+  it("says what happens now when a config still sets a retired option", async () => {
+    const file = writeConfig(
+      JSON.stringify({ subjectFactories: [{ property: "subject" }] }),
     );
-    expect(lambda.name).toBe("aws-lambda");
+    const refusal = await resolveFramework(`aws-lambda=${file}`).catch(
+      (error: Error) => error.message,
+    );
+
+    expect(refusal).toContain("subjectFactories is gone");
+    expect(refusal).toContain("SAM template's event source");
+    // A retired option describes the project's own code, so nothing
+    // here should send somebody off to write a dependency stub.
+    expect(refusal).not.toContain("suss infer stub");
   });
 
   it("still hands a pack an option a stub states", async () => {

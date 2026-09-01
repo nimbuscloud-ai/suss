@@ -99,8 +99,8 @@ Resources:
           Properties:
             Queue: !GetAtt JobsQueue.Arn
 
-  # SQS consumer built by a subject-naming handler factory. The
-  # config's `expected` property is the channel subject.
+  # SQS consumer whose export a handler factory of the project's own
+  # built, so the walk reaches the body through the factory.
   SubjectWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -110,18 +110,6 @@ Resources:
           Type: SQS
           Properties:
             Queue: !GetAtt InvoicesQueue.Arn
-
-  # Same factory, but the subject is computed, so there is no channel
-  # to bind.
-  ComputedSubjectFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/computedSubject.handler
-      Events:
-        Refunds:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt RefundsQueue.Arn
 
   # Two Lambdas answer one subject, each behind its own queue. Both
   # queues are fed by the rule that routes `order.placed`, so the
@@ -162,9 +150,6 @@ Resources:
     Type: AWS::SQS::Queue
 
   InvoicesQueue:
-    Type: AWS::SQS::Queue
-
-  RefundsQueue:
     Type: AWS::SQS::Queue
 
   OrderIndexerQueue:

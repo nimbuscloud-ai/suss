@@ -52,26 +52,22 @@ A call whose target this run cannot settle records the invoke with no name, so a
 
 ## Options
 
-A project whose SQS consumers are built by a handler factory can say where that factory states the subject, so the consumer pairs with its producers.
+None. Everything this pack reads comes off the template or the code, so there is nothing to point it at.
 
-```json
-{
-  "subjectFactories": [
-    { "property": "subject", "callees": ["sqsConsumer"], "argIndex": 0 }
-  ]
-}
+There used to be a `subjectFactories` option, for a project whose SQS consumers are built by a handler factory that states a subject:
+
+```ts
+export const handler = makeSubjectHandler(
+  { name: "paid-worker", subject: "billing.invoicePaid" as const },
+  async (message) => { ... },
+);
 ```
 
-Pass it with `suss extract -f aws-lambda=config.json`.
+The option said the property named `subject` was the channel, and the consumer bound to `bus:aws_sqs billing.invoicePaid`. That was the wrong boundary. A producer sends to a queue, not to a subject, so the two ends never met on that name, and a service that also read its template ended up with two message-bus boundaries for one handler.
 
-- `subjectFactories`: where a project's own handler factory states the subject its SQS consumer expects. A handler built by such a factory gets a message-bus binding on that subject instead of the fallback. AWS declares no such factory and nothing here assumes one, so a service that does not write its consumers this way is unaffected.
-  - `property`: the property on the factory's config object that contains the subject.
-  - `callees`: the factory functions the project builds its consumers with. Optional, since the adapter reads whatever call built the export. Fill it in when two factories in the same service put different things under the same property.
-  - `argIndex`: which argument position the config object is in. Left out, every object argument is read.
+The queue is the boundary and the template is where it is declared. A consumer's binding says the bus and leaves `channel: null`, and the declared consumer for the same deployable unit fills the channel in. That is how the checker finds the code behind a declared consumer, and `withDeclaredDelivery` in `@suss/behavioral-ir` is the same join for anything reading summaries by boundary key. `suss infer intent` uses it, so drafting a document for one of these handlers writes the queue from the template above the outcomes the handler produces.
 
-The queue itself stays on the declared side, since the message-bus pass in `@suss/contract-cloudformation` reads the template's SQS wiring. What the code adds is which subject this consumer listens for.
-
-A consumer with no such factory keeps `channel: null`, and the queue comes back from the declared side when something puts the two together. Both summaries give the same deployable unit, which is how the checker finds the code behind a declared consumer, and `withDeclaredDelivery` in `@suss/behavioral-ir` is the same join for anything that reads summaries by boundary key. `suss infer intent` uses it, so drafting a document for one of these handlers writes the queue from the template above the outcomes the handler produces.
+The subject itself is a field of the message, and `suss check` compares the fields a consumer reads against the fields the producers on that queue send. A config file that still sets `subjectFactories` is refused, with a line saying this.
 
 ## Where it fits in suss
 

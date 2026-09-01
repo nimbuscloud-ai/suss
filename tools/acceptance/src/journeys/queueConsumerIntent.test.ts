@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { fixture, runSuss, workspace, writePackConfig } from "../harness.js";
+import { fixture, runSuss, workspace } from "../harness.js";
 
 import type { CheckIntentResult } from "@suss/checker-intent";
 
@@ -22,7 +22,7 @@ import type { CheckIntentResult } from "@suss/checker-intent";
  * key. What pairs is the store named as the target of a write.
  */
 
-const DRAFT = "bus-aws-sqs-billing-invoice-paid.intent.yaml";
+const DRAFT = "bus-aws-sqs-invoices-queue.intent.yaml";
 const ROUTE = "get-invoices-invoice-id.intent.yaml";
 const ROUTE_PRD = "get-invoices-invoice-id.prd.yaml";
 
@@ -79,18 +79,13 @@ describe("infer intent for a queue consumer that writes a table", () => {
 
   beforeAll(() => {
     fs.mkdirSync(summaries, { recursive: true });
-    // The factory that says which subject this consumer expects lives in
-    // the service, so the pack is pointed at it the way a project does.
-    const packConfig = writePackConfig(root, "aws-lambda", {
-      subjectFactories: [{ property: "subject" }],
-    });
 
     const code = runSuss([
       "extract",
       "--dir",
       fixture("queue-consumer-store"),
       "-f",
-      `aws-lambda=${packConfig}`,
+      "aws-lambda",
       "-f",
       "aws-dynamodb",
       "-o",
@@ -98,11 +93,23 @@ describe("infer intent for a queue consumer that writes a table", () => {
     ]);
     expect(code.status, code.stderr).toBe(0);
 
+    // Which queue delivers to the consumer is the template's to say,
+    // so the run that reads it has to be in the same folder.
+    const infra = runSuss([
+      "contract",
+      "--from",
+      "cloudformation",
+      path.join(fixture("queue-consumer-store"), "template.yaml"),
+      "-o",
+      path.join(summaries, "infra.json"),
+    ]);
+    expect(infra.status, infra.stderr).toBe(0);
+
     const drafted = runSuss([
       "infer",
       "intent",
       "--from",
-      path.join(summaries, "code.json"),
+      summaries,
       "--out",
       intent,
     ]);
@@ -115,7 +122,7 @@ describe("infer intent for a queue consumer that writes a table", () => {
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
     expect(doc).toContain("semantics: message-bus");
     expect(doc).toContain("messageBus: aws_sqs");
-    expect(doc).toContain("channel: billing.invoicePaid");
+    expect(doc).toContain("channel: InvoicesQueue");
   });
 
   it("says which store a branch read, and what it came back with", () => {
@@ -217,7 +224,7 @@ describe("infer intent for a queue consumer that writes a table", () => {
     const doc = fs.readFileSync(path.join(intent, DRAFT), "utf8");
 
     expect(doc).toContain(
-      "# bus:aws_sqs billing.invoicePaid, as the code has it today.",
+      "# bus:aws_sqs InvoicesQueue, as the code has it today.",
     );
     expect(doc).toContain("src/handlers/invoiceWorker.ts");
     expect(doc).toContain("kind: boundary\n\nname: ");
@@ -255,7 +262,7 @@ describe("infer intent for a queue consumer that writes a table", () => {
       checked.intent.checked.map((c) =>
         c.kind === "boundary" ? c.boundary : c.intent,
       ),
-    ).toEqual(["bus:aws_sqs billing.invoicePaid", "GET /invoices/{invoiceId}"]);
+    ).toEqual(["bus:aws_sqs InvoicesQueue", "GET /invoices/{invoiceId}"]);
   });
 
   it("drafts a PRD per boundary once the outcome ids are settled", () => {

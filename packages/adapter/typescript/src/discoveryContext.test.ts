@@ -71,67 +71,6 @@ describe("createTsDiscoveryContext", () => {
   });
 });
 
-describe("exportedCallConfigString", () => {
-  const spec = {
-    callees: ["makeWidgetHandler"],
-    argIndex: 0,
-    property: "subject",
-  };
-
-  it("reads the subject through an as-const cast", () => {
-    const file = sourceFile(`
-      declare function makeWidgetHandler(c: unknown, b: unknown): unknown;
-      export const handler = makeWidgetHandler(
-        { name: "w", subject: "billing.invoicePaid" as const },
-        async () => undefined,
-      );
-    `);
-    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBe(
-      "billing.invoicePaid",
-    );
-  });
-
-  it("answers null for a computed subject", () => {
-    const file = sourceFile(`
-      declare function makeWidgetHandler(c: unknown, b: unknown): unknown;
-      const source = "billing";
-      export const handler = makeWidgetHandler(
-        { subject: \`\${source}.refundIssued\` },
-        async () => undefined,
-      );
-    `);
-    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBeNull();
-  });
-
-  it("answers null when the callee is not in the list", () => {
-    const file = sourceFile(`
-      declare function otherFactory(c: unknown, b: unknown): unknown;
-      export const handler = otherFactory(
-        { subject: "billing.invoicePaid" },
-        async () => undefined,
-      );
-    `);
-    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBeNull();
-  });
-
-  it("answers null when the export is not a call", () => {
-    const file = sourceFile("export const handler = async () => undefined;");
-    expect(ctx().exportedCallConfigString(file, "handler", spec)).toBeNull();
-  });
-
-  it("follows a config variable to the object literal it names", () => {
-    const rctx = createTsDiscoveryContext(new ResolutionStore());
-    const file = sourceFile(`
-      declare function makeWidgetHandler(c: unknown, b: unknown): unknown;
-      const config = { subject: "user.deleted" as const };
-      export const handler = makeWidgetHandler(config, async () => undefined);
-    `);
-    expect(rctx.exportedCallConfigString(file, "handler", spec)).toBe(
-      "user.deleted",
-    );
-  });
-});
-
 describe("an export whose binding is written again", () => {
   it("reports the write that survives rather than the initializer", () => {
     const file = sourceFile(`

@@ -232,11 +232,9 @@ at different depths, so leave `module` out there and use
 or through a file the project imports, makes a file worth reading.
 Above, that is the signing library the helper itself imports.
 
-Two more options work the same way, because each also describes code the
-project wrote. `registrationHelpers` on express, fastify and hono says
-what a helper of yours registers, and `subjectFactories` on aws-lambda
-says where your handler factory puts the subject its SQS consumer
-expects.
+One more option works the same way, because it also describes code the
+project wrote: `registrationHelpers` on express, fastify and hono says
+what a helper of yours registers.
 
 Reach for `registrationHelpers` only when a helper is called from
 several places with different arguments. A helper called from one place
@@ -253,18 +251,23 @@ matches comes out under `no-helper` in the pack-health block, so a
 misspelled name or a path pointing somewhere the helper is not shows up
 instead of quietly costing you the routes.
 
-The lambda option:
+The aws-lambda pack takes no options at all. It used to take
+`subjectFactories`, saying which property of your handler factory's
+config was the subject its SQS consumer listens for:
 
-```json
-{ "subjectFactories": [{ "property": "subject" }] }
+```ts
+export const handler = makeSubjectHandler(
+  { name: "paid-worker", subject: "billing.invoicePaid" as const },
+  async (message) => { ... },
+);
 ```
 
-`property` is the key under which the factory's config object puts the
-subject. The adapter works out which function was called and which
-argument was the config by following the export back to the call that
-built it, so you do not have to list either one. Add `callees` or
-`argIndex` when two factories in one service put different things under
-the same property.
+The channel was the wrong thing to take from there. A producer sends to
+a queue, so the two ends never met on that subject, and the SAM template
+already says which queue delivers to a function. A consumer's binding
+now says the bus and leaves the channel blank, and the template's own
+consumer supplies it. The subject stays a field of the message, which
+`suss check` compares against what the producers on that queue send.
 
 Nine options used to state facts about a dependency here, and 0.21.0
 removed them. Setting one now stops the run and says which stub kind

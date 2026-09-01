@@ -11,26 +11,15 @@
 // Helpers stay narrow on purpose. They cover the cases real packs need
 // without exposing arbitrary ts-morph surface to pack authors.
 
-import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
+import { Node, type SourceFile } from "ts-morph";
 
 import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
 import { ResolutionStore } from "./facts/store.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
-import { peelParens, peelSyntax } from "./walk/unwrap.js";
+import { peelParens } from "./walk/unwrap.js";
 
 import type { FunctionRoot } from "./conditions.js";
-
-/**
- * Which call built an export, and which property of its config to
- * read. A pack takes this from its own config, so the optional fields
- * spell `| undefined` the way zod infers an optional field.
- */
-export interface ExportedCallConfigSpec {
-  property: string;
-  callees?: string[] | undefined;
-  argIndex?: number | undefined;
-}
 
 export interface TsDiscoveryContext {
   /** Full filesystem path of the source file. Useful for excluding
@@ -54,33 +43,6 @@ export interface TsDiscoveryContext {
   ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }>;
 
   /**
-   * For an export the project builds by calling a factory, the string
-   * under a property of that call's config object:
-   * `export const handler = makeWidgetHandler({ subject: "a.b" }, ...)`
-   * with `{ property: "subject" }` gives back `"a.b"`.
-   *
-   * The caller does not have to say which function was called or which
-   * argument the config was in. Every object argument is read. Giving the
-   * callee or fixing the argument position narrows that down, for a
-   * project whose factories would otherwise collide.
-   *
-   * Two arguments with the property set to different values give back
-   * null, since nothing says which one was meant.
-   *
-   * The config argument is usually an object literal at the call site;
-   * a variable or import is followed to the literal it resolves to.
-   * `as const` and parentheses around the property value are peeled.
-   * Anything but a string literal underneath (a computed subject, a
-   * template, a call) gives back null, and the caller attaches nothing
-   * rather than guessing.
-   */
-  exportedCallConfigString(
-    sourceFile: SourceFile,
-    exportName: string,
-    spec: ExportedCallConfigSpec,
-  ): string | null;
-
-  /**
    * Walk a function's body for return statements whose value is a
    * JSX element / fragment / self-closing tag. Returns true on the
    * first match; false otherwise. Skips into nested function bodies
@@ -101,8 +63,6 @@ export function createTsDiscoveryContext(
   return {
     getFilePath,
     exportedFunctions: (sourceFile) => exportedFunctions(sourceFile, store),
-    exportedCallConfigString: (sourceFile, exportName, spec) =>
-      exportedCallConfigString(sourceFile, exportName, spec, store),
     hasJsxReturn,
   };
 }
@@ -182,114 +142,6 @@ function valueToAskAbout(decl: Node, writtenAgain: boolean): Node | null {
     ? (decl.getInitializer() ?? decl)
     : decl;
   return couldStillNameAFunction(value) ? value : null;
-}
-
-function exportedCallConfigString(
-  sourceFile: SourceFile,
-  exportName: string,
-  spec: ExportedCallConfigSpec,
-  resolution: ResolutionStore,
-): string | null {
-  const declarations = exportedDeclarationsOf(sourceFile, resolution).get(
-    exportName,
-  );
-  if (declarations === undefined) {
-    return null;
-  }
-
-  const found = new Set<string>();
-  for (const decl of declarations) {
-    if (!Node.isVariableDeclaration(decl)) {
-      continue;
-    }
-    const init = peelExpression(decl.getInitializer());
-    if (init === undefined || !Node.isCallExpression(init)) {
-      continue;
-    }
-    if (!calleeIsNamed(init.getExpression(), spec.callees)) {
-      continue;
-    }
-    for (const arg of configArguments(init.getArguments(), spec.argIndex)) {
-      const held = configString(arg, spec.property, resolution);
-      if (held !== null) {
-        found.add(held);
-      }
-    }
-  }
-  // Two candidates mean the code does not say which was meant, and the
-  // rule is the same as everywhere else: return nothing.
-  return found.size === 1 ? ([...found][0] as string) : null;
-}
-
-/** When the caller named no callee, every callee matches. */
-function calleeIsNamed(callee: Node, names: string[] | undefined): boolean {
-  if (names === undefined || names.length === 0) {
-    return true;
-  }
-  return Node.isIdentifier(callee) && names.includes(callee.getText());
-}
-
-/** The arguments to read a config out of: one position, or all of them. */
-function configArguments(args: Node[], argIndex: number | undefined): Node[] {
-  if (argIndex === undefined) {
-    return args;
-  }
-  const at = args[argIndex];
-  return at === undefined ? [] : [at];
-}
-
-/** The string an argument's object has under `property`. */
-function configString(
-  arg: Node,
-  property: string,
-  resolution?: ResolutionStore,
-): string | null {
-  const config = toObjectLiteral(arg, resolution);
-  if (config === null) {
-    return null;
-  }
-  const prop = config.getProperty(property);
-  if (prop === undefined || !Node.isPropertyAssignment(prop)) {
-    return null;
-  }
-  const value = peelExpression(prop.getInitializer());
-  if (value !== undefined && Node.isStringLiteral(value)) {
-    return value.getLiteralValue();
-  }
-  return null;
-}
-
-/**
- * Strip the wrappers that change a value's type without changing the
- * value: `as const` / `as T`, `satisfies T`, parentheses, and `!`.
- */
-function peelExpression(node: Node | undefined): Node | undefined {
-  return node === undefined ? undefined : peelSyntax(node);
-}
-
-/**
- * The object literal a value is, or the one it resolves to through the
- * fact layer (a config built in a shared constant or another file).
- */
-function toObjectLiteral(
-  node: Node,
-  resolution?: ResolutionStore,
-): ObjectLiteralExpression | null {
-  const peeled = peelExpression(node);
-  if (peeled === undefined) {
-    return null;
-  }
-  if (Node.isObjectLiteralExpression(peeled)) {
-    return peeled;
-  }
-  if (resolution === undefined) {
-    return null;
-  }
-  const resolved = resolution.resolveObject(peeled);
-  if (resolved !== null && Node.isObjectLiteralExpression(resolved)) {
-    return resolved;
-  }
-  return null;
 }
 
 function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {

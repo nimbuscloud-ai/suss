@@ -13,15 +13,8 @@ import type { AwsLambdaPackOptions } from "./index.js";
 
 const fixturesDir = path.resolve(__dirname, "../../../../fixtures/aws-lambda");
 
-// The fixture handlers are built by a factory the fixture project owns. We do
-// not have to configure its name, because the adapter reads whatever call built
-// the export. The project only says which property contains the subject.
-const FIXTURE_SUBJECT_FACTORIES = [{ property: "subject" }];
-
 async function runAdapter(
-  options: AwsLambdaPackOptions = {
-    subjectFactories: FIXTURE_SUBJECT_FACTORIES,
-  },
+  options: AwsLambdaPackOptions = {},
 ): Promise<BehavioralSummary[]> {
   clearTemplateCache();
   // The whole src tree: handlers plus the lib/ factory a handler
@@ -54,21 +47,6 @@ function byRoute(
   return summaries.find((s) => {
     const rest = restBindingOf(s);
     return rest !== null && rest.method === method && rest.path === routePath;
-  });
-}
-
-function byEventType(
-  summaries: BehavioralSummary[],
-  eventType: string,
-): BehavioralSummary | undefined {
-  return summaries.find((s) => {
-    const meta = s.metadata?.awsLambda as
-      | { recognition?: string; eventTypes?: string[] }
-      | undefined;
-    return (
-      meta?.recognition === "recognized-not-http" &&
-      (meta.eventTypes ?? []).includes(eventType)
-    );
   });
 }
 
@@ -244,7 +222,7 @@ describe("awsLambdaFramework: extraction", () => {
   });
 
   it("binds a queue worker to the sqs wire, not http", () => {
-    const sqs = byEventType(summaries, "SQS");
+    const sqs = byFunction(summaries, "QueueWorkerFunction");
     const binding = (sqs as BehavioralSummary).identity.boundaryBinding;
     expect(binding?.transport).toBe("aws_sqs");
   });
@@ -331,7 +309,7 @@ describe("awsLambdaFramework: extraction", () => {
     expect(meta.apiEventType).toBe("HttpApi");
   });
 
-  it("binds a factory-built SQS consumer to the subject its config names", () => {
+  it("binds a factory-built SQS consumer to the bus, with the channel left blank", () => {
     const worker = byFunction(summaries, "SubjectWorkerFunction");
     expect(worker).toBeDefined();
     const binding = (worker as BehavioralSummary).identity
@@ -339,7 +317,9 @@ describe("awsLambdaFramework: extraction", () => {
     expect(binding.semantics.name).toBe("message-bus");
     if (binding.semantics.name === "message-bus") {
       expect(binding.semantics.messageBus).toBe("aws_sqs");
-      expect(binding.semantics.channel).toBe("billing.invoicePaid");
+      // The subject in the factory config is a field of the message.
+      // Which queue delivers here is the template's to say.
+      expect(binding.semantics.channel).toBeNull();
     }
     expect(binding.transport).toBe("aws_sqs");
     expect(binding.recognition).toBe("aws-lambda");
@@ -350,32 +330,5 @@ describe("awsLambdaFramework: extraction", () => {
     };
     expect(meta.recognition).toBe("recognized-not-http");
     expect(meta.eventTypes).toContain("SQS");
-  });
-
-  it("attaches no channel when the factory subject is computed", () => {
-    const computed = byFunction(summaries, "ComputedSubjectFunction");
-    expect(computed).toBeDefined();
-    const binding = (computed as BehavioralSummary).identity.boundaryBinding;
-    // The wire is still SQS; only the channel stays unstated rather
-    // than fabricated from a computed subject.
-    expect(binding?.transport).toBe("aws_sqs");
-    expect(
-      binding?.semantics.name === "message-bus"
-        ? binding.semantics.channel
-        : "not-message-bus",
-    ).toBeNull();
-  });
-
-  it("attaches no channel until the project names its factory", async () => {
-    const defaults = await runAdapter({});
-    const worker = byFunction(defaults, "SubjectWorkerFunction");
-    expect(worker).toBeDefined();
-    const binding = (worker as BehavioralSummary).identity.boundaryBinding;
-    expect(binding?.transport).toBe("aws_sqs");
-    expect(
-      binding?.semantics.name === "message-bus"
-        ? binding.semantics.channel
-        : "not-message-bus",
-    ).toBeNull();
   });
 });

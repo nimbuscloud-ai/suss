@@ -32,6 +32,7 @@ import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
 import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
+import { retiredOptionRefusal, retiredOptionsUsed } from "./retiredOptions.js";
 import {
   loadStubs,
   type StubOverlay,
@@ -377,9 +378,13 @@ function optionProblems(name: string, issue: z.core.$ZodIssue): string[] {
   if (issue.code === "unrecognized_keys") {
     const stubOnly = new Set(stubOnlyOptionsOf(name));
     const routed = issue.keys.filter((key) => stubOnly.has(key));
-    const unknown = issue.keys.filter((key) => !stubOnly.has(key));
+    const retired = retiredOptionsUsed(name, issue.keys);
+    const unknown = issue.keys.filter(
+      (key) => !stubOnly.has(key) && !retired.includes(key),
+    );
     return [
       ...(routed.length > 0 ? [stubOnlyOptionRefusal(routed)] : []),
+      ...retiredOptionRefusal(name, retired),
       ...(unknown.length > 0 ? [unknownKeys(unknown)] : []),
     ];
   }
