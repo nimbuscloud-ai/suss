@@ -7,6 +7,8 @@
  * asking what a variable is set to, so both passes ask it here.
  */
 
+import { bindingIs } from "@suss/ir-core";
+
 import { buildModuleGraph, entryClosure } from "../scope/entryClosure.js";
 import { readCodeScope } from "../scope/unitScope.js";
 
@@ -31,7 +33,7 @@ export interface Placement {
 }
 
 export function isRuntimeConfigProvider(summary: BehavioralSummary): boolean {
-  return summary.identity.boundaryBinding?.semantics.name === "runtime-config";
+  return bindingIs(summary.identity.boundaryBinding, "runtime-config");
 }
 
 /**

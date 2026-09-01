@@ -16,6 +16,19 @@ import { allBehaviors, behaviorOf } from "./semantics/registry.js";
 import type { BoundaryBinding, Semantics } from "./index.js";
 import type { MatchResult } from "./typeShapeMatch.js";
 
+/**
+ * Whether a binding is of one protocol, narrowed to that protocol's
+ * own semantics when it is. A caller reaching through the binding to
+ * compare the name by hand gets `string | undefined` and no narrowing,
+ * so a name that no protocol uses compiles and quietly never matches.
+ */
+export function bindingIs<N extends Semantics["name"]>(
+  binding: BoundaryBinding | null | undefined,
+  name: N,
+): binding is BoundaryBinding & { semantics: Extract<Semantics, { name: N }> } {
+  return binding?.semantics.name === name;
+}
+
 export function boundaryKey(binding: BoundaryBinding): string | null {
   return behaviorOf(binding.semantics).identityKey(binding.semantics);
 }

@@ -37,7 +37,7 @@ import {
   readSourceDocumentMetadata,
   summaryRef,
 } from "@suss/behavioral-ir";
-import { boundaryKey, gqlIdentityKey } from "@suss/ir-core";
+import { bindingIs, boundaryKey, gqlIdentityKey } from "@suss/ir-core";
 
 import type {
   BehavioralSummary,
@@ -247,9 +247,7 @@ function isMetaField(name: string): boolean {
 // ---------------------------------------------------------------------------
 
 function isGraphqlOperation(summary: BehavioralSummary): boolean {
-  return (
-    summary.identity.boundaryBinding?.semantics.name === "graphql-operation"
-  );
+  return bindingIs(summary.identity.boundaryBinding, "graphql-operation");
 }
 
 function isGraphqlResolver(
@@ -257,9 +255,7 @@ function isGraphqlResolver(
 ): summary is BehavioralSummary & {
   identity: { boundaryBinding: { semantics: GraphqlResolverSemantics } };
 } {
-  return (
-    summary.identity.boundaryBinding?.semantics.name === "graphql-resolver"
-  );
+  return bindingIs(summary.identity.boundaryBinding, "graphql-resolver");
 }
 
 function indexResolvers(
