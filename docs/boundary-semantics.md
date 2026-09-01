@@ -5,9 +5,9 @@ separate fields: what bytes travel (transport), what the participants think
 they're doing (semantics), and how a particular library expresses that in
 source code (recognition).
 
-Eight semantics variants ship today: `rest`, `function-call`,
+Nine semantics variants ship today: `rest`, `function-call`,
 `graphql-resolver`, `graphql-operation`, `runtime-config`,
-`storage`, `message-bus`, and `metric`, each as its own module under
+`storage`, `message-bus`, `metric`, and `unit-invocation`, each as its own module under
 `packages/ir-core/src/semantics/`. If you came to ask whether a protocol
 already works, go to [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred);
 everything else explains the model those variants share.
@@ -115,7 +115,7 @@ interface BoundaryBinding {
 }
 ```
 
-`Semantics` is a discriminated union of eight variants today:
+`Semantics` is a discriminated union of nine variants today:
 
 ```ts
 type Semantics =
@@ -126,7 +126,8 @@ type Semantics =
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
   | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
   | { name: "message-bus"; messageBus: "aws_sqs" | "aws.sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
-  | { name: "metric"; metricSystem: string; metricType: string | null };
+  | { name: "metric"; metricSystem: string; metricType: string | null }
+  | { name: "unit-invocation"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment" | "worker"; instanceName: string | null };
 ```
 
 An identity field is null when the source never states it. A queue
@@ -216,9 +217,25 @@ Pairing key: `(metricSystem, metricType)`. What only the declaring side knows,
 whether a measurement is one number or a histogram, goes on its summary's
 metadata, the way a storage contract's field list does.
 
+**`unit-invocation`** is a deployed unit something else calls by name: a
+Lambda another Lambda invokes, a Cloud Function, a state machine. Its
+identity is the platform plus the name that platform knows the unit by,
+which is exactly a `DeployableUnit`, so the two fields come from
+`DeployableUnitSchema` and a unit's config channel and its invoke
+channel key the same way. Pairing key: `(deploymentTarget,
+instanceName)`, spelled `unit:lambda ReportBuilder`.
+
+An ARN is a spelling of that name and not the identity, since it has an
+account and a region in it and a dev ARN and a prod ARN name one
+function. `resourceNameIn` reduces one to the name where the effect is
+recorded, so the two sides compare the part both can know. A name that
+only exists at deploy time reaches the code as an env var, and
+`deployedRefs` collapses that chain against the invoking unit's own
+environment, the same way a queue URL is collapsed.
+
 ### Pack helpers
 
-`@suss/behavioral-ir` exports nine builder helpers so packs don't hand-roll
+`@suss/behavioral-ir` exports ten builder helpers so packs don't hand-roll
 the three-layer structure themselves:
 
 ```ts
@@ -231,6 +248,7 @@ runtimeConfigBinding({ recognition, deploymentTarget, instanceName })
 storageRelationalBinding({ recognition, storageSystem, scope, table })
 messageBusBinding({ recognition, messageBus, channel /* string | null */ })
 metricBinding({ recognition, metricSystem, metricType /* string | null */ })
+unitInvocationBinding({ recognition, deploymentTarget, instanceName /* string | null */ })
 ```
 
 The builders throw on an empty string in an identity field. Write null
@@ -396,14 +414,15 @@ that takes scope into account.
 
 ### Future semantics variants
 
-Two variants are still to come:
+One variant is still to come:
 
-- `{ name: "lambda-invoke"; functionName: string; qualifier?: string }` for
-  AWS SDK direct invokes. What forces the issue here is that transport drops
-  out entirely: a Lambda invoke behaves the same whether the SDK call comes
-  from a laptop or from API Gateway's integration.
 - `{ name: "kafka-message"; topic: string }` for Kafka topics beyond the
   `message-bus` variants already covered by SQS/BullMQ/NATS.
+
+A `lambda-invoke` variant was planned here and `unit-invocation` shipped
+in its place. Keying on a function name plus a qualifier would have made
+one identity per cloud and per published copy of a function, and the
+thing both sides of an invoke can spell is the platform and the name.
 
 Each one ships as another discriminated-union variant, and none of them
 reshape the existing variants. If something would move REST's method/path out
@@ -452,16 +471,18 @@ consumer side of each infrastructure component) are the work ahead.
 Shipped:
 
 1. `BoundaryBinding` has `transport`, `semantics`, and `recognition` as
-   top-level fields. `@suss/behavioral-ir` exports nine binding builder
+   top-level fields. `@suss/behavioral-ir` exports ten binding builder
    helpers; packs and contract sources use them rather than hand-rolling
    the structure themselves.
-2. Eight `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
-   `graphql-operation`, `runtime-config`, `storage`, `message-bus`, `metric`.
+2. Nine `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
+   `graphql-operation`, `runtime-config`, `storage`, `message-bus`, `metric`,
+   `unit-invocation`.
 3. Metadata namespaced under `metadata.http.*` and `metadata.graphql.*`,
    with `metadata.runtimeContract.*` and `metadata.storageContract.*` for the
    newer semantics.
 4. Checker modules for HTTP/REST, GraphQL (contract agreement and operation
-   pairing), message-bus, storage, runtime-config, and Storybook stories.
+   pairing), message-bus, storage, runtime-config, unit-invocation, and
+   Storybook stories.
 5. `boundaryKey` dispatches on `semantics.name`. Summaries without a
    matchable key go to `unmatched.unpairable`, and each entry says why,
    instead of being fabricated
@@ -474,7 +495,7 @@ and `registry.ts` composes them with a compile-time completeness check.
 
 Deferred:
 
-1. `lambda-invoke` and `kafka-message` semantics variants.
+1. A `kafka-message` semantics variant.
 2. Composable binding identities and transformation descriptors for multi-hop
    infra chains, described in the section above.
 3. Operation-level consumer-side GraphQL pairing beyond root-field selection

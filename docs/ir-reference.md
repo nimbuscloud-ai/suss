@@ -103,7 +103,8 @@ type Semantics =
   | { name: "function-call"; module?: string; exportName?: string; package?: string; exportPath?: string[] }
   | { name: "runtime-config"; deploymentTarget: string; instanceName: string }
   | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
-  | { name: "message-bus"; messageBus: string; channel: string | null };
+  | { name: "message-bus"; messageBus: string; channel: string | null }
+  | { name: "unit-invocation"; deploymentTarget: string; instanceName: string | null };
 ```
 
 Where a code unit connects to the outside world. A REST endpoint is the same boundary whether it's served at `/api/v1/users` or `/api/v2/members`, the *identity* of the boundary is separate from the address. For v0, we use the address as the identity; adding stable boundary IDs is a future concern.
@@ -314,14 +315,15 @@ Side effects observed within a transition. Two layers of detail today:
 
 **Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that *something* happened, a call fired, a state variable was set, an event was emitted. The downstream value is impact analysis: "this PR changes a handler that writes to `users`; here are consumers of `users`."
 
-**`interaction` effects** are the typed boundary-crossing effects. Each one contains the `BoundaryBinding` of the thing it talks to, plus a discriminated `interaction.class` payload describing the operation. The four classes today are:
+**`interaction` effects** are the typed boundary-crossing effects. Each one contains the `BoundaryBinding` of the thing it talks to, plus a discriminated `interaction.class` payload describing the operation. The five classes that pair today are:
 
 - **`storage-access`**, Prisma client calls, Drizzle queries, raw SQL. Pairs against storage provider summaries (Prisma schema, etc.) by `(storageSystem, scope, container, accessPath)`.
 - **`service-call`**: fetch / axios / ts-rest client / Apollo client. Pairs against REST or GraphQL providers.
 - **`message-send`**, SQS / Kafka / BullMQ producers. Pairs against message-bus consumer summaries by `(messageBus, channel)`.
 - **`config-read`**, `process.env.X` accesses. Pairs against runtime-config provider summaries by env-var name + codeScope.
+- **`unit-invoke`**, an AWS SDK `InvokeCommand` and its kind. Pairs against the deployed unit it names by `(deploymentTarget, instanceName)`, after the invoking unit's environment settles a name that only exists at deploy time.
 
-Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage`, `rest`, `message-bus`, `runtime-config`) by convention; the IR does not enforce that, but every shipped recognizer follows it. See [`reference/pack-patterns.md`](reference/pack-patterns.md#recognizers) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
+Adding a class is a strictly additive IR change. Each class maps 1:1 to a `binding.semantics.name` (`storage`, `rest`, `message-bus`, `runtime-config`, `unit-invocation`) by convention; the IR does not enforce that, but every shipped recognizer follows it. See [`reference/pack-patterns.md`](reference/pack-patterns.md#recognizers) for the recognizer primitive that emits these (`invocationRecognizers` and `accessRecognizers`).
 
 `preconditions` on `invocation` and `interaction` contain the ancestor conditions that gate reaching the effect within its enclosing transition. The extractor populates them for calls nested inside conditional blocks or loop bodies.
 

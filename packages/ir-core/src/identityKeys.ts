@@ -2,6 +2,7 @@
 // literal refuses to compile. The mint is the only constructor, which
 // is how a dropped prefix stops shipping again (#155, #167).
 
+import type { DeployableUnit } from "./deployableUnit.js";
 import type { MessageBusSemantics } from "./semantics/messageBus.js";
 
 declare const IdentityKeyBrand: unique symbol;
@@ -41,6 +42,23 @@ export function busIdentityKey(
   subject: string,
 ): BusIdentityKey {
   return `bus:${messageBus} ${subject}` as BusIdentityKey;
+}
+
+/**
+ * `unit:platform name`, the key an invoker and the unit it invokes pair
+ * on. The platform stays in because two clouds can each deploy
+ * something called `Worker` and they are not the same thing.
+ */
+export type UnitIdentityKey =
+  `unit:${DeployableUnit["deploymentTarget"]} ${string}` & {
+    readonly [IdentityKeyBrand]: "unit";
+  };
+
+export function unitIdentityKey(
+  deploymentTarget: DeployableUnit["deploymentTarget"],
+  instanceName: string,
+): UnitIdentityKey {
+  return `unit:${deploymentTarget} ${instanceName}` as UnitIdentityKey;
 }
 
 /** `metric:system type`, the key both sides of a metric pair on. */

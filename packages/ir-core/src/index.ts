@@ -31,6 +31,8 @@ export {
   gqlIdentityKey,
   type MetricIdentityKey,
   metricIdentityKey,
+  type UnitIdentityKey,
+  unitIdentityKey,
 } from "./identityKeys.js";
 export {
   BoundaryBindingSchema,
@@ -99,6 +101,7 @@ export type { Semantics } from "./semantics/registry.js";
 export type { RestSemantics } from "./semantics/rest.js";
 export type { RuntimeConfigSemantics } from "./semantics/runtimeConfig.js";
 export type { StorageSemantics } from "./semantics/storage.js";
+export type { UnitInvocationSemantics } from "./semantics/unitInvocation.js";
 
 // ---------------------------------------------------------------------------
 // Shared comparison primitives
@@ -155,6 +158,7 @@ export {
   bindingTokens,
   namesBoundary,
   namesBoundaryExactly,
+  resourceNameIn,
   spellingTokens,
 } from "./boundarySpelling.js";
 export {
@@ -367,6 +371,29 @@ export function runtimeConfigBinding(opts: {
       name: "runtime-config",
       deploymentTarget: opts.deploymentTarget,
       instanceName: opts.instanceName,
+    },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build a unit-invocation binding, the boundary between a deployed unit
+ * and whatever calls it by name. Transport is `"invoke"` because the
+ * call goes through the platform's own invoke API whichever cloud runs
+ * the unit.
+ */
+export function unitInvocationBinding(opts: {
+  recognition: string;
+  deploymentTarget: DeployableUnit["deploymentTarget"];
+  /** Null when this source does not say which unit it invokes. */
+  instanceName: string | null;
+}): BoundaryBinding {
+  return {
+    transport: "invoke",
+    semantics: {
+      name: "unit-invocation",
+      deploymentTarget: opts.deploymentTarget,
+      instanceName: namedOrNull(opts.instanceName, "invoked unit"),
     },
     recognition: opts.recognition,
   };

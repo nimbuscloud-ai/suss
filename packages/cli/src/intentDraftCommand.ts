@@ -340,6 +340,7 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
   "graphql-operation": () => null,
   "runtime-config": () => null,
   metric: () => null,
+  "unit-invocation": () => null,
 };
 
 /** Null when boundary intent has no shape for this protocol yet. */

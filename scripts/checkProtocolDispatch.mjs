@@ -38,6 +38,7 @@ const PROTOCOLS = [
   "storage",
   "function-call",
   "metric",
+  "unit-invocation",
 ];
 
 const PROTOCOL_SET = new Set(PROTOCOLS);
@@ -105,6 +106,7 @@ const OWNING_DIRS = [
   "packages/checker/src/runtime-config/",
   "packages/checker/src/storage/",
   "packages/checker/src/story/",
+  "packages/checker/src/unit-invocation/",
   "packages/checker/src/pairing/graphqlPairing.ts",
   "packages/checker/src/pairing/semanticBridging.ts",
   "packages/checker/src/contract/",

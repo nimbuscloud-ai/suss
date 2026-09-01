@@ -353,6 +353,42 @@
                         },
                         "required": ["name", "metricSystem", "metricType"],
                         "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "deploymentTarget": {
+                            "type": "string",
+                            "enum": [
+                              "lambda",
+                              "ecs-task",
+                              "container",
+                              "k8s-deployment",
+                              "worker"
+                            ]
+                          },
+                          "instanceName": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "type": "string",
+                            "const": "unit-invocation"
+                          }
+                        },
+                        "required": [
+                          "deploymentTarget",
+                          "instanceName",
+                          "name"
+                        ],
+                        "additionalProperties": false
                       }
                     ]
                   },
@@ -1039,6 +1075,42 @@
                                   "metricType"
                                 ],
                                 "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "deploymentTarget": {
+                                    "type": "string",
+                                    "enum": [
+                                      "lambda",
+                                      "ecs-task",
+                                      "container",
+                                      "k8s-deployment",
+                                      "worker"
+                                    ]
+                                  },
+                                  "instanceName": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "const": "unit-invocation"
+                                  }
+                                },
+                                "required": [
+                                  "deploymentTarget",
+                                  "instanceName",
+                                  "name"
+                                ],
+                                "additionalProperties": false
                               }
                             ]
                           },
@@ -1147,6 +1219,18 @@
                               "routingKey": {
                                 "type": "string"
                               }
+                            },
+                            "required": ["class"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
+                                "const": "unit-invoke"
+                              },
+                              "payload": {}
                             },
                             "required": ["class"],
                             "additionalProperties": false

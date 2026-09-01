@@ -936,6 +936,8 @@ const WHAT_KEYS: Record<Semantics["name"], string> = {
   "runtime-config":
     "a runtime-config boundary needs a deployment target and an instance name",
   metric: "a metric needs a system and a type",
+  "unit-invocation":
+    "an invoked unit needs a deployment target and the name the platform knows it by",
 };
 
 function describeOutcome(outcome: IntentOutcome): string {

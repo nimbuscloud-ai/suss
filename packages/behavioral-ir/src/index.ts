@@ -77,10 +77,13 @@ export {
   referenceFromName,
   referenceName,
   referenceOf,
+  resourceNameIn,
   restBinding,
   runtimeConfigBinding,
   semconvAttributes,
   storageBinding,
+  unitIdentityKey,
+  unitInvocationBinding,
   withinScope,
   withRewrittenPaths,
 } from "@suss/ir-core";
@@ -199,6 +202,7 @@ export type {
   SourceLocation,
   StorageSemantics,
   TypeShape,
+  UnitInvocationSemantics,
 } from "@suss/ir-core";
 
 // ---------------------------------------------------------------------------
