@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 64,
-    "packagesWithExports": 64,
-    "exports": 669,
-    "internal": 2381,
-    "consumers": 1172,
-    "pairs": 1153,
+    "packages": 67,
+    "packagesWithExports": 67,
+    "exports": 678,
+    "internal": 2383,
+    "consumers": 1182,
+    "pairs": 1163,
     "unfollowedCalls": 182,
     "findingErrors": 0
   },
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 21,
-      "internal": 390,
-      "consumers": 255,
+      "internal": 391,
+      "consumers": 261,
       "unfollowedCalls": 31
     },
     "packages/client/apollo": {
@@ -213,11 +213,32 @@
       "consumers": 2,
       "unfollowedCalls": 0
     },
+    "packages/framework/aws-secrets-manager": {
+      "name": "@suss/framework-aws-secrets-manager",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 1,
+      "unfollowedCalls": 0
+    },
+    "packages/framework/aws-sns": {
+      "name": "@suss/framework-aws-sns",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 2,
+      "unfollowedCalls": 0
+    },
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
       "exports": 2,
       "internal": 5,
       "consumers": 9,
+      "unfollowedCalls": 0
+    },
+    "packages/framework/aws-ssm": {
+      "name": "@suss/framework-aws-ssm",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 1,
       "unfollowedCalls": 0
     },
     "packages/framework/cloudflare-workers": {
@@ -411,7 +432,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 34,
+      "exports": 37,
       "internal": 0,
       "consumers": 0,
       "unfollowedCalls": 0
@@ -419,7 +440,7 @@
     "packages/recognize": {
       "name": "@suss/recognize",
       "exports": 12,
-      "internal": 35,
+      "internal": 36,
       "consumers": 6,
       "unfollowedCalls": 2
     },
