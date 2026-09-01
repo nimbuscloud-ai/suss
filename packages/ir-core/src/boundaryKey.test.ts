@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  bindingIs,
   boundaryKey,
   boundaryLabel,
   canPair,
@@ -636,5 +637,29 @@ describe("a function-call binding that states its module", () => {
       () => "changed",
     );
     expect(untouched.semantics).toMatchObject({ path: "/x" });
+  });
+});
+
+describe("bindingIs", () => {
+  const bus = messageBusBinding({
+    recognition: "test",
+    messageBus: "aws_sqs",
+    channel: "orders",
+  });
+
+  it("says yes for the protocol the binding is, and narrows to it", () => {
+    expect(bindingIs(bus, "message-bus")).toBe(true);
+    if (bindingIs(bus, "message-bus")) {
+      expect(bus.semantics.channel).toBe("orders");
+    }
+  });
+
+  it("says no for another protocol", () => {
+    expect(bindingIs(bus, "storage")).toBe(false);
+  });
+
+  it("says no rather than throwing when there is no binding", () => {
+    expect(bindingIs(null, "message-bus")).toBe(false);
+    expect(bindingIs(undefined, "message-bus")).toBe(false);
   });
 });

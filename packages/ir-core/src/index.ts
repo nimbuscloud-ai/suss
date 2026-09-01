@@ -124,6 +124,7 @@ export type { UnitInvocationSemantics } from "./semantics/unitInvocation.js";
 // normalizeRuleBoundary is defined in boundaryKey.ts too, but it is exported
 // below with the suppressions, next to the matcher that uses it.
 export {
+  bindingIs,
   boundaryKey,
   boundaryLabel,
   canPair,

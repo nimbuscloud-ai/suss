@@ -19,7 +19,7 @@ import {
   summaryIdentifier,
   summaryRef,
 } from "@suss/behavioral-ir";
-import { busIdentityKey } from "@suss/ir-core";
+import { bindingIs, busIdentityKey } from "@suss/ir-core";
 
 import {
   buildInteractionIndex,
@@ -743,7 +743,7 @@ function destructuredReceives(summary: BehavioralSummary): ReceiveRecord[] {
  * than a helper deployed beside it, whose inputs come from its caller.
  */
 function parameterReceive(summary: BehavioralSummary): ReceiveRecord | null {
-  if (summary.identity.boundaryBinding?.semantics.name !== "message-bus") {
+  if (!bindingIs(summary.identity.boundaryBinding, "message-bus")) {
     return null;
   }
   const result = readSetOf(summary, isTheMessageParameter);

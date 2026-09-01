@@ -23,6 +23,8 @@
 // passes: adding new classes (Drizzle, Redis, k8s, etc.) doesn't
 // add another walk.
 
+import { bindingIs } from "@suss/ir-core";
+
 import type { BehavioralSummary, Effect, Semantics } from "@suss/behavioral-ir";
 
 type SemanticsName = Semantics["name"];
@@ -174,8 +176,8 @@ export function interactionsOf<TClass extends string>(
 export function findSummariesByBindingSemantics<
   TName extends Semantics["name"],
 >(summaries: BehavioralSummary[], semanticsName: TName): BehavioralSummary[] {
-  return summaries.filter(
-    (s) => s.identity.boundaryBinding?.semantics.name === semanticsName,
+  return summaries.filter((s) =>
+    bindingIs(s.identity.boundaryBinding, semanticsName),
   );
 }
 
