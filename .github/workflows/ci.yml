@@ -104,6 +104,13 @@ jobs:
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:packs
 
+      # suss run on suss, through the shipped CLI, against the intent
+      # documents in intent/. It breaks when a change to the checker's
+      # public surface disagrees with what we wrote down about it.
+      - name: Self check
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:self
+
       # These four read documentation, so they run whatever changed.
       - name: Coverage list completeness
         run: npm run check:coverage-packages
