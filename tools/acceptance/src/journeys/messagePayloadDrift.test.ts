@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -5,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixture, readJson, runSuss, workspace } from "../harness.js";
 
 import type { Finding } from "@suss/behavioral-ir";
+import type { CheckIntentResult } from "@suss/checker-intent";
 
 /**
  * What a queue consumer reads off a message, checked against what the
@@ -82,5 +84,79 @@ describe("check what a consumer reads against what producers send", () => {
     expect(
       received().filter((f) => f.description.includes("RefundedQueue")),
     ).toEqual([]);
+  });
+
+  /**
+   * The consumer's behaviour and the queue that reaches it come from
+   * two files, and one document has to say both. The template gives the
+   * channel, the handler gives the outcomes, and the pair of them is
+   * what a person curates.
+   */
+  describe("intent drafted for a queue nothing in the code names", () => {
+    const intent = path.join(summaries, "intent");
+
+    beforeAll(() => {
+      const drafted = runSuss([
+        "infer",
+        "intent",
+        "--from",
+        summaries,
+        "--out",
+        intent,
+      ]);
+      expect(drafted.status, drafted.stderr).toBe(0);
+    }, 120_000);
+
+    it("writes one document per queue, on the queue's own channel", () => {
+      expect(fs.readdirSync(intent).sort()).toEqual([
+        "bus-aws-sqs-paid-queue.intent.yaml",
+        "bus-aws-sqs-refunded-queue.intent.yaml",
+        "bus-aws-sqs-voided-queue.intent.yaml",
+      ]);
+
+      const doc = fs.readFileSync(
+        path.join(intent, "bus-aws-sqs-paid-queue.intent.yaml"),
+        "utf8",
+      );
+      expect(doc).toContain("channel: PaidQueue");
+      expect(doc).toContain("when: invoiceId is not a string");
+      expect(doc).toContain("src/handlers/paidWorker.ts");
+    });
+
+    it("takes the curated documents back without an argument", () => {
+      for (const file of fs.readdirSync(intent)) {
+        const at = path.join(intent, file);
+        fs.writeFileSync(
+          at,
+          fs
+            .readFileSync(at, "utf8")
+            .replace(/^purpose: "".*$/m, "purpose: Record what arrived.")
+            .replace(/^audience: "".*$/m, "audience: the billing team")
+            .replace(/^source: inferred$/m, 'source: "inferred, curated"'),
+        );
+      }
+
+      const run = runSuss([
+        "check",
+        "--dir",
+        summaries,
+        "--intent",
+        intent,
+        "--json",
+      ]);
+      const report = JSON.parse(run.stdout) as { intent: CheckIntentResult };
+
+      expect(report.intent.findings).toEqual([]);
+      expect(report.intent.unchecked).toEqual([]);
+      expect(
+        report.intent.checked.map((one) =>
+          one.kind === "boundary" ? one.boundary : one.intent,
+        ),
+      ).toEqual([
+        "bus:aws_sqs PaidQueue",
+        "bus:aws_sqs RefundedQueue",
+        "bus:aws_sqs VoidedQueue",
+      ]);
+    });
   });
 });

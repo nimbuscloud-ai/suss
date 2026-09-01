@@ -62,6 +62,16 @@ The three scenario kinds ask whether a scenario points at an outcome that exists
 
 It stays quiet until at least one PRD is loaded, since before that the answer is every outcome. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these and they appear as the boundary documents grow outcomes past what the PRDs cover.
 
+## Which summaries count as the code
+
+Two rules narrow the summaries an intent doc is compared against, and both are about not arguing with a document over something that was never its job.
+
+A consumer at the same key is a caller. A client calling `GET /users/{id}` shares the key with the route and provides nothing, so comparing outcomes against its returns would report every declared outcome as uncovered.
+
+A summary a manifest produced is a declaration. A CloudFormation queue resource says the channel exists and stops there, so it has no transition that could satisfy an outcome, and the code that does is the handler in the same run. Summaries with `confidence.source: "declared"` are left out for that reason. A boundary with nothing else behind it still reports `unimplementedBoundary`, which is the state it is in: declared and not written yet.
+
+The handler behind a queue needs the declaration for its identity even so, because a SAM template decides which queue delivers to it and its own summary has no channel. `withDeclaredDelivery` in `@suss/behavioral-ir` puts the two together by the deployable unit they both give, and both this pass and `suss infer intent` call it before they index anything by boundary key. It fills in only what a summary left null, and only from a declaration, so a channel the code stated for itself stays as it is.
+
 ## Which boundaries can be paired
 
 `whatWouldKeyIt` says, per protocol, what an intent doc needs before it can be paired, and the message on an `unkeyableBoundary` finding and the reason `suss infer intent` reports for a boundary it skipped both come from it.

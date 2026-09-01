@@ -21,7 +21,7 @@
  * Where several directories contain the file, none of them decides.
  */
 
-import { readCodeScopeMetadata } from "@suss/behavioral-ir";
+import { readCodeScopeMetadata, sameUnit } from "@suss/behavioral-ir";
 import { fileInCodeScope } from "@suss/ir-core";
 
 import type {
@@ -146,12 +146,4 @@ export function runsIn(
     return scope.closure.has(code.location.file);
   }
   return fileInCodeScope(code.location.file, scope.codeScope);
-}
-
-/** Whether two units refer to the same thing to deploy. */
-export function sameUnit(a: DeployableUnit, b: DeployableUnit): boolean {
-  return (
-    a.deploymentTarget === b.deploymentTarget &&
-    a.instanceName === b.instanceName
-  );
 }

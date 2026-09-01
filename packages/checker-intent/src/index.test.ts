@@ -309,6 +309,25 @@ describe("checkIntentAgreement — REST", () => {
     ]);
   });
 
+  it("does not treat a manifest's own summary as an implementation", () => {
+    // A CloudFormation queue resource says the channel exists and has
+    // no behaviour to compare, so an intent doc drafted from the
+    // handler beside it would otherwise be argued with twice.
+    const manifest: BehavioralSummary = {
+      ...codeSummary(restCodeBinding, [], "GET /users/{id}", "library"),
+      confidence: { source: "declared", level: "high" },
+    };
+    const result = checkIntentAgreement(
+      [boundaryIntent(restIntentBinding, [response(200, userShape)])],
+      [manifest, codeSummary(restCodeBinding, [restResponse(200, userShape)])],
+    );
+
+    expect(result.findings).toEqual([]);
+    expect(result.checked[0]).toMatchObject({
+      implementations: ["src/handler.ts::getUser"],
+    });
+  });
+
   it("compares only provider-role summaries when a consumer shares the key", () => {
     const provider = codeSummary(restCodeBinding, [
       restResponse(200, userShape),
