@@ -3,11 +3,11 @@
  * runs: extract the handlers with the aws-lambda pack, read the SAM
  * template with the CloudFormation contract reader, then pair.
  *
- * Both packs now record which Lambda each summary belongs to, which is
- * what this pins. Pairing does not read that field yet, so the shared
- * subject still pairs every handler with every subscription. The
- * fan-out is asserted here so the count is on record and the change
- * that fixes it has something to move.
+ * The two used to fan out. Both sides claimed `bus:aws_sqs
+ * order.placed`, the subject was the whole key, and pairing crossed one
+ * function's code with the other function's wiring. Only the template
+ * says which queue delivers where, so only the template's side claims
+ * the subject now, and what this pins is that nothing crosses.
  */
 
 import path from "node:path";
@@ -38,14 +38,7 @@ async function extractCode(): Promise<BehavioralSummary[]> {
   project.addSourceFilesAtPaths(path.join(fixtureRoot, "src/**/*.ts"));
   const adapter = createTypeScriptAdapter({
     project,
-    frameworks: [
-      awsLambdaFramework({
-        // The fixture service owns this factory, so the pack only reads
-        // the subject once the service points at it, the way a project
-        // does through `-f aws-lambda=config.json`.
-        subjectFactories: [{ property: "subject" }],
-      }),
-    ],
+    frameworks: [awsLambdaFramework()],
   });
   return await adapter.extractAll();
 }
@@ -65,7 +58,7 @@ describe("aws-lambda fan-out on one subject", () => {
     summaries = [...code, ...declared];
   });
 
-  it("gives each side of the shared subject the Lambda it runs in", () => {
+  it("gives each subscription on the shared subject the Lambda it feeds", () => {
     const onSubject = summaries.filter((s) => {
       const semantics = s.identity.boundaryBinding?.semantics;
       return (
@@ -76,29 +69,42 @@ describe("aws-lambda fan-out on one subject", () => {
       );
     });
 
-    // Two handlers in code, two subscriptions in the template. Each one
-    // records its own Lambda, and the two packs that record it never
-    // talk to each other.
+    // The template's two subscriptions, each recording its own Lambda.
+    // The handlers are not here: their code cannot say which queue
+    // reaches them, so it says the bus and leaves the channel blank.
     expect(onSubject.map(unitNameOf).sort()).toEqual([
       "OrderIndexerFunction",
-      "OrderIndexerFunction",
-      "OrderNotifierFunction",
       "OrderNotifierFunction",
     ]);
   });
 
-  it("still pairs every handler against every subscription", () => {
+  it("no longer joins one function's code to another function's wiring", () => {
     const pairs = pairSummaries(summaries).pairs.filter(
       (p) => p.key === SHARED_SUBJECT_KEY,
     );
 
-    // Four combinations, because the subject is the whole key. Two of
-    // them join one function's code to another function's wiring, which
-    // tells you nothing about either.
-    expect(pairs).toHaveLength(4);
-    const crossed = pairs.filter(
-      (p) => unitNameOf(p.provider) !== unitNameOf(p.consumer),
+    expect(pairs).toHaveLength(0);
+  });
+
+  it("keeps every handler's own Lambda on it", () => {
+    const handlers = summaries.filter(
+      (s) =>
+        s.identity.name === "OrderIndexerFunction.handler" ||
+        s.identity.name === "OrderNotifierFunction.handler",
     );
-    expect(crossed).toHaveLength(2);
+
+    expect(handlers.map(unitNameOf).sort()).toEqual([
+      "OrderIndexerFunction",
+      "OrderNotifierFunction",
+    ]);
+    // Which is what the queue a handler reads is looked up by, once
+    // something wants the two halves of one Lambda together.
+    for (const handler of handlers) {
+      const semantics = handler.identity.boundaryBinding?.semantics;
+      expect(semantics?.name).toBe("message-bus");
+      if (semantics?.name === "message-bus") {
+        expect(semantics.channel).toBeNull();
+      }
+    }
   });
 });

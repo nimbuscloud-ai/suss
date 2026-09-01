@@ -2,8 +2,8 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 687,
-    "internal": 2392,
+    "exports": 686,
+    "internal": 2386,
     "consumers": 1209,
     "pairs": 1189,
     "unfollowedCalls": 184,
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 76,
-      "internal": 815,
+      "exports": 75,
+      "internal": 809,
       "consumers": 110,
       "unfollowedCalls": 64
     },
@@ -55,7 +55,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 21,
-      "internal": 396,
+      "internal": 397,
       "consumers": 269,
       "unfollowedCalls": 31
     },
@@ -202,7 +202,7 @@
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
       "exports": 4,
-      "internal": 14,
+      "internal": 13,
       "consumers": 17,
       "unfollowedCalls": 0
     },

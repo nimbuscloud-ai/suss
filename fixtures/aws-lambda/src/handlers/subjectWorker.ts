@@ -1,8 +1,8 @@
 import { makeWidgetHandler } from "../lib/makeWidgetHandler";
 
-// SQS consumer built by the subject-naming factory. The config's
-// `subject` property is the channel subject, so the unit carries a
-// message-bus binding on it and pairs with whoever publishes it.
+// SQS consumer whose export a handler factory built. The subject in
+// the config is a field of the message rather than the channel; the
+// channel is the queue the template puts in front of this function.
 export const handler = makeWidgetHandler(
   {
     name: "subject-worker",

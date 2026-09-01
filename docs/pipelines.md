@@ -315,7 +315,7 @@ suss contract --from cloudformation fixtures/aws-lambda/template.yaml -o cfn.jso
 suss inspect cfn.json
 ```
 
-That template gives 32 summaries, and `inspect` prints all of them, about a hundred lines. Six are routes, and each looks like this:
+That template gives 29 summaries, and `inspect` prints all of them, about a hundred lines. Six are routes, and each looks like this:
 
 <!-- suss:excerpt -->
 
@@ -331,7 +331,7 @@ cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
 
 Neither status is in the Lambda. API Gateway produces the 504 on an integration timeout and the 502 on an integration failure, and a caller receives both the same as any other response. The template is the only place they are written down, which is the whole reason this reader exists. `Contract:` is empty because this route declares no responses of its own, and `!! undeclared` on each line says the same thing from the other side: the status is one the declaration never mentions.
 
-The other 26 are the template's own resources, printed as one tree under the template's name. Here is where that tree starts:
+The other 23 are the template's own resources, printed as one tree under the template's name. Here is where that tree starts:
 
 <!-- suss:excerpt -->
 
@@ -353,10 +353,10 @@ and where it ends:
 │
 └─ MixedTriggerFunction.Sweep → eventbridge schedule:MixedTriggerFunction.Sweep  (cloudformation consumer | line 1)
 
-32 summaries.
+29 summaries.
 ```
 
-A Lambda becomes a `library` summary and a queue becomes one too. The wiring between them becomes a `consumer` summary that says which function reads which queue, and one of those reads `OrderIndexerFunction.Orders → aws_sqs default#order.placed`: the template routes that EventBridge subject into a queue, and that queue feeds that Lambda, so the reader followed the rule to the queue to the function. The `32 summaries.` line at the end is the count to check when a resource you expected goes missing.
+A Lambda becomes a `library` summary and a queue becomes one too. The wiring between them becomes a `consumer` summary that says which function reads which queue, and one of those reads `OrderIndexerFunction.Orders → aws_sqs default#order.placed`: the template routes that EventBridge subject into a queue, and that queue feeds that Lambda, so the reader followed the rule to the queue to the function. The `29 summaries.` line at the end is the count to check when a resource you expected goes missing.
 
 The three layers, and why each one is separate:
 

@@ -67,7 +67,11 @@ Nine pack options stated dependency facts before stubs existed: `classDecorators
 
 The stub statement feeds the pack through the same option key, which is why a pack still declares it. What went away is your config file setting it.
 
-Three options were listed alongside those nine when stubs shipped, and they stay in pack config: `registrationHelpers` on express, fastify and hono, `requestFunctions` on aws-dynamodb, and `subjectFactories` on aws-lambda. Each describes a function the project wrote itself, which is the case the section below says a stub is not for. A stub is keyed by a package, so it cannot spell a helper reached by a relative import at all.
+Three options were listed alongside those nine when stubs shipped, and none of them is a dependency fact: each describes a function the project wrote itself, which is the case the section below says a stub is not for. A stub is keyed by a package, so it cannot spell a helper reached by a relative import at all.
+
+`subjectFactories` on aws-lambda is gone, and not to a stub. It said which property of a handler factory's config was the channel a consumer listens on, and the channel was the wrong thing to take from there: a producer sends to a queue, and the SAM template is where the queue behind a consumer is declared. The subject is a field of the message, which `suss check` compares against what producers send. A config file that still sets it is refused, with a line saying that.
+
+`registrationHelpers` on express, fastify and hono and `requestFunctions` on aws-dynamodb stay in pack config.
 
 Editing a stub invalidates the extraction cache the same way editing pack config does.
 

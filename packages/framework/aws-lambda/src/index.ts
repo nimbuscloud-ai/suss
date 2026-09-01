@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { compile, declarationsIn } from "@suss/recognize";
 
-import { awsLambdaDiscovery, subjectFactoryOption } from "./discovery.js";
+import { awsLambdaDiscovery } from "./discovery.js";
 import { invokeDeclarations } from "./invokes.js";
 import { templatesForFiles } from "./templateIndex.js";
 import { HTTP_TERMINALS } from "./terminals.js";
@@ -41,33 +41,16 @@ import type { PatternPack } from "@suss/extractor";
 export { awsLambdaDiscovery, METADATA_NAMESPACE } from "./discovery.js";
 export { clearTemplateCache } from "./templateIndex.js";
 
-export type { SubjectFactory } from "./discovery.js";
-
 /**
- * What `-f aws-lambda=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * What `-f aws-lambda=config.json` may say. Everything this pack reads
+ * comes off the template or the code, so there is nothing to configure.
  */
-export const optionsSchema = z
-  .object({
-    /**
-     * Where a project's own handler factory states the subject its SQS
-     * consumer expects. A handler built by such a factory gets a
-     * message-bus binding on that subject instead of the fallback.
-     *
-     * The adapter follows the export back to the call that built it, so
-     * an entry only has to say which property contains the subject:
-     * `{ "property": "subject" }`. AWS declares no such factory and nothing here
-     * assumes one, so a service that does not write its consumers this way is
-     * unaffected.
-     */
-    subjectFactories: z.array(subjectFactoryOption).optional(),
-  })
-  .strict();
+export const optionsSchema = z.object({}).strict();
 
 export type AwsLambdaPackOptions = z.infer<typeof optionsSchema>;
 
 export function awsLambdaFramework(
-  options: AwsLambdaPackOptions = {},
+  _options: AwsLambdaPackOptions = {},
 ): PatternPack {
   const invokes = invokeDeclarations();
   return {
@@ -89,7 +72,7 @@ export function awsLambdaFramework(
     // No data-driven discovery: routing lives in the SAM/CFN template,
     // not in code. The callback resolves handlers against the template.
     discovery: [],
-    discoverUnits: awsLambdaDiscovery(options.subjectFactories ?? []),
+    discoverUnits: awsLambdaDiscovery(),
 
     // Everything this pack discovers comes off the template, so the
     // cache has to key on it the way it keys on a pack's config.

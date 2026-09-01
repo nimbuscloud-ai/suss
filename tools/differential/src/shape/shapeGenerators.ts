@@ -33,11 +33,7 @@ import type {
   PackageShapeSpec,
   PublishRoute,
 } from "./packageShape.js";
-import type {
-  ConfigStyle,
-  ConsumerBuild,
-  QueueShapeSpec,
-} from "./queueShape.js";
+import type { ConsumerBuild, QueueShapeSpec } from "./queueShape.js";
 import type {
   ApolloResolverSpec,
   FieldForm,
@@ -212,15 +208,8 @@ export const CONSUMER_BUILDS: ConsumerBuild[] = [
   "bareFunction",
 ];
 
-export const CONFIG_STYLES: ConfigStyle[] = [
-  "propertyOnly",
-  "namedCallee",
-  "argIndexed",
-];
-
 export const arbQueueShapeSpec: fc.Arbitrary<QueueShapeSpec> = fc.record({
   build: fc.constantFrom(...CONSUMER_BUILDS),
-  config: fc.constantFrom(...CONFIG_STYLES),
 });
 
 // ---------------------------------------------------------------------------

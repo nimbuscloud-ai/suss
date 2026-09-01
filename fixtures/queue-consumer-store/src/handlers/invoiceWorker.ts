@@ -2,10 +2,9 @@
  * The consumer of `billing.invoicePaid`. It records the invoice in the
  * Invoices table, and it turns a message with no invoice id away.
  *
- * The subject comes from the factory config, so the code says which
- * channel this consumer expects and the intent doc pairs on it. The
- * table comes from the SDK call, so the doc can say the outcome results
- * in a write to it.
+ * The channel comes from the template, which is the only place saying
+ * which queue delivers here. The table comes from the SDK call, so the
+ * doc can say the outcome results in a write to it.
  */
 
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";

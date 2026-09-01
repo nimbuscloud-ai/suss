@@ -152,42 +152,12 @@ export const NEST_RESOLVER_BUGS: ReproducedBug[] = [
 export const ENV_BUGS: ReproducedBug[] = [];
 
 /**
- * Wrong behaviour at a queue consumer. Every one is the same shape:
- * the subject is one hop away from the call to the factory,
- * so the consumer keeps a function-call binding and pairs with no
- * producer. Nothing warns about it, and a service whose subjects live
- * in one shared file gets this on every consumer it has.
+ * Wrong behaviour at a queue consumer. All four entries here were the
+ * same shape, a subject one hop away from the factory call that the
+ * walk could not follow, and all four went when the consumer stopped
+ * taking its channel from the factory config at all.
  */
-export const QUEUE_BUGS: ReproducedBug[] = [
-  {
-    dimension: "build",
-    value: "subjectFromConst",
-    signature: "invariant:everyConsumerNamesItsChannel",
-    wrong:
-      "a subject bound to a const before the factory call loses the channel",
-  },
-  {
-    dimension: "build",
-    value: "subjectFromSharedMap",
-    signature: "invariant:everyConsumerNamesItsChannel",
-    wrong:
-      "a subject read off the object a service keeps its subjects in loses the channel",
-  },
-  {
-    dimension: "build",
-    value: "spreadCarriesSubject",
-    signature: "invariant:everyConsumerNamesItsChannel",
-    wrong:
-      "a subject arriving through a spread into the config loses the channel",
-  },
-  {
-    dimension: "build",
-    value: "wrappedFactoryResult",
-    signature: "invariant:everyConsumerNamesItsChannel",
-    wrong:
-      "a handler wrapped after the factory built it loses the channel the factory named",
-  },
-];
+export const QUEUE_BUGS: ReproducedBug[] = [];
 
 /**
  * Wrong behaviour at the package boundary. Every publish route and
@@ -213,12 +183,6 @@ export const KNOWN_SIGNATURES: ReadonlySet<string> = new Set([
   // of the same read, on the transitions that would have carried it.
   "equivalence:summaries[0].transitions",
   "equivalence:summaries[1].transitions",
-  // A consumer that lost its channel also disagrees with the plainest
-  // spelling on every part of the binding it fell back from.
-  "equivalence:summaries[0].identity.boundaryBinding.transport",
-  "equivalence:summaries[0].identity.boundaryBinding.semantics.name",
-  "equivalence:summaries[0].identity.boundaryBinding.semantics.messageBus",
-  "equivalence:summaries[0].identity.boundaryBinding.semantics.channel",
   // A resolver whose boundary was lost has nothing left to bind the
   // field it answers, so every lost resolver reports twice.
   "invariant:aResolverBindsToTheFieldItAnswers",
