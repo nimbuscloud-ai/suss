@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 4531,
-      "covered": 4225,
+      "total": 4540,
+      "covered": 4234,
       "skipped": 0,
-      "pct": 93.24
+      "pct": 93.25
     },
     "statements": {
-      "total": 4657,
-      "covered": 4346,
+      "total": 4667,
+      "covered": 4356,
       "skipped": 0,
-      "pct": 93.32
+      "pct": 93.33
     },
     "functions": {
-      "total": 989,
-      "covered": 934,
+      "total": 993,
+      "covered": 938,
       "skipped": 0,
-      "pct": 94.43
+      "pct": 94.46
     },
     "branches": {
-      "total": 3184,
-      "covered": 2610,
+      "total": 3192,
+      "covered": 2617,
       "skipped": 0,
-      "pct": 81.97
+      "pct": 81.98
     },
     "branchesTrue": {
       "total": 0,
@@ -397,10 +397,10 @@
   },
   "src/extract.ts": {
     "lines": {
-      "total": 382,
-      "covered": 364,
+      "total": 384,
+      "covered": 366,
       "skipped": 0,
-      "pct": 95.28
+      "pct": 95.31
     },
     "functions": {
       "total": 100,
@@ -409,16 +409,16 @@
       "pct": 97
     },
     "statements": {
-      "total": 400,
-      "covered": 381,
+      "total": 401,
+      "covered": 382,
       "skipped": 0,
-      "pct": 95.25
+      "pct": 95.26
     },
     "branches": {
-      "total": 291,
-      "covered": 242,
+      "total": 293,
+      "covered": 244,
       "skipped": 0,
-      "pct": 83.16
+      "pct": 83.27
     }
   },
   "src/flow.ts": {
@@ -809,6 +809,32 @@
       "covered": 14,
       "skipped": 0,
       "pct": 100
+    }
+  },
+  "src/retiredOptions.ts": {
+    "lines": {
+      "total": 7,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 9,
+      "covered": 9,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 6,
+      "covered": 5,
+      "skipped": 0,
+      "pct": 83.33
     }
   },
   "src/run.ts": {
