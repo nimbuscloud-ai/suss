@@ -1,22 +1,22 @@
 {
   "total": {
     "lines": {
-      "total": 494,
-      "covered": 490,
+      "total": 495,
+      "covered": 491,
       "skipped": 0,
       "pct": 99.19
     },
     "statements": {
-      "total": 505,
-      "covered": 500,
+      "total": 506,
+      "covered": 501,
       "skipped": 0,
-      "pct": 99
+      "pct": 99.01
     },
     "functions": {
-      "total": 132,
-      "covered": 130,
+      "total": 133,
+      "covered": 131,
       "skipped": 0,
-      "pct": 98.48
+      "pct": 98.49
     },
     "branches": {
       "total": 342,
@@ -189,20 +189,20 @@
   },
   "src/relations.ts": {
     "lines": {
-      "total": 11,
-      "covered": 11,
+      "total": 12,
+      "covered": 12,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 8,
-      "covered": 8,
+      "total": 9,
+      "covered": 9,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 11,
-      "covered": 11,
+      "total": 12,
+      "covered": 12,
       "skipped": 0,
       "pct": 100
     },
