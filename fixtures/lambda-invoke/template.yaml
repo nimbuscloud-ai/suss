@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Fixture for unit-invocation pairing. No function here has an Events
+  block, so every one of them is reached by being invoked by name.
+
+    1. OrderApi invokes ReportBuilder through an env var the template
+       points at the function, so the two pair.
+    2. ReportBuilder invokes ArchiveWorker asynchronously, same chain.
+    3. OrderApi also invokes a function by full ARN that this stack
+       does not declare, which is an invoke reaching outside the run.
+    4. Nothing invokes OrderApi.
+
+Resources:
+  OrderApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-api/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          REPORT_BUILDER_FUNCTION: !Ref ReportBuilder
+
+  ReportBuilder:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/report-builder/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          ARCHIVE_WORKER_FUNCTION: !Ref ArchiveWorker
+
+  ArchiveWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/archive-worker/
+      Handler: index.handler
+      Runtime: nodejs20.x

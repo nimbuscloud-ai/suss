@@ -35,6 +35,7 @@ import {
   readGraphqlMetadata,
   readSourceDocumentMetadata,
   restBinding,
+  unitInvocationBinding,
   withGraphqlMetadata,
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
@@ -1172,6 +1173,9 @@ function extractFromSourceFile(
             ...(cu.channelInfo !== undefined
               ? { channelInfo: cu.channelInfo }
               : {}),
+            ...(cu.invocationInfo !== undefined
+              ? { invocationInfo: cu.invocationInfo }
+              : {}),
             ...(cu.deployableUnit !== undefined
               ? { deployableUnit: cu.deployableUnit }
               : {}),
@@ -1315,6 +1319,12 @@ function extractFromSourceFile(
           recognition: pack.name,
           messageBus: unit.channelInfo.messageBus,
           channel: unit.channelInfo.channel,
+        });
+      } else if (unit.invocationInfo !== undefined) {
+        raw.boundaryBinding = unitInvocationBinding({
+          recognition: pack.name,
+          deploymentTarget: unit.invocationInfo.deploymentTarget,
+          instanceName: unit.invocationInfo.instanceName,
         });
       } else if (unit.operationInfo !== undefined) {
         raw.boundaryBinding = graphqlOperationBinding({
