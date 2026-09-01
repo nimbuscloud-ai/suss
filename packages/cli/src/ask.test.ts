@@ -98,6 +98,10 @@ describe("parseQuestion", () => {
       shape: "writes",
       subject: "bus:aws_sqs orders",
     });
+    expect(parseQuestion("what reaches src/dao.ts")).toEqual({
+      shape: "reachedBy",
+      subject: "src/dao.ts",
+    });
     expect(parseQuestion("what does src/dao.ts reach")).toEqual({
       shape: "reaches",
       subject: "src/dao.ts",
@@ -323,6 +327,15 @@ describe("suss ask", () => {
     expect(output).toContain("loadCursor");
   });
 
+  it("says nothing reaches a store when its only reader serves no boundary", () => {
+    // The dao goes through the table and provides nothing of its own,
+    // and nothing here calls the dao, so no boundary is downstream.
+    const { output, code } = answer("what reaches aws.dynamodb:editions");
+
+    expect(code).toBe(0);
+    expect(output).toContain("Nothing in these summaries reaches");
+  });
+
   it("says what a route returns, for a boundary read from code", () => {
     // The contract readers answer for a boundary somebody wrote a spec
     // for. A route says the same thing by returning it, and a caller
@@ -433,7 +446,7 @@ describe("suss ask", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of seven questions");
+    expect(output).toContain("suss ask takes one of eight questions");
   });
 
   it("writes JSON an agent can read", () => {
