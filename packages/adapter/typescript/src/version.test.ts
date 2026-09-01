@@ -19,6 +19,7 @@ import {
   computeAdapterPacksDigest,
   computeContentHash,
   computeDistHashFrom,
+  projectFileStamp,
 } from "./version.js";
 
 describe("computeAdapterPacksDigest", () => {
@@ -102,6 +103,54 @@ describe("computeContentHash", () => {
     expect(
       computeContentHash([path.join(tmpdir(), "suss-absent-file.js")]),
     ).toBe("");
+  });
+});
+
+describe("projectFileStamp", () => {
+  it("changes when a template is edited", () => {
+    const file = path.join(
+      mkdtempSync(path.join(tmpdir(), "project-")),
+      "template.yaml",
+    );
+    writeFileSync(file, "Resources: {}");
+    const before = projectFileStamp([file]);
+    writeFileSync(file, "Resources: { Worker: {} }");
+
+    expect(projectFileStamp([file])).not.toBe(before);
+  });
+
+  it("changes when the same content moves to another path", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "project-"));
+    writeFileSync(path.join(dir, "template.yaml"), "Resources: {}");
+    writeFileSync(path.join(dir, "template.yml"), "Resources: {}");
+
+    expect(projectFileStamp([path.join(dir, "template.yaml")])).not.toBe(
+      projectFileStamp([path.join(dir, "template.yml")]),
+    );
+  });
+
+  it("does not care what order the files arrive in", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "project-"));
+    writeFileSync(path.join(dir, "one.yaml"), "one");
+    writeFileSync(path.join(dir, "two.yaml"), "two");
+    const files = [path.join(dir, "one.yaml"), path.join(dir, "two.yaml")];
+
+    expect(projectFileStamp(files)).toBe(
+      projectFileStamp([...files].reverse()),
+    );
+  });
+
+  it("tells a file that is gone from one that is there", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "project-"));
+    const file = path.join(dir, "template.yaml");
+    const absent = projectFileStamp([file]);
+    writeFileSync(file, "Resources: {}");
+
+    expect(projectFileStamp([file])).not.toBe(absent);
+  });
+
+  it("says none when no pack reads anything", () => {
+    expect(projectFileStamp([])).toBe("none");
   });
 });
 

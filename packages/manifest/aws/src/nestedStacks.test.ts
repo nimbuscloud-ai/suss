@@ -182,6 +182,22 @@ describe("loadTemplateTree", () => {
     expect(unfollowedStackMessage(tree.unfollowed[0])).toContain(
       "./gone.yaml is not on disk",
     );
+    // The file a caller watches for, so the day somebody writes it the
+    // read is done again.
+    expect(tree.unfollowed[0].templatePath).toBe(
+      path.join(path.dirname(root), "gone.yaml"),
+    );
+  });
+
+  it("leaves a remote child no path in this repository to watch", () => {
+    const root = writeTemplates({
+      "template.yaml": [
+        "Resources:",
+        stack("Packaged", "s3://artifacts/packaged.yaml"),
+      ].join("\n"),
+    });
+
+    expect(loadTemplateTree(root).unfollowed[0].templatePath).toBeNull();
   });
 
   it("reports a child whose location is computed rather than written", () => {

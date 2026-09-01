@@ -1033,6 +1033,19 @@ export interface PatternPack {
    * will then serve results for code that has since changed.
    */
   version?: string;
+  /**
+   * Files under the project this pack reads that are not source files,
+   * given the files the run is about to walk. Their content feeds the
+   * same cache key the pack's own config does, so a run made after
+   * somebody edits one reads the project again instead of handing back
+   * the previous answer.
+   *
+   * The aws-lambda pack is the case this exists for: a SAM template
+   * decides which handlers there are and what invokes them, and no
+   * source file changes when that template does. A pack that reads only
+   * the code it is handed leaves this out.
+   */
+  discoveryInputs?: (files: readonly string[]) => string[];
   languages: string[];
   discovery: DiscoveryPattern[];
   terminals: TerminalPattern[];

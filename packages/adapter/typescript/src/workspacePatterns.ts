@@ -13,9 +13,10 @@
  * patterns are dropped and pack health reports the pack as silent.
  */
 
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+
+import { projectFileStamp } from "./version.js";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
@@ -209,7 +210,10 @@ function expandPattern(
 
 /**
  * Feeds the pack digest, so a cached run notices when workspace
- * membership changed even though no pack and no source file did.
+ * membership changed even though no pack and no source file did. The
+ * content of each manifest counts too: an `exports` map says which
+ * files are on the package's boundary, and editing one changes what
+ * this pack discovers without touching a line of TypeScript.
  */
 export function workspaceExpansionStamp(
   frameworks: ReadonlyArray<PatternPack>,
@@ -221,15 +225,8 @@ export function workspaceExpansionStamp(
       pattern.match.packageJsonPath !== undefined
         ? [pattern.match.packageJsonPath]
         : [],
-    )
-    .sort();
-  if (paths.length === 0) {
-    return "none";
-  }
-  return createHash("sha256")
-    .update(paths.join("\n"))
-    .digest("hex")
-    .slice(0, 12);
+    );
+  return projectFileStamp(paths);
 }
 
 export function expandWorkspacePatterns(

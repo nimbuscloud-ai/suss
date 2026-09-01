@@ -40,7 +40,9 @@ A second run over an unchanged repository returns the first run's summaries from
 
 ### The key
 
-An entry is only readable by a run that agrees with the one that wrote it on everything that changes what extraction produces. The entry directory's name hashes: the cache schema version, the adapter version plus a content hash of the loaded adapter and analysis bundles, each pack's name, declared version, code hash and config digest, the extraction config (`includeReachable`, `gapHandling`), and the tsconfig path. Inside the entry, the tsconfig's own stamp and a stamp per project file guard the rest. A run built from source instead of a bundle has no code hash, and declines to cache at all.
+An entry is only readable by a run that agrees with the one that wrote it on everything that changes what extraction produces. The entry directory's name hashes: the cache schema version, the adapter version plus a content hash of the loaded adapter and analysis bundles, each pack's name, declared version, code hash and config digest, the project files the packs read off disk, the extraction config (`includeReachable`, `gapHandling`), and the tsconfig path.
+
+A pack reads project files no walk ever sees: aws-lambda reads the SAM template that says which handlers exist, and a `packageExports` pattern reads the `package.json` whose `exports` map says which files are on a package's boundary. Editing one of those changes what the run produces while every source file hashes the same, so a pack lists them under `discoveryInputs` and the key takes their paths and their content. Which files they are depends on the files the run walks, so this part of the key is settled per run, after the file list is read and before the lookup. Inside the entry, the tsconfig's own stamp and a stamp per project file guard the rest. A run built from source instead of a bundle has no code hash, and declines to cache at all.
 
 ### Whole reuse, then per-file reuse
 

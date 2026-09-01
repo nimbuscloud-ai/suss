@@ -2,12 +2,13 @@
 // walks up to the root template, and the handlers declared in the
 // documents that template embeds are found too.
 
+import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { clearTemplateCache } from "./index.js";
-import { handlersForFile } from "./templateIndex.js";
+import { handlersForFile, templatesForFiles } from "./templateIndex.js";
 
 const fixturesDir = path.resolve(
   __dirname,
@@ -49,6 +50,35 @@ describe("handlers declared in a nested stack", () => {
   it("leaves a root resource its bare logical id", () => {
     expect(handlersFor("src/root/handler.ts")[0].functionLogicalId).toBe(
       "RootFunction",
+    );
+  });
+
+  it("gives the cache key every document it read, children included", () => {
+    clearTemplateCache();
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const read = templatesForFiles([
+      path.join(fixturesDir, "src/root/handler.ts"),
+      path.join(fixturesDir, "src/orders/handler.ts"),
+    ]);
+    stderr.mockRestore();
+
+    expect([...read].sort()).toEqual(
+      [
+        path.join(fixturesDir, "billing-template.yaml"),
+        // Not here yet. Writing it is a change to what the run reads,
+        // so the key has to move when somebody does.
+        path.join(fixturesDir, "dashboard-template.yaml"),
+        path.join(fixturesDir, "orders-template.yaml"),
+        path.join(fixturesDir, "template.yaml"),
+      ].sort(),
+    );
+  });
+
+  it("reads nothing for a file no template covers", () => {
+    clearTemplateCache();
+
+    expect(templatesForFiles([path.join(os.tmpdir(), "elsewhere.ts")])).toEqual(
+      [],
     );
   });
 

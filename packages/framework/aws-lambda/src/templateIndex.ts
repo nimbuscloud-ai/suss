@@ -57,10 +57,14 @@ const TEMPLATE_NAMES = ["template.yaml", "template.yml", "template.json"];
 // resets both for test isolation.
 const dirToTemplate = new Map<string, string | null>();
 const templateToIndex = new Map<string, HandlerIndex>();
+// Every document a template's index was read from, the nested stacks it
+// embeds included, so the cache key can hash all of them.
+const templateToDocuments = new Map<string, string[]>();
 
 export function clearTemplateCache(): void {
   dirToTemplate.clear();
   templateToIndex.clear();
+  templateToDocuments.clear();
 }
 
 /**
@@ -115,12 +119,21 @@ function indexForTemplate(templatePath: string): HandlerIndex {
   }
 
   const index: HandlerIndex = new Map();
+  const documents = new Set<string>([templatePath]);
   try {
     const tree = loadTemplateTree(templatePath);
+    for (const document of tree.documents) {
+      documents.add(document.path);
+    }
     for (const stack of tree.unfollowed) {
       process.stderr.write(
         `[suss] aws-lambda: ${unfollowedStackMessage(stack)}\n`,
       );
+      // A child that is missing or unparseable today is one somebody is
+      // about to fix, and the fix has to reach the next run.
+      if (stack.templatePath !== null) {
+        documents.add(stack.templatePath);
+      }
     }
     for (const document of tree.documents) {
       // A child's CodeUri is written relative to the child's own file,
@@ -159,6 +172,7 @@ function indexForTemplate(templatePath: string): HandlerIndex {
   }
 
   templateToIndex.set(templatePath, index);
+  templateToDocuments.set(templatePath, [...documents]);
   return index;
 }
 
@@ -200,4 +214,32 @@ export function handlersForFile(filePath: string): HandlerEntry[] {
   }
   const index = indexForTemplate(templatePath);
   return index.get(toModulePath(filePath)) ?? [];
+}
+
+/**
+ * Every template the run will read for these files: the one each file
+ * resolves to, plus the nested stacks that template embeds. The adapter
+ * hashes them into the cache key, so a template edited between two runs
+ * gets read again instead of the first run's answer coming back.
+ *
+ * This walks and parses the same templates discovery is about to, and
+ * both are memoized for the process, so the second pass costs nothing.
+ */
+export function templatesForFiles(files: readonly string[]): string[] {
+  const roots = new Set<string>();
+  for (const file of files) {
+    const templatePath = findTemplate(path.dirname(path.resolve(file)));
+    if (templatePath !== null) {
+      roots.add(templatePath);
+    }
+  }
+
+  const documents = new Set<string>();
+  for (const root of roots) {
+    indexForTemplate(root);
+    for (const document of templateToDocuments.get(root) ?? [root]) {
+      documents.add(document);
+    }
+  }
+  return [...documents];
 }

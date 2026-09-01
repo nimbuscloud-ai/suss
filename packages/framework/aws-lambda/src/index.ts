@@ -30,6 +30,7 @@
 import { z } from "zod";
 
 import { awsLambdaDiscovery, subjectFactoryOption } from "./discovery.js";
+import { templatesForFiles } from "./templateIndex.js";
 import { HTTP_TERMINALS } from "./terminals.js";
 
 import type { PatternPack } from "@suss/extractor";
@@ -85,6 +86,10 @@ export function awsLambdaFramework(
     // not in code. The callback resolves handlers against the template.
     discovery: [],
     discoverUnits: awsLambdaDiscovery(options.subjectFactories ?? []),
+
+    // Everything this pack discovers comes off the template, so the
+    // cache has to key on it the way it keys on a pack's config.
+    discoveryInputs: templatesForFiles,
 
     // No import gate, on purpose.
     //

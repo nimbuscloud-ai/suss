@@ -128,6 +128,36 @@ export function computeContentHash(paths: readonly string[]): string {
 }
 
 /**
+ * Stamp for a set of project files a run reads without walking them: a
+ * SAM template, a workspace package.json. Both the paths and the
+ * content go in, so a file that moves counts as a change even when
+ * every byte in it stayed the same.
+ *
+ * A file that cannot be read stamps as absent rather than voiding the
+ * whole stamp, which is what `computeContentHash` does. These files
+ * belong to the project rather than to the installed tool: one of them
+ * being gone is a fact about the project the next run should notice,
+ * not a reason to stop telling runs apart.
+ */
+export function projectFileStamp(paths: readonly string[]): string {
+  if (paths.length === 0) {
+    return "none";
+  }
+
+  const hash = createHash("sha256");
+  for (const file of [...paths].sort()) {
+    hash.update(file);
+    hash.update("\0");
+    try {
+      hash.update(fs.readFileSync(file));
+    } catch {
+      hash.update("absent");
+    }
+  }
+  return hash.digest("hex").slice(0, 16);
+}
+
+/**
  * Where the analysis packages were loaded from. Only consulted once the
  * adapter has found its own bundle, so a run from source keeps the empty
  * stamp and its deterministic keys. A package that cannot be located is

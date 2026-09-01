@@ -72,6 +72,13 @@ export interface UnfollowedStack {
   stackPath: string[];
   /** The template location as the document writes it, when it is a string. */
   templateUrl: string | null;
+  /**
+   * The file the location resolved to, for a location that points into
+   * this repository. Null for a remote URL, or for one nothing static
+   * can resolve. A caller that hashes what it read uses this to notice
+   * the day a missing or unparseable child becomes readable.
+   */
+  templatePath: string | null;
   reason: UnfollowedReason;
   /** One phrase saying what stopped the read, for a message to a person. */
   detail: string;
@@ -184,12 +191,14 @@ function childStack(opts: {
     reason: UnfollowedReason,
     detail: string,
     templateUrl: string | null,
+    templatePath: string | null = null,
   ): ChildStack => ({
     type: "unfollowed",
     stack: {
       declaredIn: opts.document.path,
       stackPath,
       templateUrl,
+      templatePath,
       reason,
       detail,
     },
@@ -226,10 +235,15 @@ function childStack(opts: {
 
   const childPath = path.resolve(path.dirname(opts.document.path), url);
   if (opts.ancestors.includes(childPath)) {
-    return report("cycle", `${url} is already open further up the tree`, url);
+    return report(
+      "cycle",
+      `${url} is already open further up the tree`,
+      url,
+      childPath,
+    );
   }
   if (!fs.existsSync(childPath)) {
-    return report("fileMissing", `${url} is not on disk`, url);
+    return report("fileMissing", `${url} is not on disk`, url, childPath);
   }
 
   try {
@@ -246,6 +260,7 @@ function childStack(opts: {
       "unreadable",
       `${url} could not be parsed: ${err instanceof Error ? err.message : String(err)}`,
       url,
+      childPath,
     );
   }
 }
