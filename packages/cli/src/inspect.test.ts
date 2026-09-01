@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { restBinding, withWrapperMetadata } from "@suss/behavioral-ir";
+import {
+  functionCallBinding,
+  restBinding,
+  withWrapperMetadata,
+} from "@suss/behavioral-ir";
 
 import { formatCondition, inspect, inspectDiff } from "./inspect.js";
 import { runCli } from "./run.js";
@@ -393,5 +397,56 @@ describe("formatCondition", () => {
         ],
       }),
     ).toBe("request.params.id || !request.params.id");
+  });
+});
+
+describe("a Lambda the template declares no trigger for", () => {
+  const lambdaSummary = (eventTypes: string[]): BehavioralSummary => ({
+    kind: "handler",
+    location: {
+      file: "src/worker.ts",
+      range: { start: 1, end: 5 },
+      exportName: "handler",
+    },
+    identity: {
+      name: "OrphanFunction.handler",
+      exportPath: ["OrphanFunction.handler"],
+      boundaryBinding: functionCallBinding({
+        transport: "in-process",
+        recognition: "aws-lambda",
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+    metadata: {
+      awsLambda: {
+        handler: "src/worker.handler",
+        recognition: "recognized-not-http",
+        eventTypes,
+      },
+    },
+  });
+
+  const inspectOne = (summary: BehavioralSummary): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-trigger-"));
+    const file = path.join(dir, "code.json");
+    fs.writeFileSync(file, JSON.stringify([summary]));
+    return captureStdout(() => inspect({ file })).output;
+  };
+
+  it("says so, and says suss does not read invoke calls", () => {
+    const output = inspectOne(lambdaSummary([]));
+
+    expect(output).toContain("Nothing in the template says what invokes this");
+    expect(output).toContain("does not");
+    expect(output).toContain("read Lambda invoke calls");
+  });
+
+  it("stays quiet when an event reaches it", () => {
+    const output = inspectOne(lambdaSummary(["SQS"]));
+
+    expect(output).not.toContain("Nothing in the template");
   });
 });

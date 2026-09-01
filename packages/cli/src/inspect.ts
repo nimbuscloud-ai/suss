@@ -986,6 +986,28 @@ const STANDALONE_LAYOUT: SummaryLayout = {
  * and the fields a query may ask for, and both were in the JSON with
  * nowhere to read them.
  */
+/**
+ * A deployed function the template declares no trigger for. Without
+ * this a reader cannot tell one invoked from somewhere else apart from
+ * one whose trigger suss failed to read. Nothing recognizes a Lambda
+ * invoke call yet, so the line stops short of saying it is unreachable.
+ */
+function untriggeredLine(summary: BehavioralSummary): string[] {
+  const lambda = summary.metadata?.awsLambda as
+    | { eventTypes?: string[]; recognition?: string }
+    | undefined;
+  if (lambda?.recognition !== "recognized-not-http") {
+    return [];
+  }
+  if (lambda.eventTypes === undefined || lambda.eventTypes.length > 0) {
+    return [];
+  }
+  return [
+    "  Nothing in the template says what invokes this, and suss does not",
+    "  read Lambda invoke calls, so something else may.",
+  ];
+}
+
 function storeLines(summary: BehavioralSummary): string[] {
   const store = readStorageContractMetadata(summary);
   if (store === undefined) {
@@ -1054,6 +1076,7 @@ function renderSummary(
     bodyLines.push(`  Contract: ${parts.join(", ")}`);
   }
 
+  bodyLines.push(...untriggeredLine(summary));
   bodyLines.push(...storeLines(summary));
 
   if (summary.transitions.length > 0) {
