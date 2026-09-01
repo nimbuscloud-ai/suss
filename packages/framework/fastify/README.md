@@ -9,6 +9,11 @@ Framework pack for [Fastify](https://fastify.dev/) handlers. Declarative pattern
 - **Discovery** via `Fastify().get/post/put/delete/patch/head/options(path, handler)` registration calls (both default and named imports)
 - **Terminals**: `reply.code(N).send(body)`, `reply.status(N).send(body)`, `reply.send(body)`, `reply.redirect(...)`, and `throw`
 - **Input mapping**: positional parameters `(request, reply)` with semantic roles
+- **Project helpers**: a function the code hands its app to is read before extraction, and what it registers is filled in at each call site, so `registerCrud(app, "users", h)` and `registerCrud(app, "orders", h)` give both routes
+
+## Options
+
+None. `registrationHelpers` used to say what a route helper of the project's own registered; the reading above replaced it, and a config file that still sets it is refused.
 
 ### Limitations (v0)
 

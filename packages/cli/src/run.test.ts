@@ -419,10 +419,33 @@ describe("runCli extract", () => {
   });
 
   it("stops on a misspelled pack option instead of extracting nothing", async () => {
+    const config = path.join(tmpDir, "suss.aws-dynamodb.json");
+    fs.writeFileSync(
+      config,
+      JSON.stringify({ requiresImports: ["aws4fetch"] }),
+    );
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--lang",
+        "typescript",
+        "--dir",
+        tmpDir,
+        "-f",
+        `aws-dynamodb=${config}`,
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("requiresImports");
+    expect(io.stderr).toContain(config);
+    expect(io.stderr).toContain("The aws-dynamodb pack takes: requiresImport.");
+  });
+
+  it("stops on a pack option that is gone, and says what happens now", async () => {
     const config = path.join(tmpDir, "suss.hono.json");
     fs.writeFileSync(
       config,
-      JSON.stringify({ registrationHelpes: [{ helperName: "mountHealth" }] }),
+      JSON.stringify({ registrationHelpers: [{ helperName: "mountHealth" }] }),
     );
     const { exit, io } = await capture(() =>
       runCli([
@@ -436,9 +459,10 @@ describe("runCli extract", () => {
       ]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("registrationHelpes");
-    expect(io.stderr).toContain(config);
-    expect(io.stderr).toContain("The hono pack takes: registrationHelpers.");
+    expect(io.stderr).toContain("registrationHelpers is gone");
+    expect(io.stderr).toContain(
+      "The hono pack does not take any option from a config file.",
+    );
   });
 
   it("stops on an option a dependency stub states, and says where it goes", async () => {

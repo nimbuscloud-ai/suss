@@ -4,38 +4,21 @@ import { z } from "zod";
 
 import {
   httpRouteDiscovery,
-  registrationHelperDiscovery,
-  registrationHelperOption,
+  routeHelperIndex,
   wrapperDiscovery,
 } from "@suss/extractor";
 
 import type { PatternPack } from "@suss/extractor";
 
-/**
- * What `-f express=config.json` may say. The CLI parses the file against it
- * before the factory runs.
- */
-export const optionsSchema = z
-  .object({
-    /**
-     * The project's own registration helpers, each expanded into the
-     * routes one call registers. A helper's name belongs to one project,
-     * so this arrives through per-project pack config
-     * (`-f express=config.json`) rather than being built in here.
-     */
-    registrationHelpers: z.array(registrationHelperOption).optional(),
-    /**
-     * The directory of the config file these options came from. Whatever
-     * read that file supplies this; it is not written in the file.
-     */
-    configDirectory: z.string().optional(),
-  })
-  .strict();
+const METHODS = [".get", ".post", ".put", ".delete", ".patch", ".all"];
+
+/** The express pack takes no configuration. */
+export const optionsSchema = z.object({}).strict();
 
 export type ExpressPackOptions = z.infer<typeof optionsSchema>;
 
 export function expressFramework(
-  options: ExpressPackOptions = {},
+  _options: ExpressPackOptions = {},
 ): PatternPack {
   return {
     name: "express",
@@ -52,7 +35,7 @@ export function expressFramework(
       ...httpRouteDiscovery({
         importModule: "express",
         importNames: ["Router", "express"],
-        methods: [".get", ".post", ".put", ".delete", ".patch", ".all"],
+        methods: METHODS,
         mount: { method: "use", prefixPosition: 0, targetPosition: 1 },
       }),
       // `app.use(fn)` registers middleware, and the same call with a
@@ -72,11 +55,15 @@ export function expressFramework(
           },
         ],
       }),
-      ...registrationHelperDiscovery(
-        options.registrationHelpers ?? [],
-        options.configDirectory,
-      ),
     ],
+
+    // A route a project helper registers is read from the helper's own
+    // body, before extraction, and expanded at each call site.
+    projectHelpers: routeHelperIndex({
+      importModule: "express",
+      importNames: ["Router", "express"],
+      methods: METHODS,
+    }),
 
     terminals: [
       {

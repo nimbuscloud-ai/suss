@@ -62,6 +62,7 @@ function runPattern(
       pattern.match,
       pattern.kind,
       resolution,
+      mountPrefixes,
     );
   }
   if (pattern.match.type === "registrationLoop") {

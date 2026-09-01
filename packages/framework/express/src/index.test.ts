@@ -110,21 +110,14 @@ describe("expressFramework: a path built by joining strings", () => {
 });
 
 describe("expressFramework: registration options", () => {
-  it("expands the project's own helpers when config supplies them", () => {
-    const pack = expressFramework({
-      registrationHelpers: [
-        {
-          helperName: "registerCrud",
-          registrations: [
-            { method: "GET", pathTemplate: "/{1}", handlerArg: "{2}.list" },
-          ],
-        },
-      ],
-    });
-    const template = pack.discovery.find(
-      (d) => d.match.type === "registrationTemplate",
+  it("asks for the project's own route helpers to be read", () => {
+    expect(expressFramework().projectHelpers?.find).toEqual({ by: "subject" });
+  });
+
+  it("takes no option from a config file", () => {
+    expect(expressFramework().discovery).toEqual(
+      expressFramework({}).discovery,
     );
-    expect(template?.match).toMatchObject({ helperName: "registerCrud" });
   });
 
   it("guards the loop pattern with its own routable", () => {

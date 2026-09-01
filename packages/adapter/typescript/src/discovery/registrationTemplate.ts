@@ -16,9 +16,17 @@ import path from "node:path";
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
+import { joinMountedPath } from "@suss/resolution";
+
+import { nodeId } from "../facts/extract.js";
 import { ResolutionStore } from "../facts/store.js";
 import { declarationsBehind } from "../resolve/unfollowedCall.js";
 import { callsResolvingTo } from "./importedCalls.js";
+import {
+  type MountPrefixIndex,
+  registrationSubjectsOf,
+  subjectNodeFor,
+} from "./registrationCall.js";
 import {
   functionValueOf,
   objectLiteralOf,
@@ -39,11 +47,17 @@ export function discoverRegistrationTemplates(
   match: TemplateMatch,
   kind: string,
   resolution?: ResolutionStore,
+  mountPrefixes?: MountPrefixIndex,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
   for (const node of helperCallsOf(sourceFile, match, resolution)) {
     const args = node.getArguments();
+    const subject = subjectOfCall(sourceFile, args, match, resolution);
+    const prefix =
+      subject === undefined
+        ? ""
+        : (mountPrefixes?.effectivePrefixFor(subject) ?? "");
 
     for (const reg of match.registrations) {
       const path = substitutePath(reg.pathTemplate, args);
@@ -61,15 +75,53 @@ export function discoverRegistrationTemplates(
         func: handler.func,
         kind,
         name: handler.name,
+        ...(subject === undefined
+          ? {}
+          : { registrationSubjectId: nodeId(subject) }),
         routeInfo: {
           method: reg.method.toUpperCase(),
-          path,
+          path: prefix === "" ? path : joinMountedPath(prefix, path),
         },
       });
     }
   }
 
   return results;
+}
+
+/**
+ * The routable this call handed the helper. Without it a route the
+ * helper writes shares no creation site with the app, and the
+ * middleware registered there would not reach it.
+ */
+function subjectOfCall(
+  sourceFile: SourceFile,
+  args: Node[],
+  match: TemplateMatch,
+  resolution: ResolutionStore | undefined,
+): Node | undefined {
+  const stated = match.subject;
+  const argument = stated === undefined ? undefined : args[stated.argument];
+  if (stated === undefined || argument === undefined) {
+    return undefined;
+  }
+  for (const importName of stated.importNames) {
+    const found = subjectNodeFor(
+      argument,
+      registrationSubjectsOf(
+        sourceFile,
+        stated.importModule,
+        importName,
+        resolution,
+      ),
+      { importModule: stated.importModule, importName },
+      resolution,
+    );
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------

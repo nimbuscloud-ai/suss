@@ -7,12 +7,14 @@
  * across packs, and this module collects those so they are written once.
  */
 
-import path from "node:path";
-
-import { z } from "zod";
-
 import type { DiscoveryPattern } from "./framework.js";
 import type { EffectArg } from "./index.js";
+import type {
+  HelperSink,
+  HelperValue,
+  ProjectHelper,
+  ProjectHelpers,
+} from "./projectHelpers.js";
 
 /**
  * Build the `discovery` entries for an HTTP-server framework whose handlers
@@ -147,80 +149,166 @@ const LOOP_ELEMENT_SHAPE = {
 /**
  * One route a project helper registers when called, spelled with `{N}`
  * placeholders for the call's positional arguments.
- *
- * Three HTTP packs take this option, so it is declared once here and
- * each of them puts it in its own `optionsSchema`.
  */
-export const registrationHelperOption = z
-  .object({
-    /** The helper's exported name, as the project's code imports it. */
-    helperName: z.string(),
-    /** The module the helper is imported from, to tell two apart. */
-    importModule: z.string().optional(),
-    registrations: z.array(
-      z
-        .object({
-          method: z.string(),
-          pathTemplate: z.string(),
-          handlerArg: z.string(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
-
-export type RegistrationHelper = z.infer<typeof registrationHelperOption>;
+export interface RegistrationHelper {
+  /** What the helper is called, as the project's code writes it. */
+  helperName: string;
+  /** The file declaring it, so a same-named function elsewhere is left alone. */
+  importModule?: string;
+  /** Which argument is the app, so middleware on it covers these routes. */
+  subject?: {
+    argument: number;
+    importModule: string;
+    importNames: string[];
+  };
+  registrations: Array<{
+    method: string;
+    pathTemplate: string;
+    handlerArg: string;
+  }>;
+}
 
 /**
  * Discovery patterns for a project's own registration helpers.
  *
- * A helper like `registerCrud(app, "users", handlers)` registers
- * routes the call-site never spells out, so registration-call
- * discovery cannot see them. The helper's name belongs to one project,
- * which is why this arrives through per-project pack config rather
- * than shipping inside any framework pack:
- *
- *   suss extract -f express=config.json
- *
- * with `{ "registrationHelpers": [...] }` in the file.
+ * A helper like `registerCrud(app, "users", handlers)` registers routes
+ * the call site never spells out. What each one registers comes from
+ * the project helper index, which reads the helper's body before
+ * extraction, so a call site expands per call and a helper called twice
+ * gives two routes rather than none.
  */
 export function registrationHelperDiscovery(
   helpers: readonly RegistrationHelper[],
-  configDirectory?: string,
   kind = "handler",
 ): DiscoveryPattern[] {
-  return helpers.map((helper) => {
-    const importModule = helperModule(helper.importModule, configDirectory);
-    return {
-      kind,
-      match: {
-        type: "registrationTemplate",
-        helperName: helper.helperName,
-        ...(importModule !== undefined ? { importModule } : {}),
-        registrations: helper.registrations.map((one) => ({ ...one })),
-      },
-    };
-  });
+  return helpers.map((helper) => ({
+    kind,
+    match: {
+      type: "registrationTemplate",
+      helperName: helper.helperName,
+      ...(helper.importModule !== undefined
+        ? { importModule: helper.importModule }
+        : {}),
+      ...(helper.subject !== undefined ? { subject: helper.subject } : {}),
+      registrations: helper.registrations.map((one) => ({ ...one })),
+    },
+  }));
 }
 
 /**
- * An `importModule` written relative is written relative to the config
- * file it came from, the same as every other path a pack takes. Read
- * against the working directory instead it matches nothing, and a
- * helper that matches nothing looks like a project without one.
+ * The standing request an HTTP pack makes to have the project's own
+ * route helpers read, so what each one registers is a fact about the
+ * code rather than something the project restates in config.
  */
-function helperModule(
-  importModule: string | undefined,
-  configDirectory: string | undefined,
-): string | undefined {
-  if (
-    importModule === undefined ||
-    configDirectory === undefined ||
-    !importModule.startsWith(".")
-  ) {
-    return importModule;
+export function routeHelperIndex(opts: {
+  importModule: string;
+  importNames: readonly string[];
+  methods: readonly string[];
+  /** Defaults to "handler", to match `httpRouteDiscovery`. */
+  kind?: string;
+}): ProjectHelpers {
+  const methods = new Set(
+    opts.methods.map((method) =>
+      method.startsWith(".") ? method.slice(1) : method,
+    ),
+  );
+  return {
+    find: { by: "subject" },
+    declare: (helpers) => ({
+      discovery: registrationHelperDiscovery(
+        helpers.flatMap((helper) => routesRegisteredBy(helper, methods, opts)),
+        opts.kind ?? "handler",
+      ),
+    }),
+  };
+}
+
+/** What one helper registers, or nothing when its body cannot be read. */
+function routesRegisteredBy(
+  helper: ProjectHelper,
+  methods: ReadonlySet<string>,
+  opts: { importModule: string; importNames: readonly string[] },
+): RegistrationHelper[] {
+  const registrations: RegistrationHelper["registrations"] = [];
+  let subjectArgument: number | undefined;
+  for (const sink of helper.sinks) {
+    const registration = routeRegisteredBy(helper, sink, methods);
+    if (registration === null) {
+      continue;
+    }
+    registrations.push(registration);
+    if (sink.receiver.as === "parameter") {
+      subjectArgument = sink.receiver.position;
+    }
   }
-  return path.resolve(configDirectory, importModule);
+  if (registrations.length === 0 || subjectArgument === undefined) {
+    return [];
+  }
+  return [
+    {
+      helperName: helper.name,
+      importModule: helper.file,
+      subject: {
+        argument: subjectArgument,
+        importModule: opts.importModule,
+        importNames: [...opts.importNames],
+      },
+      registrations,
+    },
+  ];
+}
+
+/**
+ * One call in the body, as a route the call site fills in. Anything the
+ * reading left unread drops the registration, the way a route's own
+ * path does when it cannot be resolved.
+ */
+function routeRegisteredBy(
+  helper: ProjectHelper,
+  sink: HelperSink,
+  methods: ReadonlySet<string>,
+): RegistrationHelper["registrations"][number] | null {
+  if (sink.method === null || !methods.has(sink.method)) {
+    return null;
+  }
+  const { receiver } = sink;
+  if (
+    receiver.as !== "parameter" ||
+    receiver.property !== undefined ||
+    !helper.subjectParameters.includes(receiver.position)
+  ) {
+    return null;
+  }
+  const pathTemplate = sink.arguments[0];
+  const handler = sink.arguments[sink.arguments.length - 1];
+  if (
+    sink.arguments.length < 2 ||
+    pathTemplate === undefined ||
+    pathTemplate.as !== "text" ||
+    handler === undefined
+  ) {
+    return null;
+  }
+  const handlerArg = handlerSlot(handler);
+  return handlerArg === null
+    ? null
+    : {
+        // `.all` registers every method, which the pairing engine
+        // spells as a wildcard.
+        method: sink.method === "all" ? "*" : sink.method.toUpperCase(),
+        pathTemplate: pathTemplate.text,
+        handlerArg,
+      };
+}
+
+/** Where the call site puts the handler, as `{N}` or `{N}.prop`. */
+function handlerSlot(value: HelperValue): string | null {
+  if (value.as !== "parameter") {
+    return null;
+  }
+  return value.property === undefined
+    ? `{${value.position}}`
+    : `{${value.position}}.${value.property}`;
 }
 
 /**

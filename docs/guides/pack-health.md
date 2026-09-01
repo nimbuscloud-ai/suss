@@ -99,14 +99,12 @@ bug in the pack.
 no-helper  express  registerCruds from crud matched no call in this run, so whatever it registers is missing. ...
 ```
 
-`registrationHelpers` in a pack config tells suss about a helper your
-project wrote, and the routes that helper registers come only from
-there. A name nothing calls, or an `importModule` pointing somewhere the
-helper is not, leaves those routes out of the run with every other count
-unchanged. Check the name against the code, and check `importModule`
-against where the helper is written. A relative `importModule` is read
-relative to the config file it is in, so `./crud` beside a config at the
-project root is `crud.ts` at the project root.
+Before extraction, suss reads every function your code hands its app to
+and writes down what each one registers. This says one of those helpers
+was read and then no call to it matched, so its routes are out of the
+run with every other count unchanged. Nothing in your code causes that:
+suss found the call site to begin with. Worth an issue with the helper
+and one of its call sites.
 
 ## The four that wait for `--explain`
 

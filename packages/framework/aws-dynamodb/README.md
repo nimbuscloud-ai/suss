@@ -60,16 +60,26 @@ A parser that covered `FilterExpression` and the update expressions as well woul
 ## A project that signs the request itself
 
 An edge service often skips the SDK and signs the HTTP request with
-something small, so there is no command class to match on. The body it
-posts is the same object the command takes, so the pack reads it the
-same way once the project says which of its functions does the posting:
+something small, so there is no command class to match on. Nothing at
+the call site says DynamoDB; the helper's body does:
 
 ```ts
 // the project's own helper
-export function sendRequest(env: Env, signer: Signer, operation: string, body: object): Promise<Response>;
+export async function sendRequest(
+  region: string,
+  signer: Signer,
+  operation: string,
+  request: object,
+): Promise<Response> {
+  return signer.fetch(`https://dynamodb.${region}.amazonaws.com/`, {
+    method: "POST",
+    headers: { "X-Amz-Target": `DynamoDB_20120810.${operation}` },
+    body: JSON.stringify(request),
+  });
+}
 
 // the call site
-await sendRequest(env, signer, "Query", {
+await sendRequest(env.REGION, signer, "Query", {
   TableName: env.ORDERS_TABLE,
   IndexName: "byCustomer",
   KeyConditionExpression: "customerId = :c",
@@ -77,39 +87,30 @@ await sendRequest(env, signer, "Query", {
 });
 ```
 
-```ts
-const pack = dynamoFramework({
-  requestFunctions: [
-    {
-      name: "sendRequest",
-      operationArg: 2,
-      requestArg: 3,
-      operations: { Query: "read", GetItem: "read", PutItem: "write" },
-    },
-  ],
-  requiresImport: ["aws4fetch"],
-});
-```
+The pack asks for the project's own helpers to be read before anything
+is extracted, over every file containing `DynamoDB_20120810.`, the
+prefix DynamoDB's wire protocol puts in front of every operation. The
+parameter that reaches that header is the operation and the one posted
+as the body is the request, so `sendRequest` above reads as operation at
+argument 2 and request at argument 3. The call sites are matched with
+the arguments they were written with, and the table, the index, the
+fields and the selector come out the way they do for a command class.
 
-The same object as JSON goes to `-f aws-dynamodb=packs/dynamodb.json`.
+What each operation does to the table (`Query` reads, `PutItem` writes)
+is DynamoDB's own, so it lives in the pack. An operation DynamoDB does
+not have is one the pack reads nothing from.
 
-`operations` is where the read-or-write decision comes from, since the
-operation is a string here rather than a class the pack knows. An
-operation left out of it is one the pack reads nothing from.
-
-Add `module` to an entry when every call site imports the helper by the
-same specifier, and a function of that name from anywhere else is left
-alone. Relative imports spell the same module differently at different
-depths, so leave `module` out there. `requiresImport` is what admits
-those files instead: it lists modules whose presence, directly or
-through a file the project imports, makes a file worth reading, and the
-signing library the helper imports is one.
+One option is left, `requiresImport`: it lists modules whose presence,
+directly or through a file the project imports, makes a file worth
+reading. Reach for it when the call sites are in files importing neither
+the SDK nor anything else that would have them walked. The signing
+library the helper itself imports is the usual entry.
 
 ## Out of scope for now
 
 - **A filter is not read.** `FilterExpression` narrows what a query returns after DynamoDB has read it, and the attributes it mentions are attributes the call touches. Only the key condition and the projection are read today.
 - **AWS SDK v2** (`new AWS.DynamoDB.DocumentClient().get(...)`) has a different call shape.
-- **A request function whose call sites import it by different relative paths** is matched by name alone, so a same-named function inside those same files would be read too.
+- **A request helper is matched by name.** The pack knows which file it read the helper out of, and a call site reaches it by a relative path spelled differently at every depth, so there is nothing to match an import against. A same-named function from somewhere else would be read as the helper.
 
 ## Where it fits in suss
 

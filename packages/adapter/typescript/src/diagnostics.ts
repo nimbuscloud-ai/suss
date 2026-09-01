@@ -23,7 +23,11 @@ import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
 import { collectPackGates, packIsUngated } from "./bootstrap/preFilter.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { PackDeclarations, PatternPack } from "@suss/extractor";
+import type {
+  DiscoveryPattern,
+  PackDeclarations,
+  PatternPack,
+} from "@suss/extractor";
 
 /** One pack's path through the funnel. */
 export interface PackFunnel {
@@ -406,17 +410,17 @@ function summaryCountsByPack(
 }
 
 /**
- * The registration helpers a pack was configured with that no call in
- * the run matched, each written the way the config file writes it so
- * somebody can find the line to fix.
+ * The registration helpers the run read out of the project that no call
+ * then matched, each written with the file it was read from, so
+ * somebody can see which routes went missing.
  */
 function helpersWithNoCall(
-  pack: PatternPack,
+  patterns: ReadonlyArray<DiscoveryPattern>,
   matched: ReadonlySet<string>,
   projectRoot: string | undefined,
 ): string[] {
   const missing: string[] = [];
-  for (const pattern of pack.discovery) {
+  for (const pattern of patterns) {
     if (
       pattern.match.type !== "registrationTemplate" ||
       matched.has(pattern.match.helperName)
@@ -454,6 +458,8 @@ export function buildExtractionReport(args: {
   filesWithUnreadableExports?: ReadonlyArray<string>;
   /** Reassigned names the run stated nothing for. */
   reassignedNamesUnstated?: number;
+  /** What each pack added after reading the project's own helpers. */
+  contributedPatterns?: (packName: string) => ReadonlyArray<DiscoveryPattern>;
 }): ExtractionReport {
   const bySummary = summaryCountsByPack(args.summaries);
 
@@ -482,7 +488,7 @@ export function buildExtractionReport(args: {
       summariesProduced: tally.summariesProduced,
       failures: tally.failures,
       helpersUnmatched: helpersWithNoCall(
-        pack,
+        [...pack.discovery, ...(args.contributedPatterns?.(pack.name) ?? [])],
         tally.helpersMatched,
         args.projectRoot,
       ),

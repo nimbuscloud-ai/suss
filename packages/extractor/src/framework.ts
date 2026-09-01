@@ -18,6 +18,7 @@ import type {
   Effect,
   MessageBusSemantics,
 } from "@suss/behavioral-ir";
+import type { ProjectHelpers } from "./projectHelpers.js";
 
 // =============================================================================
 // Discovery
@@ -383,6 +384,16 @@ export type DiscoveryMatch =
       type: "registrationTemplate";
       helperName: string;
       importModule?: string;
+      /**
+       * Which argument is the routable, so a route the helper writes
+       * keys on the same app as one written beside it and the
+       * middleware registered there covers it too.
+       */
+      subject?: {
+        argument: number;
+        importModule: string;
+        importNames: string[];
+      };
       registrations: Array<{
         method: string;
         pathTemplate: string;
@@ -1217,6 +1228,13 @@ export interface PatternPack {
    * available without importing anything).
    */
   requiresImport?: string[];
+  /**
+   * Functions the project itself wrote in front of this library, read
+   * once across the whole project before any file is walked. What the
+   * pack makes of them joins its own patterns and recognizers for the
+   * rest of the run.
+   */
+  projectHelpers?: ProjectHelpers;
   /**
    * Environment variables the pack's library reads from inside
    * node_modules, where no walk ever looks. Declaring them keeps the

@@ -69,7 +69,7 @@ function statementLines(one: StubCallEvidence): string[] {
     }),
     "  - kind: performs-call",
     `    export: ${JSON.stringify(name)}`,
-    `    system: ""  # what the call reaches: aws.sqs, aws.events, aws.dynamodb, aws.lambda, axios`,
+    `    system: ""  # what the call reaches: aws.sqs, aws.events, axios`,
     "    spec: {}  # argument meanings, e.g. { subject: { at: 0 }, payload: { at: 1 } }",
   ];
   return lines;

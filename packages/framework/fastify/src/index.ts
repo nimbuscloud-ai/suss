@@ -2,39 +2,28 @@
 
 import { z } from "zod";
 
-import {
-  httpRouteDiscovery,
-  registrationHelperDiscovery,
-  registrationHelperOption,
-} from "@suss/extractor";
+import { httpRouteDiscovery, routeHelperIndex } from "@suss/extractor";
 
 import type { PatternPack } from "@suss/extractor";
 
-/**
- * What `-f fastify=config.json` may say. The CLI parses the file against it
- * before the factory runs.
- */
-export const optionsSchema = z
-  .object({
-    /**
-     * The project's own registration helpers, each expanded into the
-     * routes one call registers. A helper's name belongs to one project,
-     * so this arrives through per-project pack config
-     * (`-f fastify=config.json`) rather than being built in here.
-     */
-    registrationHelpers: z.array(registrationHelperOption).optional(),
-    /**
-     * The directory of the config file these options came from. Whatever
-     * read that file supplies this; it is not written in the file.
-     */
-    configDirectory: z.string().optional(),
-  })
-  .strict();
+const METHODS = [
+  ".get",
+  ".post",
+  ".put",
+  ".delete",
+  ".patch",
+  ".head",
+  ".options",
+  ".all",
+];
+
+/** The fastify pack takes no configuration. */
+export const optionsSchema = z.object({}).strict();
 
 export type FastifyPackOptions = z.infer<typeof optionsSchema>;
 
 export function fastifyFramework(
-  options: FastifyPackOptions = {},
+  _options: FastifyPackOptions = {},
 ): PatternPack {
   return {
     name: "fastify",
@@ -48,22 +37,17 @@ export function fastifyFramework(
       ...httpRouteDiscovery({
         importModule: "fastify",
         importNames: ["Fastify", "fastify"],
-        methods: [
-          ".get",
-          ".post",
-          ".put",
-          ".delete",
-          ".patch",
-          ".head",
-          ".options",
-          ".all",
-        ],
+        methods: METHODS,
       }),
-      ...registrationHelperDiscovery(
-        options.registrationHelpers ?? [],
-        options.configDirectory,
-      ),
     ],
+
+    // A route a project helper registers is read from the helper's own
+    // body, before extraction, and expanded at each call site.
+    projectHelpers: routeHelperIndex({
+      importModule: "fastify",
+      importNames: ["Fastify", "fastify"],
+      methods: METHODS,
+    }),
 
     terminals: [
       {

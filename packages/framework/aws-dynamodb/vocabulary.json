@@ -1,4 +1,5 @@
 {
+  "DynamoDB_20120810": "DynamoDB wire protocol: the prefix every X-Amz-Target value starts with",
   "ExpressionAttributeNames": "DynamoDB command input: the alias each attribute is written as",
   "IndexName": "DynamoDB command input: which secondary index",
   "Item": "DynamoDB command input: the attributes to write",

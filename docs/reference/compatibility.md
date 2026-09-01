@@ -126,15 +126,19 @@ helpers as it is handed through, and the path and the handler resolve
 the same way, so `registerCrud(app, "users", handlers)` gives
 `GET /users` when the helper writes `app.get(\`/${name}\`, handlers.list)`.
 
-Two limits. A helper called from more than one place with different
-arguments leaves each of those with two values and suss settles on
-neither, so no route comes out: spell those out with
-`registrationHelpers`. When it is the app itself that has two values,
-the summary of the handler says which call was refused and how many
-apps the walk reached, under `Could not follow:` in `suss inspect`. And
-a helper that never mentions the library, an untyped JavaScript
-parameter with no import beside it, is not read at all, because the file
-is not one the pack applies to.
+A helper called from more than one place with different arguments
+leaves each of those with two values, so following the parameters back
+settles on nothing. Those routes come from the other direction: before
+extraction suss reads every function the code hands its app to, writes
+down what each one registers in terms of its own parameters, and fills
+those in at each call site. `registerCrud(app, "users", handlers)` and
+`registerCrud(app, "orders", handlers)` give `GET /users` and
+`GET /orders`. The helper's own file need not mention express for this,
+so a parameter typed with an interface of the project's own is read too.
+
+One limit is left. When it is the app itself that has two values, the
+summary of the handler says which call was refused and how many apps the
+walk reached, under `Could not follow:` in `suss inspect`.
 
 ## Several services in one folder
 

@@ -16,31 +16,21 @@ Framework pack for [Hono](https://hono.dev/) handlers. A Hono handler takes one 
 
 ## Options
 
-A project that registers routes through a helper of its own passes that helper in. A helper's name belongs to one project, so this arrives through per-project pack config rather than shipping inside the pack.
+None. The pack used to take `registrationHelpers`, saying what a route helper of the project's own registers:
 
-```json
-{
-  "registrationHelpers": [
-    {
-      "helperName": "registerCrud",
-      "importModule": "./routes/crud",
-      "registrations": [
-        { "method": "GET", "pathTemplate": "/{1}", "handlerArg": "{2}.list" },
-        { "method": "POST", "pathTemplate": "/{1}", "handlerArg": "{2}.create" }
-      ]
-    }
-  ]
+```ts
+export function registerCrud(app: Hono, name: string, handlers: Handlers) {
+  app.get(`/${name}`, handlers.list);
+  app.post(`/${name}`, handlers.create);
 }
+
+registerCrud(app, "users", userHandlers);
+registerCrud(app, "orders", orderHandlers);
 ```
 
-Pass it with `suss extract -f hono=config.json`.
+suss reads that itself now. Before any file is walked it finds every function the project hands its app to, reads what each registers in terms of the function's own parameters (`GET /{1}` with the handler at `{2}.list`), and fills those in at each call site. The two calls above give four routes. A config file that still sets the option is refused, with a line saying so.
 
-- `registrationHelpers`: the project's own registration helpers, each expanded into the routes one call registers.
-  - `helperName`: the helper's exported name, as the project's code imports it.
-  - `importModule`: the module the helper is imported from, which tells two same-named helpers apart. Optional. Written relative, it is read relative to the config file it is in, so `./routes/crud` beside a config at the project root is `routes/crud.ts` at the project root.
-  - `registrations`: one entry per route the helper call registers. `{N}` is replaced by the helper call's argument at position N, and `handlerArg` can add one property on that argument.
-
-A helper here that no call in the run matches comes out under `no-helper` in [pack health](../../../docs/guides/pack-health.md), since the routes it would have registered go missing with every other count unchanged.
+A helper suss read that no call then matched comes out under `no-helper` in [pack health](../../../docs/guides/pack-health.md). That is a bug in suss rather than in your code: it found the call site to begin with.
 
 ## Where it fits in suss
 

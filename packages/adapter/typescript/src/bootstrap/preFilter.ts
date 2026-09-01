@@ -143,6 +143,15 @@ export function packIsUngated(pack: PatternPack): boolean {
   return false;
 }
 
+/**
+ * Strings a pack looks for in a file's own text, from `projectHelpers`.
+ * A pack whose library is reached over HTTP has no import to gate on.
+ */
+export function collectPackMarks(pack: PatternPack): string[] {
+  const find = pack.projectHelpers?.find;
+  return find?.by === "text" ? [...find.contains] : [];
+}
+
 /** Every import specifier that makes a gated pack applicable to a file. */
 export function collectPackGates(pack: PatternPack): string[] {
   const gates = new Set<string>();

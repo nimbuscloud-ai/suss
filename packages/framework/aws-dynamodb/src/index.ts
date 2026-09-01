@@ -15,14 +15,17 @@
 
 import { z } from "zod";
 
-import { constructedFrom, pack, storageCalls } from "@suss/recognize";
+import { compile, constructedFrom, pack, storageCalls } from "@suss/recognize";
 
 import type {
   ArgumentPick,
   CallStep,
+  HelperValue,
   InputRule,
   OneArgument,
   PatternPack,
+  ProjectHelper,
+  ProjectHelpers,
   StatedInputs,
   StorageCalls,
   StorageMethod,
@@ -264,31 +267,20 @@ function keyConditionAttributes(
 }
 
 /**
- * A function of the project's own that sends a DynamoDB request. The
- * pack recognizes the SDK's command classes, and a service that signs
- * and posts the request itself writes none of them, so the project says
- * which of its own functions does that. The README gives an example.
+ * A function of the project's own that signs and posts a DynamoDB
+ * request itself, so there is no command class to match on. The index
+ * reads it out of the project before extraction; the README says how.
  */
-const requestFunction = z
-  .object({
-    /** What the function is called where it is called. */
-    name: z.string(),
-    /**
-     * The module specifier a call site imports it from. Leave it out when
-     * call sites reach it by different relative paths; then the name
-     * alone picks it out among the files the import gate admits.
-     */
-    module: z.string().optional(),
-    /** Which argument says which operation the request performs. */
-    operationArg: z.number(),
-    /** Which argument is the request itself. */
-    requestArg: z.number(),
-    /** What each operation the function accepts does to the table. */
-    operations: z.record(z.string(), z.enum(["read", "write"])),
-  })
-  .strict();
-
-export type DynamoRequestFunction = z.infer<typeof requestFunction>;
+interface DynamoRequestFunction {
+  /** What the function is called where it is called. */
+  name: string;
+  /** Which argument says which operation the request performs. */
+  operationArg: number;
+  /** Which argument is the request itself. */
+  requestArg: number;
+  /** What each operation the function accepts does to the table. */
+  operations: Record<string, "read" | "write">;
+}
 
 /**
  * What `-f aws-dynamodb=config.json` may say. The CLI parses the file against it
@@ -296,7 +288,6 @@ export type DynamoRequestFunction = z.infer<typeof requestFunction>;
  */
 export const optionsSchema = z
   .object({
-    requestFunctions: z.array(requestFunction).optional(),
     /**
      * Further modules whose presence makes a file worth reading. A helper
      * imported by a relative path gives the gate nothing to match on; the
@@ -309,9 +300,9 @@ export const optionsSchema = z
 export type DynamoPackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * A call to a request function the project configured. The operation
- * argument decides whether the call reads or writes, and the request
- * argument is the same object a command class takes.
+ * A call to a request function the index found. The operation argument
+ * decides whether the call reads or writes, and the request argument is
+ * the same object a command class takes.
  */
 function requestFunctionCalls(spec: DynamoRequestFunction): StorageCalls {
   const operation: ArgumentPick = { at: spec.operationArg };
@@ -320,12 +311,9 @@ function requestFunctionCalls(spec: DynamoRequestFunction): StorageCalls {
     property: [property],
   });
 
-  return storageCalls({
-    system: "aws.dynamodb",
-    ...(spec.module === undefined
-      ? {}
-      : { client: constructedFrom(spec.module) }),
-  })
+  // No origin: a project reaches its own helper by a relative path,
+  // which is spelled differently at every depth.
+  return storageCalls({ system: "aws.dynamodb" })
     .methods({
       [spec.name]: {
         operation,
@@ -368,35 +356,106 @@ function argumentText(
   return "undefined";
 }
 
-const isArgumentPosition = (index: unknown): boolean =>
-  Number.isInteger(index) && (index as number) >= 0;
+/**
+ * What each operation the wire accepts does to the table, so a project
+ * that posts its own request needs to say nothing about them.
+ */
+const WIRE_OPERATIONS: Record<string, "read" | "write"> = {
+  GetItem: "read",
+  BatchGetItem: "read",
+  Query: "read",
+  Scan: "read",
+  TransactGetItems: "read",
+  PutItem: "write",
+  UpdateItem: "write",
+  DeleteItem: "write",
+  BatchWriteItem: "write",
+  TransactWriteItems: "write",
+};
+
+/** The header every DynamoDB request states its operation in. */
+const TARGET_HEADER = "X-Amz-Target";
+
+/** The service part of that header, before the operation itself. */
+const TARGET_SERVICE = "DynamoDB_20120810";
+const TARGET_PREFIX = `${TARGET_SERVICE}.`;
+
+/** Where a request body goes on its way to `fetch`. */
+const BODY_PROPERTY = "body";
+const HEADERS_PROPERTY = "headers";
 
 /**
- * Rejecting a half-written entry here rather than reading nothing later
- * turns a typo into a message from the CLI that says which file to fix.
+ * The helpers this project wrote in front of DynamoDB's HTTP API, and
+ * the calls to each of them, recognized the way a command class is.
  */
-function checkRequestFunction(spec: DynamoRequestFunction, at: number): void {
-  const complain = (problem: string): never => {
-    throw new Error(`requestFunctions[${at}] ${problem}`);
-  };
-  if (typeof spec.name !== "string" || spec.name === "") {
-    complain("needs the name of a function to read.");
-  }
-  if (!isArgumentPosition(spec.operationArg)) {
-    complain("needs operationArg: which argument says the operation, from 0.");
-  }
-  if (!isArgumentPosition(spec.requestArg)) {
-    complain("needs requestArg: which argument is the request, from 0.");
-  }
-  const operations = Object.entries(spec.operations ?? {});
-  if (operations.length === 0) {
-    complain("needs operations, saying what each one does to the table.");
-  }
-  for (const [operation, kind] of operations) {
-    if (kind !== "read" && kind !== "write") {
-      complain(`gives ${operation} as ${String(kind)}, not read or write.`);
+const REQUEST_HELPERS: ProjectHelpers = {
+  find: { by: "text", contains: [TARGET_PREFIX] },
+  declare: (helpers) => ({
+    invocationRecognizers: helpers
+      .flatMap((helper) => requestFunctionOf(helper) ?? [])
+      .map((spec) => compile(requestFunctionCalls(spec).declared, RECOGNITION)),
+  }),
+};
+
+/**
+ * A helper read as a request function, or null when its body posts no
+ * DynamoDB request whose operation and body both come from a parameter.
+ */
+function requestFunctionOf(
+  helper: ProjectHelper,
+): DynamoRequestFunction | null {
+  for (const sink of helper.sinks) {
+    for (const argument of sink.arguments) {
+      if (argument.as !== "object") {
+        continue;
+      }
+      const operationArg = operationParameter(argument.properties);
+      const requestArg = requestParameter(argument.properties[BODY_PROPERTY]);
+      if (operationArg !== null && requestArg !== null) {
+        return {
+          name: helper.name,
+          operationArg,
+          requestArg,
+          operations: WIRE_OPERATIONS,
+        };
+      }
     }
   }
+  return null;
+}
+
+/** Which parameter reaches the target header, after the wire's prefix. */
+function operationParameter(
+  properties: Record<string, HelperValue>,
+): number | null {
+  const headers = properties[HEADERS_PROPERTY];
+  if (headers?.as !== "object") {
+    return null;
+  }
+  const target = headers.properties[TARGET_HEADER];
+  if (target?.as !== "text" || !target.text.startsWith(TARGET_PREFIX)) {
+    return null;
+  }
+  return slotIn(target.text.slice(TARGET_PREFIX.length));
+}
+
+/** A whole value that is one parameter, `JSON.stringify` or not. */
+function requestParameter(value: HelperValue | undefined): number | null {
+  if (value === undefined) {
+    return null;
+  }
+  if (value.as === "parameter" && value.property === undefined) {
+    return value.position;
+  }
+  return value.as === "call" && value.callee === "JSON.stringify"
+    ? requestParameter(value.arguments[0])
+    : null;
+}
+
+/** The parameter a piece of text is nothing but, as in `"{2}"`. */
+function slotIn(text: string): number | null {
+  const slot = /^\{(\d+)\}$/.exec(text);
+  return slot === null ? null : Number(slot[1]);
 }
 
 /**
@@ -405,21 +464,15 @@ function checkRequestFunction(spec: DynamoRequestFunction, at: number): void {
  * any further module the project configured.
  */
 export function dynamoFramework(options: DynamoPackOptions = {}): PatternPack {
-  const requestFunctions = options.requestFunctions ?? [];
-  requestFunctions.forEach(checkRequestFunction);
-
-  return pack(
-    "aws-dynamodb",
-    [COMMAND_CALLS, ...requestFunctions.map(requestFunctionCalls)],
-    {
-      languages: ["typescript", "javascript"],
-      recognizedAs: RECOGNITION,
-      protocol: "dynamodb",
-      ...(options.requiresImport === undefined
-        ? {}
-        : { requiresImport: options.requiresImport }),
-    },
-  );
+  return pack("aws-dynamodb", [COMMAND_CALLS], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: RECOGNITION,
+    protocol: "dynamodb",
+    projectHelpers: REQUEST_HELPERS,
+    ...(options.requiresImport === undefined
+      ? {}
+      : { requiresImport: options.requiresImport }),
+  });
 }
 
 export default dynamoFramework;
