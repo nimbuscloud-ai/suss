@@ -20,7 +20,10 @@ import { discoverResolverMaps } from "./resolverMap.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
-import type { MountPrefixIndex } from "./registrationCall.js";
+import type {
+  ExpandedRegistrations,
+  MountPrefixIndex,
+} from "./registrationCall.js";
 
 export { clearPackageExportsCache } from "./packageExports.js";
 export { toFunctionRoot, unitDedupKey } from "./shared.js";
@@ -37,6 +40,7 @@ function runPattern(
   pattern: DiscoveryPattern,
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
+  expandedElsewhere?: ExpandedRegistrations,
 ): DiscoveredUnit[] {
   if (pattern.match.type === "namedExport") {
     return discoverNamedExports(
@@ -54,6 +58,7 @@ function runPattern(
       pattern.bindingExtraction,
       resolution,
       mountPrefixes,
+      expandedElsewhere,
     );
   }
   if (pattern.match.type === "registrationTemplate") {
@@ -62,6 +67,7 @@ function runPattern(
       pattern.match,
       pattern.kind,
       resolution,
+      mountPrefixes,
     );
   }
   if (pattern.match.type === "registrationLoop") {
@@ -168,6 +174,7 @@ export function discoverUnits(
   patterns: DiscoveryPattern[],
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
+  expandedElsewhere?: ExpandedRegistrations,
 ): DiscoveredUnit[] {
   // The adapter passes its run's store; a bare call gets its own,
   // since reading an export table needs one.
@@ -175,7 +182,13 @@ export function discoverUnits(
   const allResults: DiscoveredUnit[] = [];
 
   for (const pattern of patterns) {
-    const found = runPattern(sourceFile, pattern, store, mountPrefixes);
+    const found = runPattern(
+      sourceFile,
+      pattern,
+      store,
+      mountPrefixes,
+      expandedElsewhere,
+    );
     for (const unit of found) {
       unit.pattern = pattern;
     }

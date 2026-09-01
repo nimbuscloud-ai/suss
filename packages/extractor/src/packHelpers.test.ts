@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   httpRouteDiscovery,
   registrationHelperDiscovery,
+  routeHelperIndex,
   wrapperDiscovery,
 } from "./packHelpers.js";
 
 import type { DiscoveryPattern } from "./framework.js";
+import type { ProjectHelper } from "./projectHelpers.js";
 
 describe("httpRouteDiscovery", () => {
   it("emits one DiscoveryPattern per importName with the shared binding-extraction shape", () => {
@@ -201,46 +203,149 @@ describe("registrationHelperDiscovery", () => {
     expect(registrationHelperDiscovery([])).toEqual([]);
   });
 
-  it("reads a relative importModule against the config file's directory", () => {
-    const [pattern] = registrationHelperDiscovery(
-      [
-        {
-          helperName: "registerCrud",
-          importModule: "./routes/crud",
-          registrations: [],
-        },
-      ],
-      "/repo/config",
-    );
-
-    expect(readImportModule(pattern)).toBe("/repo/config/routes/crud");
-  });
-
-  it("leaves a package specifier alone, config directory or not", () => {
-    const [pattern] = registrationHelperDiscovery(
-      [
-        {
-          helperName: "registerCrud",
-          importModule: "@acme/routes",
-          registrations: [],
-        },
-      ],
-      "/repo/config",
-    );
-
-    expect(readImportModule(pattern)).toBe("@acme/routes");
-  });
-
-  it("leaves a relative specifier alone when nothing said where the config is", () => {
+  it("keeps the file the index read the helper out of", () => {
     const [pattern] = registrationHelperDiscovery([
       {
         helperName: "registerCrud",
-        importModule: "./routes/crud",
+        importModule: "/repo/src/routes/crud.ts",
         registrations: [],
       },
     ]);
 
-    expect(readImportModule(pattern)).toBe("./routes/crud");
+    expect(readImportModule(pattern)).toBe("/repo/src/routes/crud.ts");
+  });
+});
+
+describe("routeHelperIndex", () => {
+  const index = routeHelperIndex({
+    importModule: "express",
+    importNames: ["Router", "express"],
+    methods: [".get", ".post", ".all"],
+  });
+
+  /** One `app.get(`/${name}`, handlers.list)` inside a helper. */
+  const registerCrud = (over: Partial<ProjectHelper> = {}): ProjectHelper => ({
+    name: "registerCrud",
+    file: "/repo/src/crud.ts",
+    parameters: ["app", "name", "handlers"],
+    subjectParameters: [0],
+    sinks: [
+      {
+        method: "get",
+        receiver: { as: "parameter", position: 0 },
+        arguments: [
+          { as: "text", text: "/{1}" },
+          { as: "parameter", position: 2, property: "list" },
+        ],
+      },
+    ],
+    ...over,
+  });
+
+  it("asks for helpers found from a call site", () => {
+    expect(index.find).toEqual({ by: "subject" });
+  });
+
+  it("turns what a helper registers into one template per helper", () => {
+    const [pattern] = index.declare([registerCrud()]).discovery ?? [];
+
+    expect(pattern?.match).toEqual({
+      type: "registrationTemplate",
+      helperName: "registerCrud",
+      importModule: "/repo/src/crud.ts",
+      subject: {
+        argument: 0,
+        importModule: "express",
+        importNames: ["Router", "express"],
+      },
+      registrations: [
+        { method: "GET", pathTemplate: "/{1}", handlerArg: "{2}.list" },
+      ],
+    });
+  });
+
+  it("reads `.all` as the wildcard the pairing engine spells", () => {
+    const [pattern] =
+      index.declare([
+        registerCrud({
+          sinks: [
+            {
+              method: "all",
+              receiver: { as: "parameter", position: 0 },
+              arguments: [
+                { as: "text", text: "/{1}" },
+                { as: "parameter", position: 2, property: "list" },
+              ],
+            },
+          ],
+        }),
+      ]).discovery ?? [];
+
+    expect(
+      pattern?.match.type === "registrationTemplate"
+        ? pattern.match.registrations[0]?.method
+        : null,
+    ).toBe("*");
+  });
+
+  it("drops a registration whose handler the call site does not supply", () => {
+    const declared = index.declare([
+      registerCrud({
+        sinks: [
+          {
+            method: "get",
+            receiver: { as: "parameter", position: 0 },
+            arguments: [{ as: "text", text: "/health" }, { as: "unread" }],
+          },
+        ],
+      }),
+    ]);
+
+    expect(declared.discovery).toEqual([]);
+  });
+
+  it("drops a registration whose path the reading could not fill in", () => {
+    const declared = index.declare([
+      registerCrud({
+        sinks: [
+          {
+            method: "get",
+            receiver: { as: "parameter", position: 0 },
+            arguments: [
+              { as: "unread" },
+              { as: "parameter", position: 2, property: "list" },
+            ],
+          },
+        ],
+      }),
+    ]);
+
+    expect(declared.discovery).toEqual([]);
+  });
+
+  it("leaves a call on a parameter no caller passed the app to alone", () => {
+    const declared = index.declare([registerCrud({ subjectParameters: [1] })]);
+
+    expect(declared.discovery).toEqual([]);
+  });
+
+  it("leaves a method this framework does not register with alone", () => {
+    const declared = index.declare([
+      registerCrud({
+        sinks: [
+          {
+            method: "subscribe",
+            receiver: { as: "parameter", position: 0 },
+            arguments: [
+              { as: "text", text: "/{1}" },
+              { as: "parameter", position: 2, property: "list" },
+            ],
+          },
+        ],
+      }),
+    ]);
+
+    expect(declared.discovery).toEqual([]);
   });
 });
 

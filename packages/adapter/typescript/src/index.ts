@@ -12,6 +12,7 @@ export {
 export { collectAncestorBranches } from "./conditions.js";
 export { readConfiguredCall, rootIdentifier } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
+export { buildProjectHelperIndex } from "./discovery/helperIndex.js";
 export {
   type ImportScanOptions,
   importDeclarationsOf,

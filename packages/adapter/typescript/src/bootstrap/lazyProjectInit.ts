@@ -20,7 +20,11 @@ import path from "node:path";
 import { type Project, type SourceFile, ts } from "ts-morph";
 
 import { namesAnyPackage } from "../facts/moduleGraph.js";
-import { collectPackGates, packIsUngated } from "./preFilter.js";
+import {
+  collectPackGates,
+  collectPackMarks,
+  packIsUngated,
+} from "./preFilter.js";
 
 import type { PatternPack } from "@suss/extractor";
 
@@ -320,6 +324,8 @@ function parseTsconfig(tsConfigFilePath: string): {
 interface FileImports {
   path: string;
   importedModules: string[];
+  /** Which of the packs' marks this file's own text contains. */
+  marked: boolean;
 }
 
 async function selectCandidateFiles(
@@ -333,14 +339,15 @@ async function selectCandidateFiles(
     return [...allFiles];
   }
   const gates = collectAllGates(packs);
-  if (gates.length === 0) {
+  const marks = collectAllMarks(packs);
+  if (gates.length === 0 && marks.length === 0) {
     return [];
   }
 
-  const fileImports = await readImportsConcurrently(allFiles);
+  const fileImports = await readImportsConcurrently(allFiles, marks);
   const matched = new Set<string>();
-  for (const { path: p, importedModules } of fileImports) {
-    if (namesAnyPackage(importedModules, gates)) {
+  for (const { path: p, importedModules, marked } of fileImports) {
+    if (marked || namesAnyPackage(importedModules, gates)) {
       matched.add(p);
     }
   }
@@ -444,11 +451,22 @@ function collectAllGates(packs: ReadonlyArray<PatternPack>): string[] {
   return [...gates];
 }
 
+function collectAllMarks(packs: ReadonlyArray<PatternPack>): string[] {
+  const marks = new Set<string>();
+  for (const pack of packs) {
+    for (const mark of collectPackMarks(pack)) {
+      marks.add(mark);
+    }
+  }
+  return [...marks];
+}
+
 /** Bounded so a huge project does not exhaust the file-handle limit. */
 const READ_CONCURRENCY = 32;
 
 async function readImportsConcurrently(
   paths: ReadonlyArray<string>,
+  marks: ReadonlyArray<string>,
 ): Promise<FileImports[]> {
   const results: FileImports[] = new Array(paths.length);
   let next = 0;
@@ -465,9 +483,10 @@ async function readImportsConcurrently(
         results[i] = {
           path: p,
           importedModules: pre.importedFiles.map((f) => f.fileName),
+          marked: marks.some((mark) => text.includes(mark)),
         };
       } catch {
-        results[i] = { path: p, importedModules: [] };
+        results[i] = { path: p, importedModules: [], marked: false };
       }
     }
   }

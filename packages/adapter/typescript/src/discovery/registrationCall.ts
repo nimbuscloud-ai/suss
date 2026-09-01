@@ -23,7 +23,7 @@ import {
   objectLiteralOf,
   writtenNodeOf,
 } from "./resolveValue.js";
-import { namesAParameter } from "./shared.js";
+import { findEnclosingFunction, namesAParameter } from "./shared.js";
 
 import type {
   BindingExtraction,
@@ -72,6 +72,7 @@ export function discoverRegistrationCalls(
   bindingExtraction?: BindingExtraction,
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
+  expandedElsewhere?: ExpandedRegistrations,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
@@ -107,6 +108,10 @@ export function discoverRegistrationCalls(
 
     const methodName = callee.getName();
     if (!registrationMethods.includes(methodName)) {
+      return;
+    }
+
+    if (expandedAtCallSites(node, methodName, expandedElsewhere)) {
       return;
     }
 
@@ -243,6 +248,31 @@ export function discoverRegistrationCalls(
   });
 
   return results;
+}
+
+/**
+ * What the project helper index says it has already expanded, which the
+ * walk consults so one registration does not become two summaries.
+ */
+export interface ExpandedRegistrations {
+  expandedAtCallSites(helper: Node, method: string): boolean;
+}
+
+/**
+ * Whether this registration is one the index reads out of its helper and
+ * fills in at each call site instead. The call sites have the path and
+ * the handler the caller supplied, which the body does not.
+ */
+function expandedAtCallSites(
+  call: Node,
+  method: string,
+  expanded: ExpandedRegistrations | undefined,
+): boolean {
+  if (expanded === undefined) {
+    return false;
+  }
+  const helper = findEnclosingFunction(call);
+  return helper !== null && expanded.expandedAtCallSites(helper, method);
 }
 
 /**

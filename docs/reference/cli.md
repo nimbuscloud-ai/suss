@@ -163,7 +163,7 @@ another pack found:
 |---|---|---|
 | `prisma` | `@suss/packs/prisma` | Prisma client calls, as storage-access interactions |
 | `drizzle` | `@suss/packs/drizzle` | Drizzle query-builder and relational-query calls, with SQL table names |
-| `aws-dynamodb` | `@suss/packs/aws-dynamodb` | AWS SDK v3 DynamoDB commands, as storage-access interactions. `requestFunctions` is optional. |
+| `aws-dynamodb` | `@suss/packs/aws-dynamodb` | AWS SDK v3 DynamoDB commands, as storage-access interactions, and a request the project signs and posts itself. |
 | `aws-sqs` | `@suss/packs/aws-sqs` | AWS SDK v3 SQS producer calls, as message-send interactions |
 | `aws-sns` | `@suss/packs/aws-sns` | AWS SDK v3 SNS `Publish` and `PublishBatch` calls, as message-send interactions |
 | `aws-secrets-manager` | `@suss/packs/aws-secrets-manager` | AWS Secrets Manager calls, as storage-access interactions against the secret |
@@ -187,69 +187,28 @@ modules make a file worth reading. A fact about a package you depend on
 goes in a [dependency stub](/dependency-stubs) instead, and every pack
 that consumes it reads it from there.
 
-The DynamoDB pack takes a request helper the project wrote itself. A
-service that signs and posts the request without the SDK never writes a
-command class, and the body it posts is the same object the command
-takes:
+The DynamoDB pack takes one option, `requiresImport`. It lists the
+modules whose presence, directly or through a file the project imports,
+makes a file worth reading, which is how the call sites of a helper that
+signs its own requests get walked at all.
 
-```ts
-await sendRequest(env, signer, "Query", {
-  TableName: env.ORDERS_TABLE,
-  IndexName: "byCustomer",
-  KeyConditionExpression: "customerId = :c",
-  ProjectionExpression: "orderId, total",
-});
-```
+It used to take `requestFunctions` as well, saying which of the
+project's own functions posted a DynamoDB request and which of its
+arguments were the operation and the request. suss reads that itself
+now, before extraction: a function whose body sends the operation in the
+`X-Amz-Target` header and the request as the body is a DynamoDB helper,
+whichever parameters those come from, and the call sites are matched
+with the arguments they were written with. What each operation does to
+the table is DynamoDB's own, so it lives in the pack.
 
-```json
-{
-  "requestFunctions": [
-    {
-      "name": "sendRequest",
-      "operationArg": 2,
-      "requestArg": 3,
-      "operations": {
-        "Query": "read",
-        "GetItem": "read",
-        "PutItem": "write"
-      }
-    }
-  ],
-  "requiresImport": ["aws4fetch"]
-}
-```
-
-`name` is the function, `operationArg` and `requestArg` are the
-positions of the two arguments that matter, and `operations` says what
-each operation the helper accepts does to the table. An operation left
-out is one the pack reads nothing from.
-
-Add `module` to an entry when every call site imports the helper by the
-same specifier, and the pack then leaves a function of that name from
-anywhere else alone. Relative imports spell the same module differently
-at different depths, so leave `module` out there and use
-`requiresImport` instead: it lists the modules whose presence, directly
-or through a file the project imports, makes a file worth reading.
-Above, that is the signing library the helper itself imports.
-
-One more option works the same way, because it also describes code the
-project wrote: `registrationHelpers` on express, fastify and hono says
-what a helper of yours registers.
-
-Reach for `registrationHelpers` only when a helper is called from
-several places with different arguments. A helper called from one place
-needs no configuration: `registerRoutes(app)` is read by following the
-app to the parameter it was passed to, whether the helper writes the
-route itself or takes the path and the handler from its caller. Called
-twice with two different names, the path and the handler each have two
-values, suss settles on neither, and the routes go unread until the
-option spells them out.
-
-A helper's `importModule` written relative is read relative to the config
-file it is in. A helper the option asks for that no call in the run
-matches comes out under `no-helper` in the pack-health block, so a
-misspelled name or a path pointing somewhere the helper is not shows up
-instead of quietly costing you the routes.
+The express, fastify and hono packs take no options at all. They used to
+take `registrationHelpers`, saying what a route helper of the project's
+own registers. That is read the same way: before extraction, every
+function the code hands its app to is read once, what it registers is
+written down in terms of its own parameters, and each call site fills
+those in. A helper called twice for two different resources gives both
+routes, and a helper whose parameter is typed with an interface of the
+project's own is read like any other.
 
 The aws-lambda pack takes no options at all. It used to take
 `subjectFactories`, saying which property of your handler factory's

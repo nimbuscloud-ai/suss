@@ -28,11 +28,10 @@ Each file has a `package`, optional provenance (`authored`, who wrote it; `from`
 |---|---|---|
 | `performs-call` | an export calls into a system | `publishEntry` sends to SQS, subject in argument 0 |
 | `composes-decorator` | an export wraps a known decorator | `ApiController` composes `@nestjs/common` `Controller` |
-| `registers-routes` | an export mounts routes on the app it is passed | `mountHealth` registers `GET /health` |
 | `re-exports` | the package re-exports a framework | an internal wrapper around FastAPI |
 | `extends-base` | a class extends a framework base | a shared GraphQL resolver base |
 
-`performs-call` systems today: `aws.sqs`, `aws.events`, `aws.dynamodb`, `aws.lambda`, `axios`. The `spec` fields are the same ones the matching pack option took, so anything an option could state, a statement can.
+`performs-call` systems today: `aws.sqs`, `aws.events`, `axios`. The `spec` fields are the same ones the matching pack option took, so anything an option could state, a statement can.
 
 A stub is provided by the project today. The direction is package-shipped stubs, referenced from `package.json` the way `types` points at declarations, so a consumer configures nothing; the loader gains a second place to look and the format does not change.
 
@@ -51,7 +50,7 @@ statements:
   #   src/ledger.ts:42  (config.queueUrl, entry)
   - kind: performs-call
     export: "publishEntry"
-    system: ""  # what the call reaches: aws.sqs, aws.events, aws.dynamodb, aws.lambda, axios
+    system: ""  # what the call reaches: aws.sqs, aws.events, axios
     spec: {}  # argument meanings, e.g. { subject: { at: 0 }, payload: { at: 1 } }
 ```
 
@@ -67,11 +66,13 @@ Nine pack options stated dependency facts before stubs existed: `classDecorators
 
 The stub statement feeds the pack through the same option key, which is why a pack still declares it. What went away is your config file setting it.
 
-Three options were listed alongside those nine when stubs shipped, and none of them is a dependency fact: each describes a function the project wrote itself, which is the case the section below says a stub is not for. A stub is keyed by a package, so it cannot spell a helper reached by a relative import at all.
+Three options were listed alongside those nine when stubs shipped, and none of them is a dependency fact: each described a function the project wrote itself, which is the case the section below says a stub is not for. All three are gone, and none of them to a stub.
 
 `subjectFactories` on aws-lambda is gone, and not to a stub. It said which property of a handler factory's config was the channel a consumer listens on, and the channel was the wrong thing to take from there: a producer sends to a queue, and the SAM template is where the queue behind a consumer is declared. The subject is a field of the message, which `suss check` compares against what producers send. A config file that still sets it is refused, with a line saying that.
 
-`registrationHelpers` on express, fastify and hono and `requestFunctions` on aws-dynamodb stay in pack config.
+`registrationHelpers` on express, fastify and hono, and `requestFunctions` on aws-dynamodb, are gone the same way, and for the same reason as `subjectFactories`: suss reads the helper. Before any file is walked it finds every function the project wrote in front of one of these libraries, reads what the body does in terms of the function's own parameters, and fills those in at each call site. A route helper called twice for two different resources gives both routes, which no configuration ever did. A config file that still sets either is refused, with a line saying what happens now.
+
+That reading needs a body, so `registers-routes` went with them: it described a route helper inside a package, which is exactly the body nobody can read. Nothing else consumed it, and `performs-call` no longer accepts `aws.dynamodb` for the same reason.
 
 Editing a stub invalidates the extraction cache the same way editing pack config does.
 

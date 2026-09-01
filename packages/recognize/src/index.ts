@@ -13,8 +13,13 @@ export { unitInvokes } from "./unitInvokes.js";
 // type the adapters load it as.
 export type {
   DeclaredMatch,
+  HelperDeclarations,
+  HelperSink,
+  HelperValue,
   PackDeclarations,
   PatternPack,
+  ProjectHelper,
+  ProjectHelpers,
 } from "@suss/extractor";
 export type {
   AccessKind,

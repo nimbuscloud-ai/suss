@@ -208,6 +208,74 @@ describe("registrationTemplate discovery, a handler the call names", () => {
 });
 
 /**
+ * A route a helper registers belongs to the app the call site passed,
+ * which is what a middleware registered on the same app is keyed on.
+ */
+describe("registrationTemplate discovery, the app the call passed", () => {
+  const withSubject: DiscoveryPattern = {
+    kind: "handler",
+    match: {
+      type: "registrationTemplate",
+      helperName: "registerCrud",
+      subject: {
+        argument: 0,
+        importModule: "express",
+        importNames: ["Router", "express"],
+      },
+      registrations: [
+        { method: "get", pathTemplate: "/{1}", handlerArg: "{2}.list" },
+      ],
+    },
+  };
+
+  function callingWithApp(): SourceFile {
+    const project = makeProject();
+    project.createSourceFile(
+      "/node_modules/express/package.json",
+      JSON.stringify({ name: "express", types: "index.d.ts" }),
+    );
+    project.createSourceFile(
+      "/node_modules/express/index.d.ts",
+      `
+        export interface Express { get(p: string, h: unknown): void }
+        export function Router(): Express;
+        declare function express(): Express;
+        export default express;
+      `,
+    );
+    return project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        function registerCrud(_app: unknown, _resource: string, _handlers: unknown) {}
+        const app = express();
+        registerCrud(app, "users", { list() {} });
+      `,
+    );
+  }
+
+  it("keys the unit on the app's own creation site", () => {
+    const [unit] = discoverUnits(
+      callingWithApp(),
+      [withSubject],
+      new ResolutionStore(),
+    );
+
+    expect(unit?.registrationSubjectId).toContain("/app.ts");
+  });
+
+  it("keys on nothing when the pattern does not say which argument", () => {
+    const [unit] = discoverUnits(
+      callingWithApp(),
+      [CRUD_PATTERN],
+      new ResolutionStore(),
+    );
+
+    expect(unit?.registrationSubjectId).toBeUndefined();
+  });
+});
+
+/**
  * A project whose helper is written in `helperFile` and imported by the
  * call site, with a pattern whose `importModule` is the resolved path a
  * pack hands over. `configPath` defaults to the helper's own file.

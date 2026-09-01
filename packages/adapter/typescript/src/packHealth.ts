@@ -186,7 +186,7 @@ function helpersThatMatchedNothing(
   return packs.flatMap((funnel) =>
     funnel.helpersUnmatched.map((helper) => ({
       label: funnel.pack,
-      detail: `${helper} matched no call in this run, so whatever it registers is missing. Check the name against the code, and check importModule against where the helper is written.`,
+      detail: `${helper} matched no call in this run, so whatever it registers is missing. suss read that helper out of the project and then failed to match a call to it, which is a bug in suss rather than in your code.`,
     })),
   );
 }
@@ -389,7 +389,7 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
       violations: recognizersWithNoUnits(report.packs),
     },
     {
-      name: "every registration helper the config asks for matched a call",
+      name: "every registration helper the run read matched a call",
       code: "no-helper",
       audience: "run",
       violations: helpersThatMatchedNothing(report.packs),

@@ -55,7 +55,7 @@ export {
   httpRouteDiscovery,
   type RegistrationHelper,
   registrationHelperDiscovery,
-  registrationHelperOption,
+  routeHelperIndex,
   unwrapJsonStringify,
   wrapperDiscovery,
 } from "./packHelpers.js";
@@ -126,6 +126,14 @@ export type {
   StatementBlock,
   StructuredStatement,
 } from "./paths/structuredStatement.js";
+export type {
+  HelperDeclarations,
+  HelperSearch,
+  HelperSink,
+  HelperValue,
+  ProjectHelper,
+  ProjectHelpers,
+} from "./projectHelpers.js";
 export type {
   ChosenReading,
   DefaultedReading,

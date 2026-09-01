@@ -6,13 +6,14 @@ import { Node } from "ts-morph";
 
 import {
   accessContextFor,
+  buildProjectHelperIndex,
   invocationContextFor,
   ResolutionStore,
 } from "@suss/adapter-typescript";
 import { createTestProject } from "@suss/test-project";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
 /** Where a snippet goes when the test does not say. */
@@ -53,7 +54,8 @@ export function packUnderTest(
   ): Effect[] => {
     const project = createTestProject();
     writeLibraries(project, options.library ?? {});
-    return effectsOver(writeFiles(project, files, entry), pack);
+    const entryFile = writeFiles(project, files, entry);
+    return effectsOver(entryFile, pack, Object.keys(files));
   };
 
   return {
@@ -104,15 +106,23 @@ function writeFiles(
   return entryFile;
 }
 
-function effectsOver(sourceFile: SourceFile, pack: PatternPack): Effect[] {
-  const invocations = pack.invocationRecognizers ?? [];
+function effectsOver(
+  sourceFile: SourceFile,
+  pack: PatternPack,
+  written: readonly string[],
+): Effect[] {
+  const store = new ResolutionStore();
+  const invocations = [
+    ...(pack.invocationRecognizers ?? []),
+    ...contributedBy(pack, sourceFile, written, store),
+  ];
   const accesses = pack.accessRecognizers ?? [];
   if (invocations.length === 0 && accesses.length === 0) {
     throw new Error(
       `the pack "${pack.name}" declares no recognizers, so there is nothing to run`,
     );
   }
-  const store = new ResolutionStore();
+
   const resolve = (value: Node): Node | null =>
     store.resolveWrittenValue(value);
   const originatesFrom = (value: Node, module: string): boolean =>
@@ -145,6 +155,34 @@ function effectsOver(sourceFile: SourceFile, pack: PatternPack): Effect[] {
     }
   });
   return effects;
+}
+
+/**
+ * The recognizers a pack contributes after reading the project's own
+ * helpers, which extraction builds before it walks anything.
+ */
+function contributedBy(
+  pack: PatternPack,
+  sourceFile: SourceFile,
+  written: readonly string[],
+  store: ResolutionStore,
+): InvocationRecognizer[] {
+  if (pack.projectHelpers === undefined) {
+    return [];
+  }
+  const project = sourceFile.getProject();
+  const files = written.flatMap((filePath) => {
+    const file = project.getSourceFile(filePath);
+    return file === undefined ? [] : [file];
+  });
+  return [
+    ...buildProjectHelperIndex(
+      files,
+      [pack],
+      new Map(files.map((file) => [file, [pack]])),
+      store,
+    ).contributedRecognizers(),
+  ];
 }
 
 /** What one set of recognizers makes of one node. */

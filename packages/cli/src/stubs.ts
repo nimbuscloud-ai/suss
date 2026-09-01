@@ -18,12 +18,6 @@ import { z } from "zod";
 
 import { UsageError } from "./usageError.js";
 
-const RegistrationSchema = z.object({
-  method: z.string(),
-  pathTemplate: z.string(),
-  handlerArg: z.string(),
-});
-
 const StatementSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("composes-decorator"),
@@ -34,11 +28,6 @@ const StatementSchema = z.discriminatedUnion("kind", [
     kind: z.literal("extends-base"),
     class: z.string(),
     extends: z.string(),
-  }),
-  z.object({
-    kind: z.literal("registers-routes"),
-    export: z.string(),
-    registrations: z.array(RegistrationSchema).min(1),
   }),
   z.object({
     kind: z.literal("re-exports"),
@@ -163,12 +152,9 @@ const DECORATOR_CONSUMERS: Record<string, string[]> = {
   "@nestjs/graphql Resolver": ["nestjs-graphql"],
 };
 
-const ROUTE_HELPER_CONSUMERS = ["express", "fastify", "hono"];
-
 const CALL_CONSUMERS: Record<string, { pack: string; option: string }> = {
   "aws.sqs": { pack: "aws-sqs", option: "producers" },
   "aws.events": { pack: "aws-eventbridge", option: "producers" },
-  "aws.dynamodb": { pack: "aws-dynamodb", option: "requestFunctions" },
   axios: { pack: "axios", option: "factories" },
 };
 
@@ -205,17 +191,6 @@ function routeStatement(
     return;
   }
 
-  if (statement.kind === "registers-routes") {
-    for (const pack of ROUTE_HELPER_CONSUMERS) {
-      append(overlay, pack, "registrationHelpers", {
-        helperName: statement.export,
-        importModule: stub.package,
-        registrations: statement.registrations,
-      });
-    }
-    return;
-  }
-
   if (statement.kind === "re-exports") {
     const pack = RE_EXPORT_CONSUMERS[statement.of];
     if (pack !== undefined) {
@@ -239,12 +214,8 @@ function routeStatement(
  * above writes these same keys, so a pack factory still reads them;
  * what the CLI refuses is a project's own config file setting one.
  *
- * `registrationHelpers` and `requestFunctions` are routed here too, and
- * they are deliberately absent: each describes a function the project
- * wrote itself, so a config file is where it belongs and a stub keyed
- * by a package cannot spell it. An option that went because suss reads
- * the same fact off the code is refused through the retired table
- * instead, which says what happens now rather than where to put it.
+ * An option that went because suss reads the same fact off the code is
+ * refused through the retired table instead.
  */
 const STUB_ONLY_OPTIONS: Record<string, readonly string[]> = {
   "nestjs-rest": ["classDecorators"],

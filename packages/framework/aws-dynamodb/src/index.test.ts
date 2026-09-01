@@ -368,27 +368,39 @@ describe("a DynamoDB command", () => {
 });
 
 /**
- * A project that signs and posts the request itself. The helper takes
- * the operation third and the request fourth, which is what the config
- * has to say for the pack to read either.
+ * A project that signs and posts the request itself. Nothing at the
+ * call site says DynamoDB; the helper's body does, and which parameter
+ * is which comes from where each one ends up.
  */
-const SIGNED_REQUEST: DynamoPackOptions = {
-  requestFunctions: [
-    {
-      name: "sendRequest",
-      operationArg: 2,
-      requestArg: 3,
-      operations: { Query: "read", GetItem: "read", PutItem: "write" },
-    },
-  ],
-};
+const SIGNING_HELPER = `
+  interface Signer { fetch(url: string, init: unknown): Promise<Response>; }
+  export declare const signer: Signer;
+  export async function sendRequest(
+    region: string,
+    signer: Signer,
+    operation: string,
+    request: object,
+  ): Promise<Response> {
+    return signer.fetch(\`https://dynamodb.\${region}.amazonaws.com/\`, {
+      method: "POST",
+      headers: { "X-Amz-Target": \`DynamoDB_20120810.\${operation}\` },
+      body: JSON.stringify(request),
+    });
+  }
+`;
 
-const CLIENT_IMPORT = `import { signer, sendRequest } from "@acme/dynamo-http";`;
+const CLIENT_IMPORT = `import { signer, sendRequest } from "./signed";`;
+
+/** The call site, with the project's own helper beside it. */
+const calling = (source: string, helper = SIGNING_HELPER): Effect[] =>
+  packUnderTest(dynamoFramework()).effectsAcross(
+    { "/signed.ts": helper, "/repo.ts": source },
+    "/repo.ts",
+  );
 
 describe("a project's own request function", () => {
   it("reads the table, the index, the fields and the selector", () => {
-    const effects = effectsIn(
-      `
+    const effects = calling(`
       ${CLIENT_IMPORT}
       declare const env: { ORDERS_TABLE: string };
       export async function byCustomer(customerId: string) {
@@ -400,9 +412,7 @@ describe("a project's own request function", () => {
           ExpressionAttributeValues: { ":c": { S: customerId } },
         });
       }
-    `,
-      SIGNED_REQUEST,
-    );
+    `);
 
     expect(effects).toHaveLength(1);
     const { semantics, interaction } = storageOf(effects[0]);
@@ -421,8 +431,7 @@ describe("a project's own request function", () => {
   });
 
   it("looks a projected attribute up through the alias the call declares", () => {
-    const effects = effectsIn(
-      `
+    const effects = calling(`
       ${CLIENT_IMPORT}
       declare const env: { ORDERS_TABLE: string };
       export async function open(customerId: string) {
@@ -434,9 +443,7 @@ describe("a project's own request function", () => {
           ExpressionAttributeValues: { ":c": { S: customerId } },
         });
       }
-    `,
-      SIGNED_REQUEST,
-    );
+    `);
 
     expect(storageOf(effects[0]).interaction).toMatchObject({
       fields: ["orderId", "status"],
@@ -444,9 +451,8 @@ describe("a project's own request function", () => {
     });
   });
 
-  it("takes an operation the config calls a write as one", () => {
-    const effects = effectsIn(
-      `
+  it("takes an operation the wire writes with as a write", () => {
+    const effects = calling(`
       ${CLIENT_IMPORT}
       declare const env: { ORDERS_TABLE: string };
       export async function place(orderId: string, total: number) {
@@ -455,9 +461,7 @@ describe("a project's own request function", () => {
           Item: { orderId: { S: orderId }, total: { N: String(total) } },
         });
       }
-    `,
-      SIGNED_REQUEST,
-    );
+    `);
 
     expect(storageOf(effects[0]).interaction).toMatchObject({
       kind: "write",
@@ -467,8 +471,7 @@ describe("a project's own request function", () => {
   });
 
   it("follows a table name the code keeps in deploy-time config", () => {
-    const effects = effectsIn(
-      `
+    const effects = calling(`
       ${CLIENT_IMPORT}
       declare const env: { ORDERS_TABLE: string };
       export async function one(id: string) {
@@ -477,16 +480,13 @@ describe("a project's own request function", () => {
           Key: { orderId: { S: id } },
         });
       }
-    `,
-      SIGNED_REQUEST,
-    );
+    `);
 
     expect(storageOf(effects[0]).semantics.container).toBe("{ORDERS_TABLE}");
   });
 
   it("follows a request built into a const a few lines up", () => {
-    const effects = effectsIn(
-      `
+    const effects = calling(`
       ${CLIENT_IMPORT}
       declare const env: { ORDERS_TABLE: string };
       export async function one(id: string) {
@@ -496,9 +496,7 @@ describe("a project's own request function", () => {
         };
         return sendRequest(env, signer, "GetItem", request);
       }
-    `,
-      SIGNED_REQUEST,
-    );
+    `);
 
     expect(storageOf(effects[0]).interaction).toMatchObject({
       kind: "read",
@@ -507,99 +505,150 @@ describe("a project's own request function", () => {
   });
 
   it("leaves a call that stops short of the request alone", () => {
-    const effects = effectsIn(
-      `
+    const effects = calling(`
       ${CLIENT_IMPORT}
       declare const env: { ORDERS_TABLE: string };
       export async function one() {
         return sendRequest(env, signer, "GetItem");
       }
-    `,
-      SIGNED_REQUEST,
-    );
+    `);
 
     expect(effects).toEqual([]);
   });
 
-  it("leaves an operation the config does not list alone", () => {
-    const effects = effectsIn(
-      `
+  it("leaves an operation DynamoDB does not have alone", () => {
+    const effects = calling(`
       ${CLIENT_IMPORT}
       declare const env: { ORDERS_TABLE: string };
       export async function drop(id: string) {
-        return sendRequest(env, signer, "DeleteItem", {
-          TableName: "orders-v1",
-          Key: { orderId: { S: id } },
-        });
-      }
-    `,
-      SIGNED_REQUEST,
-    );
-
-    expect(effects).toEqual([]);
-  });
-
-  it("reads the function the configured module declares", () => {
-    const effects = effectsIn(
-      `
-      ${CLIENT_IMPORT}
-      declare const env: { ORDERS_TABLE: string };
-      export async function one(id: string) {
-        return sendRequest(env, signer, "GetItem", {
-          TableName: "orders-v1",
-          Key: { orderId: { S: id } },
-        });
-      }
-    `,
-      {
-        requestFunctions: [
-          {
-            ...(SIGNED_REQUEST.requestFunctions ?? [])[0],
-            module: "@acme/dynamo-http",
-          },
-        ],
-      },
-    );
-
-    expect(storageOf(effects[0]).semantics.container).toBe("orders-v1");
-  });
-
-  it("leaves a function of the same name from somewhere else alone", () => {
-    const effects = effectsIn(
-      `
-      import { signer, sendRequest } from "./ourOwnClient";
-      declare const env: { ORDERS_TABLE: string };
-      export async function one(id: string) {
-        return sendRequest(env, signer, "GetItem", {
-          TableName: "orders-v1",
-          Key: { orderId: { S: id } },
-        });
-      }
-    `,
-      {
-        requestFunctions: [
-          {
-            ...(SIGNED_REQUEST.requestFunctions ?? [])[0],
-            module: "@acme/dynamo-http",
-          },
-        ],
-      },
-    );
-
-    expect(effects).toEqual([]);
-  });
-
-  it("reads nothing from the same call when the pack was given no config", () => {
-    const effects = effectsIn(`
-      ${CLIENT_IMPORT}
-      declare const env: { ORDERS_TABLE: string };
-      export async function one(id: string) {
-        return sendRequest(env, signer, "GetItem", {
+        return sendRequest(env, signer, "Frobnicate", {
           TableName: "orders-v1",
           Key: { orderId: { S: id } },
         });
       }
     `);
+
+    expect(effects).toEqual([]);
+  });
+
+  it("reads nothing when the helper posts somewhere that is not DynamoDB", () => {
+    const effects = calling(
+      `
+      ${CLIENT_IMPORT}
+      export async function one(id: string) {
+        return sendRequest(env, signer, "GetItem", {
+          TableName: "orders-v1",
+          Key: { orderId: { S: id } },
+        });
+      }
+    `,
+      SIGNING_HELPER.replace("DynamoDB_20120810.", "SomeOtherService."),
+    );
+
+    expect(effects).toEqual([]);
+  });
+
+  it("reads nothing when the helper sets no headers on the request", () => {
+    const effects = calling(
+      `
+      ${CLIENT_IMPORT}
+      export async function one(id: string) {
+        return sendRequest(env, signer, "GetItem", {
+          TableName: "orders-v1",
+          Key: { orderId: { S: id } },
+        });
+      }
+    `,
+      `
+        export declare const signer: { fetch(url: string, init: unknown): Promise<Response> };
+        export async function sendRequest(
+          region: string,
+          signer: { fetch(url: string, init: unknown): Promise<Response> },
+          operation: string,
+          request: object,
+        ): Promise<Response> {
+          const target = \`DynamoDB_20120810.\${operation}\`;
+          return signer.fetch(region + target, { body: JSON.stringify(request) });
+        }
+      `,
+    );
+
+    expect(effects).toEqual([]);
+  });
+
+  it("reads nothing when the target header is not text it can read", () => {
+    const effects = calling(
+      `
+      ${CLIENT_IMPORT}
+      export async function one(id: string) {
+        return sendRequest(env, signer, "GetItem", {
+          TableName: "orders-v1",
+          Key: { orderId: { S: id } },
+        });
+      }
+    `,
+      `
+        export declare const signer: { fetch(url: string, init: unknown): Promise<Response> };
+        export async function sendRequest(
+          region: string,
+          signer: { fetch(url: string, init: unknown): Promise<Response> },
+          operation: string,
+          request: object,
+        ): Promise<Response> {
+          // DynamoDB_20120810. is written here and nowhere the request goes.
+          return signer.fetch(region, {
+            headers: { "X-Amz-Target": operation },
+            body: JSON.stringify(request),
+          });
+        }
+      `,
+    );
+
+    expect(effects).toEqual([]);
+  });
+
+  it("reads nothing when the helper posts no body", () => {
+    const effects = calling(
+      `
+      ${CLIENT_IMPORT}
+      export async function one(id: string) {
+        return sendRequest(env, signer, "GetItem", {
+          TableName: "orders-v1",
+          Key: { orderId: { S: id } },
+        });
+      }
+    `,
+      `
+        export declare const signer: { fetch(url: string, init: unknown): Promise<Response> };
+        export async function sendRequest(
+          region: string,
+          signer: { fetch(url: string, init: unknown): Promise<Response> },
+          operation: string,
+          request: object,
+        ): Promise<Response> {
+          return signer.fetch(region, {
+            headers: { "X-Amz-Target": \`DynamoDB_20120810.\${operation}\` },
+          });
+        }
+      `,
+    );
+
+    expect(effects).toEqual([]);
+  });
+
+  it("reads nothing when the operation is not one of the parameters", () => {
+    const effects = calling(
+      `
+      ${CLIENT_IMPORT}
+      export async function one(id: string) {
+        return sendRequest(env, signer, "GetItem", {
+          TableName: "orders-v1",
+          Key: { orderId: { S: id } },
+        });
+      }
+    `,
+      SIGNING_HELPER.replace(`$${"{operation}"}`, "GetItem"),
+    );
 
     expect(effects).toEqual([]);
   });
@@ -614,67 +663,18 @@ describe("the pack a project configures", () => {
     expect(dynamoFramework().invocationRecognizers).toHaveLength(1);
   });
 
-  it("admits the modules a configured function reaches the call site through", () => {
-    const pack = dynamoFramework({
-      ...SIGNED_REQUEST,
-      requiresImport: ["aws4fetch"],
-    });
+  it("admits the modules a helper reaches the call site through", () => {
+    const pack = dynamoFramework({ requiresImport: ["aws4fetch"] });
 
     expect(pack.requiresImport).toContain("aws4fetch");
-    expect(pack.invocationRecognizers).toHaveLength(2);
+    expect(pack.invocationRecognizers).toHaveLength(1);
   });
 
-  it("refuses an entry with no function to read", () => {
-    expect(() =>
-      dynamoFramework({
-        requestFunctions: [
-          { operationArg: 2, requestArg: 3, operations: {} } as never,
-        ],
-      }),
-    ).toThrow(/function/);
-  });
-
-  it("refuses an entry that does not say which argument the operation is", () => {
-    expect(() =>
-      dynamoFramework({
-        requestFunctions: [
-          {
-            name: "sendRequest",
-            requestArg: 3,
-            operations: { Query: "read" },
-          } as never,
-        ],
-      }),
-    ).toThrow(/operationArg/);
-  });
-
-  it("refuses an entry that lists no operations", () => {
-    expect(() =>
-      dynamoFramework({
-        requestFunctions: [
-          {
-            name: "sendRequest",
-            operationArg: 2,
-            requestArg: 3,
-            operations: {},
-          },
-        ],
-      }),
-    ).toThrow(/operations/);
-  });
-
-  it("refuses an entry that does not say which argument the request is", () => {
-    expect(() =>
-      dynamoFramework({
-        requestFunctions: [
-          {
-            name: "sendRequest",
-            operationArg: 2,
-            operations: { Query: "read" },
-          } as never,
-        ],
-      }),
-    ).toThrow(/requestArg/);
+  it("asks for the project's own helpers to be read", () => {
+    expect(dynamoFramework().projectHelpers?.find).toEqual({
+      by: "text",
+      contains: ["DynamoDB_20120810."],
+    });
   });
 
   it("prices what it declared: the two rules over DynamoDB's own strings", () => {
@@ -712,40 +712,34 @@ describe("the pack a project configures", () => {
     });
   });
 
-  it("writes an example for a request function out of what the config says", () => {
-    const ran = runExamples(dynamoFramework(SIGNED_REQUEST), (code) =>
-      effectsIn(
-        `
-        ${CLIENT_IMPORT}
-        export async function example() {
-          return ${code};
-        }
-      `,
-        SIGNED_REQUEST,
-      ),
-    );
+  it("says the same thing about a request function as about a command", () => {
+    const command = calling(`
+      ${IMPORTS}
+      declare const client: DynamoDBDocumentClient;
+      export async function one(id: string) {
+        return client.send(new GetCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+        }));
+      }
+    `);
+    const signed = calling(`
+      ${CLIENT_IMPORT}
+      export async function one(id: string) {
+        return sendRequest("us-east-1", signer, "GetItem", {
+          TableName: "orders-v1",
+          Key: { orderId: id },
+        });
+      }
+    `);
 
-    expect(ran[1].example).toBe(
-      'sendRequest(undefined, undefined, "Query", { TableName: "orders-v1", Key: { orderId: "a" } })',
+    expect(storageOf(signed[0]).semantics).toEqual(
+      storageOf(command[0]).semantics,
     );
-    const { semantics, interaction } = storageOf(ran[1].effects[0]);
-    expect(semantics.container).toBe("orders-v1");
-    expect(interaction).toMatchObject({ kind: "read", operation: "Query" });
-  });
-
-  it("refuses an entry whose operations say something other than read or write", () => {
-    expect(() =>
-      dynamoFramework({
-        requestFunctions: [
-          {
-            name: "sendRequest",
-            operationArg: 2,
-            requestArg: 3,
-            operations: { Query: "fetch" },
-          } as never,
-        ],
-      }),
-    ).toThrow(/Query/);
+    expect(storageOf(signed[0]).interaction).toMatchObject({
+      kind: "read",
+      selector: ["orderId"],
+    });
   });
 });
 

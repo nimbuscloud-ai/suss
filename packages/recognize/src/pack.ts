@@ -16,6 +16,7 @@ import type {
   InvocationRecognizer,
   PackDeclarations,
   PatternPack,
+  ProjectHelpers,
 } from "@suss/extractor";
 import type {
   ArgumentPick,
@@ -75,6 +76,12 @@ export interface PackSpec {
    * function links, so the cost of staying here is visible.
    */
   recognizers?: InvocationRecognizer[];
+  /**
+   * Functions the project wrote in front of this library, read once
+   * across the project before extraction. What the pack makes of them
+   * joins the chains above for the rest of the run.
+   */
+  projectHelpers?: ProjectHelpers;
 }
 
 /**
@@ -128,6 +135,9 @@ export function pack(
       ...(spec.recognizers ?? []),
     ],
     ...(access.length === 0 ? {} : { accessRecognizers: access }),
+    ...(spec.projectHelpers === undefined
+      ? {}
+      : { projectHelpers: spec.projectHelpers }),
     declarations: declarationsIn(matches),
   };
 }

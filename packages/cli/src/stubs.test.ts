@@ -91,7 +91,7 @@ describe("routing statements into pack options", () => {
     );
   });
 
-  it("routes a registration helper with the stub's package as its module", () => {
+  it("refuses a statement kind no pack consumes any more", () => {
     const root = projectWith({
       "kit.yaml": `
 package: "@acme/http-kit"
@@ -102,16 +102,7 @@ statements:
       - { method: GET, pathTemplate: /health, handlerArg: handler }
 `,
     });
-    const overlay = stubOverlayOf(loadStubs(root));
-    expect(overlay.get("express")?.get("registrationHelpers")).toEqual([
-      {
-        helperName: "mountHealth",
-        importModule: "@acme/http-kit",
-        registrations: [
-          { method: "GET", pathTemplate: "/health", handlerArg: "handler" },
-        ],
-      },
-    ]);
+    expect(() => loadStubs(root)).toThrow(/Invalid discriminator value/);
   });
 
   it("routes an extended base class and a re-exported module", () => {

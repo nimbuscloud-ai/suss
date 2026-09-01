@@ -18,8 +18,7 @@ import { z } from "zod";
 
 import {
   httpRouteDiscovery,
-  registrationHelperDiscovery,
-  registrationHelperOption,
+  routeHelperIndex,
   wrapperDiscovery,
 } from "@suss/extractor";
 
@@ -45,30 +44,22 @@ const HTTP_EXCEPTION_CODES: Record<string, number> = {
   HTTPException: 500,
 };
 
-/**
- * What `-f hono=config.json` may say. The CLI parses the file against it
- * before the factory runs.
- */
-export const optionsSchema = z
-  .object({
-    /**
-     * The project's own registration helpers, each expanded into the
-     * routes one call registers. A helper's name belongs to one project,
-     * so this arrives through per-project pack config
-     * (`-f hono=config.json`) rather than being built in here.
-     */
-    registrationHelpers: z.array(registrationHelperOption).optional(),
-    /**
-     * The directory of the config file these options came from. Whatever
-     * read that file supplies this; it is not written in the file.
-     */
-    configDirectory: z.string().optional(),
-  })
-  .strict();
+const METHODS = [
+  ".get",
+  ".post",
+  ".put",
+  ".delete",
+  ".patch",
+  ".options",
+  ".all",
+];
+
+/** The hono pack takes no configuration. */
+export const optionsSchema = z.object({}).strict();
 
 export type HonoPackOptions = z.infer<typeof optionsSchema>;
 
-export function honoFramework(options: HonoPackOptions = {}): PatternPack {
+export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
   return {
     name: "hono",
     protocol: "http",
@@ -94,29 +85,13 @@ export function honoFramework(options: HonoPackOptions = {}): PatternPack {
       ...httpRouteDiscovery({
         importModule: "hono",
         importNames: ["Hono", "OpenAPIHono"],
-        methods: [
-          ".get",
-          ".post",
-          ".put",
-          ".delete",
-          ".patch",
-          ".options",
-          ".all",
-        ],
+        methods: METHODS,
         mount: { method: "route", prefixPosition: 0, targetPosition: 1 },
       }),
       ...httpRouteDiscovery({
         importModule: "@hono/zod-openapi",
         importNames: ["OpenAPIHono"],
-        methods: [
-          ".get",
-          ".post",
-          ".put",
-          ".delete",
-          ".patch",
-          ".options",
-          ".all",
-        ],
+        methods: METHODS,
         mount: { method: "route", prefixPosition: 0, targetPosition: 1 },
       }),
       {
@@ -155,11 +130,15 @@ export function honoFramework(options: HonoPackOptions = {}): PatternPack {
         importNames: ["OpenAPIHono"],
         wraps: HONO_WRAPPERS,
       }),
-      ...registrationHelperDiscovery(
-        options.registrationHelpers ?? [],
-        options.configDirectory,
-      ),
     ],
+
+    // A route a project helper registers is read from the helper's own
+    // body, before extraction, and expanded at each call site.
+    projectHelpers: routeHelperIndex({
+      importModule: "hono",
+      importNames: ["Hono", "OpenAPIHono"],
+      methods: METHODS,
+    }),
 
     // The createRoute object registered alongside the handler declares
     // the endpoint's responses, so a handler returning a status the

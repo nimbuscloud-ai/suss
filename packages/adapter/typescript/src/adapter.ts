@@ -105,6 +105,10 @@ import {
 import { routePathFromFile } from "./discovery/filenameRoute.js";
 import { stampGraphqlClientRefs } from "./discovery/graphqlClientConstruction.js";
 import {
+  buildProjectHelperIndex,
+  type ProjectHelperIndex,
+} from "./discovery/helperIndex.js";
+import {
   type DiscoveredUnit,
   discoverUnits,
   unitDedupKey,
@@ -1112,14 +1116,16 @@ function extractFromSourceFile(
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
   wrappers?: WrapperIndex,
+  projectHelpers?: ProjectHelperIndex,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   // Recognizers come from every pack, not the discovering one: a Prisma
-  // call inside an Express handler is still a Prisma call.
-  const allInvocationRecognizers = collectInvocationRecognizers(
-    frameworks,
-    tallies,
-  );
+  // call inside an Express handler is still a Prisma call. A contributed
+  // one matches a call to a function this project itself declares.
+  const allInvocationRecognizers = [
+    ...collectInvocationRecognizers(frameworks, tallies),
+    ...(projectHelpers?.contributedRecognizers() ?? []),
+  ];
   const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
   const gatedIn: PackTally[] = [];
   let unitsWalkedHere = 0;
@@ -1138,11 +1144,15 @@ function extractFromSourceFile(
       gatedIn.push(tally);
     }
 
+    const contributed = projectHelpers?.patternsFor(pack.name) ?? [];
     const units = discoverUnits(
       sourceFile,
-      pack.discovery,
+      contributed.length === 0
+        ? pack.discovery
+        : [...pack.discovery, ...contributed],
       resolution,
       mountPrefixes,
+      projectHelpers,
     );
 
     // The wrapper index settles which registrations are error handlers
@@ -2338,6 +2348,17 @@ export function createTypeScriptAdapter(
         buildWrapperIndex(packsByFile, resolution, mountPrefixes),
       );
 
+      // A helper the project wrote in front of a library is read once
+      // here, so the pack's own matchers run at the call site instead.
+      const projectHelpers = timer.time("helperIndex", () =>
+        buildProjectHelperIndex(
+          sourceFiles,
+          config.frameworks,
+          packsByFile,
+          resolution,
+        ),
+      );
+
       const caching = cacheDir !== null;
 
       // Which stored files survive: their own hash and their recorded
@@ -2407,8 +2428,13 @@ export function createTypeScriptAdapter(
           // A module graph too deep for the checker takes the stack down
           // with it. Reporting the one file costs less than the run.
           try {
-            const walked = withDependencySink(sink, () =>
-              extractFromSourceFile(
+            const walked = withDependencySink(sink, () => {
+              for (const helperFile of projectHelpers.helperFilesFor(
+                sourceFile,
+              )) {
+                recordFileDependency(helperFile);
+              }
+              return extractFromSourceFile(
                 sourceFile,
                 applicablePacks,
                 claimedUnits,
@@ -2417,8 +2443,9 @@ export function createTypeScriptAdapter(
                 resolution,
                 mountPrefixes,
                 wrappers,
-              ),
-            );
+                projectHelpers,
+              );
+            });
             for (const summary of walked) {
               ownersBySummary.set(summary, new Set([rootPath]));
             }
@@ -2483,10 +2510,10 @@ export function createTypeScriptAdapter(
                 projectFileSet,
                 closureFacts,
                 {
-                  invocation: collectInvocationRecognizers(
-                    config.frameworks,
-                    tallies,
-                  ),
+                  invocation: [
+                    ...collectInvocationRecognizers(config.frameworks, tallies),
+                    ...projectHelpers.contributedRecognizers(),
+                  ],
                   access: collectAccessRecognizers(config.frameworks, tallies),
                   resolveWrittenValue: (value) =>
                     resolution.resolveWrittenValue(value),
@@ -2625,6 +2652,8 @@ export function createTypeScriptAdapter(
             ),
             filesWithUnreadableExports: unreadableExportFiles(),
             reassignedNamesUnstated: reassignedNamesUnstated(),
+            contributedPatterns: (packName) =>
+              projectHelpers.patternsFor(packName),
           }),
         );
       }

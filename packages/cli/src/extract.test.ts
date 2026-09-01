@@ -315,7 +315,7 @@ describe("packs for the other two languages", () => {
     );
   });
 
-  it("keeps the options that describe the project's own code", async () => {
+  it("says what happens now when a config still describes a helper", async () => {
     const helper = writeConfig(
       JSON.stringify({
         registrationHelpers: [
@@ -328,13 +328,12 @@ describe("packs for the other two languages", () => {
         ],
       }),
     );
-    const express = await resolveFramework(`express=${helper}`);
-    const helperNames = express.discovery.flatMap((pattern) =>
-      pattern.match.type === "registrationTemplate"
-        ? [pattern.match.helperName]
-        : [],
+    const refusal = await resolveFramework(`express=${helper}`).catch(
+      (error: Error) => error.message,
     );
-    expect(helperNames).toContain("registerCrud");
+    expect(refusal).toContain("registrationHelpers is gone");
+    expect(refusal).toContain("reads the helper itself");
+    expect(refusal).not.toContain("suss infer stub");
 
     const dynamo = await resolveFramework(
       `aws-dynamodb=${writeConfig(
@@ -349,8 +348,8 @@ describe("packs for the other two languages", () => {
           ],
         }),
       )}`,
-    );
-    expect(dynamo.name).toBe("aws-dynamodb");
+    ).catch((error: Error) => error.message);
+    expect(dynamo).toContain("requestFunctions is gone");
   });
 
   it("says what happens now when a config still sets a retired option", async () => {
@@ -371,28 +370,21 @@ describe("packs for the other two languages", () => {
   it("still hands a pack an option a stub states", async () => {
     const overlay = stubOverlayOf([
       {
-        package: "@acme/http-kit",
+        package: "@acme/ledger-native",
         statements: [
           {
-            kind: "registers-routes",
-            export: "mountHealth",
-            registrations: [
-              { method: "GET", pathTemplate: "/health", handlerArg: "{0}" },
-            ],
+            kind: "composes-decorator",
+            export: "ApiController",
+            composes: { module: "@nestjs/common", name: "Controller" },
           },
         ],
       },
     ]);
-    const plain = await resolveFramework("hono");
-    const stubbed = await resolveFramework("hono", overlay);
+    const plain = await resolveFramework("nestjs-rest");
+    const stubbed = await resolveFramework("nestjs-rest", overlay);
 
     expect(stubbed.version).not.toBe(plain.version);
-    const helperNames = stubbed.discovery.flatMap((pattern) =>
-      pattern.match.type === "registrationTemplate"
-        ? [pattern.match.helperName]
-        : [],
-    );
-    expect(helperNames).toContain("mountHealth");
+    expect(JSON.stringify(stubbed.discovery)).toContain("ApiController");
   });
 
   it("leaves a pack that declares no options alone", async () => {

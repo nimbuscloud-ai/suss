@@ -1,6 +1,6 @@
-// A helper that never mentions express. Nothing here says the object it
-// registers on is an app, so the routes come from the config file rather
-// than from reading this body.
+// A helper that never mentions express. Its parameter is typed with an
+// interface of the project's own, so nothing in this file says the
+// object it registers on is an app.
 
 interface Handlers {
   list(req: unknown, res: { json(body: unknown): void }): void;
