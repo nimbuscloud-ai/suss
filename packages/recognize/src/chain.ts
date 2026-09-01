@@ -14,7 +14,7 @@
  * instead is code, that link alone, and pack health says which ones.
  */
 
-import type { MessageBusSemantics } from "@suss/behavioral-ir";
+import type { DeployableUnit, MessageBusSemantics } from "@suss/behavioral-ir";
 import type {
   CallOps,
   ReceiverOrigin,
@@ -379,10 +379,21 @@ export interface MessageSendMethod {
   readonly input: OneArgument;
 }
 
+/**
+ * What one invoke method does. An invoke states its whole request as
+ * one object the same way a send does, so both say where that object
+ * is and nothing else.
+ */
+export type UnitInvokeMethod = MessageSendMethod;
+
 export type MethodMeaning = StorageMethod | SqlMethod | MessageSendMethod;
 
 /** What a chain produces when every link matches. */
-export type Ending = StorageEnding | SqlEnding | MessageSendEnding;
+export type Ending =
+  | StorageEnding
+  | SqlEnding
+  | MessageSendEnding
+  | UnitInvokeEnding;
 
 /** A storage access: one call, one thing it read or wrote. */
 export interface StorageEnding {
@@ -507,6 +518,30 @@ export interface MessageSendEnding {
    * settles. A queue URL only exists at deploy time, so the code writes
    * `process.env.ORDERS_QUEUE_URL` and the env var's name is what both
    * sides of the boundary agree on. `"reference"` keeps that name.
+   */
+  readonly unsettledName: UnsettledName;
+}
+
+/**
+ * A call that hands a payload to one deployed unit, named on the call.
+ *
+ * The unit's name is read off the call's own input rather than off a
+ * message, because there is one callee per call however many messages a
+ * send takes. A name written as a fully-qualified cloud id is reduced
+ * to the resource segment, so an ARN and a bare name come out the same.
+ */
+export interface UnitInvokeEnding {
+  readonly yields: "unitInvoke";
+  /** The platform running the unit, in the IR's deployable-unit words. */
+  readonly platform: DeployableUnit["deploymentTarget"];
+  /** The properties the call may name the unit on, tried in order. */
+  readonly named: readonly string[];
+  /** The property the call states its payload on, when the pack can say. */
+  readonly payload?: string;
+  /**
+   * What a reader gives back for a name nothing in the source settles.
+   * A function name usually arrives through an env var, whose name both
+   * sides agree on, so `"reference"` keeps it.
    */
   readonly unsettledName: UnsettledName;
 }

@@ -7,6 +7,7 @@ import { constructedFrom, declaredBy, opsIn } from "./ops.js";
 import { pack } from "./pack.js";
 import { sqlStatements } from "./sqlStatements.js";
 import { storageCalls } from "./storage.js";
+import { unitInvokes } from "./unitInvokes.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { SqlMethod, StorageMethod } from "./chain.js";
@@ -1492,5 +1493,158 @@ describe("a bare call of the tracked client", () => {
       callOps({ method: "get", from: ["tapedeck"], args: ["side_a:1"] }),
     );
     expect(effects).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A chain that invokes a deployed unit
+// ---------------------------------------------------------------------------
+
+const invokes = (over: Partial<Parameters<typeof unitInvokes>[0]> = {}) =>
+  unitInvokes({
+    platform: "lambda",
+    client: declaredBy("tapedeck"),
+    named: ["FunctionName"],
+    payload: "Payload",
+    ...over,
+  })
+    .methods(IN_THE_COMMAND)
+    .example('client.send({ FunctionName: "worker" })');
+
+/** The same declaration with no payload property, which is its own shape. */
+const invokesWithNoPayload = () =>
+  unitInvokes({
+    platform: "lambda",
+    client: declaredBy("tapedeck"),
+    named: ["FunctionName"],
+  })
+    .methods(IN_THE_COMMAND)
+    .example('client.send({ FunctionName: "worker" })');
+
+function runInvoke(
+  calls: ReturnType<typeof invokes>,
+  ops: CallOps,
+): Effect[] | null {
+  const [recognizer] =
+    pack("tapedeck", [calls], {
+      languages: ["typescript"],
+      recognizedAs: "@suss/framework-tapedeck",
+    }).invocationRecognizers ?? [];
+  if (recognizer === undefined) {
+    throw new Error("the pack compiled no recognizer");
+  }
+  return recognizer(null, { ops });
+}
+
+const unitsOf = (effects: Effect[] | null) =>
+  (effects ?? []).map((effect) =>
+    effect.type === "interaction" &&
+    effect.binding?.semantics.name === "unit-invocation"
+      ? effect.binding.semantics.instanceName
+      : null,
+  );
+
+describe("a chain that invokes one unit", () => {
+  it("reads the unit and the payload off the call's input", () => {
+    const effects = runInvoke(
+      invokes(),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { FunctionName: "worker", Payload: "{}" } },
+      }),
+    );
+    expect(unitsOf(effects)).toEqual(["worker"]);
+    expect(
+      effects?.[0]?.type === "interaction" ? effects[0].interaction : null,
+    ).toEqual({
+      class: "unit-invoke",
+      payload: { kind: "string", value: "{}" },
+    });
+  });
+
+  it("gives one effect per call, however much the call hands over", () => {
+    const effects = runInvoke(
+      invokes(),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { FunctionName: "worker" } },
+      }),
+    );
+    expect(effects).toHaveLength(1);
+  });
+
+  it("takes the function out of an ARN, so two accounts spell one name", () => {
+    const effects = runInvoke(
+      invokes(),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: {
+          0: {
+            FunctionName:
+              "arn:aws:lambda:us-east-1:123456789012:function:worker",
+          },
+        },
+      }),
+    );
+    expect(unitsOf(effects)).toEqual(["worker"]);
+  });
+
+  it("keeps the env-var reference a deploy-time name arrives as", () => {
+    const effects = runInvoke(
+      invokes(),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { FunctionName: "{WORKER_FUNCTION}" } },
+      }),
+    );
+    expect(unitsOf(effects)).toEqual(["{WORKER_FUNCTION}"]);
+  });
+
+  it("records the call with no unit rather than dropping it", () => {
+    const effects = runInvoke(
+      invokes(),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { Payload: "{}" } },
+      }),
+    );
+    expect(unitsOf(effects)).toEqual([null]);
+  });
+
+  it("tries each property the library may state the unit on, in order", () => {
+    const effects = runInvoke(
+      invokes({ named: ["FunctionName", "Target"] }),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { Target: "worker" } },
+      }),
+    );
+    expect(unitsOf(effects)).toEqual(["worker"]);
+  });
+
+  it("says nothing when the call states no input at all", () => {
+    expect(
+      runInvoke(invokes(), callOps({ method: "send", from: ["tapedeck"] })),
+    ).toBeNull();
+  });
+
+  it("leaves the payload off when the pack does not say where it is", () => {
+    const effects = runInvoke(
+      invokesWithNoPayload(),
+      callOps({
+        method: "send",
+        from: ["tapedeck"],
+        values: { 0: { FunctionName: "worker", Payload: "{}" } },
+      }),
+    );
+    expect(
+      effects?.[0]?.type === "interaction" ? effects[0].interaction : null,
+    ).toEqual({ class: "unit-invoke" });
   });
 });

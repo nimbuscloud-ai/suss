@@ -89,6 +89,7 @@ const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
   storageAccess: "invocation",
   sqlAccess: "access",
   messageSend: "invocation",
+  unitInvoke: "invocation",
 };
 
 /** The chains a pack dispatches on one of the two walks. */
@@ -145,6 +146,9 @@ function wireOf(ending: Ending): string {
   if (ending.yields === "messageSend") {
     return ending.wire;
   }
+  if (ending.yields === "unitInvoke") {
+    return ending.platform;
+  }
   return ending.transport ?? ending.system;
 }
 
@@ -154,7 +158,13 @@ function wireOf(ending: Ending): string {
  * wire carries several stores.
  */
 function declaredName(ending: Ending): string {
-  return ending.yields === "messageSend" ? ending.wire : ending.system;
+  if (ending.yields === "messageSend") {
+    return ending.wire;
+  }
+  if (ending.yields === "unitInvoke") {
+    return ending.platform;
+  }
+  return ending.system;
 }
 
 /** The wire every chain in a pack reaches over. */
