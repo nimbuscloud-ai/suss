@@ -810,7 +810,7 @@ describe("runCli ask", () => {
       runCli(["ask", "why is x.ts slow", "--dir", tmpDir]),
     );
     expect(exit).toBe(1);
-    expect(io.stdout).toContain("one of seven questions");
+    expect(io.stdout).toContain("one of eight questions");
   });
 });
 
@@ -950,7 +950,7 @@ describe("runCli field-report fixes", () => {
     expect(exit).toBe(1);
     const parsed = JSON.parse(io.stdout) as { answer: null; message: string };
     expect(parsed.answer).toBeNull();
-    expect(parsed.message).toContain("seven questions");
+    expect(parsed.message).toContain("questions suss answers");
   });
 
   it("answers a check --json usage error as JSON on stdout", async () => {

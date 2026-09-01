@@ -51,6 +51,7 @@ export type QuestionShape =
   | "writes"
   | "calls"
   | "reaches"
+  | "reachedBy"
   | WhyShape;
 
 export interface AskOptions {
@@ -104,14 +105,16 @@ const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "writes", pattern: /^what writes\s+(.+)$/i },
   { shape: "calls", pattern: /^what calls\s+(.+)$/i },
   { shape: "reaches", pattern: /^what does\s+(.+?)\s+reach$/i },
+  { shape: "reachedBy", pattern: /^what reaches\s+(.+)$/i },
 ];
 
-const HOW_TO_ASK = `suss ask takes one of seven questions:
+const HOW_TO_ASK = `suss ask takes one of eight questions:
   suss ask 'what can I project from aws.dynamodb:editions#by-publication'
   suss ask 'what reads aws.dynamodb:editions'
   suss ask 'what writes aws.dynamodb:editions'
   suss ask 'what calls src/editions/dao.ts'
   suss ask 'what does src/editions/dao.ts reach'
+  suss ask 'what reaches src/editions/dao.ts'
   suss ask 'why does src/editions/dao.ts reach aws.dynamodb:editions'
   suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
 The same five, in symbols: '<- <unit>', '<unit> ->',
@@ -145,7 +148,7 @@ export function answerQuestion(options: AskOptions): {
               question: options.question,
               answer: null,
               message:
-                "Not one of the seven questions suss answers. Run suss --help for the forms.",
+                "Not one of the questions suss answers. Run suss --help for the forms.",
             },
             null,
             2,
@@ -220,6 +223,7 @@ const ANSWERS: Record<
   writes: (subject, summaries) => answerDirection("writes", subject, summaries),
   calls: answerCalls,
   reaches: answerReaches,
+  reachedBy: answerReachedBy,
 };
 
 /**
@@ -526,6 +530,173 @@ function servesItself(touch: TargetTouch): boolean {
     touch.touched.relation === "provides" &&
     touch.touched.binding === touch.summary.identity.boundaryBinding
   );
+}
+
+/**
+ * Calls these summaries record but never resolved to a unit. Any one of
+ * them could have been a step into the chain, so a backward walk that
+ * ignores them reports fewer boundaries than really reach the target.
+ */
+function unresolvedCallCount(summaries: BehavioralSummary[]): number {
+  let count = 0;
+  for (const summary of summaries) {
+    for (const transition of summary.transitions) {
+      for (const effect of transition.effects) {
+        if (effect.type === "invocation" && effect.summary === undefined) {
+          count += 1;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+/** Who calls each unit, over the same edges `reaches` walks forward. */
+function callersByUnit(
+  summaries: BehavioralSummary[],
+): Map<BehavioralSummary, Array<{ from: BehavioralSummary; callee: string }>> {
+  const byId = new Map(
+    summaries.map((summary) => [summaryIdentifier(summary), summary]),
+  );
+  const callers = new Map<
+    BehavioralSummary,
+    Array<{ from: BehavioralSummary; callee: string }>
+  >();
+  for (const summary of summaries) {
+    for (const edge of invocationEdges(summary, byId)) {
+      const list = callers.get(edge.to) ?? [];
+      list.push({ from: edge.from, callee: edge.callee });
+      callers.set(edge.to, list);
+    }
+  }
+  return callers;
+}
+
+/** The boundary a unit serves, when it serves one. */
+function ownBoundaryOf(summary: BehavioralSummary): TargetTouch | null {
+  return touchesOfUnits([summary]).find(servesItself) ?? null;
+}
+
+/**
+ * Every boundary whose unit ends up calling into the target, and the
+ * calls it took to get there.
+ *
+ * The mirror of `reaches`, walked backwards. Somebody changing a unit
+ * wants the boundaries that behave differently afterwards rather than
+ * the list of functions in between, so the walk reports a unit only
+ * when it serves a boundary of its own.
+ */
+function answerReachedBy(
+  subject: string,
+  summaries: BehavioralSummary[],
+): Answer {
+  const resolution = resolveTarget(subject, summaries);
+  if (!resolution.matched) {
+    return {
+      shape: "reachedBy",
+      subject,
+      headline: resolution.message,
+      items: [],
+      needs: [],
+      caveats: [],
+      found: false,
+    };
+  }
+
+  const target = resolution.target;
+  // A store is touched rather than served, so the walk starts from
+  // every unit that goes through the target, not only one serving it.
+  // A unit that provides the target is the target, not something
+  // reaching it, so the walk starts from the units that go through it.
+  const provides = new Set(unitsServing(target));
+  const start = [
+    ...new Set(target.touches.map((touch) => touch.summary)),
+  ].filter((summary) => !provides.has(summary));
+  const callers = callersByUnit(summaries);
+  const unresolved = unresolvedCallCount(summaries);
+  const walkCaveats =
+    unresolved === 0
+      ? []
+      : [
+          `warning: ${unresolved} call${unresolved === 1 ? "" : "s"} here resolved to no unit, so a boundary reaching ${subject} through one of them is missing from this answer.`,
+        ];
+  const seen = new Set<BehavioralSummary>(start);
+  const items: AnswerItem[] = [];
+  const said = new Set<string>();
+  // A unit that goes through the target in its own body reaches it in
+  // no hops, and is the answer somebody most expects to see.
+  for (const at of start) {
+    const own = ownBoundaryOf(at);
+    if (own !== null && !said.has(own.touched.label)) {
+      said.add(own.touched.label);
+      items.push({
+        text: own.touched.label,
+        data: {
+          boundary: own.touched.label,
+          unit: summaryIdentifier(at),
+          through: [],
+        },
+      });
+    }
+  }
+
+  let frontier = start.map((at) => ({ at, through: [] as string[] }));
+
+  while (frontier.length > 0) {
+    const next: Array<{ at: BehavioralSummary; through: string[] }> = [];
+    for (const { at, through } of frontier) {
+      for (const caller of callers.get(at) ?? []) {
+        if (seen.has(caller.from)) {
+          continue;
+        }
+        seen.add(caller.from);
+        const path = [caller.callee, ...through];
+        const own = ownBoundaryOf(caller.from);
+        if (own !== null) {
+          const hops =
+            path.length === 0 ? "" : `, by calling ${path.join(", then ")}`;
+          const text = `${own.touched.label}${hops}`;
+          if (!said.has(text)) {
+            said.add(text);
+            items.push({
+              text,
+              data: {
+                boundary: own.touched.label,
+                unit: summaryIdentifier(caller.from),
+                through: path,
+              },
+            });
+          }
+        }
+        next.push({ at: caller.from, through: path });
+      }
+    }
+    frontier = next;
+  }
+
+  if (items.length === 0) {
+    return {
+      shape: "reachedBy",
+      subject,
+      headline: `Nothing in these summaries reaches ${subject}.`,
+      items: [],
+      needs: [
+        "A caller outside these summaries would not be here. Extract the code that calls it into the same folder, then ask again.",
+      ],
+      caveats: gapCaveats(target.summaries),
+      found: true,
+    };
+  }
+
+  return {
+    shape: "reachedBy",
+    subject,
+    headline: `${items.length} boundar${items.length === 1 ? "y" : "ies"} reach ${subject}:`,
+    items,
+    needs: [],
+    caveats: [...walkCaveats, ...gapCaveats(target.summaries)],
+    found: true,
+  };
 }
 
 function answerReaches(

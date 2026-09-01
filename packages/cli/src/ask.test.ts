@@ -98,6 +98,10 @@ describe("parseQuestion", () => {
       shape: "writes",
       subject: "bus:aws_sqs orders",
     });
+    expect(parseQuestion("what reaches src/dao.ts")).toEqual({
+      shape: "reachedBy",
+      subject: "src/dao.ts",
+    });
     expect(parseQuestion("what does src/dao.ts reach")).toEqual({
       shape: "reaches",
       subject: "src/dao.ts",
@@ -323,6 +327,15 @@ describe("suss ask", () => {
     expect(output).toContain("loadCursor");
   });
 
+  it("says nothing reaches a store when its only reader serves no boundary", () => {
+    // The dao goes through the table and provides nothing of its own,
+    // and nothing here calls the dao, so no boundary is downstream.
+    const { output, code } = answer("what reaches aws.dynamodb:editions");
+
+    expect(code).toBe(0);
+    expect(output).toContain("Nothing in these summaries reaches");
+  });
+
   it("says what a route returns, for a boundary read from code", () => {
     // The contract readers answer for a boundary somebody wrote a spec
     // for. A route says the same thing by returning it, and a caller
@@ -433,7 +446,7 @@ describe("suss ask", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of seven questions");
+    expect(output).toContain("suss ask takes one of eight questions");
   });
 
   it("writes JSON an agent can read", () => {
@@ -1514,5 +1527,99 @@ describe("suss ask about a table one call writes several ways", () => {
 
     expect(output).toContain("1 unit writes postgresql:Comment");
     expect(output.match(/addComment/g)).toHaveLength(1);
+  });
+});
+
+describe("suss ask what reaches, over a chain", () => {
+  let dir: string;
+
+  /** The dao, respelled as another unit, so the shape stays valid. */
+  const like = (
+    name: string,
+    binding: BehavioralSummary["identity"]["boundaryBinding"],
+    effects: unknown[],
+  ): BehavioralSummary =>
+    ({
+      ...dao,
+      location: { ...dao.location, file: `src/${name}.ts`, exportName: name },
+      identity: {
+        ...dao.identity,
+        name,
+        exportPath: [name],
+        id: `repo::src/${name}.ts::${name}`,
+        boundaryBinding: binding,
+      },
+      transitions: [{ ...dao.transitions[0], effects }],
+    }) as unknown as BehavioralSummary;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-reaches-"));
+    const writer = like("writeOrder", null, dao.transitions[0].effects);
+    const service = like("orderService", null, [
+      {
+        type: "invocation",
+        callee: "writeOrder",
+        summary: "repo::src/writeOrder.ts::writeOrder",
+        args: [],
+        async: false,
+      },
+    ]);
+    const postOrders = like(
+      "postOrders",
+      restBinding({
+        transport: "http",
+        recognition: "test",
+        method: "POST",
+        path: "/orders",
+      }),
+      [
+        {
+          type: "invocation",
+          callee: "orderService",
+          summary: "repo::src/orderService.ts::orderService",
+          args: [],
+          async: false,
+        },
+      ],
+    );
+    fs.writeFileSync(
+      path.join(dir, "app.json"),
+      JSON.stringify([writer, service, postOrders]),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const answer = (question: string): { output: string; code: number } => {
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+    }
+  };
+
+  it("names the route two calls above the read, and the calls it took", () => {
+    const { output, code } = answer("what reaches aws.dynamodb:editions");
+
+    expect(code).toBe(0);
+    expect(output).toContain("POST /orders");
+    expect(output).toContain("orderService");
+    expect(output).toContain("writeOrder");
+  });
+
+  it("says so when the subject is not in these summaries", () => {
+    const { output, code } = answer("what reaches aws.dynamodb:absent");
+
+    expect(code).toBe(1);
+    expect(output).toContain("Nothing here is at");
   });
 });
