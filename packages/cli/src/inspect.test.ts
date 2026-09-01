@@ -5,8 +5,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  functionCallBinding,
   restBinding,
+  unitInvocationBinding,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
@@ -411,9 +411,10 @@ describe("a Lambda the template declares no trigger for", () => {
     identity: {
       name: "OrphanFunction.handler",
       exportPath: ["OrphanFunction.handler"],
-      boundaryBinding: functionCallBinding({
-        transport: "in-process",
+      boundaryBinding: unitInvocationBinding({
         recognition: "aws-lambda",
+        deploymentTarget: "lambda",
+        instanceName: "OrphanFunction",
       }),
     },
     inputs: [],
@@ -429,23 +430,81 @@ describe("a Lambda the template declares no trigger for", () => {
     },
   });
 
-  const inspectOne = (summary: BehavioralSummary): string => {
+  /** A caller whose one effect invokes the function it is given. */
+  const invokerSummary = (instanceName: string | null): BehavioralSummary => ({
+    kind: "handler",
+    location: {
+      file: "src/caller.ts",
+      range: { start: 1, end: 5 },
+      exportName: "handler",
+    },
+    identity: {
+      name: "CallerFunction.handler",
+      exportPath: ["CallerFunction.handler"],
+      boundaryBinding: unitInvocationBinding({
+        recognition: "aws-lambda",
+        deploymentTarget: "lambda",
+        instanceName: "CallerFunction",
+      }),
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "t0",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: unitInvocationBinding({
+              recognition: "aws-lambda",
+              deploymentTarget: "lambda",
+              instanceName,
+            }),
+            callee: "lambda.send",
+            interaction: { class: "unit-invoke" },
+          },
+        ],
+        location: { start: 1, end: 5 },
+        isDefault: false,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+    metadata: {},
+  });
+
+  const inspectAll = (summaries: BehavioralSummary[]): string => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-trigger-"));
     const file = path.join(dir, "code.json");
-    fs.writeFileSync(file, JSON.stringify([summary]));
+    fs.writeFileSync(file, JSON.stringify(summaries));
     return captureStdout(() => inspect({ file })).output;
   };
 
-  it("says so, and says suss does not read invoke calls", () => {
-    const output = inspectOne(lambdaSummary([]));
+  it("says nothing in the run invokes it", () => {
+    const output = inspectAll([lambdaSummary([])]);
 
-    expect(output).toContain("Nothing in the template says what invokes this");
-    expect(output).toContain("does not");
-    expect(output).toContain("read Lambda invoke calls");
+    expect(output).toContain("Nothing in the template routes an event here");
+    expect(output).toContain("outside what suss read");
+  });
+
+  it("names the function that invokes it", () => {
+    const output = inspectAll([
+      lambdaSummary([]),
+      invokerSummary("OrphanFunction"),
+    ]);
+
+    expect(output).toContain("It is invoked by CallerFunction.handler");
+  });
+
+  it("says an invoke that settles its target at run time could reach it", () => {
+    const output = inspectAll([lambdaSummary([]), invokerSummary(null)]);
+
+    expect(output).toContain("with 1 invoke here working out the target");
   });
 
   it("stays quiet when an event reaches it", () => {
-    const output = inspectOne(lambdaSummary(["SQS"]));
+    const output = inspectAll([lambdaSummary(["SQS"])]);
 
     expect(output).not.toContain("Nothing in the template");
   });
