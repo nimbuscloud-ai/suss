@@ -86,6 +86,8 @@ the source.
 | [`aws-dynamodb`](../../packages/framework/aws-dynamodb) | AWS SDK v3 DynamoDB calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-dynamodb.svg) |
 | [`aws-s3`](../../packages/framework/aws-s3) | AWS SDK v3 S3 object calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-s3.svg) |
 | [`gcs`](../../packages/framework/gcs) | Google Cloud Storage calls, emits storage-access interactions. | ![](../../.github/badges/coverage-gcs.svg) |
+| [`aws-secrets-manager`](../../packages/framework/aws-secrets-manager) | AWS Secrets Manager calls, emits storage-access interactions against the secret. | ![](../../.github/badges/coverage-aws-secrets-manager.svg) |
+| [`aws-ssm`](../../packages/framework/aws-ssm) | AWS SSM Parameter Store calls, emits storage-access interactions against the parameter. | ![](../../.github/badges/coverage-aws-ssm.svg) |
 | [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands, emits storage-access interactions. | ![](../../.github/badges/coverage-redis.svg) |
 | [`zustand`](../../packages/framework/zustand) | zustand stores: `setState` writes and `getState` reads against the store as a client-side container. | ![](../../.github/badges/coverage-zustand.svg) |
 | [`mongoose`](../../packages/framework/mongoose) | Mongoose model calls, emits storage-access interactions against the collection a model's `.model(...)` call declares. | ![](../../.github/badges/coverage-mongoose.svg) |

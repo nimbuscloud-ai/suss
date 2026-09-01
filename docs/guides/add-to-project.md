@@ -263,6 +263,8 @@ the table is for when you want to choose by hand. A pack is named with
 | `drizzle` | Drizzle query-builder and relational-query calls, with SQL table names | `-f drizzle` |
 | `aws-sqs` | AWS SDK v3 SQS producer calls, emits message-send interactions | `-f aws-sqs` |
 | `aws-sns` | AWS SDK v3 SNS `Publish` and `PublishBatch` calls, emits message-send interactions | `-f aws-sns` |
+| `aws-secrets-manager` | AWS Secrets Manager calls, emits storage-access interactions against the secret | `-f aws-secrets-manager` |
+| `aws-ssm` | AWS SSM Parameter Store calls, emits storage-access interactions against the parameter | `-f aws-ssm` |
 | `aws-eventbridge` | EventBridge `PutEvents` calls, emits message-bus interactions | `-f aws-eventbridge` |
 | `node` | Node runtime surface, scheduling, `process.*` (incl. `process.env.X` config-read interactions), module-loading globals | `-f node` |
 | `fetch` | Global `fetch` call sites | `-f fetch` |

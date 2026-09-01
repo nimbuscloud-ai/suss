@@ -55,6 +55,8 @@ export const coveragePackages = [
   ["packages/framework/aws-s3", "aws-s3"],
   ["packages/framework/aws-sqs", "aws-sqs"],
   ["packages/framework/aws-sns", "aws-sns"],
+  ["packages/framework/aws-secrets-manager", "aws-secrets-manager"],
+  ["packages/framework/aws-ssm", "aws-ssm"],
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],
   ["packages/framework/aws-lambda", "aws-lambda"],
   ["packages/framework/cloudflare-workers", "cloudflare-workers"],

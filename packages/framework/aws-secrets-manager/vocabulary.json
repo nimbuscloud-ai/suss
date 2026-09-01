@@ -1,0 +1,8 @@
+{
+  "Name": "AWS SDK v3: CreateSecretCommand input field, the name a new secret is given",
+  "SecretId": "AWS SDK v3: Secrets Manager command input field naming the secret",
+  "SecretIdList": "AWS SDK v3: BatchGetSecretValueCommand input field listing the secrets one call reads",
+  "name": "suss: a container the call listed by name rather than keyed by one",
+  "read": "suss: access kind",
+  "write": "suss: access kind"
+}

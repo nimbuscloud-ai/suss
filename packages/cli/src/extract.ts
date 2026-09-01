@@ -196,6 +196,8 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "aws-eventbridge": "@suss/packs/aws-eventbridge",
   "aws-dynamodb": "@suss/packs/aws-dynamodb",
   "aws-s3": "@suss/packs/aws-s3",
+  "aws-secrets-manager": "@suss/packs/aws-secrets-manager",
+  "aws-ssm": "@suss/packs/aws-ssm",
   gcs: "@suss/packs/gcs",
   redis: "@suss/packs/redis",
   zustand: "@suss/packs/zustand",

@@ -12,6 +12,12 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { SqlMethod, StorageMethod } from "./chain.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
+/** The container one storage effect reached, or null for anything else. */
+const containerOf = (effect: Effect | undefined): string | null =>
+  effect?.type === "interaction" && effect.binding?.semantics.name === "storage"
+    ? effect.binding.semantics.container
+    : null;
+
 /** A call, as the ops see it, so a chain can run with no compiler here. */
 function callOps(over: {
   method?: string | null;
@@ -638,6 +644,32 @@ describe("a call that states one request object", () => {
 
   it("leaves a call that states no request alone", () => {
     expect(playing({})).toBeNull();
+  });
+
+  describe("and states the containers as a list of names", () => {
+    const byName = storageCalls({
+      system: "cassette",
+      client: declaredBy("tapedeck"),
+    })
+      .methods({ play: { kind: "read" } })
+      .containersIn({ at: 0, property: ["Sides"] }, { each: "name" });
+
+    const playing = (values: Record<number, unknown>) =>
+      run(byName, callOps({ method: "play", from: ["tapedeck"], values }));
+
+    it("gives one access per name", () => {
+      const effects = playing({ 0: { Sides: ["a", "b"] } });
+
+      expect(effects).toHaveLength(2);
+      expect(effects?.map((e) => containerOf(e))).toEqual(["a", "b"]);
+    });
+
+    it("records one access with no container when it cannot read the list", () => {
+      const effects = playing({ 0: { Sides: true } });
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects?.[0])).toBeNull();
+    });
   });
 
   it("prices the rule the pack wrote over the request", () => {

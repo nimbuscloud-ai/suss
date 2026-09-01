@@ -165,6 +165,13 @@ export interface AccessPathLink {
 export interface ContainersLink {
   readonly asks: "containers";
   readonly in: OneArgument;
+  /**
+   * What one of them is. An entry keys the container by name and says
+   * what the call did there, which is how a batch write is written. A
+   * name is the container on its own, which is how a call that reads
+   * several parameters at once is written. Defaults to an entry.
+   */
+  readonly each?: "entry" | "name";
 }
 
 /**

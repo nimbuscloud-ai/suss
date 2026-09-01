@@ -130,7 +130,7 @@ Reference and internals: [Summary format](docs/behavioral-summary-format.md), [I
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
-Thirty-five packs read code today, reached by name with `-f`:
+Thirty-seven packs read code today, reached by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -143,6 +143,7 @@ Thirty-five packs read code today, reached by name with `-f`:
 | Databases and ORMs | `prisma` `drizzle` `mongoose` `sqlalchemy` `activerecord` `redis` |
 | Client state | `zustand` |
 | Object and key-value storage | `aws-s3` `gcs` `aws-dynamodb` |
+| Secrets and parameters | `aws-secrets-manager` `aws-ssm` |
 | Messaging | `aws-sqs` `aws-sns` `aws-eventbridge` `nestjs-microservices` |
 | Runtime surface | `node`, which includes `process.env` |
 | In-process, between workspace packages | `package-exports` |

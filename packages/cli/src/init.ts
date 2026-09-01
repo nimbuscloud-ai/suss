@@ -232,6 +232,22 @@ const BY_DEPENDENCY: Array<{
   },
   {
     ecosystem: "npm",
+    dependency: "@aws-sdk/client-secrets-manager",
+    name: "aws-secrets-manager",
+    packageName: "@suss/framework-aws-secrets-manager",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
+    dependency: "@aws-sdk/client-ssm",
+    name: "aws-ssm",
+    packageName: "@suss/framework-aws-ssm",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
     dependency: "@aws-sdk/client-sns",
     name: "aws-sns",
     packageName: "@suss/framework-aws-sns",

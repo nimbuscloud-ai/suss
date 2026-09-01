@@ -76,9 +76,13 @@ export interface StorageCalls {
   accessPath(says: ArgumentPick): StorageCalls;
   /**
    * Where a call that reaches several containers at once states them.
-   * Each entry becomes one effect, against the container its key says.
+   * Each entry becomes one effect, against the container its key says,
+   * or against the name itself where the call lists names alone.
    */
-  containersIn(says: OneArgument): StorageCalls;
+  containersIn(
+    says: OneArgument,
+    options?: { each?: "entry" | "name" },
+  ): StorageCalls;
   /**
    * Where a call states its inputs, when it states them as one object.
    * A call that states none does not match, and a rule the pack wrote
@@ -130,7 +134,12 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
           : { asks: "container", argument: says },
       ),
     accessPath: (says) => adding({ asks: "accessPath", argument: says }),
-    containersIn: (says) => adding({ asks: "containers", in: says }),
+    containersIn: (says, options) =>
+      adding({
+        asks: "containers",
+        in: says,
+        each: options?.each ?? "entry",
+      }),
     input: (says) => adding({ asks: "input", at: says }),
     example: (code) => chainFrom({ ...declared, example: code }),
   };
