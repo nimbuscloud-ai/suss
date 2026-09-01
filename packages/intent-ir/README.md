@@ -6,7 +6,7 @@ The team-authored side of the loop: what the code was *meant* to do, in a form t
 
 Two citizens, discriminated by `kind`, both built on `@suss/ir-core` so intent and behaviour describe boundaries the same way:
 
-- **System intent** (`kind: boundary`): what one boundary should do, as named outcomes. The boundary is REST, function-call, message-bus or storage, and every field of one comes off the `@suss/ir-core` schema for that protocol.
+- **System intent** (`kind: boundary`): what one boundary should do, as named outcomes. The boundary is REST, function-call, message-bus, storage or unit-invocation, and every field of one comes off the `@suss/ir-core` schema for that protocol.
 - **Outcome intent** (`kind: prd`): human `when` / `expect` scenarios, each with an optional `link` to a system-intent outcome (`<intent-name>.<outcome-id>`). A scenario with no `link` is a valid state to be in: it reads fully, and nothing has linked it to an outcome yet.
 
 ## What an outcome is
@@ -72,7 +72,16 @@ transitions:
       - writes: aws.dynamodb:Invoices
 ```
 
-`suss ask "what writes aws.dynamodb:Invoices"` is the question and this is the assertion, spelled the same way. The key is the verb, `reads` or `writes`, which are the two `relationsOf` in `@suss/behavioral-ir` gives an effect. The value is the boundary's own name, the string every report writes and `namesBoundary` in `@suss/ir-core` resolves, so what you type in a document and what you type at `ask` pick out the same boundary. Nothing here is per protocol, so a queue consumer and a table writer say what they do without a fourth outcome shape each.
+`suss ask "what writes aws.dynamodb:Invoices"` is the question and this is the assertion, spelled the same way. The key is the verb, `reads`, `writes` or `invokes`, which are the three `relationsOf` in `@suss/behavioral-ir` gives an effect. The value is the boundary's own name, the string every report writes and `namesBoundary` in `@suss/ir-core` resolves, so what you type in a document and what you type at `ask` pick out the same boundary. Nothing here is per protocol, so a queue consumer and a table writer say what they do without a fourth outcome shape each.
+
+`invokes` is the verb for calling a deployed unit by name, which is how a service built out of Lambdas hangs together:
+
+```yaml
+    results:
+      - invokes: unit:lambda ArchiveWorker
+```
+
+A run that reads the deployment template gives a unit its name, so the boundary a document declares is `unit:lambda ReportBuilder`. The callee on a `results` line is spelled the way the invoking code spells it, which for a function named through an env var is `unit:lambda {ARCHIVE_WORKER_FUNCTION}`. Collapsing that env-var chain is the checker's job today and nothing hands the answer back to a drafted document, so the two spellings stay apart until it does.
 
 A clause can go further, since the summary does. `fields` is the columns the access touches and `by` is what it picks the item out by:
 
@@ -92,7 +101,7 @@ Adding `results` changes nothing about `response`, `returns` and `throws`. A doc
 
 ## Which boundaries pair, and which are pending
 
-A boundary intent pairs when its boundary has a key. REST has one from its method and path, a function-call export has one from its package and export path, and a message-bus boundary has one from its channel.
+A boundary intent pairs when its boundary has a key. REST has one from its method and path, a function-call export has one from its package and export path, a message-bus boundary has one from its channel, and an invoked unit has one from its deployment target and the name the platform knows it by. A unit whose name only the runtime settles has none, so a document for one is authorable and reported `unkeyableBoundary`.
 
 A store has none. `storage.ts` in `@suss/ir-core` returns null for a storage identity key on purpose: a container name can be a pattern with holes that only a caller or the deployment settles, and the storage pass in `@suss/checker` grounds it before pairing. So a `kind: boundary` doc whose boundary is a store is authorable, and the checker reports it as `unkeyableBoundary` and puts it in `unchecked` rather than pretending to have compared it. That is the same pending state a module-level function-call boundary is in.
 
@@ -117,7 +126,7 @@ It is a peer of `@suss/behavioral-ir`; both build on `@suss/ir-core`. Readers (e
 
 ## Status
 
-v0: REST, function-call, message-bus and storage system intent, effects as outcomes, PRD outcome intent with optional links. GraphQL, runtime-config and metric boundaries have no block yet.
+v0: REST, function-call, message-bus, storage and unit-invocation system intent, effects as outcomes, PRD outcome intent with optional links. GraphQL, runtime-config and metric boundaries have no block yet.
 
 ## Coverage
 

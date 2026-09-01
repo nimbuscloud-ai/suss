@@ -511,15 +511,16 @@ there is nowhere to put it, so the next best thing is being able to ask.
 suss ask "QUESTION" [--dir DIR | SUMMARIES.json] [--project DIR] [--json] [-o OUTPUT]
 ```
 
-Seven questions, in these words:
+Eight questions, in these words:
 
 | Question | What comes back |
 |---|---|
 | `what can I project from <boundary>` | What the boundary declares: the fields a store serves, the statuses a contract declares, the env vars a runtime takes. Also written `what does <boundary> declare`. |
 | `what reads <boundary>` | Every unit that reads it, with the file, the line, and the call. |
 | `what writes <boundary>` | The same, for writes. |
+| `what invokes <boundary>` | Every unit that calls a deployed unit by name, such as one Lambda invoking another. |
 | `what calls <unit>` | Every unit whose calls the run resolved to it, with the file, the line, and the call. The unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. |
-| `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads or writes each. |
+| `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads, writes or invokes each. |
 | `what reaches <target>` | Every boundary whose unit ends up going through the target, and the calls it took to get there. The same edges as `reach`, walked backwards, which is what somebody changing a store or a function wants before they change it. A unit is listed only when it serves a boundary of its own, so the answer is routes and queues rather than the functions between them. The answer says how many calls resolved to no unit, since a boundary reaching the target through one of those is missing from it. |
 | `why does <unit> reach <boundary>` | The call chain from the unit to the boundary, with each hop's resolution proved from source. |
 | `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
@@ -527,7 +528,10 @@ Seven questions, in these words:
 The boundary is spelled the way reports spell it, and a shorter spelling
 covers more, exactly as under [`--at`](#reporting-on-one-thing). A
 service call counts as both a read and a write, since a request sends a
-body out and gets a response back. When a spelling covers several
+body out and gets a response back. Calling a deployed unit by name does
+the same two things and is reported as `invokes`, because a service made
+of Lambdas would otherwise read as every function reading and writing
+every other one. When a spelling covers several
 boundaries at once, suss says which ones rather than picking one, and a
 spelling that is exactly one boundary's name takes that one:
 `GET /articles` is the collection route, not the comments route under
@@ -1198,11 +1202,43 @@ to what your team calls them, and setting `source: "inferred, curated"`.
 bare `inferred` intent are downgraded one level, and curation restores
 them.
 
+Those same two files are what gives a Lambda nothing triggers a document
+of its own. A function other functions call by name is a
+`unit-invocation` boundary, keyed on the platform and the name the
+template deploys it under, and the calls it makes to other functions are
+`results` lines in the third verb:
+
+```yaml
+boundary:
+  semantics: unit-invocation
+  deploymentTarget: lambda
+  instanceName: ReportBuilder
+
+transitions:
+  - id: returns
+    when: every call reaches this outcome
+    returns:
+      body:
+        type: object
+        properties:
+          reportId:
+            type: string
+    results:
+      - invokes: unit:lambda {ARCHIVE_WORKER_FUNCTION}
+```
+
+The callee reads that way because the code gets its name from an env
+var, and the drafter writes the boundary as the code spells it. Working
+out which function that variable points at happens when the checker
+pairs the invoke, and nothing hands that answer back to a drafted
+document yet.
+
 A boundary that could not be drafted is reported with the reason.
-Boundary intent covers REST, function-call, message-bus and storage
-boundaries, so a GraphQL, runtime-config or metric boundary is reported
-rather than drafted, as is a boundary whose summaries never record a
-transition producing a response, a return, a throw, or an effect.
+Boundary intent covers REST, function-call, message-bus, storage and
+unit-invocation boundaries, so a GraphQL, runtime-config or metric
+boundary is reported rather than drafted, as is a boundary whose
+summaries never record a transition producing a response, a return, a
+throw, or an effect.
 
 A store is reported too, for a different reason: storage has no identity
 key, so a doc naming one could never be paired. The reported reason says

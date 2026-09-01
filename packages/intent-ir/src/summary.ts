@@ -15,6 +15,7 @@ import {
   restBinding,
   storageBinding,
   type TypeShape,
+  unitInvocationBinding,
 } from "@suss/ir-core";
 
 import type {
@@ -190,6 +191,12 @@ const BINDINGS: {
       recognition: "intent",
       messageBus: boundary.messageBus,
       channel: boundary.channel,
+    }),
+  "unit-invocation": (boundary) =>
+    unitInvocationBinding({
+      recognition: "intent",
+      deploymentTarget: boundary.deploymentTarget,
+      instanceName: boundary.instanceName,
     }),
   storage: (boundary) =>
     storageBinding({

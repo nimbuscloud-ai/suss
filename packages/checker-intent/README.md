@@ -38,6 +38,7 @@ An outcome can declare the effects it has, written the way `suss ask` asks about
 ```yaml
 results:
   - writes: aws.dynamodb:Invoices
+  - invokes: unit:lambda ArchiveWorker
 ```
 
 Both directions are checked, and both resolve the boundary with `namesBoundary` in `@suss/ir-core`, the same matcher that settles what somebody types at `suss ask`. So `writes: Invoices` and `writes: aws.dynamodb:Invoices` both pick out the table, exactly as the two spellings do at the command line, and there is no second parser here to drift from that one.
@@ -46,7 +47,7 @@ For each declared effect, the pass walks what the matching code transitions reac
 
 For the other direction, the pass walks every boundary the unit's transitions reach and reports `undeclaredOutcome` for each one no outcome declares. An intent listing three writes on a unit doing four has one nobody wrote down. It is info rather than an error for the same reason an undeclared status is: an intent doc declares the floor rather than a closed list, so code beyond it usually means somebody has not written that part down yet.
 
-An access whose container the code cannot settle (a wrapper handed its table as an argument) spells a name with a hole in it and matches nothing here, because grounding that name is the storage pass's job and this pass loads no contracts.
+An access whose container the code cannot settle (a wrapper handed its table as an argument) spells a name with a hole in it and matches nothing here, because grounding that name is the storage pass's job and this pass loads no contracts. An invoke that reads its callee out of an env var is in the same position: the code spells it `unit:lambda {ARCHIVE_WORKER_FUNCTION}`, collapsing that chain is the unit-invocation pass's job, and a document has to spell the callee the way the code does for the two to line up.
 
 ## How a declared condition is compared
 

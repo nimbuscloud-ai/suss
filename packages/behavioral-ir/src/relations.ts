@@ -1,7 +1,7 @@
 /**
  * What a unit does at each boundary a summary mentions.
  *
- * The verbs are `@suss/ir-core`'s `Relation`, the same three `suss ask`
+ * The verbs are `@suss/ir-core`'s `Relation`, the same ones `suss ask`
  * asks with. This module says which verb each interaction class gets,
  * so a report, a question and an intent doc that states a boundary
  * effect all read one answer.
@@ -23,15 +23,14 @@ type RelationTable = {
 
 /**
  * A request sends a body out and gets a response back, so a service
- * call both reads and writes. Scheduling a callback crosses no
- * boundary, so it does neither.
+ * call both reads and writes. Scheduling crosses no boundary at all.
  */
 const RELATIONS: RelationTable = {
   "storage-access": (interaction) =>
     interaction.kind === "read" ? ["reads"] : ["writes"],
   "service-call": () => ["reads", "writes"],
   "message-send": () => ["writes"],
-  "unit-invoke": () => ["reads", "writes"],
+  "unit-invoke": () => ["invokes"],
   "message-receive": () => ["reads"],
   "config-read": () => ["reads"],
   schedule: () => [],

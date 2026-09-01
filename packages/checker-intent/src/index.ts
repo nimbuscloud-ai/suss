@@ -963,4 +963,5 @@ function describeEffect(effect: IntentEffect): string {
 const EFFECT_PHRASE: Record<EffectRelation, string> = {
   reads: "a read of",
   writes: "a write to",
+  invokes: "an invoke of",
 };

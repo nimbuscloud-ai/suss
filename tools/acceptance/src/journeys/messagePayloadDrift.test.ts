@@ -108,10 +108,15 @@ describe("check what a consumer reads against what producers send", () => {
     }, 120_000);
 
     it("writes one document per queue, on the queue's own channel", () => {
+      // Each producer is a Lambda the template deploys, so it gets a
+      // document of its own beside the queue it publishes to.
       expect(fs.readdirSync(intent).sort()).toEqual([
         "bus-aws-sqs-paid-queue.intent.yaml",
         "bus-aws-sqs-refunded-queue.intent.yaml",
         "bus-aws-sqs-voided-queue.intent.yaml",
+        "unit-lambda-paid-producer-function.intent.yaml",
+        "unit-lambda-refunded-producer-function.intent.yaml",
+        "unit-lambda-voided-producer-function.intent.yaml",
       ]);
 
       const doc = fs.readFileSync(
@@ -156,6 +161,9 @@ describe("check what a consumer reads against what producers send", () => {
         "bus:aws_sqs PaidQueue",
         "bus:aws_sqs RefundedQueue",
         "bus:aws_sqs VoidedQueue",
+        "unit:lambda PaidProducerFunction",
+        "unit:lambda RefundedProducerFunction",
+        "unit:lambda VoidedProducerFunction",
       ]);
     });
   });

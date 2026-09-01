@@ -416,6 +416,68 @@ describe("intentDraftResult", () => {
     expect(result.drafted[0].yaml).toContain("channel: OrdersQueue");
   });
 
+  it("drafts a deployed unit on the name the platform knows it by", () => {
+    const returnsReport: Transition = {
+      id: "t",
+      conditions: [],
+      output: {
+        type: "return",
+        value: { type: "record", properties: { reportId: { type: "text" } } },
+      },
+      effects: [
+        {
+          type: "interaction",
+          binding: {
+            transport: "invoke",
+            semantics: {
+              name: "unit-invocation",
+              deploymentTarget: "lambda",
+              instanceName: "ArchiveWorker",
+            },
+            recognition: "test",
+          },
+          callee: "lambda.send",
+          interaction: { class: "unit-invoke" },
+        },
+      ],
+      location: { start: 1, end: 2 },
+      isDefault: false,
+    };
+    const result = intentDraftResult(
+      [
+        provider(
+          "ReportBuilder.handler",
+          {
+            transport: "invoke",
+            semantics: {
+              name: "unit-invocation",
+              deploymentTarget: "lambda",
+              instanceName: "ReportBuilder",
+            },
+            recognition: "test",
+          },
+          [returnsReport],
+        ),
+      ],
+      "code.json",
+    );
+
+    expect(result.undrafted).toEqual([]);
+    expect(result.drafted).toHaveLength(1);
+    expect(result.drafted[0].boundary).toBe("unit:lambda ReportBuilder");
+    expect(result.drafted[0].yaml).toContain(
+      [
+        "boundary:",
+        "  semantics: unit-invocation",
+        "  deploymentTarget: lambda",
+        "  instanceName: ReportBuilder",
+      ].join("\n"),
+    );
+    expect(result.drafted[0].yaml).toContain(
+      "      - invokes: unit:lambda ArchiveWorker",
+    );
+  });
+
   it("drafts a queue consumer against the channel the template names", () => {
     const unit = {
       deploymentTarget: "lambda",
@@ -638,10 +700,10 @@ describe("intentDraftResult", () => {
     expect(result.drafted).toEqual([]);
     expect(result.undrafted.map((one) => one.reason)).toEqual([
       "it has no key the checker could pair intent against: a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead",
-      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is runtime-config",
-      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-resolver",
-      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is graphql-operation",
-      "boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is metric",
+      "boundary intent declares rest, function-call, message-bus, storage and unit-invocation boundaries, and this one is runtime-config",
+      "boundary intent declares rest, function-call, message-bus, storage and unit-invocation boundaries, and this one is graphql-resolver",
+      "boundary intent declares rest, function-call, message-bus, storage and unit-invocation boundaries, and this one is graphql-operation",
+      "boundary intent declares rest, function-call, message-bus, storage and unit-invocation boundaries, and this one is metric",
     ]);
   });
 
@@ -664,6 +726,32 @@ describe("intentDraftResult", () => {
     expect(result.drafted).toEqual([]);
     expect(result.undrafted[0].reason).toContain(
       "no key the checker could pair intent against",
+    );
+  });
+
+  it("says a unit named at run time is one the checker could not pair", () => {
+    const result = intentDraftResult(
+      [
+        provider(
+          "handler",
+          {
+            transport: "invoke",
+            semantics: {
+              name: "unit-invocation",
+              deploymentTarget: "lambda",
+              instanceName: null,
+            },
+            recognition: "test",
+          },
+          [responds("t", 200)],
+        ),
+      ],
+      "code.json",
+    );
+
+    expect(result.drafted).toEqual([]);
+    expect(result.undrafted[0].reason).toContain(
+      "an invoked unit needs a deployment target and the name the platform knows it by",
     );
   });
 });
