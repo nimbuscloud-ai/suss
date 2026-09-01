@@ -105,6 +105,26 @@ const storeIntent = {
   ],
 };
 
+const unitIntent = {
+  kind: "boundary",
+  name: "report-builder",
+  purpose: "Build the report for an order.",
+  audience: "the orders team",
+  boundary: {
+    semantics: "unit-invocation",
+    deploymentTarget: "lambda",
+    instanceName: "ReportBuilder",
+  },
+  transitions: [
+    {
+      id: "returns",
+      when: "an order was placed",
+      returns: { body: { properties: { reportId: { type: "string" } } } },
+      results: [{ invokes: "unit:lambda ArchiveWorker" }],
+    },
+  ],
+};
+
 const prd = {
   kind: "prd",
   title: "User profile lookup",
@@ -172,6 +192,30 @@ describe("IntentDocSchema validation", () => {
 
   it("accepts a storage boundary intent", () => {
     expect(() => IntentDocSchema.parse(storeIntent)).not.toThrow();
+  });
+
+  it("accepts a unit-invocation boundary intent", () => {
+    expect(() => IntentDocSchema.parse(unitIntent)).not.toThrow();
+  });
+
+  it("rejects a deployment target the ir-core schema does not name", () => {
+    const bad = {
+      ...unitIntent,
+      boundary: { ...unitIntent.boundary, deploymentTarget: "fargate" },
+    };
+    expect(() => IntentDocSchema.parse(bad)).toThrow();
+  });
+
+  it("takes a unit with no name, which is a unit named at run time", () => {
+    const parsed = IntentDocSchema.parse({
+      ...unitIntent,
+      boundary: { semantics: "unit-invocation", deploymentTarget: "lambda" },
+    });
+    expect(parsed.kind === "boundary" && parsed.boundary).toEqual({
+      semantics: "unit-invocation",
+      deploymentTarget: "lambda",
+      instanceName: null,
+    });
   });
 
   it("rejects a bus the ir-core schema does not name", () => {
@@ -322,6 +366,32 @@ describe("intentDocToSummary — function-call boundary", () => {
     expect(byId.summaries.status).toBeNull();
     expect(byId["unknown-source"].kind).toBe("throw");
     expect(byId["unknown-source"].errorType).toBe("Error");
+  });
+});
+
+describe("intentDocToSummary over a unit-invocation boundary", () => {
+  it("builds the binding the ir-core constructor builds, and reads the invoke", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(unitIntent),
+    ) as BoundaryIntentSummary;
+
+    expect(summary.boundary).toEqual({
+      transport: "invoke",
+      semantics: {
+        name: "unit-invocation",
+        deploymentTarget: "lambda",
+        instanceName: "ReportBuilder",
+      },
+      recognition: "intent",
+    });
+    expect(summary.outcomes[0].effects).toEqual([
+      {
+        does: "invokes",
+        names: "unit:lambda ArchiveWorker",
+        fields: [],
+        by: [],
+      },
+    ]);
   });
 });
 

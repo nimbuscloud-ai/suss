@@ -3,9 +3,9 @@
     "packages": 67,
     "packagesWithExports": 67,
     "exports": 694,
-    "internal": 2405,
-    "consumers": 1216,
-    "pairs": 1196,
+    "internal": 2407,
+    "consumers": 1218,
+    "pairs": 1198,
     "unfollowedCalls": 209,
     "findingErrors": 0
   },
@@ -48,8 +48,8 @@
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
       "exports": 3,
-      "internal": 18,
-      "consumers": 24,
+      "internal": 20,
+      "consumers": 25,
       "unfollowedCalls": 0
     },
     "packages/cli": {
@@ -406,7 +406,7 @@
       "name": "@suss/intent-ir",
       "exports": 3,
       "internal": 2,
-      "consumers": 4,
+      "consumers": 5,
       "unfollowedCalls": 1
     },
     "packages/ir-core": {

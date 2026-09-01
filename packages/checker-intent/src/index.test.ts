@@ -9,6 +9,7 @@ import {
   restBinding,
   storageBinding,
   type TypeShape,
+  unitInvocationBinding,
   type ValueRef,
 } from "@suss/behavioral-ir";
 import { SemanticsSchema } from "@suss/ir-core";
@@ -1471,5 +1472,160 @@ describe("an outcome with no scenario", () => {
     expect(
       result.findings.filter((f) => f.kind === "undescribedOutcome"),
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A deployed unit other units call by name
+// ---------------------------------------------------------------------------
+
+const reportBuilderIntent = unitInvocationBinding({
+  recognition: "intent",
+  deploymentTarget: "lambda",
+  instanceName: "ReportBuilder",
+});
+const reportBuilderCode = unitInvocationBinding({
+  recognition: "aws-lambda",
+  deploymentTarget: "lambda",
+  instanceName: "ReportBuilder",
+});
+const archiveWorker = unitInvocationBinding({
+  recognition: "@suss/framework-aws-lambda",
+  deploymentTarget: "lambda",
+  instanceName: "ArchiveWorker",
+});
+
+const reportShape: TypeShape = {
+  type: "record",
+  properties: { reportId: { type: "text" } },
+};
+
+function invokes(unit: string): IntentEffect {
+  return { does: "invokes", names: unit, fields: [], by: [] };
+}
+
+/** A deployed function whose one return also invokes another function. */
+function unitInvokingArchive(): BehavioralSummary {
+  const summary = codeSummary(
+    reportBuilderCode,
+    [{ type: "return", value: reportShape }],
+    "ReportBuilder.handler",
+  );
+  summary.transitions[0].effects = [
+    {
+      type: "interaction",
+      binding: archiveWorker,
+      callee: "lambda.send",
+      interaction: { class: "unit-invoke" },
+    },
+  ];
+  return summary;
+}
+
+function returnsReport(effects: IntentEffect[]): IntentOutcome {
+  return {
+    id: "returns",
+    when: "every call reaches this outcome",
+    conditions: [],
+    kind: "return",
+    status: null,
+    body: reportShape,
+    errorType: null,
+    effects,
+  };
+}
+
+describe("checkIntentAgreement over an invoked unit", () => {
+  it("pairs the document against the function deployed under that name", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          reportBuilderIntent,
+          [returnsReport([invokes("unit:lambda ArchiveWorker")])],
+          "report-builder",
+        ),
+      ],
+      [unitInvokingArchive()],
+    );
+
+    expect(result.findings).toEqual([]);
+    expect(result.unchecked).toEqual([]);
+    expect(result.checked).toEqual([
+      {
+        kind: "boundary",
+        intent: "report-builder",
+        boundary: "unit:lambda ReportBuilder",
+        implementations: ["src/handler.ts::ReportBuilder.handler"],
+      },
+    ]);
+  });
+
+  it("reports an invoke of a unit the function never invokes", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          reportBuilderIntent,
+          [returnsReport([invokes("unit:lambda OrderApi")])],
+          "report-builder",
+        ),
+      ],
+      [unitInvokingArchive()],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+    expect(uncovered[0].message).toContain(
+      "results in an invoke of unit:lambda OrderApi",
+    );
+  });
+
+  it("reports an invoke the code makes that no outcome declares", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          reportBuilderIntent,
+          [returnsReport([])],
+          "report-builder",
+        ),
+      ],
+      [unitInvokingArchive()],
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].kind).toBe("undeclaredOutcome");
+    expect(result.findings[0].message).toContain(
+      "invokes unit:lambda ArchiveWorker",
+    );
+  });
+
+  it("cannot key a unit whose name only the runtime settles", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          unitInvocationBinding({
+            recognition: "intent",
+            deploymentTarget: "lambda",
+            instanceName: null,
+          }),
+          [returnsReport([])],
+          "some-lambda",
+        ),
+      ],
+      [unitInvokingArchive()],
+    );
+
+    expect(result.findings.map((f) => f.kind)).toEqual(["unkeyableBoundary"]);
+    expect(result.findings[0].message).toContain(
+      "an invoked unit needs a deployment target and the name the platform knows it by",
+    );
+    expect(result.unchecked).toEqual([
+      {
+        intent: "some-lambda",
+        reason: "unkeyable",
+        detail: "boundary can't be keyed for pairing against code",
+      },
+    ]);
   });
 });

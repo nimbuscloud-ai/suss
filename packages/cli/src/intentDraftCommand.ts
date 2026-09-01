@@ -300,6 +300,9 @@ type BoundaryBlocks = {
   ) => AuthoredBoundary | null;
 };
 
+/** The table entry for a protocol that boundary intent cannot declare yet. */
+const NO_BLOCK = () => null;
+
 const BOUNDARY_BLOCKS: BoundaryBlocks = {
   rest: (semantics) => ({
     transport: "http",
@@ -336,12 +339,31 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
       ? { accessPath: semantics.accessPath }
       : {}),
   }),
-  "graphql-resolver": () => null,
-  "graphql-operation": () => null,
-  "runtime-config": () => null,
-  metric: () => null,
-  "unit-invocation": () => null,
+  // A unit whose name only the runtime settles leaves the field off,
+  // and the checker is what reports the document as unpairable.
+  "unit-invocation": (semantics) => ({
+    semantics: "unit-invocation",
+    deploymentTarget: semantics.deploymentTarget,
+    ...(semantics.instanceName !== null
+      ? { instanceName: semantics.instanceName }
+      : {}),
+  }),
+  "graphql-resolver": NO_BLOCK,
+  "graphql-operation": NO_BLOCK,
+  "runtime-config": NO_BLOCK,
+  metric: NO_BLOCK,
 };
+
+/** The protocols a document can be written for, as a doc author reads them. */
+const DECLARABLE = Object.entries(BOUNDARY_BLOCKS)
+  .filter(([, write]) => write !== NO_BLOCK)
+  .map(([name]) => name);
+
+/** Those protocols in a sentence, so the report cannot list a stale set. */
+const DECLARABLE_SAID = [
+  DECLARABLE.slice(0, -1).join(", "),
+  DECLARABLE[DECLARABLE.length - 1],
+].join(" and ");
 
 /** Null when boundary intent has no shape for this protocol yet. */
 function boundaryBlock(binding: BoundaryBinding): AuthoredBoundary | null {
@@ -388,7 +410,7 @@ function groupByBoundary(input: BehavioralSummary[]): {
     if (block === null) {
       sayOnce({
         boundary: displayLabel(binding),
-        reason: `boundary intent declares rest, function-call, message-bus and storage boundaries, and this one is ${binding.semantics.name}`,
+        reason: `boundary intent declares ${DECLARABLE_SAID} boundaries, and this one is ${binding.semantics.name}`,
       });
       continue;
     }

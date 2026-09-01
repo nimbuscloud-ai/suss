@@ -2,8 +2,8 @@
  * `suss ask`: one question, answered from the summaries already on
  * disk, and for a why question from the source as well.
  *
- * Seven shapes, and no parser behind them. A question that is not one
- * of the seven gets the seven printed back rather than a guess at what
+ * Eight shapes, and no parser behind them. A question that is not one
+ * of the eight gets the eight printed back rather than a guess at what
  * it meant: a wrong answer about a store is worse than no answer.
  *
  * An answer says what it is missing. Nothing on disk declares what most
@@ -45,10 +45,12 @@ import type {
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
 
+/** The questions that ask who does one thing at a named boundary. */
+type Direction = "reads" | "writes" | "invokes";
+
 export type QuestionShape =
   | "declares"
-  | "reads"
-  | "writes"
+  | Direction
   | "calls"
   | "reaches"
   | "reachedBy"
@@ -103,15 +105,17 @@ const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "declares", pattern: /^what does\s+(.+?)\s+declare$/i },
   { shape: "reads", pattern: /^what reads\s+(.+)$/i },
   { shape: "writes", pattern: /^what writes\s+(.+)$/i },
+  { shape: "invokes", pattern: /^what invokes\s+(.+)$/i },
   { shape: "calls", pattern: /^what calls\s+(.+)$/i },
   { shape: "reaches", pattern: /^what does\s+(.+?)\s+reach$/i },
   { shape: "reachedBy", pattern: /^what reaches\s+(.+)$/i },
 ];
 
-const HOW_TO_ASK = `suss ask takes one of eight questions:
+const HOW_TO_ASK = `suss ask takes one of nine questions:
   suss ask 'what can I project from aws.dynamodb:editions#by-publication'
   suss ask 'what reads aws.dynamodb:editions'
   suss ask 'what writes aws.dynamodb:editions'
+  suss ask 'what invokes unit:lambda ReportBuilder'
   suss ask 'what calls src/editions/dao.ts'
   suss ask 'what does src/editions/dao.ts reach'
   suss ask 'what reaches src/editions/dao.ts'
@@ -211,7 +215,7 @@ function loadSummaries(options: AskOptions): BehavioralSummary[] {
 }
 
 // ---------------------------------------------------------------------------
-// The five summary answers
+// The six summary answers
 // ---------------------------------------------------------------------------
 
 const ANSWERS: Record<
@@ -221,6 +225,8 @@ const ANSWERS: Record<
   declares: answerDeclares,
   reads: (subject, summaries) => answerDirection("reads", subject, summaries),
   writes: (subject, summaries) => answerDirection("writes", subject, summaries),
+  invokes: (subject, summaries) =>
+    answerDirection("invokes", subject, summaries),
   calls: answerCalls,
   reaches: answerReaches,
   reachedBy: answerReachedBy,
@@ -241,15 +247,17 @@ function boundaryLabelFor(
 }
 
 /** "2 units read", "1 unit reads". */
-const PLURAL_VERB: Record<"reads" | "writes", string> = {
+const PLURAL_VERB: Record<Direction, string> = {
   reads: "read",
   writes: "write",
+  invokes: "invoke",
 };
 
 /** Who the unfollowed call could be hiding, for each question. */
-const HIDDEN_ACTOR: Record<"reads" | "writes", string> = {
+const HIDDEN_ACTOR: Record<Direction, string> = {
   reads: "a reader",
   writes: "a writer",
+  invokes: "a caller",
 };
 
 /**
@@ -374,7 +382,7 @@ function touchedFields(touches: ReadonlyArray<TargetTouch>): AnswerItem[] {
 }
 
 function answerDirection(
-  shape: "reads" | "writes",
+  shape: Direction,
   subject: string,
   summaries: BehavioralSummary[],
 ): Answer {
@@ -886,7 +894,7 @@ function declarationsOf(summary: BehavioralSummary): Declaration[] {
  */
 function runCaveats(
   summaries: ReadonlyArray<BehavioralSummary>,
-  shape: "reads" | "writes",
+  shape: Direction,
   listed: ReadonlyArray<BehavioralSummary> = [],
 ): string[] {
   const already = new Set(listed);

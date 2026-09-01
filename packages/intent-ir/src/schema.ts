@@ -26,6 +26,7 @@ import {
   EffectRelationSchema,
   MessageBusSemanticsSchema,
   StorageSemanticsSchema,
+  UnitInvocationSemanticsSchema,
 } from "@suss/ir-core";
 
 // ---------------------------------------------------------------------------
@@ -178,11 +179,21 @@ const StorageBoundarySchema = z.object({
   accessPath: StorageSemanticsSchema.shape.accessPath.default(null),
 });
 
+// Both fields come off the ir-core schema, the same reuse the bus and
+// the store get. A doc that leaves the name out is authorable and
+// unpairable, and the checker is what says so.
+const UnitInvocationBoundarySchema = z.object({
+  semantics: z.literal("unit-invocation"),
+  deploymentTarget: UnitInvocationSemanticsSchema.shape.deploymentTarget,
+  instanceName: UnitInvocationSemanticsSchema.shape.instanceName.default(null),
+});
+
 export const BoundarySchema = z.discriminatedUnion("semantics", [
   RestBoundarySchema,
   FunctionCallBoundarySchema,
   MessageBusBoundarySchema,
   StorageBoundarySchema,
+  UnitInvocationBoundarySchema,
 ]);
 
 // ---------------------------------------------------------------------------

@@ -6,13 +6,19 @@
  * question parser and an intent doc all have to spell the verbs the
  * same way. They are here rather than beside any one of them.
  *
- * `provides` is the unit's own boundary; `reads` and `writes` are what
- * a call site does at somebody else's.
+ * `provides` is the unit's own boundary; `reads`, `writes` and
+ * `invokes` are what a call site does at somebody else's. Calling a
+ * deployed unit by name is one act, so it gets a verb of its own.
  */
 
 import { z } from "zod";
 
-export const RelationSchema = z.enum(["provides", "reads", "writes"]);
+export const RelationSchema = z.enum([
+  "provides",
+  "reads",
+  "writes",
+  "invokes",
+]);
 
 export type Relation = z.infer<typeof RelationSchema>;
 

@@ -442,11 +442,11 @@ describe("suss ask", () => {
     expect(output).toContain("then ask again");
   });
 
-  it("prints the seven shapes back when the question is not one of them", () => {
+  it("prints the eight shapes back when the question is not one of them", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of eight questions");
+    expect(output).toContain("suss ask takes one of nine questions");
   });
 
   it("writes JSON an agent can read", () => {

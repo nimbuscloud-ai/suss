@@ -60,6 +60,7 @@ export {
   storageContainerLabel,
   storageLabel,
 } from "./semantics/storage.js";
+export { UnitInvocationSemanticsSchema } from "./semantics/unitInvocation.js";
 export { semconvAttributes } from "./semconv.js";
 
 export type {
