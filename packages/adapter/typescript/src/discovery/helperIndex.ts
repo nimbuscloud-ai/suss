@@ -43,12 +43,20 @@ export interface ProjectHelperIndex {
    * per-file cache invalidates `file` when one of them is edited.
    */
   helperFilesFor(file: SourceFile): readonly string[];
+  /**
+   * Whether a registration written inside `helper` with `method` is one
+   * the call sites already expand. Reading it here as well would give
+   * one registration two summaries, and which of the two a run kept
+   * would come down to the order the files were walked in.
+   */
+  expandedAtCallSites(helper: Node, method: string): boolean;
 }
 
 const NO_HELPERS: ProjectHelperIndex = {
   patternsFor: () => [],
   contributedRecognizers: () => [],
   helperFilesFor: () => [],
+  expandedAtCallSites: () => false,
 };
 
 /** A helper as it is collected, before the pack is told about it. */
@@ -73,6 +81,7 @@ export function buildProjectHelperIndex(
   const recognizers: InvocationRecognizer[] = [];
   const helperNames = new Set<string>();
   const helperFiles = new Set<string>();
+  const expanded = new Map<string, Set<string>>();
 
   for (const pack of asking) {
     const search = pack.projectHelpers?.find;
@@ -102,6 +111,7 @@ export function buildProjectHelperIndex(
         ...(patterns.get(pack.name) ?? []),
         ...declared.discovery,
       ]);
+      noteExpanded(expanded, readings, declared.discovery);
     }
     recognizers.push(...(declared.invocationRecognizers ?? []));
   }
@@ -116,7 +126,43 @@ export function buildProjectHelperIndex(
     patternsFor: (packName) => patterns.get(packName) ?? [],
     contributedRecognizers: () => recognizers,
     helperFilesFor: (file) => (mentionsAnyOf(file, written) ? all : []),
+    expandedAtCallSites: (helper, method) =>
+      expanded.get(nodeId(helper))?.has(method) === true,
   };
+}
+
+/**
+ * Which methods each helper's body writes registrations with that the
+ * pack turned into a template. A method it left alone stays with the
+ * body, which is where a route written out in full still comes from.
+ */
+function noteExpanded(
+  expanded: Map<string, Set<string>>,
+  readings: readonly Reading[],
+  discovery: readonly DiscoveryPattern[],
+): void {
+  for (const pattern of discovery) {
+    const match = pattern.match;
+    if (match.type !== "registrationTemplate") {
+      continue;
+    }
+    const reading = readings.find(
+      ({ helper }) =>
+        helper.name === match.helperName && helper.file === match.importModule,
+    );
+    if (reading === undefined) {
+      continue;
+    }
+    const paths = new Set(match.registrations.map((one) => one.pathTemplate));
+    const methods = expanded.get(reading.declarationId) ?? new Set<string>();
+    for (const sink of reading.helper.sinks) {
+      const path = sink.arguments[0];
+      if (sink.method !== null && path?.as === "text" && paths.has(path.text)) {
+        methods.add(sink.method);
+      }
+    }
+    expanded.set(reading.declarationId, methods);
+  }
 }
 
 /** Whether this file writes any of these words, cheaply. */

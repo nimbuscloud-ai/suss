@@ -1152,6 +1152,7 @@ function extractFromSourceFile(
         : [...pack.discovery, ...contributed],
       resolution,
       mountPrefixes,
+      projectHelpers,
     );
 
     // The wrapper index settles which registrations are error handlers

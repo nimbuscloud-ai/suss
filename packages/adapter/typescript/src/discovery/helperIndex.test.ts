@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { routeHelperIndex } from "@suss/extractor";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
@@ -103,6 +104,100 @@ function helpersRead(files: Record<string, string>): ProjectHelper[] {
   );
   return seen;
 }
+
+/**
+ * One registration is one summary. Reading it out of the helper's body
+ * as well would leave which of the two a run kept down to the order the
+ * files happened to be walked in.
+ */
+describe("standing down where the call sites expand", () => {
+  const HEALTH = `
+    interface Sink { get(path: string, handler: unknown): void }
+    export function registerHealth(sink: Sink) {
+      sink.get("/health", () => {});
+    }
+  `;
+  const CALLS_BOTH = `
+    import express from "express";
+    import { registerCrud } from "./crud";
+    import { registerHealth } from "./health";
+    const app = express();
+    registerHealth(app);
+    registerCrud(app, "users", { list() {} });
+  `;
+
+  function indexOver() {
+    const { sourceFiles } = projectWith({
+      "/app.ts": CALLS_BOTH,
+      "/crud.ts": CRUD,
+      "/health.ts": HEALTH,
+    });
+    const pack = packAsking((helpers) =>
+      routeHelperIndex({
+        importModule: "express",
+        importNames: ["express"],
+        methods: [".get", ".post"],
+      }).declare(helpers),
+    );
+    const applicable = new Map(
+      sourceFiles
+        .filter((file) => file.getFullText().includes('from "express"'))
+        .map((file) => [file, [pack]] as const),
+    );
+    return {
+      index: buildProjectHelperIndex(
+        sourceFiles,
+        [pack],
+        applicable,
+        new ResolutionStore(),
+      ),
+      sourceFiles,
+    };
+  }
+
+  function helperNamed(files: SourceFile[], name: string) {
+    for (const file of files) {
+      const found = file.getFunction(name);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    throw new Error(`no function called ${name}`);
+  }
+
+  it("takes over the registration whose path the call site fills in", () => {
+    const { index, sourceFiles } = indexOver();
+
+    expect(
+      index.expandedAtCallSites(
+        helperNamed(sourceFiles, "registerCrud"),
+        "get",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves a route the helper writes out in full to the body", () => {
+    const { index, sourceFiles } = indexOver();
+
+    expect(
+      index.expandedAtCallSites(
+        helperNamed(sourceFiles, "registerHealth"),
+        "get",
+      ),
+    ).toBe(false);
+  });
+
+  it("leaves a method it made no template for to the body", () => {
+    const { index, sourceFiles } = indexOver();
+
+    expect(
+      index.expandedAtCallSites(
+        helperNamed(sourceFiles, "registerCrud"),
+        "post",
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("finding a helper from the call site", () => {
   it("reads a helper whose own file never mentions the library", () => {
