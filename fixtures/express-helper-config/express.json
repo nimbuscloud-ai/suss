@@ -1,0 +1,11 @@
+{
+  "registrationHelpers": [
+    {
+      "helperName": "registerCrud",
+      "importModule": "./crud",
+      "registrations": [
+        { "method": "GET", "pathTemplate": "/{1}", "handlerArg": "{2}.list" }
+      ]
+    }
+  ]
+}

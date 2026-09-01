@@ -340,18 +340,22 @@ function assertOptionsArePackable(
  * The pack's schema with the stub-only keys taken out. A stub writes
  * those keys into the same options the factory gets, so the factory
  * still declares them and only a project's own file is refused (#673).
+ *
+ * `configDirectory` goes the same way for the same reason: this file
+ * puts it there, and a pack that reads a path relative to its config
+ * declares it so the factory can see it.
  */
 function whatAConfigFileMaySay(
   name: string,
   declared: z.ZodObject<z.ZodRawShape>,
 ): z.ZodObject<z.ZodRawShape> {
-  const stubOnly = stubOnlyOptionsOf(name).filter(
+  const supplied = [...stubOnlyOptionsOf(name), "configDirectory"].filter(
     (key) => key in declared.shape,
   );
-  if (stubOnly.length === 0) {
+  if (supplied.length === 0) {
     return declared;
   }
-  return declared.omit(Object.fromEntries(stubOnly.map((key) => [key, true])));
+  return declared.omit(Object.fromEntries(supplied.map((key) => [key, true])));
 }
 
 function whatThePackTakes(

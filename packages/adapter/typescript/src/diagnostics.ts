@@ -113,6 +113,14 @@ export interface PackFunnel {
    */
   failures: PackFailure[];
   /**
+   * Registration helpers this pack's config asked for that no call in
+   * the run matched. The helper belongs to the project, so a spelling
+   * that matches nothing is a config mistake with no other symptom: the
+   * routes go missing and every count reads the same as a project
+   * without them.
+   */
+  helpersUnmatched: string[];
+  /**
    * What the pack wrote as data rather than as code, or null for a pack
    * written as a hand-rolled walk. This is the one thing in the funnel
    * that no run produces: it is the pack's own shape, and it is here so
@@ -186,6 +194,8 @@ export interface PackTally {
   selfCollisions: number;
   summariesProduced: number;
   failures: PackFailure[];
+  /** Registration helpers from this pack's config that produced a unit. */
+  helpersMatched: Set<string>;
 }
 
 const emptyTally = (): PackTally => ({
@@ -197,6 +207,7 @@ const emptyTally = (): PackTally => ({
   selfCollisions: 0,
   summariesProduced: 0,
   failures: [],
+  helpersMatched: new Set(),
 });
 
 /**
@@ -394,6 +405,42 @@ function summaryCountsByPack(
   return counts;
 }
 
+/**
+ * The registration helpers a pack was configured with that no call in
+ * the run matched, each written the way the config file writes it so
+ * somebody can find the line to fix.
+ */
+function helpersWithNoCall(
+  pack: PatternPack,
+  matched: ReadonlySet<string>,
+  projectRoot: string | undefined,
+): string[] {
+  const missing: string[] = [];
+  for (const pattern of pack.discovery) {
+    if (
+      pattern.match.type !== "registrationTemplate" ||
+      matched.has(pattern.match.helperName)
+    ) {
+      continue;
+    }
+    const from = pattern.match.importModule;
+    missing.push(
+      from === undefined
+        ? pattern.match.helperName
+        : `${pattern.match.helperName} from ${shortModule(from, projectRoot)}`,
+    );
+  }
+  return missing;
+}
+
+/** A path the pack already resolved, back to where somebody reads it. */
+function shortModule(module: string, projectRoot: string | undefined): string {
+  if (projectRoot === undefined || !path.isAbsolute(module)) {
+    return module;
+  }
+  return path.relative(projectRoot, module);
+}
+
 export function buildExtractionReport(args: {
   packs: ReadonlyArray<PatternPack>;
   tallies: Map<string, PackTally>;
@@ -434,6 +481,11 @@ export function buildExtractionReport(args: {
       selfCollisions: tally.selfCollisions,
       summariesProduced: tally.summariesProduced,
       failures: tally.failures,
+      helpersUnmatched: helpersWithNoCall(
+        pack,
+        tally.helpersMatched,
+        args.projectRoot,
+      ),
       summariesBound: counted.bound,
       providerSummaries: counted.providers,
       summariesWithBehavior: counted.withBehavior,

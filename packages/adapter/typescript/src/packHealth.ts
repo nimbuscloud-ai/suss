@@ -173,6 +173,24 @@ function recognizersWithNoUnits(
     }));
 }
 
+/**
+ * A registration helper the config asked for that no call matched.
+ *
+ * The routes that helper registers are missing, and nothing else in
+ * the run says so: the pack's own counts come out the same as they
+ * would for a project with no helpers at all.
+ */
+function helpersThatMatchedNothing(
+  packs: ReadonlyArray<PackFunnel>,
+): HealthViolation[] {
+  return packs.flatMap((funnel) =>
+    funnel.helpersUnmatched.map((helper) => ({
+      label: funnel.pack,
+      detail: `${helper} matched no call in this run, so whatever it registers is missing. Check the name against the code, and check importModule against where the helper is written.`,
+    })),
+  );
+}
+
 function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
   return packs
     .filter((funnel) => funnel.version === null)
@@ -369,6 +387,12 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
       code: "no-units",
       audience: "run",
       violations: recognizersWithNoUnits(report.packs),
+    },
+    {
+      name: "every registration helper the config asks for matched a call",
+      code: "no-helper",
+      audience: "run",
+      violations: helpersThatMatchedNothing(report.packs),
     },
     {
       name: "every pack declares a version",

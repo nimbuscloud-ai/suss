@@ -7,6 +7,8 @@
  * across packs, and this module collects those so they are written once.
  */
 
+import path from "node:path";
+
 import { z } from "zod";
 
 import type { DiscoveryPattern } from "./framework.js";
@@ -184,19 +186,41 @@ export type RegistrationHelper = z.infer<typeof registrationHelperOption>;
  */
 export function registrationHelperDiscovery(
   helpers: readonly RegistrationHelper[],
+  configDirectory?: string,
   kind = "handler",
 ): DiscoveryPattern[] {
-  return helpers.map((helper) => ({
-    kind,
-    match: {
-      type: "registrationTemplate",
-      helperName: helper.helperName,
-      ...(helper.importModule !== undefined
-        ? { importModule: helper.importModule }
-        : {}),
-      registrations: helper.registrations.map((one) => ({ ...one })),
-    },
-  }));
+  return helpers.map((helper) => {
+    const importModule = helperModule(helper.importModule, configDirectory);
+    return {
+      kind,
+      match: {
+        type: "registrationTemplate",
+        helperName: helper.helperName,
+        ...(importModule !== undefined ? { importModule } : {}),
+        registrations: helper.registrations.map((one) => ({ ...one })),
+      },
+    };
+  });
+}
+
+/**
+ * An `importModule` written relative is written relative to the config
+ * file it came from, the same as every other path a pack takes. Read
+ * against the working directory instead it matches nothing, and a
+ * helper that matches nothing looks like a project without one.
+ */
+function helperModule(
+  importModule: string | undefined,
+  configDirectory: string | undefined,
+): string | undefined {
+  if (
+    importModule === undefined ||
+    configDirectory === undefined ||
+    !importModule.startsWith(".")
+  ) {
+    return importModule;
+  }
+  return path.resolve(configDirectory, importModule);
 }
 
 /**

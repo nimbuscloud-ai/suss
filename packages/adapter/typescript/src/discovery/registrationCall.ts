@@ -111,16 +111,30 @@ export function discoverRegistrationCalls(
     }
 
     // The subject of the call must resolve to our registration variable
-    const subjectNode = subjectNodeFor(
+    const receiver = receiverOf(
       callee.getExpression(),
       registrationSubjects,
       match,
       resolution,
     );
 
-    if (subjectNode === undefined) {
+    if (receiver.kind === "several") {
+      results.push(
+        ...declinedRegistration(
+          node,
+          callee,
+          methodName,
+          kind,
+          receiver,
+          resolution,
+        ),
+      );
       return;
     }
+    if (receiver.kind === "none") {
+      return;
+    }
+    const subjectNode = receiver.node;
 
     // Step 4: Extract handlers from the call
     const args = node.getArguments();
@@ -232,6 +246,44 @@ export function discoverRegistrationCalls(
 }
 
 /**
+ * The registration whose receiver the store declined, said out loud.
+ *
+ * No route is claimed, since naming the app the walk happened to see
+ * first would put a route somewhere it may not be. The handler is
+ * still summarized, so a reader has the code the run left out and a
+ * gap on it saying why. The README beside this file has the rest.
+ */
+function declinedRegistration(
+  call: CallExpression,
+  callee: Node,
+  methodName: string,
+  kind: string,
+  receiver: Extract<ResolvedReceiver, { kind: "several" }>,
+  resolution: ResolutionStore | undefined,
+): DiscoveredUnit[] {
+  const args = call.getArguments();
+  const lastArg = args[args.length - 1] as Node | undefined;
+  const handler =
+    lastArg === undefined ? null : functionValueOf(lastArg, resolution);
+  if (handler === null) {
+    return [];
+  }
+  return [
+    {
+      func: handler,
+      kind,
+      name: methodName,
+      nameKind: "label",
+      unfollowed: {
+        callee: callee.getText(),
+        reason: "multipleReceivers",
+        candidates: receiver.candidates,
+      },
+    },
+  ];
+}
+
+/**
  * `routeInfo` composed with whatever prefix `subjectNode`'s router was
  * mounted under, or `routeInfo` unchanged when there is nothing to
  * compose: no index was built for this run, the router was never
@@ -294,10 +346,33 @@ export function subjectNodeFor(
   match: { importModule: string; importName: string },
   resolution: ResolutionStore | undefined,
 ): Node | undefined {
+  const receiver = receiverOf(subject, subjects, match, resolution);
+  return receiver.kind === "routable" ? receiver.node : undefined;
+}
+
+/**
+ * What a registration call's receiver came to. `several` is the one
+ * the store declined on rather than never found, and it is kept apart
+ * so the caller can say a registration was dropped instead of passing
+ * over a method call that was never a registration at all.
+ */
+export type ResolvedReceiver =
+  | { kind: "routable"; node: Node }
+  | { kind: "none" }
+  | { kind: "several"; candidates: number };
+
+const NOT_A_ROUTABLE: ResolvedReceiver = { kind: "none" };
+
+export function receiverOf(
+  subject: Node,
+  subjects: ReadonlyMap<string, Node>,
+  match: { importModule: string; importName: string },
+  resolution: ResolutionStore | undefined,
+): ResolvedReceiver {
   if (Node.isIdentifier(subject)) {
     const known = subjects.get(subject.getText());
     if (known !== undefined) {
-      return known;
+      return { kind: "routable", node: known };
     }
   }
 
@@ -305,15 +380,22 @@ export function subjectNodeFor(
     resolution === undefined ||
     !(Node.isIdentifier(subject) || Node.isPropertyAccessExpression(subject))
   ) {
-    return undefined;
+    return NOT_A_ROUTABLE;
   }
-  return (
-    resolution.subjectConstructionOf(
-      subject,
-      match.importModule,
-      match.importName,
-    ) ?? undefined
+  const construction = resolution.subjectConstructionOf(
+    subject,
+    match.importModule,
+    match.importName,
   );
+  if (construction !== null) {
+    return { kind: "routable", node: construction };
+  }
+  const candidates = resolution.subjectCandidateCountOf(
+    subject,
+    match.importModule,
+    match.importName,
+  );
+  return candidates > 1 ? { kind: "several", candidates } : NOT_A_ROUTABLE;
 }
 
 /**

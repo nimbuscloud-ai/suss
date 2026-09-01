@@ -73,4 +73,56 @@ describe("read the routes a project's own helpers register", () => {
       ),
     ).toEqual([200]);
   });
+
+  it("says nothing extra when the one caller settles the app", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    expect(summaries.flatMap((one) => one.gaps)).toEqual([]);
+  });
+});
+
+/**
+ * Two apps flow into one helper, so the app its route belongs to is not
+ * decided. Picking one would put a route on the wrong app, so the run
+ * declines, and says which call it stopped at.
+ */
+describe("say which registration a second app took away", () => {
+  const out = workspace("express-two-apps");
+  const summariesFile = path.join(out, "api.json");
+
+  it("says which call it stopped at and how many apps it found", () => {
+    const extract = runSuss([
+      "extract",
+      "--dir",
+      fixture("express-two-apps"),
+      "-f",
+      "express",
+      "-o",
+      summariesFile,
+    ]);
+    expect(extract.status, extract.stderr).toBe(0);
+
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const stops = summaries
+      .flatMap((one) => one.gaps)
+      .filter((gap) => gap.type === "unfollowedCall");
+    expect(stops).toHaveLength(1);
+    expect(stops[0].callee).toBe("target.get");
+    expect(stops[0].description).toContain("2 different values");
+  });
+
+  it("claims no route it could not attribute", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const routes = summaries.flatMap((one) => {
+      const semantics = one.identity.boundaryBinding?.semantics;
+      return semantics?.name === "rest" ? [semantics.path] : [];
+    });
+    expect(routes).toEqual(["/direct"]);
+  });
+
+  it("reads the handler behind the registration it declined", () => {
+    const inspect = runSuss(["inspect", summariesFile]);
+    expect(inspect.status, inspect.stderr).toBe(0);
+    expect(inspect.stdout).toContain("Could not follow:");
+    expect(inspect.stdout).toContain("200 { ok }");
+  });
 });
