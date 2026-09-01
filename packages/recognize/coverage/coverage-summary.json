@@ -19,10 +19,10 @@
       "pct": 98.3
     },
     "branches": {
-      "total": 309,
-      "covered": 300,
+      "total": 311,
+      "covered": 301,
       "skipped": 0,
-      "pct": 97.08
+      "pct": 96.78
     },
     "branchesTrue": {
       "total": 0,
@@ -233,10 +233,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 54,
-      "covered": 53,
+      "total": 56,
+      "covered": 54,
       "skipped": 0,
-      "pct": 98.14
+      "pct": 96.42
     }
   },
   "src/sqlStatements.ts": {
