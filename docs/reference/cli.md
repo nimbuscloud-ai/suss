@@ -233,7 +233,18 @@ Two more options work the same way, because each also describes code the
 project wrote. `registrationHelpers` on express, fastify and hono says
 what a helper of yours registers, and `subjectFactories` on aws-lambda
 says where your handler factory puts the subject its SQS consumer
-expects:
+expects.
+
+Reach for `registrationHelpers` only when a helper is called from
+several places with different arguments. A helper called from one place
+needs no configuration: `registerRoutes(app)` is read by following the
+app to the parameter it was passed to, whether the helper writes the
+route itself or takes the path and the handler from its caller. Called
+twice with two different names, the path and the handler each have two
+values, suss settles on neither, and the routes go unread until the
+option spells them out.
+
+The lambda option:
 
 ```json
 { "subjectFactories": [{ "property": "subject" }] }

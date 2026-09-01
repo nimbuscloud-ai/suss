@@ -20,7 +20,11 @@
 
 import { type ForOfStatement, Node, type SourceFile } from "ts-morph";
 
-import { registrationSubjectsOf } from "./registrationCall.js";
+import {
+  registrationSubjectsOf,
+  storeCanFindSubjects,
+  subjectNodeFor,
+} from "./registrationCall.js";
 import {
   arrayLiteralOf,
   functionValueOf,
@@ -38,6 +42,18 @@ type LoopMatch = Extract<
   { type: "registrationLoop" }
 >;
 
+type Receiver = NonNullable<LoopMatch["receiver"]>;
+
+/**
+ * What a loop has to register on, and the routables this file's own
+ * syntax names. Null when the pattern declares no receiver and any
+ * subject is accepted.
+ */
+interface ReceiverGuard {
+  receiver: Receiver;
+  routables: ReadonlyMap<string, Node>;
+}
+
 export function discoverRegistrationLoops(
   sourceFile: SourceFile,
   match: LoopMatch,
@@ -46,10 +62,14 @@ export function discoverRegistrationLoops(
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
-  const routables = routableNames(sourceFile, match);
-  if (routables !== null && routables.size === 0) {
-    // The pack asked for a receiver and this file constructs none, so
-    // no loop in it registers routes on one.
+  const guard = receiverGuard(sourceFile, match.receiver, resolution);
+  if (
+    guard !== null &&
+    guard.routables.size === 0 &&
+    !storeCanFindSubjects(sourceFile, guard.receiver, resolution)
+  ) {
+    // The pack asked for a receiver, this file constructs none, and it
+    // never mentions the library, so no loop in it registers routes.
     return results;
   }
 
@@ -57,7 +77,7 @@ export function discoverRegistrationLoops(
     if (!Node.isForOfStatement(node)) {
       return;
     }
-    const expanded = tryExpandLoop(node, match, kind, resolution, routables);
+    const expanded = tryExpandLoop(node, match, kind, resolution, guard);
     if (expanded !== null) {
       results.push(...expanded);
     }
@@ -67,28 +87,29 @@ export function discoverRegistrationLoops(
 }
 
 /**
- * The variables in this file the pack's receiver declaration picks
- * out, or null when the pattern declares no receiver and any subject
- * is accepted.
+ * The receiver declaration together with the variables it picks out in
+ * this file, merged over every name the library builds a routable under.
  */
-function routableNames(
+function receiverGuard(
   sourceFile: SourceFile,
-  match: LoopMatch,
-): Set<string> | null {
-  if (match.receiver === undefined) {
+  receiver: Receiver | undefined,
+  resolution: ResolutionStore | undefined,
+): ReceiverGuard | null {
+  if (receiver === undefined) {
     return null;
   }
-  const names = new Set<string>();
-  for (const importName of match.receiver.importNames) {
-    for (const name of registrationSubjectsOf(
+  const routables = new Map<string, Node>();
+  for (const importName of receiver.importNames) {
+    for (const [name, node] of registrationSubjectsOf(
       sourceFile,
-      match.receiver.importModule,
+      receiver.importModule,
       importName,
-    ).keys()) {
-      names.add(name);
+      resolution,
+    )) {
+      routables.set(name, node);
     }
   }
-  return names;
+  return { receiver, routables };
 }
 
 function tryExpandLoop(
@@ -96,7 +117,7 @@ function tryExpandLoop(
   match: LoopMatch,
   kind: string,
   resolution: ResolutionStore | undefined,
-  routables: Set<string> | null,
+  guard: ReceiverGuard | null,
 ): DiscoveredUnit[] | null {
   const loopVar = loopVariableName(loop);
   if (loopVar === null) {
@@ -105,7 +126,7 @@ function tryExpandLoop(
   if (!bodyReferencesLoopVar(loop, loopVar)) {
     return null;
   }
-  if (routables !== null && !bodyCallsOn(loop, routables)) {
+  if (guard !== null && !bodyCallsOnRoutable(loop, guard, resolution)) {
     // A loop over objects with the right keys that never touches the
     // routable registers nothing, and expanding it would report routes
     // the server does not serve.
@@ -174,29 +195,39 @@ function bodyReferencesLoopVar(loop: ForOfStatement, name: string): boolean {
 }
 
 /**
- * Whether the body calls a method on one of the named variables,
- * through a property (`app.get(...)`) or an element access
- * (`app[r.method](...)`).
+ * Whether the body calls a method on a routable, through a property
+ * (`app.get(...)`) or an element access (`app[r.method](...)`). A
+ * receiver this file's own syntax does not name goes to the store, the
+ * same question route discovery asks, so a loop inside a helper the app
+ * was passed to is read and a loop over anything else is not.
  */
-function bodyCallsOn(loop: ForOfStatement, routables: Set<string>): boolean {
+function bodyCallsOnRoutable(
+  loop: ForOfStatement,
+  guard: ReceiverGuard,
+  resolution: ResolutionStore | undefined,
+): boolean {
   let found = false;
   loop.getStatement().forEachDescendant((node) => {
     if (found || !Node.isCallExpression(node)) {
       return;
     }
     const callee = node.getExpression();
-    const subject =
-      Node.isPropertyAccessExpression(callee) ||
-      Node.isElementAccessExpression(callee)
-        ? callee.getExpression()
-        : null;
     if (
-      subject !== null &&
-      Node.isIdentifier(subject) &&
-      routables.has(subject.getText())
+      !Node.isPropertyAccessExpression(callee) &&
+      !Node.isElementAccessExpression(callee)
     ) {
-      found = true;
+      return;
     }
+    const subject = callee.getExpression();
+    found = guard.receiver.importNames.some(
+      (importName) =>
+        subjectNodeFor(
+          subject,
+          guard.routables,
+          { importModule: guard.receiver.importModule, importName },
+          resolution,
+        ) !== undefined,
+    );
   });
   return found;
 }
