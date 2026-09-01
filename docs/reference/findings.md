@@ -453,6 +453,22 @@ A rule or subscription deploys switched off (`State: DISABLED`), so its target r
 
 ---
 
+## Unit-invocation findings
+
+### `unitInvocationTargetUnknown` *(shipped)*
+
+**Severity:** warning • **Emitted by:** `checkUnitInvocation`
+
+Code invokes a deployed unit by name, and no deployment source in the run declares a unit by that name. The name is read off the call: a literal, the resource segment of an ARN, or whatever the invoking unit's environment points the variable at.
+
+**Legitimate when:** the callee is deployed by another stack, which one run cannot see, or the infrastructure has not landed yet.
+
+**Bug when:** the name is stale. The call fails at runtime with `ResourceNotFoundException` and nothing at deploy time says so.
+
+**Fix:** add the contract source that declares the callee, or suppress.
+
+---
+
 ## Runtime-config findings
 
 **Legitimate when:** it is switched off on purpose, which is why this is info and why the pass does not report the channel as unused.

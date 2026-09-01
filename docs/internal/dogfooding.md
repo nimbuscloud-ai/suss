@@ -201,8 +201,9 @@ value a package returned.** They are `checkAll(...).findings`,
 `groundStorageAccesses(...).accesses`,
 `SuppressionFileSchema.safeParse(...)`, `IntentDocSchema.parse(...)`,
 `evaluate(...).facts`, two of `storageCalls(...).methods(...)`, two
-of `sqlStatements(...).methods(...)`, and two of
-`messageSends(...).methods(...)`. The DynamoDB pack builds its chain
+of `sqlStatements(...).methods(...)`, two of
+`messageSends(...).methods(...)`, and one of
+`unitInvokes(...).methods(...)`. The DynamoDB pack builds its chain
 inside a function because the chain depends on what a project
 configured, the Mongoose pack builds its own inside one because the
 scope a project asks for goes into the chain itself, and the Prisma and

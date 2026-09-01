@@ -17,26 +17,19 @@ import { declaredExports } from "./declaredSurface.mjs";
 
 /**
  * How many consumers may go unpaired while their provider is in the
- * same run. Fourteen today, and every one of them asks for a method or
- * a property on a value a package returned, which nothing publishes a
- * provider for. The dogfooding notes list them under `## Where the
+ * same run. Every one of them asks for a method or a property on a
+ * value a package returned, which nothing publishes a provider for, so
+ * the number tracks how many places call a builder in that style and
+ * moves when a pack is written rather than when resolution changes.
+ * The dogfooding notes list every one of them under `## Where the
  * unmatched summaries come from`.
  *
- * The number tracks how many places call a builder in that style, so it
- * moves when a pack is written rather than only when resolution changes.
- * It went to fourteen when a second declaration in one test called
- * `messageSends(...).methods(...)`, which is the same shape as the
- * `storageCalls` and `sqlStatements` call sites already counted here.
- * It went to fifteen when the eventbridge pack migrated onto
- * `messageSends(...)`: its factory now calls the builder the same way
- * the dynamodb, mongoose, drizzle and prisma factories already do.
- * Sixteen is the sqs factory making the same move.
- * Lowering it is a fix landing; raising it needs saying which call
- * sites arrived and why they are the same shape as the rest.
- * Nineteen is attribution reading members destructured off factory
- * results, three sites of the same member-of-a-returned-value shape.
+ * Lowering it is a fix landing. Raising it needs saying which call
+ * sites arrived and why they are the same shape as the rest, in the
+ * notes: the twentieth is `unitInvokes(...).methods(...)` in the
+ * aws-lambda pack, beside the sqs and eventbridge factories.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 19;
+const KNOWN_UNPAIRED_CONSUMERS = 20;
 
 /**
  * Every function a package says it exports has a provider summary.
