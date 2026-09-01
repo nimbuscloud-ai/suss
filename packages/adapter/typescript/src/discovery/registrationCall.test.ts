@@ -938,3 +938,164 @@ describe("registrationSubjectsOf: an app registered on in another file", () => {
     expect(edges[0]?.parentRouterId).toBe(nodeId(created));
   });
 });
+
+describe("discoverRegistrationCalls: a helper the app was passed to", () => {
+  it("reads a route registered on a parameter typed with the library", () => {
+    // Express names its type Express and its constructor express, so a
+    // helper's only mention of the library is a name the pack never
+    // asks about. Nothing here was read at all until #769.
+    const { file, resolution } = splitProject({
+      "index.ts": `
+        import express from "express";
+        import { registerHealth } from "./routes";
+        const app = express();
+        registerHealth(app);
+      `,
+      "routes.ts": `
+        import type { Express } from "express";
+        export function registerHealth(app: Express): void {
+          app.get("/health", (_req, res) => { res.json({ ok: true }); });
+        }
+      `,
+    });
+
+    const units = discoverRegistrationCalls(
+      file("routes.ts"),
+      expressAppMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
+    expect(units.map((one) => one.routeInfo)).toEqual([
+      { method: "GET", path: "/health" },
+    ]);
+  });
+
+  it("keys that route on the app's own creation site", () => {
+    const { file, resolution } = splitProject({
+      "index.ts": `
+        import express from "express";
+        import { registerHealth } from "./routes";
+        const app = express();
+        registerHealth(app);
+      `,
+      "routes.ts": `
+        import type { Express } from "express";
+        export function registerHealth(app: Express): void {
+          app.get("/health", (_req, res) => { res.json({ ok: true }); });
+        }
+      `,
+    });
+
+    const created = file("index.ts")
+      .getVariableDeclarationOrThrow("app")
+      .getInitializerOrThrow();
+    const units = discoverRegistrationCalls(
+      file("routes.ts"),
+      expressAppMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
+    expect(units[0]?.registrationSubjectId).toBe(nodeId(created));
+  });
+
+  it("follows the app through two helpers in turn", () => {
+    const { file, resolution } = splitProject({
+      "index.ts": `
+        import express from "express";
+        import { registerAll } from "./all";
+        const app = express();
+        registerAll(app);
+      `,
+      "all.ts": `
+        import type { Express } from "express";
+        import { registerHealth } from "./routes";
+        export function registerAll(app: Express): void {
+          registerHealth(app);
+        }
+      `,
+      "routes.ts": `
+        import type { Express } from "express";
+        export function registerHealth(app: Express): void {
+          app.get("/health", (_req, res) => { res.json({ ok: true }); });
+        }
+      `,
+    });
+
+    const units = discoverRegistrationCalls(
+      file("routes.ts"),
+      expressAppMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
+    expect(units.map((one) => one.routeInfo)).toEqual([
+      { method: "GET", path: "/health" },
+    ]);
+  });
+
+  it("reads nothing off a plain object with a get method", () => {
+    // The file imports express for its request type, and the object it
+    // was handed is spelled the way a routable is. Reporting a route
+    // here would be a route the server never serves.
+    const { file, resolution } = splitProject({
+      "index.ts": `
+        import { registerCache } from "./cache";
+        const cache = { get(key: string, onHit: () => void) {} };
+        registerCache(cache);
+      `,
+      "cache.ts": `
+        import type { Request, Response } from "express";
+        interface Cache {
+          get(key: string, onHit: (req: Request, res: Response) => void): void;
+        }
+        export function registerCache(cache: Cache): void {
+          cache.get("/health", (_req, res) => { res.json({ ok: true }); });
+        }
+      `,
+    });
+
+    const units = discoverRegistrationCalls(
+      file("cache.ts"),
+      expressAppMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("reads nothing when two callers pass two different apps", () => {
+    const { file, resolution } = splitProject({
+      "index.ts": `
+        import express from "express";
+        import { registerHealth } from "./routes";
+        const publicApp = express();
+        const adminApp = express();
+        registerHealth(publicApp);
+        registerHealth(adminApp);
+      `,
+      "routes.ts": `
+        import type { Express } from "express";
+        export function registerHealth(app: Express): void {
+          app.get("/health", (_req, res) => { res.json({ ok: true }); });
+        }
+      `,
+    });
+
+    const units = discoverRegistrationCalls(
+      file("routes.ts"),
+      expressAppMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
+    expect(units).toEqual([]);
+  });
+});

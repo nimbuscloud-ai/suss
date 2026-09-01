@@ -16,6 +16,21 @@ function makeFile(source: string): SourceFile {
   return makeProject().createSourceFile("user.ts", source);
 }
 
+/** A project of several files, with the store warmed over all of them. */
+function splitProject(files: Record<string, string>) {
+  const project = makeProject();
+  const written = new Map<string, SourceFile>();
+  for (const [name, code] of Object.entries(files)) {
+    written.set(name, project.createSourceFile(name, code));
+  }
+  const resolution = new ResolutionStore();
+  resolution.extractFiles(written.values());
+  return {
+    file: (name: string) => written.get(name) as SourceFile,
+    resolution,
+  };
+}
+
 const PATTERN: DiscoveryPattern = {
   kind: "handler",
   match: {
@@ -241,6 +256,51 @@ describe("registrationLoop with a declared receiver", () => {
     `);
     const units = discoverUnits(file, [GUARDED], new ResolutionStore());
     expect(units.map((u) => u.routeInfo?.path)).toEqual(["/orders"]);
+  });
+
+  it("expands a loop inside a helper the app was passed to", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import express from "express";
+        import { registerAll } from "./routes";
+        const app = express();
+        registerAll(app);
+      `,
+      "routes.ts": `
+        import type { Express } from "express";
+        function onOrders() {}
+        export function registerAll(app: Express): void {
+          for (const r of [{ method: "get", path: "/orders", handler: onOrders }]) {
+            app[r.method](r.path, r.handler);
+          }
+        }
+      `,
+    });
+    const units = discoverUnits(file("routes.ts"), [GUARDED], resolution);
+    expect(units.map((u) => u.routeInfo?.path)).toEqual(["/orders"]);
+  });
+
+  it("leaves a loop alone when the helper was passed something else", () => {
+    const { file, resolution } = splitProject({
+      "app.ts": `
+        import { registerAll } from "./routes";
+        const registry = { get(path: string, handler: unknown) {} };
+        registerAll(registry);
+      `,
+      "routes.ts": `
+        import type { Request } from "express";
+        function onOrders(req: Request) {}
+        export function registerAll(registry: {
+          get(path: string, handler: unknown): void;
+        }): void {
+          for (const r of [{ method: "get", path: "/orders", handler: onOrders }]) {
+            registry[r.method](r.path, r.handler);
+          }
+        }
+      `,
+    });
+    const units = discoverUnits(file("routes.ts"), [GUARDED], resolution);
+    expect(units).toEqual([]);
   });
 });
 

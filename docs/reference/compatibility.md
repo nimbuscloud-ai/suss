@@ -103,6 +103,36 @@ return json(code, payload);           // both, since `code` is unknown here.
 One thing it will not do yet: follow a helper reached through an
 object, like `responses.json(...)`. It does read a helper called by name.
 
+## Your own route helpers
+
+A service that outgrows one file hands its app to functions of its own,
+and those functions write the routes:
+
+```ts
+// src/routes.ts
+export function registerHealth(app: Express): void {
+  app.get("/health", (_req, res) => res.json({ ok: true }));
+}
+
+// src/index.ts
+const app = express();
+registerHealth(app);
+```
+
+suss reads `GET /health` here. The receiver is a parameter, the
+parameter comes from whatever each caller passed, and the walk ends at
+the `express()` that built the app. It follows the app through as many
+helpers as it is handed through, and the path and the handler resolve
+the same way, so `registerCrud(app, "users", handlers)` gives
+`GET /users` when the helper writes `app.get(\`/${name}\`, handlers.list)`.
+
+Two limits. A helper called from more than one place with different
+arguments leaves each of those with two values, suss settles on neither,
+and nothing is reported: spell those out with `registrationHelpers`. And
+a helper that never mentions the library, an untyped JavaScript
+parameter with no import beside it, is not read at all, because the file
+is not one the pack applies to.
+
 ## Several services in one folder
 
 suss identifies an HTTP boundary by its method and path, and nothing

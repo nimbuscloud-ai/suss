@@ -16,6 +16,7 @@ import { joinMountedPath } from "@suss/resolution";
 
 import { nodeId } from "../facts/extract.js";
 import { pathFromArgument } from "../resolve/routePath.js";
+import { importDeclarationsOf } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 import {
   functionValueOf,
@@ -319,20 +320,19 @@ export function subjectNodeFor(
  * Whether a file with no syntactic subject is still worth walking: it
  * imports the library, and there is a store to put receivers to. The
  * import gate is what keeps the store question from being asked about
- * every method call in every file.
+ * every method call in every file. It asks for the module rather than
+ * for the constructor, because a function the app was passed to never
+ * calls `express()`. The README's "a receiver is what the store says
+ * it is" explains why widening this stays safe.
  */
 export function storeCanFindSubjects(
   sourceFile: SourceFile,
-  match: { importModule: string; importName: string },
+  match: { importModule: string },
   resolution: ResolutionStore | undefined,
 ): boolean {
   return (
     resolution !== undefined &&
-    resolveImportedLocalName(
-      sourceFile,
-      match.importModule,
-      match.importName,
-    ) !== null
+    importDeclarationsOf(sourceFile, [match.importModule]).length > 0
   );
 }
 
