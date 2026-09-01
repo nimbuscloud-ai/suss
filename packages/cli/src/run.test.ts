@@ -441,7 +441,7 @@ describe("runCli extract", () => {
     expect(io.stderr).toContain("The aws-dynamodb pack takes: requiresImport.");
   });
 
-  it("stops on a pack option that is gone, and says what happens now", async () => {
+  it("warns on a pack option that is gone, and keeps going", async () => {
     const config = path.join(tmpDir, "suss.hono.json");
     fs.writeFileSync(
       config,
@@ -458,11 +458,12 @@ describe("runCli extract", () => {
         `hono=${config}`,
       ]),
     );
-    expect(exit).toBe(1);
-    expect(io.stderr).toContain("registrationHelpers is gone");
-    expect(io.stderr).toContain(
-      "The hono pack does not take any option from a config file.",
-    );
+    // The warning this option got in 0.20.0 told people to write a
+    // dependency stub, which cannot spell a helper the project wrote,
+    // so it is read past until 0.22.0 rather than refused.
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("ignores registrationHelpers");
+    expect(io.stderr).toContain("0.22.0");
   });
 
   it("stops on an option a dependency stub states, and says where it goes", async () => {

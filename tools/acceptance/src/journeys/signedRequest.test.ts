@@ -65,7 +65,7 @@ describe("read a project's own signed DynamoDB request", () => {
     expect(operations).toEqual(["PutItem", "Query"]);
   });
 
-  it("says the option is gone when a config file still sets it", () => {
+  it("warns and keeps going when a config file still sets the option", () => {
     const config = path.join(out, "dynamo.json");
     fs.writeFileSync(
       config,
@@ -89,9 +89,12 @@ describe("read a project's own signed DynamoDB request", () => {
       "-o",
       summariesFile,
     ]);
-    expect(run.status).toBe(1);
-    expect(run.stderr).toContain("requestFunctions is gone");
-    expect(run.stderr).toContain("reads the helper itself");
+    // 0.20.0 told everyone setting this to write a dependency stub,
+    // which was the wrong instruction for a first-party helper, so the
+    // key is read past with a warning until 0.22.0 rather than refused.
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stderr).toContain("ignores requestFunctions");
+    expect(run.stderr).toContain("0.22.0");
     expect(run.stderr).not.toContain("suss infer stub");
   });
 });

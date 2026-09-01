@@ -67,7 +67,7 @@ The option said the property named `subject` was the channel, and the consumer b
 
 The queue is the boundary and the template is where it is declared. A consumer's binding says the bus and leaves `channel: null`, and the declared consumer for the same deployable unit fills the channel in. That is how the checker finds the code behind a declared consumer, and `withDeclaredDelivery` in `@suss/behavioral-ir` is the same join for anything reading summaries by boundary key. `suss infer intent` uses it, so drafting a document for one of these handlers writes the queue from the template above the outcomes the handler produces.
 
-The subject itself is a field of the message, and `suss check` compares the fields a consumer reads against the fields the producers on that queue send. A config file that still sets `subjectFactories` is refused, with a line saying this.
+The subject itself is a field of the message, and `suss check` compares the fields a consumer reads against the fields the producers on that queue send. A config file that still sets `subjectFactories` is read past with a warning, and stops the run in 0.22.0.
 
 ## Where it fits in suss
 
