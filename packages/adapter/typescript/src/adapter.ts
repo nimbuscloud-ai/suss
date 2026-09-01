@@ -146,6 +146,7 @@ import {
 } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { pathFromArgument } from "./resolve/routePath.js";
+import { unfollowedCallGap } from "./resolve/unfollowedCall.js";
 import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 import {
@@ -1447,6 +1448,9 @@ function extractFromSourceFile(
       }
 
       const summary = assembleSummary(raw, options);
+      if (unit.unfollowed !== undefined && options?.gapHandling !== "silent") {
+        summary.gaps.push(unfollowedCallGap(unit.unfollowed));
+      }
       if (
         unit.metadata !== undefined &&
         Object.keys(unit.metadata).length > 0

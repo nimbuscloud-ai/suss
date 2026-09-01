@@ -182,7 +182,17 @@ export class ResolutionStore {
   >();
   private readonly subjectConstructions = new Map<
     string,
-    { construction: Node | null; walked: string[]; extractedAt: number }
+    {
+      construction: Node | null;
+      /**
+       * How many constructions the walk reached. Two or more is why
+       * `construction` is null, and the caller says so rather than
+       * dropping the registration without a word.
+       */
+      candidates: number;
+      walked: string[];
+      extractedAt: number;
+    }
   >();
   /**
    * A file's table depends only on its re-export closure, which
@@ -365,10 +375,29 @@ export class ResolutionStore {
     );
     this.subjectConstructions.set(key, {
       construction: settled?.construction ?? null,
+      candidates: settled?.candidates ?? 0,
       walked: [...this.lastQueryWalked],
       extractedAt: this.fullyExtracted.size,
     });
     return settled?.construction ?? null;
+  }
+
+  /**
+   * How many constructions this value was written as, which is what
+   * `subjectConstructionOf` weighed before it declined. Ask it after
+   * that call, so the walk it needs has already been paid for.
+   */
+  subjectCandidateCountOf(
+    value: Node,
+    importModule: string,
+    importName: string,
+  ): number {
+    const shared = nodeId(this.sharedDeclarationFor(factKeyOf(value)));
+    return (
+      this.subjectConstructions.get(
+        `subject|${shared}|${importModule}|${importName}`,
+      )?.candidates ?? 0
+    );
   }
 
   /**
@@ -381,7 +410,7 @@ export class ResolutionStore {
     value: Node,
     importModule: string,
     importName: string,
-  ): { construction: Node | null } | null {
+  ): { construction: Node | null; candidates: number } | null {
     this.derive();
 
     const valueId = nodeId(value);
@@ -394,17 +423,35 @@ export class ResolutionStore {
       candidates.add(node);
     }
 
+    // Counting only the ones this pack's own import built keeps a
+    // parameter two callers hand two unrelated objects out of the
+    // report, since neither of those is a routable.
     if (candidates.size > 1) {
-      return { construction: null };
+      return {
+        construction: null,
+        candidates: [...candidates].filter((one) =>
+          this.constructionComesFrom(valueId, one, importModule, importName),
+        ).length,
+      };
     }
     const single = [...candidates][0];
     if (single === undefined) {
-      return neverWritable(value) ? { construction: null } : null;
+      return neverWritable(value)
+        ? { construction: null, candidates: 0 }
+        : null;
     }
 
-    return this.constructionComesFrom(valueId, single, importModule, importName)
-      ? { construction: single }
-      : { construction: null };
+    return {
+      construction: this.constructionComesFrom(
+        valueId,
+        single,
+        importModule,
+        importName,
+      )
+        ? single
+        : null,
+      candidates: 1,
+    };
   }
 
   /**

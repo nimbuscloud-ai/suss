@@ -35,6 +35,8 @@ import type { FunctionRoot } from "../conditions.js";
  * callee nothing declares, which is what a call on an untyped value
  * comes to. `callerSupplied` is a parameter of the function being
  * scanned, so the call runs whatever its caller handed in.
+ * `multipleReceivers` is a registration whose receiver comes down to
+ * more than one thing, so nothing says which one it registers on.
  */
 export type UnfollowedReason =
   | "noBody"
@@ -42,13 +44,16 @@ export type UnfollowedReason =
   | "multipleSources"
   | "outsideRun"
   | "noDeclaration"
-  | "callerSupplied";
+  | "callerSupplied"
+  | "multipleReceivers";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
   /** The callee as the source writes it, `this.dao.getEditions` say. */
   readonly callee: string;
   readonly reason: UnfollowedReason;
+  /** How many things the walk reached where it needed one. */
+  readonly candidates?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +239,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   outsideRun: false,
   noDeclaration: false,
   callerSupplied: false,
+  multipleReceivers: true,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -244,19 +250,24 @@ export function worthRecording(reason: UnfollowedReason): boolean {
 // Saying it
 // ---------------------------------------------------------------------------
 
-const STOP_SENTENCE: Record<UnfollowedReason, (callee: string) => string> = {
-  noBody: (callee) =>
+const STOP_SENTENCE: Record<
+  UnfollowedReason,
+  (stop: UnfollowedCall) => string
+> = {
+  noBody: ({ callee }) =>
     `The call to ${callee} lands on a declaration with no body, so whatever runs there is missing from this summary`,
-  unsettledValue: (callee) =>
+  unsettledValue: ({ callee }) =>
     `The call to ${callee} goes through a value this run could not settle, so whatever runs there is missing from this summary`,
-  multipleSources: (callee) =>
+  multipleSources: ({ callee }) =>
     `The call to ${callee} reaches a value with more than one possible source, so whatever runs there is missing from this summary`,
-  outsideRun: (callee) =>
+  outsideRun: ({ callee }) =>
     `The call to ${callee} lands in a package whose source is not in this run, so whatever runs there is missing from this summary`,
-  noDeclaration: (callee) =>
+  noDeclaration: ({ callee }) =>
     `The call to ${callee} has no declaration this run could find, so whatever runs there is missing from this summary`,
-  callerSupplied: (callee) =>
+  callerSupplied: ({ callee }) =>
     `The call to ${callee} runs the function this unit's caller passed in, so what happens there is decided at the call site`,
+  multipleReceivers: ({ callee, candidates }) =>
+    `The call to ${callee} is made on a receiver this run reads as ${candidates ?? "several"} different values, so nothing says which one it registers on and the registration is left out`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {
@@ -264,7 +275,7 @@ export function unfollowedCallGap(stop: UnfollowedCall): Gap {
     type: "unfollowedCall",
     conditions: [],
     consequence: "unknown",
-    description: STOP_SENTENCE[stop.reason](stop.callee),
+    description: STOP_SENTENCE[stop.reason](stop),
     callee: stop.callee,
   };
 }

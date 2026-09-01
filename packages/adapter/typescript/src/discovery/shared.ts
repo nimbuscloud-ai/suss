@@ -15,6 +15,7 @@ import type {
   TerminalPattern,
 } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { UnfollowedCall } from "../resolve/unfollowedCall.js";
 
 export interface ClientCallSite {
   callExpression: CallExpression;
@@ -181,6 +182,12 @@ export interface DiscoveredUnit {
    * summary as an `unreadOutcome` gap.
    */
   unreadBinding?: string;
+  /**
+   * A call the handler met and could not follow, which reaches the
+   * summary as an `unfollowedCall` gap beside the ones the closure
+   * walk records.
+   */
+  unfollowed?: UnfollowedCall;
 }
 
 /**

@@ -1070,23 +1070,8 @@ describe("discoverRegistrationCalls: a helper the app was passed to", () => {
     expect(units).toEqual([]);
   });
 
-  it("reads nothing when two callers pass two different apps", () => {
-    const { file, resolution } = splitProject({
-      "index.ts": `
-        import express from "express";
-        import { registerHealth } from "./routes";
-        const publicApp = express();
-        const adminApp = express();
-        registerHealth(publicApp);
-        registerHealth(adminApp);
-      `,
-      "routes.ts": `
-        import type { Express } from "express";
-        export function registerHealth(app: Express): void {
-          app.get("/health", (_req, res) => { res.json({ ok: true }); });
-        }
-      `,
-    });
+  it("claims no route when two callers pass two different apps", () => {
+    const { file, resolution } = twoApps();
 
     const units = discoverRegistrationCalls(
       file("routes.ts"),
@@ -1096,6 +1081,74 @@ describe("discoverRegistrationCalls: a helper the app was passed to", () => {
       resolution,
     );
 
+    expect(units.map((unit) => unit.routeInfo)).toEqual([undefined]);
+  });
+
+  it("names the call it stopped at and counts the apps it found", () => {
+    const { file, resolution } = twoApps();
+
+    const units = discoverRegistrationCalls(
+      file("routes.ts"),
+      expressAppMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
+    expect(units.map((unit) => unit.unfollowed)).toEqual([
+      { callee: "app.get", reason: "multipleReceivers", candidates: 2 },
+    ]);
+  });
+
+  it("says nothing about a receiver two callers hand two unrelated objects", () => {
+    const { file, resolution } = splitProject({
+      "index.ts": `
+        import express from "express";
+        import { registerCache } from "./cache";
+        const memory = { get(_k: string, _f: () => void) {} };
+        const disk = { get(_k: string, _f: () => void) {} };
+        registerCache(memory);
+        registerCache(disk);
+        const app = express();
+        app.get("/direct", (_req, res) => { res.json({}); });
+      `,
+      "cache.ts": `
+        import type { Request, Response } from "express";
+        interface Cache { get(key: string, onHit: (req: Request, res: Response) => void): void }
+        export function registerCache(cache: Cache): void {
+          cache.get("/health", (_req, res) => { res.json({ cached: true }); });
+        }
+      `,
+    });
+
+    const units = discoverRegistrationCalls(
+      file("cache.ts"),
+      expressAppMatch,
+      "handler",
+      httpBinding,
+      resolution,
+    );
+
     expect(units).toEqual([]);
   });
 });
+
+/** The two-app project both of the declining tests above read. */
+function twoApps() {
+  return splitProject({
+    "index.ts": `
+      import express from "express";
+      import { registerHealth } from "./routes";
+      const publicApp = express();
+      const adminApp = express();
+      registerHealth(publicApp);
+      registerHealth(adminApp);
+    `,
+    "routes.ts": `
+      import type { Express } from "express";
+      export function registerHealth(app: Express): void {
+        app.get("/health", (_req, res) => { res.json({ ok: true }); });
+      }
+    `,
+  });
+}
