@@ -84,7 +84,7 @@ function sendDeclarations(): Match[] {
       wire: "aws_sqs",
       client: constructedFrom(SQS),
       messages: { each: "theInput" },
-      channel: [{ property: "QueueUrl" }],
+      channel: [{ property: ["QueueUrl"] }],
       body: "MessageBody",
     })
       .methods(INSIDE_THE_COMMAND(["SendMessageCommand"]))
@@ -96,7 +96,7 @@ function sendDeclarations(): Match[] {
       client: constructedFrom(SQS),
       messages: { each: "in", property: "Entries" },
       // A batch states the queue once beside the list of messages.
-      channel: [{ property: "QueueUrl", on: "theInput" }],
+      channel: [{ property: ["QueueUrl"], on: "theInput" }],
       body: "MessageBody",
     })
       .methods(INSIDE_THE_COMMAND(["SendMessageBatchCommand"]))

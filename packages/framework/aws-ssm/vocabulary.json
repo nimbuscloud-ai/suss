@@ -1,0 +1,7 @@
+{
+  "Name": "AWS SDK v3: SSM command input field naming the parameter",
+  "Names": "AWS SDK v3: SSM command input field listing the parameters one call reaches",
+  "name": "suss: a container the call listed by name rather than keyed by one",
+  "read": "suss: access kind",
+  "write": "suss: access kind"
+}

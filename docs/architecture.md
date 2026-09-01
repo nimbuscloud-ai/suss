@@ -140,7 +140,10 @@ The terms used consistently across the codebase, code unit, boundary, terminal, 
     │     │     @suss/framework-apollo
     │     │     @suss/framework-aws-lambda
     │     │     @suss/framework-aws-sqs
+    │     │     @suss/framework-aws-sns
     │     │     @suss/framework-aws-eventbridge
+    │     │     @suss/framework-aws-secrets-manager
+    │     │     @suss/framework-aws-ssm
     │     │     @suss/framework-prisma
     │     │     @suss/framework-drizzle
     │     │

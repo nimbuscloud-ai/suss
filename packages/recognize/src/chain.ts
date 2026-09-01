@@ -165,6 +165,13 @@ export interface AccessPathLink {
 export interface ContainersLink {
   readonly asks: "containers";
   readonly in: OneArgument;
+  /**
+   * What one of them is. An entry keys the container by name and says
+   * what the call did there, which is how a batch write is written. A
+   * name is the container on its own, which is how a call that reads
+   * several parameters at once is written. Defaults to an entry.
+   */
+  readonly each?: "entry" | "name";
 }
 
 /**
@@ -449,8 +456,13 @@ export interface ManyIn {
  * the same way, so a pack states the parts in the order they join.
  */
 export interface ChannelPart {
-  /** The property the message states this part on. */
-  readonly property: string;
+  /**
+   * The properties the message may state this part on, tried in order.
+   * A library that lets one destination be written more than one way
+   * lists each spelling: an SNS publish writes its topic as `TopicArn`
+   * or as `TargetArn`, and the two are the same part of the channel.
+   */
+  readonly property: readonly string[];
   /**
    * Where the property is written. A batch command states the queue
    * once beside the list of messages, so its channel part reads off

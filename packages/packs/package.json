@@ -48,6 +48,18 @@
       "types": "./dist/aws-s3.d.ts",
       "import": "./dist/aws-s3.js"
     },
+    "./aws-secrets-manager": {
+      "types": "./dist/aws-secrets-manager.d.ts",
+      "import": "./dist/aws-secrets-manager.js"
+    },
+    "./aws-sns": {
+      "types": "./dist/aws-sns.d.ts",
+      "import": "./dist/aws-sns.js"
+    },
+    "./aws-ssm": {
+      "types": "./dist/aws-ssm.d.ts",
+      "import": "./dist/aws-ssm.js"
+    },
     "./aws-sqs": {
       "types": "./dist/aws-sqs.d.ts",
       "import": "./dist/aws-sqs.js"
@@ -194,7 +206,10 @@
     "@suss/framework-aws-eventbridge": "*",
     "@suss/framework-aws-lambda": "*",
     "@suss/framework-aws-s3": "*",
+    "@suss/framework-aws-secrets-manager": "*",
+    "@suss/framework-aws-sns": "*",
     "@suss/framework-aws-sqs": "*",
+    "@suss/framework-aws-ssm": "*",
     "@suss/framework-cloudflare-workers": "*",
     "@suss/framework-drizzle": "*",
     "@suss/framework-express": "*",

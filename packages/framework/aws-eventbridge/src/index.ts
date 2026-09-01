@@ -149,11 +149,11 @@ export function eventBridgeFramework(
         messages: { each: "in", property: "Entries" },
         channel: [
           {
-            property: "EventBusName",
+            property: ["EventBusName"],
             whenAbsent: "default",
             unsettled: "reference",
           },
-          { property: "DetailType", unsettled: "nothing" },
+          { property: ["DetailType"], unsettled: "nothing" },
         ],
         unsettledName: "nothing",
         routingKey: "Source",

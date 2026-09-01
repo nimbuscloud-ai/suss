@@ -295,6 +295,8 @@ interface Reached {
   readonly container: string | null;
   /** The entry, or null when the call reached a single container. */
   readonly entry: ValueOps | null;
+  /** Whether the chain's containers link is what said. */
+  readonly stated: boolean;
 }
 
 /** What one storage effect is built from, beyond the links themselves. */
@@ -339,10 +341,9 @@ function accessEffect(matched: Matched, access: Access): Effect {
         ? {}
         : { transport: ending.transport }),
       scope: ending.scope,
-      container:
-        reached.entry === null
-          ? containerOf(chain, selector, subject, unsettled)
-          : reached.container,
+      container: reached.stated
+        ? reached.container
+        : containerOf(chain, selector, subject, unsettled),
       accessPath: accessPathOf(chain, subject, unsettled),
     }),
     callee: ops.calleeText(),
@@ -367,13 +368,26 @@ function reachedBy(
   unsettled: UnsettledName,
 ): Reached[] {
   const link: ContainersLink | null = linkIn(chain, "containers");
-  const map = link === null ? null : statedValue(subject, link.in);
-  if (map === null) {
-    return [{ container: null, entry: null }];
+  const alone: Reached[] = [{ container: null, entry: null, stated: false }];
+  const stated = link === null ? null : statedValue(subject, link.in);
+  if (link === null || stated === null) {
+    return alone;
   }
-  return map
-    .entries(unsettled)
-    .map((entry) => ({ container: entry.key, entry: entry.value }));
+  if (link.each === "name") {
+    const named = stated.items().map((item) => ({
+      container: item.name(unsettled),
+      entry: null,
+      stated: true,
+    }));
+    // A list this run cannot read is still a call against the store.
+    // Dropping it made a unit that reads look like one that does not.
+    return named.length === 0 ? alone : named;
+  }
+  return stated.entries(unsettled).map((entry) => ({
+    container: entry.key,
+    entry: entry.value,
+    stated: true,
+  }));
 }
 
 /**
@@ -610,7 +624,7 @@ function channelOf(
   const parts: string[] = [];
   for (const part of ending.channel) {
     const holder = part.on === "theInput" ? input : message;
-    const written = holder.property(part.property);
+    const written = firstWritten(holder, part.property);
     if (written === null) {
       if (part.whenAbsent === undefined) {
         return null;
@@ -625,6 +639,24 @@ function channelOf(
     parts.push(stated);
   }
   return parts.join(ending.channelSeparator ?? "#");
+}
+
+/**
+ * The first of these properties the message wrote. Trying them in order
+ * means the pack decides which spelling wins where a message writes two
+ * of them, rather than that depending on how the source was typed.
+ */
+function firstWritten(
+  holder: ValueOps,
+  properties: readonly string[],
+): ValueOps | null {
+  for (const property of properties) {
+    const written = holder.property(property);
+    if (written !== null) {
+      return written;
+    }
+  }
+  return null;
 }
 
 /**

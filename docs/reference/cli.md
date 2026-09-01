@@ -165,6 +165,9 @@ another pack found:
 | `drizzle` | `@suss/packs/drizzle` | Drizzle query-builder and relational-query calls, with SQL table names |
 | `aws-dynamodb` | `@suss/packs/aws-dynamodb` | AWS SDK v3 DynamoDB commands, as storage-access interactions. `requestFunctions` is optional. |
 | `aws-sqs` | `@suss/packs/aws-sqs` | AWS SDK v3 SQS producer calls, as message-send interactions |
+| `aws-sns` | `@suss/packs/aws-sns` | AWS SDK v3 SNS `Publish` and `PublishBatch` calls, as message-send interactions |
+| `aws-secrets-manager` | `@suss/packs/aws-secrets-manager` | AWS Secrets Manager calls, as storage-access interactions against the secret |
+| `aws-ssm` | `@suss/packs/aws-ssm` | AWS SSM Parameter Store calls, as storage-access interactions against the parameter |
 | `aws-eventbridge` | `@suss/packs/aws-eventbridge` | EventBridge `PutEvents` calls, as message-bus interactions |
 
 Your own pack works the same way. Publish it under any name and pass

@@ -54,6 +54,15 @@
       "path": "../framework/aws-s3/tsconfig.typecheck.json"
     },
     {
+      "path": "../framework/aws-secrets-manager/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/aws-sns/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/aws-ssm/tsconfig.typecheck.json"
+    },
+    {
       "path": "../framework/aws-sqs/tsconfig.typecheck.json"
     },
     {

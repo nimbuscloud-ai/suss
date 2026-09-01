@@ -92,6 +92,15 @@
       "path": "packages/framework/aws-s3/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/aws-secrets-manager/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/aws-sns/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/aws-ssm/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/aws-sqs/tsconfig.typecheck.json"
     },
     {
