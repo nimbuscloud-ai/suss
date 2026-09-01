@@ -994,12 +994,12 @@ const STANDALONE_LAYOUT: SummaryLayout = {
  */
 function untriggeredLine(summary: BehavioralSummary): string[] {
   const lambda = summary.metadata?.awsLambda as
-    | { eventTypes?: string[] }
+    | { eventTypes?: string[]; recognition?: string }
     | undefined;
-  if (lambda?.eventTypes === undefined || lambda.eventTypes.length > 0) {
+  if (lambda?.recognition !== "recognized-not-http") {
     return [];
   }
-  if (summary.identity.boundaryBinding?.semantics.name !== "function-call") {
+  if (lambda.eventTypes === undefined || lambda.eventTypes.length > 0) {
     return [];
   }
   return [
