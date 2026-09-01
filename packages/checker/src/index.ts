@@ -25,6 +25,7 @@ import { checkRenderProps } from "./render/renderProps.js";
 import { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
 import { checkStorage } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
+import { checkUnitInvocation } from "./unit-invocation/unitInvocationPairing.js";
 
 import type {
   BehavioralSummary,
@@ -155,6 +156,11 @@ export {
   SuppressionRuleSchema,
   validateRule,
 } from "./suppressions.js";
+export {
+  checkUnitInvocation,
+  type InvokesInRun,
+  invokersOfUnits,
+} from "./unit-invocation/unitInvocationPairing.js";
 
 export type { GroundedName, Grounding } from "./storage/grounding.js";
 
@@ -288,6 +294,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   findings.push(...checkRuntimeConfig(summaries, interactionIndex, pairInfo));
   findings.push(...checkStorage(summaries, interactionIndex, pairInfo));
   findings.push(...checkMessageBus(summaries, interactionIndex, pairInfo));
+  findings.push(...checkUnitInvocation(summaries, interactionIndex, pairInfo));
   findings.push(...checkMetric(summaries, interactionIndex));
 
   // Pairing only knows method and path, so it files a store or a queue

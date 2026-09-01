@@ -160,6 +160,13 @@ export interface DiscoveredUnit {
     channel: string | null;
   };
   /**
+   * Populated by a pack's `discoverUnits` callback for a deployed unit
+   * nothing else routes to, which is reached by being invoked by name.
+   * The adapter builds a `unit-invocation` binding from it, which pairs
+   * with the calls that name the same unit.
+   */
+  invocationInfo?: DeployableUnit;
+  /**
    * Identity of the routable this unit was registered on, when a
    * registration call put it there. What the wrapper index is keyed on,
    * since a wrapper is registered on the routable and not on the unit.
@@ -241,6 +248,9 @@ export function unitDedupKey(unit: DiscoveredUnit): string {
     unit.channelInfo === undefined
       ? ""
       : `${unit.channelInfo.messageBus}:${unit.channelInfo.channel}`,
+    unit.invocationInfo === undefined
+      ? ""
+      : `${unit.invocationInfo.deploymentTarget}:${unit.invocationInfo.instanceName}`,
     // An anonymous operation has no name to key on, so use the unit
     // name, which already includes the document reference discovery
     // fell back to.

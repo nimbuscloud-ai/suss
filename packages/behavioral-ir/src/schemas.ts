@@ -112,6 +112,8 @@ export const FindingKindSchema = z.enum([
   "messageBusUnused",
   /** A subscription deploys switched off, so its target receives nothing. */
   "messageBusConsumerDisabled",
+  /** Code invokes a deployed unit no deployment in scope declares. */
+  "unitInvocationTargetUnknown",
   /** A pack marked a boundary it cannot summarise, so nothing will pair. */
   "unsupportedSemantics",
   /** Too many predicates were opaque to pair on. Reported per pair, unlike `lowConfidence`. */
@@ -539,6 +541,17 @@ export const EffectSchema = z.discriminatedUnion("type", [
         class: z.literal("message-send"),
         body: z.unknown().optional(),
         routingKey: z.string().optional(),
+      }),
+      /**
+       * Calling a deployed unit by name and waiting, or not, for what
+       * it gives back. Distinct from a service call, whose identity is
+       * a method and a URL path, and from a message send, which goes to
+       * whoever subscribes rather than to one named callee.
+       */
+      z.object({
+        class: z.literal("unit-invoke"),
+        /** What the caller hands over, when the source states it. */
+        payload: z.unknown().optional(),
       }),
       /**
        * The fields a consumer pulls out of a message, with no channel,

@@ -13,5 +13,10 @@
   "batchItemFailures": "AWS Lambda: partial batch response field",
   "POWERTOOLS_": "@aws-lambda-powertools: env-var prefix the library's configuration reads",
   "s3": "AWS S3: message-bus technology behind a SAM S3 event",
-  "eventbridge": "AWS EventBridge: message-bus technology behind SAM Schedule and EventBridgeRule events"
+  "eventbridge": "AWS EventBridge: message-bus technology behind SAM Schedule and EventBridgeRule events",
+  "InvokeCommand": "@aws-sdk/client-lambda: the synchronous invoke operation's command class",
+  "InvokeAsyncCommand": "@aws-sdk/client-lambda: the fire-and-forget invoke operation's command class",
+  "FunctionName": "AWS SDK v3: Invoke input field naming the function to call",
+  "Payload": "AWS SDK v3: InvokeCommand input field carrying the event",
+  "InvokeArgs": "AWS SDK v3: InvokeAsyncCommand input field carrying the event"
 }

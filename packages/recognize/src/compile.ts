@@ -13,7 +13,12 @@
  * says what each step reaches and why the walk is bounded.
  */
 
-import { messageBusBinding, storageBinding } from "@suss/behavioral-ir";
+import {
+  messageBusBinding,
+  resourceNameIn,
+  storageBinding,
+  unitInvocationBinding,
+} from "@suss/behavioral-ir";
 import { unwrapJsonStringify } from "@suss/extractor";
 import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
@@ -50,6 +55,8 @@ import type {
   SubjectLink,
   ToArgument,
   ToReceiver,
+  UnitInvokeEnding,
+  UnitInvokeMethod,
 } from "./chain.js";
 import type {
   CallOps,
@@ -287,6 +294,7 @@ const YIELD: Record<Ending["yields"], (matched: Matched) => Effect[] | null> = {
   storageAccess: storageAccess,
   sqlAccess: sqlAccess,
   messageSend: messageSend,
+  unitInvoke: unitInvoke,
 };
 
 /** One container a call reached, and what the call says about it. */
@@ -688,6 +696,70 @@ function routingKeyOf(
   }
   const stated = message.property(ending.routingKey)?.text() ?? null;
   return stated === null || stated === "" ? {} : { routingKey: stated };
+}
+
+/**
+ * One effect for the unit a call invokes.
+ *
+ * A call reaches one callee however much it hands over, so this yields
+ * a single effect and reads the name off the call's own request object.
+ * A call whose request this run cannot read is not one of these calls;
+ * one that states a name nothing settles is recorded with no name, so a
+ * service that invokes does not read as one that invokes nothing.
+ */
+function unitInvoke(matched: Matched): Effect[] | null {
+  const { ops, subject, chain, recognition } = matched;
+  const ending = chain.ending as UnitInvokeEnding;
+  const input = statedValue(
+    subject,
+    (matched.meaning as UnitInvokeMethod).input,
+  );
+  if (input === null) {
+    return null;
+  }
+  return [
+    {
+      type: "interaction",
+      binding: unitInvocationBinding({
+        recognition,
+        deploymentTarget: ending.platform,
+        instanceName: invokedUnitIn(input, ending),
+      }),
+      callee: ops.calleeText(),
+      interaction: {
+        class: "unit-invoke",
+        ...payloadOf(input, ending),
+      },
+    },
+  ];
+}
+
+/** The unit a call states, reduced from whatever id it was written as. */
+function invokedUnitIn(
+  input: ValueOps,
+  ending: UnitInvokeEnding,
+): string | null {
+  for (const property of ending.named) {
+    const stated = input.property(property)?.name(ending.unsettledName) ?? null;
+    if (stated !== null && stated !== "") {
+      return resourceNameIn(stated);
+    }
+  }
+  return null;
+}
+
+/** The payload a call hands over, in the form an effect records an argument. */
+function payloadOf(
+  input: ValueOps,
+  ending: UnitInvokeEnding,
+): { payload?: EffectArg } {
+  if (ending.payload === undefined) {
+    return {};
+  }
+  const stated = unwrapJsonStringify(
+    input.property(ending.payload)?.asArg() ?? null,
+  );
+  return stated === null ? {} : { payload: stated };
 }
 
 function sqlAccess(matched: Matched): Effect[] | null {

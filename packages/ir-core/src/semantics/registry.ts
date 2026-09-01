@@ -19,6 +19,7 @@ import { metricSemantics } from "./metric.js";
 import { restSemantics } from "./rest.js";
 import { runtimeConfigSemantics } from "./runtimeConfig.js";
 import { storageSemantics } from "./storage.js";
+import { unitInvocationSemantics } from "./unitInvocation.js";
 
 import type { BoundaryBehavior, SemconvAttribute } from "./definition.js";
 
@@ -35,6 +36,7 @@ export const SemanticsSchema = z.discriminatedUnion("name", [
   storageSemantics.schema,
   messageBusSemantics.schema,
   metricSemantics.schema,
+  unitInvocationSemantics.schema,
 ]);
 
 export type Semantics = z.infer<typeof SemanticsSchema>;
@@ -48,6 +50,7 @@ const DEFINITIONS = [
   storageSemantics,
   messageBusSemantics,
   metricSemantics,
+  unitInvocationSemantics,
 ] as const;
 
 const BY_NAME = new Map<string, (typeof DEFINITIONS)[number]>(

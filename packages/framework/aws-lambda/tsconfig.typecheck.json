@@ -22,6 +22,9 @@
     },
     {
       "path": "../../manifest/aws/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../recognize/tsconfig.typecheck.json"
     }
   ]
 }

@@ -7,6 +7,7 @@ export { constructedFrom, declaredBy, opsIn } from "./ops.js";
 export { declarationsIn, pack } from "./pack.js";
 export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
+export { unitInvokes } from "./unitInvokes.js";
 
 // A declared pack imports its whole surface from here, including the
 // type the adapters load it as.
@@ -56,6 +57,8 @@ export type {
   SubjectLink,
   ToArgument,
   ToReceiver,
+  UnitInvokeEnding,
+  UnitInvokeMethod,
 } from "./chain.js";
 export type { RanExample, RunOverCode } from "./example.js";
 export type { MessageSends, MessageSendsSpec } from "./messageSends.js";
@@ -72,3 +75,4 @@ export type {
 export type { Match, PackSpec } from "./pack.js";
 export type { SqlStatements, SqlStatementsSpec } from "./sqlStatements.js";
 export type { StorageCalls, StorageCallsSpec } from "./storage.js";
+export type { UnitInvokes, UnitInvokesSpec } from "./unitInvokes.js";

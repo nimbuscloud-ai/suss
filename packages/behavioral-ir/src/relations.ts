@@ -31,6 +31,7 @@ const RELATIONS: RelationTable = {
     interaction.kind === "read" ? ["reads"] : ["writes"],
   "service-call": () => ["reads", "writes"],
   "message-send": () => ["writes"],
+  "unit-invoke": () => ["reads", "writes"],
   "message-receive": () => ["reads"],
   "config-read": () => ["reads"],
   schedule: () => [],

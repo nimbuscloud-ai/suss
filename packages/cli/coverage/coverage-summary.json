@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 4510,
-      "covered": 4203,
+      "total": 4531,
+      "covered": 4225,
       "skipped": 0,
-      "pct": 93.19
+      "pct": 93.24
     },
     "statements": {
-      "total": 4634,
-      "covered": 4322,
+      "total": 4657,
+      "covered": 4346,
       "skipped": 0,
-      "pct": 93.26
+      "pct": 93.32
     },
     "functions": {
-      "total": 986,
-      "covered": 932,
+      "total": 989,
+      "covered": 934,
       "skipped": 0,
-      "pct": 94.52
+      "pct": 94.43
     },
     "branches": {
-      "total": 3165,
-      "covered": 2592,
+      "total": 3184,
+      "covered": 2610,
       "skipped": 0,
-      "pct": 81.89
+      "pct": 81.97
     },
     "branchesTrue": {
       "total": 0,
@@ -553,48 +553,48 @@
   },
   "src/inspect.ts": {
     "lines": {
-      "total": 671,
-      "covered": 595,
+      "total": 691,
+      "covered": 617,
       "skipped": 0,
-      "pct": 88.67
+      "pct": 89.29
     },
     "functions": {
-      "total": 127,
-      "covered": 112,
+      "total": 129,
+      "covered": 114,
       "skipped": 0,
-      "pct": 88.18
+      "pct": 88.37
     },
     "statements": {
-      "total": 686,
-      "covered": 609,
+      "total": 708,
+      "covered": 633,
       "skipped": 0,
-      "pct": 88.77
+      "pct": 89.4
     },
     "branches": {
-      "total": 451,
-      "covered": 356,
+      "total": 470,
+      "covered": 374,
       "skipped": 0,
-      "pct": 78.93
+      "pct": 79.57
     }
   },
   "src/intentDraftCommand.ts": {
     "lines": {
-      "total": 207,
+      "total": 208,
       "covered": 205,
       "skipped": 0,
-      "pct": 99.03
+      "pct": 98.55
     },
     "functions": {
-      "total": 52,
+      "total": 53,
       "covered": 52,
       "skipped": 0,
-      "pct": 100
+      "pct": 98.11
     },
     "statements": {
-      "total": 211,
+      "total": 212,
       "covered": 209,
       "skipped": 0,
-      "pct": 99.05
+      "pct": 98.58
     },
     "branches": {
       "total": 146,

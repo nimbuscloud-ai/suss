@@ -282,15 +282,17 @@ describe("awsLambdaDiscovery — AppSync resolvers", () => {
     expect(outputs).toContain("throw");
   });
 
-  it("leaves a handler no resolver points at unbound", async () => {
+  it("binds a handler no resolver points at to the function itself", async () => {
     const summaries = await run();
     const anyOnly = summaries.find((s) =>
       s.identity.name.startsWith("AnyOnlyFn."),
     );
 
-    expect(anyOnly?.identity.boundaryBinding?.semantics.name).toBe(
-      "function-call",
-    );
+    expect(anyOnly?.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "unit-invocation",
+      deploymentTarget: "lambda",
+      instanceName: "AnyOnlyFn",
+    });
   });
 });
 

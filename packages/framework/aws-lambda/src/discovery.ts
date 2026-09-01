@@ -123,8 +123,9 @@ function graphqlResolverUnits(
  * it. Its binding says the wire the template routes to it: the
  * factory-given subject when there is one, otherwise a message-bus
  * binding with no channel, which pairs with nothing but stops the unit
- * claiming http (#128). Only a unit whose event types map to no one
- * technology keeps the function-call fallback.
+ * claiming http (#128). A unit whose event types map to no one
+ * technology is invoked by name, so the deployed function is its
+ * boundary.
  *
  * No HTTP envelope constrains what these return, so the unit uses the wider
  * terminal list and any returned object gets read. Route units keep the
@@ -139,13 +140,16 @@ function accountingUnit(
   const backs = typeFields(entry);
   const wire =
     channel !== null ? ("aws_sqs" as const) : messageBusWire(eventTypes);
+  const unit = deployableUnit(entry);
   return {
     func,
     kind: "handler",
     name: `${entry.functionLogicalId}.${entry.exportName}`,
     terminals: NON_HTTP_TERMINALS,
-    ...(wire !== null ? { channelInfo: { messageBus: wire, channel } } : {}),
-    deployableUnit: deployableUnit(entry),
+    ...(wire !== null
+      ? { channelInfo: { messageBus: wire, channel } }
+      : { invocationInfo: unit }),
+    deployableUnit: unit,
     metadata: {
       [METADATA_NAMESPACE]: {
         handler: entry.handler,

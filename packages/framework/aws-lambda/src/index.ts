@@ -29,7 +29,10 @@
 
 import { z } from "zod";
 
+import { compile, declarationsIn } from "@suss/recognize";
+
 import { awsLambdaDiscovery, subjectFactoryOption } from "./discovery.js";
+import { invokeDeclarations } from "./invokes.js";
 import { templatesForFiles } from "./templateIndex.js";
 import { HTTP_TERMINALS } from "./terminals.js";
 
@@ -66,6 +69,7 @@ export type AwsLambdaPackOptions = z.infer<typeof optionsSchema>;
 export function awsLambdaFramework(
   options: AwsLambdaPackOptions = {},
 ): PatternPack {
+  const invokes = invokeDeclarations();
   return {
     name: "aws-lambda",
     protocol: "http",
@@ -129,6 +133,14 @@ export function awsLambdaFramework(
         prefixes: ["POWERTOOLS_"],
       },
     ],
+
+    // Still no pack-level `requiresImport`: it would gate
+    // `discoverUnits` as well, and each declaration checks the SDK its
+    // command came from anyway.
+    invocationRecognizers: invokes.map((match) =>
+      compile(match.declared, "@suss/framework-aws-lambda"),
+    ),
+    declarations: declarationsIn(invokes),
   };
 }
 

@@ -17,6 +17,35 @@ import { displayLabel } from "./boundaryKey.js";
 import type { BoundaryBinding } from "./index.js";
 
 /**
+ * The name inside a fully-qualified cloud resource id, and anything
+ * else unchanged.
+ *
+ * `arn:aws:lambda:us-east-1:1234:function:prod-worker` and
+ * `projects/p/locations/l/functions/prod-worker` say the same thing as
+ * `prod-worker` plus an account and a region. Keeping the whole string
+ * makes one deployment's spelling of a resource disagree with
+ * another's, so every reader that meets one reduces it here and the two
+ * sides compare the part they can both know. A Lambda ARN's trailing
+ * alias or version comes off with the rest: the function is the
+ * boundary whichever published copy a call reaches.
+ */
+export function resourceNameIn(spelling: string): string {
+  if (spelling.startsWith("arn:")) {
+    const segments = spelling.split(":");
+    // arn:partition:service:region:account:type:name[:qualifier]
+    return segments[6] ?? segments[5] ?? spelling;
+  }
+  // A GCP-style id is an even number of key/value segments, and the
+  // last one is the resource. A path that is not that shape is somebody
+  // else's string and stays as written.
+  const segments = spelling.split("/");
+  if (segments.length >= 4 && segments.length % 2 === 0) {
+    return segments[segments.length - 1] ?? spelling;
+  }
+  return spelling;
+}
+
+/**
  * The words in a boundary spelling. Separators between parts of a name
  * are cut, and the characters inside one part are left alone, so
  * `by-publication` stays one word and `{id}` and `:id` both come out as

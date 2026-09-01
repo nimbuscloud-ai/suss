@@ -33,6 +33,10 @@ describe("relationsOf", () => {
     expect(relationsOf({ class: "message-receive" })).toEqual(["reads"]);
   });
 
+  it("both reads and writes an invoke, which hands a payload over and takes a result back", () => {
+    expect(relationsOf({ class: "unit-invoke" })).toEqual(["reads", "writes"]);
+  });
+
   it("reads a config read", () => {
     expect(
       relationsOf({ class: "config-read", name: "PORT", defaulted: false }),

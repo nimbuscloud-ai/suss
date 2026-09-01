@@ -15,7 +15,6 @@
 
 import {
   readMessageBusMetadata,
-  readRuntimeContractMetadata,
   referenceFromName,
   summaryIdentifier,
   summaryRef,
@@ -34,6 +33,7 @@ import {
   formatPath,
   readSetOf,
 } from "../receive/inputContract.js";
+import { deployedRefs } from "../runtime-config/deployedRefs.js";
 import {
   runsIn,
   type UnitScope,
@@ -114,7 +114,7 @@ export function checkMessageBus(
   ).map((record) => ({ ...record, resolvedChannel: null }));
 
   const byFile = unitsByFile(summaries);
-  resolveProducerChannels(producers, summaries, byFile);
+  resolveProducerChannels(producers, summaries);
 
   const providerChannels: ChannelSet = createChannelSet();
   const consumerChannels: ChannelSet = createChannelSet();
@@ -362,13 +362,8 @@ function effectiveChannel(p: ProducerRecord): string | null {
 function resolveProducerChannels(
   producers: ProducerRecord[],
   summaries: BehavioralSummary[],
-  byFile: UnitsByFile,
 ): void {
-  const runtimeProviders = summaries.filter(
-    (s) =>
-      s.kind === "library" &&
-      s.identity.boundaryBinding?.semantics.name === "runtime-config",
-  );
+  const pointsAt = deployedRefs(summaries);
 
   for (const producer of producers) {
     const semantics = producer.effect.binding.semantics;
@@ -386,21 +381,16 @@ function resolveProducerChannels(
       semantics.messageBus,
       semantics.channel,
     );
-    const runtime = runtimeRunning(runtimeProviders, producer.summary, byFile);
-    if (runtime === null) {
-      continue;
-    }
-    const targets = readEnvVarTargets(runtime);
     // A recognizer that keeps the reference spells the bus `{X}`, and
     // an older one spells it `X`. One lookup takes both, so the two
     // recognizer generations resolve against the same template.
     const variable = referenceFromName(busToken)?.root ?? busToken;
-    const target = targets[variable];
-    if (target !== undefined) {
+    const logicalId = pointsAt(producer.summary, variable);
+    if (logicalId !== null) {
       producer.resolvedChannel =
         detailSuffix === null
-          ? target.logicalId
-          : formatChannel(target.logicalId, detailSuffix);
+          ? logicalId
+          : formatChannel(logicalId, detailSuffix);
     }
   }
 }
@@ -441,41 +431,6 @@ function readPatternResolution(
   summary: BehavioralSummary,
 ): "exact" | "schedule" | "unresolvable" | null {
   return readMessageBusMetadata(summary)?.patternResolution ?? null;
-}
-
-/** The runtime whose environment this producer's code is deployed with. */
-function runtimeRunning(
-  runtimes: BehavioralSummary[],
-  producer: BehavioralSummary,
-  byFile: UnitsByFile,
-): BehavioralSummary | null {
-  for (const runtime of runtimes) {
-    const meta = runtime.metadata as
-      | { codeScope?: { kind?: string; path?: string } }
-      | undefined;
-    const scope = meta?.codeScope;
-    if (scope?.kind !== "codeUri" || scope.path === undefined) {
-      continue;
-    }
-    const inUnit = runsIn(
-      producer,
-      {
-        unit: runtime.identity.deployableUnit,
-        codeScope: scope.path,
-      },
-      byFile,
-    );
-    if (inUnit) {
-      return runtime;
-    }
-  }
-  return null;
-}
-
-function readEnvVarTargets(
-  runtime: BehavioralSummary,
-): Record<string, { kind: "ref"; logicalId: string }> {
-  return readRuntimeContractMetadata(runtime)?.envVarTargets ?? {};
 }
 
 // ---------------------------------------------------------------------------

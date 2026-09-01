@@ -22,6 +22,7 @@ import {
 } from "@suss/behavioral-ir";
 import {
   contractDeclaresStatus,
+  invokersOfUnits,
   pairSummaries,
   readDeclaredContract,
   summaryWithDefinitionsInlined,
@@ -43,6 +44,7 @@ import type {
   ValueRef,
   WrapperReference,
 } from "@suss/behavioral-ir";
+import type { InvokesInRun } from "@suss/checker";
 
 // ---------------------------------------------------------------------------
 // Variant dispatch helper
@@ -405,6 +407,12 @@ interface RenderCtx {
    * Populated at ctx-build time from the full summary list.
    */
   ambiguousNames: Set<string>;
+  /**
+   * Who invokes each deployed unit in the run, keyed the way that
+   * unit's own boundary keys, so a function nothing invokes reads
+   * differently from one something does.
+   */
+  invokes: InvokesInRun;
 }
 
 /**
@@ -987,12 +995,11 @@ const STANDALONE_LAYOUT: SummaryLayout = {
  * nowhere to read them.
  */
 /**
- * A deployed function the template declares no trigger for. Without
- * this a reader cannot tell one invoked from somewhere else apart from
- * one whose trigger suss failed to read. Nothing recognizes a Lambda
- * invoke call yet, so the line stops short of saying it is unreachable.
+ * A deployed function the template declares no trigger for, and who
+ * invokes it. Without this a reader cannot tell one invoked from
+ * somewhere else apart from one whose trigger suss failed to read.
  */
-function untriggeredLine(summary: BehavioralSummary): string[] {
+function untriggeredLine(summary: BehavioralSummary, ctx: RenderCtx): string[] {
   const lambda = summary.metadata?.awsLambda as
     | { eventTypes?: string[]; recognition?: string }
     | undefined;
@@ -1002,9 +1009,26 @@ function untriggeredLine(summary: BehavioralSummary): string[] {
   if (lambda.eventTypes === undefined || lambda.eventTypes.length > 0) {
     return [];
   }
+  const binding = summary.identity.boundaryBinding;
+  const key = binding === null ? null : boundaryKey(binding);
+  const invokers = key === null ? undefined : ctx.invokes.byUnit.get(key);
+  if (invokers !== undefined && invokers.length > 0) {
+    const names = invokers.map((s) => s.identity.name).join(", ");
+    return [
+      `  Nothing in the template routes an event here. It is invoked by ${names}.`,
+    ];
+  }
+  const unsettled = ctx.invokes.unsettled;
+  if (unsettled > 0) {
+    return [
+      "  Nothing in the template routes an event here and no call in this run",
+      `  names it, with ${plural(unsettled, "invoke", "invokes")} here working out the target`,
+      "  at run time, so one of those could reach it.",
+    ];
+  }
   return [
-    "  Nothing in the template says what invokes this, and suss does not",
-    "  read Lambda invoke calls, so something else may.",
+    "  Nothing in the template routes an event here and no call in this run",
+    "  names it, so whatever invokes it is outside what suss read.",
   ];
 }
 
@@ -1076,7 +1100,7 @@ function renderSummary(
     bodyLines.push(`  Contract: ${parts.join(", ")}`);
   }
 
-  bodyLines.push(...untriggeredLine(summary));
+  bodyLines.push(...untriggeredLine(summary, ctx));
   bodyLines.push(...storeLines(summary));
 
   if (summary.transitions.length > 0) {
@@ -1531,6 +1555,7 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     summaryById,
     spawnerIndex,
     ambiguousNames,
+    invokes: invokersOfUnits(summaries),
   };
 }
 
@@ -1875,6 +1900,7 @@ export function inspectDir(options: DirOptions): void {
     options.types,
   );
   const result = pairSummaries(summaries);
+  const invokes = invokersOfUnits(summaries);
 
   // Paired boundaries
   // Group pairs by key and show provider/consumer transition counts
@@ -1894,6 +1920,21 @@ export function inspectDir(options: DirOptions): void {
     if (!group.consumers.includes(pair.consumer)) {
       group.consumers.push(pair.consumer);
     }
+  }
+
+  // An invoke is an effect inside a caller rather than a summary of its
+  // own, so the summary pairing above never saw one. Its callee has a
+  // client all the same.
+  const invoked = new Set<BehavioralSummary>();
+  for (const provider of result.unmatched.providers) {
+    const binding = provider.identity.boundaryBinding;
+    const key = binding === null ? null : boundaryKey(binding);
+    const callers = key === null ? undefined : invokes.byUnit.get(key);
+    if (key === null || callers === undefined || callers.length === 0) {
+      continue;
+    }
+    invoked.add(provider);
+    pairsByKey.set(key, { providers: [provider], consumers: [...callers] });
   }
 
   if (pairsByKey.size > 0) {
@@ -1919,7 +1960,8 @@ export function inspectDir(options: DirOptions): void {
   }
 
   // Unmatched
-  const { providers, consumers, unpairable } = result.unmatched;
+  const { consumers, unpairable } = result.unmatched;
+  const providers = result.unmatched.providers.filter((p) => !invoked.has(p));
   const unmatchedCount =
     providers.length + consumers.length + unpairable.length;
 

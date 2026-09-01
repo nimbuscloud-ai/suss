@@ -2,11 +2,11 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 678,
-    "internal": 2389,
-    "consumers": 1185,
-    "pairs": 1166,
-    "unfollowedCalls": 182,
+    "exports": 687,
+    "internal": 2392,
+    "consumers": 1209,
+    "pairs": 1189,
+    "unfollowedCalls": 184,
     "findingErrors": 0
   },
   "packages": {
@@ -28,22 +28,22 @@
       "name": "@suss/adapter-typescript",
       "exports": 76,
       "internal": 815,
-      "consumers": 109,
-      "unfollowedCalls": 63
+      "consumers": 110,
+      "unfollowedCalls": 64
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 84,
+      "exports": 87,
       "internal": 27,
       "consumers": 6,
       "unfollowedCalls": 1
     },
     "packages/checker": {
       "name": "@suss/checker",
-      "exports": 40,
-      "internal": 228,
-      "consumers": 154,
-      "unfollowedCalls": 28
+      "exports": 42,
+      "internal": 230,
+      "consumers": 161,
+      "unfollowedCalls": 29
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 21,
-      "internal": 397,
-      "consumers": 264,
+      "internal": 396,
+      "consumers": 269,
       "unfollowedCalls": 31
     },
     "packages/client/apollo": {
@@ -203,7 +203,7 @@
       "name": "@suss/framework-aws-lambda",
       "exports": 4,
       "internal": 14,
-      "consumers": 9,
+      "consumers": 17,
       "unfollowedCalls": 0
     },
     "packages/framework/aws-s3": {
@@ -411,7 +411,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 69,
+      "exports": 72,
       "internal": 14,
       "consumers": 0,
       "unfollowedCalls": 10
@@ -439,9 +439,9 @@
     },
     "packages/recognize": {
       "name": "@suss/recognize",
-      "exports": 12,
-      "internal": 36,
-      "consumers": 6,
+      "exports": 13,
+      "internal": 38,
+      "consumers": 9,
       "unfollowedCalls": 2
     },
     "packages/resolution": {

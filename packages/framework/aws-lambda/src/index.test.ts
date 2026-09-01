@@ -225,10 +225,14 @@ describe("awsLambdaFramework: extraction", () => {
     expect(restBindingOf(sqs as BehavioralSummary)).toBeNull();
   });
 
-  it("keeps the function-call fallback when two wires feed one handler", () => {
+  it("names the deployed function when two wires feed one handler", () => {
     const mixed = byFunction(summaries, "MixedTriggerFunction");
     const binding = (mixed as BehavioralSummary).identity.boundaryBinding;
-    expect(binding?.semantics.name).toBe("function-call");
+    expect(binding?.semantics).toMatchObject({
+      name: "unit-invocation",
+      deploymentTarget: "lambda",
+      instanceName: "MixedTriggerFunction",
+    });
   });
 
   it("binds a scheduled job to the eventbridge wire, not http", () => {

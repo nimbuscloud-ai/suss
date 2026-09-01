@@ -1460,6 +1460,14 @@ export interface DiscoveredCustomUnit {
     /** Null when the pack knows the wire but not the channel on it. */
     channel: string | null;
   };
+  /**
+   * The deployed unit this one is, for a unit nothing else routes to.
+   * A Lambda with no event source in its template is reached by being
+   * invoked by name, so its own platform and name are the boundary, and
+   * the adapter builds a `unit-invocation` binding from them. Set it
+   * where a unit would otherwise fall back to a keyless function-call.
+   */
+  invocationInfo?: DeployableUnit;
   /** The thing that gets deployed and runs this unit, when known. */
   deployableUnit?: DeployableUnit;
   /**
