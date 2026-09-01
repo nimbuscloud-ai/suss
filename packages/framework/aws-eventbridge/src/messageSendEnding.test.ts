@@ -57,7 +57,7 @@ const sqsPack = (): PatternPack =>
         wire: "aws_sqs",
         client: constructedFrom(SQS),
         messages: { each: "theInput" },
-        channel: [{ property: "QueueUrl" }],
+        channel: [{ property: ["QueueUrl"] }],
         body: "MessageBody",
       })
         .methods(INSIDE_THE_COMMAND(["SendMessageCommand"], SQS))
@@ -66,7 +66,7 @@ const sqsPack = (): PatternPack =>
         wire: "aws_sqs",
         client: constructedFrom(SQS),
         messages: { each: "in", property: "Entries" },
-        channel: [{ property: "QueueUrl" }],
+        channel: [{ property: ["QueueUrl"] }],
         body: "MessageBody",
       })
         .methods(INSIDE_THE_COMMAND(["SendMessageBatchCommand"], SQS))
@@ -86,8 +86,8 @@ const eventBridgePack = (): PatternPack =>
         client: constructedFrom(EVENTBRIDGE),
         messages: { each: "in", property: "Entries" },
         channel: [
-          { property: "EventBusName", whenAbsent: "default" },
-          { property: "DetailType" },
+          { property: ["EventBusName"], whenAbsent: "default" },
+          { property: ["DetailType"] },
         ],
         // A subject written where nothing here can read it leaves the
         // send unnamed. A hole in its place would pair across buses.

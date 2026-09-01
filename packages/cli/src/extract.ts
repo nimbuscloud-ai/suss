@@ -192,6 +192,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   drizzle: "@suss/packs/drizzle",
   mongoose: "@suss/packs/mongoose",
   "aws-sqs": "@suss/packs/aws-sqs",
+  "aws-sns": "@suss/packs/aws-sns",
   "aws-eventbridge": "@suss/packs/aws-eventbridge",
   "aws-dynamodb": "@suss/packs/aws-dynamodb",
   "aws-s3": "@suss/packs/aws-s3",

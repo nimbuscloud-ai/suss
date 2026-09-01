@@ -1,0 +1,63 @@
+{
+  "name": "@suss/framework-aws-sns",
+  "version": "0.20.0",
+  "type": "module",
+  "description": "Recognize AWS SNS publish calls in TypeScript code and emit message-send effects.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "sns",
+    "aws",
+    "messaging",
+    "pubsub"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/aws-sns#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/framework/aws-sns"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/recognize": "0.20.0"
+  },
+  "devDependencies": {
+    "@suss/adapter-typescript": "*",
+    "@suss/behavioral-ir": "*",
+    "@suss/extractor": "*",
+    "@suss/pack-harness": "*",
+    "@suss/test-project": "*",
+    "ts-morph": "*",
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "private": true
+}

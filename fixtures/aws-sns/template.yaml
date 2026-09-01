@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Fixture for the SNS pairing integration test. Three cases:
+    1. Publisher + subscriber paired correctly (OrderEvents).
+    2. Publisher with no subscriber (AuditEvents) — the topic is
+       declared and code publishes to it, but nothing subscribes.
+    3. Subscriber with no publisher (AlertEvents) — the topic and the
+       Lambda subscription are declared and no code publishes.
+
+Resources:
+  # Pair 1: publisher + subscriber both wired up.
+  OrderEvents:
+    Type: AWS::SNS::Topic
+    Properties: {}
+
+  OrderAnnouncer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-announcer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          ORDER_EVENTS_TOPIC_ARN: !Ref OrderEvents
+
+  OrderNotifier:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/order-notifier/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        FromOrderEvents:
+          Type: SNS
+          Properties:
+            Topic: !Ref OrderEvents
+
+  # Pair 2: the topic is declared and published to, and nothing
+  # subscribes, so nothing receives what the batch publish sends.
+  AuditEvents:
+    Type: AWS::SNS::Topic
+    Properties: {}
+
+  AuditAnnouncer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/audit-announcer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          AUDIT_EVENTS_TOPIC_ARN: !Ref AuditEvents
+
+  # Pair 3: a subscriber with nothing publishing to it.
+  AlertEvents:
+    Type: AWS::SNS::Topic
+    Properties: {}
+
+  AlertNotifier:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/alert-notifier/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Events:
+        FromAlertEvents:
+          Type: SNS
+          Properties:
+            Topic: !Ref AlertEvents

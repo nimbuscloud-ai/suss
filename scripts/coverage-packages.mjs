@@ -54,6 +54,7 @@ export const coveragePackages = [
   ["packages/framework/aws-dynamodb", "aws-dynamodb"],
   ["packages/framework/aws-s3", "aws-s3"],
   ["packages/framework/aws-sqs", "aws-sqs"],
+  ["packages/framework/aws-sns", "aws-sns"],
   ["packages/framework/aws-eventbridge", "aws-eventbridge"],
   ["packages/framework/aws-lambda", "aws-lambda"],
   ["packages/framework/cloudflare-workers", "cloudflare-workers"],

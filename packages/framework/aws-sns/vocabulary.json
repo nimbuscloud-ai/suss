@@ -1,0 +1,10 @@
+{
+  "Message": "AWS SDK v3: PublishCommand input field carrying the payload",
+  "PublishBatchCommand": "@aws-sdk/client-sns: the batch-publish operation's command class",
+  "PublishBatchRequestEntries": "AWS SDK v3: PublishBatchCommand input field holding the messages one batch call publishes",
+  "PublishCommand": "@aws-sdk/client-sns: the single-publish operation's command class",
+  "Subject": "AWS SDK v3: PublishCommand input field, the subject line an email subscription shows",
+  "TargetArn": "AWS SDK v3: PublishCommand input field naming a topic or a platform endpoint",
+  "TopicArn": "AWS SDK v3: PublishCommand input field naming the topic",
+  "sns": "AWS transport name, Amazon SNS"
+}

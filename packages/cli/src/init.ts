@@ -232,6 +232,14 @@ const BY_DEPENDENCY: Array<{
   },
   {
     ecosystem: "npm",
+    dependency: "@aws-sdk/client-sns",
+    name: "aws-sns",
+    packageName: "@suss/framework-aws-sns",
+    kind: "effects",
+    language: "typescript",
+  },
+  {
+    ecosystem: "npm",
     dependency: "@aws-sdk/client-eventbridge",
     name: "aws-eventbridge",
     packageName: "@suss/framework-aws-eventbridge",

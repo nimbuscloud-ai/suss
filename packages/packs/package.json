@@ -48,6 +48,10 @@
       "types": "./dist/aws-s3.d.ts",
       "import": "./dist/aws-s3.js"
     },
+    "./aws-sns": {
+      "types": "./dist/aws-sns.d.ts",
+      "import": "./dist/aws-sns.js"
+    },
     "./aws-sqs": {
       "types": "./dist/aws-sqs.d.ts",
       "import": "./dist/aws-sqs.js"
@@ -194,6 +198,7 @@
     "@suss/framework-aws-eventbridge": "*",
     "@suss/framework-aws-lambda": "*",
     "@suss/framework-aws-s3": "*",
+    "@suss/framework-aws-sns": "*",
     "@suss/framework-aws-sqs": "*",
     "@suss/framework-cloudflare-workers": "*",
     "@suss/framework-drizzle": "*",
