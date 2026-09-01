@@ -1081,7 +1081,7 @@ const sends = (over: Partial<Parameters<typeof messageSends>[0]> = {}) =>
     wire: "aws_sqs",
     client: declaredBy("tapedeck"),
     messages: { each: "theInput" },
-    channel: [{ property: "QueueUrl" }],
+    channel: [{ property: ["QueueUrl"] }],
     body: "MessageBody",
     ...over,
   })
@@ -1142,8 +1142,8 @@ describe("a chain that sends one message", () => {
     const effects = runSend(
       sends({
         channel: [
-          { property: "Bus", whenAbsent: "default" },
-          { property: "Kind" },
+          { property: ["Bus"], whenAbsent: "default" },
+          { property: ["Kind"] },
         ],
       }),
       callOps({
@@ -1162,7 +1162,7 @@ describe("a chain that sends one message", () => {
     // default there would place the send on a channel it never goes to.
     const effects = runSend(
       sends({
-        channel: [{ property: "QueueUrl", whenAbsent: "default" }],
+        channel: [{ property: ["QueueUrl"], whenAbsent: "default" }],
         unsettledName: "nothing",
       }),
       callOps({
@@ -1178,8 +1178,8 @@ describe("a chain that sends one message", () => {
     const effects = runSend(
       sends({
         channel: [
-          { property: "Bus", unsettled: "reference" },
-          { property: "Kind", unsettled: "nothing" },
+          { property: ["Bus"], unsettled: "reference" },
+          { property: ["Kind"], unsettled: "nothing" },
         ],
         unsettledName: "nothing",
       }),
@@ -1222,7 +1222,7 @@ describe("a chain that sends one message", () => {
     const effects = runSend(
       sends({
         messages: { each: "in", property: "Entries" },
-        channel: [{ property: "QueueUrl", on: "theInput" }],
+        channel: [{ property: ["QueueUrl"], on: "theInput" }],
       }),
       callOps({
         method: "send",
@@ -1297,8 +1297,8 @@ describe("a channel written in more than one place", () => {
       wire: "eventbridge",
       messages: { each: "in", property: "Entries" },
       channel: [
-        { property: "EventBusName", whenAbsent: "default" },
-        { property: "DetailType" },
+        { property: ["EventBusName"], whenAbsent: "default" },
+        { property: ["DetailType"] },
       ],
       unsettledName: "nothing",
     });
@@ -1340,7 +1340,10 @@ describe("a channel written in more than one place", () => {
         runSend(
           sends({
             messages: { each: "in", property: "Entries" },
-            channel: [{ property: "EventBusName" }, { property: "DetailType" }],
+            channel: [
+              { property: ["EventBusName"] },
+              { property: ["DetailType"] },
+            ],
             channelSeparator: "/",
           }),
           entries({ EventBusName: "orders", DetailType: "Placed" }),
@@ -1357,7 +1360,7 @@ describe("what a declaration leaves out", () => {
         wire: "aws_sqs",
         client: declaredBy("tapedeck"),
         messages: { each: "theInput" },
-        channel: [{ property: "QueueUrl" }],
+        channel: [{ property: ["QueueUrl"] }],
       })
         .methods(IN_THE_COMMAND)
         .example('client.send({ QueueUrl: "orders" })'),

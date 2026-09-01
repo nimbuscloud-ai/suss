@@ -610,7 +610,7 @@ function channelOf(
   const parts: string[] = [];
   for (const part of ending.channel) {
     const holder = part.on === "theInput" ? input : message;
-    const written = holder.property(part.property);
+    const written = firstWritten(holder, part.property);
     if (written === null) {
       if (part.whenAbsent === undefined) {
         return null;
@@ -625,6 +625,24 @@ function channelOf(
     parts.push(stated);
   }
   return parts.join(ending.channelSeparator ?? "#");
+}
+
+/**
+ * The first of these properties the message wrote. Trying them in order
+ * means the pack decides which spelling wins where a message writes two
+ * of them, rather than that depending on how the source was typed.
+ */
+function firstWritten(
+  holder: ValueOps,
+  properties: readonly string[],
+): ValueOps | null {
+  for (const property of properties) {
+    const written = holder.property(property);
+    if (written !== null) {
+      return written;
+    }
+  }
+  return null;
 }
 
 /**
