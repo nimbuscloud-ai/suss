@@ -27,6 +27,7 @@ import {
   displayLabel,
   goesThroughRelation,
   relationsOf,
+  withDeclaredDelivery,
 } from "@suss/behavioral-ir";
 import { summaryWithDefinitionsInlined } from "@suss/checker";
 import { whatWouldKeyIt } from "@suss/checker-intent";
@@ -358,10 +359,13 @@ interface BoundaryGroup {
   summaries: BehavioralSummary[];
 }
 
-function groupByBoundary(summaries: BehavioralSummary[]): {
+function groupByBoundary(input: BehavioralSummary[]): {
   groups: BoundaryGroup[];
   undrafted: UndraftedBoundary[];
 } {
+  // A queue consumer's behaviour and the queue that reaches it arrive
+  // as two summaries. Drafting one document needs them in one group.
+  const summaries = withDeclaredDelivery(input);
   const groups = new Map<string, BoundaryGroup>();
   const undrafted: UndraftedBoundary[] = [];
   const alreadySaid = new Set<string>();

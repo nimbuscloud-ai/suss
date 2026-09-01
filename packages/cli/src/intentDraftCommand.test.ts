@@ -416,6 +416,73 @@ describe("intentDraftResult", () => {
     expect(result.drafted[0].yaml).toContain("channel: OrdersQueue");
   });
 
+  it("drafts a queue consumer against the channel the template names", () => {
+    const unit = {
+      deploymentTarget: "lambda",
+      instanceName: "WorkerFunction",
+    } as const;
+    const worker: BehavioralSummary = {
+      kind: "handler",
+      location: {
+        file: "src/worker.ts",
+        range: { start: 1, end: 9 },
+        exportName: null,
+      },
+      identity: {
+        name: "WorkerFunction.handler",
+        exportPath: null,
+        deployableUnit: unit,
+        boundaryBinding: {
+          transport: "aws_sqs",
+          semantics: {
+            name: "message-bus",
+            messageBus: "aws_sqs",
+            channel: null,
+          },
+          recognition: "aws-lambda",
+        },
+      },
+      inputs: [],
+      transitions: [responds("t", 200)],
+      gaps: [],
+      confidence: { source: "inferred_static", level: "high" },
+    };
+    const declared: BehavioralSummary = {
+      kind: "consumer",
+      location: {
+        file: "cloudformation:template.yaml",
+        range: { start: 1, end: 1 },
+        exportName: null,
+      },
+      identity: {
+        name: "WorkerFunction.Inbox",
+        exportPath: null,
+        deployableUnit: unit,
+        boundaryBinding: {
+          transport: "aws_sqs",
+          semantics: {
+            name: "message-bus",
+            messageBus: "aws_sqs",
+            channel: "InboxQueue",
+          },
+          recognition: "cloudformation",
+        },
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: { source: "declared", level: "high" },
+    };
+
+    const result = intentDraftResult([worker, declared], "summaries");
+
+    expect(result.undrafted).toEqual([]);
+    expect(result.drafted).toHaveLength(1);
+    expect(result.drafted[0].boundary).toBe("bus:aws_sqs InboxQueue");
+    expect(result.drafted[0].yaml).toContain("channel: InboxQueue");
+    expect(result.drafted[0].outcomes).toBe(1);
+  });
+
   it("skips a consumer, which calls a boundary rather than providing one", () => {
     const consumer: BehavioralSummary = {
       ...restProvider("GET", "/users/:id", [found]),

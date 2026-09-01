@@ -1187,6 +1187,20 @@ something. The checker compares it both ways: a declared write the code
 never makes is an error, and a boundary the code reaches that no outcome
 mentions is info.
 
+That document is on `billing.invoicePaid` because a factory in the
+service states the subject its consumer expects, so the code says which
+channel it is. A Lambda without one has no channel of its own: the SAM
+template decides which queue delivers to it. Read the template as well
+and give `--from` the folder both summaries are in, and the doc comes out
+on the queue the template says reaches that function, with the outcomes
+from the handler:
+
+```bash
+suss extract --dir . -f aws-lambda -o summaries/code.json
+suss contract --from cloudformation template.yaml -o summaries/infra.json
+suss infer intent --from summaries --out intent/
+```
+
 A clause can also say `fields`, the columns the access touches, and `by`,
 what it picks the item out by. Both are optional and both are drafted
 when the summary has them, which is what stops "the customer's contact

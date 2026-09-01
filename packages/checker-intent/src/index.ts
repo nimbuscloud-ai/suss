@@ -36,6 +36,7 @@ import {
   goesThroughRelation,
   relationsOf,
   summaryRef,
+  withDeclaredDelivery,
 } from "@suss/behavioral-ir";
 import {
   applySuppressionsToFindings,
@@ -550,13 +551,22 @@ function indexCodeByBoundary(
   code: BehavioralSummary[],
 ): Map<string, BehavioralSummary[]> {
   const byKey = new Map<string, BehavioralSummary[]>();
-  for (const summary of code) {
+  // A queue consumer's own summary says nothing about which queue
+  // delivers to it, so without this it lands under no key at all and an
+  // intent doc for that boundary pairs with nothing.
+  for (const summary of withDeclaredDelivery(code)) {
     // Intent declares what a boundary PROVIDES. A consumer at the same
     // key (a client calling GET /users/{id}) is a caller, not an
     // implementation: comparing intent outcomes against its
     // return/render transitions would report every declared outcome as
     // uncovered. Same role split the behavioural checker's pairing uses.
     if (BOUNDARY_ROLE[summary.kind] !== "provider") {
+      continue;
+    }
+    // A manifest says a queue exists and no more, so an intent doc
+    // compared against it reads as behaviour nothing implements, when
+    // what implements it is the handler beside it in the same run.
+    if (summary.confidence.source === "declared") {
       continue;
     }
     const binding = summary.identity.boundaryBinding;

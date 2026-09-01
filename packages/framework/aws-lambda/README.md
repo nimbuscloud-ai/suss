@@ -40,6 +40,8 @@ Pass it with `suss extract -f aws-lambda=config.json`.
 
 The queue itself stays on the declared side, since the message-bus pass in `@suss/contract-cloudformation` reads the template's SQS wiring. What the code adds is which subject this consumer listens for.
 
+A consumer with no such factory keeps `channel: null`, and the queue comes back from the declared side when something puts the two together. Both summaries give the same deployable unit, which is how the checker finds the code behind a declared consumer, and `withDeclaredDelivery` in `@suss/behavioral-ir` is the same join for anything that reads summaries by boundary key. `suss infer intent` uses it, so drafting a document for one of these handlers writes the queue from the template above the outcomes the handler produces.
+
 ## Where it fits in suss
 
 Depends on `@suss/extractor` for the `PatternPack` type, `@suss/manifest-aws` to load the template tree and read the function resources and their events, and `@suss/adapter-typescript` for the discovery context the callback asks about a file's exported functions. `ts-morph` is a peer dependency.

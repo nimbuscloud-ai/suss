@@ -95,6 +95,7 @@ export {
   type Polarity,
   polarityOf,
 } from "./conditions.js";
+export { sameUnit, withDeclaredDelivery } from "./declaredDelivery.js";
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 export {
   type CodeScopeMetadata,
