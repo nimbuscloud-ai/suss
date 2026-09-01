@@ -244,6 +244,12 @@ twice with two different names, the path and the handler each have two
 values, suss settles on neither, and the routes go unread until the
 option spells them out.
 
+A helper's `importModule` written relative is read relative to the config
+file it is in. A helper the option asks for that no call in the run
+matches comes out under `no-helper` in the pack-health block, so a
+misspelled name or a path pointing somewhere the helper is not shows up
+instead of quietly costing you the routes.
+
 The lambda option:
 
 ```json

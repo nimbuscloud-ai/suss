@@ -129,6 +129,22 @@ describe("registrationTemplate discovery", () => {
     expect(units).toHaveLength(0);
   });
 
+  it("matches a helper the config's own path points at", () => {
+    const { file, pattern } = projectWithHelperIn("/routes/crud.ts");
+
+    const units = discoverUnits(file, [pattern], new ResolutionStore());
+
+    expect(units.map((unit) => unit.routeInfo)).toEqual([
+      { method: "GET", path: "/users" },
+    ]);
+  });
+
+  it("matches nothing when the config's path is not where the helper is", () => {
+    const { file, pattern } = projectWithHelperIn("/routes/crud.ts", "/nope");
+
+    expect(discoverUnits(file, [pattern], new ResolutionStore())).toEqual([]);
+  });
+
   it("supports a single-handler template without property access", () => {
     const pattern: DiscoveryPattern = {
       kind: "handler",
@@ -190,3 +206,38 @@ describe("registrationTemplate discovery, a handler the call names", () => {
     ]);
   });
 });
+
+/**
+ * A project whose helper is written in `helperFile` and imported by the
+ * call site, with a pattern whose `importModule` is the resolved path a
+ * pack hands over. `configPath` defaults to the helper's own file.
+ */
+function projectWithHelperIn(helperFile: string, configPath?: string) {
+  const project = makeProject();
+  project.createSourceFile(
+    helperFile,
+    `
+      export function registerCrud(_app: unknown, _resource: string, _handlers: unknown) {}
+    `,
+  );
+  const file = project.createSourceFile(
+    "user.ts",
+    `
+      import { registerCrud } from ".${helperFile.replace(/\.ts$/, "")}";
+      const app = {};
+      registerCrud(app, "users", { list() {} });
+    `,
+  );
+  const pattern: DiscoveryPattern = {
+    kind: "handler",
+    match: {
+      type: "registrationTemplate",
+      helperName: "registerCrud",
+      importModule: configPath ?? helperFile.replace(/\.ts$/, ""),
+      registrations: [
+        { method: "get", pathTemplate: "/{1}", handlerArg: "{2}.list" },
+      ],
+    },
+  };
+  return { file, pattern };
+}

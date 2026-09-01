@@ -58,6 +58,11 @@ export const optionsSchema = z
      * (`-f hono=config.json`) rather than being built in here.
      */
     registrationHelpers: z.array(registrationHelperOption).optional(),
+    /**
+     * The directory of the config file these options came from. Whatever
+     * read that file supplies this; it is not written in the file.
+     */
+    configDirectory: z.string().optional(),
   })
   .strict();
 
@@ -150,7 +155,10 @@ export function honoFramework(options: HonoPackOptions = {}): PatternPack {
         importNames: ["OpenAPIHono"],
         wraps: HONO_WRAPPERS,
       }),
-      ...registrationHelperDiscovery(options.registrationHelpers ?? []),
+      ...registrationHelperDiscovery(
+        options.registrationHelpers ?? [],
+        options.configDirectory,
+      ),
     ],
 
     // The createRoute object registered alongside the handler declares

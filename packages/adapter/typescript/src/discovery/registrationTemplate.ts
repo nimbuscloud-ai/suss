@@ -12,9 +12,12 @@
 // deeper than one property are still unread, and a registration whose
 // handler nothing reaches emits no unit.
 
+import path from "node:path";
+
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import { ResolutionStore } from "../facts/store.js";
+import { declarationsBehind } from "../resolve/unfollowedCall.js";
 import { callsResolvingTo } from "./importedCalls.js";
 import {
   functionValueOf,
@@ -74,20 +77,25 @@ export function discoverRegistrationTemplates(
 // ---------------------------------------------------------------------------
 
 /**
- * The helper calls this file makes. With no importModule narrowing the
- * helper is matched by name wherever it came from, which covers one a
- * project declares locally; with one, the store follows the callee to
- * that module's export, through aliases and barrels.
+ * The helper calls this file makes.
+ *
+ * With no importModule narrowing the helper is matched by name wherever
+ * it came from. A package name goes to the store, which follows the
+ * callee to that package's export through aliases and barrels. A path
+ * the pack already resolved against the config file is a file in this
+ * project, and the store's origin rules only speak about packages, so
+ * that one is matched against where the callee is declared.
  */
 function helperCallsOf(
   sourceFile: SourceFile,
   match: TemplateMatch,
   resolution: ResolutionStore | undefined,
 ): CallExpression[] {
-  if (match.importModule !== undefined) {
+  const module = match.importModule;
+  if (module !== undefined && !path.isAbsolute(module)) {
     const store = resolution ?? new ResolutionStore();
     return callsResolvingTo(sourceFile, store, {
-      module: match.importModule,
+      module,
       name: match.helperName,
     }).filter(Node.isCallExpression);
   }
@@ -98,11 +106,33 @@ function helperCallsOf(
       return;
     }
     const callee = node.getExpression();
-    if (Node.isIdentifier(callee) && callee.getText() === match.helperName) {
+    if (!Node.isIdentifier(callee) || callee.getText() !== match.helperName) {
+      return;
+    }
+    if (module === undefined || declaredInModule(callee, module)) {
       calls.push(node);
     }
   });
   return calls;
+}
+
+/**
+ * Whether the callee is declared in the file at `module`, following an
+ * import through to whatever it is an alias of.
+ */
+function declaredInModule(callee: Node, module: string): boolean {
+  return declarationsBehind(callee.getSymbol()).some((declaration) =>
+    isModuleFile(declaration.getSourceFile().getFilePath(), module),
+  );
+}
+
+const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/;
+
+/** A module path points at a file however that file's name ends. */
+function isModuleFile(filePath: string, module: string): boolean {
+  const withoutExtension = filePath.replace(SOURCE_EXTENSION, "");
+  const named = module.replace(SOURCE_EXTENSION, "");
+  return withoutExtension === named || withoutExtension === `${named}/index`;
 }
 
 function substitutePath(template: string, args: Node[]): string | null {

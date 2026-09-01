@@ -6,6 +6,8 @@ import {
   wrapperDiscovery,
 } from "./packHelpers.js";
 
+import type { DiscoveryPattern } from "./framework.js";
+
 describe("httpRouteDiscovery", () => {
   it("emits one DiscoveryPattern per importName with the shared binding-extraction shape", () => {
     const patterns = httpRouteDiscovery({
@@ -198,4 +200,52 @@ describe("registrationHelperDiscovery", () => {
   it("produces nothing from no helpers, so the default costs nothing", () => {
     expect(registrationHelperDiscovery([])).toEqual([]);
   });
+
+  it("reads a relative importModule against the config file's directory", () => {
+    const [pattern] = registrationHelperDiscovery(
+      [
+        {
+          helperName: "registerCrud",
+          importModule: "./routes/crud",
+          registrations: [],
+        },
+      ],
+      "/repo/config",
+    );
+
+    expect(readImportModule(pattern)).toBe("/repo/config/routes/crud");
+  });
+
+  it("leaves a package specifier alone, config directory or not", () => {
+    const [pattern] = registrationHelperDiscovery(
+      [
+        {
+          helperName: "registerCrud",
+          importModule: "@acme/routes",
+          registrations: [],
+        },
+      ],
+      "/repo/config",
+    );
+
+    expect(readImportModule(pattern)).toBe("@acme/routes");
+  });
+
+  it("leaves a relative specifier alone when nothing said where the config is", () => {
+    const [pattern] = registrationHelperDiscovery([
+      {
+        helperName: "registerCrud",
+        importModule: "./routes/crud",
+        registrations: [],
+      },
+    ]);
+
+    expect(readImportModule(pattern)).toBe("./routes/crud");
+  });
 });
+
+function readImportModule(pattern: DiscoveryPattern | undefined) {
+  return pattern?.match.type === "registrationTemplate"
+    ? pattern.match.importModule
+    : null;
+}

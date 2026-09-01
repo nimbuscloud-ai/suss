@@ -37,8 +37,10 @@ Pass it with `suss extract -f hono=config.json`.
 
 - `registrationHelpers`: the project's own registration helpers, each expanded into the routes one call registers.
   - `helperName`: the helper's exported name, as the project's code imports it.
-  - `importModule`: the module the helper is imported from, which tells two same-named helpers apart. Optional.
+  - `importModule`: the module the helper is imported from, which tells two same-named helpers apart. Optional. Written relative, it is read relative to the config file it is in, so `./routes/crud` beside a config at the project root is `routes/crud.ts` at the project root.
   - `registrations`: one entry per route the helper call registers. `{N}` is replaced by the helper call's argument at position N, and `handlerArg` can add one property on that argument.
+
+A helper here that no call in the run matches comes out under `no-helper` in [pack health](../../../docs/guides/pack-health.md), since the routes it would have registered go missing with every other count unchanged.
 
 ## Where it fits in suss
 

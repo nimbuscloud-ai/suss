@@ -1466,6 +1466,12 @@ function extractFromSourceFile(
     if (tally !== undefined) {
       tally.unitsDiscovered += units.length;
       tally.summariesProduced += summaries.length - summariesBefore;
+      for (const unit of units) {
+        const matched = unit.pattern?.match;
+        if (matched?.type === "registrationTemplate") {
+          tally.helpersMatched.add(matched.helperName);
+        }
+      }
     }
   }
 

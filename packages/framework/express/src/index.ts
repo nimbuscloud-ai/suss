@@ -24,6 +24,11 @@ export const optionsSchema = z
      * (`-f express=config.json`) rather than being built in here.
      */
     registrationHelpers: z.array(registrationHelperOption).optional(),
+    /**
+     * The directory of the config file these options came from. Whatever
+     * read that file supplies this; it is not written in the file.
+     */
+    configDirectory: z.string().optional(),
   })
   .strict();
 
@@ -67,7 +72,10 @@ export function expressFramework(
           },
         ],
       }),
-      ...registrationHelperDiscovery(options.registrationHelpers ?? []),
+      ...registrationHelperDiscovery(
+        options.registrationHelpers ?? [],
+        options.configDirectory,
+      ),
     ],
 
     terminals: [

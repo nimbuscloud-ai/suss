@@ -120,6 +120,7 @@ function report(
       unitsInGatedFiles: 0,
       effectsRecognized: 0,
       failures: [],
+      helpersMatched: new Set<string>(),
       unitsClaimed: c.unitsDiscovered,
       selfCollisions: 0,
     });
