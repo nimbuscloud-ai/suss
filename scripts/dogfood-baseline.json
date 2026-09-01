@@ -2,10 +2,10 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 686,
-    "internal": 2386,
-    "consumers": 1209,
-    "pairs": 1189,
+    "exports": 687,
+    "internal": 2383,
+    "consumers": 1214,
+    "pairs": 1194,
     "unfollowedCalls": 184,
     "findingErrors": 0
   },
@@ -41,8 +41,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 42,
-      "internal": 230,
-      "consumers": 161,
+      "internal": 227,
+      "consumers": 166,
       "unfollowedCalls": 29
     },
     "packages/checker-intent": {
@@ -411,7 +411,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 72,
+      "exports": 73,
       "internal": 14,
       "consumers": 0,
       "unfollowedCalls": 10
