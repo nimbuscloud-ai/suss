@@ -58,6 +58,16 @@ function makeRuntimeProvider(opts: {
   };
 }
 
+function calleeOf(
+  varName: string,
+  callee: string | null | undefined,
+): { callee?: string } {
+  if (callee === null) {
+    return {};
+  }
+  return { callee: callee ?? `process.env.${varName}` };
+}
+
 function makeCodeSummary(opts: {
   name: string;
   file: string;
@@ -65,6 +75,8 @@ function makeCodeSummary(opts: {
   runsInUnit?: string;
   moduleImports?: string[];
   defaulted?: boolean;
+  /** How the source spelled every read; null leaves the callee off. */
+  callee?: string | null;
 }): BehavioralSummary {
   const transition: Transition = {
     id: "t0",
@@ -81,7 +93,7 @@ function makeCodeSummary(opts: {
         },
         recognition: "@suss/runtime-node",
       },
-      callee: `process.env.${varName}`,
+      ...calleeOf(varName, opts.callee),
       interaction: {
         class: "config-read" as const,
         name: varName,
@@ -909,6 +921,7 @@ describe("a runtime whose code reads its configuration off an argument", () => {
         name: "fetch",
         file: "src/index.ts",
         envReads: ["MISSING_ORIGIN"],
+        callee: null,
       }),
     ]);
 
@@ -918,6 +931,30 @@ describe("a runtime whose code reads its configuration off an argument", () => {
 
     const unused = findings.find((f) => f.kind === "boundaryFieldUnused");
     expect(unused?.description).toContain("reads env.GREETING_TABLE");
+  });
+});
+
+describe("a read the source spelled its own way", () => {
+  it("repeats the source's spelling, so a Python read is not described as process.env", () => {
+    const findings = checkRuntimeConfig([
+      makeRuntimeProvider({
+        instanceName: "ApiFunction",
+        envVars: [],
+        codeScope: { kind: "codeUri", path: "src" },
+      }),
+      makeCodeSummary({
+        name: "list_items",
+        file: "src/app.py",
+        envReads: ["ASSET_BUCKET"],
+        callee: 'os.environ["ASSET_BUCKET"]',
+      }),
+    ]);
+
+    const unprovided = findings.find((f) => f.kind === "boundaryFieldUnknown");
+    expect(unprovided?.description).toContain(
+      'os.environ["ASSET_BUCKET"] read by list_items',
+    );
+    expect(unprovided?.description).not.toContain("process.env");
   });
 });
 

@@ -58,6 +58,7 @@ import {
   type RawDependencyCall,
   type RawParameter,
   type ResponsePropertyMapping,
+  stampModuleImports,
   type TerminalPattern,
 } from "@suss/extractor";
 
@@ -1558,35 +1559,6 @@ function stampWrappers(
 }
 
 /**
- * Record on each summary which project files its own file imports, so
- * a checker working from summaries alone can rebuild the module graph
- * (a runtime's scope is its handler entry's import closure). Absolute
- * paths here; the CLI makes them relative beside `location.file`.
- */
-function stampModuleImports(
-  summaries: BehavioralSummary[],
-  project: Project,
-): void {
-  const byFile = new Map<string, string[]>();
-  for (const summary of summaries) {
-    const file = summary.location.file;
-    let imports = byFile.get(file);
-    if (imports === undefined) {
-      imports = internalImportsOf(project, file);
-      byFile.set(file, imports);
-    }
-
-    if (imports.length === 0) {
-      continue;
-    }
-    summary.metadata = {
-      ...(summary.metadata ?? {}),
-      moduleImports: imports,
-    };
-  }
-}
-
-/**
  * One marker summary per pack-declared library whose module some
  * project file imports. The marker's metadata says which env vars the
  * library reads from inside node_modules, where no walk looks, so the
@@ -2565,8 +2537,13 @@ export function createTypeScriptAdapter(
         );
       }
 
+      // Absolute paths here; the CLI makes them relative beside `location.file`.
+      // A leaf file stays unstamped, as it always has for TypeScript.
       timer.time("stampModuleImports", () =>
-        stampModuleImports(enriched, project),
+        stampModuleImports(enriched, (file) => {
+          const imports = internalImportsOf(project, file);
+          return imports.length === 0 ? undefined : imports;
+        }),
       );
       timer.time("emitLibraryEnvReadMarkers", () =>
         emitLibraryEnvReadMarkers(enriched, project, config.frameworks),

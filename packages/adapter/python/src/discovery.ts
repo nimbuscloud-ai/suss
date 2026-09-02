@@ -46,6 +46,7 @@ import {
   decoratorReceiver,
   unwrapDecorator,
 } from "./decorators.js";
+import { envReadEffects } from "./envReads.js";
 import { subjectConstructions } from "./facts/resolve.js";
 import { readKey } from "./facts/values.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
@@ -1200,6 +1201,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
             patterns: storageLookup.rawSql ?? [],
           }),
         ];
+  const extra = [...envReadEffects(definitionNode, module), ...storage];
   const perReturn = branchesFromReturns(
     readsReturnedStatus,
     definitionNode,
@@ -1208,7 +1210,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     statusCode,
   );
   const branches: RawBranch[] = (perReturn ?? []).map((branch) =>
-    storage.length === 0 ? branch : { ...branch, extraEffects: storage },
+    extra.length === 0 ? branch : { ...branch, extraEffects: extra },
   );
   // Whatever a body does, it did so whether or not the route declares a
   // response, and an effect with no transition to sit on is thrown away.
@@ -1216,7 +1218,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     perReturn === null &&
     (responseShape.reading.kind !== "absent" ||
       statusCode.reading.kind !== "absent" ||
-      storage.length > 0 ||
+      extra.length > 0 ||
       effects.length > 0)
   ) {
     branches.push({
@@ -1238,7 +1240,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       statusCodeReading: statusCode,
       bodyShapeReading: { reading: responseShape.reading },
       effects,
-      ...(storage.length === 0 ? {} : { extraEffects: storage }),
+      ...(extra.length === 0 ? {} : { extraEffects: extra }),
       location: rangeOf(definitionNode),
       isDefault: true,
     });

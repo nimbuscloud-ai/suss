@@ -90,6 +90,24 @@ export function runStatements(
   return found;
 }
 
+/** The text inside a plain string node, with the quotes removed. A string with interpolation returns null. */
+export function stringLiteralValue(node: RbNode): string | null {
+  if (node.type !== "string") {
+    return null;
+  }
+  let content = "";
+  for (const child of bodyStatements(node)) {
+    if (child.type === "string_content") {
+      content += child.text;
+      continue;
+    }
+    if (child.type === "interpolation") {
+      return null;
+    }
+  }
+  return content;
+}
+
 /** tree-sitter-ruby leaves the leading colon in a `simple_symbol`'s text, but not in a `hash_key_symbol`'s. */
 export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;

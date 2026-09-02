@@ -51,6 +51,8 @@ import type { DefaultedReading, Reading } from "./reading.js";
 
 export { composeWrappers } from "./composeWrappers.js";
 export { guardsHoldOn, runsBefore } from "./effectGuards.js";
+export { stampModuleImports } from "./moduleImports.js";
+export { type ModuleInitOptions, moduleInitStructure } from "./moduleInit.js";
 export {
   httpRouteDiscovery,
   type RegistrationHelper,

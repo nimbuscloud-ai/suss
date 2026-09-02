@@ -24,6 +24,7 @@ export interface ConstantReference {
 }
 
 export interface FileConstants {
+  readonly filePath: string;
   readonly definitions: readonly ConstantDefinition[];
   readonly references: readonly ConstantReference[];
 }
@@ -138,24 +139,30 @@ export function collectFileConstants(
   };
 
   walk(root, null, []);
-  return { definitions, references };
+  return { filePath, definitions, references };
 }
 
 /**
  * Link every constant read anywhere in the run to the definition behind it,
  * looking outwards from the nesting it was read inside the way Ruby does.
+ *
+ * `binds(refKey, defKey)` is the link itself. `rbConstantFrom(from, to)`
+ * is the same link at file level, which is the closest thing to an
+ * import graph a language without imports has.
  */
 export function emitConstantBindings(
   db: Database,
   perFile: Iterable<FileConstants>,
 ): void {
   const byName = new Map<string, string[]>();
+  const fileOfDefinition = new Map<string, string>();
   const files = [...perFile];
   for (const file of files) {
     for (const definition of file.definitions) {
       const found = byName.get(definition.qualifiedName) ?? [];
       found.push(definition.key);
       byName.set(definition.qualifiedName, found);
+      fileOfDefinition.set(definition.key, file.filePath);
     }
   }
 
@@ -177,6 +184,10 @@ export function emitConstantBindings(
         const key = settles(candidate);
         if (key !== null) {
           db.add("binds", [reference.key, key]);
+          const definedIn = fileOfDefinition.get(key);
+          if (definedIn !== undefined && definedIn !== file.filePath) {
+            db.add("rbConstantFrom", [file.filePath, definedIn]);
+          }
           break;
         }
       }

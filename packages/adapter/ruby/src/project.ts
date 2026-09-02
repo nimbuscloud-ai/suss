@@ -12,16 +12,22 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { Database } from "@suss/datalog";
-import { assembleSummary } from "@suss/extractor";
+import {
+  assembleSummary,
+  moduleInitStructure,
+  stampModuleImports,
+} from "@suss/extractor";
 
+import { rangeOf } from "./ast.js";
 import { createFileCache, discoverUnits } from "./discovery.js";
+import { envReadEffects } from "./envReads.js";
 import {
   collectFileConstants,
   emitConstantBindings,
   type FileConstants,
 } from "./facts/constants.js";
 import { emitValueFacts } from "./facts/values.js";
-import { emitEntryFact } from "./facts.js";
+import { emitEntryFact, emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -70,16 +76,21 @@ export async function extractRubyProject(
     constants.push(collectFileConstants(file, root));
   }
   emitConstantBindings(db, constants);
+  const known = new Set(parsed.map(({ file }) => file));
+  for (const { file, root } of parsed) {
+    emitRequireFacts(db, file, root, known);
+  }
 
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
+  // Facts keep the full filesystem path, because they are joined against
+  // internally. Only the summary's `location.file` gets shortened.
+  const displayPathOf = (file: string): string =>
+    options.workspaceRoot !== undefined
+      ? path.relative(options.workspaceRoot, file)
+      : file;
 
   for (const { file, root } of parsed) {
-    // Facts keep the full filesystem path, because they are joined against
-    // internally. Only the summary's `location.file` gets shortened.
-    const displayPath =
-      options.workspaceRoot !== undefined
-        ? path.relative(options.workspaceRoot, file)
-        : file;
+    const displayPath = displayPathOf(file);
 
     const rawUnits = await discoverUnits(root, {
       packs: options.packs,
@@ -98,9 +109,52 @@ export async function extractRubyProject(
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
     }
+
+    const loadTimeReads = envReadEffects(root);
+    if (loadTimeReads.length > 0) {
+      const summary = assembleSummary(
+        moduleInitStructure({
+          name: path.basename(displayPath),
+          file: displayPath,
+          range: rangeOf(root),
+          effects: loadTimeReads,
+        }),
+        { gapHandling: "permissive" },
+      );
+      summary.confidence = { source: "inferred_static", level: "low" };
+      summaries.push(summary);
+    }
   }
 
+  const dependencies = fileDependenciesOf(db, displayPathOf);
+  stampModuleImports(summaries, (file) => dependencies.get(file) ?? []);
+
   return { summaries, facts: db };
+}
+
+/**
+ * The files each file depends on, spelled the way a summary's
+ * location.file is. Ruby has no import statement to read, so this comes
+ * from `require_relative` lines that resolve to a file in the run and
+ * from constants this file reads that another file in the run defines.
+ */
+function fileDependenciesOf(
+  db: Database,
+  displayPathOf: (file: string) => string,
+): Map<string, string[]> {
+  const byFile = new Map<string, string[]>();
+  for (const relation of ["rbRequires", "rbConstantFrom"]) {
+    for (const [from, to] of db.facts(relation)) {
+      if (typeof from !== "string" || typeof to !== "string") {
+        continue;
+      }
+      const key = displayPathOf(from);
+      const seen = byFile.get(key) ?? [];
+      seen.push(displayPathOf(to));
+      byFile.set(key, seen);
+    }
+  }
+  return byFile;
 }
 
 const SKIPPED_DIRECTORIES = new Set(["vendor", "node_modules", "tmp", ".git"]);
