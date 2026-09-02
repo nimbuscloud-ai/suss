@@ -53,13 +53,13 @@ async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
   let cursor = 0;
   const workerCount = Math.min(limit, items.length);
-  const workers = Array.from({ length: workerCount }, async () => {
+  const workers = Array.from({ length: workerCount }, async (_, lane) => {
     while (true) {
       const i = cursor++;
       if (i >= items.length) {
         return;
       }
-      results[i] = await fn(items[i], i);
+      results[i] = await fn(items[i], lane);
     }
   });
   await Promise.all(workers);
@@ -135,44 +135,70 @@ const allSummaries = [];
 const workerScript = path.join(__dirname, "dogfood-worker.mjs");
 const sussImportTargetsList = [...sussImportTargets];
 
-function runWorker(pkg) {
-  return new Promise((resolve) => {
-    const worker = new Worker(workerScript, {
-      workerData: {
-        pkg: {
-          packageJson: pkg.packageJson,
-          packageJsonPath: pkg.packageJsonPath,
-          tsconfig: path.join(pkg.dir, "tsconfig.json"),
-        },
-        sussImportTargets: sussImportTargetsList,
-      },
-    });
-    let settled = false;
-    const finish = (msg) => {
-      if (!settled) {
-        settled = true;
-        resolve(msg);
-      }
-    };
-    worker.once("message", (msg) => {
-      finish(msg);
-      worker.terminate();
-    });
-    worker.once("error", (err) => {
-      finish({ kind: "error", message: err.message });
-    });
-    // A worker that dies without a message or an error, which is what a
-    // native crash in the thread looks like when the process survives it.
-    worker.once("exit", (code) => {
-      finish({
-        kind: "error",
-        message: `worker exited with code ${code} before reporting anything`,
-      });
-    });
+function spawnWorker() {
+  return new Worker(workerScript, {
+    workerData: { sussImportTargets: sussImportTargetsList },
   });
 }
 
-async function extractOne(pkg) {
+/**
+ * One worker thread that extracts package after package. Loading ts-morph
+ * and the adapter costs about half a second per thread, so a thread per
+ * package spent half a minute of CPU on module loading alone. A lane
+ * keeps its thread across packages and replaces it when it dies or asks
+ * to be retired.
+ */
+function createLane() {
+  let worker = spawnWorker();
+
+  const run = (pkg) =>
+    new Promise((resolve) => {
+      let settled = false;
+      const finish = (msg, dead) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        worker.off("message", onMessage);
+        worker.off("error", onError);
+        worker.off("exit", onExit);
+        if (dead) {
+          worker = spawnWorker();
+        }
+        resolve(msg);
+      };
+      const onMessage = (msg) => {
+        if (msg.retire) {
+          worker.terminate();
+        }
+        finish(msg, msg.retire);
+      };
+      const onError = (err) =>
+        finish({ kind: "error", message: err.message }, true);
+      // A worker that dies without a message or an error, which is what a
+      // native crash in the thread looks like when the process survives it.
+      const onExit = (code) =>
+        finish(
+          {
+            kind: "error",
+            message: `worker exited with code ${code} before reporting anything`,
+          },
+          true,
+        );
+      worker.on("message", onMessage);
+      worker.on("error", onError);
+      worker.on("exit", onExit);
+      worker.postMessage({
+        packageJson: pkg.packageJson,
+        packageJsonPath: pkg.packageJsonPath,
+        tsconfig: path.join(pkg.dir, "tsconfig.json"),
+      });
+    });
+
+  return { run, close: () => worker.terminate() };
+}
+
+async function extractOne(pkg, lane) {
   const name = pkg.packageJson.name;
   const tsconfig = path.join(pkg.dir, "tsconfig.json");
   if (!fs.existsSync(tsconfig)) {
@@ -183,7 +209,7 @@ async function extractOne(pkg) {
   // whole process with nothing said (#249), and then these lines are
   // the only record of which packages were being read.
   process.stdout.write(`  reading ${name}…\n`);
-  const result = await runWorker(pkg);
+  const result = await lane.run(pkg);
   if (result.kind === "error") {
     return { kind: "error", name, message: result.message };
   }
@@ -210,11 +236,15 @@ const concurrency = Math.max(
 console.log(
   `Extracting ${packages.length} @suss/* packages with concurrency ${concurrency}…`,
 );
+const lanes = Array.from({ length: concurrency }, createLane);
 const extractResults = await mapWithConcurrency(
   packages,
   concurrency,
-  extractOne,
+  (pkg, laneIndex) => extractOne(pkg, lanes[laneIndex]),
 );
+for (const lane of lanes) {
+  lane.close();
+}
 
 for (const result of extractResults) {
   console.log(`\n=== ${result.name} ===`);

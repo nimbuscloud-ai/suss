@@ -15,6 +15,8 @@ import path from "node:path";
 
 import ts from "typescript";
 
+import { findManifests } from "./workspacePackages.mjs";
+
 /**
  * Each export surface a manifest declares, as the sub-path it is reached
  * by and the declaration file that describes it. A sub-path export shows
@@ -49,11 +51,42 @@ function declaredEntryPoints(packageJson, dir) {
  * is a construct signature, and its methods are surface a caller reaches
  * even though the name itself takes no call.
  *
- * Memoised on the declaration file, because reading one means building a
- * TypeScript program for it and both readers ask about every package in
- * the workspace.
+ * Memoised on the declaration file, because both readers ask about
+ * every package in the workspace.
  */
 const exportsByFile = new Map();
+
+let workspaceProgram = null;
+
+function workspaceDeclarations() {
+  return findManifests().flatMap((manifest) => {
+    const packageJson = JSON.parse(fs.readFileSync(manifest, "utf8"));
+    return declaredEntryPoints(packageJson, path.dirname(manifest)).map(
+      (entry) => entry.declarationFile,
+    );
+  });
+}
+
+/**
+ * One TypeScript program over every entry point in the workspace, built
+ * the first time anything asks. A program per declaration file parsed
+ * the standard library once per package: 26 seconds of the dogfood run,
+ * against 0.6 for one program over all of them.
+ */
+function programFor(declarationFile) {
+  if (
+    workspaceProgram === null ||
+    workspaceProgram.getSourceFile(declarationFile) === undefined
+  ) {
+    const roots = new Set(workspaceDeclarations());
+    roots.add(declarationFile);
+    workspaceProgram = ts.createProgram([...roots], {
+      target: ts.ScriptTarget.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    });
+  }
+  return workspaceProgram;
+}
 
 function moduleExports(declarationFile) {
   const memoised = exportsByFile.get(declarationFile);
@@ -61,10 +94,7 @@ function moduleExports(declarationFile) {
     return memoised;
   }
 
-  const program = ts.createProgram([declarationFile], {
-    target: ts.ScriptTarget.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  });
+  const program = programFor(declarationFile);
   const checker = program.getTypeChecker();
   const source = program.getSourceFile(declarationFile);
   const moduleSymbol = source && checker.getSymbolAtLocation(source);
