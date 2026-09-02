@@ -47,6 +47,7 @@ import type { z } from "zod";
 // them unchanged; behaviour-specific types are derived from schemas.ts below.
 export {
   type BoundaryName,
+  bindingIs,
   boundaryKey,
   boundaryLabel,
   boundaryNameString,
@@ -216,8 +217,10 @@ export {
   disambiguateSummaryIds,
   renderTargetKey,
   type SummaryIdParts,
+  settlingSuffix,
   summaryIdentifier,
   summaryIdFromParts,
+  unsettledSummaryId,
 } from "./summaryId.js";
 
 export type {

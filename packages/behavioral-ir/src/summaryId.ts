@@ -90,6 +90,37 @@ export function summaryIdentifier(summary: BehavioralSummary): string {
   });
 }
 
+/**
+ * The id a summary has before settling adds a boundary or a line to
+ * it, which is what a reader matches a typed tail against: the tail
+ * `evaluate` is this function's own name, and not the export a caller
+ * of it was settled with.
+ */
+export function unsettledSummaryId(summary: BehavioralSummary): string {
+  return summaryIdFromParts({
+    workspace: summary.location.workspace,
+    file: summary.location.file,
+    name: summary.identity.name,
+    exportPath: summary.identity.exportPath,
+  });
+}
+
+/**
+ * What settling appended to a summary's id, or nothing. The id and the
+ * summary can disagree about the workspace, so the match leaves it out.
+ */
+export function settlingSuffix(summary: BehavioralSummary): string {
+  const id = summaryIdentifier(summary);
+  const withoutWorkspace = summaryIdFromParts({
+    workspace: undefined,
+    file: summary.location.file,
+    name: summary.identity.name,
+    exportPath: summary.identity.exportPath,
+  });
+  const at = id.indexOf(withoutWorkspace);
+  return at === -1 ? "" : id.slice(at + withoutWorkspace.length);
+}
+
 export function summaryIdFromParts(parts: SummaryIdParts): string {
   const reached =
     parts.exportPath !== null && parts.exportPath.length > 0
