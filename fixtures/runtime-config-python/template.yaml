@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Two Python Lambdas built from one source directory. Each
+  declares its own environment, so only the handler entry says which
+  module runs where.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.handler
+      Environment:
+        Variables:
+          TABLE_NAME: "catalog-items"
+          RETRY_LIMIT: "3"
+      Events:
+        Items:
+          Type: HttpApi
+          Properties:
+            Method: GET
+            Path: /items
+
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: worker.handler
+      Environment:
+        Variables:
+          QUEUE_URL: "https://sqs.us-east-1.amazonaws.com/000000000000/catalog"
