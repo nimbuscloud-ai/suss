@@ -22,6 +22,11 @@ import {
   variable as v,
 } from "./index.js";
 
+// Pinned so a run repeats and a counterexample can be reproduced from
+// the seed alone. The nightly fuzz job sets SUSS_FUZZ_SEED from its run
+// id, which is where these generators draw anything new.
+const PROPERTY_SEED = Number(process.env.SUSS_FUZZ_SEED) || 20260730;
+
 // A fixed schema keeps generated rules meaningful. There are two base
 // relations the rules read from, and three derived ones they write to.
 const BASE = ["edge", "flag"] as const;
@@ -188,7 +193,7 @@ describe("evaluate holds up under random rule sets", () => {
           );
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 300, seed: PROPERTY_SEED },
     );
   });
 
@@ -201,7 +206,7 @@ describe("evaluate holds up under random rule sets", () => {
           model(evaluatedInOneGo(reversed, rules)),
         );
       }),
-      { numRuns: 200 },
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 
@@ -230,7 +235,7 @@ describe("evaluate holds up under random rule sets", () => {
           expect(model(carriedOver)).toEqual(model(reference));
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 });

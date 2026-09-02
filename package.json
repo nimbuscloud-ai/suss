@@ -81,7 +81,8 @@
     "test:acceptance": "npm run -w @suss/acceptance test",
     "test:badges": "npm run test:coverage && npm run badges",
     "test:coverage": "turbo test:coverage --concurrency=3",
-    "typecheck": "tsc --build tsconfig.typecheck.json"
+    "typecheck": "tsc --build tsconfig.typecheck.json",
+    "fuzz:properties": "vitest run packages/datalog/src packages/resolution/src"
   },
   "lint-staged": {
     "*": [
