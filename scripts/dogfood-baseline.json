@@ -2,11 +2,11 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 694,
-    "internal": 2416,
-    "consumers": 1218,
-    "pairs": 1198,
-    "unfollowedCalls": 210,
+    "exports": 712,
+    "internal": 2407,
+    "consumers": 1247,
+    "pairs": 1227,
+    "unfollowedCalls": 221,
     "findingErrors": 0
   },
   "packages": {
@@ -33,30 +33,30 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 87,
-      "internal": 27,
-      "consumers": 6,
-      "unfollowedCalls": 1
+      "exports": 103,
+      "internal": 31,
+      "consumers": 11,
+      "unfollowedCalls": 4
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 42,
-      "internal": 227,
-      "consumers": 166,
-      "unfollowedCalls": 29
+      "internal": 212,
+      "consumers": 178,
+      "unfollowedCalls": 36
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
       "exports": 3,
-      "internal": 20,
-      "consumers": 25,
+      "internal": 21,
+      "consumers": 30,
       "unfollowedCalls": 0
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 21,
       "internal": 399,
-      "consumers": 269,
+      "consumers": 273,
       "unfollowedCalls": 31
     },
     "packages/client/apollo": {
@@ -97,8 +97,8 @@
     "packages/contract/cloudformation": {
       "name": "@suss/contract-cloudformation",
       "exports": 8,
-      "internal": 74,
-      "consumers": 124,
+      "internal": 75,
+      "consumers": 127,
       "unfollowedCalls": 1
     },
     "packages/contract/graphql": {
@@ -411,10 +411,10 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 73,
+      "exports": 75,
       "internal": 14,
       "consumers": 0,
-      "unfollowedCalls": 10
+      "unfollowedCalls": 11
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
