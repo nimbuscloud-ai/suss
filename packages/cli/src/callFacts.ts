@@ -27,7 +27,7 @@ import { resolveTarget } from "./target.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { BodyMatch, Rule, TagAlgebra } from "@suss/datalog";
 
-/** Where a function is, which is the one thing all of its summaries share. */
+/** What `functionOf` returns. */
 export type FunctionKey = string;
 
 /** The calls between two functions, each as the caller writes it. */
@@ -36,7 +36,6 @@ export type CallPath = readonly string[];
 export interface CallFacts {
   /** Every summary of each function, in the order the run wrote them. */
   units: ReadonlyMap<FunctionKey, BehavioralSummary[]>;
-  functionOf(summary: BehavioralSummary): FunctionKey;
   /** Who calls a function directly, one entry per caller function. */
   callersOf(target: ReachTarget): DirectCall[];
   /** Every function that ends up calling into the target, with the shortest path. */
@@ -120,14 +119,14 @@ export function readCallFacts(
 
   return {
     units,
-    functionOf,
     callersOf: (target) => directCallers(database(), target),
     reaching: (target) => reachingFunctions(database(), target),
     reachedFrom: (start) => reachedFunctions(database(), start),
   };
 }
 
-function functionOf(summary: BehavioralSummary): FunctionKey {
+/** Where a function is, which is the one thing all of its summaries share. */
+export function functionOf(summary: BehavioralSummary): FunctionKey {
   const { file, range, workspace } = summary.location;
   return [workspace ?? "", file, range.start, range.end].join(" ");
 }
@@ -333,7 +332,7 @@ export function functionsSpelled(
   if (resolution.matched && resolution.target.kind === "boundary") {
     const provided = resolution.target.touches
       .filter((touch) => touch.touched.relation === "provides")
-      .map((touch) => facts.functionOf(touch.summary));
+      .map((touch) => functionOf(touch.summary));
     const keys = resolution.target.touches
       .map((touch) => boundaryKey(touch.touched.binding))
       .filter((key): key is string => key !== null);
@@ -358,7 +357,7 @@ export function functionsSpelled(
     };
   }
 
-  const functions = [...new Set(units.map((unit) => facts.functionOf(unit)))];
+  const functions = [...new Set(units.map((unit) => functionOf(unit)))];
   const byName = !resolution.matched || resolution.target.kind === "summary";
   if (byName && functions.length > 1) {
     const candidates = functions.map((fn) =>

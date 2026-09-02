@@ -30,7 +30,7 @@ import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
 import { askWhy, WHY_SHAPES } from "./askWhy.js";
-import { readCallFacts } from "./callFacts.js";
+import { functionOf, readCallFacts } from "./callFacts.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import {
@@ -522,9 +522,7 @@ function throughCalls(
   const facts = readCallFacts(summaries);
   const already = new Set(direct.map((touch) => touchKey(touch)));
   const found: ReachedTouch[] = [];
-  const reached = facts.reachedFrom(
-    start.map((unit) => facts.functionOf(unit)),
-  );
+  const reached = facts.reachedFrom(start.map((unit) => functionOf(unit)));
   for (const [fn, through] of shortestFirst(reached)) {
     for (const touch of touchesOfUnits(facts.units.get(fn) ?? [])) {
       if (servesItself(touch) || already.has(touchKey(touch))) {
@@ -626,11 +624,11 @@ function reachTargetOf(target: ResolvedTarget, facts: CallFacts): ReachTarget {
       bindingIs(binding, "function-call") &&
       key !== null;
     if (!placedByBinding) {
-      at.add(facts.functionOf(touch.summary));
+      at.add(functionOf(touch.summary));
     }
   }
   return {
-    functions: [...new Set(functions.map((unit) => facts.functionOf(unit)))],
+    functions: [...new Set(functions.map((unit) => functionOf(unit)))],
     keys: [...keys],
     at: [...at],
   };
