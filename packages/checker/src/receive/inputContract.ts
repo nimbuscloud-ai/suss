@@ -32,8 +32,9 @@ export interface ReadSet {
   /**
    * Whether the paths start at the value the sender wrote. A
    * destructure of an already-parsed message does. A handler
-   * parameter does not, because the platform's envelope arrives in
-   * the same position and its fields are not the sender's.
+   * parameter does not as far as `readSetOf` can tell, because the
+   * platform's envelope arrives in the same position; a protocol that
+   * knows its envelope settles this itself.
    */
   rootedAtPayload: boolean;
 }

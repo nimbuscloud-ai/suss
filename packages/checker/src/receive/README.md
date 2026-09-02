@@ -20,15 +20,15 @@ A false finding against working code costs more than a missing one, so the rule 
 - **`rest-parameter`.** A rest binding collects whatever the caller passed. Anything could be consumed through it without a read being recorded.
 - **`payload-used-whole`.** The receiver used the payload object itself, with an empty path. It can forward the object anywhere, and every field of it could be read somewhere this summary cannot see.
 - **`sender-opaque`.** One of the senders passed something that is not an object literal: a variable, a call, a template string. It could be setting any of these paths. The message-bus pass previously ignored such a sender and compared against the rest, which reported a field a `send(payload)` beside it may well have been sending.
-- **`different-object`.** Every path came back unsupplied and not one outermost name is shared. That is what a receiver reading the platform's envelope looks like: a raw SQS handler reads `event.Records` while the producer sends `{ id, total }`, and reporting `Records` as a missing field would be nonsense. This one applies only to reads that start at a handler parameter. A destructure of an already-parsed message is known to start at the sender's value, so a wholesale rename there is reported.
+- **`different-object`.** Every path came back unsupplied and not one outermost name is shared. That is what a receiver reading the platform's envelope looks like: a raw SQS handler reads `event.Records` while the producer sends `{ id, total }`, and reporting `Records` as a missing field would be nonsense. This one applies only when `rootedAtPayload` is false, which is a read set whose protocol could not say whether the parameter is the sender's value or an envelope around it. A destructure of an already-parsed message is known to start at the sender's value, so a wholesale rename there is reported.
 
-`different-object` is the one that costs findings. A payload with a single top-level field, renamed, looks exactly like a receiver reading the wrong object, and the rule keeps quiet about both.
+`different-object` is the one that costs findings. A payload with a single top-level field, renamed, looks exactly like a receiver reading the wrong object, and the rule keeps quiet about both. A protocol that knows what its envelope looks like can settle `rootedAtPayload` itself instead of leaving it to this rule, which is what the message-bus pass does for the buses Lambda delivers: a handler reading none of the envelope's fields has the parsed message, and its top-level rename is reported.
 
 ## What the reader cannot see into
 
 Inside a path, a value the adapter could not read is treated as supplying whatever is asked of it. `{ data: buildData() }` counts as supplying `data.invoiceId`, because the call could return it. Only a named field that is missing from an object literal counts as unsupplied.
 
-An index in the middle of a read path is dropped rather than recorded: `event.Records[0].body` arrives as `["Records", "body"]`, which is not a path that exists. Treating an array as opaque keeps that from turning into a finding, and `different-object` catches the envelope case it usually comes from.
+An index in the middle of a read path is dropped rather than recorded: `event.Records[0].body` arrives as `["Records", "body"]`, which is not a path that exists. Treating an array as opaque keeps that from turning into a finding, and the message-bus pass keeps a handler reading `Records` out of the comparison altogether.
 
 ## Who uses it
 

@@ -52,6 +52,7 @@ import type {
   BoundaryBinding,
   Finding,
   MessageBusSemantics,
+  MessageBusTechnology,
   UnitScope,
   UnitsByFile,
 } from "@suss/behavioral-ir";
@@ -599,6 +600,30 @@ function makeSide(
 const isTheMessageParameter: CarriesPayload = (input) =>
   input.type === "parameter" && input.role === "event";
 
+/**
+ * What Lambda puts at the top of the event it hands a handler on each
+ * bus. A handler reading one of these was given the envelope; one
+ * reading none of them was given the parsed message by a wrapper.
+ */
+const LAMBDA_ENVELOPE_FIELDS: Partial<
+  Record<MessageBusTechnology, readonly string[]>
+> = {
+  aws_sqs: ["Records"],
+  "aws.sns": ["Records"],
+  s3: ["Records"],
+  eventbridge: [
+    "version",
+    "id",
+    "detail-type",
+    "source",
+    "account",
+    "time",
+    "region",
+    "resources",
+    "detail",
+  ],
+};
+
 interface ReceiveRecord {
   summary: BehavioralSummary;
   transitionId?: string;
@@ -682,8 +707,7 @@ function readCodeScope(summary: BehavioralSummary): string | null {
  *
  * A destructure of the parsed body is the better reading, because it
  * starts at what the producer wrote. The handler's own parameter is
- * used only when there is no such destructure, and then it may be the
- * platform's envelope instead, which the rule allows for.
+ * used only when there is no such destructure.
  */
 function collectReceives(
   summaries: BehavioralSummary[],
@@ -739,16 +763,33 @@ function destructuredReceives(summary: BehavioralSummary): ReceiveRecord[] {
 /**
  * The message-bus binding is what makes this unit the receiver rather
  * than a helper deployed beside it, whose inputs come from its caller.
+ * The summary cannot tell the envelope from a message a wrapper parsed
+ * out of it, so the envelope's own field names decide.
  */
 function parameterReceive(summary: BehavioralSummary): ReceiveRecord | null {
-  if (!bindingIs(summary.identity.boundaryBinding, "message-bus")) {
+  const binding = summary.identity.boundaryBinding;
+  if (!bindingIs(binding, "message-bus")) {
     return null;
   }
   const result = readSetOf(summary, isTheMessageParameter);
   if (!result.read) {
     return null;
   }
-  return { summary, reads: result.reads };
+  const envelope = LAMBDA_ENVELOPE_FIELDS[binding.semantics.messageBus];
+  if (envelope === undefined) {
+    return { summary, reads: result.reads };
+  }
+  if (readsThroughEnvelope(result.reads, envelope)) {
+    return null;
+  }
+  return { summary, reads: { ...result.reads, rootedAtPayload: true } };
+}
+
+function readsThroughEnvelope(
+  reads: ReadSet,
+  envelope: readonly string[],
+): boolean {
+  return reads.paths.some((path) => envelope.includes(path[0] ?? ""));
 }
 
 /** Every body sent to this channel, opaque ones included. */

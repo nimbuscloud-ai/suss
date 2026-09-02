@@ -426,6 +426,50 @@ describe("what a handler reads off its parameter", () => {
     ).toEqual([]);
   });
 
+  it("reports a top-level field the producer renamed when a wrapper parsed the message", () => {
+    const findings = receiveFindings([
+      queueProvider("PaidQueue"),
+      producerSummary({
+        name: "PaidProducer",
+        filePath: "src/paid-producer/index.ts",
+        channel: "PaidQueue",
+        bodyShape: {
+          kind: "object",
+          fields: {
+            subject: { kind: "string", value: "billing.invoicePaid" },
+            id: { kind: "identifier", name: "invoiceId" },
+          },
+        },
+      }),
+      consumerSummary({
+        name: "PaidWorker.FromPaid",
+        channel: "PaidQueue",
+        codeScopePath: "src/paid-worker/",
+      }),
+      handlerReadingItsParameter({
+        name: "PaidWorker.handler",
+        filePath: "src/paid-worker/index.ts",
+        reads: [{ input: "message", path: ["invoiceId"] }],
+      }),
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.description).toContain('reads "invoiceId"');
+  });
+
+  it("reports nothing when the handler reads both the envelope and a field the producer never sends", () => {
+    expect(
+      receiveFindings(
+        setup({
+          producerSends: { id: "invoiceId" },
+          reads: [
+            { input: "message", path: ["Records", "body"] },
+            { input: "message", path: ["invoiceId"] },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it("leaves a helper deployed beside the handler alone", () => {
     const summaries = setup({
       producerSends: { id: "invoiceId" },

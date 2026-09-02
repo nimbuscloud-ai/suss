@@ -17,17 +17,15 @@ interface SqsEvent {
   Records: Array<{ body: string }>;
 }
 
-export function makeSubjectHandler<S extends string, R>(
-  config: SubjectHandlerConfig<S>,
-  body: (message: { subject: S; data: Record<string, unknown> }) => Promise<R>,
-) {
+export function makeSubjectHandler<
+  S extends string,
+  R,
+  M extends { subject: S } = { subject: S; data: Record<string, unknown> },
+>(config: SubjectHandlerConfig<S>, body: (message: M) => Promise<R>) {
   return async (event: SqsEvent): Promise<R[]> => {
     const results: R[] = [];
     for (const record of event.Records) {
-      const parsed = JSON.parse(record.body) as {
-        subject: S;
-        data: Record<string, unknown>;
-      };
+      const parsed = JSON.parse(record.body) as M;
       results.push(await body(parsed));
     }
     return results;

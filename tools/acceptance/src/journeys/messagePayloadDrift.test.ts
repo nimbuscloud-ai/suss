@@ -12,12 +12,13 @@ import type { CheckIntentResult } from "@suss/checker-intent";
  * What a queue consumer reads off a message, checked against what the
  * producers on that queue send.
  *
- * Three queues, one case each. PaidQueue's producer sends `data.id`
+ * Four queues, one case each. PaidQueue's producer sends `data.id`
  * where the consumer reads `data.invoiceId`, which throws on every
  * message and which nothing in the types catches, because what goes
- * over a queue is a string. VoidedQueue agrees. RefundedQueue's consumer
- * passes the message on whole, so its read list is not the whole story
- * and the check keeps quiet about it.
+ * over a queue is a string. ShippedQueue has the same drift at the top
+ * of the message, `id` sent where `invoiceId` is read. VoidedQueue
+ * agrees. RefundedQueue's consumer passes the message on whole, so its
+ * read list is not the whole story and the check keeps quiet about it.
  */
 describe("check what a consumer reads against what producers send", () => {
   const summaries = workspace("message-payload-drift");
@@ -65,13 +66,28 @@ describe("check what a consumer reads against what producers send", () => {
     expect(infra.status, infra.stderr).toBe(0);
   }, 120_000);
 
-  it("reports the field the producer renamed, and only that one", () => {
-    const findings = received();
+  it("reports the nested field the producer renamed", () => {
+    const findings = received().filter((f) =>
+      f.description.includes("PaidQueue"),
+    );
     expect(findings).toHaveLength(1);
     expect(findings[0]?.description).toContain("PaidWorkerFunction.handler");
     expect(findings[0]?.description).toContain('reads "data.invoiceId"');
-    expect(findings[0]?.description).toContain("PaidQueue");
     expect(findings[0]?.severity).toBe("warning");
+  });
+
+  it("reports the top-level field the producer renamed", () => {
+    const findings = received().filter((f) =>
+      f.description.includes("ShippedQueue"),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.description).toContain("ShippedWorkerFunction.handler");
+    expect(findings[0]?.description).toContain('reads "invoiceId"');
+    expect(findings[0]?.severity).toBe("warning");
+  });
+
+  it("reports nothing else", () => {
+    expect(received()).toHaveLength(2);
   });
 
   it("says nothing about the queue whose two sides agree", () => {
@@ -113,9 +129,11 @@ describe("check what a consumer reads against what producers send", () => {
       expect(fs.readdirSync(intent).sort()).toEqual([
         "bus-aws-sqs-paid-queue.intent.yaml",
         "bus-aws-sqs-refunded-queue.intent.yaml",
+        "bus-aws-sqs-shipped-queue.intent.yaml",
         "bus-aws-sqs-voided-queue.intent.yaml",
         "unit-lambda-paid-producer-function.intent.yaml",
         "unit-lambda-refunded-producer-function.intent.yaml",
+        "unit-lambda-shipped-producer-function.intent.yaml",
         "unit-lambda-voided-producer-function.intent.yaml",
       ]);
 
@@ -160,9 +178,11 @@ describe("check what a consumer reads against what producers send", () => {
       ).toEqual([
         "bus:aws_sqs PaidQueue",
         "bus:aws_sqs RefundedQueue",
+        "bus:aws_sqs ShippedQueue",
         "bus:aws_sqs VoidedQueue",
         "unit:lambda PaidProducerFunction",
         "unit:lambda RefundedProducerFunction",
+        "unit:lambda ShippedProducerFunction",
         "unit:lambda VoidedProducerFunction",
       ]);
     });
