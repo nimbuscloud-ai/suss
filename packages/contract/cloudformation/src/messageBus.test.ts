@@ -345,6 +345,77 @@ describe("buildMessageBusSummaries", () => {
     expect(targets).not.toHaveProperty("STATIC_CONFIG");
   });
 
+  it("captures what the template sets a variable to, in plain text", () => {
+    // A store the code addresses through a variable reaches the name
+    // this records, so a drafted document says which table.
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        Rotator: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/rotator/",
+            Environment: {
+              Variables: {
+                API_KEY_SECRET_ID: "prod/app/api-key",
+                ORDERS_QUEUE_URL: { Ref: "OrdersQueue" },
+              },
+            },
+          },
+        },
+      },
+    });
+    const runtime =
+      out.find(
+        (s) =>
+          s.identity.boundaryBinding?.semantics.name === "runtime-config" &&
+          s.identity.name === "Rotator",
+      ) ?? raise("no runtime");
+
+    expect(readRuntimeContractMetadata(runtime)?.envVarValues).toEqual({
+      API_KEY_SECRET_ID: "prod/app/api-key",
+    });
+  });
+
+  it("reads nothing out of an environment block that is not a map", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Malformed: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "src/malformed/",
+            Environment: { Variables: "not-a-map" },
+          },
+        },
+      },
+    });
+    const runtime =
+      out.find(
+        (s) => s.identity.boundaryBinding?.semantics.name === "runtime-config",
+      ) ?? raise("no runtime");
+    const contract = readRuntimeContractMetadata(runtime);
+
+    expect(contract?.envVarValues).toBeUndefined();
+    expect(contract?.envVarTargets).toBeUndefined();
+  });
+
+  it("records no values for a function whose environment is empty", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        Bare: {
+          Type: "AWS::Serverless::Function",
+          Properties: { CodeUri: "src/bare/" },
+        },
+      },
+    });
+    const runtime =
+      out.find(
+        (s) => s.identity.boundaryBinding?.semantics.name === "runtime-config",
+      ) ?? raise("no runtime");
+
+    expect(readRuntimeContractMetadata(runtime)?.envVarValues).toBeUndefined();
+  });
+
   it("skips event sources whose Queue ref can't be resolved", () => {
     const out = cloudFormationToSummaries({
       Resources: {
