@@ -138,10 +138,18 @@ describe("os.environ spellings", () => {
     ).toEqual([]);
   });
 
-  it("ignores writes and membership tests", async () => {
+  it("ignores writes, deletions and membership tests", async () => {
     expect(
       await moduleReads(
-        'import os\nos.environ["A"] = "1"\nif "B" in os.environ:\n    pass\n',
+        'import os\nos.environ["A"] = "1"\ndel os.environ["D"]\nos.environ["E"] += "1"\nif "B" in os.environ:\n    pass\n',
+      ),
+    ).toEqual([]);
+  });
+
+  it("ignores a subscript or a .get on something that is not os.environ", async () => {
+    expect(
+      await moduleReads(
+        'import os\nA = settings()["A"]\nB = os.path["B"]\nC = load().get("C")\nD = os.environ.copy().get("D")\nE = load().getenv("E")\n',
       ),
     ).toEqual([]);
   });

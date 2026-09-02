@@ -103,7 +103,7 @@ function isAssignedTo(node: PyNode): boolean {
   if (parent === null) {
     return false;
   }
-  if (parent.type === "del_statement") {
+  if (parent.type === "delete_statement") {
     return true;
   }
   return (
