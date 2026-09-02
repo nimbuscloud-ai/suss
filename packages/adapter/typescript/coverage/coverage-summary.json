@@ -1,26 +1,26 @@
 {
   "total": {
     "lines": {
-      "total": 9355,
-      "covered": 8104,
+      "total": 9364,
+      "covered": 8113,
       "skipped": 0,
-      "pct": 86.62
+      "pct": 86.64
     },
     "statements": {
-      "total": 9462,
-      "covered": 8205,
+      "total": 9471,
+      "covered": 8214,
       "skipped": 0,
-      "pct": 86.71
+      "pct": 86.72
     },
     "functions": {
-      "total": 1424,
-      "covered": 1308,
+      "total": 1426,
+      "covered": 1310,
       "skipped": 0,
-      "pct": 91.85
+      "pct": 91.86
     },
     "branches": {
-      "total": 7277,
-      "covered": 5730,
+      "total": 7279,
+      "covered": 5732,
       "skipped": 0,
       "pct": 78.74
     },
@@ -761,28 +761,28 @@
   },
   "src/bootstrap/lazyProjectInit.ts": {
     "lines": {
-      "total": 185,
-      "covered": 175,
+      "total": 194,
+      "covered": 184,
       "skipped": 0,
-      "pct": 94.59
+      "pct": 94.84
     },
     "functions": {
-      "total": 27,
-      "covered": 26,
+      "total": 29,
+      "covered": 28,
       "skipped": 0,
-      "pct": 96.29
+      "pct": 96.55
     },
     "statements": {
-      "total": 187,
-      "covered": 177,
+      "total": 196,
+      "covered": 186,
       "skipped": 0,
-      "pct": 94.65
+      "pct": 94.89
     },
     "branches": {
-      "total": 76,
-      "covered": 64,
+      "total": 78,
+      "covered": 66,
       "skipped": 0,
-      "pct": 84.21
+      "pct": 84.61
     }
   },
   "src/bootstrap/noTsconfigProject.ts": {
