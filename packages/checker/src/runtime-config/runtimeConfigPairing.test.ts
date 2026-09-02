@@ -58,6 +58,16 @@ function makeRuntimeProvider(opts: {
   };
 }
 
+function calleeOf(
+  varName: string,
+  callee: string | null | undefined,
+): { callee?: string } {
+  if (callee === null) {
+    return {};
+  }
+  return { callee: callee ?? `process.env.${varName}` };
+}
+
 function makeCodeSummary(opts: {
   name: string;
   file: string;
@@ -65,11 +75,9 @@ function makeCodeSummary(opts: {
   runsInUnit?: string;
   moduleImports?: string[];
   defaulted?: boolean;
-  /** How the source spelled each read; undefined leaves the callee off. */
-  spellRead?: (varName: string) => string | undefined;
+  /** How the source spelled every read; null leaves the callee off. */
+  callee?: string | null;
 }): BehavioralSummary {
-  const spellRead =
-    opts.spellRead ?? ((varName: string) => `process.env.${varName}`);
   const transition: Transition = {
     id: "t0",
     conditions: [],
@@ -85,9 +93,7 @@ function makeCodeSummary(opts: {
         },
         recognition: "@suss/runtime-node",
       },
-      ...(spellRead(varName) === undefined
-        ? {}
-        : { callee: spellRead(varName) }),
+      ...calleeOf(varName, opts.callee),
       interaction: {
         class: "config-read" as const,
         name: varName,
@@ -915,7 +921,7 @@ describe("a runtime whose code reads its configuration off an argument", () => {
         name: "fetch",
         file: "src/index.ts",
         envReads: ["MISSING_ORIGIN"],
-        spellRead: () => undefined,
+        callee: null,
       }),
     ]);
 
@@ -940,7 +946,7 @@ describe("a read the source spelled its own way", () => {
         name: "list_items",
         file: "src/app.py",
         envReads: ["ASSET_BUCKET"],
-        spellRead: (varName) => `os.environ["${varName}"]`,
+        callee: 'os.environ["ASSET_BUCKET"]',
       }),
     ]);
 
