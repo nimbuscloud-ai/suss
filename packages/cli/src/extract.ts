@@ -32,7 +32,11 @@ import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
 import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
-import { retiredOptionRefusal, retiredOptionsUsed } from "./retiredOptions.js";
+import {
+  retiredOptionRefusal,
+  retiredOptionsUsed,
+  retiredOptionWarning,
+} from "./retiredOptions.js";
 import {
   loadStubs,
   type StubOverlay,
@@ -308,6 +312,28 @@ export function packsLoadedSoFar(): Array<{
 }
 
 /**
+ * The config with any retired key taken out, having said so. suss reads
+ * what those keys used to state off the project itself now, so a run
+ * that still sets one gets the same answer either way and a warning
+ * rather than a failure.
+ */
+function withoutRetired(name: string, options: unknown): unknown {
+  if (options === null || typeof options !== "object") {
+    return options;
+  }
+  const entries = Object.entries(options as Record<string, unknown>);
+  const used = retiredOptionsUsed(
+    name,
+    entries.map(([key]) => key),
+  );
+  if (used.length === 0) {
+    return options;
+  }
+  process.stderr.write(retiredOptionWarning(name, used));
+  return Object.fromEntries(entries.filter(([key]) => !used.includes(key)));
+}
+
+/**
  * Refuse a config the pack could not have read, before the factory
  * runs. Without this a misspelled key parses to nothing, the run exits
  * 0, and the only sign is a boundary that never appears.
@@ -324,7 +350,7 @@ function assertOptionsArePackable(
   }
 
   const schema = whatAConfigFileMaySay(name, declared);
-  const parsed = schema.safeParse(options);
+  const parsed = schema.safeParse(withoutRetired(name, options));
   if (parsed.success) {
     return;
   }

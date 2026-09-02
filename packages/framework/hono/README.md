@@ -28,7 +28,7 @@ registerCrud(app, "users", userHandlers);
 registerCrud(app, "orders", orderHandlers);
 ```
 
-suss reads that itself now. Before any file is walked it finds every function the project hands its app to, reads what each registers in terms of the function's own parameters (`GET /{1}` with the handler at `{2}.list`), and fills those in at each call site. The two calls above give four routes. A config file that still sets the option is refused, with a line saying so.
+suss reads that itself now. Before any file is walked it finds every function the project hands its app to, reads what each registers in terms of the function's own parameters (`GET /{1}` with the handler at `{2}.list`), and fills those in at each call site. The two calls above give four routes. A config file that still sets the option is read past with a warning, and stops the run in 0.22.0, with a line saying so.
 
 A helper suss read that no call then matched comes out under `no-helper` in [pack health](../../../docs/guides/pack-health.md). That is a bug in suss rather than in your code: it found the call site to begin with.
 

@@ -14,7 +14,7 @@ Framework pack for [Express](https://expressjs.com/) handlers. Declarative patte
 
 ## Options
 
-None. `registrationHelpers` used to say what a route helper of the project's own registered; the reading above replaced it, and a config file that still sets it is refused.
+None. `registrationHelpers` used to say what a route helper of the project's own registered; the reading above replaced it. A config file that still sets it is read past with a warning, and stops the run in 0.22.0.
 
 ## Where it fits in suss
 

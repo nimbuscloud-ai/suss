@@ -48,7 +48,7 @@ describe("read a helper called twice from a file with no import", () => {
     expect(bodies[0]).not.toEqual(bodies[1]);
   });
 
-  it("says the option is gone when a config file still sets it", () => {
+  it("warns and keeps going when a config file still sets the option", () => {
     const config = path.join(out, "express.json");
     fs.writeFileSync(
       config,
@@ -72,9 +72,12 @@ describe("read a helper called twice from a file with no import", () => {
       "-o",
       summariesFile,
     ]);
-    expect(run.status).toBe(1);
-    expect(run.stderr).toContain("registrationHelpers is gone");
-    expect(run.stderr).toContain("reads the helper itself");
+    // 0.20.0 told everyone setting this to write a dependency stub,
+    // which was the wrong instruction for a first-party helper, so the
+    // key is read past with a warning until 0.22.0 rather than refused.
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stderr).toContain("ignores registrationHelpers");
+    expect(run.stderr).toContain("0.22.0");
     expect(run.stderr).not.toContain("suss infer stub");
   });
 });

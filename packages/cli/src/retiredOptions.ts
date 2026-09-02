@@ -62,3 +62,32 @@ export function retiredOptionRefusal(
   const retired = RETIRED[packName] ?? {};
   return used.map((key) => `${key} is gone. ${retired[key] ?? ""}`.trimEnd());
 }
+
+/**
+ * The release these stop being read at all.
+ *
+ * 0.20.0 told everyone setting one of these to write a dependency stub,
+ * and for these three that was the wrong instruction: they describe the
+ * project's own code, a stub cannot spell one, and the reading that
+ * replaces them only arrived in 0.21.0. So the warning they were given
+ * pointed nowhere, and they get a release with a true one instead.
+ */
+const REMOVED_IN = "0.22.0";
+
+/** What somebody setting one of these reads, loudly, on every run. */
+export function retiredOptionWarning(
+  packName: string,
+  used: readonly string[],
+): string {
+  const retired = RETIRED[packName] ?? {};
+  const lines = used.map((key) => `  ${key}: ${retired[key] ?? ""}`.trimEnd());
+  const plural = used.length > 1;
+  return [
+    "",
+    `[suss] The ${packName} pack ignores ${used.join(" and ")}. ` +
+      `suss reads the same thing off your code now, so the option change${plural ? "" : "s"} nothing.`,
+    ...lines,
+    `  Delete ${plural ? "them" : "it"} from your config. suss stops reading ${plural ? "these keys" : "this key"} in ${REMOVED_IN} and a run that sets ${plural ? "one" : "it"} will fail.`,
+    "",
+  ].join("\n");
+}

@@ -315,7 +315,28 @@ describe("packs for the other two languages", () => {
     );
   });
 
-  it("says what happens now when a config still describes a helper", async () => {
+  /** What a run writes to stderr while resolving a pack. */
+  const warningsWhileResolving = async (spec: string): Promise<string> => {
+    const written: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      await resolveFramework(spec);
+    } finally {
+      process.stderr.write = original;
+    }
+    return written.join("");
+  };
+
+  // 0.20.0 told everyone setting one of these to write a dependency
+  // stub. For a helper the project wrote itself that was the wrong
+  // instruction and the reading that replaces it only arrived in
+  // 0.21.0, so these three are read past with a warning until 0.22.0
+  // rather than refused like the nine that state a dependency fact.
+  it("warns and keeps going when a config still describes a helper", async () => {
     const helper = writeConfig(
       JSON.stringify({
         registrationHelpers: [
@@ -328,43 +349,28 @@ describe("packs for the other two languages", () => {
         ],
       }),
     );
-    const refusal = await resolveFramework(`express=${helper}`).catch(
-      (error: Error) => error.message,
-    );
-    expect(refusal).toContain("registrationHelpers is gone");
-    expect(refusal).toContain("reads the helper itself");
-    expect(refusal).not.toContain("suss infer stub");
 
-    const dynamo = await resolveFramework(
-      `aws-dynamodb=${writeConfig(
-        JSON.stringify({
-          requestFunctions: [
-            {
-              name: "sendRequest",
-              operationArg: 2,
-              requestArg: 3,
-              operations: { Query: "read" },
-            },
-          ],
-        }),
-      )}`,
-    ).catch((error: Error) => error.message);
-    expect(dynamo).toContain("requestFunctions is gone");
+    const said = await warningsWhileResolving(`express=${helper}`);
+
+    expect(said).toContain("ignores registrationHelpers");
+    expect(said).toContain("reads the helper itself");
+    expect(said).toContain("0.22.0");
+    expect(said).not.toContain("suss infer stub");
   });
 
-  it("says what happens now when a config still sets a retired option", async () => {
+  it("warns and keeps going when a config still sets subjectFactories", async () => {
     const file = writeConfig(
       JSON.stringify({ subjectFactories: [{ property: "subject" }] }),
     );
-    const refusal = await resolveFramework(`aws-lambda=${file}`).catch(
-      (error: Error) => error.message,
-    );
 
-    expect(refusal).toContain("subjectFactories is gone");
-    expect(refusal).toContain("SAM template's event source");
+    const said = await warningsWhileResolving(`aws-lambda=${file}`);
+
+    expect(said).toContain("ignores subjectFactories");
+    expect(said).toContain("SAM template's event source");
+    expect(said).toContain("0.22.0");
     // A retired option describes the project's own code, so nothing
     // here should send somebody off to write a dependency stub.
-    expect(refusal).not.toContain("suss infer stub");
+    expect(said).not.toContain("suss infer stub");
   });
 
   it("still hands a pack an option a stub states", async () => {
