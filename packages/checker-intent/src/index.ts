@@ -33,7 +33,9 @@ import {
   BOUNDARY_ROLE,
   boundaryCalls,
   boundaryGuardsOf,
+  deploymentOf,
   goesThroughRelation,
+  groundBinding,
   relationsOf,
   summaryRef,
   withDeclaredDelivery,
@@ -44,6 +46,7 @@ import {
   boundaryKey,
   displayLabel,
   EVERY_FIELD,
+  nameReference,
   namesBoundary,
   pairingKey,
   ruleBoundaryMatchesKey,
@@ -54,6 +57,7 @@ import type {
   BehavioralSummary,
   BoundaryCall,
   BoundaryGuard,
+  Deployment,
   Interaction,
   Transition,
   TypeShape,
@@ -170,6 +174,10 @@ export function checkIntentAgreement(
   const unchecked: UncheckedIntent[] = [];
   const codeByBoundary = indexCodeByBoundary(code);
   const boundaryByName = indexBoundaryIntentsByName(intents);
+  // The document was drafted with deploy-time names put in, so reading
+  // it back has to put the same ones in. `deploymentOf` is the step
+  // the drafter and the behavioural checker both go through.
+  const deploymentOfUnit = deploymentOf(code);
 
   for (const intent of intents) {
     if (intent.kind === "prd") {
@@ -178,7 +186,11 @@ export function checkIntentAgreement(
       checked.push(result.checked);
       continue;
     }
-    const result = checkBoundaryIntent(intent, codeByBoundary);
+    const result = checkBoundaryIntent(
+      intent,
+      codeByBoundary,
+      deploymentOfUnit,
+    );
     findings.push(...withProvenance(result.findings, intent.source));
     checked.push(...result.checked);
     unchecked.push(...result.unchecked);
@@ -242,6 +254,7 @@ interface IntentPassResult {
 function checkBoundaryIntent(
   intent: BoundaryIntentSummary,
   codeByBoundary: Map<string, BehavioralSummary[]>,
+  deploymentOfUnit: (code: BehavioralSummary) => Deployment,
 ): IntentPassResult {
   const key = pairingKey(intent.boundary);
   if (key === null) {
@@ -305,7 +318,9 @@ function checkBoundaryIntent(
   }
   const findings: IntentFinding[] = [];
   for (const impl of impls) {
-    findings.push(...compareIntentToImpl(intent, impl, label));
+    findings.push(
+      ...compareIntentToImpl(intent, impl, label, deploymentOfUnit(impl)),
+    );
   }
   return {
     findings,
@@ -591,14 +606,17 @@ function compareIntentToImpl(
   intent: BoundaryIntentSummary,
   impl: BehavioralSummary,
   boundary: string,
+  deployment: Deployment,
 ): IntentFinding[] {
   const findings: IntentFinding[] = [];
   const ref = codeRef(impl);
   const calls = boundaryCalls(impl);
   const codeOutcomes = impl.transitions
-    .map((t) => toCodeOutcome(t, calls))
+    .map((t) => toCodeOutcome(t, calls, deployment))
     .filter((o): o is CodeOutcome => o !== null);
-  const everyEffect = impl.transitions.flatMap(codeEffectsOf);
+  const everyEffect = impl.transitions.flatMap((t) =>
+    codeEffectsOf(t, deployment),
+  );
 
   for (const outcome of intent.outcomes) {
     // An outcome that says only what it resulted in has no terminal to
@@ -619,7 +637,7 @@ function compareIntentToImpl(
         boundary,
         intent: { name: intent.name, outcomeId: outcome.id },
         code: ref,
-        message: `Intent "${intent.name}" declares that ${outcome.id} results in ${describeEffect(effect)} at ${boundary}; no transition of ${impl.identity.name} does that.`,
+        message: `Intent "${intent.name}" declares that ${outcome.id} results in ${describeEffect(effect)} at ${boundary}; no transition of ${impl.identity.name} does that.${unsettledNote(reached, effect, deployment)}`,
       });
     }
     if (outcome.kind === "effect") {
@@ -754,6 +772,35 @@ function compareIntentToImpl(
 }
 
 /**
+ * What this run could not settle, for a declared effect nothing
+ * matched. A callee or a store the code reaches through a variable is
+ * a name only once a deployment says what the variable is, so a
+ * document that names one is unverified here rather than wrong, and
+ * the sentence says which input would settle it.
+ */
+function unsettledNote(
+  reached: CodeEffect[],
+  declared: IntentEffect,
+  deployment: Deployment,
+): string {
+  const variables = new Set<string>();
+  for (const made of reached) {
+    const reference = nameReference(made.binding);
+    const variable =
+      reference === null ? null : deployment.variableFor(reference);
+    if (made.does === declared.does && variable !== null) {
+      variables.add(variable);
+    }
+  }
+  if (variables.size === 0) {
+    return "";
+  }
+
+  const named = [...variables].sort().join(", ");
+  return ` The code says which one through ${named}, and nothing in this run says what that is set to. Read the deployment that sets it in and check again.`;
+}
+
+/**
  * Whether an effect the code makes is the one the intent declared. The
  * boundary is resolved with `namesBoundary`, the matcher that resolves
  * what somebody types at `suss ask`, so a document and a question that
@@ -810,10 +857,14 @@ function conditionMet(
 function toCodeOutcome(
   t: Transition,
   calls: Map<string, BoundaryCall>,
+  deployment: Deployment,
 ): CodeOutcome | null {
   const output = t.output;
-  const effects = codeEffectsOf(t);
-  const turnsOn = boundaryGuardsOf(t, calls);
+  const effects = codeEffectsOf(t, deployment);
+  const turnsOn = boundaryGuardsOf(t, calls).map((guard) => ({
+    ...guard,
+    binding: groundBinding(guard.binding, deployment),
+  }));
   if (output.type === "response") {
     const status =
       output.statusCode !== null && output.statusCode.type === "literal"
@@ -863,7 +914,7 @@ interface CodeEffect {
   by: string[];
 }
 
-function codeEffectsOf(t: Transition): CodeEffect[] {
+function codeEffectsOf(t: Transition, deployment: Deployment): CodeEffect[] {
   const reached: CodeEffect[] = [];
   for (const effect of t.effects) {
     if (effect.type !== "interaction") {
@@ -874,10 +925,14 @@ function codeEffectsOf(t: Transition): CodeEffect[] {
     if (goesThroughRelation(effect.interaction)) {
       continue;
     }
-    const label = displayLabel(effect.binding);
+    // The drafter writes the grounded name, so the code side has to be
+    // read the same way or a document suss wrote would not match the
+    // code it was written from.
+    const binding = groundBinding(effect.binding, deployment);
+    const label = displayLabel(binding);
     const touched = accessDetail(effect.interaction);
     for (const does of relationsOf(effect.interaction)) {
-      reached.push({ does, binding: effect.binding, label, ...touched });
+      reached.push({ does, binding, label, ...touched });
     }
   }
   return reached;

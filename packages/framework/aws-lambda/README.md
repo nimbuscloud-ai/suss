@@ -46,7 +46,7 @@ A name that only exists once the stack is deployed reaches the code as an env va
           REPORT_BUILDER_FUNCTION: !Ref ReportBuilder
 ```
 
-which resolves to `ReportBuilder`, the logical id the invoked function's summary states. That is the same chain a queue URL goes through, and both go through `deployedRefs` in `@suss/checker`.
+which resolves to `ReportBuilder`, the logical id the invoked function's summary states. That is the same chain a queue URL goes through, and both go through `deployedRefs` in `@suss/behavioral-ir`. A drafted intent document reads it too, so it says which function the invoke reaches rather than which variable names it.
 
 A call whose target this run cannot settle records the invoke with no name, so a service that invokes does not read as one that invokes nothing. A call that names a function no deployment in the run declares gets a `unitInvocationTargetUnknown` warning, which is usually a function in another stack.
 
