@@ -1,6 +1,6 @@
 {
   "name": "@suss/packs",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "type": "module",
   "description": "Every pack suss ships, as one package with a subpath per pack.",
   "keywords": [
@@ -185,15 +185,15 @@
     "ts-morph": "^23.0.0"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.20.0",
-    "@suss/adapter-ruby": "0.20.0",
-    "@suss/adapter-typescript": "0.20.0",
-    "@suss/behavioral-ir": "0.20.0",
-    "@suss/contract-graphql": "0.20.0",
-    "@suss/extractor": "0.20.0",
-    "@suss/manifest-aws": "0.20.0",
-    "@suss/recognize": "0.20.0",
-    "@suss/sql": "0.20.0",
+    "@suss/adapter-python": "0.21.0",
+    "@suss/adapter-ruby": "0.21.0",
+    "@suss/adapter-typescript": "0.21.0",
+    "@suss/behavioral-ir": "0.21.0",
+    "@suss/contract-graphql": "0.21.0",
+    "@suss/extractor": "0.21.0",
+    "@suss/manifest-aws": "0.21.0",
+    "@suss/recognize": "0.21.0",
+    "@suss/sql": "0.21.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
