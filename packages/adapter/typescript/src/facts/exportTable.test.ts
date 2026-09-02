@@ -139,3 +139,34 @@ describe("what exportsOf lists per module shape", () => {
     expect(values[0]?.getSourceFile().getFilePath()).toBe("/inner.ts");
   });
 });
+
+describe("the order of a barrel's table", () => {
+  const files = {
+    "/inner.ts":
+      "export function third() {}\nexport function first() {}\nexport function second() {}\n",
+    "/barrel.ts": 'export { first, second, third } from "./inner.js";\n',
+  };
+
+  function projectOf(): ReturnType<typeof createTestProject> {
+    const project = createTestProject();
+    for (const [path, content] of Object.entries(files)) {
+      project.createSourceFile(path, content);
+    }
+    return project;
+  }
+
+  it("follows the barrel's own statement on a cold store", () => {
+    const project = projectOf();
+    const store = new ResolutionStore();
+    const table = store.exportsOf(project.getSourceFileOrThrow("/barrel.ts"));
+    expect([...table.keys()]).toEqual(["first", "second", "third"]);
+  });
+
+  it("follows the barrel's own statement when the target was read first", () => {
+    const project = projectOf();
+    const store = new ResolutionStore();
+    store.exportsOf(project.getSourceFileOrThrow("/inner.ts"));
+    const table = store.exportsOf(project.getSourceFileOrThrow("/barrel.ts"));
+    expect([...table.keys()]).toEqual(["first", "second", "third"]);
+  });
+});

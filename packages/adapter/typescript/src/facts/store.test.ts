@@ -1058,6 +1058,37 @@ describe("resolveWrittenValue", () => {
   });
 });
 
+describe("an answer, whatever was asked before it", () => {
+  const TWO_BRANCHES = {
+    "/impl.ts": `export const remote = async () => "remote";`,
+    "/mod.ts": `
+      import { remote } from "./impl.js";
+      const local: (() => Promise<string>) | undefined = async () => "local";
+      export const handler = local || remote;
+    `,
+  };
+
+  it("gives every source of a fallback whose other branch is imported", () => {
+    const project = projectOf(TWO_BRANCHES);
+    const store = new ResolutionStore();
+
+    const value = exportValue(project, "/mod.ts", "handler");
+    expect(store.resolveCallableSources(value)).toHaveLength(2);
+    expect(store.resolveCallable(value)).toBeNull();
+  });
+
+  it("gives the same sources after an earlier query extracted the imported file", () => {
+    const project = projectOf(TWO_BRANCHES);
+    const cold = new ResolutionStore();
+    const warm = new ResolutionStore();
+    warm.resolveCallable(exportValue(project, "/impl.ts", "remote"));
+
+    const value = exportValue(project, "/mod.ts", "handler");
+    expect(warm.resolveCallableSources(value)).toHaveLength(2);
+    expect(cold.resolveCallableSources(value)).toHaveLength(2);
+  });
+});
+
 describe("a value written as a fallback", () => {
   function usedAs(project: Project, file: string, name: string): Node {
     const sourceFile = project.getSourceFileOrThrow(file);
