@@ -15,8 +15,16 @@ import type { Atom } from "./index.js";
 const atomKey = (a: Atom): string =>
   typeof a === "number" ? `n${a}:` : `s${a.length}:${a}`;
 
-export const tupleKey = (parts: readonly Atom[]): string =>
-  parts.map(atomKey).join("");
+// Every fact added, looked up, or removed comes through here, so the
+// loop is written out rather than mapped and joined: one string is
+// built instead of an array of them and then a string.
+export const tupleKey = (parts: readonly Atom[]): string => {
+  let key = "";
+  for (let i = 0; i < parts.length; i++) {
+    key += atomKey(parts[i]);
+  }
+  return key;
+};
 
 /**
  * Throws on a string `tupleKey` did not produce. A key that does not
