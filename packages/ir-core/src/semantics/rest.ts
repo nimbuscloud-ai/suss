@@ -15,8 +15,11 @@
 
 import { z } from "zod";
 
+import { patternHole, referenceFromName } from "../boundaryName.js";
 import { pathAfterOrigin } from "../urlPath.js";
 import { defineBoundarySemantics } from "./definition.js";
+
+import type { Reference } from "../boundaryName.js";
 
 export const RestSemanticsSchema = z.object({
   name: z.literal("rest"),
@@ -43,14 +46,16 @@ export type RestSemantics = z.infer<typeof RestSemanticsSchema>;
 const OPENING_HOLE = /^\{([^{}]+)\}(.*)$/;
 
 /**
- * The variable a hole's label asks about.
- *
- * A pack writes the label the way the source spells the read, so
- * `{API_BASE}` and `{env.API_BASE}` ask about the same variable.
+ * Where a base URL the source left open says to go and ask. Only a
+ * hole at the front is a base URL: one further along is a route
+ * parameter, and `/orders/{id}` means every id rather than a variable
+ * somebody set.
  */
-function variableOf(label: string): string {
-  const parts = label.split(".");
-  return parts[parts.length - 1] ?? label;
+function baseUrlReference(semantics: {
+  path: string | null;
+}): Reference | null {
+  const label = OPENING_HOLE.exec(semantics.path ?? "")?.[1];
+  return label === undefined ? null : referenceFromName(patternHole(label));
 }
 
 /**
@@ -238,22 +243,20 @@ export const restSemantics = defineBoundarySemantics({
      * route parameter, and `/orders/{id}` means every id rather than a
      * variable somebody set.
      */
-    groundName(semantics, deployedAs) {
-      if (semantics.path === null) {
+    groundName(semantics, deployment) {
+      const reference = baseUrlReference(semantics);
+      if (reference === null) {
         return null;
       }
-      const opening = OPENING_HOLE.exec(semantics.path);
-      if (opening === null) {
-        return null;
-      }
-      const [, label, rest] = opening;
-      const base = deployedAs(variableOf(label));
+      const base = deployment.setTo(reference);
       if (base === null) {
         return null;
       }
+      const rest = OPENING_HOLE.exec(semantics.path ?? "")?.[2] ?? "";
       const grounded = pathAfterOrigin(`${base}${rest}`);
       return { ...semantics, path: grounded === "" ? "/" : grounded };
     },
+    nameReference: baseUrlReference,
     ruleBoundary: {
       // "METHOD /path": one leading token, then an absolute path.
       claims(raw) {

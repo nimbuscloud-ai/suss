@@ -14,10 +14,13 @@
  */
 
 import {
+  deployedRefs,
   readMessageBusMetadata,
   referenceFromName,
+  runsIn,
   summaryIdentifier,
   summaryRef,
+  unitsByFile,
 } from "@suss/behavioral-ir";
 import { bindingIs, busIdentityKey } from "@suss/ir-core";
 
@@ -33,13 +36,6 @@ import {
   formatPath,
   readSetOf,
 } from "../receive/inputContract.js";
-import { deployedRefs } from "../runtime-config/deployedRefs.js";
-import {
-  runsIn,
-  type UnitScope,
-  type UnitsByFile,
-  unitsByFile,
-} from "../scope/unitScope.js";
 import {
   addChannel,
   type ChannelSet,
@@ -56,6 +52,8 @@ import type {
   BoundaryBinding,
   Finding,
   MessageBusSemantics,
+  UnitScope,
+  UnitsByFile,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
 import type { CarriesPayload, ReadSet } from "../receive/inputContract.js";

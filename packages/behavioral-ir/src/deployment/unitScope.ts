@@ -21,16 +21,15 @@
  * Where several directories contain the file, none of them decides.
  */
 
-import { readCodeScopeMetadata, sameUnit } from "@suss/behavioral-ir";
 import { fileInCodeScope } from "@suss/ir-core";
 
-import type {
-  BehavioralSummary,
-  CodeScopeMetadata,
-  DeployableUnit,
-} from "@suss/behavioral-ir";
+import { sameUnit } from "../declaredDelivery.js";
+import { readCodeScopeMetadata } from "../metadata.js";
 
-export type { CodeScopeMetadata } from "@suss/behavioral-ir";
+import type { BehavioralSummary, DeployableUnit } from "../index.js";
+import type { CodeScopeMetadata } from "../metadata.js";
+
+export type { CodeScopeMetadata } from "../metadata.js";
 
 /** The code scope on a declaring summary, or the unknown marker when it
  * has none. */

@@ -15,9 +15,12 @@
 
 import { z } from "zod";
 
+import { namesNothing, referenceFromName } from "../boundaryName.js";
 import { DeployableUnitSchema } from "../deployableUnit.js";
 import { unitIdentityKey } from "../identityKeys.js";
 import { defineBoundarySemantics } from "./definition.js";
+
+import type { Reference } from "../boundaryName.js";
 
 /**
  * `instanceName` is nullable here and required on the unit itself,
@@ -33,6 +36,13 @@ export const UnitInvocationSemanticsSchema = DeployableUnitSchema.extend({
 export type UnitInvocationSemantics = z.infer<
   typeof UnitInvocationSemanticsSchema
 >;
+
+/** Where a callee the source states as a variable says to go and ask. */
+function calleeReference(semantics: UnitInvocationSemantics): Reference | null {
+  return semantics.instanceName === null
+    ? null
+    : referenceFromName(semantics.instanceName);
+}
 
 export const unitInvocationSemantics = defineBoundarySemantics({
   name: "unit-invocation",
@@ -56,8 +66,16 @@ export const unitInvocationSemantics = defineBoundarySemantics({
      * being reported as a problem here.
      */
     reportsUnpairedItself: false,
+    /**
+     * A callee the source states only as a variable is not a name for
+     * anything until the deployment fills it in, so it keys as nothing
+     * rather than as a bucket that would agree with itself alone.
+     */
     identityKey(semantics) {
-      if (semantics.instanceName === null) {
+      if (
+        semantics.instanceName === null ||
+        namesNothing(semantics.instanceName)
+      ) {
         return null;
       }
       return unitIdentityKey(
@@ -74,5 +92,23 @@ export const unitInvocationSemantics = defineBoundarySemantics({
         semantics.instanceName,
       );
     },
+    /**
+     * A call that reads its callee's name out of the environment
+     * reaches whichever resource the template wires that variable to.
+     * The logical id is the answer rather than the deployed name,
+     * because the invoked unit's own summary is keyed by the logical
+     * id and neither side ever writes the other's string.
+     */
+    groundName(semantics, deployment) {
+      const reference = calleeReference(semantics);
+      if (reference === null) {
+        return null;
+      }
+      const logicalId = deployment.pointsAt(reference);
+      return logicalId === null
+        ? null
+        : { ...semantics, instanceName: logicalId };
+    },
+    nameReference: calleeReference,
   },
 });

@@ -50,6 +50,7 @@ export {
   boundaryKey,
   boundaryLabel,
   boundaryNameString,
+  type Deployment,
   type DispatchTable,
   dispatchByType,
   displayLabel,
@@ -59,13 +60,16 @@ export {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  groundBinding,
   hasNameHole,
   isGraphqlOperationBinding,
   messageBusBinding,
   metricBinding,
   type NamePart,
+  NOTHING_DEPLOYED,
   namePatternFromSub,
   namePatternKey,
+  nameReference,
   namesAgree,
   namesNothing,
   packageExportBinding,
@@ -99,6 +103,39 @@ export {
   polarityOf,
 } from "./conditions.js";
 export { sameUnit, withDeclaredDelivery } from "./declaredDelivery.js";
+export {
+  deploymentOf,
+  parameterNamed,
+  variableAsked,
+} from "./deployment/deployedNames.js";
+export { deployedRefs } from "./deployment/deployedRefs.js";
+export {
+  type DeployedValue,
+  deployedValues,
+} from "./deployment/deployedValues.js";
+export {
+  type DeploymentScope,
+  deploymentScope,
+} from "./deployment/deploymentScope.js";
+export {
+  buildModuleGraph,
+  entryClosure,
+  type ModuleGraph,
+} from "./deployment/entryClosure.js";
+export {
+  isRuntimeConfigProvider,
+  type PlacedRuntime,
+  type Placement,
+  placeRuntimes,
+} from "./deployment/placement.js";
+export {
+  contestedFiles,
+  readCodeScope,
+  runsIn,
+  type UnitScope,
+  type UnitsByFile,
+  unitsByFile,
+} from "./deployment/unitScope.js";
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 export {
   type CodeScopeMetadata,

@@ -32,6 +32,16 @@ const METADATA_FILE = path.join(ROOT, "packages/behavioral-ir/src/metadata.ts");
 const READER_PACKAGES = ["checker", "checker-intent", "cli"];
 
 /**
+ * Directories inside a package whose reads count even though the rest
+ * of that package's do not. `behavioral-ir/src/deployment` works out
+ * what a deployment fills a variable in with, and both checkers and
+ * the CLI go through it, so a field it reads has a consumer.
+ */
+const READER_DIRECTORIES = [
+  path.join(ROOT, "packages", "behavioral-ir", "src", "deployment"),
+];
+
+/**
  * Fields with one end legitimately missing, and what would fill the
  * gap. Keyed the way a finding spells them, `namespace.field`, with the
  * issue tracking the other half. An entry here is a decision somebody
@@ -1061,10 +1071,12 @@ for (const { pkg, dir } of sourceDirectories) {
   }
 }
 
-const readerFiles = sourceDirectories
-  .filter(({ pkg }) => READER_PACKAGES.includes(pkg))
-  .flatMap(({ dir }) => shippedSourceFiles(dir))
-  .map((file) => ({ file, source: sourceOf(file) }));
+const readerFiles = [
+  ...sourceDirectories
+    .filter(({ pkg }) => READER_PACKAGES.includes(pkg))
+    .flatMap(({ dir }) => shippedSourceFiles(dir)),
+  ...READER_DIRECTORIES.flatMap((dir) => shippedSourceFiles(dir)),
+].map((file) => ({ file, source: sourceOf(file) }));
 
 // Twice around: a helper that returns a namespace has to be known
 // before the file calling it is read, whatever order the files come in.

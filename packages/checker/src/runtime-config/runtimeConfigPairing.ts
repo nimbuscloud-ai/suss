@@ -31,16 +31,19 @@
 // process actually receives, not just the template-declared subset.
 
 import {
+  contestedFiles,
+  isRuntimeConfigProvider,
   type LibraryEnvReads,
+  placeRuntimes,
   readLibraryEnvReads,
   readRuntimeContractMetadata,
+  runsIn,
   summaryIdentifier,
+  unitsByFile,
 } from "@suss/behavioral-ir";
 import { fileInCodeScope } from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
-import { contestedFiles, runsIn, unitsByFile } from "../scope/unitScope.js";
-import { isRuntimeConfigProvider, placeRuntimes } from "./placement.js";
 
 import type {
   BehavioralSummary,
@@ -48,15 +51,15 @@ import type {
   Effect,
   EnvVarSource,
   Finding,
+  PlacedRuntime,
   RuntimeConfigSemantics,
+  UnitsByFile,
 } from "@suss/behavioral-ir";
 import type {
   InteractionIndex,
   InteractionRecord,
 } from "../interactions/dispatcher.js";
 import type { ComparedPair } from "../pairing/comparedPair.js";
-import type { UnitsByFile } from "../scope/unitScope.js";
-import type { PlacedRuntime } from "./placement.js";
 
 interface ScopedRuntime {
   runtime: BehavioralSummary;

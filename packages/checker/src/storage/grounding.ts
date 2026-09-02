@@ -14,14 +14,15 @@
  * reference over, so nothing here reads the string again.
  */
 
-import { namePatternFromSub, summaryIdentifier } from "@suss/behavioral-ir";
-
-import { deployedValues } from "../runtime-config/deployedValues.js";
+import {
+  deployedValues,
+  namePatternFromSub,
+  parameterNamed,
+  summaryIdentifier,
+  variableAsked,
+} from "@suss/behavioral-ir";
 
 import type { BehavioralSummary, Effect, Reference } from "@suss/behavioral-ir";
-
-/** What a pack calls the argument a runtime's configuration arrives in. */
-const CONFIG_ROLE = "config";
 
 /** What a caller passed, in the shape the extractor records arguments. */
 type Argument =
@@ -187,23 +188,6 @@ function configuredNames(
   };
 }
 
-/**
- * The variable a reference asks about, or null when it asks about an
- * argument instead. One bare name is a variable. A path through the
- * argument a pack calls the configuration is one too, since what fills
- * that argument is the runtime rather than any call site in the run.
- */
-function variableAsked(
-  summary: BehavioralSummary,
-  reference: Reference,
-): string | null {
-  if (reference.fields.length === 0) {
-    return reference.root;
-  }
-  const parameter = parameterNamed(summary, reference.root);
-  return parameter?.role === CONFIG_ROLE ? reference.fields.join(".") : null;
-}
-
 /** The call this effect is, when it says which summary it reaches. */
 function invocationInto(
   effect: Effect,
@@ -212,19 +196,6 @@ function invocationInto(
     return null;
   }
   return { summary: effect.summary, args: effect.args as Argument[] };
-}
-
-/** The parameter of this unit a reference starts at, if it takes one. */
-function parameterNamed(
-  summary: BehavioralSummary,
-  name: string,
-): { position: number; role: string | null } | null {
-  for (const input of summary.inputs) {
-    if (input.type === "parameter" && input.name === name) {
-      return { position: input.position, role: input.role };
-    }
-  }
-  return null;
 }
 
 /** The part of an argument a reference's fields point at. */

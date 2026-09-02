@@ -1,9 +1,9 @@
 // entryClosure.ts: which files a runtime's handler entry reaches
 // through imports.
 
-import { readModuleImports } from "@suss/behavioral-ir";
+import { readModuleImports } from "../metadata.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "../index.js";
 
 /** Edges from each summary file to the files it imports. */
 export type ModuleGraph = ReadonlyMap<string, readonly string[]>;
@@ -47,9 +47,12 @@ export function entryClosure(
   const queue = [entryFile];
   while (queue.length > 0) {
     const file = queue.pop();
+    // The loop condition guarantees one; this keeps the narrowing.
+    /* v8 ignore start */
     if (file === undefined) {
       break;
     }
+    /* v8 ignore stop */
 
     for (const imported of graph.get(file) ?? []) {
       if (!reached.has(imported)) {

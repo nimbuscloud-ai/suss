@@ -144,10 +144,24 @@ describe("a consumer whose base URL the deployment fills in", () => {
     expect(keys).toHaveLength(0);
   });
 
-  it("reads the variable through the way the source spells it", () => {
+  it("reads the variable through the argument the runtime fills in", () => {
+    // A Worker takes its configuration as a parameter, so the read is
+    // spelled `env.API_BASE` and the variable is the field on it.
+    const worker = {
+      ...forwarder("{env.API_BASE}/orders"),
+      inputs: [
+        {
+          type: "parameter" as const,
+          name: "env",
+          position: 1,
+          role: "config",
+          shape: { type: "unknown" as const },
+        },
+      ],
+    };
     const keys = pairedKeys([
       backend("/orders"),
-      forwarder("{env.API_BASE}/orders"),
+      worker,
       runtime({ API_BASE: "http://backend.internal" }),
     ]);
 
