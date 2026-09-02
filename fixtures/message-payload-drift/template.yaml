@@ -1,17 +1,23 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: |
-  Three queues, each with one producer and one consumer, for the check
+  Four queues, each with one producer and one consumer, for the check
   that compares what a consumer reads off a message against what the
   producers on that channel send.
 
   PaidQueue disagrees: the producer sends data.id and the consumer
-  reads data.invoiceId. VoidedQueue agrees. RefundedQueue's consumer
-  passes the message on whole, so its read list is incomplete and
-  nothing should be reported about it.
+  reads data.invoiceId. ShippedQueue disagrees at the top of the
+  message: the producer sends id and the consumer reads invoiceId.
+  VoidedQueue agrees. RefundedQueue's consumer passes the message on
+  whole, so its read list is incomplete and nothing should be reported
+  about it.
 
 Resources:
   PaidQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  ShippedQueue:
     Type: AWS::SQS::Queue
     Properties: {}
 
@@ -44,6 +50,28 @@ Resources:
           Type: SQS
           Properties:
             Queue: !GetAtt PaidQueue.Arn
+
+  ShippedProducerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/shippedProducer.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          SHIPPED_QUEUE_URL: !Ref ShippedQueue
+
+  ShippedWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/shippedWorker.handler
+      Runtime: nodejs20.x
+      Events:
+        FromShipped:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ShippedQueue.Arn
 
   VoidedProducerFunction:
     Type: AWS::Serverless::Function
