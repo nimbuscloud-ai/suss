@@ -237,6 +237,34 @@ export function importedFilePathsOf(
   return paths;
 }
 
+/**
+ * The compiler's own resolution cache, one per project. Without it every
+ * file resolves its imports cold, and most of that is re-reading the
+ * same package.json files up the directory tree.
+ */
+function resolutionCacheFor(
+  project: Project,
+  options: ts.CompilerOptions,
+): ts.ModuleResolutionCache {
+  const existing = resolutionCachesByProject.get(project);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const fresh = ts.createModuleResolutionCache(
+    project.getFileSystem().getCurrentDirectory(),
+    (name) => name,
+    options,
+  );
+  resolutionCachesByProject.set(project, fresh);
+  return fresh;
+}
+
+const resolutionCachesByProject = new WeakMap<
+  Project,
+  ts.ModuleResolutionCache
+>();
+
 /** Keyed on the project, so two projects never share results. */
 function specifierCacheFor(project: Project): Map<string, string[]> {
   const existing = specifiersByProject.get(project);
@@ -276,6 +304,7 @@ function readSpecifierPaths(
   }
 
   const scanned = ts.preProcessFile(text, true, true);
+  const cache = resolutionCacheFor(project, options);
   const paths: string[] = [];
   for (const imported of scanned.importedFiles) {
     const resolved = ts.resolveModuleName(
@@ -283,6 +312,7 @@ function readSpecifierPaths(
       filePath,
       options,
       host,
+      cache,
     ).resolvedModule?.resolvedFileName;
     if (resolved !== undefined && !resolved.includes("/node_modules/")) {
       paths.push(resolved);
