@@ -27,7 +27,11 @@ export {
   confidence,
   confidenceWith,
 } from "./confidence.js";
-export { deriveOnDemand, type OnDemandRules } from "./onDemand.js";
+export {
+  type Demand,
+  deriveOnDemand,
+  type OnDemandRules,
+} from "./onDemand.js";
 export {
   type EvaluationProfile,
   formatProfile,

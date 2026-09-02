@@ -313,6 +313,24 @@ Keep the facts you add and the facts the rules derive in separate
 relations. Taking a conclusion back cannot tell one from the other, and
 splitting them is how people normally write Datalog anyway.
 
+### Reading what the rules are waiting on
+
+Demand is also something a caller can read. `program.demands` lists
+each demand relation with the relation it is for and which of that
+relation's columns a demand row fixes, in column order:
+
+```ts
+program.demands;
+// [{ relation: "reaches", bound: [true, false], demand: "wanted:reaches" }]
+db.facts("wanted:reaches"); // [["a"], ["b"], ["c"]]
+```
+
+A caller that loads its base facts lazily uses this to find out what to
+load next. Evaluate, read the demand rows on the relation whose base
+facts come from somewhere else, fetch those, evaluate again, and stop
+when no demand row is new. The rules then decide what gets loaded, and
+the caller never has to guess how far a chain runs.
+
 Extraction-scale fact sets run to thousands of tuples. If that changes,
 the rule data model is the part that stays and this evaluator is the
 part you replace.
