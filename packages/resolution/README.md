@@ -97,6 +97,18 @@ Each question is that one closure with its own stopping condition. So
 adding a construct is one step and every question gets it, and adding a
 question is a stopping condition and no steps at all.
 
+The closure is written with the walk so far first and the next hop after
+it: `reaches(x, z) <- reaches(x, y), stepsTo(y, z)`. The order matters
+under demand. Every question here asks about one value, and with the
+walk first, the demand stays on that value and each round extends the
+walks it already has by one hop. Written hop first, `reaches(x, z) <-
+stepsTo(x, y), reaches(y, z)`, a question about `x` becomes a question
+about every `y` a hop leads to, so the closure is derived from every
+value the walk passes through, and each new walk is joined back against
+every hop that lands on its start. Extracting the TypeScript adapter's
+own sources, the hop first order spent two seconds in the closure, and
+the walk first order spends forty milliseconds.
+
 ## What comes out
 
 ```

@@ -261,6 +261,19 @@ companion becomes a literal in the rule body, and demand travels down
 each body the same way the join binds variables. A relation nothing asks
 for is not derived at all, so only read back the relations you listed.
 
+The rewrite puts each body in the order demand should travel, which is
+not always written order. At each position it takes the literal with the
+most columns already fixed, by a constant or by a variable the head or
+an earlier literal bound, and keeps written order between equals. Take
+`moduleExport(m, n, v) <- reExports(m, n, m2, n2), moduleExport(m2, n2,
+v)` asked with `v` bound. In written order the re-export comes first and
+binds `m2` and `n2` off every re-export in the program, so the recursive
+call wants `moduleExport` with all three columns bound: one demand fact
+per re-export per value asked about. With `moduleExport(m2, n2, v)`
+first, the demand stays on `v` and the re-exports come off an index on
+`m2`. A body the head binds nothing in starts with its written first
+literal.
+
 This costs you two things. The companion relations are stored like any
 other, at a few tuples per value asked about, so a caller who asks about
 most of a program ends up deriving more rather than less. And the

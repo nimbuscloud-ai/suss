@@ -1,11 +1,5 @@
-export {
-  checkFactContract,
-  FACT_CONTRACT_CASES,
-} from "./contract.js";
-export {
-  explainResolutionProof,
-  renderExplanation,
-} from "./explain.js";
+export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
+export { explainResolutionProof, renderExplanation } from "./explain.js";
 export {
   agreedMountPrefix,
   joinMountedPath,
@@ -227,9 +221,9 @@ export const RESOLUTION_RULES = [
     "call result",
   ),
 
-  // Where a walk gets to, and whether it ran a call on the way. A value
-  // step keeps whatever the rest of the walk was, and a result step
-  // makes the whole walk one that ran a call.
+  // Where a walk gets to, and whether it ran a call on the way. The walk
+  // so far comes first, so demand stays on the value asked about; the
+  // README says what the other order cost.
   rule(
     "reaches",
     [v("x"), v("z"), v("kind")],
@@ -239,27 +233,27 @@ export const RESOLUTION_RULES = [
     "reaches",
     [v("x"), v("z"), v("kind")],
     [
-      lit("stepsTo", v("x"), v("y"), VALUE_STEP),
-      lit("reaches", v("y"), v("z"), v("kind")),
+      lit("reaches", v("x"), v("y"), VALUE_STEP),
+      lit("stepsTo", v("y"), v("z"), v("kind")),
     ],
   ),
-  // Two rules rather than one leaving the rest of the walk's kind free.
-  // A free kind is a second question about the same relation, and a
+  // Two rules rather than one leaving the next step's kind free. A free
+  // kind is a second question about the same relation, and a
   // demand-driven run then derives both to answer either.
   rule(
     "reaches",
     [v("x"), v("z"), RESULT_STEP],
     [
-      lit("stepsTo", v("x"), v("y"), RESULT_STEP),
-      lit("reaches", v("y"), v("z"), VALUE_STEP),
+      lit("reaches", v("x"), v("y"), RESULT_STEP),
+      lit("stepsTo", v("y"), v("z"), VALUE_STEP),
     ],
   ),
   rule(
     "reaches",
     [v("x"), v("z"), RESULT_STEP],
     [
-      lit("stepsTo", v("x"), v("y"), RESULT_STEP),
-      lit("reaches", v("y"), v("z"), RESULT_STEP),
+      lit("reaches", v("x"), v("y"), RESULT_STEP),
+      lit("stepsTo", v("y"), v("z"), RESULT_STEP),
     ],
   ),
 

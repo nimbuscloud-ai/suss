@@ -146,7 +146,8 @@ export function deriveOnDemand(
 
   while (pending.length > 0) {
     const adorned = pending.pop() as AdornedRelation;
-    for (const r of rulesByHead.get(adorned.relation) ?? []) {
+    for (const written of rulesByHead.get(adorned.relation) ?? []) {
+      const r = boundFirst(written, adorned.adornment);
       const adornments = bodyAdornments(r, adorned.adornment, derives);
       r.body.forEach((literal, at) => {
         const adornment = adornments[at];
@@ -191,7 +192,8 @@ export function deriveOnDemand(
       demandDriven.add(nameOf(adorned.relation, adorned.adornment));
       demandDriven.add(demandOn(adorned.relation, adorned.adornment));
     }
-    for (const r of rulesByHead.get(adorned.relation) ?? []) {
+    for (const written of rulesByHead.get(adorned.relation) ?? []) {
+      const r = boundFirst(written, adorned.adornment);
       const guard = anyBound(adorned.adornment)
         ? [
             positiveLiteral(
@@ -205,13 +207,14 @@ export function deriveOnDemand(
       r.body.forEach((literal, at) => {
         const adornment = adornments[at];
         if (adornment !== null && anyBound(adornment)) {
-          emit({
-            head: {
-              relation: demandOn(literal.relation, adornment),
-              terms: boundTerms(literal.terms, adornment),
-            },
-            body: [...guard, ...body],
-          });
+          const demand = positiveLiteral(
+            demandOn(literal.relation, adornment),
+            boundTerms(literal.terms, adornment),
+          );
+          const premises = [...guard, ...body];
+          if (!sameLiteral(premises, demand)) {
+            emit({ head: demand, body: premises });
+          }
         }
         body.push(
           adornment === null
@@ -237,12 +240,55 @@ export function deriveOnDemand(
 }
 
 /**
- * How each body literal is bound when the join reaches it, left to right,
+ * Whether the only premise is the conclusion itself. A rule saying that
+ * a value is wanted because it is wanted derives nothing.
+ */
+const sameLiteral = (premises: Literal[], conclusion: Literal): boolean =>
+  premises.length === 1 &&
+  JSON.stringify(premises[0]) === JSON.stringify(conclusion);
+
+/**
+ * The rule with its body in the order demand should travel: at each
+ * step, the literal with the most columns already fixed, and written
+ * order between equals. The README shows what written order costs when
+ * the head binds a column the body's first literal does not mention.
+ */
+function boundFirst(r: Rule, headAdornment: Adornment): Rule {
+  const bound = new Set<string>();
+  r.head.terms.forEach((term, column) => {
+    if (headAdornment[column] && term.type === "variable") {
+      bound.add(term.name);
+    }
+  });
+  const boundColumns = (literal: Literal): number =>
+    literal.terms.filter(
+      (term) => term.type === "constant" || bound.has(term.name),
+    ).length;
+
+  const remaining = [...r.body];
+  const body: Literal[] = [];
+  while (remaining.length > 0) {
+    let pick = 0;
+    for (let at = 1; at < remaining.length; at++) {
+      if (boundColumns(remaining[at]) > boundColumns(remaining[pick])) {
+        pick = at;
+      }
+    }
+    const [literal] = remaining.splice(pick, 1);
+    body.push(literal);
+    for (const term of literal.terms) {
+      if (term.type === "variable") {
+        bound.add(term.name);
+      }
+    }
+  }
+  return { head: r.head, body };
+}
+
+/**
+ * How each body literal is bound when the join reaches it, in body order,
  * or null where the literal refers to a relation no rule derives. Base
  * relations need no demand: their facts are all there already.
- *
- * Left to right because that is the order the evaluator joins in, so this
- * reports what a rule has bound by the time it reaches each literal.
  */
 function bodyAdornments(
   r: Rule,
