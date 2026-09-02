@@ -14,10 +14,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
-import { assembleSummary } from "@suss/extractor";
+import {
+  assembleSummary,
+  moduleInitStructure,
+  stampModuleImports,
+} from "@suss/extractor";
 
-import { field } from "./ast.js";
+import { field, rangeOf } from "./ast.js";
 import { discoverUnits } from "./discovery.js";
+import { envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { resolveAbsoluteModule } from "./moduleResolver.js";
@@ -177,48 +182,45 @@ export async function extractPythonProject(
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
     }
+
+    const loadTimeReads = envReadEffects(root, moduleBinding);
+    if (loadTimeReads.length > 0) {
+      const summary = assembleSummary(
+        moduleInitStructure({
+          name: path.basename(displayPath),
+          file: displayPath,
+          range: rangeOf(root),
+          effects: loadTimeReads,
+        }),
+        { gapHandling },
+      );
+      summary.confidence = { source: "inferred_static", level: "low" };
+      summaries.push(summary);
+    }
   }
 
-  stampModuleImports(summaries, db, displayPathOf);
+  const resolvedImports = resolvedImportsOf(db, displayPathOf);
+  stampModuleImports(summaries, (file) => resolvedImports.get(file) ?? []);
 
   return { summaries, facts: db };
 }
 
-/**
- * Record the project files each summary's own file imports, the same
- * field the TypeScript adapter writes. A checker rebuilds the module
- * graph from these, which is how a runtime's scope becomes its handler
- * entry's import closure rather than whatever shares a directory (#353).
- *
- * The paths are the ones a summary's location.file uses, so both sides
- * of the graph are spelled the same way.
- */
-function stampModuleImports(
-  summaries: BehavioralSummary[],
+/** The files each file's imports resolved to, spelled the way a summary's location.file is. */
+function resolvedImportsOf(
   db: Database,
   displayPathOf: (file: string) => string,
-): void {
-  const importsByFile = new Map<string, Set<string>>();
+): Map<string, string[]> {
+  const importsByFile = new Map<string, string[]>();
   for (const [from, , to] of db.facts("pyImportResolved")) {
     if (typeof from !== "string" || typeof to !== "string") {
       continue;
     }
     const key = displayPathOf(from);
-    const seen = importsByFile.get(key) ?? new Set<string>();
-    seen.add(displayPathOf(to));
+    const seen = importsByFile.get(key) ?? [];
+    seen.push(displayPathOf(to));
     importsByFile.set(key, seen);
   }
-
-  for (const summary of summaries) {
-    const imports = importsByFile.get(summary.location.file);
-    if (imports === undefined || imports.size === 0) {
-      continue;
-    }
-    summary.metadata = {
-      ...(summary.metadata ?? {}),
-      moduleImports: [...imports].sort(),
-    };
-  }
+  return importsByFile;
 }
 
 const SKIPPED_DIRECTORIES = new Set([

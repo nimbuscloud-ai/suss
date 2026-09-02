@@ -107,10 +107,10 @@ describe("module imports on a summary", () => {
     expect(route?.metadata?.moduleImports).toEqual(["myapp/wrappers/restx.py"]);
   });
 
-  it("leaves the field off a file that imports nothing in the project", async () => {
+  it("stamps an empty list on a file that imports nothing in the project, so a handler entry there is a leaf of the graph", async () => {
     const only = write(
-      "myapp/routes/solo.py",
-      'from flask_restx import Namespace\n\napi = Namespace("solo")\n\n\n@api.route("/solo")\nclass Solo:\n    def get(self):\n        return []\n',
+      "myapp/worker.py",
+      'import os\nimport boto3\n\nQUEUE_URL = os.environ["QUEUE_URL"]\n',
     );
     const { summaries } = await extractPythonProject({
       files: [only],
@@ -118,7 +118,79 @@ describe("module imports on a summary", () => {
       packs: [flaskRestxLike],
       workspaceRoot: tmpDir,
     });
-    expect(summaries[0]?.metadata?.moduleImports).toBeUndefined();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.metadata?.moduleImports).toEqual([]);
+  });
+});
+
+describe("environment reads on a summary", () => {
+  it("puts a route body's reads on the route and a module's reads on a module-init unit", async () => {
+    const wrapper = write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    const todos = write(
+      "myapp/routes/todos.py",
+      [
+        "import os",
+        "from myapp.wrappers.restx import route",
+        "",
+        'TABLE = os.environ["TABLE_NAME"]',
+        "",
+        "",
+        '@route("/todos")',
+        "class TodoList:",
+        "    def get(self):",
+        '        limit = os.environ.get("PAGE_SIZE", "20")',
+        "        return []",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractPythonProject({
+      files: [wrapper, todos],
+      roots: [tmpDir],
+      packs: [flaskRestxLike],
+      workspaceRoot: tmpDir,
+    });
+
+    const configReads = (summary: (typeof summaries)[number] | undefined) =>
+      summary?.transitions.flatMap((t) =>
+        t.effects.flatMap((effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "config-read"
+            ? [effect.interaction]
+            : [],
+        ),
+      );
+    const route = summaries.find((s) => s.kind === "handler");
+    expect(configReads(route)).toEqual([
+      { class: "config-read", name: "PAGE_SIZE", defaulted: true },
+    ]);
+
+    const moduleInit = summaries.find((s) => s.kind === "module-init");
+    expect(moduleInit?.identity.name).toBe("todos.py");
+    expect(moduleInit?.location.file).toBe("myapp/routes/todos.py");
+    expect(configReads(moduleInit)).toEqual([
+      { class: "config-read", name: "TABLE_NAME", defaulted: false },
+    ]);
+  });
+
+  it("emits no module-init unit for a file that reads nothing at load", async () => {
+    const wrapper = write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    const only = write(
+      "myapp/routes/solo.py",
+      'from myapp.wrappers.restx import route\n\n\n@route("/solo")\nclass Solo:\n    def get(self):\n        return []\n',
+    );
+    const { summaries } = await extractPythonProject({
+      files: [wrapper, only],
+      roots: [tmpDir],
+      packs: [flaskRestxLike],
+      workspaceRoot: tmpDir,
+    });
+    expect(summaries.map((s) => s.kind)).toEqual(["handler"]);
   });
 });
 

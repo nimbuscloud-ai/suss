@@ -298,6 +298,28 @@ Both of those qualifiers matter. Only counting loops keeps the ordinary case wor
 
 A module-level mount is never dropped this way. It runs whichever factory the app calls. flask-restx trims at the constructor and not at the mount, because only the constructor's path goes through the property that strips it. The pack declares trimming per library, and the mount side does not need it, since a mount that states a prefix on that library abstains anyway.
 
+## What a file reads from the environment
+
+`os.environ` is part of the language's standard library, so the adapter recognizes reads of it itself, without a pack. Each read becomes the same `config-read` interaction the TypeScript adapter emits for `process.env.X`, on the binding `runtime-config`, spelled `os.environ["X"]` whichever way the source wrote it. The runtime-config checker pairs those against what a template declares for the function the file runs in.
+
+| Python | Recognized as | Defaulted |
+| --- | --- | --- |
+| `os.environ["X"]` | a read of `X` | no |
+| `os.environ.get("X")` | a read of `X` | no |
+| `os.environ.get("X", "d")`, `os.environ.get("X", default="d")` | a read of `X` | yes |
+| `os.getenv("X")`, `os.getenv("X", "d")` | a read of `X` | as above |
+| any of these followed by `or` (`os.environ.get("X") or "d"`) | a read of `X` | yes |
+| `import os as _os`, `from os import environ, getenv` | the same reads, through the alias | |
+| `os.environ[name]`, `os.environ.get(f"{prefix}_X")` | nothing: the name is not a literal | |
+| `os.environ["X"] = "1"`, `del os.environ["X"]`, `"X" in os.environ` | nothing: a write or a membership test | |
+| `os.environ.get("X") or os.environ.get("Y")` | `X` defaulted, `Y` not, since `Y` is the chain's last resort | |
+
+A read inside a route body goes on that route's summary. A read at module level, or in a class body, runs when the module is imported, so it goes on a `module-init` summary named after the file, one per file that has such a read. A read inside a plain function that no pack discovers is reported nowhere, because nothing says when that function runs. A project helper that wraps `os.environ` (`settings.get("X")`) is the same case: the adapter reads the wrapper's body only if a pack discovered it as a unit.
+
+## What a file imports from the project
+
+Every summary has `metadata.moduleImports`, the project files its own file's imports resolved to, relative to the workspace root and sorted. A file whose imports all resolve outside the project gets an empty list rather than no field, so a Lambda handler that imports only the standard library still tells the checker that its closure is the handler module alone. A checker rebuilds the import graph from that field to work out which modules a template's handler entry loads; the entry `app.handler` under `CodeUri: src/` matches `src/app.py`, and a dotted module such as `shop.app.handler` matches `src/shop/app.py`.
+
 ## Grammar asset
 
 `grammar/tree-sitter-python.wasm` is a checked-in binary asset, not a build output. See [`grammar/README.md`](./grammar/README.md) for its provenance and how to bump it.
