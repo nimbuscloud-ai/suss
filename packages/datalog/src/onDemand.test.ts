@@ -408,6 +408,53 @@ describe("the rewrite itself", () => {
     expect(reached(db, "exporters")).toEqual(["barrel|fn", "lib|fn"]);
   });
 
+  it("says which columns each demand relation binds, so a caller can read what is wanted", () => {
+    const rules = [
+      rule(
+        "moduleExport",
+        [v("m"), v("n"), v("value")],
+        [lit("exportsAs", v("m"), v("n"), v("value"))],
+      ),
+      rule(
+        "moduleExport",
+        [v("m"), v("n"), v("value")],
+        [
+          lit("reExports", v("m"), v("n"), v("m2"), v("n2")),
+          lit("moduleExport", v("m2"), v("n2"), v("value")),
+        ],
+      ),
+      rule(
+        "resolves",
+        [v("x"), v("value")],
+        [
+          lit("asked", v("x")),
+          lit("imports", v("x"), v("m"), v("n")),
+          lit("moduleExport", v("m"), v("n"), v("value")),
+        ],
+      ),
+    ];
+    const { rules: rewritten, demands } = deriveOnDemand(rules, ["resolves"]);
+    expect(demands).toEqual([
+      {
+        relation: "moduleExport",
+        bound: [true, true, false],
+        demand: "wanted:moduleExport",
+      },
+    ]);
+
+    const db = new Database();
+    db.add("imports", ["app", "barrel", "fn"]);
+    db.add("reExports", ["barrel", "fn", "lib", "impl"]);
+    db.add("asked", ["app"]);
+    evaluate(db, rewritten);
+    // The demand rows name the modules the rules are waiting on, the
+    // one behind the re-export included, before any export fact exists.
+    expect(reached(db, "wanted:moduleExport")).toEqual([
+      "barrel|fn",
+      "lib|impl",
+    ]);
+  });
+
   it("refuses a rule set that uses negation", () => {
     const rules = [
       rule(

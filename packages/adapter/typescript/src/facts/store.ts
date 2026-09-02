@@ -9,8 +9,8 @@
  * files reach any of a set of packages, which a per-file import check
  * misses whenever a local barrel re-exports the SDK.
  *
- * Facts are extracted per file on demand and only along the module
- * edges a query follows, so cost tracks how indirect the code is.
+ * A query extracts the modules the rules ask for while answering it,
+ * so the files a question reads do not depend on what was asked before.
  */
 
 import { Node } from "ts-morph";
@@ -78,6 +78,7 @@ const RESOLUTION_PROGRAM: OnDemandRules =
     ? {
         rules: [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS],
         demandDriven: [],
+        demands: [],
       }
     : deriveOnDemand(
         [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS],
@@ -131,8 +132,19 @@ const QUERY_FACTS: readonly string[] =
         "wantedSubject",
       ];
 
-/** Deep enough for barrels of barrels, bounded so a wide graph stays cheap. */
-const MAX_MODULE_HOPS = 6;
+/**
+ * A rule consults another module through its export table, so a demand
+ * on `moduleExport` or `moduleForwards` with the module column bound is
+ * the rules saying which file they need next. The module is the first
+ * column of the relation, so it is the first column of the demand row.
+ */
+const MODULE_DEMANDS: readonly string[] = RESOLUTION_PROGRAM.demands
+  .filter(
+    (one) =>
+      (one.relation === "moduleExport" || one.relation === "moduleForwards") &&
+      one.bound[0] === true,
+  )
+  .map((one) => one.demand);
 
 export interface ExplainCallableOptions {
   /** A second file to walk out from; see `resolveCallable`. */
@@ -200,7 +212,7 @@ export class ResolutionStore {
    * extraction elsewhere cannot change an entry.
    */
   private readonly exportTables = new Map<string, Map<string, Node[]>>();
-  /** Files the most recent wave walk entered, for the memo to keep. */
+  /** Files the most recent query read, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
@@ -235,22 +247,20 @@ export class ResolutionStore {
    */
   resolveCallableSources(value: Node, alsoFrom?: SourceFile): Node[] {
     const target = factKeyOf(value);
-    return (
-      this.resolveByWaves(
-        target,
-        "wanted",
-        () => this.lookupSources(target),
-        alsoFrom,
-      ) ?? []
+    return this.askAbout(
+      target,
+      "wanted",
+      () => this.lookupSources(target),
+      alsoFrom,
     );
   }
 
   /**
    * The witness proof behind `resolveCallable`'s answer. Resolves the
-   * value first, which walks files and extracts facts in the usual
-   * waves, then re-evaluates the rules over those base facts under the
-   * witness algebra and rebuilds the proof of the answer. Null when
-   * the value does not resolve at all.
+   * value first, which extracts the files the question demands, then
+   * re-evaluates the rules over those base facts under the witness
+   * algebra and rebuilds the proof of the answer. Null when the value
+   * does not resolve at all.
    */
   explainCallable(
     value: Node,
@@ -298,9 +308,7 @@ export class ResolutionStore {
 
   resolveObject(value: Node): Node | null {
     const target = factKeyOf(value);
-    return this.resolveByWaves(target, "wanted", () =>
-      this.lookupObject(target),
-    );
+    return this.askAbout(target, "wanted", () => this.lookupObject(target));
   }
 
   /**
@@ -327,15 +335,15 @@ export class ResolutionStore {
       return cached.written;
     }
 
-    const settled = this.resolveByWaves(target, "wanted", () =>
+    const written = this.askAbout(target, "wanted", () =>
       this.lookupWritten(target),
     );
     this.writtenValues.set(key, {
-      written: settled?.written ?? null,
+      written,
       walked: [...this.lastQueryWalked],
       extractedAt: this.fullyExtracted.size,
     });
-    return settled?.written ?? null;
+    return written;
   }
 
   /**
@@ -370,16 +378,15 @@ export class ResolutionStore {
       return cached.construction;
     }
 
-    const settled = this.resolveByWaves(target, "wantedSubject", () =>
+    const settled = this.askAbout(target, "wantedSubject", () =>
       this.lookupSubjectConstruction(target, importModule, importName),
     );
     this.subjectConstructions.set(key, {
-      construction: settled?.construction ?? null,
-      candidates: settled?.candidates ?? 0,
+      ...settled,
       walked: [...this.lastQueryWalked],
       extractedAt: this.fullyExtracted.size,
     });
-    return settled?.construction ?? null;
+    return settled.construction;
   }
 
   /**
@@ -401,16 +408,14 @@ export class ResolutionStore {
   }
 
   /**
-   * The single-answer policy over the written-value walk, then the
-   * origin check on the one candidate. A candidate failing the check
-   * is settled refusal rather than a reason to widen: its own file's
-   * import facts are already in, and more files only add candidates.
+   * The single-answer policy over the written-value chain, then the
+   * origin check on the one candidate.
    */
   private lookupSubjectConstruction(
     value: Node,
     importModule: string,
     importName: string,
-  ): { construction: Node | null; candidates: number } | null {
+  ): { construction: Node | null; candidates: number } {
     this.derive();
 
     const valueId = nodeId(value);
@@ -436,9 +441,7 @@ export class ResolutionStore {
     }
     const single = [...candidates][0];
     if (single === undefined) {
-      return neverWritable(value)
-        ? { construction: null, candidates: 0 }
-        : null;
+      return { construction: null, candidates: 0 };
     }
 
     return {
@@ -523,10 +526,9 @@ export class ResolutionStore {
       return cached.names;
     }
     const target = factKeyOf(value);
-    const found =
-      this.resolveByWaves(target, "wantedOrigin", () =>
-        this.lookupImportedNames(target, modules),
-      ) ?? [];
+    const found = this.askAbout(target, "wantedOrigin", () =>
+      this.lookupImportedNames(target, modules),
+    );
     this.importedNames.set(declaration, {
       names: found,
       walked: [...this.lastQueryWalked],
@@ -550,8 +552,8 @@ export class ResolutionStore {
   }
 
   /**
-   * The batched form: one demand set, one derivation, one widening
-   * walk shared by every value. A discovery pass asks about every
+   * The batched form: one demand set, one derivation, one round of
+   * extraction shared by every value. A discovery pass asks about every
    * callee in a file, and per-value queries would re-pay demand
    * clearing and re-derivation once per call site.
    */
@@ -591,56 +593,13 @@ export class ResolutionStore {
         this.wantValue("wantedCallOrigin", one.target);
         this.seedValue(one.target);
       }
+      this.extractDemanded(pending.map((one) => one.target.getSourceFile()));
 
-      const walked = new Set<string>();
-      this.lastQueryWalked = [];
-      let frontier: SourceFile[] = [];
       for (const one of pending) {
-        const file = one.target.getSourceFile();
-        if (!walked.has(file.getFilePath()) && !frontier.includes(file)) {
-          frontier.push(file);
-        }
-      }
-
-      const open = new Set(pending);
-      for (let hop = 0; hop <= MAX_MODULE_HOPS && open.size > 0; hop++) {
-        const next: SourceFile[] = [];
-        for (const sourceFile of frontier) {
-          if (walked.has(sourceFile.getFilePath())) {
-            continue;
-          }
-          walked.add(sourceFile.getFilePath());
-          this.lastQueryWalked.push(sourceFile.getFilePath());
-          // Even a null answer read these files: their content decided
-          // there was nothing to find, so a change to any of them can
-          // change the answer.
-          recordFileDependency(sourceFile.getFilePath());
-          this.extractFile(sourceFile);
-          next.push(...this.graph.importedFilesOf(sourceFile));
-        }
-
-        for (const one of [...open]) {
-          const found = this.lookupImportOrigins(one.target, modules);
-          if (found !== null) {
-            results.set(one.value, found);
-            this.importOrigins.set(one.key, {
-              origins: found,
-              walked: [...this.lastQueryWalked],
-              extractedAt: this.fullyExtracted.size,
-            });
-            open.delete(one);
-          }
-        }
-        if (next.length === 0) {
-          break;
-        }
-        frontier = next;
-      }
-
-      for (const one of open) {
-        results.set(one.value, []);
+        const origins = this.lookupImportOrigins(one.target, modules);
+        results.set(one.value, origins);
         this.importOrigins.set(one.key, {
-          origins: [],
+          origins,
           walked: [...this.lastQueryWalked],
           extractedAt: this.fullyExtracted.size,
         });
@@ -672,7 +631,7 @@ export class ResolutionStore {
   private lookupImportOrigins(
     value: Node,
     modules: string[],
-  ): Array<{ module: string; path: string[] }> | null {
+  ): Array<{ module: string; path: string[] }> {
     this.derive();
 
     // Its own demand class, without `callsInto`: a local helper that
@@ -716,97 +675,111 @@ export class ResolutionStore {
         .filter((one) => one.path.length > 1)
         .map((one) => tupleKey(one.path.slice(0, -1))),
     );
-    const origins = [...byPath.values()]
+    return [...byPath.values()]
       .filter((one) => !refined.has(tupleKey(one.path)))
       .sort((a, b) => a.path.join(".").localeCompare(b.path.join(".")));
-    if (origins.length > 0) {
-      return origins;
-    }
-    return all.some((one) => namesAPackage(one.module)) ? [] : null;
   }
 
-  /**
-   * Null tells the walk to keep widening. A value that landed in a
-   * package returns empty instead, because a library's own body is not
-   * here to read and widening would never find anything.
-   */
-  private lookupImportedNames(value: Node, modules: string[]): string[] | null {
+  private lookupImportedNames(value: Node, modules: string[]): string[] {
     this.derive();
 
-    const origins = this.answerPairsFor("wantedComesFrom", nodeId(value));
-    const reached = new Set(origins);
+    const reached = new Set(
+      this.answerPairsFor("wantedComesFrom", nodeId(value)),
+    );
     for (const target of this.answersFor("wantedComesTo", nodeId(value))) {
       for (const entry of this.answerPairsFor("wantedCallsInto", target)) {
         reached.add(entry);
       }
     }
-
-    const names = namesFrom([...reached], modules);
-    if (names.length > 0) {
-      return names;
-    }
-    return origins.some((pair) => namesAPackage(pairHalves(pair).module))
-      ? []
-      : null;
+    return namesFrom([...reached], modules);
   }
 
-  private resolveByWaves<T>(
+  private askAbout<T>(
     value: Node,
     question: Question,
-    ask: () => T | null,
+    read: () => T,
     alsoFrom?: SourceFile,
-  ): T | null {
+  ): T {
     try {
-      return this.walkForAnswer(value, question, ask, alsoFrom);
+      this.wantValue(question, value);
+      this.seedValue(value);
+      this.extractDemanded(
+        alsoFrom === undefined
+          ? [value.getSourceFile()]
+          : [value.getSourceFile(), alsoFrom],
+      );
+      return read();
     } finally {
       this.forgetQuery();
     }
   }
 
-  private walkForAnswer<T>(
-    value: Node,
-    question: Question,
-    ask: () => T | null,
-    alsoFrom?: SourceFile,
-  ): T | null {
-    this.wantValue(question, value);
-    this.seedValue(value);
-
-    // Per query rather than per store. A file an earlier query extracted
-    // still has to be walked through, or the frontier collapses and this
-    // query comes back null.
-    const walked = new Set<string>();
+  /**
+   * Extract the seed files, then every module the rules ask for, until
+   * they ask for nothing new. The files a question reads are then fixed
+   * by the question alone, so its answer does not depend on what an
+   * earlier question left in the store.
+   */
+  private extractDemanded(seeds: readonly SourceFile[]): void {
+    const project = seeds[0]?.getProject();
+    if (project === undefined) {
+      return;
+    }
+    // Per query rather than per store: a file an earlier query read
+    // still has its demand followed, or this query stops short.
+    const read = new Set<string>();
+    const considered = new Set<string>();
     this.lastQueryWalked = [];
-    let frontier =
-      alsoFrom === undefined
-        ? [value.getSourceFile()]
-        : [value.getSourceFile(), alsoFrom];
-
-    for (let hop = 0; hop <= MAX_MODULE_HOPS; hop++) {
-      const next: SourceFile[] = [];
-      for (const sourceFile of frontier) {
-        if (walked.has(sourceFile.getFilePath())) {
+    let pending: SourceFile[] = [...seeds];
+    while (pending.length > 0) {
+      const readThisRound: string[] = [];
+      for (const sourceFile of pending) {
+        const filePath = sourceFile.getFilePath();
+        if (read.has(filePath)) {
           continue;
         }
-        walked.add(sourceFile.getFilePath());
-        this.lastQueryWalked.push(sourceFile.getFilePath());
-        // Even a null answer read these files: their content decided
+        read.add(filePath);
+        readThisRound.push(filePath);
+        this.lastQueryWalked.push(filePath);
+        // Even an empty answer read these files: their content decided
         // there was nothing to find, so a change to any of them can
         // change the answer.
-        recordFileDependency(sourceFile.getFilePath());
+        recordFileDependency(filePath);
         this.extractFile(sourceFile);
-        next.push(...this.graph.importedFilesOf(sourceFile));
       }
-      const found = ask();
-      if (found !== null) {
-        return found;
+      this.derive();
+
+      pending = [];
+      for (const moduleKey of this.demandedModules(readThisRound)) {
+        if (considered.has(moduleKey)) {
+          continue;
+        }
+        considered.add(moduleKey);
+        const sourceFile = sourceFileFor(project, moduleKey);
+        if (sourceFile !== undefined && !read.has(sourceFile.getFilePath())) {
+          pending.push(sourceFile);
+        }
       }
-      if (next.length === 0) {
-        return null;
-      }
-      frontier = next;
     }
-    return null;
+  }
+
+  /**
+   * Module keys the rules are waiting on. Demand facts are cleared
+   * between queries, so the demand relations contain this query's
+   * alone; the unrestricted program has none, and follows the imports
+   * of the files read this round instead.
+   */
+  private demandedModules(readThisRound: readonly string[]): string[] {
+    if (RESOLUTION_PROGRAM.demands.length === 0) {
+      return readThisRound.flatMap((filePath) =>
+        this.db
+          .lookup("importsModule", 0, filePath)
+          .map((tuple) => String(tuple[1])),
+      );
+    }
+    return MODULE_DEMANDS.flatMap((relation) =>
+      this.db.facts(relation).map((tuple) => String(tuple[0])),
+    );
   }
 
   /**
@@ -826,6 +799,29 @@ export class ResolutionStore {
     if (this.db.add(question, [nodeId(value)]) === "added") {
       this.stale = true;
     }
+  }
+
+  private wantExportsOf(filePath: string): void {
+    if (this.db.add("wantedExportsOf", [filePath]) === "added") {
+      this.stale = true;
+    }
+  }
+
+  /**
+   * Discovery walks the table in order, and the rounds derive it in
+   * the order files arrived. Deriving it again from the demand alone,
+   * over the loaded closure, orders it by the file's own statements.
+   */
+  private rederiveExportsOf(filePath: string): void {
+    if (QUERY_FACTS.length === 0) {
+      return;
+    }
+    this.db.retract("wantedModuleExport", [
+      ...this.db.lookup("wantedModuleExport", 0, filePath),
+    ]);
+    this.forgetQuery();
+    this.wantExportsOf(filePath);
+    this.derive();
   }
 
   /**
@@ -871,7 +867,7 @@ export class ResolutionStore {
    * An answer has to be an expression, which leaves out the class a
    * construction makes an instance of. The README says why.
    */
-  private lookupWritten(value: Node): { written: Node | null } | null {
+  private lookupWritten(value: Node): Node | null {
     this.derive();
 
     const candidates = new Set<Node>();
@@ -883,27 +879,19 @@ export class ResolutionStore {
       candidates.add(node);
     }
 
-    if (candidates.size === 1) {
-      return { written: [...candidates][0] as Node };
+    if (candidates.size !== 1) {
+      return null;
     }
-    // Two candidates is settled refusal, since more files can only add
-    // candidates, never take one away.
-    if (candidates.size > 1) {
-      return { written: null };
-    }
-    if (neverWritable(value)) {
-      return { written: null };
-    }
-    return null;
+    return [...candidates][0] as Node;
   }
 
   /**
    * Read these files' facts now, before anything asks a question.
    *
-   * A query widens along the imports of the file it starts in, which
-   * is where a value's definition is. What a caller passed is the other
+   * A query follows the imports of the file it starts in, which is
+   * where a value's definition is. What a caller passed is the other
    * direction, so a question about a parameter is answered only by
-   * files the walk never reaches on its own.
+   * files the query never reaches on its own.
    */
   extractFiles(sourceFiles: Iterable<SourceFile>): void {
     for (const sourceFile of sourceFiles) {
@@ -923,32 +911,29 @@ export class ResolutionStore {
   }
 
   /**
-   * The calls behind a receiver that `matches` accepts, walked out in
-   * waves the way every question is. The wave ends as soon as one file
-   * yields a match, and the caller applies the single-answer policy to
-   * the set; the resolution README's anchor section says why the rules
-   * cannot rank a nearer call above a farther one.
+   * The calls behind a receiver that `matches` accepts. The caller
+   * applies the single-answer policy to the set; the resolution
+   * README's anchor section says why the rules cannot rank a nearer
+   * call above a farther one.
    */
   anchorCallsOf(value: Node, matches: (call: Node) => boolean): Node[] {
     const target = factKeyOf(value);
-    return (
-      this.resolveByWaves(target, "wantedAnchor", () => {
-        this.derive();
-        const found: Node[] = [];
-        for (const id of this.answersFor("wantedAnchorCall", nodeId(target))) {
-          const node = this.table.byId.get(id);
-          if (node !== undefined && matches(node)) {
-            found.push(node);
-          }
+    return this.askAbout(target, "wantedAnchor", () => {
+      this.derive();
+      const found: Node[] = [];
+      for (const id of this.answersFor("wantedAnchorCall", nodeId(target))) {
+        const node = this.table.byId.get(id);
+        if (node !== undefined && matches(node)) {
+          found.push(node);
         }
-        return found.length === 0 ? null : found;
-      }) ?? []
-    );
+      }
+      return found;
+    });
   }
 
   /**
    * Every name a module exports and the values behind each, with
-   * re-export chains flattened by the rules. The frontier follows
+   * re-export chains flattened by the rules. The demand follows
    * re-export targets only, so a barrel of barrels extracts its own
    * chain and nothing beside it, to any depth.
    */
@@ -970,34 +955,10 @@ export class ResolutionStore {
   }
 
   private collectExports(sourceFile: SourceFile): Map<string, Node[]> {
-    const project = sourceFile.getProject();
-    const walked = new Set<string>();
-    let frontier = [sourceFile];
-    while (frontier.length > 0) {
-      const next: SourceFile[] = [];
-      for (const file of frontier) {
-        const filePath = file.getFilePath();
-        if (walked.has(filePath)) {
-          continue;
-        }
-        walked.add(filePath);
-        recordFileDependency(filePath);
-        this.extractFile(file);
-        for (const target of this.reExportTargetsOf(filePath)) {
-          const targetFile = sourceFileFor(project, target);
-          if (targetFile !== undefined) {
-            next.push(targetFile);
-          }
-        }
-      }
-      frontier = next;
-    }
-
     const filePath = sourceFile.getFilePath();
-    if (this.db.add("wantedExportsOf", [filePath]) === "added") {
-      this.stale = true;
-    }
-    this.derive();
+    this.wantExportsOf(filePath);
+    this.extractDemanded([sourceFile]);
+    this.rederiveExportsOf(filePath);
 
     const exports = new Map<string, Node[]>();
     for (const tuple of this.db.lookup("wantedModuleExport", 0, filePath)) {
@@ -1016,27 +977,11 @@ export class ResolutionStore {
     return exports;
   }
 
-  /** Module keys this file re-exports from, read off its own facts. */
-  private reExportTargetsOf(filePath: string): string[] {
-    const targets = new Set<string>();
-    for (const tuple of this.db.lookup("reExports", 0, filePath)) {
-      targets.add(String(tuple[2]));
-    }
-
-    for (const tuple of this.db.lookup("reExportsAll", 0, filePath)) {
-      targets.add(String(tuple[1]));
-    }
-
-    return [...targets];
-  }
-
   /**
-   * Null keeps the wave walk widening; any candidate at all ends it,
-   * since more files can only add candidates, never take one away. The
-   * single-answer policy stays with the callers: picking one of two
-   * would make the result depend on the order the facts came in.
+   * The single-answer policy stays with the callers: a value with two
+   * sources is something to say at the site, not something to pick from.
    */
-  private lookupSources(value: Node): Node[] | null {
+  private lookupSources(value: Node): Node[] {
     this.derive();
 
     const candidates = new Set<Node>();
@@ -1050,7 +995,7 @@ export class ResolutionStore {
       }
     }
 
-    return candidates.size === 0 ? null : [...candidates];
+    return [...candidates];
   }
 
   private derive(): void {
@@ -1130,33 +1075,9 @@ function pairHalves(pair: string): { module: string; name: string } {
 }
 
 /**
- * A specifier that did not resolve stays as written, and one that
- * resolved into a dependency is an absolute path through node_modules.
- */
-function namesAPackage(moduleKey: string): boolean {
-  return !moduleKey.startsWith("/") || moduleKey.includes("/node_modules/");
-}
-
-/**
  * The key is a resolved file path when the package is installed and the
  * raw specifier when it is not, so both forms have to be looked up.
  */
-/**
- * Whether no amount of extraction can produce a written value: the
- * name is declared inside a package, whose body is not here to read.
- * A parameter is not on this list, since the argument step gives it
- * the value a caller passes, and the caller can be in a wider file.
- */
-function neverWritable(value: Node): boolean {
-  if (!Node.isIdentifier(value)) {
-    return false;
-  }
-  const declarations = value.getSymbol()?.getDeclarations() ?? [];
-  return declarations.some((declaration) =>
-    declaration.getSourceFile().getFilePath().includes("/node_modules/"),
-  );
-}
-
 function namesPackage(moduleKey: string, packages: string[]): boolean {
   return namesAnyPackage(
     [moduleKey, ...packagesDeclaring(moduleKey)],

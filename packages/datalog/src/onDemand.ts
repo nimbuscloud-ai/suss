@@ -71,6 +71,19 @@ const demandRewrites = new WeakSet<Rule[]>();
 export const isDemandRewritten = (rules: Rule[]): boolean =>
   demandRewrites.has(rules);
 
+/** One demand relation the rewrite created, and what its rows say. */
+export interface Demand {
+  /** The relation whose rows are being waited on. */
+  relation: string;
+  /** Which columns of that relation a demand row fixes. */
+  bound: readonly boolean[];
+  /**
+   * The demand relation's name. Each of its rows lists the bound
+   * columns' values, in the relation's column order.
+   */
+  demand: string;
+}
+
 /** A rewritten rule set, and which of its relations demand restricts. */
 export interface OnDemandRules {
   /** The rewritten rules, ready to evaluate. */
@@ -83,6 +96,13 @@ export interface OnDemandRules {
    * answers.
    */
   demandDriven: string[];
+  /**
+   * The demand relations by what they ask for, so a caller can read
+   * what the rules are waiting on and go and get it: a store that
+   * loads facts lazily reads the demand on a module's exports and
+   * extracts that module.
+   */
+  demands: Demand[];
 }
 
 /**
@@ -178,6 +198,7 @@ export function deriveOnDemand(
 
   const rewritten: Rule[] = [];
   const demandDriven = new Set<string>();
+  const demands: Demand[] = [];
   const already = new Set<string>();
   const emit = (r: Rule): void => {
     const key = JSON.stringify(r);
@@ -191,6 +212,11 @@ export function deriveOnDemand(
     if (anyBound(adorned.adornment)) {
       demandDriven.add(nameOf(adorned.relation, adorned.adornment));
       demandDriven.add(demandOn(adorned.relation, adorned.adornment));
+      demands.push({
+        relation: adorned.relation,
+        bound: adorned.adornment,
+        demand: demandOn(adorned.relation, adorned.adornment),
+      });
     }
     for (const written of rulesByHead.get(adorned.relation) ?? []) {
       const r = boundFirst(written, adorned.adornment);
@@ -236,7 +262,7 @@ export function deriveOnDemand(
   }
 
   demandRewrites.add(rewritten);
-  return { rules: rewritten, demandDriven: [...demandDriven] };
+  return { rules: rewritten, demandDriven: [...demandDriven], demands };
 }
 
 /**

@@ -97,7 +97,7 @@ export function attributedCalls(
   }
 
   // A file that cannot reach the package has no call to attribute,
-  // and asking the store per call pays the wave walk for every miss.
+  // and asking the store per call pays the demand walk for every miss.
   const [reaching] = resolution.filesImportingTransitively([
     { sourceFiles: [sourceFile], packages: [...packages] },
   ]);

@@ -59,22 +59,48 @@ Getting several names back is normal. A wrapper that combines two
 library decorators applies both of them, so a caller asks about the one
 it cares about instead of expecting a single answer.
 
-Two things keep the cost down. The answer is memoized against the
-declaration, since one wrapper is applied across hundreds of files and
-the question is about the wrapper rather than about any use of it. And
-the walk stops as soon as the value reaches a package, because a
-library's body is not here to read. Without that second rule, a
-decorator from a library the pack never asked about ran the whole
-import closure looking for a match it would never find, and the files
-that arrived changed what the type checker reported for shapes read
-later.
+The answer is memoized against the declaration, since one wrapper is
+applied across hundreds of files and the question is about the wrapper
+rather than about any use of it.
 
 ## Cost
 
-Facts arrive in waves. A query extracts the file its value lives in and
-asks; only if the answer is missing does it widen to the files that file
-imports, up to six hops. A value that resolves without leaving its own
-file costs one file of extraction.
+A query extracts the file its value lives in, evaluates the rules, and
+reads what they are waiting on. The rules under `deriveOnDemand` say so
+as demand facts, and the demands on `moduleExport` and `moduleForwards`
+with the module column bound are the ones that name a file the query
+has not read. The store extracts those files, evaluates again, and
+repeats until the rules ask for nothing new. Then it reads the answer.
+
+The files a question reads are therefore fixed by the question: the
+value's own file, plus every module the chain from that value imports
+through, to any depth, and nothing beside them. A value that resolves
+without leaving its own file costs one file of extraction. An import of
+a package resolves to the package's declaration file, which is read
+like any other module, and its own imports are followed only where a
+name the chain reaches is re-exported from them.
+
+Reading only what the question demands is what makes a query's answer
+the same whatever was asked before it. The store keeps every file it
+has extracted in one database, so an earlier query's facts are there
+when a later one runs. The wave walk this replaced widened one import
+hop at a time and stopped at the first hop that produced a candidate,
+so the answer depended on which of two branches an earlier query
+happened to have read. With the demanded closure read whole before the
+answer is taken, the extra facts change nothing the question reads.
+
+`exportsOf` is the one answer whose order is visible, since discovery
+walks the table and emits summaries as it goes. The rounds derive the
+table in the order the files arrived, so after the closure is loaded
+the store drops that table and derives it once more from the demand
+alone. That order follows the file's own statements, whatever was read
+before.
+
+`SUSS_RESOLUTION_ON_DEMAND=0` runs the rules without the rewrite, and
+with no demand facts to read the store follows every import of every
+file it extracts instead. That reads the whole import closure of the
+value's file, which is more than the question needs and slow on a large
+project, but it gives the same answers.
 
 Nearly every file in the project gets asked the gate question, so suss
 works it out for all of them at once. `moduleGraph.ts` resolves each
@@ -86,10 +112,10 @@ specifier resolutions for 35,000 distinct edges.
 
 ## Reading a caller's file
 
-A query widens outward along the imports of the file it starts in, which
-is where a value's definition is. What a caller passed is the other
-direction: the call is in a file that imports this one, and the walk
-never arrives there.
+A query follows the imports of the file it starts in, which is where a
+value's definition is. What a caller passed is the other direction: the
+call is in a file that imports this one, and no rule demands a file by
+who imports it, so the query never arrives there.
 
 `ResolutionStore.extractFiles` reads a set of files before anything asks
 a question, so those facts are already in the store. Route discovery
@@ -143,7 +169,7 @@ Three do not:
 - **A parameter, unless the caller's file has been read.** `const
   register = (handle) => router.get("/p", handle)`. Whoever calls
   `register` supplies the function, and the call is in a file that
-  imports this one, which a query widening along imports never reaches.
+  imports this one, which a query following imports never reaches.
   A caller that already knows the file set can read it first; see
   "Reading a caller's file" below.
 
@@ -202,10 +228,12 @@ class declaration is not an expression, and the question is what the
 source wrote the value as. `resolveObject` is the question that wants
 the class.
 
-This does not make the store order independent in general. A query
-still sees every fact any earlier query extracted, and where more files
-bring a genuinely different second value, null is the correct answer
-and the single answer the narrower walk gave was the wrong one.
+One question stays open to what was read before it: a parameter's
+value. The argument step runs from a call to the parameter it fills,
+and the call is in a file that imports this one, which no demand asks
+for. So a parameter resolves to whatever the files read so far pass it, and
+`extractFiles` is how a caller who knows the file set makes that the
+same every time; see "Reading a caller's file" above.
 
 ## When something does not resolve
 
