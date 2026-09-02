@@ -355,6 +355,59 @@ describe("the rewrite itself", () => {
     expect(reached(db, "rightOf")).toEqual(["c|d"]);
   });
 
+  it("sends demand through the literal the head already binds", () => {
+    // Asked with the value bound, written order would bind the module
+    // and name off every re-export first and then want the recursive
+    // literal with all three columns bound.
+    const rules = [
+      rule(
+        "moduleExport",
+        [v("m"), v("n"), v("value")],
+        [lit("exportsAs", v("m"), v("n"), v("value"))],
+      ),
+      rule(
+        "moduleExport",
+        [v("m"), v("n"), v("value")],
+        [
+          lit("reExports", v("m"), v("n"), v("m2"), v("n2")),
+          lit("moduleExport", v("m2"), v("n2"), v("value")),
+        ],
+      ),
+      rule(
+        "exporters",
+        [v("m"), v("value")],
+        [
+          lit("asked", v("value")),
+          lit("moduleExport", v("m"), v("n"), v("value")),
+        ],
+      ),
+    ];
+    const { rules: rewritten, demandDriven } = deriveOnDemand(rules, [
+      "exporters",
+    ]);
+    expect(demandDriven).not.toContain("wanted:moduleExport:bbb");
+    const recursive = rewritten.find(
+      (r) => r.head.relation === "moduleExport" && r.body.length === 3,
+    );
+    expect(recursive?.body.map((l) => l.relation)).toEqual([
+      "wanted:moduleExport",
+      "moduleExport",
+      "reExports",
+    ]);
+    // A rule saying the value is wanted because it is wanted is left out.
+    expect(
+      rewritten.filter((r) => r.head.relation === "wanted:moduleExport"),
+    ).toHaveLength(1);
+
+    const db = new Database();
+    db.add("exportsAs", ["lib", "impl", "fn"]);
+    db.add("reExports", ["barrel", "fn", "lib", "impl"]);
+    db.add("reExports", ["other", "x", "lib", "x"]);
+    db.add("asked", ["fn"]);
+    evaluate(db, rewritten);
+    expect(reached(db, "exporters")).toEqual(["barrel|fn", "lib|fn"]);
+  });
+
   it("refuses a rule set that uses negation", () => {
     const rules = [
       rule(
