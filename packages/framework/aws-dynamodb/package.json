@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-aws-dynamodb",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "type": "module",
   "description": "Recognize AWS DynamoDB calls in TypeScript code and emit storage-access effects.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/recognize": "0.21.0",
+    "@suss/recognize": "0.21.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {
