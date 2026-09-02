@@ -152,6 +152,45 @@ ends with tells a read from a write, and the keywords along it become the
 selector. `fields` comes back empty, and a call on anything that is not a
 constant says nothing, since there is no class to ask about.
 
+## What a file reads from the environment
+
+`ENV` is part of the language core, so the adapter recognizes reads of it
+itself, without a pack. Each read becomes the same `config-read` interaction
+the TypeScript adapter emits for `process.env.X`, on the binding
+`runtime-config`, spelled `ENV["X"]` whichever way the source wrote it. The
+runtime-config checker pairs those against what a template declares for the
+process the file runs in.
+
+| Ruby | Recognized as | Defaulted |
+| --- | --- | --- |
+| `ENV["X"]`, `ENV['X']`, `::ENV["X"]` | a read of `X` | no |
+| `ENV.fetch("X")` | a read of `X` | no |
+| `ENV.fetch("X", "d")`, `ENV.fetch("X", nil)` | a read of `X` | yes |
+| `ENV.fetch("X") { "d" }`, `ENV.fetch("X") do ... end` | a read of `X` | yes |
+| any of these followed by `\|\|` (`ENV["X"] \|\| "d"`) | a read of `X` | yes |
+| `ENV[name]`, `ENV.fetch("#{prefix}_X")`, `ENV[:X]` | nothing: the name is not a string literal | |
+| `ENV["X"] = "1"`, `ENV.key?("X")`, `Settings::ENV["X"]` | nothing: a write, a membership test, or another constant | |
+| `other \|\| ENV["X"]` | `X` not defaulted, since it is the chain's last resort | |
+
+A read inside a method a pack discovers (a resolver method behind a GraphQL
+field) goes on that unit's summary. A read in the file body, in a class or
+module body, or in a block at those levels runs when the file loads, so it goes
+on a `module-init` summary named after the file, one per file that has such a
+read. A read inside a method no pack discovers, or inside a lambda, is reported
+nowhere, because nothing says when it runs.
+
+## What a file depends on in the project
+
+Every summary has `metadata.moduleImports`, the project files this file depends
+on, relative to the workspace root and sorted. Ruby has no import statement, so
+the list comes from two places: a `require_relative` whose target is a file in
+the run, and a constant the file references that another file in the run
+defines (`Settings::REGION` puts the file defining `Settings` in the list). A
+plain `require` is not followed, because where it loads from depends on the
+load path at run time. A file that depends on nothing in the project gets an
+empty list rather than no field, so a Lambda handler that only requires gems
+still tells the checker that its closure is the handler file alone.
+
 ## Where it fits in suss
 
 Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (starting with `@suss/framework-graphql-ruby`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes or DSL calls are named beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.

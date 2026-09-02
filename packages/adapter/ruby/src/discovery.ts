@@ -29,6 +29,7 @@ import {
   spanOf,
   symbolValue,
 } from "./ast.js";
+import { envReadEffects } from "./envReads.js";
 import { invocationEffects } from "./paths/effects.js";
 import {
   graphqlTypeNameFromQualified,
@@ -380,13 +381,17 @@ interface BodyReport {
 
 function bodyOfMethod(method: RbNode, storage?: RbStorageOptions): BodyReport {
   const effects = invocationEffects(method);
-  const database =
-    storage === undefined ? [] : storageEffects(callsUnder(method), storage);
+  const extra = [
+    ...envReadEffects(method),
+    ...(storage === undefined
+      ? []
+      : storageEffects(callsUnder(method), storage)),
+  ];
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",
     readings: [],
     ...(effects.length > 0 ? { effects } : {}),
-    ...(database.length > 0 ? { extraEffects: database } : {}),
+    ...(extra.length > 0 ? { extraEffects: extra } : {}),
   };
 }
 

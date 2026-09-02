@@ -108,6 +108,98 @@ describe("extractRubyProject", () => {
   });
 });
 
+describe("environment reads on a summary", () => {
+  it("puts a resolver body's reads on the field and a file's load-time reads on a module-init unit", async () => {
+    const campaignType = write(
+      "app/graphql/types/campaign_type.rb",
+      [
+        'PAGE_SIZE = ENV.fetch("PAGE_SIZE", "20")',
+        "",
+        "class Types::CampaignType < Types::BaseObject",
+        "  field :banner, String, null: false",
+        "",
+        "  def banner",
+        '    ENV["BANNER_BUCKET"]',
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractRubyProject({
+      files: [campaignType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+      workspaceRoot: tmpDir,
+    });
+
+    const configReads = (summary: (typeof summaries)[number] | undefined) =>
+      summary?.transitions.flatMap((t) =>
+        t.effects.flatMap((effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "config-read"
+            ? [effect.interaction]
+            : [],
+        ),
+      );
+    const field = summaries.find((s) => s.identity.name === "Campaign.banner");
+    expect(configReads(field)).toEqual([
+      { class: "config-read", name: "BANNER_BUCKET", defaulted: false },
+    ]);
+
+    const moduleInit = summaries.find((s) => s.kind === "module-init");
+    expect(moduleInit?.identity.name).toBe("campaign_type.rb");
+    expect(moduleInit?.location.file).toBe(
+      "app/graphql/types/campaign_type.rb",
+    );
+    expect(configReads(moduleInit)).toEqual([
+      { class: "config-read", name: "PAGE_SIZE", defaulted: true },
+    ]);
+  });
+});
+
+describe("module imports on a summary", () => {
+  it("records the files a require_relative resolves to and the files whose constants the file reads", async () => {
+    const settings = write(
+      "app/graphql/settings.rb",
+      'module Settings\n  REGION = ENV.fetch("REGION", "us-east-1")\nend\n',
+    );
+    const helpers = write(
+      "app/graphql/types/helpers.rb",
+      "module Helpers\nend\n",
+    );
+    const campaignType = write(
+      "app/graphql/types/campaign_type.rb",
+      [
+        'require_relative "helpers"',
+        "",
+        "class Types::CampaignType < Types::BaseObject",
+        "  field :region, String, null: false",
+        "",
+        "  def region",
+        "    Settings::REGION",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractRubyProject({
+      files: [settings, helpers, campaignType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+      workspaceRoot: tmpDir,
+    });
+
+    const field = summaries.find((s) => s.identity.name === "Campaign.region");
+    expect(field?.metadata?.moduleImports).toEqual([
+      "app/graphql/settings.rb",
+      "app/graphql/types/helpers.rb",
+    ]);
+    const settingsInit = summaries.find(
+      (s) => s.location.file === "app/graphql/settings.rb",
+    );
+    expect(settingsInit?.kind).toBe("module-init");
+    expect(settingsInit?.metadata?.moduleImports).toEqual([]);
+  });
+});
+
 /** The generated base classes a graphql-ruby project extends, so an ancestor walk over these fixtures ends where a generated project's does. */
 function writeBaseClasses(): void {
   write(
