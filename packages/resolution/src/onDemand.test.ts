@@ -30,6 +30,11 @@ import {
   RESOLUTION_RULES,
 } from "./index.js";
 
+// Pinned so a run repeats and a counterexample can be reproduced from
+// the seed alone. The nightly fuzz job sets SUSS_FUZZ_SEED from its run
+// id, which is where these generators draw anything new.
+const PROPERTY_SEED = Number(process.env.SUSS_FUZZ_SEED) || 20260730;
+
 const COMPLETE = [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS];
 const PROGRAM = deriveOnDemand(COMPLETE, ANSWER_RELATIONS);
 const ON_DEMAND = PROGRAM.rules;
@@ -189,7 +194,7 @@ describe("deriving the resolution rules on demand", () => {
       fc.property(arbFacts, (facts) => {
         expect(answers(facts, ON_DEMAND)).toEqual(answers(facts, COMPLETE));
       }),
-      { numRuns: 400 },
+      { numRuns: 400, seed: PROPERTY_SEED },
     );
   });
 
@@ -203,7 +208,7 @@ describe("deriving the resolution rules on demand", () => {
         }
         expect(answersFrom(resumed)).toEqual(answers(facts, COMPLETE));
       }),
-      { numRuns: 200 },
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 
@@ -226,7 +231,7 @@ describe("deriving the resolution rules on demand", () => {
 
         expect(answersFrom(late)).toEqual(answers(facts, COMPLETE));
       }),
-      { numRuns: 200 },
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 
@@ -253,7 +258,7 @@ describe("deriving the resolution rules on demand", () => {
           clearRelations(scoped, ON_DEMAND, QUERY_FACTS);
         }
       }),
-      { numRuns: 300 },
+      { numRuns: 300, seed: PROPERTY_SEED },
     );
   });
 
@@ -273,7 +278,7 @@ describe("deriving the resolution rules on demand", () => {
           expect(db.size(relation)).toBe(0);
         }
       }),
-      { numRuns: 200 },
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 

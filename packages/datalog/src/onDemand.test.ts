@@ -23,6 +23,11 @@ import {
   variable as v,
 } from "./index.js";
 
+// Pinned so a run repeats and a counterexample can be reproduced from
+// the seed alone. The nightly fuzz job sets SUSS_FUZZ_SEED from its run
+// id, which is where these generators draw anything new.
+const PROPERTY_SEED = Number(process.env.SUSS_FUZZ_SEED) || 20260730;
+
 // There are two base relations the rules read, three derived ones they
 // write, and one more that says which values somebody is asking about.
 const ARITY: Record<string, number> = {
@@ -157,7 +162,7 @@ describe("answering the same questions from less", () => {
         );
         expect(answersFrom(onDemand)).toEqual(answersFrom(plain));
       }),
-      { numRuns: 300 },
+      { numRuns: 300, seed: PROPERTY_SEED },
     );
   });
 
@@ -175,7 +180,7 @@ describe("answering the same questions from less", () => {
         }
         expect(answersFrom(resumed)).toEqual(answersFrom(inOneGo));
       }),
-      { numRuns: 200 },
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 
@@ -203,7 +208,7 @@ describe("answering the same questions from less", () => {
           clearRelations(scoped, program.rules, scope);
         }
       }),
-      { numRuns: 300 },
+      { numRuns: 300, seed: PROPERTY_SEED },
     );
   });
 
@@ -222,7 +227,7 @@ describe("answering the same questions from less", () => {
           );
         }
       }),
-      { numRuns: 200 },
+      { numRuns: 200, seed: PROPERTY_SEED },
     );
   });
 });

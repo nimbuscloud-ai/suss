@@ -42,6 +42,14 @@ jobs:
         env:
           FUZZ_PROGRAMS: ${{ inputs.programs || '4000' }}
 
+      # The datalog and resolution suites run at a pinned seed under CI,
+      # so this is the only place their generators draw anything new.
+      - name: The datalog and resolution properties, at a seed from the clock
+        if: ${{ !cancelled() }}
+        run: npm run fuzz:properties
+        env:
+          SUSS_FUZZ_SEED: ${{ github.run_id }}
+
       # The Python differential needs an interpreter and the target
       # frameworks, which only this workflow installs: the runtime
       # side of a fuzz target lives in CI, never in any shipped
