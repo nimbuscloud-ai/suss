@@ -92,6 +92,26 @@ describe("resolveTarget", () => {
     expect(result.matched).toBe(true);
   });
 
+  it("reads a tail against the id before settling, so a caller settled with the export it calls is not that export", () => {
+    const settled: BehavioralSummary = {
+      ...dao,
+      identity: {
+        ...dao.identity,
+        id: "app::src/editions/dao.ts::byPublication#fn:@suss/datalog::evaluate",
+      },
+    };
+
+    expect(resolveTarget("evaluate", [settled]).matched).toBe(false);
+    expect(resolveTarget("byPublication", [settled]).matched).toBe(true);
+    expect(
+      resolveTarget("src/editions/dao.ts::byPublication", [settled]).matched,
+    ).toBe(true);
+    expect(
+      resolveTarget("byPublication#fn:@suss/datalog::evaluate", [settled])
+        .matched,
+    ).toBe(true);
+  });
+
   it("takes a package export boundary, which has :: in it too", () => {
     const caller: BehavioralSummary = {
       ...dao,

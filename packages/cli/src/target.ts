@@ -13,7 +13,12 @@
 
 import path from "node:path";
 
-import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
+import {
+  settlingSuffix,
+  summaryIdentifier,
+  summaryRef,
+  unsettledSummaryId,
+} from "@suss/behavioral-ir";
 
 import {
   boundariesTouchedBy,
@@ -111,11 +116,7 @@ function summaryTarget(
   spec: string,
   summaries: ReadonlyArray<BehavioralSummary>,
 ): TargetResolution {
-  const matched = summaries.filter(
-    (summary) =>
-      idMatches(spec, summaryIdentifier(summary)) ||
-      idMatches(spec, summaryRef(summary)),
-  );
+  const matched = summaries.filter((summary) => idMatches(spec, summary));
   if (matched.length === 0) {
     return {
       matched: false,
@@ -309,9 +310,27 @@ function endsWithSegments(whole: string, tail: string): boolean {
 /**
  * A summary id matches the whole id or a tail of it, so somebody who
  * saw `src/dao.ts::byPublication` in one report can type it at a run
- * whose ids have a workspace in front.
+ * whose ids have a workspace in front. The tail is read against the
+ * id before settling, so `evaluate` is the function called that and
+ * not every caller settled with `#fn:...::evaluate` on the end.
  */
-function idMatches(spec: string, id: string): boolean {
+function idMatches(spec: string, summary: BehavioralSummary): boolean {
+  const id = summaryIdentifier(summary);
+  if (id === spec) {
+    return true;
+  }
+  const settledWith = settlingSuffix(summary);
+  const wanted =
+    settledWith !== "" && spec.endsWith(settledWith)
+      ? spec.slice(0, -settledWith.length)
+      : spec;
+  return (
+    isTailOf(wanted, unsettledSummaryId(summary)) ||
+    isTailOf(wanted, summaryRef(summary))
+  );
+}
+
+function isTailOf(spec: string, id: string): boolean {
   return id === spec || id.endsWith(`::${spec}`);
 }
 
