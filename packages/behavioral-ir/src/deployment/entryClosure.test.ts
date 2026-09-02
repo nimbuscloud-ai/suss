@@ -19,4 +19,18 @@ describe("entryClosure", () => {
   it("returns null when no file matches the entry", () => {
     expect(entryClosure("src/missing", graph)).toBeNull();
   });
+
+  it("matches a Python module written with dots against a file path", () => {
+    const python: ModuleGraph = new Map([
+      ["src/shop/app.py", ["src/shop/settings.py"]],
+      ["src/shop/settings.py", []],
+      ["src/worker.py", []],
+    ]);
+    expect(entryClosure("src/shop.app", python)).toEqual(
+      new Set(["src/shop/app.py", "src/shop/settings.py"]),
+    );
+    expect(entryClosure("src/worker", python)).toEqual(
+      new Set(["src/worker.py"]),
+    );
+  });
 });

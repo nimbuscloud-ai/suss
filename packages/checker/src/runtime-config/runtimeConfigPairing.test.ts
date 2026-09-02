@@ -65,7 +65,11 @@ function makeCodeSummary(opts: {
   runsInUnit?: string;
   moduleImports?: string[];
   defaulted?: boolean;
+  /** How the source spelled each read; undefined leaves the callee off. */
+  spellRead?: (varName: string) => string | undefined;
 }): BehavioralSummary {
+  const spellRead =
+    opts.spellRead ?? ((varName: string) => `process.env.${varName}`);
   const transition: Transition = {
     id: "t0",
     conditions: [],
@@ -81,7 +85,9 @@ function makeCodeSummary(opts: {
         },
         recognition: "@suss/runtime-node",
       },
-      callee: `process.env.${varName}`,
+      ...(spellRead(varName) === undefined
+        ? {}
+        : { callee: spellRead(varName) }),
       interaction: {
         class: "config-read" as const,
         name: varName,
@@ -909,6 +915,7 @@ describe("a runtime whose code reads its configuration off an argument", () => {
         name: "fetch",
         file: "src/index.ts",
         envReads: ["MISSING_ORIGIN"],
+        spellRead: () => undefined,
       }),
     ]);
 
@@ -918,6 +925,30 @@ describe("a runtime whose code reads its configuration off an argument", () => {
 
     const unused = findings.find((f) => f.kind === "boundaryFieldUnused");
     expect(unused?.description).toContain("reads env.GREETING_TABLE");
+  });
+});
+
+describe("a read the source spelled its own way", () => {
+  it("repeats the source's spelling, so a Python read is not described as process.env", () => {
+    const findings = checkRuntimeConfig([
+      makeRuntimeProvider({
+        instanceName: "ApiFunction",
+        envVars: [],
+        codeScope: { kind: "codeUri", path: "src" },
+      }),
+      makeCodeSummary({
+        name: "list_items",
+        file: "src/app.py",
+        envReads: ["ASSET_BUCKET"],
+        spellRead: (varName) => `os.environ["${varName}"]`,
+      }),
+    ]);
+
+    const unprovided = findings.find((f) => f.kind === "boundaryFieldUnknown");
+    expect(unprovided?.description).toContain(
+      'os.environ["ASSET_BUCKET"] read by list_items',
+    );
+    expect(unprovided?.description).not.toContain("process.env");
   });
 });
 

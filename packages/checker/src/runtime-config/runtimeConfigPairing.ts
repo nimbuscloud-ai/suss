@@ -82,6 +82,8 @@ interface EnvVarRead {
   transitionId: string;
   /** The code supplies a fallback, so an absent value is not a defect. */
   defaulted: boolean;
+  /** How the source spelled the read, so a Python finding does not say `process.env`. */
+  spelling?: string;
 }
 
 /**
@@ -431,6 +433,9 @@ function collectEnvVarReads(
         summary: record.summary,
         transitionId: record.transitionId,
         defaulted: record.effect.interaction.defaulted === true,
+        ...(record.effect.callee === undefined
+          ? {}
+          : { spelling: record.effect.callee }),
       });
     }
   } else {
@@ -447,6 +452,9 @@ function collectEnvVarReads(
               summary,
               transitionId: transition.id,
               defaulted: effect.interaction.defaulted === true,
+              ...(effect.callee === undefined
+                ? {}
+                : { spelling: effect.callee }),
             });
           }
         }
@@ -550,7 +558,7 @@ function makeUnprovidedFinding(
     boundary: binding,
     provider: makeSide(runtime),
     consumer: makeSide(read.summary, read.transitionId),
-    description: `${readSpelling(semantics, read.name)} read by ${read.summary.identity.name} (${instanceLabel(semantics)} scope) but ${semantics.instanceName} declares no ${read.name} in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.`,
+    description: `${read.spelling ?? readSpelling(semantics, read.name)} read by ${read.summary.identity.name} (${instanceLabel(semantics)} scope) but ${semantics.instanceName} declares no ${read.name} in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.`,
     severity: "error",
   };
 }

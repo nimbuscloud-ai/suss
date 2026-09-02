@@ -38,7 +38,11 @@ export function entryClosure(
     files.add(file);
   }
 
-  const entryFile = [...files].find((file) => stripExtension(file) === entry);
+  const entryFile =
+    [...files].find((file) => stripExtension(file) === entry) ??
+    [...files].find(
+      (file) => stripExtension(file) === asModuleDirectory(entry),
+    );
   if (entryFile === undefined) {
     return null;
   }
@@ -65,5 +69,12 @@ export function entryClosure(
 }
 
 function stripExtension(file: string): string {
-  return file.replace(/\.[cm]?[jt]sx?$/, "");
+  return file.replace(/\.([cm]?[jt]sx?|py|rb)$/, "");
+}
+
+/** A Python handler writes its module with dots (`shop.app.handler`), so the last segment of the entry is also tried as a directory path. */
+function asModuleDirectory(entry: string): string {
+  const slash = entry.lastIndexOf("/");
+  const directory = entry.slice(0, slash + 1);
+  return directory + entry.slice(slash + 1).replace(/\./g, "/");
 }
