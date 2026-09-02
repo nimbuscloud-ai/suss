@@ -582,3 +582,143 @@ describe("tupleKey", () => {
     expect(() => tupleKeyParts("s-1:a")).toThrow("not a tuple key");
   });
 });
+
+describe("evaluate: the order a round walks a rule body in", () => {
+  type Facts = Array<[string, readonly string[]]>;
+  type Rules = Parameters<typeof evaluate>[1];
+
+  const factsInto = (db: Database, facts: Facts): void => {
+    for (const [name, tuple] of facts) {
+      db.add(name, tuple);
+    }
+  };
+
+  // A resumed round draws its delta from the facts added since the last
+  // call, which is how the delta lands on a literal other than the first
+  // and the join reorders.
+  const inTwoPasses = (
+    rules: Rules,
+    first: Facts,
+    second: Facts,
+    relation: string,
+  ): string[] => {
+    const db = new Database();
+    factsInto(db, first);
+    evaluate(db, rules);
+    factsInto(db, second);
+    evaluate(db, rules);
+    return sorted(db.facts(relation));
+  };
+
+  const atOnce = (rules: Rules, facts: Facts, relation: string): string[] => {
+    const db = new Database();
+    factsInto(db, facts);
+    evaluate(db, rules);
+    return sorted(db.facts(relation));
+  };
+
+  const CHAIN = [
+    rule("chain", [V("x"), V("x")], [lit("wanted", V("x"))]),
+    rule(
+      "chain",
+      [V("x"), V("z")],
+      [lit("chain", V("x"), V("y")), lit("binds", V("y"), V("z"))],
+    ),
+  ];
+
+  it("derives the same chain when the new facts are the second literal", () => {
+    const facts: Facts = [
+      ["wanted", ["a"]],
+      ["binds", ["a", "b"]],
+      ["binds", ["b", "c"]],
+      ["binds", ["c", "d"]],
+    ];
+    expect(
+      inTwoPasses(CHAIN, facts.slice(0, 2), facts.slice(2), "chain"),
+    ).toEqual(atOnce(CHAIN, facts, "chain"));
+  });
+
+  const CROSS = [
+    rule(
+      "pair",
+      [V("x"), V("y")],
+      [lit("left", V("x")), lit("right", V("y")), lit("seen", V("x"))],
+    ),
+  ];
+
+  it("derives the same pairs when a literal shares no bound variable", () => {
+    const facts: Facts = [
+      ["left", ["a"]],
+      ["seen", ["a"]],
+      ["right", ["p"]],
+      ["left", ["b"]],
+      ["seen", ["b"]],
+      ["right", ["q"]],
+    ];
+    expect(
+      inTwoPasses(CROSS, facts.slice(0, 3), facts.slice(3), "pair"),
+    ).toEqual(atOnce(CROSS, facts, "pair"));
+  });
+
+  const FILTERED = [
+    rule(
+      "reachable",
+      [V("x"), V("y")],
+      [lit("edge", V("x"), V("y")), notLit("blocked", V("y"))],
+    ),
+  ];
+
+  it("still drops what a negated literal blocks", () => {
+    const facts: Facts = [
+      ["edge", ["a", "b"]],
+      ["blocked", ["c"]],
+      ["edge", ["a", "c"]],
+    ];
+    expect(
+      inTwoPasses(FILTERED, facts.slice(0, 2), facts.slice(2), "reachable"),
+    ).toEqual(["a,b"]);
+  });
+
+  it("reports a negated literal whose variable nothing binds", () => {
+    const db = new Database();
+    factsInto(db, [
+      ["edge", ["a", "b"]],
+      ["other", ["a"]],
+    ]);
+    expect(() =>
+      evaluate(db, [
+        rule(
+          "bad",
+          [V("x")],
+          [
+            lit("edge", V("x"), V("y")),
+            notLit("blocked", V("z")),
+            lit("other", V("x")),
+          ],
+        ),
+      ]),
+    ).toThrow('unbound variable "z"');
+  });
+
+  // `other` is empty when the seed round reaches the malformed rule, so
+  // that rule first runs in a later round, drawing its delta from
+  // `other` and reordering the body around it.
+  it("reports it too when the round starts from a later literal", () => {
+    const db = new Database();
+    factsInto(db, [["edge", ["a", "b"]]]);
+    expect(() =>
+      evaluate(db, [
+        rule(
+          "bad",
+          [V("x")],
+          [
+            lit("edge", V("x"), V("y")),
+            notLit("blocked", V("z")),
+            lit("other", V("x")),
+          ],
+        ),
+        rule("other", [V("x")], [lit("edge", V("x"), V("y"))]),
+      ]),
+    ).toThrow('unbound variable "z"');
+  });
+});

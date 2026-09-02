@@ -639,29 +639,14 @@ export const RESOLUTION_QUESTIONS = [
   // here demands reaches or callsInto. The chains are closures with
   // no depth bound: an alias run of any length resolves.
   rule("callOriginChain", [v("x"), v("x")], [lit("wantedCallOrigin", v("x"))]),
-  rule(
-    "callOriginChain",
-    [v("x"), v("z")],
-    [lit("callOriginChain", v("x"), v("y")), lit("binds", v("y"), v("z"))],
-  ),
-  rule(
-    "callOriginChain",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain", v("x"), v("y")),
-      lit("endsHolding", v("y"), v("z")),
-    ],
-  ),
-  rule(
-    "callOriginChain",
-    [v("x"), v("z")],
-    [
-      lit("callOriginChain", v("x"), v("y")),
-      lit("fallbackBranch", v("y"), v("z")),
-    ],
-  ),
   // The chain with at least one hop taken, which is what tells a
-  // destructured binding apart from asking about a node directly.
+  // destructured binding apart from asking about a node directly. The
+  // whole chain is the seed plus those hops.
+  rule(
+    "callOriginChain",
+    [v("x"), v("z")],
+    [lit("callOriginChainStepped", v("x"), v("z"))],
+  ),
   rule(
     "callOriginChainStepped",
     [v("x"), v("z")],
