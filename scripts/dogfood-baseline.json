@@ -3,10 +3,10 @@
     "packages": 67,
     "packagesWithExports": 67,
     "exports": 694,
-    "internal": 2409,
+    "internal": 2416,
     "consumers": 1218,
     "pairs": 1198,
-    "unfollowedCalls": 209,
+    "unfollowedCalls": 210,
     "findingErrors": 0
   },
   "packages": {
@@ -160,9 +160,9 @@
     "packages/datalog": {
       "name": "@suss/datalog",
       "exports": 27,
-      "internal": 58,
+      "internal": 65,
       "consumers": 0,
-      "unfollowedCalls": 6
+      "unfollowedCalls": 7
     },
     "packages/extractor": {
       "name": "@suss/extractor",
