@@ -130,6 +130,9 @@ describe("infer intent for Lambdas that invoke each other", () => {
   it("says what the function gives back, and which unit it invokes", () => {
     const doc = fs.readFileSync(path.join(intent, REPORT_BUILDER), "utf8");
 
+    // The code reads the callee out of ARCHIVE_WORKER_FUNCTION and the
+    // template points that variable at ArchiveWorker, so the document
+    // says which function rather than which variable.
     expect(doc).toContain(
       [
         "  - id: returns",
@@ -141,7 +144,7 @@ describe("infer intent for Lambdas that invoke each other", () => {
         "          reportId:",
         "            type: string",
         "    results:",
-        "      - invokes: unit:lambda {ARCHIVE_WORKER_FUNCTION}",
+        "      - invokes: unit:lambda ArchiveWorker",
       ].join("\n"),
     );
   });
@@ -159,6 +162,36 @@ describe("infer intent for Lambdas that invoke each other", () => {
       "1 unit invokes unit:lambda {ARCHIVE_WORKER_FUNCTION}",
     );
     expect(run.stdout).toContain("ReportBuilder.handler");
+  });
+
+  it("keeps the variable in the document when no template is read", () => {
+    const alone = path.join(root, "code-only");
+    fs.mkdirSync(alone, { recursive: true });
+    fs.copyFileSync(
+      path.join(summaries, "code.json"),
+      path.join(alone, "code.json"),
+    );
+    const out = path.join(root, "code-only-intent");
+    const drafted = runSuss(["infer", "intent", "--from", alone, "--out", out]);
+    expect(drafted.status, drafted.stderr).toBe(0);
+
+    const doc = fs.readFileSync(path.join(out, REPORT_BUILDER), "utf8");
+    expect(doc).toContain(
+      "      - invokes: unit:lambda {ARCHIVE_WORKER_FUNCTION}",
+    );
+    expect(doc).toContain(
+      "# Nothing read here says what ARCHIVE_WORKER_FUNCTION is set to, so a",
+    );
+
+    // And it still round trips: both sides read the same run, so the
+    // document the drafter wrote is the one the checker agrees with.
+    curate(path.join(out, ORDER_API));
+    curate(path.join(out, REPORT_BUILDER));
+    curate(path.join(out, ARCHIVE_WORKER));
+    const run = runSuss(["check", "--dir", alone, "--intent", out, "--json"]);
+    const checked = (JSON.parse(run.stdout) as { intent: CheckIntentResult })
+      .intent;
+    expect(checked.findings).toEqual([]);
   });
 
   it("names the function this stack does not deploy as the code names it", () => {
@@ -190,7 +223,7 @@ describe("infer intent for Lambdas that invoke each other", () => {
 
   it("reports an invoke of a unit the function never invokes", () => {
     const drift = driftedInto("callee", REPORT_BUILDER, (doc) =>
-      doc.replace("{ARCHIVE_WORKER_FUNCTION}", "OrderApi"),
+      doc.replace("unit:lambda ArchiveWorker", "unit:lambda OrderApi"),
     );
 
     const checked = checkIntent(drift);
@@ -203,7 +236,7 @@ describe("infer intent for Lambdas that invoke each other", () => {
       "results in an invoke of unit:lambda OrderApi",
     );
     expect(checked.intent.findings[1].message).toContain(
-      "invokes unit:lambda {ARCHIVE_WORKER_FUNCTION}",
+      "invokes unit:lambda ArchiveWorker",
     );
   });
 

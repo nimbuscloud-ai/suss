@@ -23,20 +23,22 @@
 
 import {
   BOUNDARY_ROLE,
+  readCodeScope,
   readRoutingMetadata,
   rootDocumentLabel,
+  runsIn,
   summaryRef,
+  unitsByFile,
 } from "@suss/behavioral-ir";
-
-import { readCodeScope, runsIn, unitsByFile } from "../scope/unitScope.js";
 
 import type {
   BehavioralSummary,
   BoundaryBinding,
   RoutingMatchRecord,
   RoutingMetadata,
+  UnitScope,
+  UnitsByFile,
 } from "@suss/behavioral-ir";
-import type { UnitScope, UnitsByFile } from "../scope/unitScope.js";
 
 type RoutingResponse = NonNullable<RoutingMetadata["response"]>;
 

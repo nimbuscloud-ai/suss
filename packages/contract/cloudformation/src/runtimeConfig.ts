@@ -141,6 +141,7 @@ function buildLambdaSummary(opts: {
       ?.Variables ?? {};
   const templateVars = readEnvVariables(envVariables);
   const envVarTargets = readEnvVarTargets(envVariables);
+  const envVarValues = readEnvVarValues(envVariables);
   const codeScope = readCodeScope(resource);
   const runtime = props.Runtime;
   return buildSummary({
@@ -150,6 +151,7 @@ function buildLambdaSummary(opts: {
     templateVars,
     inheritedVars: opts.inherited,
     envVarTargets,
+    envVarValues,
     codeScope,
     recognition: opts.recognition,
     ...(typeof runtime === "string" ? { runtime } : {}),
@@ -220,6 +222,12 @@ function buildSummary(opts: {
    * string values produce no entry. They're "data," not "wiring."
    */
   envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
+  /**
+   * What the template sets each variable to, for the ones it writes as
+   * plain text. A store the code addresses through a variable reaches
+   * whatever declares that name through this.
+   */
+  envVarValues?: Record<string, string>;
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
   /** Language runtime the manifest declares for the unit (SAM `Runtime`). */
   runtime?: string;
@@ -280,6 +288,10 @@ function buildSummary(opts: {
         Object.keys(opts.envVarTargets).length > 0
           ? { envVarTargets: opts.envVarTargets }
           : {}),
+        ...(opts.envVarValues !== undefined &&
+        Object.keys(opts.envVarValues).length > 0
+          ? { envVarValues: opts.envVarValues }
+          : {}),
         ...(opts.runtime !== undefined ? { runtime: opts.runtime } : {}),
       },
     ),
@@ -328,6 +340,25 @@ function readRefTarget(value: unknown): string | null {
     return null;
   }
   return refTarget(value);
+}
+
+/**
+ * What the template sets each variable to, for the ones it writes out
+ * as plain text. A store or a base URL the code reaches through a
+ * variable is that string, so the boundary pairs with whatever declares
+ * it. A `!Ref` says which resource instead and is read next door.
+ */
+function readEnvVarValues(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (raw === null || typeof raw !== "object") {
+    return out;
+  }
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string") {
+      out[name] = value;
+    }
+  }
+  return out;
 }
 
 function readEcsEnvironmentList(raw: unknown): string[] {

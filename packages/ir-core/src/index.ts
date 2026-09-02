@@ -131,7 +131,9 @@ export {
   canPair,
   displayLabel,
   exchangesHttpResponses,
+  groundBinding,
   groundedPairingKey,
+  nameReference,
   pairingKey,
   reportsUnpairedItself,
   semanticsAgree,
@@ -172,6 +174,7 @@ export {
   parseChannel,
 } from "./channel.js";
 export { codeScopePath, fileInCodeScope } from "./codeScope.js";
+export { type Deployment, NOTHING_DEPLOYED } from "./deployment.js";
 export { type DispatchTable, dispatchByType } from "./dispatch.js";
 export {
   type EffectRelation,

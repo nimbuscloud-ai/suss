@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { storageBinding } from "@suss/behavioral-ir";
+import { NOTHING_DEPLOYED, storageBinding } from "@suss/behavioral-ir";
 
 import { draftedWhen, saidPlainly } from "./intentWhen.js";
 
@@ -71,7 +71,7 @@ function unitReadingInvoices(branches: Transition[]): BehavioralSummary {
 
 function drafted(conditions: Predicate[], isDefault = false) {
   const one = branch(conditions, isDefault);
-  return draftedWhen(one, unitReadingInvoices([one]), false);
+  return draftedWhen(one, unitReadingInvoices([one]), false, NOTHING_DEPLOYED);
 }
 
 function said(conditions: Predicate[]): string {
@@ -233,12 +233,12 @@ describe("the fall-through branch", () => {
   it("falls back to one word only when the summary never recorded a guard", () => {
     const one = branch([], true);
 
-    expect(draftedWhen(one, unitReadingInvoices([one]), false)).toBe(
-      "otherwise",
-    );
-    expect(draftedWhen(one, unitReadingInvoices([one]), true)).toBe(
-      "every call reaches this outcome",
-    );
+    expect(
+      draftedWhen(one, unitReadingInvoices([one]), false, NOTHING_DEPLOYED),
+    ).toBe("otherwise");
+    expect(
+      draftedWhen(one, unitReadingInvoices([one]), true, NOTHING_DEPLOYED),
+    ).toBe("every call reaches this outcome");
   });
 });
 

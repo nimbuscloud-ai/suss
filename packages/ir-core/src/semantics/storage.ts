@@ -15,7 +15,10 @@
 
 import { z } from "zod";
 
+import { referenceFromName } from "../boundaryName.js";
 import { defineBoundarySemantics } from "./definition.js";
+
+import type { Reference } from "../boundaryName.js";
 
 export const StorageSemanticsSchema = z.object({
   name: z.literal("storage"),
@@ -52,6 +55,13 @@ export const StorageSemanticsSchema = z.object({
 
 export type StorageSemantics = z.infer<typeof StorageSemanticsSchema>;
 
+/** Where a container the source states as a variable says to go and ask. */
+function containerReference(semantics: StorageSemantics): Reference | null {
+  return semantics.container === null
+    ? null
+    : referenceFromName(semantics.container);
+}
+
 export const storageSemantics = defineBoundarySemantics({
   name: "storage",
   schema: StorageSemanticsSchema,
@@ -69,6 +79,20 @@ export const storageSemantics = defineBoundarySemantics({
     reportsUnpairedItself: false,
     identityKey: () => null,
     displayLabel: storageLabel,
+    /**
+     * A container the source states as a variable is whatever the
+     * deployment sets that variable to. `{SUBSCRIBERS_TABLE}` in the
+     * code and `prod-subscribers-v1` in the manifest are one table.
+     */
+    groundName(semantics, deployment) {
+      const reference = containerReference(semantics);
+      if (reference === null) {
+        return null;
+      }
+      const name = deployment.setTo(reference);
+      return name === null ? null : { ...semantics, container: name };
+    },
+    nameReference: containerReference,
   },
 });
 

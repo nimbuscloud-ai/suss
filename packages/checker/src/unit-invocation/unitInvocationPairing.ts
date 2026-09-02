@@ -9,8 +9,12 @@
  * happens where the effect is recorded, so nothing here sees an ARN.
  */
 
-import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
-import { referenceFromName, unitIdentityKey } from "@suss/ir-core";
+import {
+  deploymentOf,
+  summaryIdentifier,
+  summaryRef,
+} from "@suss/behavioral-ir";
+import { boundaryKey, groundBinding, unitIdentityKey } from "@suss/ir-core";
 
 import {
   buildInteractionIndex,
@@ -19,7 +23,6 @@ import {
   interactionsOf,
   providersOf,
 } from "../interactions/dispatcher.js";
-import { deployedRefs } from "../runtime-config/deployedRefs.js";
 
 import type {
   BehavioralSummary,
@@ -110,7 +113,7 @@ function groundedInvokes(
   index: InteractionIndex,
   summaries: BehavioralSummary[],
 ): InvokeRecord[] {
-  const pointsAt = deployedRefs(summaries);
+  const deployment = deploymentOf(summaries);
   const invokes: InvokeRecord[] = [];
 
   for (const record of interactionsOf(
@@ -125,35 +128,12 @@ function groundedInvokes(
     invokes.push({
       record,
       semantics,
-      key: reachedKey(semantics, record.summary, pointsAt),
+      key: boundaryKey(
+        groundBinding(record.effect.binding, deployment(record.summary)),
+      ),
     });
   }
   return invokes;
-}
-
-/**
- * The unit an invoke reaches. A name the source states outright is the
- * answer; a name the code reads out of the environment is whatever the
- * template points that variable at, and null when nothing points it
- * anywhere, since an unresolved variable is not a unit name.
- */
-function reachedKey(
-  semantics: UnitInvocationSemantics,
-  invoker: BehavioralSummary,
-  pointsAt: (summary: BehavioralSummary, variable: string) => string | null,
-): string | null {
-  const stated = semantics.instanceName;
-  if (stated === null) {
-    return null;
-  }
-  const variable = referenceFromName(stated)?.root ?? null;
-  if (variable === null) {
-    return unitIdentityKey(semantics.deploymentTarget, stated);
-  }
-  const logicalId = pointsAt(invoker, variable);
-  return logicalId === null
-    ? null
-    : unitIdentityKey(semantics.deploymentTarget, logicalId);
 }
 
 /** The units in the run, by the key their own binding gives. */

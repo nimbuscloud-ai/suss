@@ -81,7 +81,7 @@ transitions:
       - invokes: unit:lambda ArchiveWorker
 ```
 
-A run that reads the deployment template gives a unit its name, so the boundary a document declares is `unit:lambda ReportBuilder`. The callee on a `results` line is spelled the way the invoking code spells it, which for a function named through an env var is `unit:lambda {ARCHIVE_WORKER_FUNCTION}`. Collapsing that env-var chain is the checker's job today and nothing hands the answer back to a drafted document, so the two spellings stay apart until it does.
+A run that reads the deployment template gives a unit its name, so the boundary a document declares is `unit:lambda ReportBuilder`. The callee on a `results` line is spelled the same way, even when the invoking code reaches it through an env var: `deploymentOf` in `@suss/behavioral-ir` says which resource the template points that variable at, and the drafter and the intent checker both go through it, so a document says which function rather than which variable. A run with no template in it has nothing to put in, and then the line keeps the code's own spelling, `unit:lambda {ARCHIVE_WORKER_FUNCTION}`, and the document's header says which variable it is waiting on. A store the code reaches through a variable works the same way.
 
 A clause can go further, since the summary does. `fields` is the columns the access touches and `by` is what it picks the item out by:
 

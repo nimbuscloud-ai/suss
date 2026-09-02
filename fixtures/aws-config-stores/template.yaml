@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Fixture for a store the code reaches through a variable. SecretsRotator
+  writes the secret named by API_KEY_SECRET_ID, and this template is the
+  only thing that says which secret that is. ParameterSync names every
+  parameter it touches in the source, so it grounds nothing.
+
+Resources:
+  SecretsRotator:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/secrets/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          API_KEY_SECRET_ID: prod/app/api-key
+
+  ParameterSync:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/parameters/
+      Handler: index.handler
+      Runtime: nodejs20.x

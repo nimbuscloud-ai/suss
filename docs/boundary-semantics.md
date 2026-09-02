@@ -231,7 +231,10 @@ function. `resourceNameIn` reduces one to the name where the effect is
 recorded, so the two sides compare the part both can know. A name that
 only exists at deploy time reaches the code as an env var, and
 `deployedRefs` collapses that chain against the invoking unit's own
-environment, the same way a queue URL is collapsed.
+environment, the same way a queue URL is collapsed. Every reader of a
+boundary name takes that step through `groundBinding`, so the pairing
+pass, a drafted intent document and the intent checker all arrive at
+one name; see [grounding a deploy-time name](#grounding-a-deploy-time-name).
 
 ### Pack helpers
 
@@ -388,6 +391,32 @@ modules (`message-bus/`, `runtime-config/`, `storage/`) filter by
 `semantics.name`. `identityKey` returns null for the `runtime-config`
 and `storage` variants, and `message-bus` keys and pairs
 through the generic pass as well.
+
+### Grounding a deploy-time name
+
+A queue URL, a function name and a table name only exist once a stack
+is deployed, so the source reaches them through a variable and the
+template says what that variable is. Two more behaviors cover that:
+
+- `nameReference`: where this boundary's name says to go and ask, or
+  null when the source stated a name outright.
+- `groundName`: the same boundary with what the deployment fills in put
+  in. REST puts a base URL back into the front of a path,
+  unit-invocation swaps the callee for the resource the template points
+  the variable at, and storage swaps the container for the string the
+  deployment sets it to.
+
+`groundBinding` in `packages/ir-core/src/boundaryKey.ts` is the lookup,
+and `deploymentOf` in `@suss/behavioral-ir` supplies the values. Everything
+that reads a boundary name for somebody to see goes through the pair:
+the pairing pass, `suss infer intent` when it writes a document, and
+`checkIntentAgreement` when it reads one back. A step only one of them
+took would have the drafter write a name the checker then argued with.
+
+A run with no template in it grounds nothing, and so does a run where
+two deployments of the same code set a variable differently. Both leave
+the boundary spelled as the source spells it, which is what a document
+then says.
 
 ### Metadata namespaced by semantics
 

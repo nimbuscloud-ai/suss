@@ -8,8 +8,10 @@
 import { describe, expect, it } from "vitest";
 
 import { servesRequest, withinScope } from "../boundaryKey.js";
+import { referenceName } from "../boundaryName.js";
 import { restSemantics, routePathAdmits } from "./rest.js";
 
+import type { Deployment } from "../deployment.js";
 import type { BoundaryBinding } from "../index.js";
 
 describe("routePathAdmits", () => {
@@ -123,8 +125,14 @@ describe("restSemantics groundName", () => {
     method: "GET",
     path,
   });
-  const sets = (values: Record<string, string>) => (variable: string) =>
-    values[variable] ?? null;
+  // Which variable a dotted reference asks about is the deployment
+  // reader's rule, so these stand in for it by taking the whole path.
+  const sets = (values: Record<string, string>): Deployment => ({
+    variableFor: (reference) => referenceName(reference),
+    setTo: (reference) =>
+      values[[reference.root, ...reference.fields].join(".")] ?? null,
+    pointsAt: () => null,
+  });
 
   it("takes the origin off when the base URL is one", () => {
     expect(
@@ -140,11 +148,11 @@ describe("restSemantics groundName", () => {
     ).toEqual({ name: "rest", method: "GET", path: "/api/v2/orders" });
   });
 
-  it("reads the variable through the way the source spells it", () => {
+  it("hands the whole reference over, dots and all", () => {
     expect(
       ground(
         route("{env.API_BASE}/orders"),
-        sets({ API_BASE: "http://backend" }),
+        sets({ "env.API_BASE": "http://backend" }),
       ),
     ).toEqual({ name: "rest", method: "GET", path: "/orders" });
   });

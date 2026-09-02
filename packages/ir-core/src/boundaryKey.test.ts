@@ -10,18 +10,24 @@ import {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  groundBinding,
   groundedPairingKey,
   messageBusBinding,
   methodsAgree,
   metricBinding,
+  NOTHING_DEPLOYED,
+  nameReference,
   normalizePath,
   pairingKey,
   reportsUnpairedItself,
   restBinding,
   semanticsAgree,
   storageBinding,
+  unitInvocationBinding,
   withRewrittenPaths,
 } from "./index.js";
+
+import type { Deployment } from "./index.js";
 
 describe("normalizePath", () => {
   it("converts :param to {param} and lowercases static segments", () => {
@@ -556,6 +562,16 @@ describe("a metric boundary", () => {
   });
 });
 
+/** A deployment that gives one answer to everything it is asked. */
+const always = (
+  answer: string | null,
+  channel: "setTo" | "pointsAt" = "setTo",
+): Deployment => ({
+  variableFor: (reference) => reference.root,
+  setTo: () => (channel === "setTo" ? answer : null),
+  pointsAt: () => (channel === "pointsAt" ? answer : null),
+});
+
 describe("groundedPairingKey", () => {
   const forwarder = restBinding({
     transport: "http",
@@ -565,7 +581,9 @@ describe("groundedPairingKey", () => {
   });
 
   it("keys on the path a deploy-time base URL reaches", () => {
-    expect(groundedPairingKey(forwarder, () => "http://backend.internal")).toBe(
+    expect(
+      groundedPairingKey(forwarder, always("http://backend.internal")),
+    ).toBe(
       pairingKey(
         restBinding({
           transport: "http",
@@ -578,19 +596,154 @@ describe("groundedPairingKey", () => {
   });
 
   it("keys as before when nothing fills the name in", () => {
-    expect(groundedPairingKey(forwarder, () => null)).toBe(
+    expect(groundedPairingKey(forwarder, always(null))).toBe(
       pairingKey(forwarder),
     );
   });
 
   it("keys as before for a protocol with nothing to fill in", () => {
+    const bus = messageBusBinding({
+      recognition: "sqs",
+      messageBus: "aws_sqs",
+      channel: "orders",
+    });
+    expect(groundedPairingKey(bus, always("anything"))).toBe(pairingKey(bus));
+  });
+});
+
+describe("groundBinding", () => {
+  const invoke = unitInvocationBinding({
+    recognition: "aws-lambda",
+    deploymentTarget: "lambda",
+    instanceName: "{ARCHIVE_WORKER_FUNCTION}",
+  });
+
+  it("names the unit the template points the variable at", () => {
+    expect(
+      groundBinding(invoke, always("ArchiveWorker", "pointsAt")).semantics,
+    ).toMatchObject({ instanceName: "ArchiveWorker" });
+  });
+
+  it("leaves an invoke alone when nothing points the variable anywhere", () => {
+    expect(groundBinding(invoke, always(null)).semantics).toMatchObject({
+      instanceName: "{ARCHIVE_WORKER_FUNCTION}",
+    });
+  });
+
+  it("leaves a callee the source named outright alone", () => {
+    const named = unitInvocationBinding({
+      recognition: "aws-lambda",
+      deploymentTarget: "lambda",
+      instanceName: "legacy-pricing",
+    });
+    expect(
+      groundBinding(named, always("ArchiveWorker", "pointsAt")).semantics,
+    ).toMatchObject({ instanceName: "legacy-pricing" });
+  });
+
+  it("names the store the deployment sets the variable to", () => {
     const store = storageBinding({
       recognition: "dynamodb",
       storageSystem: "aws.dynamodb",
-      scope: "table",
+      scope: "default",
+      container: "{SUBSCRIBERS_TABLE}",
+    });
+    expect(
+      groundBinding(store, always("prod-subscribers-v1")).semantics,
+    ).toMatchObject({ container: "prod-subscribers-v1" });
+  });
+
+  it("leaves a store the source named outright alone", () => {
+    const store = storageBinding({
+      recognition: "dynamodb",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
       container: "orders",
     });
-    expect(groundedPairingKey(store, () => "anything")).toBe(pairingKey(store));
+    expect(groundBinding(store, always("elsewhere")).semantics).toMatchObject({
+      container: "orders",
+    });
+  });
+
+  it("leaves a store with no container at all alone", () => {
+    const store = storageBinding({
+      recognition: "dynamodb",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
+      container: null,
+    });
+    expect(groundBinding(store, always("elsewhere")).semantics).toMatchObject({
+      container: null,
+    });
+  });
+
+  it("leaves an invoke whose callee is worked out at run time alone", () => {
+    const unnamed = unitInvocationBinding({
+      recognition: "aws-lambda",
+      deploymentTarget: "lambda",
+      instanceName: null,
+    });
+    expect(
+      groundBinding(unnamed, always("ArchiveWorker", "pointsAt")).semantics,
+    ).toMatchObject({ instanceName: null });
+  });
+
+  it("leaves everything alone for a run with no deployment in it", () => {
+    expect(groundBinding(invoke, NOTHING_DEPLOYED)).toBe(invoke);
+    expect(NOTHING_DEPLOYED.variableFor({ root: "X", fields: [] })).toBeNull();
+    expect(NOTHING_DEPLOYED.setTo({ root: "X", fields: [] })).toBeNull();
+    expect(NOTHING_DEPLOYED.pointsAt({ root: "X", fields: [] })).toBeNull();
+  });
+});
+
+describe("nameReference", () => {
+  it("says where a callee stated as a variable points", () => {
+    expect(
+      nameReference(
+        unitInvocationBinding({
+          recognition: "aws-lambda",
+          deploymentTarget: "lambda",
+          instanceName: "{ARCHIVE_WORKER_FUNCTION}",
+        }),
+      ),
+    ).toEqual({ root: "ARCHIVE_WORKER_FUNCTION", fields: [] });
+  });
+
+  it("says nothing for a callee the source named outright", () => {
+    expect(
+      nameReference(
+        unitInvocationBinding({
+          recognition: "aws-lambda",
+          deploymentTarget: "lambda",
+          instanceName: "legacy-pricing",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("says where a base URL the source left open points", () => {
+    expect(
+      nameReference(
+        restBinding({
+          transport: "http",
+          recognition: "fetch",
+          method: "GET",
+          path: "{env.API_BASE}/orders",
+        }),
+      ),
+    ).toEqual({ root: "env", fields: ["API_BASE"] });
+  });
+
+  it("says nothing for a protocol whose names the source settles", () => {
+    expect(
+      nameReference(
+        messageBusBinding({
+          recognition: "sqs",
+          messageBus: "aws_sqs",
+          channel: "orders",
+        }),
+      ),
+    ).toBeNull();
   });
 });
 

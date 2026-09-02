@@ -1600,6 +1600,44 @@ describe("checkIntentAgreement over an invoked unit", () => {
     );
   });
 
+  it("says which variable is unsettled when the run cannot name the callee", () => {
+    // The document was drafted from a run that read the template, and
+    // this one has no template in it, so the callee is a variable and
+    // the two sides cannot be compared.
+    const throughVariable = unitInvokingArchive();
+    throughVariable.transitions[0].effects = [
+      {
+        type: "interaction",
+        binding: unitInvocationBinding({
+          recognition: "@suss/framework-aws-lambda",
+          deploymentTarget: "lambda",
+          instanceName: "{ARCHIVE_WORKER_FUNCTION}",
+        }),
+        callee: "lambda.send",
+        interaction: { class: "unit-invoke" },
+      },
+    ];
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          reportBuilderIntent,
+          [returnsReport([invokes("unit:lambda ArchiveWorker")])],
+          "report-builder",
+        ),
+      ],
+      [throughVariable],
+    );
+
+    const uncovered = result.findings.filter(
+      (f) => f.kind === "uncoveredOutcome",
+    );
+    expect(uncovered).toHaveLength(1);
+    expect(uncovered[0].message).toContain(
+      "The code says which one through ARCHIVE_WORKER_FUNCTION, and nothing in this run says what that is set to.",
+    );
+  });
+
   it("cannot key a unit whose name only the runtime settles", () => {
     const result = checkIntentAgreement(
       [

@@ -16,6 +16,7 @@ import {
   boundaryGuardsOf,
   dispatchByType,
   displayLabel,
+  groundBinding,
   guardSubject,
   polarityOf,
 } from "@suss/behavioral-ir";
@@ -25,6 +26,7 @@ import { formatRef } from "./inspect.js";
 import type {
   BehavioralSummary,
   BoundaryGuard,
+  Deployment,
   DispatchTable,
   Polarity,
   Predicate,
@@ -48,8 +50,16 @@ export function draftedWhen(
   transition: Transition,
   summary: BehavioralSummary,
   isFirst: boolean,
+  deployment: Deployment,
 ): string | WhenClause[] {
-  const named = boundaryGuardsOf(transition, boundaryCalls(summary));
+  // A clause spells its boundary the way the rest of the document
+  // does, so a store the template gives a name to gets that name here.
+  const named = boundaryGuardsOf(transition, boundaryCalls(summary)).map(
+    (guard) => ({
+      ...guard,
+      binding: groundBinding(guard.binding, deployment),
+    }),
+  );
   const clauses = [
     ...boundaryClauses(named),
     ...transition.conditions

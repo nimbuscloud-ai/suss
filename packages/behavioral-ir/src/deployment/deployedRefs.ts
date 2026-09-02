@@ -13,12 +13,11 @@
  * asking which runtime the code in question runs in.
  */
 
-import { readRuntimeContractMetadata } from "@suss/behavioral-ir";
+import { readRuntimeContractMetadata } from "../metadata.js";
+import { type DeploymentScope, deploymentScope } from "./deploymentScope.js";
+import { runsIn } from "./unitScope.js";
 
-import { runsIn, unitsByFile } from "../scope/unitScope.js";
-import { placeRuntimes } from "./placement.js";
-
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "../index.js";
 
 /**
  * Ask which template resource a variable points at, for a given unit.
@@ -30,12 +29,12 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
  */
 export function deployedRefs(
   summaries: BehavioralSummary[],
+  scope?: DeploymentScope,
 ): (summary: BehavioralSummary, variable: string) => string | null {
-  const { placed } = placeRuntimes(summaries);
+  const { placed, byFile } = scope ?? deploymentScope(summaries);
   if (placed.length === 0) {
     return () => null;
   }
-  const byFile = unitsByFile(summaries);
   const runtimes = placed.map((runtime) => ({
     scope: runtime.scope,
     targets: readRuntimeContractMetadata(runtime.runtime)?.envVarTargets ?? {},

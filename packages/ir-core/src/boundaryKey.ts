@@ -13,6 +13,8 @@
 
 import { allBehaviors, behaviorOf } from "./semantics/registry.js";
 
+import type { Reference } from "./boundaryName.js";
+import type { Deployment } from "./deployment.js";
 import type { BoundaryBinding, Semantics } from "./index.js";
 import type { MatchResult } from "./typeShapeMatch.js";
 
@@ -63,12 +65,37 @@ export function withRewrittenPaths(
  */
 export function groundedPairingKey(
   binding: BoundaryBinding,
-  deployedAs: (variable: string) => string | null,
+  deployment: Deployment,
 ): string | null {
+  return pairingKey(groundBinding(binding, deployment));
+}
+
+/**
+ * The same boundary, with whatever the deployment fills in put in.
+ *
+ * Everything that reads a boundary's name for a person to see goes
+ * through here first: the pairing pass, the drafter that writes an
+ * intent document, and the intent checker that reads one back. A step
+ * only one of them took would have the drafter write a name the
+ * checker then argued with.
+ */
+export function groundBinding(
+  binding: BoundaryBinding,
+  deployment: Deployment,
+): BoundaryBinding {
   const behavior = behaviorOf(binding.semantics);
-  const grounded = behavior.groundName?.(binding.semantics, deployedAs) ?? null;
-  return pairingKey(
-    grounded === null ? binding : { ...binding, semantics: grounded },
+  const grounded = behavior.groundName?.(binding.semantics, deployment) ?? null;
+  return grounded === null ? binding : { ...binding, semantics: grounded };
+}
+
+/**
+ * Where this boundary's name says to go and ask, or null when the
+ * source stated a name outright. A report that has to say why two
+ * sides did not meet reads it to say which input would settle them.
+ */
+export function nameReference(binding: BoundaryBinding): Reference | null {
+  return (
+    behaviorOf(binding.semantics).nameReference?.(binding.semantics) ?? null
   );
 }
 

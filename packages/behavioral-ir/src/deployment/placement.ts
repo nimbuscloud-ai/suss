@@ -9,11 +9,11 @@
 
 import { bindingIs } from "@suss/ir-core";
 
-import { buildModuleGraph, entryClosure } from "../scope/entryClosure.js";
-import { readCodeScope } from "../scope/unitScope.js";
+import { buildModuleGraph, entryClosure } from "./entryClosure.js";
+import { readCodeScope } from "./unitScope.js";
 
-import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
-import type { UnitScope } from "../scope/unitScope.js";
+import type { BehavioralSummary, BoundaryBinding } from "../index.js";
+import type { UnitScope } from "./unitScope.js";
 
 /** A runtime and the answer to "which code runs in it". */
 export interface PlacedRuntime {
@@ -48,10 +48,12 @@ export function placeRuntimes(summaries: BehavioralSummary[]): Placement {
 
   for (const runtime of summaries.filter(isRuntimeConfigProvider)) {
     const binding = runtime.identity.boundaryBinding;
+    // The filter above guarantees one. Skip rather than crash.
+    /* v8 ignore start */
     if (binding === null) {
-      // Defensive: the filter above guarantees one. Skip rather than crash.
       continue;
     }
+    /* v8 ignore stop */
     const codeScope = readCodeScope(runtime);
     if (codeScope.kind === "unknown" || codeScope.path === undefined) {
       unplaced.push({ runtime, binding });

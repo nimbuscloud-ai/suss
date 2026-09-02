@@ -18,6 +18,8 @@
  */
 
 import type { z } from "zod";
+import type { Reference } from "../boundaryName.js";
+import type { Deployment } from "../deployment.js";
 import type { MatchResult } from "../typeShapeMatch.js";
 
 /** One identity field written as an OpenTelemetry attribute. */
@@ -112,19 +114,26 @@ export interface BoundaryBehavior<S extends { name: string }> {
    * the code. Both parts have to be in before anybody can see that the
    * two sides describe one boundary.
    *
-   * `deployedAs` is already scoped to the unit this boundary belongs to.
-   * A protocol asks for a variable and gets back what this deployment
-   * sets it to, or null. Return null to leave the boundary as it is,
+   * `deployment` is already scoped to the unit this boundary belongs
+   * to. A protocol hands over the reference its name states and gets
+   * back what fills it in, or null. Return null to leave it as it is,
    * which is right whenever nothing needs filling in or nothing can
    * fill it.
    *
    * A protocol whose names are settled in the source leaves this
    * undefined.
    */
-  groundName?(
-    semantics: S,
-    deployedAs: (variable: string) => string | null,
-  ): S | null;
+  groundName?(semantics: S, deployment: Deployment): S | null;
+
+  /**
+   * Where this boundary's name says to go and ask, when it says that
+   * rather than a name. A caller that has to explain why two sides did
+   * not meet reads it to say which input would settle them.
+   *
+   * A protocol that defines `groundName` defines this too, and the
+   * same reference is what `groundName` hands over.
+   */
+  nameReference?(semantics: S): Reference | null;
 
   /**
    * Whether a provider produces a status and a body that a consumer

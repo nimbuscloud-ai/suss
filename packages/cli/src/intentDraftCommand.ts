@@ -23,9 +23,12 @@ import {
   BOUNDARY_ROLE,
   boundaryKey,
   boundaryLabel,
+  deploymentOf,
   dispatchByType,
   displayLabel,
   goesThroughRelation,
+  groundBinding,
+  nameReference,
   relationsOf,
   withDeclaredDelivery,
 } from "@suss/behavioral-ir";
@@ -41,6 +44,7 @@ import { UsageError } from "./usageError.js";
 import type {
   BehavioralSummary,
   BoundaryBinding,
+  Deployment,
   DispatchTable,
   Interaction,
   Transition,
@@ -165,8 +169,16 @@ export function statusOutcomeId(status: number): string {
  * `suss ask` asks about one: `- writes: aws.dynamodb:Invoices`. A
  * boundary with no name of its own is left out rather than written as
  * a string nobody would type back.
+ *
+ * A callee or a store the source reaches through a variable is written
+ * under the name the deployment gives it, and under the variable when
+ * this run has no deployment that settles it. Grounding it on both
+ * sides is what keeps the checker from arguing with the document.
  */
-function draftedEffects(transition: Transition): EffectOutcome[] {
+function draftedEffects(
+  transition: Transition,
+  deployment: Deployment,
+): EffectOutcome[] {
   const results: EffectOutcome[] = [];
   const written = new Set<string>();
   for (const effect of transition.effects) {
@@ -176,7 +188,7 @@ function draftedEffects(transition: Transition): EffectOutcome[] {
     ) {
       continue;
     }
-    const names = boundaryLabel(effect.binding);
+    const names = boundaryLabel(groundBinding(effect.binding, deployment));
     if (names === null) {
       continue;
     }
@@ -218,15 +230,48 @@ function touchedBy(interaction: Interaction): {
   };
 }
 
+/**
+ * The variables a document writes a name through because this run had
+ * nothing that settles them. The header says so, since a reader who
+ * sees `{ARCHIVE_WORKER_FUNCTION}` on a results line is owed the reason
+ * rather than being left to think suss failed to read the code.
+ */
+function unsettledVariables(
+  summaries: BehavioralSummary[],
+  deploymentOfUnit: (code: BehavioralSummary) => Deployment,
+): string[] {
+  const asked = new Set<string>();
+  for (const summary of summaries) {
+    const deployment = deploymentOfUnit(summary);
+    for (const transition of summary.transitions) {
+      for (const effect of transition.effects) {
+        if (effect.type !== "interaction") {
+          continue;
+        }
+        const reference = nameReference(
+          groundBinding(effect.binding, deployment),
+        );
+        const variable =
+          reference === null ? null : deployment.variableFor(reference);
+        if (variable !== null) {
+          asked.add(variable);
+        }
+      }
+    }
+  }
+  return [...asked].sort();
+}
+
 /** Null when the transition's terminal has no intent outcome to declare. */
 function toDraftedOutcome(
   transition: Transition,
   summary: BehavioralSummary,
   isFirst: boolean,
+  deployment: Deployment,
 ): DraftedOutcome | null {
   const output = transition.output;
-  const when = draftedWhen(transition, summary, isFirst);
-  const results = draftedEffects(transition);
+  const when = draftedWhen(transition, summary, isFirst, deployment);
+  const results = draftedEffects(transition, deployment);
   const did = results.length > 0 ? { results } : {};
 
   if (output.type === "response") {
@@ -527,13 +572,20 @@ function draftDocument(
   group: BoundaryGroup,
   names: Set<string>,
   from: string,
+  deploymentOfUnit: (code: BehavioralSummary) => Deployment,
 ): DraftedIntent | UndraftedBoundary {
   const transitions = group.summaries.flatMap((s) => s.transitions);
   const outcomeIds = new Set<string>();
   const outcomes: DraftedOutcome[] = [];
   for (const summary of group.summaries) {
+    const deployment = deploymentOfUnit(summary);
     summary.transitions.forEach((transition, index) => {
-      const outcome = toDraftedOutcome(transition, summary, index === 0);
+      const outcome = toDraftedOutcome(
+        transition,
+        summary,
+        index === 0,
+        deployment,
+      );
       if (outcome !== null) {
         outcomes.push({ ...outcome, id: unique(outcome.id, outcomeIds) });
       }
@@ -585,12 +637,23 @@ function draftDocument(
           "# declare, so no outcome below covers them.",
         ];
 
+  const unsettled = unsettledVariables(group.summaries, deploymentOfUnit);
+  const asked =
+    unsettled.length === 0
+      ? []
+      : [
+          "#",
+          `# Nothing read here says what ${unsettled.join(", ")} is set to, so a`,
+          "# results line below names that variable rather than what it reaches.",
+          "# Read the deployment that sets it in and infer again.",
+        ];
+
   return {
     file: `${name}.intent.yaml`,
     name,
     boundary: group.key,
     outcomes: outcomes.length,
-    yaml: `${[...header(group, from), ...note].join("\n")}\n\n${render(doc, BLANKS, PARAGRAPHS)}`,
+    yaml: `${[...header(group, from), ...note, ...asked].join("\n")}\n\n${render(doc, BLANKS, PARAGRAPHS)}`,
   };
 }
 
@@ -609,9 +672,13 @@ export function intentDraftResult(
   const { groups, undrafted } = groupByBoundary(summaries);
   const drafted: DraftedIntent[] = [];
   const names = new Set<string>();
+  // Built from every summary read, the deployment templates among
+  // them, so a name only a template settles is settled the same way
+  // here as it is when the checker reads the document back.
+  const deployment = deploymentOf(summaries);
 
   for (const group of groups) {
-    const result = draftDocument(group, names, from);
+    const result = draftDocument(group, names, from, deployment);
     if ("file" in result) {
       drafted.push(result);
       continue;
