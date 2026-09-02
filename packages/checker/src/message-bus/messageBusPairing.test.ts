@@ -22,6 +22,7 @@ function consumerSummary(opts: {
   channel: string;
   codeScopePath: string;
   queue?: string;
+  messageBus?: "aws_sqs" | "eventbridge";
 }): BehavioralSummary {
   return {
     kind: "consumer",
@@ -34,10 +35,10 @@ function consumerSummary(opts: {
       name: opts.name,
       exportPath: null,
       boundaryBinding: {
-        transport: "aws_sqs",
+        transport: opts.messageBus ?? "aws_sqs",
         semantics: {
           name: "message-bus",
-          messageBus: "aws_sqs",
+          messageBus: opts.messageBus ?? "aws_sqs",
           channel: opts.channel,
         },
         recognition: "@suss/contract-cloudformation",
@@ -456,6 +457,41 @@ describe("what a handler reads off its parameter", () => {
     expect(findings[0]?.description).toContain('reads "invoiceId"');
   });
 
+  it("reports a top-level rename on EventBridge when the parsed detail has an id of its own", () => {
+    const channel = "OrderEventBus#InvoicePaid";
+    const findings = receiveFindings([
+      eventBridgeProvider(channel),
+      producerSummary({
+        name: "InvoiceProducer",
+        filePath: "src/invoice-producer/index.ts",
+        channel,
+        messageBus: "eventbridge",
+        bodyShape: {
+          kind: "object",
+          fields: { id: { kind: "identifier", name: "invoiceId" } },
+        },
+      }),
+      consumerSummary({
+        name: "InvoiceWorker#InvoicePaid",
+        channel,
+        codeScopePath: "src/invoice-worker/",
+        messageBus: "eventbridge",
+      }),
+      handlerReadingItsParameter({
+        name: "InvoiceWorker.handler",
+        filePath: "src/invoice-worker/index.ts",
+        messageBus: "eventbridge",
+        reads: [
+          { input: "message", path: ["id"] },
+          { input: "message", path: ["invoiceId"] },
+        ],
+      }),
+    ]);
+    expect(findings.map((f) => f.description)).toEqual([
+      expect.stringContaining('reads "invoiceId"'),
+    ]);
+  });
+
   it("reports nothing when the handler reads both the envelope and a field the producer never sends", () => {
     expect(
       receiveFindings(
@@ -517,6 +553,7 @@ function handlerReadingItsParameter(opts: {
   name: string;
   filePath: string;
   reads: Array<{ input: string; path: string[] }>;
+  messageBus?: "aws_sqs" | "eventbridge";
 }): BehavioralSummary {
   return {
     kind: "handler",
@@ -529,10 +566,10 @@ function handlerReadingItsParameter(opts: {
       name: opts.name,
       exportPath: null,
       boundaryBinding: {
-        transport: "aws_sqs",
+        transport: opts.messageBus ?? "aws_sqs",
         semantics: {
           name: "message-bus",
-          messageBus: "aws_sqs",
+          messageBus: opts.messageBus ?? "aws_sqs",
           channel: "billing.invoicePaid",
         },
         recognition: "aws-lambda",

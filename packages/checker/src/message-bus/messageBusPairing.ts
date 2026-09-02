@@ -601,9 +601,11 @@ const isTheMessageParameter: CarriesPayload = (input) =>
   input.type === "parameter" && input.role === "event";
 
 /**
- * What Lambda puts at the top of the event it hands a handler on each
- * bus. A handler reading one of these was given the envelope; one
- * reading none of them was given the parsed message by a wrapper.
+ * The fields at the top of Lambda's event, per bus, that a business
+ * payload would not plausibly have. A handler reading one of these was
+ * given the envelope; one reading none of them was given the parsed
+ * message by a wrapper. EventBridge's `id`, `source` and `time` are
+ * left out because a parsed detail often has fields spelled that way.
  */
 const LAMBDA_ENVELOPE_FIELDS: Partial<
   Record<MessageBusTechnology, readonly string[]>
@@ -611,17 +613,7 @@ const LAMBDA_ENVELOPE_FIELDS: Partial<
   aws_sqs: ["Records"],
   "aws.sns": ["Records"],
   s3: ["Records"],
-  eventbridge: [
-    "version",
-    "id",
-    "detail-type",
-    "source",
-    "account",
-    "time",
-    "region",
-    "resources",
-    "detail",
-  ],
+  eventbridge: ["detail", "detail-type", "resources", "account", "region"],
 };
 
 interface ReceiveRecord {
