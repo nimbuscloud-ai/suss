@@ -64,6 +64,24 @@ column gets indexed the first time something asks for it and stays up to
 date after that, so a relation nobody joins on that way never gets an
 index at all.
 
+The body is not always walked in the order it was written. A round draws
+one literal from the facts that arrived last round, and that list is
+usually short, so it goes first and everything after it starts with some
+variables already bound. Take `chain(x, z) :- chain(x, y), binds(y, z)`
+in the round where new `binds` facts arrive. Written order asks for
+`chain(x, y)` with nothing bound, which scans every chain fact and tries
+each one against every new binding. Leading with the new bindings binds
+`y`, and `chain` then comes off its index on that column. On suss's own
+sources that one reordering took the rule from 2.4 seconds to 55
+milliseconds.
+
+Once the delta leads, the rest of the body follows greedily: the next
+literal is one sharing a variable that is already bound, so it too comes
+off an index rather than scanning. A negated literal is a filter, so it
+is placed as soon as its variables are bound. A join produces the same
+rows whatever order it walks in, so this changes what a round costs and
+not what it derives.
+
 `evaluate` picks up where it left off. Call it again with the same rules
 after adding facts and it starts from the facts you added rather than
 redoing the whole fixpoint. Callers that go back and forth between

@@ -118,7 +118,20 @@ export const ruleLabel = (r: Rule): string =>
 // Tuple store
 // ---------------------------------------------------------------------------
 
-const keyOf = (tuple: Tuple): string => tupleKey(tuple);
+// One tuple is keyed on the way in, again to retract it, and again for
+// every membership test in between, so the key is remembered against
+// the tuple itself.
+const keys = new WeakMap<Tuple, string>();
+
+const keyOf = (tuple: Tuple): string => {
+  const known = keys.get(tuple);
+  if (known !== undefined) {
+    return known;
+  }
+  const key = tupleKey(tuple);
+  keys.set(tuple, key);
+  return key;
+};
 
 interface Relation {
   keys: Set<string>;
@@ -291,9 +304,13 @@ export class Database {
       relation.keys.delete(key);
       relation.tags?.delete(key);
     }
-    relation.tuples = relation.tuples.filter(
-      (tuple) => !going.has(keyOf(tuple)),
-    );
+    // Emptying a relation is what `clearRelations` does after every
+    // question, and walking the tuples to find that none of them stay is
+    // the slowest way to arrive at an empty list.
+    relation.tuples =
+      relation.keys.size === 0
+        ? []
+        : relation.tuples.filter((tuple) => !going.has(keyOf(tuple)));
     // Dropping the indexes and letting the next lookup rebuild them is
     // cheaper than hunting through every bucket for the removed tuples.
     relation.indexes.clear();
@@ -506,6 +523,99 @@ function headTuple(head: Rule["head"], bindings: Bindings | null): Tuple {
   });
 }
 
+const variablesOf = (literal: Literal): string[] =>
+  literal.terms
+    .filter((term) => term.type === "variable")
+    .map((term) => (term as { name: string }).name);
+
+/** Which body literal the round's new facts are, and the order to walk. */
+interface BodyPlan {
+  deltaAt: number;
+  order: readonly number[];
+}
+
+const plans = new WeakMap<Rule, Map<number, BodyPlan>>();
+
+/**
+ * How to walk one rule's body. A join gives the same rows whatever order
+ * it takes them in; the README says why this one is cheaper.
+ */
+function bodyPlan(r: Rule, deltaIndex: number): BodyPlan {
+  let byDelta = plans.get(r);
+  if (byDelta === undefined) {
+    byDelta = new Map();
+    plans.set(r, byDelta);
+  }
+  const known = byDelta.get(deltaIndex);
+  if (known !== undefined) {
+    return known;
+  }
+  const positives = r.body
+    .map((literal, index) => (literal.negated ? -1 : index))
+    .filter((index) => index !== -1);
+  const deltaAt = positives[deltaIndex] ?? -1;
+  const computed = { deltaAt, order: planBodyOrder(r, deltaAt) };
+  byDelta.set(deltaIndex, computed);
+  return computed;
+}
+
+function planBodyOrder(r: Rule, deltaAt: number): readonly number[] {
+  const natural = r.body.map((_, i) => i);
+  // With the delta already leading, the written order is what the rule
+  // author chose and there is nothing to improve on.
+  if (deltaAt <= 0) {
+    return natural;
+  }
+
+  const taken = r.body.map(() => false);
+  const bound = new Set<string>();
+  const order: number[] = [];
+  const take = (index: number): void => {
+    taken[index] = true;
+    order.push(index);
+    for (const name of variablesOf(r.body[index])) {
+      bound.add(name);
+    }
+  };
+  const firstWhere = (want: (index: number) => boolean): number =>
+    natural.find((index) => !taken[index] && want(index)) ?? -1;
+
+  const nextLiteral = (): number => {
+    // A negated literal only filters, so ask it as soon as its variables
+    // are bound.
+    const ready = firstWhere(
+      (i) =>
+        r.body[i].negated &&
+        variablesOf(r.body[i]).every((name) => bound.has(name)),
+    );
+    if (ready !== -1) {
+      return ready;
+    }
+    // Sharing a bound variable is what lets a literal come off an index.
+    const joined = firstWhere(
+      (i) =>
+        !r.body[i].negated &&
+        variablesOf(r.body[i]).some((name) => bound.has(name)),
+    );
+    if (joined !== -1) {
+      return joined;
+    }
+    const disconnected = firstWhere((i) => !r.body[i].negated);
+    if (disconnected !== -1) {
+      return disconnected;
+    }
+    // Every literal left is negated with a variable nothing binds, which
+    // is a malformed rule. Written order is where it gets reported.
+    return firstWhere(() => true);
+  };
+
+  take(deltaAt);
+  while (order.length < r.body.length) {
+    take(nextLiteral());
+  }
+  return order;
+}
+
 /**
  * Evaluate one rule with the `deltaIndex`-th positive literal drawn
  * from the delta set and every other positive literal from the full
@@ -518,38 +628,36 @@ function evaluateRule(
   deltaIndex: number,
 ): Tuple[] {
   const results: Tuple[] = [];
+  const { deltaAt, order } = bodyPlan(r, deltaIndex);
 
-  const step = (
-    literalIndex: number,
-    positiveIndex: number,
-    bindings: Bindings | null,
-  ): void => {
-    if (literalIndex === r.body.length) {
+  const step = (orderIndex: number, bindings: Bindings | null): void => {
+    if (orderIndex === order.length) {
       results.push(headTuple(r.head, bindings));
       return;
     }
+    const literalIndex = order[orderIndex];
     const literal = r.body[literalIndex];
 
     if (literal.negated) {
       if (!db.has(literal.relation, groundNegated(literal, bindings))) {
-        step(literalIndex + 1, positiveIndex, bindings);
+        step(orderIndex + 1, bindings);
       }
       return;
     }
 
     const source =
-      positiveIndex === deltaIndex
+      literalIndex === deltaAt
         ? (deltas.get(literal.relation) ?? [])
         : boundSource(db, literal, bindings);
     for (const tuple of source) {
       const next = unify(literal, tuple, bindings);
       if (next !== NO_MATCH) {
-        step(literalIndex + 1, positiveIndex + 1, next);
+        step(orderIndex + 1, next);
       }
     }
   };
 
-  step(0, 0, null);
+  step(0, null);
   return results;
 }
 
