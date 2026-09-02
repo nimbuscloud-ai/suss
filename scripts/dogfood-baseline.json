@@ -2,10 +2,10 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 712,
-    "internal": 2411,
-    "consumers": 1250,
-    "pairs": 1230,
+    "exports": 714,
+    "internal": 2431,
+    "consumers": 1266,
+    "pairs": 1246,
     "unfollowedCalls": 221,
     "findingErrors": 0
   },
@@ -13,35 +13,35 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 51,
-      "internal": 176,
-      "consumers": 59,
+      "internal": 185,
+      "consumers": 63,
       "unfollowedCalls": 8
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 46,
-      "internal": 111,
-      "consumers": 16,
+      "internal": 121,
+      "consumers": 21,
       "unfollowedCalls": 4
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 80,
-      "internal": 829,
-      "consumers": 116,
+      "internal": 828,
+      "consumers": 118,
       "unfollowedCalls": 89
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
       "exports": 103,
-      "internal": 31,
+      "internal": 32,
       "consumers": 11,
       "unfollowedCalls": 4
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 42,
-      "internal": 213,
+      "internal": 214,
       "consumers": 178,
       "unfollowedCalls": 36
     },
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 21,
       "internal": 399,
-      "consumers": 273,
+      "consumers": 278,
       "unfollowedCalls": 31
     },
     "packages/client/apollo": {
@@ -166,7 +166,7 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 36,
+      "exports": 38,
       "internal": 48,
       "consumers": 13,
       "unfollowedCalls": 3
