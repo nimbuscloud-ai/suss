@@ -1,39 +1,38 @@
 /**
- * `what calls <unit>`: the reverse of the reach questions.
+ * `what calls <unit>`: the direct callers of one function.
  *
- * Every call the run resolved records which summary it reaches, so
- * the callers of a unit are a scan over everyone else's invocation
- * effects. The one thing that can hide a caller is a call suss could
+ * The callers come off the one-hop call facts, so a call the run
+ * resolved and a call recorded on the caller's binding are the same
+ * answer, and the function is the same one whichever way the question
+ * spells it. The one thing that can hide a caller is a call suss could
  * not follow, and the answer says when the run recorded any, so an
  * empty list reads as "nothing calls this" only when it is.
  */
 
-import { displayLabel, summaryIdentifier } from "@suss/behavioral-ir";
-import { boundaryKey } from "@suss/checker";
+import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
-import { noUnitSpelled, unitsSpelled } from "./askWhy.js";
+import {
+  functionsSpelled,
+  readCallFacts,
+  representativeUnit,
+} from "./callFacts.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Answer, AnswerItem } from "./ask.js";
-
-/** One caller, and the call as its source writes it. */
-interface CallSite {
-  caller: BehavioralSummary;
-  callee: string;
-}
 
 export function answerCalls(
   subject: string,
   summaries: BehavioralSummary[],
 ): Answer {
-  const units = unitsSpelled(subject, summaries);
-  if (units.length === 0) {
+  const facts = readCallFacts(summaries);
+  const spelled = functionsSpelled(subject, summaries, facts);
+  if (!spelled.found) {
     return {
       shape: "calls",
       subject,
-      headline: noUnitSpelled(subject),
+      headline: spelled.headline,
       items: [],
       needs: [],
       caveats: [],
@@ -41,24 +40,13 @@ export function answerCalls(
     };
   }
 
-  const label = units.length === 1 ? summaryIdentifier(units[0]) : subject;
-  // A unit of the subject calling a sibling of the subject is the
-  // subject's own internal behavior, and listing it under "what calls
-  // this" buries the outside callers the question asks for.
-  const subjectUnits = new Set(units);
-  const effectSites = callSitesInto(units, summaries);
-  // A caller the effects already place is not repeated from its
-  // binding, which spells the same call a second way.
-  const placed = new Set(effectSites.map((site) => site.caller));
-  const sites = [
-    ...effectSites,
-    ...boundCallersInto(units, summaries).filter(
-      (site) => !placed.has(site.caller),
-    ),
-  ].filter((site) => !subjectUnits.has(site.caller));
-  const callers = [...new Set(sites.map((site) => site.caller))];
+  const { label } = spelled;
+  const calls = facts.callersOf(spelled.target);
+  const callers = [...new Set(calls.map((call) => call.caller))].map((fn) =>
+    representativeUnit(facts, fn),
+  );
 
-  if (sites.length === 0) {
+  if (calls.length === 0) {
     return {
       shape: "calls",
       subject,
@@ -70,15 +58,18 @@ export function answerCalls(
     };
   }
 
-  const items: AnswerItem[] = sites.map((site) => ({
-    text: `${summaryIdentifier(site.caller)} (${site.caller.location.file}:${site.caller.location.range.start}) calls ${site.callee}`,
-    data: {
-      unit: summaryIdentifier(site.caller),
-      file: site.caller.location.file,
-      line: site.caller.location.range.start,
-      call: site.callee,
-    },
-  }));
+  const items: AnswerItem[] = calls.map((call) => {
+    const caller = representativeUnit(facts, call.caller);
+    return {
+      text: `${summaryIdentifier(caller)} (${caller.location.file}:${caller.location.range.start}) calls ${call.callee}`,
+      data: {
+        unit: summaryIdentifier(caller),
+        file: caller.location.file,
+        line: caller.location.range.start,
+        call: call.callee,
+      },
+    };
+  });
 
   return {
     shape: "calls",
@@ -92,75 +83,6 @@ export function answerCalls(
     ],
     found: true,
   };
-}
-
-/**
- * Callers recorded through their binding instead of an invocation
- * effect. A caller-kind unit the packageImport discovery produces says
- * which export it calls on its own binding, so the scan over
- * invocation effects never sees it. The join is the registry's
- * identity key, so a unit with a keyless in-process binding (a
- * component, a bare handler) never matches here.
- */
-function boundCallersInto(
-  units: ReadonlyArray<BehavioralSummary>,
-  summaries: ReadonlyArray<BehavioralSummary>,
-): CallSite[] {
-  const exports = new Map<string, BehavioralSummary>();
-  for (const unit of units) {
-    const binding = unit.identity.boundaryBinding;
-    const key = binding === null ? null : boundaryKey(binding);
-    if (key !== null) {
-      exports.set(key, unit);
-    }
-  }
-  if (exports.size === 0) {
-    return [];
-  }
-
-  const sites: CallSite[] = [];
-  for (const summary of summaries) {
-    if (summary.kind !== "caller") {
-      continue;
-    }
-    const binding = summary.identity.boundaryBinding;
-    const key = binding === null ? null : boundaryKey(binding);
-    if (key === null || !exports.has(key) || binding === null) {
-      continue;
-    }
-    sites.push({ caller: summary, callee: displayLabel(binding) });
-  }
-  return sites;
-}
-
-/** Every recorded call that reaches one of these units. */
-function callSitesInto(
-  units: ReadonlyArray<BehavioralSummary>,
-  summaries: ReadonlyArray<BehavioralSummary>,
-): CallSite[] {
-  const ids = new Set(units.map((unit) => summaryIdentifier(unit)));
-  const sites: CallSite[] = [];
-  const seen = new Set<string>();
-  for (const summary of summaries) {
-    for (const transition of summary.transitions) {
-      for (const effect of transition.effects) {
-        if (
-          effect.type !== "invocation" ||
-          effect.summary === undefined ||
-          !ids.has(effect.summary)
-        ) {
-          continue;
-        }
-        const key = `${summaryIdentifier(summary)}\u0000${effect.callee}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        sites.push({ caller: summary, callee: effect.callee });
-      }
-    }
-  }
-  return sites;
 }
 
 /**

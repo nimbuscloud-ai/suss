@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  packageExportBinding,
   restBinding,
   storageBinding,
   summaryIdentifier,
@@ -19,6 +20,7 @@ import {
   routeClient,
 } from "./__fixtures__/oneThing.js";
 import {
+  answerQuestion,
   ask,
   hiddenBehindLine,
   parseQuestion,
@@ -1621,5 +1623,262 @@ describe("suss ask what reaches, over a chain", () => {
 
     expect(code).toBe(1);
     expect(output).toContain("Nothing here is at");
+  });
+});
+
+describe("suss ask about one function, however it is spelled", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+  const evaluateExport = packageExportBinding({
+    recognition: "package-exports",
+    packageName: "@demo/datalog",
+    exportPath: ["evaluate"],
+  });
+  const analyzeExport = packageExportBinding({
+    recognition: "package-exports",
+    packageName: "@demo/checker",
+    exportPath: ["analyzeFlow"],
+  });
+
+  /** One summary, spelled the way the package-exports pack writes them. */
+  function unit(spec: {
+    kind: BehavioralSummary["kind"];
+    file: string;
+    name: string;
+    id: string;
+    line?: number;
+    binding?: BehavioralSummary["identity"]["boundaryBinding"];
+    calls?: Array<{ callee: string; summary?: string }>;
+  }): BehavioralSummary {
+    const start = spec.line ?? 1;
+    return {
+      kind: spec.kind,
+      location: {
+        file: spec.file,
+        range: { start, end: start + 9 },
+        exportName: spec.name,
+      },
+      identity: {
+        name: spec.name,
+        exportPath: [spec.name],
+        boundaryBinding: spec.binding ?? null,
+        id: spec.id,
+      },
+      inputs: [],
+      transitions: [
+        {
+          id: `${spec.name}:default`,
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: (spec.calls ?? []).map((call) => ({
+            type: "invocation" as const,
+            callee: call.callee,
+            args: [],
+            async: false,
+            ...(call.summary !== undefined ? { summary: call.summary } : {}),
+          })),
+          location: { start, end: start + 9 },
+          isDefault: true,
+        },
+      ],
+      gaps: [],
+      confidence: CONFIDENT,
+    } as BehavioralSummary;
+  }
+
+  const evaluate = unit({
+    kind: "library",
+    file: "packages/datalog/src/index.ts",
+    name: "evaluate",
+    id: "repo::packages/datalog/src/index.ts::evaluate",
+    binding: evaluateExport,
+  });
+  const evaluateCall = {
+    callee: "evaluate",
+    summary: "repo::packages/datalog/src/index.ts::evaluate",
+  };
+
+  /** Bound to evaluate through its import, and calls it in its body. */
+  const reachesBase = unit({
+    kind: "caller",
+    file: "packages/ruby/src/storage.ts",
+    name: "reachesBase",
+    id: "repo::packages/ruby/src/storage.ts::reachesBase",
+    line: 66,
+    binding: evaluateExport,
+    calls: [evaluateCall],
+  });
+  const storageEffects = unit({
+    kind: "caller",
+    file: "packages/ruby/src/storage.ts",
+    name: "storageEffects",
+    id: "repo::packages/ruby/src/storage.ts::storageEffects",
+    line: 121,
+    calls: [
+      {
+        callee: "reachesBase",
+        summary: "repo::packages/ruby/src/storage.ts::reachesBase",
+      },
+    ],
+  });
+
+  /** Bound to evaluate, with a body the run never read. */
+  const boundOnly = unit({
+    kind: "caller",
+    file: "packages/resolution/src/onDemand.test.ts",
+    name: "boundOnly",
+    id: "repo::packages/resolution/src/onDemand.test.ts::boundOnly",
+    line: 182,
+    binding: evaluateExport,
+  });
+
+  /** One function, two summaries: the export it provides and the one it calls. */
+  const analyzeFlowProvider = unit({
+    kind: "library",
+    file: "packages/checker/src/reachability.ts",
+    name: "analyzeFlow",
+    id: "repo::packages/checker/src/reachability.ts::analyzeFlow#fn:@demo/checker::analyzeFlow",
+    line: 413,
+    binding: analyzeExport,
+    calls: [evaluateCall],
+  });
+  const analyzeFlowCaller = unit({
+    kind: "caller",
+    file: "packages/checker/src/reachability.ts",
+    name: "analyzeFlow",
+    id: "repo::packages/checker/src/reachability.ts::analyzeFlow#fn:@demo/datalog::evaluate",
+    line: 413,
+    binding: evaluateExport,
+    calls: [evaluateCall],
+  });
+
+  const all = [
+    evaluate,
+    reachesBase,
+    storageEffects,
+    boundOnly,
+    analyzeFlowProvider,
+    analyzeFlowCaller,
+  ];
+
+  function answer(
+    question: string,
+    summaries: BehavioralSummary[],
+  ): { code: number; headline: string; items: Array<{ unit: string }> } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-one-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    try {
+      const { exitCode, answer: json } = answerQuestion({
+        question,
+        dir,
+        output: path.join(dir, "answer.txt"),
+      });
+      if (json === null) {
+        throw new Error(`not a question suss answers: ${question}`);
+      }
+      return {
+        code: exitCode,
+        headline: json.headline,
+        items: json.items as Array<{ unit: string }>,
+      };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const callers = (question: string): string[] =>
+    answer(question, all)
+      .items.map((item) => item.unit)
+      .sort();
+
+  it("lists the callers of the subject, not the callers of what it calls", () => {
+    expect(callers("what calls reachesBase")).toEqual([
+      "repo::packages/ruby/src/storage.ts::storageEffects",
+    ]);
+  });
+
+  it("gives the bare name, the export spelling, and the reads question one answer", () => {
+    const byName = callers("what calls evaluate");
+
+    expect(byName).toEqual([
+      "repo::packages/checker/src/reachability.ts::analyzeFlow#fn:@demo/checker::analyzeFlow",
+      "repo::packages/resolution/src/onDemand.test.ts::boundOnly",
+      "repo::packages/ruby/src/storage.ts::reachesBase",
+    ]);
+    expect(callers("what calls fn:@demo/datalog::evaluate")).toEqual(byName);
+    expect(callers("what reads fn:@demo/datalog::evaluate")).toEqual(byName);
+  });
+
+  it("says when a bare name could mean several functions, and which", () => {
+    const twin = unit({
+      kind: "library",
+      file: "packages/other/src/index.ts",
+      name: "evaluate",
+      id: "repo::packages/other/src/index.ts::evaluate",
+    });
+
+    const { code, headline } = answer("what calls evaluate", [...all, twin]);
+
+    expect(code).toBe(1);
+    expect(headline).toContain("could mean 2 functions");
+    expect(headline).toContain("repo::packages/other/src/index.ts::evaluate");
+  });
+
+  it("counts a direct caller that provides an export among what reaches the target", () => {
+    const { items } = answer("what reaches fn:@demo/datalog::evaluate", all);
+
+    expect(items.map((item) => item.unit)).toContain(
+      "repo::packages/checker/src/reachability.ts::analyzeFlow#fn:@demo/checker::analyzeFlow",
+    );
+  });
+
+  it("follows a chain of eleven calls to the target", () => {
+    const chain: BehavioralSummary[] = [evaluate];
+    let callee = evaluateCall;
+    for (let hop = 1; hop <= 11; hop += 1) {
+      const name = `hop${hop}`;
+      const id = `repo::src/${name}.ts::${name}`;
+      chain.push(
+        unit({
+          kind: hop === 11 ? "handler" : "library",
+          file: `src/${name}.ts`,
+          name,
+          id,
+          calls: [callee],
+          ...(hop === 11
+            ? {
+                binding: restBinding({
+                  transport: "http",
+                  recognition: "test",
+                  method: "GET",
+                  path: "/top",
+                }),
+              }
+            : {}),
+        }),
+      );
+      callee = { callee: name, summary: id };
+    }
+
+    const { items } = answer("what reaches fn:@demo/datalog::evaluate", chain);
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        unit: "repo::src/hop11.ts::hop11",
+        boundary: "GET /top",
+        through: [
+          "hop10",
+          "hop9",
+          "hop8",
+          "hop7",
+          "hop6",
+          "hop5",
+          "hop4",
+          "hop3",
+          "hop2",
+          "hop1",
+          "evaluate",
+        ],
+      }),
+    ]);
   });
 });
