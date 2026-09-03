@@ -31,6 +31,7 @@ import {
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
   isWrittenAgain,
+  sameConstructionAcrossWrites,
   writesToBinding,
   writesToField,
 } from "./assignments.js";
@@ -534,9 +535,10 @@ export function emitValue(
  * would give every reader the value the name had before the module
  * finished.
  *
- * Which write that is comes from `writesToBinding`, which only decides
- * where control flow cannot change it. Where it cannot decide, nothing
- * is written down and a reader asking about the name gets nothing.
+ * Which write that is comes from `writesToBinding`, which decides it
+ * when control flow cannot change the result, or when it can but every
+ * write is the same construction. Short of that, nothing is written
+ * down and a reader asking about the name gets nothing.
  */
 function emitBindingValues(
   db: Database,
@@ -555,11 +557,18 @@ function emitBindingValues(
 
   const { values, inOrder } = writesToBinding(declaration);
   const last = values[values.length - 1];
-  if (!inOrder || last === undefined) {
-    reassignedUnstated.add(declarationId);
+  if (inOrder && last !== undefined) {
+    fact(db, "endsHolding", declarationId, emitValue(db, table, last));
     return;
   }
-  fact(db, "endsHolding", declarationId, emitValue(db, table, last));
+
+  const construction = sameConstructionAcrossWrites(values);
+  if (construction !== null) {
+    fact(db, "endsHolding", declarationId, emitValue(db, table, construction));
+    return;
+  }
+
+  reassignedUnstated.add(declarationId);
 }
 
 const reassignedUnstated = new Set<string>();
@@ -581,8 +590,9 @@ export function forgetReassignedNamesUnstated(): void {
 /**
  * What a class field comes down to. `writesToField` says whether the
  * field takes one value every reader sees, which is the case a
- * constructor assignment makes, and a field it cannot settle is
- * written down as nothing rather than as its first value.
+ * constructor assignment makes; a field it cannot order that way is
+ * still written down when every write is the same construction, and
+ * otherwise comes down to nothing rather than its first value.
  */
 function emitFieldValues(
   db: Database,
@@ -591,10 +601,15 @@ function emitFieldValues(
 ): void {
   const { values, inOrder } = writesToField(declaration);
   const last = values[values.length - 1];
-  if (!inOrder || last === undefined || !Node.isExpression(last)) {
+  if (inOrder && last !== undefined && Node.isExpression(last)) {
+    fact(db, "binds", nodeId(declaration), emitValue(db, table, last));
     return;
   }
-  fact(db, "binds", nodeId(declaration), emitValue(db, table, last));
+
+  const construction = sameConstructionAcrossWrites(values);
+  if (construction !== null) {
+    fact(db, "binds", nodeId(declaration), emitValue(db, table, construction));
+  }
 }
 
 /**
@@ -611,15 +626,20 @@ function emitParameterPropertyRead(
 ): void {
   const { values, inOrder } = writesToField(declaration);
   const last = values[values.length - 1];
-  if (!inOrder || last === undefined) {
+  if (inOrder && last !== undefined && Node.isExpression(last)) {
+    fact(db, "binds", referenceId, emitValue(db, table, last));
     return;
   }
-  if (!Node.isExpression(last)) {
+  if (inOrder && last !== undefined) {
     table.byId.set(nodeId(last), last);
     fact(db, "binds", referenceId, nodeId(last));
     return;
   }
-  fact(db, "binds", referenceId, emitValue(db, table, last));
+
+  const construction = sameConstructionAcrossWrites(values);
+  if (construction !== null) {
+    fact(db, "binds", referenceId, emitValue(db, table, construction));
+  }
 }
 
 /**

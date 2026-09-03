@@ -1273,6 +1273,139 @@ describe("a binding written more than once", () => {
     );
     expect(written?.getText()).toContain("query Second");
   });
+
+  it("resolves to the construction when a guard writes it once behind a check", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare class Client {}
+        let cachedClient: Client | null = null;
+        function client() {
+          if (!cachedClient) {
+            cachedClient = new Client();
+          }
+          return cachedClient;
+        }
+        export { cachedClient };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      bindingOf(project, "/mod.ts", "cachedClient"),
+    );
+    expect(written?.getText()).toBe("new Client()");
+  });
+
+  it("resolves to the construction when a guard writes it once with ??=", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare class Client {}
+        let cachedClient: Client | null = null;
+        function client() {
+          cachedClient ??= new Client();
+          return cachedClient;
+        }
+        export { cachedClient };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      bindingOf(project, "/mod.ts", "cachedClient"),
+    );
+    expect(written?.getText()).toBe("new Client()");
+  });
+
+  it("resolves to nothing when the guarded writes are different constructions", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare const useAlternate: boolean;
+        declare class Client {}
+        declare class OtherClient {}
+        let cachedClient: unknown = null;
+        if (useAlternate) {
+          cachedClient = new OtherClient();
+        } else {
+          cachedClient = new Client();
+        }
+        export { cachedClient };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store.resolveWrittenValue(bindingOf(project, "/mod.ts", "cachedClient")),
+    ).toBe(null);
+  });
+
+  it("resolves to nothing when every write past the declaration is a null placeholder", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare const flag: boolean;
+        let cachedClient: unknown = null;
+        if (flag) {
+          cachedClient = null;
+        }
+        export { cachedClient };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store.resolveWrittenValue(bindingOf(project, "/mod.ts", "cachedClient")),
+    ).toBe(null);
+  });
+});
+
+describe("a call reached through a cached-client wrapper", () => {
+  it("resolves to the construction the wrapper's guard settles on", () => {
+    const project = projectOf({
+      "/docClient.ts": `
+        declare class DynamoDBDocumentClient {
+          static from(base: unknown): DynamoDBDocumentClient;
+          send(command: unknown): unknown;
+        }
+        declare function baseClient(): unknown;
+
+        let cachedDocClient: DynamoDBDocumentClient | null = null;
+
+        export function docClient() {
+          if (!cachedDocClient) {
+            cachedDocClient = DynamoDBDocumentClient.from(baseClient());
+          }
+          return cachedDocClient;
+        }
+      `,
+      "/handlers.ts": `
+        import { docClient } from "./docClient";
+        declare class GetCommand {
+          constructor(input: unknown);
+        }
+        function handler() {
+          return docClient().send(new GetCommand({}));
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    // What a storage pack asks of a call like this: which function the
+    // receiver's callee calls, then what that function's return value
+    // was written as.
+    const receiverCallee = project
+      .getSourceFileOrThrow("/handlers.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((call) => call.getExpression().getText() === "docClient")
+      ?.getExpression();
+    const wrapper = store.resolveCallable(receiverCallee as Node);
+    const returned = wrapper
+      ?.getDescendantsOfKind(SyntaxKind.ReturnStatement)
+      .find((statement) => statement.getExpression() !== undefined)
+      ?.getExpression();
+
+    expect(
+      returned && store.resolveWrittenValue(returned as Node)?.getText(),
+    ).toBe("DynamoDBDocumentClient.from(baseClient())");
+  });
 });
 
 describe("a binding declared without a value", () => {
