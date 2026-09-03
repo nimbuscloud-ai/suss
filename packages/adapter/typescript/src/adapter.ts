@@ -166,8 +166,8 @@ import {
 } from "./summaryIdentity.js";
 import { createTimer, type Timer, type TimingReport } from "./timing.js";
 import {
-  adapterCodeStamp,
   computeAdapterPacksDigest,
+  declineWhenRunFromSource,
   projectFileStamp,
 } from "./version.js";
 import {
@@ -2006,8 +2006,6 @@ export interface TypeScriptAdapter extends LanguageAdapter {
   extractAll(): Promise<BehavioralSummary[]>;
 }
 
-let saidWhyNoCache = false;
-
 /** Anything that changes what an extraction produces belongs in the key. */
 export function extractionConfigStamp(config: {
   includeReachable?: boolean;
@@ -2017,19 +2015,6 @@ export function extractionConfigStamp(config: {
     `includeReachable=${config.includeReachable !== false}`,
     `gapHandling=${config.extractorOptions?.gapHandling ?? "default"}`,
   ].join(",");
-}
-
-function declineWhenRunFromSource(cacheDir: string | null): string | null {
-  if (cacheDir === null || adapterCodeStamp().kind === "bundle") {
-    return cacheDir;
-  }
-  if (!saidWhyNoCache) {
-    saidWhyNoCache = true;
-    process.stderr.write(
-      "[suss] extraction cache off: this process loaded the adapter from source, where nothing can tell one build of it from another. Run the built adapter to cache.\n",
-    );
-  }
-  return null;
 }
 
 /**
