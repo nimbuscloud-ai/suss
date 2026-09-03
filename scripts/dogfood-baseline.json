@@ -2,8 +2,8 @@
   "totals": {
     "packages": 68,
     "packagesWithExports": 68,
-    "exports": 782,
-    "internal": 2785,
+    "exports": 784,
+    "internal": 2787,
     "consumers": 1414,
     "pairs": 1402,
     "unfollowedCalls": 376,
@@ -432,8 +432,8 @@
     },
     "packages/mcp": {
       "name": "@suss/mcp",
-      "exports": 7,
-      "internal": 14,
+      "exports": 9,
+      "internal": 16,
       "consumers": 10,
       "unfollowedCalls": 2
     },
