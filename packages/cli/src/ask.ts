@@ -16,7 +16,6 @@ import fs from "node:fs";
 
 import {
   bindingIs,
-  boundaryKey,
   readHttpMetadata,
   readRuntimeContractMetadata,
   readStorageContractMetadata,
@@ -30,7 +29,12 @@ import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
 import { askWhy, WHY_SHAPES } from "./askWhy.js";
-import { functionOf, readCallFacts } from "./callFacts.js";
+import {
+  callSpellings,
+  functionOf,
+  reachTargetOf,
+  readCallFacts,
+} from "./callFacts.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import {
@@ -39,6 +43,7 @@ import {
   resolveTarget,
   type TargetTouch,
   touchesOfUnits,
+  unitsServing,
 } from "./target.js";
 import { UsageError } from "./usageError.js";
 
@@ -49,12 +54,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
-import type {
-  CallFacts,
-  CallPath,
-  FunctionKey,
-  ReachTarget,
-} from "./callFacts.js";
+import type { CallFacts, CallPath, FunctionKey } from "./callFacts.js";
 
 /** The questions that ask who does one thing at a named boundary. */
 type Direction = "reads" | "writes" | "invokes";
@@ -496,7 +496,9 @@ function reachedFrom(
   summaries: BehavioralSummary[],
 ): ReachedTouch[] {
   const start =
-    target.kind === "boundary" ? unitsServing(target) : target.summaries;
+    target.kind === "boundary"
+      ? unitsServing(target.touches)
+      : target.summaries;
   const direct = (
     target.kind === "boundary" ? touchesOfUnits(start) : target.touches
   ).filter((touch) => !servesItself(touch));
@@ -529,7 +531,7 @@ function throughCalls(
         continue;
       }
       already.add(touchKey(touch));
-      found.push({ ...touch, through: [...through] });
+      found.push({ ...touch, through });
     }
   }
   return found;
@@ -538,30 +540,17 @@ function throughCalls(
 /** Nearest functions first, so the path shown for a boundary is the shortest one. */
 function shortestFirst(
   paths: ReadonlyMap<FunctionKey, CallPath>,
-): Array<[FunctionKey, CallPath]> {
-  return [...paths].sort(
-    ([, a], [, b]) =>
-      a.length - b.length || a.join(" ").localeCompare(b.join(" ")),
-  );
+): Array<[FunctionKey, string[]]> {
+  return [...paths]
+    .map(([fn, path]): [FunctionKey, string[]] => [fn, callSpellings(path)])
+    .sort(
+      ([, a], [, b]) =>
+        a.length - b.length || a.join(" ").localeCompare(b.join(" ")),
+    );
 }
 
 function touchKey(touch: TargetTouch): string {
   return `${touch.touched.label} ${touch.touched.relation}`;
-}
-
-/**
- * The units serving a boundary, which are the ones whose downstream a
- * question about it is asking after. A client of the boundary reaches
- * it rather than through it, so its calls belong to its own answer.
- */
-function unitsServing(target: ResolvedTarget): BehavioralSummary[] {
-  return [
-    ...new Set(
-      target.touches
-        .filter((touch) => touch.touched.relation === "provides")
-        .map((touch) => touch.summary),
-    ),
-  ];
 }
 
 function servesItself(touch: TargetTouch): boolean {
@@ -596,45 +585,6 @@ function ownBoundariesOf(facts: CallFacts, fn: FunctionKey): TargetTouch[] {
 }
 
 /**
- * What a reach question ends at. A boundary is reached by touching it
- * or by calling into whatever serves it; a unit is reached by calling
- * it. A caller bound to a function-call boundary is placed by that
- * binding, and anything else touching the boundary is at it already.
- */
-function reachTargetOf(target: ResolvedTarget, facts: CallFacts): ReachTarget {
-  const providers = new Set(unitsServing(target));
-  const functions =
-    target.kind === "boundary" ? [...providers] : target.summaries;
-  const keys = new Set<string>();
-  const at = new Set<FunctionKey>();
-  for (const touch of target.touches) {
-    const binding = touch.touched.binding;
-    const key = boundaryKey(binding);
-    if (
-      key !== null &&
-      (target.kind === "boundary" || touch.touched.relation === "provides")
-    ) {
-      keys.add(key);
-    }
-    if (target.kind !== "boundary" || providers.has(touch.summary)) {
-      continue;
-    }
-    const placedByBinding =
-      binding === touch.summary.identity.boundaryBinding &&
-      bindingIs(binding, "function-call") &&
-      key !== null;
-    if (!placedByBinding) {
-      at.add(functionOf(touch.summary));
-    }
-  }
-  return {
-    functions: [...new Set(functions.map((unit) => functionOf(unit)))],
-    keys: [...keys],
-    at: [...at],
-  };
-}
-
-/**
  * Every boundary whose unit ends up calling into the target, and the
  * calls it took to get there.
  *
@@ -662,7 +612,7 @@ function answerReachedBy(
 
   const target = resolution.target;
   const facts = readCallFacts(summaries);
-  const reaching = facts.reaching(reachTargetOf(target, facts));
+  const reaching = facts.reaching(reachTargetOf(target));
   const unresolved = unresolvedCallCount(summaries);
   const walkCaveats =
     unresolved === 0
@@ -758,7 +708,7 @@ function answerReaches(
 
   if (items.length === 0) {
     const noProvider =
-      target.kind === "boundary" && unitsServing(target).length === 0;
+      target.kind === "boundary" && unitsServing(target.touches).length === 0;
     return {
       shape: "reaches",
       subject,

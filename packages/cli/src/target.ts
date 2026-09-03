@@ -387,6 +387,23 @@ export function touchesOfUnits(
   return touchesOf(summaries);
 }
 
+/**
+ * The units serving a boundary, which are the ones whose downstream a
+ * question about it is asking after. A client of the boundary reaches
+ * it rather than through it, so its calls belong to its own answer.
+ */
+export function unitsServing(
+  touches: ReadonlyArray<TargetTouch>,
+): BehavioralSummary[] {
+  return [
+    ...new Set(
+      touches
+        .filter((touch) => touch.touched.relation === "provides")
+        .map((touch) => touch.summary),
+    ),
+  ];
+}
+
 function touchesOf(
   summaries: ReadonlyArray<BehavioralSummary>,
   transitionIds?: ReadonlySet<string>,

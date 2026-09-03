@@ -1763,7 +1763,12 @@ describe("suss ask about one function, however it is spelled", () => {
   function answer(
     question: string,
     summaries: BehavioralSummary[],
-  ): { code: number; headline: string; items: Array<{ unit: string }> } {
+  ): {
+    code: number;
+    headline: string;
+    items: Array<{ unit: string }>;
+    json: Record<string, unknown>;
+  } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-one-"));
     fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
     try {
@@ -1779,6 +1784,7 @@ describe("suss ask about one function, however it is spelled", () => {
         code: exitCode,
         headline: json.headline,
         items: json.items as Array<{ unit: string }>,
+        json,
       };
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1879,6 +1885,111 @@ describe("suss ask about one function, however it is spelled", () => {
           "evaluate",
         ],
       }),
+    ]);
+  });
+
+  it("answers why with the one-step chain when the subject calls the target", () => {
+    const { code, headline, json } = answer(
+      "why does fn:@demo/checker::analyzeFlow reach fn:@demo/datalog::evaluate",
+      all,
+    );
+
+    expect(code).toBe(0);
+    expect(headline).toBe("analyzeFlow reaches fn:@demo/datalog::evaluate:");
+    expect(json.chain).toEqual(["analyzeFlow", "evaluate"]);
+    expect(json.hops).toEqual([
+      expect.objectContaining({
+        from: "repo::packages/checker/src/reachability.ts::analyzeFlow#fn:@demo/checker::analyzeFlow",
+        callee: "evaluate",
+        to: "repo::packages/datalog/src/index.ts::evaluate",
+      }),
+    ]);
+  });
+
+  it("answers why with the same chain what reaches reports", () => {
+    const { code, json } = answer(
+      "why does storageEffects reach fn:@demo/datalog::evaluate",
+      all,
+    );
+
+    expect(code).toBe(0);
+    expect(json.chain).toEqual(["storageEffects", "reachesBase", "evaluate"]);
+    expect(
+      (json.hops as Array<{ from: string; to: string | null }>).map((hop) => [
+        hop.from,
+        hop.to,
+      ]),
+    ).toEqual([
+      [
+        "repo::packages/ruby/src/storage.ts::storageEffects",
+        "repo::packages/ruby/src/storage.ts::reachesBase",
+      ],
+      [
+        "repo::packages/ruby/src/storage.ts::reachesBase",
+        "repo::packages/datalog/src/index.ts::evaluate",
+      ],
+    ]);
+  });
+
+  it("refuses a why question whose bare subject could mean two functions", () => {
+    const twin = unit({
+      kind: "library",
+      file: "packages/other/src/index.ts",
+      name: "analyzeFlow",
+      id: "repo::packages/other/src/index.ts::analyzeFlow",
+      calls: [evaluateCall],
+    });
+
+    const { code, headline } = answer(
+      "why does analyzeFlow reach fn:@demo/datalog::evaluate",
+      [...all, twin],
+    );
+
+    expect(code).toBe(1);
+    expect(headline).toContain("could mean 2 functions");
+    expect(headline).toContain(
+      "repo::packages/other/src/index.ts::analyzeFlow",
+    );
+  });
+
+  it("answers why when the target is a plain function rather than an export", () => {
+    const { code, headline, json } = answer(
+      "why does storageEffects reach reachesBase",
+      all,
+    );
+
+    expect(code).toBe(0);
+    expect(headline).toBe(
+      "storageEffects reaches repo::packages/ruby/src/storage.ts::reachesBase:",
+    );
+    expect(json.chain).toEqual(["storageEffects", "reachesBase"]);
+  });
+
+  it("says which functions do reach the target when the subject does not", () => {
+    const { code, headline, json } = answer(
+      "why does boundOnly reach reachesBase",
+      all,
+    );
+
+    expect(code).toBe(1);
+    expect(headline).toBe(
+      "Nothing in these summaries says boundOnly reaches repo::packages/ruby/src/storage.ts::reachesBase.",
+    );
+    expect(json.needs).toEqual([
+      "repo::packages/ruby/src/storage.ts::reachesBase is where storageEffects goes, and no call chain here connects boundOnly to it.",
+    ]);
+  });
+
+  it("ends the chain at the binding when nothing here provides the export", () => {
+    const { code, json } = answer(
+      "why does boundOnly reach fn:@demo/datalog::evaluate",
+      all.filter((summary) => summary !== evaluate),
+    );
+
+    expect(code).toBe(0);
+    expect(json.chain).toEqual(["boundOnly", "fn:@demo/datalog::evaluate"]);
+    expect(json.hops).toEqual([
+      expect.objectContaining({ to: null, recorded: "bound" }),
     ]);
   });
 });

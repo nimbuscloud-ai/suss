@@ -20,13 +20,28 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
-import { boundariesTouchedBy, namesBoundary } from "./boundaryReach.js";
+import { boundariesTouchedBy } from "./boundaryReach.js";
+import {
+  functionsSpelled,
+  reachTargetOfTouches,
+  readCallFacts,
+  representativeUnit,
+} from "./callFacts.js";
 import { resolveTarget } from "./target.js";
 
 import type { ValueLocation, WhyExplained } from "@suss/adapter-typescript";
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { Answer, AnswerItem, AskOptions, ParsedQuestion } from "./ask.js";
 import type { TouchedBoundary } from "./boundaryReach.js";
+import type {
+  CallFacts,
+  CallPath,
+  CallRecord,
+  FunctionKey,
+  ReachTarget,
+  SpelledFunctions,
+} from "./callFacts.js";
+import type { TargetTouch } from "./target.js";
 
 export type WhyShape = "whyReaches" | "whyResolves";
 
@@ -209,17 +224,25 @@ function resolutionJson(explained: WhyExplained): Record<string, unknown> {
 // Why a unit reaches a boundary
 // ---------------------------------------------------------------------------
 
-export interface UnitHop {
-  from: BehavioralSummary;
-  /** The call as the caller writes it. */
-  callee: string;
-  to: BehavioralSummary;
+/** Where a why question ends, and which bindings count as touching it. */
+interface WhyTarget {
+  target: ReachTarget;
+  label: string;
+  /** The bindings at the boundary. Empty when the target is a function. */
+  bindings: ReadonlySet<BoundaryBinding>;
 }
 
-interface BoundaryPath {
-  start: BehavioralSummary;
-  hops: UnitHop[];
-  touch: TouchedBoundary;
+type WhyTargetSpelled =
+  | ({ found: true } & WhyTarget)
+  | { found: false; headline: string; needs: string[] };
+
+/** One call on the chain, with the summaries on both sides of it. */
+interface WhyHop {
+  from: BehavioralSummary;
+  callee: string;
+  /** Null when the call is to an export nothing here provides. */
+  to: BehavioralSummary | null;
+  recorded: CallRecord;
 }
 
 function answerWhyReaches(
@@ -227,166 +250,176 @@ function answerWhyReaches(
   options: AskOptions,
   summaries: BehavioralSummary[],
 ): Answer {
-  const boundarySpec = question.object ?? "";
-  const units = unitsSpelled(question.subject, summaries);
-  if (units.length === 0) {
+  const facts = readCallFacts(summaries);
+  const subject = functionsSpelled(question.subject, summaries, facts);
+  if (!subject.found) {
+    return miss("whyReaches", question.subject, subject.headline);
+  }
+
+  const target = whyTargetSpelled(question.object ?? "", summaries, facts);
+  if (!target.found) {
+    return miss("whyReaches", question.subject, target.headline, target.needs);
+  }
+
+  const reaching = facts.reaching(target.target);
+  if (reaching.size === 0) {
     return miss(
       "whyReaches",
       question.subject,
-      noUnitSpelled(question.subject),
+      `Nothing in these summaries goes through ${target.label}.`,
+      [`Extract the code that goes through ${target.label}, then ask again.`],
     );
   }
 
-  const goesThrough = crossesBoundary(boundarySpec, summaries);
-  const touching = summaries.filter((summary) =>
-    boundariesTouchedBy(summary).some((touch) => goesThrough(summary, touch)),
-  );
-  if (touching.length === 0) {
-    return miss(
-      "whyReaches",
-      question.subject,
-      `Nothing in these summaries goes through ${boundarySpec}.`,
-      [`Extract the code that goes through ${boundarySpec}, then ask again.`],
-    );
-  }
-
-  const found = pathToBoundary(units, goesThrough, summaries);
+  const found = shortestFrom(subject.target.functions, reaching);
   if (found === null) {
+    const nearest = nearestTo(reaching, facts);
     return miss(
       "whyReaches",
       question.subject,
-      `Nothing in these summaries says ${question.subject} reaches ${boundarySpec}.`,
+      `Nothing in these summaries says ${question.subject} reaches ${target.label}.`,
       [
-        `${boundarySpec} is where ${touching
-          .map((summary) => summary.identity.name)
-          .join(
-            ", ",
-          )} go${touching.length === 1 ? "es" : ""}, and no call chain here connects ${question.subject} to ${touching.length === 1 ? "it" : "any of them"}.`,
+        `${target.label} is where ${nearest.text} go${nearest.one ? "es" : ""}, and no call chain here connects ${question.subject} to ${nearest.one ? "it" : "any of them"}.`,
       ],
     );
   }
 
-  return reachAnswer(question.subject, found, options);
-}
-
-/** What to print when nothing in the summaries is the spelled unit. */
-export function noUnitSpelled(spec: string): string {
-  return `No summary here is ${spec}. Spell the unit as a file, a summary id, or its function name.`;
+  const start = representativeUnit(facts, found.start);
+  return reachAnswer(
+    question.subject,
+    start,
+    hopsOf(start, found.path, facts),
+    target,
+    options,
+  );
 }
 
 /**
- * The units somebody spelled: whatever the `--at` spellings resolve
- * to, and failing those, the units whose function name is what was
- * typed, so `getOrder` works without its file.
+ * Read the end of a why question. A function is spelled the way `what
+ * calls` takes one, so a bare name that means two functions is refused
+ * with both listed. Anything else is a boundary, spelled the way `what
+ * reads` takes one, deployed names included.
  */
-export function unitsSpelled(
+function whyTargetSpelled(
   spec: string,
   summaries: BehavioralSummary[],
-): BehavioralSummary[] {
+  facts: CallFacts,
+): WhyTargetSpelled {
   const resolution = resolveTarget(spec, summaries);
-  if (resolution.matched) {
-    return resolution.target.summaries;
+  const spelledAsUnit =
+    resolution.matched && resolution.target.kind !== "boundary";
+  if (spelledAsUnit) {
+    return functionTarget(functionsSpelled(spec, summaries, facts));
   }
-  return summaries.filter(
-    (summary) =>
-      summary.identity.name === spec ||
-      summary.identity.name.endsWith(`.${spec}`),
-  );
-}
 
-/** The call edges out of one unit, to the units this run resolved them to. */
-export function invocationEdges(
-  summary: BehavioralSummary,
-  byId: ReadonlyMap<string, BehavioralSummary>,
-): UnitHop[] {
-  const edges: UnitHop[] = [];
-  const seen = new Set<string>();
-  for (const transition of summary.transitions) {
-    for (const effect of transition.effects) {
-      if (effect.type !== "invocation" || effect.summary === undefined) {
-        continue;
-      }
-      const to = byId.get(effect.summary);
-      if (to === undefined || seen.has(effect.summary)) {
-        continue;
-      }
-      seen.add(effect.summary);
-      edges.push({ from: summary, callee: effect.callee, to });
-    }
+  const grounded = groundedTouchesAt(spec, summaries);
+  if (grounded.touches.length > 0) {
+    return {
+      found: true,
+      target: reachTargetOfTouches(grounded.touches),
+      label: boundaryLabelFor(spec, grounded.touches),
+      bindings: new Set(grounded.touches.map((touch) => touch.touched.binding)),
+    };
   }
-  return edges;
+
+  // A name resolveTarget does not read, such as a method spelled
+  // without its class, is still a function to the call facts.
+  const spelled = functionsSpelled(spec, summaries, facts);
+  if (spelled.found) {
+    return functionTarget(spelled);
+  }
+  return {
+    found: false,
+    headline: `Nothing in these summaries goes through ${spec}.`,
+    needs: [
+      ...grounded.hints,
+      `Extract the code that goes through ${spec}, then ask again.`,
+    ],
+  };
 }
 
-/**
- * Breadth-first over the run's own call edges, so the chain found is
- * the shortest one the summaries state. The path is summary-level; the
- * resolution proof under each hop comes later, from source.
- */
-/**
- * Whether one unit goes through the boundary somebody asked about.
- * A why question takes the same spellings a `what reads` question
- * takes, deployed names included, so one store cannot be reachable by
- * one question and absent from the other.
- */
-type CrossesBoundary = (
-  summary: BehavioralSummary,
-  touch: TouchedBoundary,
-) => boolean;
-
-function crossesBoundary(
-  boundarySpec: string,
-  summaries: BehavioralSummary[],
-): CrossesBoundary {
-  const grounded = new Set(
-    groundedTouchesAt(boundarySpec, summaries).touches.map(
-      (touch) => touch.touched.binding,
-    ),
-  );
-  return (_summary, touch) =>
-    touch.relation !== "provides" &&
-    (namesBoundary(boundarySpec, touch.binding) || grounded.has(touch.binding));
+function functionTarget(spelled: SpelledFunctions): WhyTargetSpelled {
+  if (!spelled.found) {
+    return { found: false, headline: spelled.headline, needs: [] };
+  }
+  return {
+    found: true,
+    target: spelled.target,
+    label: spelled.label,
+    bindings: new Set(),
+  };
 }
 
-function pathToBoundary(
-  starts: BehavioralSummary[],
-  goesThrough: CrossesBoundary,
-  summaries: BehavioralSummary[],
-): BoundaryPath | null {
-  const byId = new Map(
-    summaries.map((summary) => [summaryIdentifier(summary), summary]),
-  );
-  const visited = new Set<BehavioralSummary>();
-  const queue = starts.map((start) => ({
-    start,
-    at: start,
-    hops: [] as UnitHop[],
-  }));
+/** The label the touches share, or the spelling when they disagree. */
+function boundaryLabelFor(
+  spec: string,
+  touches: ReadonlyArray<TargetTouch>,
+): string {
+  const labels = new Set(touches.map((touch) => touch.touched.label));
+  return labels.size === 1 ? [...labels][0] : spec;
+}
 
-  while (queue.length > 0) {
-    const entry = queue.shift() as (typeof queue)[number];
-    if (visited.has(entry.at)) {
+/** The subject's function with the shortest path to the target, if any reaches it. */
+function shortestFrom(
+  starts: ReadonlyArray<FunctionKey>,
+  reaching: ReadonlyMap<FunctionKey, CallPath>,
+): { start: FunctionKey; path: CallPath } | null {
+  let best: { start: FunctionKey; path: CallPath } | null = null;
+  for (const start of starts) {
+    const path = reaching.get(start);
+    if (path === undefined) {
       continue;
     }
-    visited.add(entry.at);
-
-    const touch = boundariesTouchedBy(entry.at).find((candidate) =>
-      goesThrough(entry.at, candidate),
-    );
-    if (touch !== undefined) {
-      return { start: entry.start, hops: entry.hops, touch };
-    }
-
-    for (const edge of invocationEdges(entry.at, byId)) {
-      if (!visited.has(edge.to)) {
-        queue.push({
-          start: entry.start,
-          at: edge.to,
-          hops: [...entry.hops, edge],
-        });
-      }
+    if (best === null || path.length < best.path.length) {
+      best = { start, path };
     }
   }
-  return null;
+  return best;
+}
+
+const NEAREST_SHOWN = 5;
+
+/**
+ * The functions that touch the target or call it directly, as a phrase.
+ * Several summaries can share a name, and a busy export has dozens of
+ * direct callers, so the phrase is deduplicated and capped.
+ */
+function nearestTo(
+  reaching: ReadonlyMap<FunctionKey, CallPath>,
+  facts: CallFacts,
+): { text: string; one: boolean } {
+  const names = [
+    ...new Set(
+      [...reaching]
+        .filter(([, path]) => path.length <= 1)
+        .map(([fn]) => representativeUnit(facts, fn).identity.name),
+    ),
+  ];
+  const shown = names.slice(0, NEAREST_SHOWN);
+  const rest = names.length - shown.length;
+  return {
+    text: rest > 0 ? `${shown.join(", ")} and ${rest} more` : shown.join(", "),
+    one: names.length === 1,
+  };
+}
+
+/** The path's hops with the summary on each side, starting from the subject. */
+function hopsOf(
+  start: BehavioralSummary,
+  path: CallPath,
+  facts: CallFacts,
+): WhyHop[] {
+  const hops: WhyHop[] = [];
+  let from: BehavioralSummary | null = start;
+  for (const hop of path) {
+    if (from === null) {
+      break;
+    }
+    const to = hop.to === null ? null : representativeUnit(facts, hop.to);
+    hops.push({ from, callee: hop.callee, to, recorded: hop.recorded });
+    from = to;
+  }
+  return hops;
 }
 
 /** Where a summary is, the way an answer prints it. */
@@ -396,21 +429,20 @@ function unitAt(summary: BehavioralSummary): string {
 
 function reachAnswer(
   subject: string,
-  found: BoundaryPath,
+  start: BehavioralSummary,
+  hops: WhyHop[],
+  target: WhyTarget,
   options: AskOptions,
 ): Answer {
   const root = path.resolve(options.project ?? process.cwd());
-  const startName = found.start.identity.name;
-  const finalUnit =
-    found.hops.length === 0
-      ? found.start
-      : found.hops[found.hops.length - 1].to;
-  const touch = found.touch;
+  const startName = start.identity.name;
+  const last = hops.length === 0 ? start : hops[hops.length - 1].to;
+  const ending = last === null ? null : touchAtTarget(last, target);
 
   const chain = [
     startName,
-    ...found.hops.map((hop) => hop.to.identity.name),
-    ...(touch.callee !== undefined ? [touch.callee] : []),
+    ...hops.map((hop) => hop.callee),
+    ...(ending?.callee !== undefined ? [ending.callee] : []),
   ];
 
   const items: AnswerItem[] = [{ text: chain.join(" -> "), data: { chain } }];
@@ -419,67 +451,102 @@ function reachAnswer(
   const hopsJson: Array<Record<string, unknown>> = [];
   let missingProofs = false;
 
-  for (const hop of found.hops) {
-    items.push({
-      text: `${hop.from.identity.name} (${unitAt(hop.from)}) calls ${hop.callee}, and that call runs ${hop.to.identity.name} (${unitAt(hop.to)}):`,
-      data: {
-        from: summaryIdentifier(hop.from),
-        callee: hop.callee,
-        to: summaryIdentifier(hop.to),
-      },
-    });
-    const explained = explainHop(session, hop);
-    if (explained === null) {
+  for (const hop of hops) {
+    items.push({ text: hopLine(hop), data: hopJson(hop) });
+    const explained =
+      hop.recorded === "written" ? explainHop(session, hop) : null;
+    if (hop.recorded === "written" && explained === null) {
       missingProofs = true;
-    } else {
-      for (const item of explanationItems(explained)) {
-        items.push({ text: `  ${item.text}`, data: item.data });
-      }
+    }
+    for (const item of explained === null ? [] : explanationItems(explained)) {
+      items.push({ text: `  ${item.text}`, data: item.data });
     }
     hopsJson.push({
-      from: summaryIdentifier(hop.from),
-      callee: hop.callee,
-      to: summaryIdentifier(hop.to),
+      ...hopJson(hop),
       ...(explained === null ? {} : { resolution: resolutionJson(explained) }),
     });
   }
 
-  const through = touch.callee === undefined ? "" : ` through ${touch.callee}`;
-  items.push({
-    text:
-      found.hops.length === 0
-        ? `${finalUnit.identity.name} ${touch.relation} ${touch.label}${through}, in its own body (${unitAt(finalUnit)})`
-        : `${finalUnit.identity.name} ${touch.relation} ${touch.label}${through} (${unitAt(finalUnit)})`,
-    data: {
-      unit: summaryIdentifier(finalUnit),
-      relation: touch.relation,
-      boundary: touch.label,
-      ...(touch.callee !== undefined ? { via: touch.callee } : {}),
-    },
-  });
+  if (last !== null && ending !== null) {
+    const through =
+      ending.callee === undefined ? "" : ` through ${ending.callee}`;
+    const where =
+      hops.length === 0
+        ? `, in its own body (${unitAt(last)})`
+        : ` (${unitAt(last)})`;
+    items.push({
+      text: `${last.identity.name} ${ending.relation} ${ending.label}${through}${where}`,
+      data: {
+        unit: summaryIdentifier(last),
+        relation: ending.relation,
+        boundary: ending.label,
+        ...(ending.callee !== undefined ? { via: ending.callee } : {}),
+      },
+    });
+  }
 
   if (missingProofs) {
     caveats.push(
       `The source under ${root} does not line up with these summaries, so some hops show without their resolution steps. --project says where the source is.`,
     );
   }
-  caveats.push(
-    ...gapCaveats([found.start, ...found.hops.map((hop) => hop.to)]),
+  const along = [start, ...hops.map((hop) => hop.to)].filter(
+    (unit): unit is BehavioralSummary => unit !== null,
   );
+  caveats.push(...gapCaveats(along));
 
   return {
     shape: "whyReaches",
     subject,
-    headline: `${startName} reaches ${touch.label}:`,
+    headline: `${startName} reaches ${target.label}:`,
     items,
     needs: [],
     caveats,
     found: true,
     detail: {
-      boundary: touch.label,
+      boundary: target.label,
       chain,
       hops: hopsJson,
     },
+  };
+}
+
+/**
+ * What the last function on the chain does at the target: its touch on
+ * the boundary asked about, or the export it provides when the target
+ * is a function. A function with no boundary of its own has nothing to
+ * add past the hop that reached it.
+ */
+function touchAtTarget(
+  unit: BehavioralSummary,
+  target: WhyTarget,
+): TouchedBoundary | null {
+  const touches = boundariesTouchedBy(unit);
+  if (target.bindings.size > 0) {
+    return touches.find((touch) => target.bindings.has(touch.binding)) ?? null;
+  }
+  return touches.find((touch) => touch.relation === "provides") ?? null;
+}
+
+const HOP_LINE: Record<CallRecord, (hop: WhyHop) => string> = {
+  written: (hop) =>
+    `${hop.from.identity.name} (${unitAt(hop.from)}) calls ${hop.callee}, and that call runs ${hop.to?.identity.name} (${hop.to === null ? "" : unitAt(hop.to)}):`,
+  bound: (hop) =>
+    hop.to === null
+      ? `${hop.from.identity.name} (${unitAt(hop.from)}) is bound to ${hop.callee}, which nothing here provides`
+      : `${hop.from.identity.name} (${unitAt(hop.from)}) is bound to ${hop.callee}, which ${hop.to.identity.name} (${unitAt(hop.to)}) provides`,
+};
+
+function hopLine(hop: WhyHop): string {
+  return HOP_LINE[hop.recorded](hop);
+}
+
+function hopJson(hop: WhyHop): Record<string, unknown> {
+  return {
+    from: summaryIdentifier(hop.from),
+    callee: hop.callee,
+    to: hop.to === null ? null : summaryIdentifier(hop.to),
+    recorded: hop.recorded,
   };
 }
 
@@ -500,7 +567,7 @@ function openSession(root: string): WhySession | null {
  */
 function explainHop(
   session: WhySession | null,
-  hop: UnitHop,
+  hop: WhyHop,
 ): WhyExplained | null {
   if (session === null) {
     return null;

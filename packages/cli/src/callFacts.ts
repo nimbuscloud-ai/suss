@@ -20,18 +20,46 @@ import {
   displayLabel,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
-import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
+import {
+  constant,
+  Database,
+  evaluate,
+  lit,
+  notLit,
+  rule,
+  variable as v,
+} from "@suss/datalog";
 
-import { resolveTarget } from "./target.js";
+import { resolveTarget, unitsServing } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { BodyMatch, Rule, TagAlgebra } from "@suss/datalog";
+import type { ResolvedTarget, TargetTouch } from "./target.js";
 
 /** What `functionOf` returns. */
 export type FunctionKey = string;
 
-/** The calls between two functions, each as the caller writes it. */
-export type CallPath = readonly string[];
+/**
+ * Where a call came from: the caller's body, or only the caller's
+ * binding to the export it imports. A written call can be proved from
+ * source; a bound one has no call expression to find.
+ */
+export type CallRecord = "written" | "bound";
+
+export interface CallHop {
+  callee: string;
+  /** Null when the call is to an export nothing here provides. */
+  to: FunctionKey | null;
+  recorded: CallRecord;
+}
+
+/** The calls from one function to another, in the order they are made. */
+export type CallPath = readonly CallHop[];
+
+/** The callees along a path, which is how an answer prints it. */
+export function callSpellings(path: CallPath): string[] {
+  return path.map((hop) => hop.callee);
+}
 
 export interface CallFacts {
   /** Every summary of each function, in the order the run wrote them. */
@@ -140,36 +168,46 @@ const G = v("g");
 const K = v("k");
 const L = v("l");
 const T = v("t");
+const W = v("w");
 
 const CALLS: Rule[] = [
-  rule("calls", [F, G, L], [lit("invocation", F, G, L)], "calls-written"),
   rule(
     "calls",
-    [F, G, L],
+    [F, G, L, constant("written")],
+    [lit("invocation", F, G, L)],
+    "calls-written",
+  ),
+  rule(
+    "calls",
+    [F, G, L, constant("bound")],
     [lit("boundTo", F, K, L), lit("provides", G, K)],
     "calls-bound",
   ),
+  rule("provided", [K], [lit("provides", G, K)], "provided"),
 ];
 
+// When some summary provides the export, the calls-bound rule already
+// links the caller to that provider. The reaches-bound rule is for an
+// export nothing here provides, so the chain can still end at it.
 const REACHING: Rule[] = [
   ...CALLS,
   rule("reaches", [F], [lit("atTarget", F)], "reaches-at"),
   rule(
     "reaches",
     [F],
-    [lit("target", T), lit("calls", F, T, L)],
+    [lit("target", T), lit("calls", F, T, L, W)],
     "reaches-into",
   ),
   rule(
     "reaches",
     [F],
-    [lit("targetKey", K), lit("boundTo", F, K, L)],
+    [lit("targetKey", K), lit("boundTo", F, K, L), notLit("provided", K)],
     "reaches-bound",
   ),
   rule(
     "reaches",
     [F],
-    [lit("reaches", G), lit("calls", F, G, L)],
+    [lit("reaches", G), lit("calls", F, G, L, W)],
     "reaches-through",
   ),
 ];
@@ -179,21 +217,38 @@ const REACHED: Rule[] = [
   rule(
     "reached",
     [G],
-    [lit("start", F), lit("calls", F, G, L)],
+    [lit("start", F), lit("calls", F, G, L, W)],
     "reached-from",
   ),
   rule(
     "reached",
     [G],
-    [lit("reached", F), lit("calls", F, G, L)],
+    [lit("reached", F), lit("calls", F, G, L, W)],
     "reached-onward",
   ),
 ];
 
-/** The call spelling on the body fact at `index`, which is always column 2. */
-function calleeAt(body: readonly BodyMatch[], index: number): string {
+/** The hop recorded by the `calls` fact at `index` in a rule body. */
+function callAt(body: readonly BodyMatch[], index: number): CallHop {
   const match = body[index];
-  return match?.kind === "fact" ? String(match.tuple[2]) : "";
+  if (match?.kind !== "fact") {
+    return { callee: "", to: null, recorded: "written" };
+  }
+  return {
+    callee: String(match.tuple[2]),
+    to: String(match.tuple[1]),
+    recorded: match.tuple[3] === "bound" ? "bound" : "written",
+  };
+}
+
+/** The hop recorded by the `boundTo` fact at `index`, which lands in no function here. */
+function bindingAt(body: readonly BodyMatch[], index: number): CallHop {
+  const match = body[index];
+  return {
+    callee: match?.kind === "fact" ? String(match.tuple[2]) : "",
+    to: null,
+    recorded: "bound",
+  };
 }
 
 const PATH_OF: Record<
@@ -202,12 +257,13 @@ const PATH_OF: Record<
 > = {
   "calls-written": () => [],
   "calls-bound": () => [],
+  provided: () => [],
   "reaches-at": () => [],
-  "reaches-into": (body) => [calleeAt(body, 1)],
-  "reaches-bound": (body) => [calleeAt(body, 1)],
-  "reaches-through": (body, tags) => [calleeAt(body, 1), ...tags[0]],
-  "reached-from": (body) => [calleeAt(body, 1)],
-  "reached-onward": (body, tags) => [...tags[0], calleeAt(body, 1)],
+  "reaches-into": (body) => [callAt(body, 1)],
+  "reaches-bound": (body) => [bindingAt(body, 1)],
+  "reaches-through": (body, tags) => [callAt(body, 1), ...tags[0]],
+  "reached-from": (body) => [callAt(body, 1)],
+  "reached-onward": (body, tags) => [...tags[0], callAt(body, 1)],
 };
 
 /** The shortest path wins, and between two of one length the spelling that sorts first. */
@@ -220,7 +276,9 @@ const SHORTEST_PATH: TagAlgebra<CallPath> = {
     if (incoming.length !== stored.length) {
       return incoming.length < stored.length ? incoming : stored;
     }
-    return incoming.join(" ") < stored.join(" ") ? incoming : stored;
+    return callSpellings(incoming).join(" ") < callSpellings(stored).join(" ")
+      ? incoming
+      : stored;
   },
 };
 
@@ -330,15 +388,9 @@ export function functionsSpelled(
 ): SpelledFunctions {
   const resolution = resolveTarget(spec, summaries);
   if (resolution.matched && resolution.target.kind === "boundary") {
-    const provided = resolution.target.touches
-      .filter((touch) => touch.touched.relation === "provides")
-      .map((touch) => functionOf(touch.summary));
-    const keys = resolution.target.touches
-      .map((touch) => boundaryKey(touch.touched.binding))
-      .filter((key): key is string => key !== null);
     return {
       found: true,
-      target: { functions: [...new Set(provided)], keys: [...new Set(keys)] },
+      target: reachTargetOf(resolution.target),
       label: resolution.target.touches[0]?.touched.label ?? spec,
     };
   }
@@ -357,18 +409,76 @@ export function functionsSpelled(
     };
   }
 
-  const functions = [...new Set(units.map((unit) => functionOf(unit)))];
+  const target = reachTargetOfUnits(units);
   const byName = !resolution.matched || resolution.target.kind === "summary";
-  if (byName && functions.length > 1) {
-    const candidates = functions.map((fn) =>
+  if (byName && target.functions.length > 1) {
+    const candidates = target.functions.map((fn) =>
       summaryIdentifier(representativeUnit(facts, fn)),
     );
     return {
       found: false,
-      headline: `${spec} could mean ${functions.length} functions here: ${candidates.join(", ")}. Ask about one of them.`,
+      headline: `${spec} could mean ${target.functions.length} functions here: ${candidates.join(", ")}. Ask about one of them.`,
     };
   }
 
+  return {
+    found: true,
+    target,
+    label:
+      target.functions.length === 1
+        ? summaryIdentifier(representativeUnit(facts, target.functions[0]))
+        : spec,
+  };
+}
+
+/**
+ * What a reach question ends at. A boundary is reached by touching it
+ * or by calling into whatever serves it; a unit is reached by calling
+ * it. A caller bound to a function-call boundary is placed by that
+ * binding, and anything else touching the boundary is at it already.
+ */
+export function reachTargetOf(target: ResolvedTarget): ReachTarget {
+  if (target.kind !== "boundary") {
+    return reachTargetOfUnits(target.summaries);
+  }
+  return reachTargetOfTouches(target.touches);
+}
+
+/** The reach target for a boundary, given every touch on it. */
+export function reachTargetOfTouches(
+  touches: ReadonlyArray<TargetTouch>,
+): ReachTarget {
+  const providers = new Set(unitsServing(touches));
+  const keys = new Set<string>();
+  const at = new Set<FunctionKey>();
+  for (const touch of touches) {
+    const binding = touch.touched.binding;
+    const key = boundaryKey(binding);
+    if (key !== null) {
+      keys.add(key);
+    }
+    if (providers.has(touch.summary)) {
+      continue;
+    }
+    const placedByBinding =
+      binding === touch.summary.identity.boundaryBinding &&
+      bindingIs(binding, "function-call") &&
+      key !== null;
+    if (!placedByBinding) {
+      at.add(functionOf(touch.summary));
+    }
+  }
+  return {
+    functions: [...new Set([...providers].map((unit) => functionOf(unit)))],
+    keys: [...keys],
+    at: [...at],
+  };
+}
+
+/** The reach target for some units: their functions, and the exports they provide. */
+function reachTargetOfUnits(
+  units: ReadonlyArray<BehavioralSummary>,
+): ReachTarget {
   const keys = new Set<string>();
   for (const unit of units) {
     const binding = unit.identity.boundaryBinding;
@@ -383,12 +493,8 @@ export function functionsSpelled(
     }
   }
   return {
-    found: true,
-    target: { functions, keys: [...keys] },
-    label:
-      functions.length === 1
-        ? summaryIdentifier(representativeUnit(facts, functions[0]))
-        : spec,
+    functions: [...new Set(units.map((unit) => functionOf(unit)))],
+    keys: [...keys],
   };
 }
 
