@@ -6,9 +6,8 @@
  * boundary is touched. The witness proof over the resolution rules
  * says why a callee comes down to the function it does, computed when
  * the question is asked by re-reading source through whichever
- * language's adapter reads that file. A hop in a language with no
- * session yet prints without a proof; a session that cannot make
- * sense of the source says so as a caveat rather than crashing.
+ * language's adapter reads that file. When a session cannot make
+ * sense of the source, the answer says so in a caveat.
  */
 
 import fs from "node:fs";
@@ -65,9 +64,10 @@ interface WhySessionLike {
   explain(value: unknown, options?: { maxDepth?: number }): WhyExplained | null;
 }
 
-/** One session constructor per language that can answer a why question today. */
-const SESSION_FOR: Partial<
-  Record<Language, (options: { dir: string }) => WhySessionLike>
+/** The session that reads each language's source for a why question. */
+const SESSION_FOR: Record<
+  Language,
+  (options: { dir: string }) => WhySessionLike
 > = {
   typescript: (options) => new TypeScriptWhySession(options),
   python: (options) => new PythonWhySession(options),
@@ -86,6 +86,10 @@ const PRELOAD: Partial<Record<Language, () => Promise<void>>> = {
  */
 export async function preloadWhySessions(): Promise<void> {
   await Promise.all(Object.values(PRELOAD).map((preload) => preload()));
+}
+
+export function isWhyQuestion(question: ParsedQuestion): boolean {
+  return question.shape === "whyReaches" || question.shape === "whyResolves";
 }
 
 /**
@@ -164,22 +168,11 @@ function answerWhyResolves(
   }
 
   const language = languageOfFile(at.file) ?? "typescript";
-  const openSession = SESSION_FOR[language];
-  if (openSession === undefined) {
-    return miss(
-      "whyResolves",
-      asked,
-      `suss does not yet read ${LANGUAGE_LABEL[language]} source to explain a resolve.`,
-      [
-        `The summaries still record what ${question.subject} resolves to; they carry no step-by-step explanation for ${LANGUAGE_LABEL[language]} source.`,
-      ],
-    );
-  }
 
   let value: unknown | null;
   let explained: WhyExplained | null;
   try {
-    const session = openSession({ dir: root });
+    const session = SESSION_FOR[language]({ dir: root });
     value = session.findExpression(at.file, at.line, question.subject);
     explained = value === null ? null : session.explain(value);
   } catch (error) {
@@ -659,23 +652,15 @@ function hopJson(hop: WhyHop): Record<string, unknown> {
   };
 }
 
-/** A hop written in a language with no session yet shows without a proof. */
+/** Only a hop the summaries recorded from source has a proof to show. */
 function provable(hop: WhyHop): boolean {
-  if (hop.recorded !== "written") {
-    return false;
-  }
-  const language = languageOfFile(hop.from.location.file) ?? "typescript";
-  return SESSION_FOR[language] !== undefined;
+  return hop.recorded === "written";
 }
 
 /** Null when the root cannot be read as this language's project at all. */
 function openSession(language: Language, root: string): WhySessionLike | null {
-  const create = SESSION_FOR[language];
-  if (create === undefined) {
-    return null;
-  }
   try {
-    return create({ dir: root });
+    return SESSION_FOR[language]({ dir: root });
   } catch {
     return null;
   }

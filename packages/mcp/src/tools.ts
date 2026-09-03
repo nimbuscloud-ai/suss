@@ -14,8 +14,7 @@ import {
   answerQuestion,
   checkAt,
   checkDir,
-  parseQuestion,
-  preloadWhySessions,
+  preloadForQuestion,
   stubDraftResult,
 } from "@suss/cli";
 
@@ -83,13 +82,7 @@ export async function askTool(
   args: { question: string; limit?: number | undefined },
 ): Promise<ToolResult> {
   await project.settled();
-  const parsed = parseQuestion(args.question);
-  if (
-    parsed !== null &&
-    (parsed.shape === "whyReaches" || parsed.shape === "whyResolves")
-  ) {
-    await preloadWhySessions();
-  }
+  await preloadForQuestion(args.question);
   const { answer } = answerQuestion({
     question: args.question,
     loaded: project.summaries(),

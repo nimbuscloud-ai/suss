@@ -5,9 +5,8 @@ export {
   type AskOptions,
   answerQuestion,
   ask,
-  parseQuestion,
+  preloadForQuestion,
 } from "./ask.js";
-export { preloadWhySessions } from "./askWhy.js";
 export { check, checkDir, checkDirectory } from "./check.js";
 export { type CheckAtOptions, type CheckAtResult, checkAt } from "./checkAt.js";
 export { contract } from "./contract.js";

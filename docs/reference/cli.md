@@ -649,9 +649,9 @@ fn:@suss/datalog::evaluate, which evaluate provides`. A bound hop has
 no written call to prove, so it prints without resolution steps.
 Proving a hop reads that hop's own file through its language's
 adapter, so a project mixing TypeScript, Python and Ruby proves each
-hop through the adapter that reads it. Source suss cannot make sense
-of, such as a broken tsconfig, shows as a caveat on the answer rather
-than a crash.
+hop through the adapter that reads it. When an adapter cannot make
+sense of the source, a broken tsconfig for instance, the answer says
+so in a caveat.
 [How suss follows a value](../resolving-values.md) walks through the
 facts, the rules and the proof behind one of these chains.
 

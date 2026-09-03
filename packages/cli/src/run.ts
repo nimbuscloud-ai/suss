@@ -11,8 +11,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { ask, parseQuestion } from "./ask.js";
-import { preloadWhySessions } from "./askWhy.js";
+import { ask, preloadForQuestion } from "./ask.js";
 import { check, checkDir } from "./check.js";
 import { checkAt } from "./checkAt.js";
 import { contract } from "./contract.js";
@@ -701,15 +700,7 @@ async function runAsk(args: string[]): Promise<number> {
     });
   }
 
-  // A why question opens a language's parser, which loads asynchronously;
-  // every other question reads summaries alone, so nothing is warmed for it.
-  const parsed = parseQuestion(question);
-  if (
-    parsed !== null &&
-    (parsed.shape === "whyReaches" || parsed.shape === "whyResolves")
-  ) {
-    await preloadWhySessions();
-  }
+  await preloadForQuestion(question);
 
   const file = positionals[1];
   return ask({

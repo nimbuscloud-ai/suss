@@ -88,8 +88,8 @@ list to interpret.
 
 A why question re-reads the file it is asked about, through
 whichever language's adapter reads that file: TypeScript, Python, and
-Ruby each have one. Source suss cannot make sense of shows up as a
-caveat on the answer, not a crash.
+Ruby each have one. When the adapter cannot make sense of the source,
+the answer says so in a caveat.
 
 Exit code 0 means the question parsed and its subject is in these
 summaries, including when the answer is empty. Exit code 1 means the
