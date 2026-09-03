@@ -2,8 +2,8 @@
  * `suss ask`: one question, answered from the summaries already on
  * disk, and for a why question from the source as well.
  *
- * Eight shapes, and no parser behind them. A question that is not one
- * of the eight gets the eight printed back rather than a guess at what
+ * Ten shapes, and no parser behind them. A question that is not one
+ * of the ten gets the ten printed back rather than a guess at what
  * it meant: a wrong answer about a store is worse than no answer.
  *
  * An answer says what it is missing. Nothing on disk declares what most
@@ -38,6 +38,7 @@ import {
   providesKeyOf,
   type ResolvedTarget,
   resolveTarget,
+  type TargetKind,
   type TargetTouch,
   touchesOfUnits,
   unitsServing,
@@ -764,22 +765,22 @@ function providersOfPackage(
   );
 }
 
-/**
- * The one thing missing when a subject picked out something but none of
- * it provides a boundary. A subject spelled like a package points at
- * code this run never read; anything else already had its summaries
- * read, and they only ever called out.
- */
-function providesGapNeed(subject: string): string {
-  if (subject.includes("/") || subject.startsWith("@")) {
-    return `No summary here provides a package export for ${subject}. Extract with -f package-exports so package.json exports become boundaries.`;
-  }
-  return `The units ${subject} picked out only consume boundaries.`;
-}
+// A subject that resolved as a boundary spelling has callers here and no
+// provider, so the export side was never extracted; a unit had its
+// summaries read and they only call out.
+const PROVIDES_GAP_NEED: Record<TargetKind, (subject: string) => string> = {
+  boundary: (subject) =>
+    `No summary here provides ${subject}. Extract the package that exports it with -f package-exports so its package.json exports become boundaries.`,
+  summary: (subject) =>
+    `The units ${subject} picked out only consume boundaries.`,
+  file: (subject) => `The units ${subject} picked out only consume boundaries.`,
+  line: (subject) => `The units ${subject} picked out only consume boundaries.`,
+};
 
 function providesAnswer(
   subject: string,
   providers: BehavioralSummary[],
+  resolvedAs: TargetKind,
 ): Answer {
   if (providers.length === 0) {
     return {
@@ -787,7 +788,7 @@ function providesAnswer(
       subject,
       headline: `Nothing here says ${subject} provides a boundary.`,
       items: [],
-      needs: [providesGapNeed(subject)],
+      needs: [PROVIDES_GAP_NEED[resolvedAs](subject)],
       caveats: [],
       found: true,
     };
@@ -823,17 +824,13 @@ function providesAnswer(
   };
 }
 
-/**
- * The boundaries a package, a file, or a function provides. A package
- * is matched by name against every provider's own binding first, since
- * its exports can sit in files all over the run; anything else goes
- * through the same resolution the other questions use.
- */
+// A package's exports are spread over its files, so a package name is
+// matched against every provider before the subject is tried as a unit.
 function answerProvides(subject: string, loaded: LoadedSummaries): Answer {
   const { summaries } = loaded;
   const packageProviders = providersOfPackage(subject, summaries);
   if (packageProviders.length > 0) {
-    return providesAnswer(subject, packageProviders);
+    return providesAnswer(subject, packageProviders, "boundary");
   }
 
   const resolution = resolveTarget(subject, summaries);
@@ -844,7 +841,7 @@ function answerProvides(subject: string, loaded: LoadedSummaries): Answer {
   const providers = resolution.target.summaries.filter(
     (summary) => providesKeyOf(summary) !== undefined,
   );
-  return providesAnswer(subject, providers);
+  return providesAnswer(subject, providers, resolution.target.kind);
 }
 
 // ---------------------------------------------------------------------------

@@ -2557,6 +2557,18 @@ describe("suss ask what X provides", () => {
     expect(output).toContain("only consume boundaries");
   });
 
+  it("says a file that only consumes consumes, even though its path has a slash", () => {
+    const { output, code } = answer("what does src/editions/dao.ts provide", [
+      dao,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain(
+      "The units src/editions/dao.ts picked out only consume boundaries.",
+    );
+    expect(output).not.toContain("package-exports");
+  });
+
   it("points at extracting package exports when only a caller of the package is here", () => {
     const caller: BehavioralSummary = {
       kind: "caller",
@@ -2590,7 +2602,7 @@ describe("suss ask what X provides", () => {
       "Nothing here says @suss/missing provides a boundary.",
     );
     expect(output).toContain(
-      "No summary here provides a package export for @suss/missing. Extract with -f package-exports",
+      "No summary here provides @suss/missing. Extract the package that exports it with -f package-exports",
     );
   });
 

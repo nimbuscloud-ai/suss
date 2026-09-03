@@ -62,7 +62,7 @@ export async function createServer(
       inputSchema: {
         question: z
           .string()
-          .describe("One of the eight questions, in the words listed above."),
+          .describe("One of the ten questions, in the words listed above."),
         limit: z
           .number()
           .int()
