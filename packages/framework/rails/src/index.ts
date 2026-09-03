@@ -145,6 +145,9 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     name: "rails",
     protocol: "http",
     discovery: [pattern],
+    // The routes file decides every action's method and path but is
+    // never walked, so the cache key has to read it here.
+    discoveryInputs: () => [routesFile],
   };
 }
 
