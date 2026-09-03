@@ -76,15 +76,18 @@ export interface CheckOptions {
   /** Print every finding and every list, not the collapsed report. */
   all?: boolean;
   /**
-   * Exit non-zero when the run compared nothing.
+   * Opt out of the default: a run that doesn't compare anything exits
+   * non-zero.
    *
-   * A run that pairs no boundary produces no findings and reads as a
-   * pass, which is the same answer it gives when both sides agree. The
-   * two are worth telling apart: one means the code is consistent, the
-   * other means suss could not see enough of it to say. `extract` takes
-   * the same flag for the same reason.
+   * A run that doesn't pair a single boundary produces no findings and
+   * reads as a pass, the same answer it gives when both sides agree.
+   * The two are worth telling apart: one means the code is consistent,
+   * the other means suss couldn't see enough of it to say. `extract`
+   * takes the same option for the same reason. Two-file `check` doesn't
+   * build a pairing count to gate on, so this option is refused there
+   * rather than read.
    */
-  failOnEmpty?: boolean;
+  allowEmpty?: boolean;
 }
 
 export interface CheckDirOptions {
@@ -95,8 +98,8 @@ export interface CheckDirOptions {
   sussignore?: string;
   noSuppressions?: boolean;
   all?: boolean;
-  /** Exit non-zero when the run compared nothing. See CheckOptions. */
-  failOnEmpty?: boolean;
+  /** Opt out of the default: a run that doesn't compare anything exits non-zero. See CheckOptions. */
+  allowEmpty?: boolean;
   /**
    * Exit non-zero when more boundaries went unpaired than this allows:
    * a count ("25") or a share of all boundaries ("50%"). A run that
@@ -294,7 +297,7 @@ export function checkDir(
   const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
   const summariesWithGaps = countSummariesWithGaps(allSummaries);
   const run = [
-    ...runFindings(options.failOnEmpty === true, allSummaries, result),
+    ...runFindings(options.allowEmpty !== true, allSummaries, result),
     ...unreadableFindings(options.failOnUnreadable === true, skipped),
     ...unpairedFindings(options.failOnUnpaired, result),
   ];
@@ -330,19 +333,19 @@ export function checkDir(
  *
  * A red exit with nothing to read stalls an automated fixer: it has
  * something to react to and nothing to act on. So a run that fails
- * because it compared nothing says so in the report, with what to do
- * about it, and the exit code follows from the finding.
+ * because it didn't compare anything says so in the report, with what
+ * to do about it, and the exit code follows from the finding.
  *
  * A run over no summaries at all is a different mistake, and the empty
  * run already says so, so this only fires where there was something to
  * compare and no pair came out of it.
  */
 function runFindings(
-  asked: boolean,
+  shouldFail: boolean,
   summaries: readonly BehavioralSummary[],
   result: CheckAllResult,
 ): RunFinding[] {
-  if (!asked || summaries.length === 0 || result.pairs.length > 0) {
+  if (!shouldFail || summaries.length === 0 || result.pairs.length > 0) {
     return [];
   }
   return [

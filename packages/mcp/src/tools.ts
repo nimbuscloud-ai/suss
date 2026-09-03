@@ -118,7 +118,6 @@ function wholeProject(dir: string): Record<string, unknown> {
   const result = checkDir({
     dir,
     json: true,
-    failOnEmpty: true,
     output: NOWHERE,
   });
   const trimmed = trim(result.findings, (one) => one.kind);

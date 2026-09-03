@@ -590,8 +590,11 @@ export interface ExtractOptions {
    * A run that produced nothing prints it either way.
    */
   explain?: boolean;
-  /** Exit non-zero when the run produces no summaries. */
-  failOnEmpty?: boolean;
+  /**
+   * Opt out of the default: a run that doesn't produce any summaries
+   * exits non-zero. Set this when an empty run is expected.
+   */
+  allowEmpty?: boolean;
   /** Exit non-zero when a pack threw while it was reading. */
   failOnPackError?: boolean;
 }
@@ -962,9 +965,9 @@ export async function extract(
     );
   }
 
-  if (options.failOnEmpty === true && summaries.length === 0) {
+  if (options.allowEmpty !== true && summaries.length === 0) {
     process.stderr.write(
-      "Failing because the extract produced no summaries (--fail-on-empty).\n",
+      "Failing because the extract produced no summaries. Pass --allow-empty when that is expected.\n",
     );
     process.exitCode = 1;
   }

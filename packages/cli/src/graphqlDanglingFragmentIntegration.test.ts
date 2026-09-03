@@ -30,10 +30,11 @@ function checkFixture(fixture: string) {
     { encoding: "utf8", timeout: 120_000 },
   );
   expect(extract.status, extract.stderr).toBe(0);
-  return spawnSync(process.execPath, [BIN, "check", "--dir", dir, "--all"], {
-    encoding: "utf8",
-    timeout: 120_000,
-  });
+  return spawnSync(
+    process.execPath,
+    [BIN, "check", "--dir", dir, "--all", "--allow-empty"],
+    { encoding: "utf8", timeout: 120_000 },
+  );
 }
 
 describe("dangling fragment spread through the built binary", () => {

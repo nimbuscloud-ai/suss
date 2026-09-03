@@ -97,12 +97,14 @@ Options (extract):
   --timing         Print how long each phase of the run took, to stderr
   --explain        Show where the summaries came from, file by file and pack by
                    pack. Shown automatically when a run finds nothing.
-  --fail-on-empty  Exit non-zero when a run finds nothing
+  --allow-empty    A run that finds nothing exits non-zero by default;
+                   this opts back into exiting 0
   --fail-on-pack-error  Exit non-zero when a pack throws while it reads
 
 Options (check):
-  --fail-on-empty  Exit non-zero when the run compared nothing, which
-                   otherwise reads the same as both sides agreeing
+  --allow-empty    A run over --dir that compares nothing exits
+                   non-zero by default, which otherwise reads the same
+                   as both sides agreeing; this opts back into exiting 0
   --fail-on-unpaired  Exit non-zero when more boundaries went unpaired
                    than this: a count ("25") or a share ("50%")
   --fail-on-unreadable  Exit non-zero when a file in --dir could not be
@@ -320,6 +322,17 @@ function endOfFlags(args: string[]): number {
   return separator === -1 ? args.length : separator;
 }
 
+/**
+ * `--fail-on-empty` used to be the opt-in. A run that finds nothing now
+ * fails by default, so the flag is refused with what changed rather
+ * than silently ignored.
+ */
+function refuseFailOnEmpty(): never {
+  throw new UsageError(
+    "--fail-on-empty is gone. A run that finds nothing now fails by default; pass --allow-empty to opt back into exiting 0.",
+  );
+}
+
 async function runInit(args: string[]): Promise<number> {
   const plain = args.includes("--plain");
   const dir = args.find((a) => !a.startsWith("-"));
@@ -344,11 +357,16 @@ async function runExtract(args: string[]): Promise<number> {
       "datalog-profile": { type: "boolean" },
       "no-cache": { type: "boolean" },
       explain: { type: "boolean" },
+      "allow-empty": { type: "boolean" },
       "fail-on-empty": { type: "boolean" },
       "fail-on-pack-error": { type: "boolean" },
     },
     allowPositionals: true,
   });
+
+  if (values["fail-on-empty"] === true) {
+    refuseFailOnEmpty();
+  }
 
   const tsconfig = values.project;
   const frameworks = values.framework ?? [];
@@ -413,10 +431,14 @@ async function runExtract(args: string[]): Promise<number> {
     ...(values["datalog-profile"] === true ? { datalogProfile: true } : {}),
     ...(values["no-cache"] === true ? { noCache: true } : {}),
     ...(values.explain === true ? { explain: true } : {}),
-    ...(values["fail-on-empty"] === true ? { failOnEmpty: true } : {}),
+    ...(values["allow-empty"] === true ? { allowEmpty: true } : {}),
     ...(values["fail-on-pack-error"] === true ? { failOnPackError: true } : {}),
   };
 
+  // extract() reports failure by setting process.exitCode, so each run
+  // has to clear it first rather than read a stale failure a previous
+  // run in this process left behind.
+  process.exitCode = undefined;
   await extract(options);
 
   return process.exitCode === 1 ? 1 : 0;
@@ -533,6 +555,7 @@ function runCheck(args: string[]): number {
       intent: { type: "string" },
       all: { type: "boolean" },
       "fail-on": { type: "string" },
+      "allow-empty": { type: "boolean" },
       "fail-on-empty": { type: "boolean" },
       "fail-on-unpaired": { type: "string" },
       "fail-on-unreadable": { type: "boolean" },
@@ -541,6 +564,10 @@ function runCheck(args: string[]): number {
     },
     allowPositionals: true,
   });
+
+  if (values["fail-on-empty"] === true) {
+    refuseFailOnEmpty();
+  }
 
   const failOn = values["fail-on"] as
     | "error"
@@ -573,7 +600,7 @@ function runCheck(args: string[]): number {
       ? { sussignore: values.sussignore }
       : {}),
     ...(values["no-suppressions"] === true ? { noSuppressions: true } : {}),
-    ...(values["fail-on-empty"] === true ? { failOnEmpty: true } : {}),
+    ...(values["allow-empty"] === true ? { allowEmpty: true } : {}),
     ...(values["fail-on-unpaired"] !== undefined
       ? { failOnUnpaired: values["fail-on-unpaired"] }
       : {}),
@@ -626,11 +653,10 @@ function runCheck(args: string[]): number {
   }
 
   // Two-file check compares every provider against every consumer
-  // without building pairs, so there is nothing there to count as
-  // empty. Saying so beats taking the flag and doing nothing with it.
-  if (values["fail-on-empty"] === true) {
+  // without building pairs, so it has no empty count to opt out of.
+  if (values["allow-empty"] === true) {
     process.stderr.write(
-      "--fail-on-empty needs --dir. Comparing two files checks every provider against every consumer without pairing them, so there is no count of what paired.\n",
+      "--allow-empty needs --dir. Comparing two files checks every provider against every consumer without pairing them, so there is no count of what paired.\n",
     );
     return 1;
   }

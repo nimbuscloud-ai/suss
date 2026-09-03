@@ -1022,6 +1022,7 @@ describe("checkDir", () => {
           dir: tmpDir,
           intent: intentDir,
           failOn: "none",
+          allowEmpty: true,
         });
         expect(lenient.intent?.findings).toHaveLength(
           result.intent?.findings.length ?? 0,
@@ -1094,6 +1095,7 @@ describe("checkDir", () => {
           dir: tmpDir,
           intent: intentDir,
           sussignore,
+          allowEmpty: true,
         });
         // The finding is still reported, annotated: but mark excludes
         // it from gating, so the run passes.
@@ -1199,7 +1201,11 @@ describe("checkDir", () => {
     );
     try {
       const output = captureStdout(() => {
-        const result = checkDir({ dir: tmpDir, intent: intentDir });
+        const result = checkDir({
+          dir: tmpDir,
+          intent: intentDir,
+          allowEmpty: true,
+        });
         const kinds = (result.intent?.findings ?? []).map((f) => f.kind);
         expect(kinds).toContain("unlinkedScenario"); // Missing id
         expect(kinds).toContain("danglingScenarioLink"); // links to unknown outcome
@@ -1216,8 +1222,12 @@ describe("checkDir", () => {
         // but not at the default error threshold.
         expect(result.hasErrors).toBe(false);
         expect(
-          checkDir({ dir: tmpDir, intent: intentDir, failOn: "warning" })
-            .hasErrors,
+          checkDir({
+            dir: tmpDir,
+            intent: intentDir,
+            failOn: "warning",
+            allowEmpty: true,
+          }).hasErrors,
         ).toBe(true);
       });
       expect(output).toContain("Intent:");
@@ -1910,19 +1920,19 @@ describe("the collapsed report", () => {
   });
 });
 
-describe("--fail-on-empty", () => {
-  it("exits non-zero when the run compared nothing", () => {
+describe("failing when the run compares nothing", () => {
+  it("exits non-zero by default, and --allow-empty opts back out", () => {
     // A check that pairs nothing reports nothing, which reads the same
-    // as both sides agreeing. Somebody gating a build on green wants to
-    // tell those apart.
+    // as both sides agreeing. A build gated on green needs the two
+    // told apart, so this is the default rather than an opt-in.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-empty-"));
     fs.writeFileSync(
       path.join(dir, "providers.json"),
       JSON.stringify([providerWithRoute("getUser", "GET", "/users/:id", [])]),
     );
 
-    expect(checkDir({ dir, failOnEmpty: true }).hasErrors).toBe(true);
-    expect(checkDir({ dir }).hasErrors).toBe(false);
+    expect(checkDir({ dir }).hasErrors).toBe(true);
+    expect(checkDir({ dir, allowEmpty: true }).hasErrors).toBe(false);
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -1937,14 +1947,14 @@ describe("--fail-on-empty", () => {
     // A fixer that reacts to a red run and finds nothing to act on
     // makes no change and gives up, so the exit code alone is not
     // enough. The finding says what happened and what to do.
-    const { run } = checkDir({ dir, failOnEmpty: true });
+    const { run } = checkDir({ dir });
     expect(run).toHaveLength(1);
     expect(run?.[0]?.kind).toBe("nothingPaired");
     expect(run?.[0]?.severity).toBe("error");
     expect(run?.[0]?.description).toContain("1 summary");
     expect(run?.[0]?.remedy).not.toBe("");
 
-    expect(checkDir({ dir }).run).toBeUndefined();
+    expect(checkDir({ dir, allowEmpty: true }).run).toBeUndefined();
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -1962,7 +1972,7 @@ describe("--fail-on-empty", () => {
       ]),
     );
 
-    expect(checkDir({ dir, failOnEmpty: true }).hasErrors).toBe(false);
+    expect(checkDir({ dir }).hasErrors).toBe(false);
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
