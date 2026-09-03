@@ -140,6 +140,10 @@
       "types": "./dist/prisma.d.ts",
       "import": "./dist/prisma.js"
     },
+    "./rails": {
+      "types": "./dist/rails.d.ts",
+      "import": "./dist/rails.js"
+    },
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
@@ -226,6 +230,7 @@
     "@suss/framework-nextjs": "*",
     "@suss/framework-package-exports": "*",
     "@suss/framework-prisma": "*",
+    "@suss/framework-rails": "*",
     "@suss/framework-react": "*",
     "@suss/framework-react-query": "*",
     "@suss/framework-zustand": "*",

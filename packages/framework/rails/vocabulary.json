@@ -1,0 +1,18 @@
+{
+  "controllerActions": "suss: RubyDiscoveryPattern variant tag, defined in @suss/adapter-ruby",
+  "railsUnderscore": "suss: constant-to-path convention name, defined in @suss/adapter-ruby; selects Rails' (Zeitwerk's) underscore rule",
+  "rails": "suss: this pack's own name, used as RubyPack.name and as boundaryBinding recognition",
+  "ApplicationController": "Rails: the base class every generated controller extends",
+  "app": "Rails: the default directory a project's own code lives under",
+  "Controller": "Rails: the suffix every generated controller class name carries",
+  "collection": "Rails routing DSL: on: value routing a bare verb call to a resource's own path, with no :id",
+  "member": "Rails routing DSL: on: value routing a bare verb call to one resource's :id",
+  "arguments": "suss: tree-sitter-ruby field name for a call's own argument list",
+  "pair": "suss: tree-sitter-ruby node type for a key: value or key => value argument",
+  "key": "suss: tree-sitter-ruby field name for a pair node's key",
+  "value": "suss: tree-sitter-ruby field name for a pair node's value",
+  "block": "suss: tree-sitter-ruby field name for a call's do...end block",
+  "body": "suss: tree-sitter-ruby field name for a block's own body",
+  "receiver": "suss: tree-sitter-ruby field name for a call's receiver expression",
+  "method": "suss: tree-sitter-ruby field name for a call's method name"
+}

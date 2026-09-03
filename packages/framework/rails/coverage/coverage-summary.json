@@ -1,0 +1,86 @@
+{
+  "total": {
+    "lines": {
+      "total": 216,
+      "covered": 194,
+      "skipped": 0,
+      "pct": 89.81
+    },
+    "statements": {
+      "total": 216,
+      "covered": 194,
+      "skipped": 0,
+      "pct": 89.81
+    },
+    "functions": {
+      "total": 55,
+      "covered": 51,
+      "skipped": 0,
+      "pct": 92.72
+    },
+    "branches": {
+      "total": 169,
+      "covered": 128,
+      "skipped": 0,
+      "pct": 75.73
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": "Unknown"
+    }
+  },
+  "src/index.ts": {
+    "lines": {
+      "total": 28,
+      "covered": 28,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 7,
+      "covered": 7,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 28,
+      "covered": 28,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 23,
+      "covered": 20,
+      "skipped": 0,
+      "pct": 86.95
+    }
+  },
+  "src/routes.ts": {
+    "lines": {
+      "total": 188,
+      "covered": 166,
+      "skipped": 0,
+      "pct": 88.29
+    },
+    "functions": {
+      "total": 48,
+      "covered": 44,
+      "skipped": 0,
+      "pct": 91.66
+    },
+    "statements": {
+      "total": 188,
+      "covered": 166,
+      "skipped": 0,
+      "pct": 88.29
+    },
+    "branches": {
+      "total": 146,
+      "covered": 108,
+      "skipped": 0,
+      "pct": 73.97
+    }
+  }
+}
