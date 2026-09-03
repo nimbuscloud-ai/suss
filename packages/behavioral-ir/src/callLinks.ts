@@ -12,6 +12,7 @@
 
 import { BOUNDARY_ROLE } from "./index.js";
 import { summaryIdentifier } from "./summaryId.js";
+import { unfollowedCallGap } from "./unfollowedCall.js";
 
 import type { BehavioralSummary, Effect } from "./index.js";
 
@@ -19,6 +20,12 @@ type InvocationEffect = Extract<Effect, { type: "invocation" }>;
 
 /** Where a call's callee is declared, as an adapter wrote it on the effect. */
 export type DeclaredAt = NonNullable<InvocationEffect["declaredAt"]>;
+
+/** A call, made through one of the scanned unit's own parameters, to record on its matching invocation effect. */
+export interface ParameterCall {
+  readonly callee: string;
+  readonly parameterIndex: number;
+}
 
 /**
  * A place in a file by character offsets, spelled the one way every
@@ -48,6 +55,105 @@ export function placeCalls(
       if (target !== undefined) {
         effect.declaredAt = target;
       }
+    }
+  }
+}
+
+/**
+ * Say on each invocation effect where an identifier argument that is
+ * itself a project function is declared, keyed by its position among
+ * the call's arguments. `linkArgs` later turns each entry into
+ * `argsSummary`, the same way `placeCalls` feeds `declaredAt` into
+ * `linkCallsToSummaries`. Shared by every adapter that follows an
+ * argument passed by name into a call: matching the effect by callee
+ * text and writing a location is language-independent once the walk
+ * has resolved the argument to a declaration.
+ */
+export function placeArgTargets(
+  summary: BehavioralSummary,
+  argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>> | undefined,
+): void {
+  if (argTargets === undefined) {
+    return;
+  }
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (effect.type !== "invocation") {
+        continue;
+      }
+      const byPosition = argTargets.get(effect.callee);
+      if (byPosition === undefined) {
+        continue;
+      }
+      const argsDeclaredAt: Record<string, DeclaredAt> = {};
+      for (const [position, target] of byPosition) {
+        argsDeclaredAt[String(position)] = target;
+      }
+      if (Object.keys(argsDeclaredAt).length > 0) {
+        effect.argsDeclaredAt = argsDeclaredAt;
+      }
+    }
+  }
+}
+
+/**
+ * Say on each invocation effect which of the scanned unit's own
+ * parameters it calls. A caller elsewhere that passes a function into
+ * that position joins to this call by it.
+ */
+export function placeCalleeParameters(
+  summary: BehavioralSummary,
+  parameterCalls: readonly ParameterCall[] | undefined,
+): void {
+  if (parameterCalls === undefined) {
+    return;
+  }
+  const byCallee = new Map(
+    parameterCalls.map(({ callee, parameterIndex }) => [
+      callee,
+      parameterIndex,
+    ]),
+  );
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (effect.type !== "invocation") {
+        continue;
+      }
+      const parameterIndex = byCallee.get(effect.callee);
+      if (parameterIndex !== undefined) {
+        effect.calleeParameter = parameterIndex;
+      }
+    }
+  }
+}
+
+/**
+ * A call through one of a unit's own parameters is a gap only once the
+ * whole run is scanned and nothing anywhere passes a function into
+ * that position: until then it is the ordinary `callerSupplied` stop,
+ * which nothing records. `key` identifies a scanned unit the same way
+ * across `parameterCallsByKey`, `summariesByKey`, and the position
+ * strings in `passedPositions`, whatever scheme an adapter's own walk
+ * uses to key a unit.
+ */
+export function recordParameterGaps(
+  parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>,
+  summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
+  passedPositions: ReadonlySet<string>,
+): void {
+  for (const [key, parameterCalls] of parameterCallsByKey) {
+    const unbound = parameterCalls.filter(
+      ({ parameterIndex }) => !passedPositions.has(`${key}#${parameterIndex}`),
+    );
+    if (unbound.length === 0) {
+      continue;
+    }
+    for (const summary of summariesByKey.get(key) ?? []) {
+      summary.gaps.push(
+        ...unbound.map(({ callee }) =>
+          unfollowedCallGap({ callee, reason: "unboundParameter" }),
+        ),
+      );
     }
   }
 }
