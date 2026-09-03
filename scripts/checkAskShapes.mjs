@@ -38,12 +38,52 @@ const PATTERN_BY_SHAPE = {
   whyResolves: /why does[^\n]*resolve to/i,
 };
 
+// Every surface that spells the count out in words. A shape added
+// without touching one of these is how the docs drifted to three
+// different numbers at once.
+const COUNTED = {
+  "AGENTS.md": path.join(ROOT, "AGENTS.md"),
+  "docs/reference/cli.md": path.join(ROOT, "docs/reference/cli.md"),
+  "packages/cli/src/ask.ts": ASK,
+  "packages/cli/src/run.ts": path.join(ROOT, "packages/cli/src/run.ts"),
+  "packages/mcp/src/tools.ts": path.join(ROOT, "packages/mcp/src/tools.ts"),
+  "packages/mcp/src/index.ts": path.join(ROOT, "packages/mcp/src/index.ts"),
+};
+const NUMBER_WORDS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+];
+
 const problems = [];
 
-if (shapes.size !== 10) {
-  problems.push(
-    `ask.ts and askWhy.ts declare ${shapes.size} question shapes (${[...shapes].sort().join(", ")}), not the ten this check and the docs assume.`,
-  );
+const expected = NUMBER_WORDS[shapes.size];
+for (const [name, file] of Object.entries(COUNTED)) {
+  const counts = [
+    ...fs.readFileSync(file, "utf8").matchAll(/\b(\w+) questions\b/gi),
+  ]
+    .map((match) => match[1].toLowerCase())
+    .filter((word) => NUMBER_WORDS.includes(word));
+  for (const word of counts) {
+    if (word !== expected) {
+      problems.push(
+        `${name} says "${word} questions" and ask.ts answers ${expected}.`,
+      );
+    }
+  }
 }
 
 for (const shape of shapes) {
