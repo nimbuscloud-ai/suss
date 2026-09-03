@@ -36,6 +36,7 @@ export { extractPythonProject, findPythonFiles } from "./project.js";
 export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
 export { pythonImportEvidence } from "./stubEvidence.js";
+export { ADAPTER_VERSION } from "./version.js";
 
 export type { AnnotationContext } from "./annotations.js";
 export type { DecoratorArg, DecoratorClassification } from "./decorators.js";

@@ -98,16 +98,17 @@ function callPackFactory<T>(
   }
 }
 
-function instantiatePack(
+/**
+ * Loads a pack and stamps it with a version the extraction cache can key
+ * on. `T` is whichever language's own pack type; every one declares an
+ * optional `version` field for a loader to fill in this way.
+ */
+function instantiatePack<T extends { version?: string }>(
   loaded: Pick<LoadedFactory, "factory" | "options" | "handedOver">,
   specifier: string,
   name: string,
-): PatternPack {
-  const pack = callPackFactory<PatternPack>(
-    loaded.factory,
-    loaded.handedOver,
-    name,
-  );
+): T {
+  const pack = callPackFactory<T>(loaded.factory, loaded.handedOver, name);
 
   // The extraction cache keys on this stamp. A pack's code and config
   // change what it reads without reaching its declared version; the
@@ -491,7 +492,7 @@ export async function resolveFramework(
 ): Promise<PatternPack> {
   const loaded = await loadPackFactory(spec);
   assertPackLanguage(loaded.name, "typescript");
-  return instantiatePack(
+  return instantiatePack<PatternPack>(
     withStubbedOptions(loaded, stubOverlay),
     loaded.specifier,
     loaded.name,
@@ -518,18 +519,13 @@ function withStubbedOptions(
   };
 }
 
-/** No version stamp: the stamp keys a cache the Python adapter does not keep. */
 export async function resolvePythonPack(
   spec: string,
   stubOverlay?: StubOverlay,
 ): Promise<PythonPack> {
   const loaded = withStubbedOptions(await loadPackFactory(spec), stubOverlay);
   assertPackLanguage(loaded.name, "python");
-  return callPackFactory<PythonPack>(
-    loaded.factory,
-    loaded.handedOver,
-    loaded.name,
-  );
+  return instantiatePack<PythonPack>(loaded, loaded.specifier, loaded.name);
 }
 
 export async function resolveRubyPack(
@@ -538,11 +534,7 @@ export async function resolveRubyPack(
 ): Promise<RubyPack> {
   const loaded = withStubbedOptions(await loadPackFactory(spec), stubOverlay);
   assertPackLanguage(loaded.name, "ruby");
-  return callPackFactory<RubyPack>(
-    loaded.factory,
-    loaded.handedOver,
-    loaded.name,
-  );
+  return instantiatePack<RubyPack>(loaded, loaded.specifier, loaded.name);
 }
 
 /** A scoped name or a path is the package itself, not a short name. */
@@ -747,6 +739,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
 
   let timingReport: TimingReport | null = null;
   let extractionReport: ExtractionReport | null = null;
+  let cacheDiagnostic: CacheDiagnostic | null = null;
   const { summaries } = await extractPythonProject({
     files,
     packs,
@@ -755,11 +748,15 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     ...(runOptions.options.gaps !== undefined
       ? { gapHandling: runOptions.options.gaps }
       : {}),
+    ...(runOptions.options.noCache === true ? { cacheDir: null } : {}),
     onTiming: (report) => {
       timingReport = report;
     },
     onExtractionReport: (report) => {
       extractionReport = report;
+    },
+    onCacheDiagnostic: (diagnostic) => {
+      cacheDiagnostic = diagnostic;
     },
   });
   return languageRun(
@@ -769,6 +766,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     packs.length > 0 && packs.every((p) => p.discovery.length === 0),
     timingReport,
     extractionReport,
+    cacheDiagnostic,
   );
 }
 
@@ -785,15 +783,20 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
   let timingReport: TimingReport | null = null;
   let extractionReport: ExtractionReport | null = null;
+  let cacheDiagnostic: CacheDiagnostic | null = null;
   const { summaries } = await extractRubyProject({
     files,
     packs,
     projectRoot: runOptions.root,
+    ...(runOptions.options.noCache === true ? { cacheDir: null } : {}),
     onTiming: (report) => {
       timingReport = report;
     },
     onExtractionReport: (report) => {
       extractionReport = report;
+    },
+    onCacheDiagnostic: (diagnostic) => {
+      cacheDiagnostic = diagnostic;
     },
   });
   return languageRun(
@@ -803,10 +806,10 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     packs.length > 0 && packs.every((p) => p.discovery.length === 0),
     timingReport,
     extractionReport,
+    cacheDiagnostic,
   );
 }
 
-/** cacheDiagnostic stays null here: neither Python nor Ruby caches yet. */
 function languageRun(
   summaries: BehavioralSummary[],
   root: string,
@@ -814,13 +817,14 @@ function languageRun(
   recognizersOnly: boolean,
   timingReport: TimingReport | null,
   extractionReport: ExtractionReport | null,
+  cacheDiagnostic: CacheDiagnostic | null,
 ): LanguageRun {
   return {
     summaries,
     root,
     filesRead,
     timingReport,
-    cacheDiagnostic: null,
+    cacheDiagnostic,
     extractionReport,
     recognizersOnly,
   };

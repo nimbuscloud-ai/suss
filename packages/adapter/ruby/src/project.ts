@@ -24,9 +24,11 @@ import {
 import { Database } from "@suss/datalog";
 import {
   assembleSummary,
+  createCacheLayer,
   createTimer,
   moduleInitStructure,
   noopTimer,
+  runDigest,
   stampModuleImports,
 } from "@suss/extractor";
 
@@ -47,9 +49,13 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
 import { reachedFunctions } from "./reach/closure.js";
+import { adapterStamp } from "./version.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
+  CacheDiagnostic,
+  CacheInput,
+  CacheLayer,
   ExtractionReport,
   RawCodeStructure,
   TimingReport,
@@ -71,6 +77,10 @@ export interface ExtractRubyOptions {
   onTiming?: (report: TimingReport) => void;
   /** Called once with the file-by-file funnel, for `suss extract --explain`. */
   onExtractionReport?: (report: ExtractionReport) => void;
+  /** Called once with what the cache decided, for `suss extract --timing`. */
+  onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
+  /** Absolute. `<projectRoot>/.suss/cache` by default; `null` turns it off. */
+  cacheDir?: string | null;
 }
 
 export interface ExtractRubyResult {
@@ -81,9 +91,42 @@ export interface ExtractRubyResult {
 export async function extractRubyProject(
   options: ExtractRubyOptions,
 ): Promise<ExtractRubyResult> {
+  const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
+
+  const cacheDir = adapterStamp.declineWhenRunFromSource(
+    options.cacheDir === null
+      ? null
+      : (options.cacheDir ??
+          (options.projectRoot !== undefined
+            ? path.join(options.projectRoot, ".suss", "cache")
+            : null)),
+  );
+  const extractionCache: CacheLayer = createCacheLayer(cacheDir);
+  const packsDigest = adapterStamp.packsDigest(
+    options.packs.map((pack) =>
+      pack.version !== undefined
+        ? { name: pack.name, version: pack.version }
+        : { name: pack.name },
+    ),
+  );
+  const cacheInput: CacheInput = {
+    files: cacheDir === null ? [] : options.files,
+    adapterPacksDigest:
+      cacheDir === null
+        ? packsDigest
+        : runDigest(packsDigest, options.packs, options.files),
+  };
+  const lookup = await timer.timeAsync("cache.lookup", () =>
+    extractionCache.lookup(cacheInput),
+  );
+  options.onCacheDiagnostic?.(lookup.diagnostic);
+  if (lookup.kind === "hit") {
+    options.onTiming?.(timer.report());
+    return { summaries: lookup.summaries, facts: new Database() };
+  }
+
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
-  const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
   const tallies = createPackTallies(options.packs);
   // Which file defines a constant is settled across the whole run, so the
   // reading sites wait until every file has been walked.
@@ -270,6 +313,20 @@ export async function extractRubyProject(
   }
   disambiguateSummaryIds(summaries);
   linkCallsToSummaries(summaries);
+
+  await timer.timeAsync("cache.write", async () => {
+    // An empty result is never cached. Serving one would skip the
+    // stages that fill the funnel, so a misconfigured project would
+    // get "0 summaries" with no explanation ever after.
+    if (cacheDir === null || summaries.length === 0) {
+      return;
+    }
+    try {
+      await extractionCache.write(cacheInput, summaries);
+    } catch {
+      // A failed cache write must not fail the extract.
+    }
+  });
 
   options.onExtractionReport?.(
     buildRubyExtractionReport({

@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 12 consumers unpaired, plus the
+The run leaves 134 providers and 15 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -196,23 +196,29 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 12 unmatched consumers ask for a method on a value a package
+**The 15 unmatched consumers ask for a method on a value a package
 returned or exported.** They are `SuppressionFileSchema.safeParse(...)`,
 `IntentDocSchema.safeParse(...)`, `evaluate(...).facts`, two of
 `storageCalls(...).methods(...)`, two of
 `sqlStatements(...).methods(...)`, four of
-`messageSends(...).methods(...)`, and one of
-`unitInvokes(...).methods(...)`. The DynamoDB pack builds its chain
+`messageSends(...).methods(...)`, one of
+`unitInvokes(...).methods(...)`, and three in the TypeScript adapter's
+`version.ts`: `stamp.codeStamp()`, `stamp.packsDigest(...)`, and
+`stamp.declineWhenRunFromSource(...)`. The DynamoDB pack builds its chain
 inside a function because the chain depends on what a project
 configured, the Mongoose pack builds its own inside one because the
 scope a project asks for goes into the chain itself, and the Prisma and
 Drizzle packs do the same for their raw paths because the store and the
-scope are the pack's own options. The consumer records the member as part of
-its export path, so it asks for `@suss/checker::checkAll.findings`,
-and a package publishes providers for what it exports rather than for
-the members of what those exports return. Closing this means
-publishing a provider for a class method, which is a larger piece of
-work than the pairing pass.
+scope are the pack's own options. `createAdapterStamp`, in
+`@suss/extractor`, builds the same kind of value: a plain object with
+`codeStamp`, `packsDigest`, and `declineWhenRunFromSource` on it, so
+`version.ts` binds what it returns to a local variable and calls each
+method off that, the same shape as the calls above it. The consumer
+records the member as part of its export path, so it asks for
+`@suss/checker::checkAll.findings`, and a package publishes providers
+for what it exports rather than for the members of what those exports
+return. Closing this means publishing a provider for a class method,
+which is a larger piece of work than the pairing pass.
 
 A method the language declares on every value used to land here too,
 and that was noise: `readSqlAccess(...).map(...)` asked for

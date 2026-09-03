@@ -365,6 +365,10 @@ A summary's `identity.id` is the file relative to the project root plus the expo
 
 Every summary has `metadata.moduleImports`, the project files its own file's imports resolved to, relative to the workspace root and sorted. A file whose imports all resolve outside the project gets an empty list rather than no field, so a Lambda handler that imports only the standard library still tells the checker that its closure is the handler module alone. A checker rebuilds the import graph from that field to work out which modules a template's handler entry loads; the entry `app.handler` under `CodeUri: src/` matches `src/app.py`, and a dotted module such as `shop.app.handler` matches `src/shop/app.py`.
 
+## Extraction cache
+
+This adapter uses the extraction cache shared across every language adapter, from `@suss/extractor`. It keeps the cache beside the project root, at `.suss/cache/`, and supplies the walked `.py` file list as the key's file set; it has no config file of its own to guard the entry the way the TypeScript adapter's tsconfig does. Reuse today is whole-run only: any file changing re-extracts the whole project instead of that one file. See the extractor package's README for the design.
+
 ## Grammar asset
 
 `grammar/tree-sitter-python.wasm` is a checked-in binary asset, not a build output. See [`grammar/README.md`](./grammar/README.md) for its provenance and how to bump it.

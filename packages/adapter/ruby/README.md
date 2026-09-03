@@ -228,6 +228,10 @@ Not followed yet: a method found only on a superclass past an unread ancestor, a
 
 Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (`@suss/framework-graphql-ruby` and `@suss/framework-rails`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes, DSL calls, or base classes are called beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.
 
+## Extraction cache
+
+This adapter uses the extraction cache shared across every language adapter, from `@suss/extractor`. It keeps the cache beside the project root, at `.suss/cache/`, and supplies the walked `.rb` file list as the key's file set; it has no config file of its own to guard the entry the way the TypeScript adapter's tsconfig does. Reuse today is whole-run only: any file changing re-extracts the whole project instead of that one file. See the extractor package's README for the design.
+
 ## Grammar asset
 
 `grammar/tree-sitter-ruby.wasm` is a checked-in binary asset, not a build output. See [`grammar/README.md`](./grammar/README.md) for its provenance and how to bump it.

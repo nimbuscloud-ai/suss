@@ -13,6 +13,22 @@ import type { GraphqlTypeNameConvention } from "./scope.js";
 
 export interface RubyPack {
   name: string;
+  /**
+   * Pack version stamp, which feeds the cache invalidation key. Bump on
+   * any change that affects discovered units or extracted summaries.
+   * The CLI folds a hash of the loaded pack file and its config into
+   * this stamp on top, so a pack run through the CLI invalidates on an
+   * edit whether or not it declares a version of its own.
+   */
+  version?: string;
+  /**
+   * Files under the project this pack reads that are not among the
+   * `.rb` files a run walks, given the files the run is about to walk.
+   * Their content feeds the same cache key the pack's own config does,
+   * so an edit to one of them re-extracts instead of handing back the
+   * previous answer.
+   */
+  discoveryInputs?: (files: readonly string[]) => string[];
   /** Wire protocol for the produced boundary bindings, e.g. "http-graphql". */
   protocol: string;
   discovery: RubyDiscoveryPattern[];

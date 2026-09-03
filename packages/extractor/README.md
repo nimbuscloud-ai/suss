@@ -109,6 +109,8 @@ Comparison is by the condition's polarity and the text it was written as, the sa
 
 A second run over an unchanged repository returns the first run's summaries from disk, and a run after an edit re-extracts only the files the edit can affect. The TypeScript adapter keeps the cache in `.suss/cache/` beside the tsconfig, and turns it off for a caller-supplied project; `--no-cache` skips it for one run. This section is the design.
 
+The Python and Ruby adapters keep the same on-disk cache, rooted at `.suss/cache/` beside the project root. Neither has a config file of its own to guard an entry the way the TypeScript adapter's tsconfig does, so their key rests on the walked file list and the packs digest alone. Both write an entry with no per-file attribution, so a hit today is whole-run only: any file changing re-extracts the whole project, and per-file reuse for these two adapters is a later change.
+
 ### The key
 
 An entry is only readable by a run that agrees with the one that wrote it on everything that changes what extraction produces. The entry directory's name hashes: the cache schema version, the adapter version plus a content hash of the loaded adapter and analysis bundles, each pack's name, declared version, code hash and config digest, the project files the packs read off disk, the extraction config (`includeReachable`, `gapHandling`), and the config path the adapter supplies (the TypeScript adapter's tsconfig).
