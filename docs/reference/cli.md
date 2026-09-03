@@ -647,6 +647,11 @@ A hop can be one the caller writes, `getOrder calls readRow`, or one
 only the caller's import records, as `analyzeFlow is bound to
 fn:@suss/datalog::evaluate, which evaluate provides`. A bound hop has
 no written call to prove, so it prints without resolution steps.
+Proving a hop reads that hop's own file through its language's
+adapter, so a project mixing TypeScript, Python and Ruby proves each
+hop through the adapter that reads it. When an adapter cannot make
+sense of the source, a broken tsconfig for instance, the answer says
+so in a caveat.
 [How suss follows a value](../resolving-values.md) walks through the
 facts, the rules and the proof behind one of these chains.
 

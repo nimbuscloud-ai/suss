@@ -29,8 +29,18 @@ export {
   discoverUnits,
   type FileCache,
 } from "./discovery.js";
+export {
+  collectFileConstants,
+  emitConstantBindings,
+} from "./facts/constants.js";
+export { emitValueFacts, nodeId, readKey } from "./facts/values.js";
+export { RubyWhySession } from "./facts/why.js";
 export { emitEntryFact, unitKey } from "./facts.js";
-export { parseRuby } from "./parser.js";
+export {
+  parseRuby,
+  parseRubySync,
+  preloadRubyGrammar,
+} from "./parser.js";
 export { extractRubyProject, findRubyFiles } from "./project.js";
 export {
   graphqlTypeNameFromQualified,
@@ -49,6 +59,11 @@ export type {
   ReachedBody,
 } from "./ancestry.js";
 export type { ConstantPathConvention } from "./constantPath.js";
+export type { FileConstants } from "./facts/constants.js";
+export type {
+  RubyValueHandle,
+  RubyWhySessionOptions,
+} from "./facts/why.js";
 export type {
   GraphqlObjectFields,
   RbStoragePattern,

@@ -7,6 +7,7 @@ export {
   type MountEdges,
   mountPathsOf,
 } from "./mount.js";
+export { explainResolvedKey } from "./session.js";
 
 export type {
   CaseFiles,
@@ -22,6 +23,12 @@ export type {
   StepContext,
   StepPhrase,
 } from "./explain.js";
+export type {
+  ExplainResolvedKeyOptions,
+  ExplainStats,
+  ValueLocation,
+  WhyExplained,
+} from "./session.js";
 
 // @suss/resolution - following a value to the function it comes down to.
 //

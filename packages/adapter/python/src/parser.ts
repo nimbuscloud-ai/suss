@@ -22,6 +22,8 @@ const GRAMMAR_PATH = path.join(
 );
 
 let languagePromise: Promise<Language> | null = null;
+/** Set once `languagePromise` resolves, so a synchronous caller can parse without waiting on it again. */
+let loadedLanguage: Language | null = null;
 
 function loadLanguage(): Promise<Language> {
   languagePromise ??= (async () => {
@@ -31,7 +33,9 @@ function loadLanguage(): Promise<Language> {
       );
     }
     await Parser.init();
-    return Language.load(GRAMMAR_PATH);
+    const language = await Language.load(GRAMMAR_PATH);
+    loadedLanguage = language;
+    return language;
   })();
   return languagePromise;
 }
@@ -43,6 +47,33 @@ function loadLanguage(): Promise<Language> {
  */
 export async function parsePython(source: string): Promise<Tree> {
   const language = await loadLanguage();
+  return parseWith(language, source);
+}
+
+/**
+ * Load the grammar ahead of time, for a caller whose own entry point is
+ * async but whose parsing happens later through `parsePythonSync`. Loading
+ * the WASM grammar is the only async part; parsing a tree from it is not.
+ */
+export async function preloadPythonGrammar(): Promise<void> {
+  await loadLanguage();
+}
+
+/**
+ * `parsePython` without the await, for a caller that cannot itself be
+ * async. Throws if `preloadPythonGrammar` (or `parsePython`) has not
+ * already loaded the grammar in this process.
+ */
+export function parsePythonSync(source: string): Tree {
+  if (loadedLanguage === null) {
+    throw new Error(
+      "the Python grammar has not been loaded yet; call preloadPythonGrammar first",
+    );
+  }
+  return parseWith(loadedLanguage, source);
+}
+
+function parseWith(language: Language, source: string): Tree {
   const parser = new Parser();
   parser.setLanguage(language);
   try {

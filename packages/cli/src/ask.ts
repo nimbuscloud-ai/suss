@@ -28,7 +28,13 @@ import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
-import { askWhy, unitAt, WHY_SHAPES } from "./askWhy.js";
+import {
+  askWhy,
+  isWhyQuestion,
+  preloadWhySessions,
+  unitAt,
+  WHY_SHAPES,
+} from "./askWhy.js";
 import { callSpellings, functionOf, reachTargetOf } from "./callFacts.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
@@ -193,6 +199,18 @@ export function answerQuestion(options: AskOptions): {
     exitCode: answer.found ? 0 : 1,
     answer: asJson(options.question, answer),
   };
+}
+
+/**
+ * A why question opens a language's parser, which loads asynchronously,
+ * so a caller awaits this before asking. Every other question reads
+ * summaries alone, and nothing is warmed for it.
+ */
+export async function preloadForQuestion(raw: string): Promise<void> {
+  const question = parseQuestion(raw);
+  if (question !== null && isWhyQuestion(question)) {
+    await preloadWhySessions();
+  }
 }
 
 export function parseQuestion(raw: string): ParsedQuestion | null {

@@ -19,7 +19,8 @@ import {
 
 import type { Database } from "@suss/datalog";
 
-const RUBY_RULES = [
+/** The one step Ruby states beyond the shared rules: `Loader.new`. */
+export const RUBY_RULES = [
   // `Loader.new` makes one of the class, which the shared rules already say
   // about calling a class. Ruby writes it as a method read off the constant
   // instead, so the read is what steps to the class here.

@@ -159,7 +159,7 @@ describe("what a graphql-ruby field's resolver reaches", () => {
     expect(text).toContain("reads postgresql:ActiveRecord::Base/Order");
   });
 
-  it("walks the chain for a why question without asking TypeScript to prove a Ruby hop", async () => {
+  it("walks the chain for a why question, and says the chained call has no proof of its own", async () => {
     const summaries = await extracted();
     const out = path.join(dir, "summaries");
     fs.mkdirSync(out);
@@ -181,7 +181,7 @@ describe("what a graphql-ruby field's resolver reaches", () => {
     expect(text).toContain(
       "calls OrderService.new.list_orders, and that call runs list_orders",
     );
-    expect(text).not.toContain("without their resolution steps");
+    expect(text).toContain("without their resolution steps");
   });
 
   it("finds the field from the service method it calls", async () => {

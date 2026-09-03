@@ -10,7 +10,13 @@
  * Every tool reads. None of them change a file.
  */
 
-import { answerQuestion, checkAt, checkDir, stubDraftResult } from "@suss/cli";
+import {
+  answerQuestion,
+  checkAt,
+  checkDir,
+  preloadForQuestion,
+  stubDraftResult,
+} from "@suss/cli";
 
 import { omissionNote, SHOWN, trim } from "./budget.js";
 
@@ -76,6 +82,7 @@ export async function askTool(
   args: { question: string; limit?: number | undefined },
 ): Promise<ToolResult> {
   await project.settled();
+  await preloadForQuestion(args.question);
   const { answer } = answerQuestion({
     question: args.question,
     loaded: project.summaries(),

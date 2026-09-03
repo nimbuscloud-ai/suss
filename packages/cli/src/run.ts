@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { ask } from "./ask.js";
+import { ask, preloadForQuestion } from "./ask.js";
 import { check, checkDir } from "./check.js";
 import { checkAt } from "./checkAt.js";
 import { contract } from "./contract.js";
@@ -304,7 +304,7 @@ async function dispatch(args: string[]): Promise<number> {
     return runCheck(args.slice(1));
   }
   if (command === "ask") {
-    return runAsk(args.slice(1));
+    return await runAsk(args.slice(1));
   }
   if (command === "contract") {
     return await runContract(args.slice(1));
@@ -675,7 +675,7 @@ function runCheck(args: string[]): number {
   return result.hasErrors ? 1 : 0;
 }
 
-function runAsk(args: string[]): number {
+async function runAsk(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     options: {
@@ -699,6 +699,8 @@ function runAsk(args: string[]): number {
       ...(values.output !== undefined ? { output: values.output } : {}),
     });
   }
+
+  await preloadForQuestion(question);
 
   const file = positionals[1];
   return ask({

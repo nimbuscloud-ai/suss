@@ -2,26 +2,26 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 728,
-    "internal": 2736,
-    "consumers": 1335,
-    "pairs": 1323,
-    "unfollowedCalls": 307,
+    "exports": 746,
+    "internal": 2762,
+    "consumers": 1344,
+    "pairs": 1332,
+    "unfollowedCalls": 326,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
-      "exports": 52,
-      "internal": 223,
-      "consumers": 86,
+      "exports": 58,
+      "internal": 233,
+      "consumers": 87,
       "unfollowedCalls": 12
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
-      "exports": 47,
-      "internal": 154,
-      "consumers": 41,
+      "exports": 57,
+      "internal": 163,
+      "consumers": 42,
       "unfollowedCalls": 14
     },
     "packages/adapter/typescript": {
@@ -54,10 +54,10 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 23,
-      "internal": 434,
-      "consumers": 300,
-      "unfollowedCalls": 46
+      "exports": 24,
+      "internal": 440,
+      "consumers": 299,
+      "unfollowedCalls": 51
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -427,7 +427,7 @@
       "name": "@suss/mcp",
       "exports": 7,
       "internal": 14,
-      "consumers": 9,
+      "consumers": 10,
       "unfollowedCalls": 2
     },
     "packages/packs": {
@@ -446,10 +446,10 @@
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 6,
-      "internal": 9,
-      "consumers": 46,
-      "unfollowedCalls": 6
+      "exports": 7,
+      "internal": 10,
+      "consumers": 53,
+      "unfollowedCalls": 20
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",

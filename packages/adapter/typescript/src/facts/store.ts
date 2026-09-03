@@ -31,6 +31,7 @@ import {
 } from "@suss/datalog";
 import {
   ANSWER_RELATIONS,
+  type ExplainStats,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES as SHARED_RULES,
   VALUE_STEP,
@@ -151,15 +152,6 @@ export interface ExplainCallableOptions {
   alsoFrom?: SourceFile;
   /** How many derived nodes deep the proof walk goes; see `proofOf`. */
   maxDepth?: number;
-}
-
-/** What one witness re-evaluation cost, said rather than hidden. */
-export interface ExplainStats {
-  /** Facts the demand walk had extracted, which the proof pass reran. */
-  baseFacts: number;
-  /** Facts the exhaustive pass derived on top of those. */
-  derivedFacts: number;
-  evaluateMs: number;
 }
 
 export interface ExplainedResolution {

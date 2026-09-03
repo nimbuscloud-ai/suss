@@ -19,14 +19,19 @@ export {
   objectReturnedBy,
   resolveCalls,
 } from "./facts/resolve.js";
-export { emitValueFacts, nodeId } from "./facts/values.js";
+export { emitValueFacts, nodeId, readKey } from "./facts/values.js";
+export { PythonWhySession } from "./facts/why.js";
 export { emitEntryFact, emitModuleImportFacts, unitKey } from "./facts.js";
 export {
   resolveAbsoluteModule,
   resolveModule,
   resolveRelativeModule,
 } from "./moduleResolver.js";
-export { parsePython } from "./parser.js";
+export {
+  parsePython,
+  parsePythonSync,
+  preloadPythonGrammar,
+} from "./parser.js";
 export { extractPythonProject, findPythonFiles } from "./project.js";
 export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
@@ -35,6 +40,10 @@ export { pythonImportEvidence } from "./stubEvidence.js";
 export type { AnnotationContext } from "./annotations.js";
 export type { DecoratorArg, DecoratorClassification } from "./decorators.js";
 export type { DiscoveryOptions } from "./discovery.js";
+export type {
+  PythonValueHandle,
+  PythonWhySessionOptions,
+} from "./facts/why.js";
 export type {
   ModuleResolution,
   ModuleResolverOptions,
