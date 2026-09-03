@@ -9,9 +9,7 @@ import {
   computeContentHash,
   createProjectWithoutTsconfig,
   createTypeScriptAdapter,
-  evaluatePackHealth,
   findNearestTsconfig,
-  formatPackHealth,
   workspaceRootFor,
 } from "@suss/adapter-typescript";
 import {
@@ -21,6 +19,7 @@ import {
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
+import { evaluatePackHealth, formatPackHealth } from "@suss/extractor";
 
 import { renderDiagnosis } from "./diagnosis.js";
 import {
@@ -49,18 +48,18 @@ import { UsageError } from "./usageError.js";
 
 import type { PythonPack } from "@suss/adapter-python";
 import type { RubyPack } from "@suss/adapter-ruby";
-import type {
-  CacheDiagnostic,
-  EmptyStage,
-  ExtractionReport,
-  TimingReport,
-} from "@suss/adapter-typescript";
+import type { CacheDiagnostic } from "@suss/adapter-typescript";
 import type {
   BehavioralSummary,
   RenderNode,
   WrapperReference,
 } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type {
+  EmptyStage,
+  ExtractionReport,
+  PatternPack,
+  TimingReport,
+} from "@suss/extractor";
 import type { z } from "zod";
 import type { Diagnosis } from "./diagnosis.js";
 import type { Submodule } from "./gitSubmodules.js";

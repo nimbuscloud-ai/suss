@@ -41,7 +41,6 @@ export {
   exportedDeclarationsOf,
   resolveAliasedSymbol,
 } from "./moduleExports.js";
-export { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
 export { parseConditionExpression } from "./predicates.js";
 // The executor ops a declared pack runs on. Exported so a pack's test
 // harness can build the same context the adapter threads through.
@@ -97,11 +96,6 @@ export type {
 } from "./diagnostics.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
 export type { TsDiscoveryContext } from "./discoveryContext.js";
-export type {
-  HealthCheck,
-  HealthViolation,
-  PackGradient,
-} from "./packHealth.js";
 export type { TsInvocationRecognizerContext } from "./resolve/invocationEffects.js";
 export type {
   TsJsxAttributeLocation,
