@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 2483,
-      "covered": 2385,
+      "total": 2418,
+      "covered": 2324,
       "skipped": 0,
-      "pct": 96.05
+      "pct": 96.11
     },
     "statements": {
-      "total": 2515,
-      "covered": 2417,
+      "total": 2449,
+      "covered": 2355,
       "skipped": 0,
-      "pct": 96.1
+      "pct": 96.16
     },
     "functions": {
-      "total": 478,
-      "covered": 475,
+      "total": 459,
+      "covered": 456,
       "skipped": 0,
-      "pct": 99.37
+      "pct": 99.34
     },
     "branches": {
-      "total": 1943,
-      "covered": 1712,
+      "total": 1902,
+      "covered": 1678,
       "skipped": 0,
-      "pct": 88.11
+      "pct": 88.22
     },
     "branchesTrue": {
       "total": 0,
@@ -293,28 +293,28 @@
   },
   "src/project.ts": {
     "lines": {
-      "total": 141,
-      "covered": 136,
+      "total": 116,
+      "covered": 114,
       "skipped": 0,
-      "pct": 96.45
+      "pct": 98.27
     },
     "functions": {
-      "total": 24,
-      "covered": 24,
+      "total": 19,
+      "covered": 19,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 148,
-      "covered": 143,
+      "total": 122,
+      "covered": 120,
       "skipped": 0,
-      "pct": 96.62
+      "pct": 98.36
     },
     "branches": {
-      "total": 90,
-      "covered": 75,
+      "total": 75,
+      "covered": 64,
       "skipped": 0,
-      "pct": 83.33
+      "pct": 85.33
     }
   },
   "src/rawSql.ts": {
@@ -397,28 +397,28 @@
   },
   "src/storage.ts": {
     "lines": {
-      "total": 155,
-      "covered": 152,
+      "total": 115,
+      "covered": 113,
       "skipped": 0,
-      "pct": 98.06
+      "pct": 98.26
     },
     "functions": {
-      "total": 44,
-      "covered": 44,
+      "total": 30,
+      "covered": 30,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 156,
-      "covered": 153,
+      "total": 116,
+      "covered": 114,
       "skipped": 0,
-      "pct": 98.07
+      "pct": 98.27
     },
     "branches": {
-      "total": 130,
-      "covered": 111,
+      "total": 104,
+      "covered": 88,
       "skipped": 0,
-      "pct": 85.38
+      "pct": 84.61
     }
   },
   "src/facts/resolve.ts": {

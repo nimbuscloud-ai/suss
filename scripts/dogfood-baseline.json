@@ -2,10 +2,10 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 723,
-    "internal": 2623,
-    "consumers": 1328,
-    "pairs": 1308,
+    "exports": 726,
+    "internal": 2618,
+    "consumers": 1330,
+    "pairs": 1310,
     "unfollowedCalls": 232,
     "findingErrors": 0
   },
@@ -13,9 +13,9 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 51,
-      "internal": 206,
+      "internal": 203,
       "consumers": 86,
-      "unfollowedCalls": 10
+      "unfollowedCalls": 8
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
@@ -54,10 +54,10 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 21,
-      "internal": 411,
+      "exports": 23,
+      "internal": 409,
       "consumers": 295,
-      "unfollowedCalls": 30
+      "unfollowedCalls": 32
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
@@ -425,9 +425,9 @@
     },
     "packages/mcp": {
       "name": "@suss/mcp",
-      "exports": 6,
+      "exports": 7,
       "internal": 13,
-      "consumers": 7,
+      "consumers": 9,
       "unfollowedCalls": 0
     },
     "packages/packs": {
