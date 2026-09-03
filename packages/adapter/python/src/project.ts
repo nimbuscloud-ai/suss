@@ -13,6 +13,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  disambiguateSummaryIds,
+  linkCallsToSummaries,
+  summaryIdFromParts,
+  unfollowedCallGap,
+} from "@suss/behavioral-ir";
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import {
   assembleSummary,
@@ -27,6 +33,7 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { resolveAbsoluteModule } from "./moduleResolver.js";
 import { parsePython } from "./parser.js";
+import { placeCalls, reachedFunctions } from "./reach/closure.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 
@@ -34,7 +41,9 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ExtractorOptions } from "@suss/extractor";
 import type { PythonPack, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { Seed } from "./reach/closure.js";
 import type { BoundPythonFile } from "./routers.js";
+import type { StorageLookup } from "./storage.js";
 
 export interface ExtractPythonOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -44,6 +53,8 @@ export interface ExtractPythonOptions {
   roots: string[];
   /** When set, `location.file` on each summary is relativized against this. */
   workspaceRoot?: string;
+  /** The directory a summary's id measures its file from, when that differs from `workspaceRoot`. */
+  projectRoot?: string;
   /** As well as deciding how much of what nobody could read reaches a summary, "strict" lets a route that cannot be built stop the run. */
   gapHandling?: ExtractorOptions["gapHandling"];
 }
@@ -115,16 +126,14 @@ export async function extractPythonProject(
   const discovers = options.packs.some((pack) => pack.discovery.length > 0);
   const needsValues = discovers || mountsRouters || storagePatterns.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
-  // what it says it returns.
+  // what it says it returns and the call walk can start from a route.
   const definitions = new Map<string, PyNode>();
   for (const { file, root, module: moduleBinding } of bound) {
     emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
     if (needsValues) {
       emitValueFacts(db, file, root);
     }
-    if (storagePatterns.length > 0) {
-      indexDefinitions(definitions, file, root);
-    }
+    indexDefinitions(definitions, file, root);
   }
 
   // A chain that matches starts at a method some file importing the library
@@ -149,8 +158,25 @@ export async function extractPythonProject(
     ...(mountsRouters ? { facts: db } : {}),
   });
 
-  for (const { file, root, module: moduleBinding } of bound) {
+  const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
+    storagePatterns.length > 0 || rawSqlPatterns.length > 0
+      ? {
+          facts: db,
+          factsPath: file.file,
+          patterns: storagePatterns,
+          definitionAt: (key: string) => definitions.get(key),
+          couldMatch,
+          leadsToStorage,
+          rawSql: rawSqlPatterns,
+        }
+      : undefined;
+
+  const seeds: Seed[] = [];
+  const summariesBySeed = new Map<string, BehavioralSummary[]>();
+  for (const boundFile of bound) {
+    const { file, root, module: moduleBinding } = boundFile;
     const displayPath = displayPathOf(file);
+    const storage = storageFor(boundFile);
 
     const rawUnits = discoverUnits(root, moduleBinding, {
       packs: options.packs,
@@ -159,19 +185,7 @@ export async function extractPythonProject(
       routerIndex,
       gapHandling,
       ...(needsValues ? { facts: db } : {}),
-      ...(storagePatterns.length > 0 || rawSqlPatterns.length > 0
-        ? {
-            storage: {
-              facts: db,
-              factsPath: file,
-              patterns: storagePatterns,
-              definitionAt: (key: string) => definitions.get(key),
-              couldMatch,
-              leadsToStorage,
-              rawSql: rawSqlPatterns,
-            },
-          }
-        : {}),
+      ...(storage === undefined ? {} : { storage }),
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling });
@@ -181,6 +195,22 @@ export async function extractPythonProject(
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
+
+      // Two routes on one function, one per method say, share a seed.
+      const span = raw.identity.span;
+      const key =
+        span === undefined ? null : `${file}:${span.start}-${span.end}`;
+      const node = key === null ? undefined : definitions.get(key);
+      if (key === null || node === undefined) {
+        continue;
+      }
+      const sharing = summariesBySeed.get(key);
+      if (sharing === undefined) {
+        seeds.push({ key, file: boundFile, node });
+        summariesBySeed.set(key, [summary]);
+      } else {
+        sharing.push(summary);
+      }
     }
 
     const loadTimeReads = envReadEffects(root, moduleBinding);
@@ -199,8 +229,48 @@ export async function extractPythonProject(
     }
   }
 
+  const reached = reachedFunctions(seeds, {
+    files: bound,
+    roots: options.roots,
+    gapHandling,
+    storageFor,
+  });
+  for (const [key, owners] of summariesBySeed) {
+    for (const summary of owners) {
+      if (gapHandling !== "silent") {
+        summary.gaps.push(
+          ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
+        );
+      }
+      placeCalls(summary, reached.targetsByKey.get(key));
+    }
+  }
+  summaries.push(...reached.summaries);
+
   const resolvedImports = resolvedImportsOf(db, displayPathOf);
   stampModuleImports(summaries, (file) => resolvedImports.get(file) ?? []);
+
+  // A summary's id is measured from the project root, because the CLI
+  // shortens `location.file` to that root after this returns and an id
+  // written from the longer path would not match it.
+  const idRoot = options.projectRoot ?? options.workspaceRoot;
+  for (const summary of summaries) {
+    const absoluteFile =
+      options.workspaceRoot === undefined
+        ? summary.location.file
+        : path.resolve(options.workspaceRoot, summary.location.file);
+    summary.identity.id = summaryIdFromParts({
+      workspace: undefined,
+      file:
+        idRoot === undefined
+          ? absoluteFile
+          : path.relative(idRoot, absoluteFile),
+      name: summary.identity.name,
+      exportPath: summary.identity.exportPath,
+    });
+  }
+  disambiguateSummaryIds(summaries);
+  linkCallsToSummaries(summaries);
 
   return { summaries, facts: db };
 }

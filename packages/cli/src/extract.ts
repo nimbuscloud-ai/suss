@@ -745,6 +745,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     files,
     packs,
     roots,
+    projectRoot: runOptions.root,
     ...(runOptions.options.gaps !== undefined
       ? { gapHandling: runOptions.options.gaps }
       : {}),

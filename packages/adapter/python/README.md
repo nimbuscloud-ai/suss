@@ -314,7 +314,48 @@ A module-level mount is never dropped this way. It runs whichever factory the ap
 | `os.environ["X"] = "1"`, `del os.environ["X"]`, `"X" in os.environ` | nothing: a write or a membership test | |
 | `os.environ.get("X") or os.environ.get("Y")` | `X` defaulted, `Y` not, since `Y` is the chain's last resort | |
 
-A read inside a route body goes on that route's summary. A read at module level, or in a class body, runs when the module is imported, so it goes on a `module-init` summary named after the file, one per file that has such a read. A read inside a plain function that no pack discovers is reported nowhere, because nothing says when that function runs. A project helper that wraps `os.environ` (`settings.get("X")`) is the same case: the adapter reads the wrapper's body only if a pack discovered it as a unit.
+A read inside a route body goes on that route's summary. A read at module level, or in a class body, runs when the module is imported, so it goes on a `module-init` summary named after the file, one per file that has such a read. A read inside a function a route reaches through its calls goes on that function's own summary (see below). A read inside a function nothing discovered and nothing reaches is reported nowhere, because nothing says when that function runs.
+
+## What a route reaches
+
+A route's body calls project functions, and those call others. Each function a route reaches this way gets a summary of its own, of kind `library`, bound as `function-call` with `transport: "in-process"` and `recognition: "reachable"`, with the calls, environment reads and database work its own body does. Each invocation effect on a route or a reached function says which summary the call lands on, in `summary`, so a reader answering "what does this route reach" follows `summary` from one unit to the next and never has to match a name. This is the same walk the TypeScript adapter runs, and it produces the same shape.
+
+The walk starts at every discovered route, and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A function two routes both reach gets one summary. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call to a parameter, or into a package that is not in the run).
+
+A callee is followed only through a binding that says where it came from. The binder's scopes settle a name written in the file; the import resolver settles a name brought in from another file in the run.
+
+| Written as | Followed to |
+| --- | --- |
+| `helper()` with `def helper` in the file | that definition |
+| `helper()` with `from pkg.mod import helper` | `helper` in `pkg/mod.py` |
+| `mod.helper()` with `import pkg.mod` or `from pkg import mod` | `helper` in `pkg/mod.py`, whether or not `pkg` has an `__init__.py` |
+| `run = helper` then `run()`, written straight in a body | `helper`, one alias hop |
+| `Handlers.on_get()` with `on_get = helper` in the class body | `helper` |
+| `self.method()` or `cls.method()` inside a method | the method on the enclosing class |
+| `Service().run()`, or `svc = Service()` then `svc.run()` | `run` on `Service` |
+| `Service()` | `Service.__init__` |
+| `helper()` with `from pkg.mod import *` and one module defining it | that definition |
+| a call written as an argument, or as the receiver of a chain | followed like any other, in the order it finishes |
+| a call inside a lambda | the enclosing function's call |
+| `inner()` with `def inner` nested in the body | `inner`, which gets a summary of its own with the calls its body makes |
+
+Where it stops, and what the gap says:
+
+| Written as | Reason |
+| --- | --- |
+| a call on a parameter, `callback()` | the caller supplies it (no gap) |
+| a name a `for`, `with`, `except ... as`, walrus, or lambda parameter rebinds | the value could not be settled |
+| a name assigned inside an `if`, `try`, or `with` block, or by unpacking | the value could not be settled |
+| `from a import *` and `from b import *` when both define the name | more than one possible source |
+| an import that resolves under two roots | more than one possible source |
+| a call into a package whose source is not in the run | outside the run (no gap) |
+| a value's attribute, `order.save()`, or a call on a call's result | no declaration to follow (no gap) |
+
+One callee spelling that lands on two definitions in one body, `load()` under a class body that imports its own `load` say, is placed on neither.
+
+Not followed yet: a method inherited from a base class, a callable stored in a dict or a list, a decorator's own body, a call written in a parameter default such as `Depends(get_db)`, and an attribute set on `self` in `__init__` and called elsewhere.
+
+A summary's `identity.id` is the file relative to the project root plus the export path (`app/store.py::read_orders`, `app/models.py::Orders.total`), and `summary` on an effect is that id. Two summaries that would share an id are told apart by their boundary, then by their line.
 
 ## What a file imports from the project
 
