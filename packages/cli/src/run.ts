@@ -150,13 +150,18 @@ Options (check):
   --no-suppressions  Report every finding, ignoring any .sussignore
 
 Options (ask):
-  The question is one of seven, in these words:
+  The question is one of ten, in these words:
     what can I project from <boundary>   what the boundary declares
     what reads <boundary>                which units read it
     what writes <boundary>               which units write it
+    what invokes <boundary>              which units invoke it
     what calls <unit>                    which units call it
     what does <unit> reach               which boundaries a file or
                                          summary goes through
+    what reaches <target>                which boundaries end up going
+                                         through the target, however
+                                         many calls away
+    what does <package or unit> provide  every boundary it provides
     why does <unit> reach <boundary>     the call chain that gets there,
                                          with each hop's resolution
     why does <name> at <file>:<line> resolve to <target>
@@ -652,13 +657,15 @@ function runAsk(args: string[]): number {
   });
 
   // The question comes first, and a summaries file may follow it, the
-  // same way `inspect` takes one.
+  // same way `inspect` takes one. No question gets the same treatment
+  // as one that matched nothing: the ten it does answer, printed back.
   const question = positionals[0];
   if (question === undefined) {
-    process.stderr.write(
-      "ask needs a question. Try: suss ask 'what reads dynamodb:editions' --dir summaries/\n",
-    );
-    return 1;
+    return ask({
+      question: "",
+      ...(values.json === true ? { json: true } : {}),
+      ...(values.output !== undefined ? { output: values.output } : {}),
+    });
   }
 
   const file = positionals[1];

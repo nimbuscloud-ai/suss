@@ -124,6 +124,9 @@ jobs:
       - name: Findings catalog covers every kind
         run: npm run check:findings
 
+      - name: Ask question docs match ask.ts
+        run: npm run check:ask-shapes
+
       # The examples check runs the commands the pages show, so it needs
       # a CLI. A code change has one from the build above; a docs-only
       # change builds the one package.

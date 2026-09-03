@@ -43,6 +43,7 @@
     "build": "turbo build",
     "bump": "node scripts/bumpVersion.mjs",
     "changelog": "node scripts/changelog.mjs",
+    "check:ask-shapes": "node scripts/checkAskShapes.mjs",
     "check:corpus": "node scripts/checkCorpusBaseline.mjs",
     "check:coverage": "node scripts/checkCoverageBaseline.mjs",
     "check:coverage-packages": "node scripts/checkCoveragePackages.mjs",

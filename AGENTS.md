@@ -58,20 +58,27 @@ rather than a re-extract.
 suss ask "what writes aws.dynamodb:orders" --dir .suss --json
 ```
 
-Seven questions, in these words:
+Ten questions, in these words:
 
 - `what can I project from <boundary>`, also `what does <boundary> declare`
 - `what reads <boundary>`
 - `what writes <boundary>`
+- `what invokes <boundary>`
 - `what calls <unit>`
 - `what does <unit> reach`
+- `what reaches <target>`
+- `what does <package or unit> provide`, also `what does <package> export`
 - `why does <unit> reach <boundary>`
 - `why does <name> at <file>:<line> resolve to <target>`
+
+Run `suss ask` with no question and it prints this list back.
 
 Five have a symbol form: `<- <unit>`, `<unit> ->`, and the rest under
 [`suss ask`](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli.md#suss-ask),
 which also gives the spellings a boundary accepts.
 
+`--dir` says which summaries to read. `--project` says where the
+source is for a why question, when it is not the working directory.
 `--json` returns `{ question, shape, subject, found, headline, items,
 needs, caveats }`. A why answer adds the chain and each hop's
 resolution. `needs` is the part to act on when `found` is false: it
