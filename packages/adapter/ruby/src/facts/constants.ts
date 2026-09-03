@@ -2,7 +2,7 @@
 // no imports, so `imports` has no counterpart here and this binds a reference
 // straight to its definition. The README says how the lookup works.
 
-import { field } from "../ast.js";
+import { field, NESTING_TYPES } from "../ast.js";
 import { nodeId } from "./values.js";
 
 import type { Database } from "@suss/datalog";
@@ -28,8 +28,6 @@ export interface FileConstants {
   readonly definitions: readonly ConstantDefinition[];
   readonly references: readonly ConstantReference[];
 }
-
-const NESTING_TYPES = new Set(["class", "module"]);
 
 function children(node: RbNode): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);

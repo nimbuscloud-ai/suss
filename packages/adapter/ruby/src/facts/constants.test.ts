@@ -23,6 +23,12 @@ async function factsFor(files: Record<string, string>) {
 const bindingsOf = (db: Database): string[][] =>
   db.facts("binds").map((row) => row.map(String));
 
+/** A key's span width, so a caller can tell a nested definition's key from its enclosing one. */
+function width(key: string): number {
+  const [start, end] = (key.split(":")[1] ?? "").split("-").map(Number);
+  return (end ?? 0) - (start ?? 0);
+}
+
 describe("a Ruby constant", () => {
   it("binds to the class another file declares", async () => {
     const db = await factsFor({
@@ -43,10 +49,13 @@ describe("a Ruby constant", () => {
       "use.rb": "value = Types::Order\n",
     });
 
-    const classKey = db
+    // A module is an object too, so this file has two `objectValue` keys.
+    // The class is the narrower span.
+    const [classKey] = db
       .facts("objectValue")
       .map((row) => String(row[0]))
-      .find((key) => key.startsWith("order.rb:") && key !== "order.rb");
+      .filter((key) => key.startsWith("order.rb:"))
+      .sort((a, b) => width(a) - width(b));
     const scoped = bindingsOf(db).find(([from]) => from.startsWith("use.rb:"));
     expect(scoped?.[1]).toBe(classKey);
   });

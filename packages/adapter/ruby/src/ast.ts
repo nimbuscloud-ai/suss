@@ -54,6 +54,9 @@ export const OWN_BODY_TYPES = new Set([
   "singleton_class",
 ]);
 
+/** A class and a module both open a body a definition can be written inside. */
+export const NESTING_TYPES = new Set(["class", "module"]);
+
 /** A call's arguments are values it is handed, not statements the body runs. */
 const ARGUMENT_LIST_TYPE = "argument_list";
 
