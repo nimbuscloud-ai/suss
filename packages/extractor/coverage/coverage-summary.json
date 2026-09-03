@@ -1,34 +1,60 @@
 {
   "total": {
     "lines": {
-      "total": 772,
-      "covered": 756,
+      "total": 952,
+      "covered": 920,
       "skipped": 0,
-      "pct": 97.92
+      "pct": 96.63
     },
     "statements": {
-      "total": 796,
-      "covered": 779,
+      "total": 988,
+      "covered": 955,
       "skipped": 0,
-      "pct": 97.86
+      "pct": 96.65
     },
     "functions": {
-      "total": 232,
-      "covered": 230,
+      "total": 288,
+      "covered": 284,
       "skipped": 0,
-      "pct": 99.13
+      "pct": 98.61
     },
     "branches": {
-      "total": 571,
-      "covered": 527,
+      "total": 675,
+      "covered": 613,
       "skipped": 0,
-      "pct": 92.29
+      "pct": 90.81
     },
     "branchesTrue": {
       "total": 0,
       "covered": 0,
       "skipped": 0,
       "pct": 100
+    }
+  },
+  "src/cache.ts": {
+    "lines": {
+      "total": 180,
+      "covered": 164,
+      "skipped": 0,
+      "pct": 91.11
+    },
+    "functions": {
+      "total": 56,
+      "covered": 54,
+      "skipped": 0,
+      "pct": 96.42
+    },
+    "statements": {
+      "total": 192,
+      "covered": 176,
+      "skipped": 0,
+      "pct": 91.66
+    },
+    "branches": {
+      "total": 104,
+      "covered": 86,
+      "skipped": 0,
+      "pct": 82.69
     }
   },
   "src/composeWrappers.ts": {
