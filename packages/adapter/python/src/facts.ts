@@ -60,50 +60,46 @@ export function emitModuleImportFacts(
   module: ModuleBinding,
   resolverOptions: ModuleResolverOptions,
 ): void {
-  const everyBinding = [...module.scopeFor.values()].flatMap((scope) => [
-    ...scope.bindings,
-  ]);
-  for (const [localName, binding] of everyBinding) {
-    if (binding.kind !== "import" && binding.kind !== "importFrom") {
-      continue;
-    }
-    const moduleText = importedModuleText(
-      binding.module,
-      binding.relativeLevel,
-    );
-    const resolution = resolveModule(
-      filePath,
-      { module: binding.module, relativeLevel: binding.relativeLevel },
-      resolverOptions,
-    );
-    db.add("pyImport", [
-      filePath,
-      moduleText,
-      resolution.status === "resolved" ? "resolved" : resolution.reason,
-    ]);
-    const importedName =
-      binding.kind === "import" ? binding.localName : binding.importedName;
-    // Which name came from which module, for a library nobody can read.
-    db.add("pyImportedName", [
-      `${filePath}#${localName}`,
-      moduleText,
-      importedName,
-    ]);
-    if (resolution.status === "resolved") {
-      db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
-      // The shared rules follow a name across files through these two, so a
-      // resolved module is keyed by the file it resolved to.
-      db.add("imports", [
-        `${filePath}#${localName}`,
-        resolution.file,
-        importedName,
+  for (const scope of module.scopeFor.values()) {
+    for (const [localName, binding] of scope.bindings) {
+      if (binding.kind !== "import" && binding.kind !== "importFrom") {
+        continue;
+      }
+      const nameKey = `${filePath}#${localName}`;
+      const moduleText = importedModuleText(
+        binding.module,
+        binding.relativeLevel,
+      );
+      const resolution = resolveModule(
+        filePath,
+        { module: binding.module, relativeLevel: binding.relativeLevel },
+        resolverOptions,
+      );
+      db.add("pyImport", [
+        filePath,
+        moduleText,
+        resolution.status === "resolved" ? "resolved" : resolution.reason,
       ]);
-      continue;
+      const importedName =
+        binding.kind === "import" ? binding.localName : binding.importedName;
+      // Which name came from which module, for a library nobody can read.
+      db.add("pyImportedName", [nameKey, moduleText, importedName]);
+      // A module-scope name is one another file can import back out.
+      if (scope.kind === "module") {
+        db.add("exportsAs", [filePath, localName, nameKey]);
+      }
+      if (resolution.status === "resolved") {
+        db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
+        // The shared rules follow a name across files through these two, so a
+        // resolved module is keyed by the file it resolved to.
+        db.add("imports", [nameKey, resolution.file, importedName]);
+        continue;
+      }
+      // A third-party package resolves to no file, and the shared rules
+      // still have to say a name came out of it: that is how `FastAPI()`
+      // is told from a same-named constructor the project wrote itself.
+      db.add("imports", [nameKey, moduleText, importedName]);
     }
-    // A third-party package resolves to no file, and the shared rules
-    // still have to say a name came out of it: that is how `FastAPI()`
-    // is told from a same-named constructor the project wrote itself.
-    db.add("imports", [`${filePath}#${localName}`, moduleText, importedName]);
   }
 
   for (const openModule of module.openImports) {
