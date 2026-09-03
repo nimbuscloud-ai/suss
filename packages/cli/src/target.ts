@@ -230,13 +230,50 @@ function narrowedToOne(
   return exactLabels.size === 1 ? exact : null;
 }
 
+function boundaryMatches(
+  spec: string,
+  summaries: ReadonlyArray<BehavioralSummary>,
+): TargetTouch[] {
+  return touchesOf(summaries).filter((touch) =>
+    namesBoundary(spec, touch.touched.binding),
+  );
+}
+
+/** The message `--at` gives up with: how many boundaries a spelling could mean, and a few of them by name. */
+function ambiguousBoundaryMessage(
+  spec: string,
+  matching: readonly TargetTouch[],
+): string {
+  const candidates = [
+    ...new Set(matching.map((touch) => touch.touched.label)),
+  ].sort();
+  const shown = candidates.slice(0, 6);
+  const rest = candidates.length - shown.length;
+  return `${spec} could mean ${candidates.length} boundaries here: ${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}. Ask about one of them.`;
+}
+
+/**
+ * Whether a boundary spelling picks out more than one boundary here,
+ * judged the way `--at` judges a boundary spec. Null when the spelling
+ * matches nothing or narrows to one, so `suss ask` only has to act on
+ * the case its own answer would otherwise get wrong.
+ */
+export function ambiguousBoundarySpelling(
+  spec: string,
+  summaries: ReadonlyArray<BehavioralSummary>,
+): string | null {
+  const matching = boundaryMatches(spec, summaries);
+  if (matching.length === 0 || narrowedToOne(spec, matching) !== null) {
+    return null;
+  }
+  return ambiguousBoundaryMessage(spec, matching);
+}
+
 function boundaryTarget(
   spec: string,
   summaries: ReadonlyArray<BehavioralSummary>,
 ): TargetResolution {
-  const matching = touchesOf(summaries).filter((touch) =>
-    namesBoundary(spec, touch.touched.binding),
-  );
+  const matching = boundaryMatches(spec, summaries);
   if (matching.length === 0) {
     return {
       matched: false,
@@ -247,15 +284,10 @@ function boundaryTarget(
 
   const touches = narrowedToOne(spec, matching);
   if (touches === null) {
-    const candidates = [
-      ...new Set(matching.map((touch) => touch.touched.label)),
-    ].sort();
-    const shown = candidates.slice(0, 6);
-    const rest = candidates.length - shown.length;
     return {
       matched: false,
       spelledAs: spec,
-      message: `${spec} could mean ${candidates.length} boundaries here: ${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}. Ask about one of them.`,
+      message: ambiguousBoundaryMessage(spec, matching),
     };
   }
 

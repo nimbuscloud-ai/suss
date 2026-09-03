@@ -40,6 +40,7 @@ import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import { loadedSummaries } from "./loadedSummaries.js";
 import {
+  ambiguousBoundarySpelling,
   collapseTouches,
   providesKeyOf,
   type ResolvedTarget,
@@ -356,10 +357,45 @@ function notHere(
   };
 }
 
+/**
+ * The answer when a subject's spelling picks out more than one
+ * boundary, the same refusal `suss check --at` gives through
+ * `narrowedToOne`. A subject that also picks out a package with
+ * providers here points at `what does <package> provide`, which lists
+ * the boundaries by name instead of by every export token they share.
+ */
+function ambiguousAnswer(
+  shape: QuestionShape,
+  subject: string,
+  message: string,
+  summaries: BehavioralSummary[],
+): Answer {
+  const packageProviders = providersOfPackage(subject, summaries);
+  return {
+    shape,
+    subject,
+    headline: message,
+    items: [],
+    needs:
+      packageProviders.length === 0
+        ? []
+        : [
+            `${subject} is a package. suss ask 'what does ${subject} provide' lists what it exports.`,
+          ],
+    caveats: [],
+    found: false,
+  };
+}
+
 function answerDeclares(
   subject: string,
   summaries: BehavioralSummary[],
 ): Answer {
+  const ambiguous = ambiguousBoundarySpelling(subject, summaries);
+  if (ambiguous !== null) {
+    return ambiguousAnswer("declares", subject, ambiguous, summaries);
+  }
+
   const { touches, hints } = groundedTouchesAt(subject, summaries);
   if (touches.length === 0) {
     return notHere("declares", subject, hints);
@@ -453,6 +489,11 @@ function answerDirection(
   const { summaries } = loaded;
   if (isFunctionCallBoundary(subject, summaries)) {
     return { ...answerCalls(subject, loaded), shape };
+  }
+
+  const ambiguous = ambiguousBoundarySpelling(subject, summaries);
+  if (ambiguous !== null) {
+    return ambiguousAnswer(shape, subject, ambiguous, summaries);
   }
 
   const { touches, hints } = groundedTouchesAt(subject, summaries);

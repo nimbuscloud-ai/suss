@@ -2613,3 +2613,145 @@ describe("suss ask what X provides", () => {
     expect(output).toContain("Nothing in these summaries is at nowhere.ts");
   });
 });
+
+describe("suss ask, when a subject picks out more than one boundary", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  function exported(spec: {
+    file: string;
+    name: string;
+    line: number;
+    packageName: string;
+  }): BehavioralSummary {
+    return {
+      kind: "library",
+      location: {
+        file: spec.file,
+        range: { start: spec.line, end: spec.line + 5 },
+        exportName: spec.name,
+      },
+      identity: {
+        name: spec.name,
+        exportPath: [spec.name],
+        boundaryBinding: packageExportBinding({
+          recognition: "package-exports",
+          packageName: spec.packageName,
+          exportPath: [spec.name],
+        }),
+        id: `repo::${spec.file}::${spec.name}`,
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: CONFIDENT,
+    } as BehavioralSummary;
+  }
+
+  const analyzeFlow = exported({
+    file: "packages/checker/src/flow/reachability.ts",
+    name: "analyzeFlow",
+    line: 400,
+    packageName: "@suss/checker",
+  });
+  const checkAll = exported({
+    file: "packages/checker/src/index.ts",
+    name: "checkAll",
+    line: 12,
+    packageName: "@suss/checker",
+  });
+  const evaluate = exported({
+    file: "packages/datalog/src/index.ts",
+    name: "evaluate",
+    line: 5,
+    packageName: "@suss/datalog",
+  });
+
+  function answer(
+    question: string,
+    summaries: BehavioralSummary[],
+    options: { json?: boolean } = {},
+  ): { output: string; code: number } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-ambiguous-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir, ...options });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("refuses a package name as the declares subject, and points at what it provides", () => {
+    const { output, code } = answer("what does @suss/checker declare", [
+      analyzeFlow,
+      checkAll,
+      evaluate,
+    ]);
+
+    expect(code).toBe(1);
+    expect(output).toContain(
+      "@suss/checker could mean 2 boundaries here: fn:@suss/checker::analyzeFlow, fn:@suss/checker::checkAll. Ask about one of them.",
+    );
+    expect(output).toContain(
+      "@suss/checker is a package. suss ask 'what does @suss/checker provide' lists what it exports.",
+    );
+    expect(output).not.toContain("@suss/datalog");
+  });
+
+  it("says the same refusal in JSON, with the hint under needs and no items", () => {
+    const { output, code } = answer(
+      "what does @suss/checker declare",
+      [analyzeFlow, checkAll, evaluate],
+      { json: true },
+    );
+
+    expect(code).toBe(1);
+    const parsed = JSON.parse(output) as {
+      found: boolean;
+      headline: string;
+      items: unknown[];
+      needs: string[];
+    };
+    expect(parsed.found).toBe(false);
+    expect(parsed.items).toEqual([]);
+    expect(parsed.headline).toContain(
+      "@suss/checker could mean 2 boundaries here",
+    );
+    expect(parsed.needs).toEqual([
+      "@suss/checker is a package. suss ask 'what does @suss/checker provide' lists what it exports.",
+    ]);
+  });
+
+  it("does not refuse a subject that still picks out exactly one boundary", () => {
+    const { output, code } = answer("what does analyzeFlow declare", [
+      analyzeFlow,
+      checkAll,
+      evaluate,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).not.toContain("could mean");
+    expect(output).toContain(
+      "Nothing here declares what fn:@suss/checker::analyzeFlow serves.",
+    );
+  });
+
+  it("refuses the same package name as a reads subject, since the check comes free from the same helper", () => {
+    const { output, code } = answer("what reads @suss/checker", [
+      analyzeFlow,
+      checkAll,
+    ]);
+
+    expect(code).toBe(1);
+    expect(output).toContain(
+      "@suss/checker could mean 2 boundaries here: fn:@suss/checker::analyzeFlow, fn:@suss/checker::checkAll. Ask about one of them.",
+    );
+  });
+});
