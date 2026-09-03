@@ -58,6 +58,30 @@ export function fetchUser(id: string) {
     expect(paths).toContain("createClient.getUser");
   });
 
+  it("skips a method the language gives every value, on a call and on an exported constant", () => {
+    const project = projectWith({
+      "/node_modules/@acme/kit/index.d.ts": `
+export declare const NAMES: readonly string[];
+export declare function load(): string[];
+`,
+      "/src/list.ts": `
+import { NAMES, load } from "@acme/kit";
+export function hint() {
+  return NAMES.join(", ");
+}
+export function trimmed() {
+  return load().map((one) => one.trim());
+}
+`,
+    });
+
+    const evidence = stubEvidenceIn(project, "@acme/kit", "/");
+    expect(evidence.map((one) => one.exportPath.join("."))).toEqual(["load"]);
+    expect(evidence[0].calls).toEqual([
+      { file: "src/list.ts", line: 7, args: [] },
+    ]);
+  });
+
   it("ignores calls into other packages and declaration files", () => {
     const project = projectWith({
       "/src/other.ts": `

@@ -218,6 +218,10 @@ wrapper's name is your project's choice, so it arrives in the stub. An
 aliased import (`from myapp.wrappers.restx import route as api_route`)
 resolves the same way.
 
+`suss infer stub myapp` reads the project's own imports and drafts
+this stub, one file per wrapper module it finds, since the match above
+is exact per module.
+
 Each HTTP-verb-named method on the class becomes its own route, with
 the verb from the method name and the path from the decorator's first
 string argument. Werkzeug converters are canonicalized, so
@@ -324,7 +328,10 @@ statements:
 ```
 
 The pack then reads a class of yours that extends
-`Acme::GraphQL::BaseObject` as a set of resolvers.
+`Acme::GraphQL::BaseObject` as a set of resolvers. `suss infer stub
+acme-graphql` drafts this from the project's own `require`s and class
+definitions; that read of `require` is only for the draft, not for
+extraction itself.
 
 A class extending one of those base classes has each `field` call in
 its body turned into a resolver. The name is `Campaign.id`, from the

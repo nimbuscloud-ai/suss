@@ -66,7 +66,9 @@ Commands:
   infer     Draft an artifact for you to curate. "infer stub" writes a
             dependency stub skeleton, the checked-in file that states
             what a package suss cannot read does, from the project's
-            observed calls into the package. "infer intent" writes one
+            observed calls into it (TypeScript), imports of it
+            (Python), or requires and superclasses spelled from it
+            (Ruby). "infer intent" writes one
             boundary intent doc per boundary in a summaries file, saying
             what the code does today, for you to turn into what the team
             meant. "infer prd" reads those once they are curated and
@@ -199,9 +201,12 @@ Options (corroborate):
 
 Options (infer stub):
   -p, --project    Path to the tsconfig covering the code to read
-  --dir            Directory to read when there is no tsconfig
+  --dir            Directory to read when there is no tsconfig, or
+                   when the code is Python or Ruby
   -o, --output     Where to write the draft. "-" prints it instead.
                    Default: suss/stubs/<package>.yaml next to the code.
+                   A Python package can draft one file per imported
+                   module; -o then has to be left off.
 
 Options (infer intent):
   --from           The summaries file to read, from suss extract. Pick the
@@ -216,7 +221,8 @@ Options (infer intent):
 Exit codes:
   check exits non-zero when it finds anything at error severity.
   corroborate exits non-zero when a claim is refuted by execution.
-  infer stub exits non-zero when no calls into the package are found.
+  infer stub exits non-zero when the project shows no evidence of the
+  package: no calls, no imports, no requires, no superclass.
   infer intent exits non-zero when no boundary could be drafted.
 
 An interactive run ends with one line on stderr when a newer suss is on
@@ -305,7 +311,7 @@ async function dispatch(args: string[]): Promise<number> {
     return await runCorroborate(args.slice(1));
   }
   if (command === "infer") {
-    return runInfer(args.slice(1));
+    return await runInfer(args.slice(1));
   }
   process.stderr.write(
     `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, and infer.\n`,
@@ -796,7 +802,7 @@ async function runContract(args: string[]): Promise<number> {
   return 0;
 }
 
-function runInfer(args: string[]): number {
+async function runInfer(args: string[]): Promise<number> {
   const sub = args[0];
   const kind = sub === undefined ? undefined : INFER_KINDS[sub];
   if (kind === undefined) {
@@ -808,16 +814,19 @@ function runInfer(args: string[]): number {
     return 1;
   }
 
-  return kind(args.slice(1));
+  return await kind(args.slice(1));
 }
 
-const INFER_KINDS: Record<string, (args: string[]) => number> = {
+const INFER_KINDS: Record<
+  string,
+  (args: string[]) => number | Promise<number>
+> = {
   stub: runInferStub,
   intent: runInferIntent,
   prd: runInferPrd,
 };
 
-function runInferStub(args: string[]): number {
+async function runInferStub(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     options: {
@@ -836,7 +845,7 @@ function runInferStub(args: string[]): number {
     return 1;
   }
 
-  return stubDraft({
+  return await stubDraft({
     package: packageName,
     ...(values.project !== undefined ? { tsconfig: values.project } : {}),
     ...(values.dir !== undefined ? { dir: values.dir } : {}),

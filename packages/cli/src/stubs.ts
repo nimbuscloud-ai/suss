@@ -233,14 +233,44 @@ export function stubOnlyOptionsOf(packName: string): readonly string[] {
   return STUB_ONLY_OPTIONS[packName] ?? [];
 }
 
-/** What a project reads when its pack config sets one of them. */
-export function stubOnlyOptionRefusal(used: readonly string[]): string {
-  const plural = used.length > 1;
+/** The reverse of `RE_EXPORT_CONSUMERS`: which `of:` value a wrapperModules pack's own re-exports statement takes. */
+const WRAPPER_MODULE_REEXPORTS: Record<string, string> = {
+  fastapi: "fastapi",
+  "flask-restx": "flask_restx",
+};
+
+/**
+ * wrapperModules matches a project module exactly, one stub per
+ * module the project imports, so the refusal shows the shape rather
+ * than pointing at the general stub docs alone.
+ */
+function wrapperModulesExample(packName: string): string {
+  const reExports = WRAPPER_MODULE_REEXPORTS[packName];
+  if (reExports === undefined) {
+    return "";
+  }
   return (
+    "\n\n  package: myapp.routing.namespace\n" +
+    "  statements:\n" +
+    "    - kind: re-exports\n" +
+    `      of: ${reExports}\n\n` +
+    "package is the full module the project imports from, one stub per imported module."
+  );
+}
+
+/** What a project reads when its pack config sets one of them. */
+export function stubOnlyOptionRefusal(
+  used: readonly string[],
+  packName: string,
+): string {
+  const plural = used.length > 1;
+  const base =
     `The ${used.join(" and ")} option${plural ? "s" : ""} ` +
     `describe${plural ? "" : "s"} a dependency, and a stub file in suss/stubs/ is where that now goes. ` +
-    "Start one with: suss infer stub <package>."
-  );
+    "Start one with: suss infer stub <package>.";
+  return used.includes("wrapperModules")
+    ? base + wrapperModulesExample(packName)
+    : base;
 }
 
 /**

@@ -160,11 +160,11 @@ export function attributedCalls(
     if (subject === null) {
       return null;
     }
-    // A method the package declares extends the export path; one the
-    // language gives every value (`.map`, `.then`) says nothing about
-    // the package, so the path stops at what was called.
+    // A method the package declares extends the export path. One the
+    // language gives every value (`.map`, `.then`) is no call into the
+    // package: a call it was made on is attributed on its own already.
     if (!methodComesFromSource(callee)) {
-      return subject;
+      return null;
     }
     return {
       packageName: subject.packageName,

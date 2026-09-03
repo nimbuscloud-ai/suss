@@ -114,7 +114,7 @@ export async function createServer(
   server.registerTool(
     "suss_stub_draft",
     {
-      title: "Draft a dependency stub from observed calls",
+      title: "Draft a dependency stub from observed use",
       description: STUB_DRAFT_DESCRIPTION,
       annotations: READ_ONLY,
       inputSchema: {

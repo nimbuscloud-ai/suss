@@ -206,13 +206,29 @@ describe("the options only a stub may state", () => {
   });
 
   it("points one at the stub file, and reads as a sentence for two", () => {
-    expect(stubOnlyOptionRefusal(["classDecorators"])).toBe(
+    expect(stubOnlyOptionRefusal(["classDecorators"], "nestjs-rest")).toBe(
       "The classDecorators option describes a dependency, and a stub file in suss/stubs/ is where that now goes. " +
         "Start one with: suss infer stub <package>.",
     );
-    expect(stubOnlyOptionRefusal(["producers", "factories"])).toContain(
-      "The producers and factories options describe a dependency",
+    expect(
+      stubOnlyOptionRefusal(["producers", "factories"], "aws-sqs"),
+    ).toContain("The producers and factories options describe a dependency");
+  });
+
+  it("shows the re-exports shape for wrapperModules, since matching is one stub per imported module", () => {
+    const forFastapi = stubOnlyOptionRefusal(["wrapperModules"], "fastapi");
+    expect(forFastapi).toContain("suss infer stub <package>");
+    expect(forFastapi).toContain("kind: re-exports");
+    expect(forFastapi).toContain("of: fastapi");
+    expect(forFastapi).toContain(
+      "package is the full module the project imports from",
     );
+
+    const forFlaskRestx = stubOnlyOptionRefusal(
+      ["wrapperModules"],
+      "flask-restx",
+    );
+    expect(forFlaskRestx).toContain("of: flask_restx");
   });
 });
 

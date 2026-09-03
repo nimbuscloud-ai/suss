@@ -265,20 +265,28 @@ export async function attempt(
   }
 }
 
-export const STUB_DRAFT_DESCRIPTION = `Draft a dependency stub for a package this project calls but suss cannot read into: a compiled binding, a private wrapper, anything without readable source.
+export const STUB_DRAFT_DESCRIPTION = `Draft a dependency stub for a package this project uses but suss cannot read into: a compiled binding, a private wrapper, anything without readable source.
 
-The draft is built from the project's own call sites: one performs-call skeleton per export the code reaches, with the argument shapes observed at each site. The semantic blanks (which system each call reaches, which argument means what) are yours to fill from the package's own source, then save the file where the answer says and re-run extract.`;
+For TypeScript the draft is built from the project's own call sites: one performs-call skeleton per export the code reaches, with the argument shapes observed at each site. For a Python project whose routes go through a wrapper module, it drafts a re-exports skeleton per imported module instead. For Ruby it drafts an extends-base skeleton from every require and every class whose superclass is spelled from the package. The semantic blanks are yours to fill from the package's own source, then save the file where the answer says and re-run extract.`;
 
-export function stubDraftTool(
+export async function stubDraftTool(
   project: Project,
   args: { package: string },
-): ToolResult {
-  const result = stubDraftResult({ package: args.package, dir: project.root });
+): Promise<ToolResult> {
+  const result = await stubDraftResult({
+    package: args.package,
+    dir: project.root,
+  });
   if (result === null) {
     return failure(
-      `No calls into ${args.package} found under ${project.root}. A stub drafts from observed call sites, so there is nothing to draft. Check the package name against the project's imports.`,
+      `No evidence of ${args.package} found under ${project.root}: no calls, no imports, no requires. A stub drafts from those, so there is nothing to draft. Check the package name against the project's own code.`,
     );
   }
-  const text = `Save this to ${result.target} after filling each blank. ${result.exports} exports, from ${result.sites} observed call sites.\n\n${result.yaml}`;
+  const text =
+    result.drafts.length === 1
+      ? `Save this to ${result.drafts[0].target} after filling each blank. ${result.exports} exports, from ${result.sites} observed sites.\n\n${result.drafts[0].yaml}`
+      : `Save each of these to its own path after filling the blanks. ${result.exports} imported modules, from ${result.sites} observed sites.\n\n${result.drafts
+          .map((draft) => `# ${draft.target}\n${draft.yaml}`)
+          .join("\n")}`;
   return { content: [{ type: "text", text }] };
 }

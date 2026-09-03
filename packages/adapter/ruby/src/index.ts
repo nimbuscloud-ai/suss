@@ -38,6 +38,7 @@ export {
   walkClasses,
   walkDefinitions,
 } from "./scope.js";
+export { rubyStubEvidence } from "./stubEvidence.js";
 export { typeShapeFromNode } from "./typeShape.js";
 
 export type {
@@ -57,4 +58,10 @@ export type {
 export type { RbNode, RbTree } from "./parser.js";
 export type { ExtractRubyOptions, ExtractRubyResult } from "./project.js";
 export type { ClassInfo, GraphqlTypeNameConvention } from "./scope.js";
+export type {
+  RubyExtendsSite,
+  RubyRequireSite,
+  RubyStubEvidence,
+  RubyStubEvidenceOptions,
+} from "./stubEvidence.js";
 export type { TypeReadContext } from "./typeShape.js";

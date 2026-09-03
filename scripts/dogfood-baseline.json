@@ -2,26 +2,26 @@
   "totals": {
     "packages": 67,
     "packagesWithExports": 67,
-    "exports": 726,
-    "internal": 2714,
-    "consumers": 1339,
-    "pairs": 1319,
+    "exports": 728,
+    "internal": 2736,
+    "consumers": 1335,
+    "pairs": 1323,
     "unfollowedCalls": 307,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
-      "exports": 51,
-      "internal": 217,
+      "exports": 52,
+      "internal": 223,
       "consumers": 86,
       "unfollowedCalls": 12
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
-      "exports": 46,
-      "internal": 149,
-      "consumers": 40,
+      "exports": 47,
+      "internal": 154,
+      "consumers": 41,
       "unfollowedCalls": 14
     },
     "packages/adapter/typescript": {
@@ -55,15 +55,15 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 23,
-      "internal": 423,
-      "consumers": 304,
+      "internal": 434,
+      "consumers": 300,
       "unfollowedCalls": 46
     },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
       "exports": 2,
       "internal": 1,
-      "consumers": 22,
+      "consumers": 21,
       "unfollowedCalls": 0
     },
     "packages/client/axios": {

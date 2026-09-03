@@ -50,13 +50,16 @@ describe("findPythonFiles", () => {
   });
 });
 
-describe("a configured wrapper module that resolves to nothing", () => {
-  it("says which entry missed, and stays quiet when it resolves", async () => {
+describe("a configured wrapper module nothing imports", () => {
+  it("says which entry missed, and stays quiet about the one a file imports", async () => {
     write(
       "myapp/wrappers/restx.py",
       "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
     );
-    const file = write("myapp/routes/todos.py", "x = 1\n");
+    const todos = write(
+      "myapp/routes/todos.py",
+      'from myapp.wrappers.restx import route\n\n\n@route("/todos")\nclass TodoList:\n    def get(self):\n        return []\n',
+    );
     const said: string[] = [];
     const original = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string) => {
@@ -66,7 +69,7 @@ describe("a configured wrapper module that resolves to nothing", () => {
 
     try {
       await extractPythonProject({
-        files: [file],
+        files: [todos],
         roots: [tmpDir],
         packs: [
           {
@@ -79,7 +82,7 @@ describe("a configured wrapper module that resolves to nothing", () => {
       process.stderr.write = original;
     }
 
-    const complaints = said.filter((line) => line.includes("does not resolve"));
+    const complaints = said.filter((line) => line.includes("changes nothing"));
     expect(complaints).toHaveLength(1);
     expect(complaints[0]).toContain("myapp.wrappers.typo");
   });

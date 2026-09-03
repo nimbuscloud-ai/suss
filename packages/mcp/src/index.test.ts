@@ -269,3 +269,40 @@ describe("the suss MCP server", () => {
     fs.rmSync(bare, { recursive: true, force: true });
   });
 });
+
+describe("the stub draft tool on a Python project", () => {
+  it("returns one draft per imported module, each under its own path", async () => {
+    const pyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-mcp-python-"));
+    fs.writeFileSync(
+      path.join(pyRoot, "app.py"),
+      [
+        "from acme.routing.namespace import Namespace",
+        "from acme.routing.resource import Resource",
+      ].join("\n"),
+    );
+    const { server, project } = await createServer({
+      root: pyRoot,
+      watch: false,
+    });
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    const pyClient = new Client({ name: "test", version: "0" });
+    await Promise.all([
+      server.connect(serverSide),
+      pyClient.connect(clientSide),
+    ]);
+
+    const result = await pyClient.callTool({
+      name: "suss_stub_draft",
+      arguments: { package: "acme" },
+    });
+    expect(result.isError).toBeUndefined();
+    const text = JSON.stringify(result.content);
+    expect(text).toContain("Save each of these");
+    expect(text).toContain("acme.routing.namespace");
+    expect(text).toContain("acme.routing.resource");
+    expect(text).toContain("re-exports");
+
+    project.close();
+    fs.rmSync(pyRoot, { recursive: true, force: true });
+  }, 60_000);
+});

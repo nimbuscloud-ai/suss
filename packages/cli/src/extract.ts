@@ -409,7 +409,7 @@ function optionProblems(name: string, issue: z.core.$ZodIssue): string[] {
       (key) => !stubOnly.has(key) && !retired.includes(key),
     );
     return [
-      ...(routed.length > 0 ? [stubOnlyOptionRefusal(routed)] : []),
+      ...(routed.length > 0 ? [stubOnlyOptionRefusal(routed, name)] : []),
       ...retiredOptionRefusal(name, retired),
       ...(unknown.length > 0 ? [unknownKeys(unknown)] : []),
     ];

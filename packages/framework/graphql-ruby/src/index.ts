@@ -61,6 +61,22 @@ export const optionsSchema = z
 export type GraphqlRubyPackOptions = z.infer<typeof optionsSchema>;
 
 /**
+ * The classes graphql-ruby's own generated base classes extend or mix
+ * in. A project's ancestry walk ends at one of them, so putting one in
+ * a stub changes nothing; `suss infer stub` reads this list to say so.
+ */
+export const GRAPHQL_RUBY_ROOT_CLASS_NAMES: readonly string[] = [
+  "GraphQL::Schema::Object",
+  "GraphQL::Schema::Mutation",
+  "GraphQL::Schema::Resolver",
+  "GraphQL::Schema::Interface",
+  "GraphQL::Schema::InputObject",
+  "GraphQL::Schema::Enum",
+  "GraphQL::Schema::Union",
+  "GraphQL::Schema::Scalar",
+];
+
+/**
  * The type-level base classes `rails g graphql:install` scaffolds. A
  * type extends one of these, or mixes one in for an interface, so all
  * of them mark a definition as declaring GraphQL fields. The generator
@@ -113,18 +129,7 @@ export function graphqlRubyFramework(
     argumentCallName: "argument",
     wiringKeywords: ["mutation", "resolver"],
     resolverMethodName: "resolve",
-    // The classes graphql-ruby's own generated base classes extend or
-    // mix in. A project's chain ends at one of them.
-    ancestryRootClassNames: [
-      "GraphQL::Schema::Object",
-      "GraphQL::Schema::Mutation",
-      "GraphQL::Schema::Resolver",
-      "GraphQL::Schema::Interface",
-      "GraphQL::Schema::InputObject",
-      "GraphQL::Schema::Enum",
-      "GraphQL::Schema::Union",
-      "GraphQL::Schema::Scalar",
-    ],
+    ancestryRootClassNames: [...GRAPHQL_RUBY_ROOT_CLASS_NAMES],
     requiredKeyword: "required",
     // graphql-ruby registers an argument as required unless the call
     // opts out with `required: false`.

@@ -52,6 +52,12 @@ set of resolvers. The `baseClassNames` pack option said the same thing
 until 0.21.0 removed it. A config file setting it now stops the run and
 points here.
 
+`suss infer stub acme-graphql` reads the project's own `require`s and
+class definitions and drafts one `extends-base` statement per
+superclass it finds spelled from the package. A class that extends one
+of graphql-ruby's own root classes directly is skipped, since the pack
+already stops there and a stub adds nothing.
+
 ## Coverage
 
 ![coverage](../../../.github/badges/coverage-graphql-ruby.svg)
