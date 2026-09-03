@@ -666,7 +666,7 @@ describe("formatEmptyLanguageRun", () => {
 });
 
 describe("extract, on a project with no boundaries", () => {
-  it("returns nothing and fails the run when asked to", async () => {
+  it("returns nothing and fails the run by default", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-empty-"));
     fs.writeFileSync(path.join(dir, "thing.ts"), "export const x = 1;\n");
     const out = path.join(dir, "summaries.json");
@@ -676,11 +676,28 @@ describe("extract, on a project with no boundaries", () => {
       dir,
       frameworks: ["express"],
       output: out,
-      failOnEmpty: true,
     });
 
     expect(summaries).toEqual([]);
     expect(process.exitCode).toBe(1);
+    process.exitCode = previous;
+  });
+
+  it("stays green when --allow-empty opts out", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-empty-"));
+    fs.writeFileSync(path.join(dir, "thing.ts"), "export const x = 1;\n");
+    const out = path.join(dir, "summaries.json");
+    const previous = process.exitCode;
+
+    const summaries = await extract({
+      dir,
+      frameworks: ["express"],
+      output: out,
+      allowEmpty: true,
+    });
+
+    expect(summaries).toEqual([]);
+    expect(process.exitCode).toBe(previous);
     process.exitCode = previous;
   });
 });

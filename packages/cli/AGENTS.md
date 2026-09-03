@@ -38,14 +38,15 @@ the directory both wrote into:
 ```
 suss extract -f express --dir src -o .suss/code.json
 suss contract --from openapi openapi.yaml -o .suss/spec.json
-suss check --dir .suss --fail-on-empty --json
+suss check --dir .suss --json
 ```
 
-`--fail-on-empty` matters for automation. Without it a run that paired
-nothing exits 0 and prints the same "no findings" as a run where both
-sides agreed. With it on, the report gets a `nothingPaired` finding
+A run that pairs nothing exits non-zero by default, which matters for
+automation: without that, it would print the same "no findings" as a
+run where both sides agreed. The report gets a `nothingPaired` finding
 under `run` saying what happened and what to do, so a fixer reacting to
-the red exit has something to act on.
+the red exit has something to act on. Pass `--allow-empty` when an
+empty run is expected.
 
 Full flags for every command: [docs/reference/cli.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli.md).
 
@@ -173,8 +174,9 @@ reports what changed between two runs.
 
 An empty report has three causes and they are distinguishable.
 
-- Nothing paired. `--fail-on-empty` exits non-zero and says how many
-  summaries were read.
+- Nothing paired. This exits non-zero by default and says how many
+  summaries were read; pass `--allow-empty` when an empty run is
+  expected.
 - A pack read your files and recognised none of them. The pack health
   block says so; see
   [docs/guides/pack-health.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/pack-health.md).

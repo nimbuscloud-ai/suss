@@ -329,6 +329,22 @@ describe("runCli extract", () => {
     expect(io.stderr).toContain("--gaps");
   });
 
+  it("refuses --fail-on-empty, since failing on nothing is the default now", async () => {
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "-p",
+        "tsconfig.json",
+        "-f",
+        "axios",
+        "--fail-on-empty",
+      ]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("--fail-on-empty is gone");
+    expect(io.stderr).toContain("--allow-empty");
+  });
+
   it("extracts a project to a file and reports timing under --timing", async () => {
     const srcDir = path.join(tmpDir, "src");
     fs.mkdirSync(srcDir, { recursive: true });
@@ -456,6 +472,7 @@ describe("runCli extract", () => {
         tmpDir,
         "-f",
         `hono=${config}`,
+        "--allow-empty",
       ]),
     );
     // The warning this option got in 0.20.0 told people to write a
@@ -545,6 +562,7 @@ describe("runCli extract", () => {
         "-o",
         path.join(tmpDir, "web.json"),
         "--no-cache",
+        "--allow-empty",
       ]),
     );
     expect(exit).toBe(0);
@@ -703,6 +721,25 @@ describe("runCli check", () => {
     );
     expect(exit).toBe(1);
     expect(io.stderr).toContain("--fail-on must be");
+  });
+
+  it("refuses --fail-on-empty, since failing on nothing is the default now", async () => {
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-empty"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("--fail-on-empty is gone");
+    expect(io.stderr).toContain("--allow-empty");
+  });
+
+  it("refuses --allow-empty on a two-file check, which has no pairing count", async () => {
+    const provider = writeJson("provider.json", [minimalSummary]);
+    const consumer = writeJson("consumer.json", [matchingConsumer]);
+    const { exit, io } = await capture(() =>
+      runCli(["check", provider, consumer, "--allow-empty"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("--allow-empty needs --dir");
   });
 
   it("returns 0 when consumer covers every provider status", async () => {

@@ -145,10 +145,11 @@ syntax and the three effects (`mark` / `downgrade` / `hide`).
   Use `suss inspect --diff before.json after.json` in parallel: it
   shows which transitions changed, rather than which pair mismatched.
   Add `--json` when something other than a person reads it.
-- **Fail the run that compared nothing.** A check that pairs nothing
-  reports nothing, which looks the same as both sides agreeing. `suss check --dir summaries/ --fail-on-empty` tells the
-  two apart, and it is worth having wherever a green result is
-  taken as evidence.
+- **A check that pairs nothing fails.** It has nothing to report,
+  which looks the same as both sides agreeing, so `suss check --dir
+  summaries/` exits non-zero when that happens. Pass `--allow-empty`
+  when an empty run is expected, such as checking one side of a
+  boundary before the other side has been extracted.
 - **Emit the finding, not only the status.** A red check with
   nothing parseable behind it gives an automated fixer nothing to
   act on. Write the JSON somewhere the same job can read.

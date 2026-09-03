@@ -150,6 +150,7 @@ describe("extract, infer intent, check", () => {
       "--intent",
       intentDir,
       "--json",
+      "--allow-empty",
     ]);
 
     expect(checked.exit).toBe(0);
