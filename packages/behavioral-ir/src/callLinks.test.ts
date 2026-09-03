@@ -5,7 +5,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { declarationKey, linkCallsToSummaries } from "./callLinks.js";
+import {
+  declarationKey,
+  linkCallsToSummaries,
+  placeCalls,
+} from "./callLinks.js";
 
 import type { DeclaredAt } from "./callLinks.js";
 import type { BehavioralSummary } from "./index.js";
@@ -224,5 +228,55 @@ describe("linkCallsToSummaries", () => {
     expect(declarationKey("src/h.py", { start: 3, end: 9 })).toBe(
       "src/h.py:3-9",
     );
+  });
+});
+
+describe("placeCalls", () => {
+  it("writes declaredAt on the invocation effect a target names", () => {
+    const caller = summary({
+      name: "handler",
+      file: "src/h.py",
+      calls: ["orders_for", "untouched"],
+    });
+    const target = { file: "src/service.py", span: { start: 40, end: 48 } };
+
+    placeCalls(caller, new Map([["orders_for", target]]));
+
+    const effects = caller.transitions[0]?.effects ?? [];
+    expect(effects[0]).toMatchObject({
+      callee: "orders_for",
+      declaredAt: target,
+    });
+    expect(effects[1]).not.toHaveProperty("declaredAt");
+  });
+
+  it("does nothing when there are no targets for this summary", () => {
+    const caller = summary({ name: "handler", file: "src/h.py", calls: ["x"] });
+
+    placeCalls(caller, undefined);
+
+    expect(caller.transitions[0]?.effects[0]).not.toHaveProperty("declaredAt");
+  });
+
+  it("leaves an effect that is not a call untouched", () => {
+    const caller = summary({ name: "handler", file: "src/h.py" });
+    const read = {
+      type: "interaction" as const,
+      interaction: {
+        class: "storage-access" as const,
+        target: { system: "postgresql", collection: "orders" },
+        operation: "read" as const,
+      },
+      target: "orders",
+      operation: "read",
+    };
+    caller.transitions[0]?.effects.push(read as never);
+
+    placeCalls(
+      caller,
+      new Map([["read", { file: "x", span: { start: 0, end: 1 } }]]),
+    );
+
+    expect(caller.transitions[0]?.effects).toEqual([read]);
   });
 });

@@ -13,6 +13,7 @@
 
 import {
   functionCallBinding,
+  placeCalls,
   unfollowedCallGap,
   worthRecording,
 } from "@suss/behavioral-ir";
@@ -153,27 +154,6 @@ export function reachedFunctions(
   }
 
   return { summaries, targetsByKey, stopsByKey };
-}
-
-/** Say on each invocation effect where its callee is declared, so the link step can find the summary there. */
-export function placeCalls(
-  summary: BehavioralSummary,
-  targets: ReadonlyMap<string, DeclaredAt> | undefined,
-): void {
-  if (targets === undefined) {
-    return;
-  }
-  for (const transition of summary.transitions) {
-    for (const effect of transition.effects) {
-      if (effect.type !== "invocation") {
-        continue;
-      }
-      const target = targets.get(effect.callee);
-      if (target !== undefined) {
-        effect.declaredAt = target;
-      }
-    }
-  }
 }
 
 function keyOf(target: ReachedFunction): string {

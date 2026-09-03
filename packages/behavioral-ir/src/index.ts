@@ -97,6 +97,7 @@ export {
   type DeclaredAt,
   declarationKey,
   linkCallsToSummaries,
+  placeCalls,
 } from "./callLinks.js";
 export {
   type BoundaryCall,
