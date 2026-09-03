@@ -44,7 +44,12 @@ import {
   type AccessRecognizer,
   assembleSummary,
   type BindingExtraction,
+  type CacheAttribution,
+  type CacheDiagnostic,
+  type CacheInput,
+  type CacheLayer,
   composeWrappers,
+  createCacheLayer,
   type DiscoveredSubUnit,
   type DiscoveredSubUnitParent,
   type DiscoveryPattern,
@@ -52,12 +57,14 @@ import {
   type InputMappingPattern,
   type InvocationRecognizer,
   type LanguageAdapter,
+  type PartialPlan,
   type PatternPack,
   type RawBranch,
   type RawCodeStructure,
   type RawDependencyCall,
   type RawParameter,
   type ResponsePropertyMapping,
+  type RootRecord,
   stampModuleImports,
   type TerminalPattern,
 } from "@suss/extractor";
@@ -79,14 +86,6 @@ import {
   createSourceFileLookup,
   type SourceFileLookup,
 } from "./bootstrap/sourceFileLookup.js";
-import {
-  type CacheAttribution,
-  type CacheDiagnostic,
-  type CacheLayer,
-  createCacheLayer,
-  type PartialPlan,
-  type RootRecord,
-} from "./cache.js";
 import { readContract, readContractForClientCall } from "./contract.js";
 import {
   createDependencySink,
@@ -2072,6 +2071,12 @@ function loadRunFiles(
   return { sourceFiles, deep };
 }
 
+/** What this adapter stores in a cached file's opaque `meta` slot. */
+interface TsCacheMeta {
+  /** Mount prefixes the walk consumed, by mounted router node id. */
+  mountPrefixes: Record<string, string>;
+}
+
 export function createTypeScriptAdapter(
   suppliedConfig: TypeScriptAdapterConfig,
 ): TypeScriptAdapter {
@@ -2122,7 +2127,8 @@ export function createTypeScriptAdapter(
             ? path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache")
             : null)),
   );
-  const cache: CacheLayer = createCacheLayer(cacheDir);
+  const cache: CacheLayer<TsCacheMeta> =
+    createCacheLayer<TsCacheMeta>(cacheDir);
   const packsDigest = `${computeAdapterPacksDigest(
     config.frameworks.map((p) =>
       p.version !== undefined
@@ -2206,34 +2212,29 @@ export function createTypeScriptAdapter(
           )
         : null;
 
-      // Nothing reads the digest when the run is not caching, and
-      // settling it walks the tree for every template a pack reads.
+      // Nothing reads the digest or the file list when the run is not
+      // caching, and settling either walks the tree for every template
+      // a pack reads.
+      let cacheFiles: string[] | null = null;
       const adapterPacksDigest =
         cacheDir === null
           ? packsDigest
-          : timer.time("cache.digest", () =>
-              digestFor(
+          : timer.time("cache.digest", () => {
+              cacheFiles =
                 tsconfigFileList ??
-                  project.getSourceFiles().map((sf) => sf.getFilePath()),
-              ),
-            );
+                project.getSourceFiles().map((sf) => sf.getFilePath());
+              return digestFor(cacheFiles);
+            });
 
-      const cacheInput =
-        tsconfigFileList !== null
-          ? {
-              files: tsconfigFileList,
-              adapterPacksDigest,
-              tsconfigPath:
-                config.tsConfigFilePath ??
-                raise("lazy bootstrap requires tsConfigFilePath"),
-            }
-          : {
-              project,
-              adapterPacksDigest,
-              ...(config.tsConfigFilePath !== undefined
-                ? { tsconfigPath: config.tsConfigFilePath }
-                : {}),
-            };
+      const cacheInput: CacheInput = {
+        // Empty when cacheDir is null: a no-op cache layer never reads
+        // the file list, so there is nothing worth resolving early.
+        files: cacheFiles ?? [],
+        adapterPacksDigest,
+        ...(config.tsConfigFilePath !== undefined
+          ? { configPath: config.tsConfigFilePath }
+          : {}),
+      };
       const lookup = await timer.timeAsync("cache.lookup", () =>
         cache.lookup(cacheInput),
       );
@@ -2656,10 +2657,10 @@ export function createTypeScriptAdapter(
  * mentions it and no recorded dependency would catch it.
  */
 function mountAssumptionsAgree(
-  record: RootRecord,
+  record: RootRecord<TsCacheMeta>,
   index: MountPrefixIndex,
 ): boolean {
-  return Object.entries(record.mountPrefixes).every(
+  return Object.entries(record.meta.mountPrefixes).every(
     ([childId, prefix]) => (index.prefixForId?.(childId) ?? "") === prefix,
   );
 }
@@ -2836,7 +2837,7 @@ function readsRunLevelJoins(summary: BehavioralSummary): boolean {
  */
 function buildCacheAttribution(args: {
   project: Project;
-  plan: PartialPlan | null;
+  plan: PartialPlan<TsCacheMeta> | null;
   validRoots: Set<string>;
   sinkByRoot: Map<string, DependencySink>;
   ownersBySummary: Map<BehavioralSummary, Set<string>>;
@@ -2847,7 +2848,7 @@ function buildCacheAttribution(args: {
   reusedKept: BehavioralSummary[];
   reusedOwners: string[][];
   fresh: BehavioralSummary[];
-}): CacheAttribution {
+}): CacheAttribution<TsCacheMeta> {
   const references = createReferenceIndex(
     args.project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
   );
@@ -2868,7 +2869,7 @@ function buildCacheAttribution(args: {
     }
   }
 
-  const roots: RootRecord[] = [];
+  const roots: RootRecord<TsCacheMeta>[] = [];
   for (const [rootPath, sink] of args.sinkByRoot) {
     // Direct references only: deeper reads arrive through the sink,
     // the claims and the reachable set, so an edit far up a barrel
@@ -2906,7 +2907,7 @@ function buildCacheAttribution(args: {
       cacheable,
       deps: [...deps].sort(),
       claims: sink.claims,
-      mountPrefixes: Object.fromEntries(sink.mountPrefixes),
+      meta: { mountPrefixes: Object.fromEntries(sink.mountPrefixes) },
       packs: packNamesByPath.get(rootPath) ?? [],
     });
   }

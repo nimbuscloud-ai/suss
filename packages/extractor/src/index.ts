@@ -1006,6 +1006,7 @@ export function paramToInput(param: RawParameter): Input {
   };
 }
 
+export { createCacheLayer, MAX_ENTRIES } from "./cache.js";
 export {
   buildUngatedExtractionReport,
   createPackTallies,
@@ -1021,6 +1022,15 @@ export {
 } from "./packHealth.js";
 export { createTimer, noopTimer } from "./timing.js";
 
+export type {
+  CacheAttribution,
+  CacheDiagnostic,
+  CacheInput,
+  CacheLayer,
+  CacheLookup,
+  PartialPlan,
+  RootRecord,
+} from "./cache.js";
 export type {
   EmptyStage,
   ExtractionReport,

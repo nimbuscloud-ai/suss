@@ -81,7 +81,6 @@ export type {
   TypeScriptAdapter,
   TypeScriptAdapterConfig,
 } from "./adapter.js";
-export type { CacheDiagnostic, CacheLookup } from "./cache.js";
 export type { FunctionRoot } from "./conditions.js";
 export type {
   ConfiguredCallContext,
