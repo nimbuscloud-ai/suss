@@ -115,7 +115,7 @@ describe("infer intent for a Lambda whose store comes from a variable", () => {
     ).toEqual(["unit:lambda ParameterSync", "unit:lambda SecretsRotator"]);
   });
 
-  it("reports a write to a secret the function never writes", () => {
+  it("reports a renamed secret as one finding", () => {
     const drift = path.join(root, "store");
     fs.mkdirSync(drift, { recursive: true });
     fs.writeFileSync(
@@ -127,15 +127,10 @@ describe("infer intent for a Lambda whose store comes from a variable", () => {
 
     const checked = checkIntent(drift);
 
-    expect(checked.findings.map((f) => f.kind)).toEqual([
-      "uncoveredOutcome",
-      "undeclaredOutcome",
-    ]);
-    expect(checked.findings[0].message).toContain(
-      "a write to aws.secretsmanager:prod/app/other-key",
-    );
-    expect(checked.findings[1].message).toContain(
-      "writes aws.secretsmanager:prod/app/api-key",
+    expect(checked.findings.map((f) => f.kind)).toEqual(["renamedBoundary"]);
+    expect(checked.findings[0].severity).toBe("error");
+    expect(checked.findings[0].message).toBe(
+      'Intent "unit-lambda-secrets-rotator" declares aws.secretsmanager:prod/app/other-key; SecretsRotator.handler writes aws.secretsmanager:prod/app/api-key instead, with the same outcomes. If the store was renamed, update the intent.',
     );
   });
 });

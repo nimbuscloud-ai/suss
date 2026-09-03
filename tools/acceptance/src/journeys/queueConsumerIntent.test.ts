@@ -307,7 +307,7 @@ describe("infer intent for a queue consumer that writes a table", () => {
     expect(reported[0].message).toContain("no PRD scenario says why");
   });
 
-  it("reports a declared write the consumer does not make", () => {
+  it("reports a renamed table as one finding", () => {
     const drift = driftedInto("write", DRAFT, (doc) =>
       doc.replaceAll("aws.dynamodb:Invoices", "aws.dynamodb:Receipts"),
     );
@@ -316,14 +316,14 @@ describe("infer intent for a queue consumer that writes a table", () => {
 
     expect(checked.status).toBe(1);
     expect(checked.intent.findings.map((f) => f.kind)).toEqual([
-      "uncoveredOutcome",
-      "undeclaredOutcome",
+      "renamedBoundary",
     ]);
+    expect(checked.intent.findings[0].severity).toBe("error");
     expect(checked.intent.findings[0].message).toContain(
-      "results in a write to aws.dynamodb:Receipts",
+      "declares aws.dynamodb:Receipts",
     );
-    expect(checked.intent.findings[1].message).toContain(
-      "writes aws.dynamodb:Invoices",
+    expect(checked.intent.findings[0].message).toContain(
+      "writes aws.dynamodb:Invoices instead",
     );
   });
 

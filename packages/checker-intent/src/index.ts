@@ -617,6 +617,11 @@ function compareIntentToImpl(
   const everyEffect = impl.transitions.flatMap((t) =>
     codeEffectsOf(t, deployment),
   );
+  // Declared boundaries the unit never touches at all, and undeclared
+  // ones it touches instead: the raw material for a renamedBoundary
+  // pairing once every outcome has been walked.
+  const vanished: VanishedBoundaryUse[] = [];
+  const undeclared: UndeclaredBoundaryUse[] = [];
 
   for (const outcome of intent.outcomes) {
     // An outcome that says only what it resulted in has no terminal to
@@ -631,14 +636,25 @@ function compareIntentToImpl(
       if (reached.some((made) => effectMatches(effect, made))) {
         continue;
       }
-      findings.push({
+      const finding: IntentFinding = {
         kind: "uncoveredOutcome",
         severity: "error",
         boundary,
         intent: { name: intent.name, outcomeId: outcome.id },
         code: ref,
         message: `Intent "${intent.name}" declares that ${outcome.id} results in ${describeEffect(effect)} at ${boundary}; no transition of ${impl.identity.name} does that.${unsettledNote(reached, effect, deployment)}`,
-      });
+      };
+      findings.push(finding);
+      if (neverTouchesBoundary(effect.names, everyEffect)) {
+        vanished.push({
+          finding,
+          boundary: effect.names,
+          does: effect.does,
+          kind: "effect",
+          effect,
+          reached,
+        });
+      }
     }
     if (outcome.kind === "effect") {
       continue;
@@ -671,14 +687,35 @@ function compareIntentToImpl(
       const unmet = stated.find(
         (c) => !ending.some((co) => conditionMet(c, co.turnsOn)),
       );
-      findings.push({
+      const finding: IntentFinding = {
         kind: "uncoveredOutcome",
         severity: "error",
         boundary,
         intent: { name: intent.name, outcomeId: outcome.id },
         code: ref,
-        message: `Intent "${intent.name}" declares ${describeOutcome(outcome)} at ${boundary} when ${unmet?.said ?? outcome.when}; ${impl.identity.name} produces it on a different condition.`,
-      });
+        message: unmetConditionMessage(
+          intent,
+          outcome,
+          boundary,
+          impl,
+          unmet,
+          everyEffect,
+        ),
+      };
+      findings.push(finding);
+      if (
+        unmet !== undefined &&
+        neverTouchesBoundary(unmet.at.names, everyEffect)
+      ) {
+        vanished.push({
+          finding,
+          boundary: unmet.at.names,
+          does: unmet.at.does,
+          kind: "condition",
+          unmet,
+          ending,
+        });
+      }
       continue;
     }
     const declaredBody = outcome.body;
@@ -758,17 +795,274 @@ function compareIntentToImpl(
       continue;
     }
     said.add(spelled);
-    findings.push({
+    const finding: IntentFinding = {
       kind: "undeclaredOutcome",
       severity: "info",
       boundary,
       intent: { name: intent.name },
       code: ref,
       message: `${impl.identity.name} ${spelled} at ${boundary}; intent "${intent.name}" does not declare it.`,
+    };
+    findings.push(finding);
+    undeclared.push({ finding, boundary: made.label, does: made.does });
+  }
+
+  return foldRenamedBoundaries(
+    intent,
+    impl,
+    boundary,
+    ref,
+    findings,
+    vanished,
+    undeclared,
+  );
+}
+
+/** Whether the unit makes no effect at all against a boundary, in any transition. */
+function neverTouchesBoundary(
+  names: string,
+  everyEffect: CodeEffect[],
+): boolean {
+  return everyEffect.every((made) => !namesBoundary(names, made.binding));
+}
+
+/**
+ * A clause naming a boundary the unit never touches anywhere gets a
+ * message that says so, since the branch conditions cannot be the
+ * reason. Otherwise the branch is produced under a different condition.
+ */
+function unmetConditionMessage(
+  intent: BoundaryIntentSummary,
+  outcome: IntentOutcome,
+  boundary: string,
+  impl: BehavioralSummary,
+  unmet: (IntentCondition & { at: IntentEffect }) | undefined,
+  everyEffect: CodeEffect[],
+): string {
+  const declared = `Intent "${intent.name}" declares ${describeOutcome(outcome)} at ${boundary} when ${unmet?.said ?? outcome.when}`;
+  if (
+    unmet !== undefined &&
+    neverTouchesBoundary(unmet.at.names, everyEffect)
+  ) {
+    return `${declared}; ${impl.identity.name} never ${unmet.at.does} ${unmet.at.names}.`;
+  }
+  return `${declared}; ${impl.identity.name} produces it on a different condition.`;
+}
+
+/** A declared effect boundary the unit never touches, that a rename could explain, with what `satisfiedBy` needs to check a candidate against it. */
+type VanishedBoundaryUse =
+  | {
+      finding: IntentFinding;
+      /** The boundary as the intent doc spelled it. */
+      boundary: string;
+      does: Relation;
+      kind: "effect";
+      effect: IntentEffect;
+      reached: CodeEffect[];
+    }
+  | {
+      finding: IntentFinding;
+      boundary: string;
+      does: Relation;
+      kind: "condition";
+      unmet: IntentCondition & { at: IntentEffect };
+      ending: CodeOutcome[];
+    };
+
+/** Whether a candidate boundary would satisfy this specific declared use. */
+function satisfiedBy(use: VanishedBoundaryUse, candidate: string): boolean {
+  if (use.kind === "effect") {
+    return use.reached.some((made) =>
+      effectMatches({ ...use.effect, names: candidate }, made),
+    );
+  }
+  return use.ending.some((co) =>
+    conditionMet(
+      { ...use.unmet, at: { ...use.unmet.at, names: candidate } },
+      co.turnsOn,
+    ),
+  );
+}
+
+/** A boundary the code touches that the intent never declares, that could be the renamed counterpart. */
+interface UndeclaredBoundaryUse {
+  finding: IntentFinding;
+  /** The boundary as the code spells it. */
+  boundary: string;
+  does: Relation;
+}
+
+/**
+ * Fold a declared boundary the unit never touches together with an
+ * undeclared one of the same storage system it touches instead, into
+ * one `renamedBoundary` finding, when the pairing is unambiguous.
+ * Everything the two produced (the uncovered-outcome and condition
+ * findings for the vanished boundary, the undeclared-effect findings
+ * for the one that appeared) is replaced by the one finding; anything
+ * left unpaired stays as it was, since a reader can act on those
+ * directly.
+ */
+function foldRenamedBoundaries(
+  intent: BoundaryIntentSummary,
+  impl: BehavioralSummary,
+  boundary: string,
+  ref: string,
+  findings: IntentFinding[],
+  vanished: VanishedBoundaryUse[],
+  undeclared: UndeclaredBoundaryUse[],
+): IntentFinding[] {
+  const vanishedByBoundary = groupByBoundary(vanished);
+  const undeclaredByBoundary = groupByBoundary(undeclared);
+  const pairings = matchRenamedBoundaries(
+    vanishedByBoundary,
+    undeclaredByBoundary,
+  );
+  if (pairings.length === 0) {
+    return findings;
+  }
+
+  const explained = new Set<IntentFinding>();
+  const renamed: IntentFinding[] = [];
+  for (const pairing of pairings) {
+    for (const use of pairing.vanishedUses) {
+      explained.add(use.finding);
+    }
+    for (const use of pairing.undeclaredUses) {
+      explained.add(use.finding);
+    }
+    renamed.push({
+      kind: "renamedBoundary",
+      severity: "error",
+      boundary,
+      intent: { name: intent.name },
+      code: ref,
+      message: `Intent "${intent.name}" declares ${pairing.from}; ${impl.identity.name} ${joinVerbs(pairing.does)} ${pairing.to} instead, with the same outcomes. If the store was renamed, update the intent.`,
     });
   }
 
-  return findings;
+  return [...findings.filter((finding) => !explained.has(finding)), ...renamed];
+}
+
+/** One boundary that vanished, paired with the one that appeared in its place, and the uses on both sides the one finding replaces. */
+interface RenamedBoundaryPairing {
+  from: string;
+  to: string;
+  does: Set<Relation>;
+  vanishedUses: VanishedBoundaryUse[];
+  undeclaredUses: UndeclaredBoundaryUse[];
+}
+
+/**
+ * Which vanished boundaries pair unambiguously with which undeclared
+ * ones: the two boundaries share a system prefix, their verbs match
+ * exactly, the undeclared boundary satisfies every declared use the
+ * vanished one had, and each side has exactly one candidate on the
+ * other.
+ */
+function matchRenamedBoundaries(
+  vanishedByBoundary: Map<string, VanishedBoundaryUse[]>,
+  undeclaredByBoundary: Map<string, UndeclaredBoundaryUse[]>,
+): RenamedBoundaryPairing[] {
+  const candidatesFor = new Map<string, RenamedBoundaryPairing[]>();
+  const candidateCountAgainst = new Map<string, number>();
+
+  for (const [from, uses] of vanishedByBoundary) {
+    // Reads and writes are how a store is touched. A queue channel or
+    // a deployed unit is addressed by name, and a callee swap is a
+    // defect the individual findings already describe.
+    const verbs = new Set(uses.map((use) => use.does));
+    if (!isStorageVerbs(verbs)) {
+      continue;
+    }
+    for (const [to, madeUses] of undeclaredByBoundary) {
+      if (!sameSystem(from, to)) {
+        continue;
+      }
+      if (!sameVerbs(verbs, new Set(madeUses.map((use) => use.does)))) {
+        continue;
+      }
+      if (!uses.every((use) => satisfiedBy(use, to))) {
+        continue;
+      }
+      pushCandidate(candidatesFor, from, {
+        from,
+        to,
+        does: verbs,
+        vanishedUses: uses,
+        undeclaredUses: madeUses,
+      });
+      incrementCount(candidateCountAgainst, to);
+    }
+  }
+
+  const pairings: RenamedBoundaryPairing[] = [];
+  for (const [, candidates] of candidatesFor) {
+    if (candidates.length !== 1) {
+      continue;
+    }
+    const [pairing] = candidates;
+    if (candidateCountAgainst.get(pairing.to) !== 1) {
+      continue;
+    }
+    pairings.push(pairing);
+  }
+  return pairings;
+}
+
+function pushCandidate<T>(map: Map<string, T[]>, key: string, value: T): void {
+  const existing = map.get(key);
+  if (existing === undefined) {
+    map.set(key, [value]);
+    return;
+  }
+  existing.push(value);
+}
+
+function incrementCount(map: Map<string, number>, key: string): void {
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+/** Whether every verb in the set is a store access. */
+function isStorageVerbs(verbs: Set<Relation>): boolean {
+  return [...verbs].every((verb) => verb === "reads" || verb === "writes");
+}
+
+function sameVerbs(a: Set<Relation>, b: Set<Relation>): boolean {
+  return a.size === b.size && [...a].every((verb) => b.has(verb));
+}
+
+/** Whether two boundary labels pick out the same storage system, and are not the same boundary. */
+function sameSystem(a: string, b: string): boolean {
+  return a !== b && systemPrefix(a) === systemPrefix(b);
+}
+
+function systemPrefix(name: string): string {
+  const colon = name.indexOf(":");
+  return colon === -1 ? name : name.slice(0, colon + 1);
+}
+
+function joinVerbs(verbs: Set<Relation>): string {
+  const list = [...verbs];
+  if (list.length < 2) {
+    return list.join("");
+  }
+  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
+
+/** Buckets by `.boundary` directly, rather than through a caller-supplied key function. */
+function groupByBoundary<T extends { boundary: string }>(
+  items: T[],
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const bucket = groups.get(item.boundary);
+    if (bucket === undefined) {
+      groups.set(item.boundary, [item]);
+      continue;
+    }
+    bucket.push(item);
+  }
+  return groups;
 }
 
 /**
