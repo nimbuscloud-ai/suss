@@ -21,7 +21,7 @@ import {
 import { omissionNote, SHOWN, trim } from "./budget.js";
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { Project } from "./project.js";
+import type { BuildReport, Project } from "./project.js";
 
 /** What a tool hands back, in the shape the protocol states. */
 export type ToolResult = CallToolResult;
@@ -205,19 +205,44 @@ function labelOf(one: { key: string | null; name: string }): string {
   return one.key ?? one.name;
 }
 
+const BUILDING_LINE = "Building: the first extract has not finished yet.";
+
 export function statusTool(project: Project): ToolResult {
   const report = project.lastBuild();
-  const text = report.configured
+  const building = project.building();
+  return {
+    content: [{ type: "text", text: statusText(project, report, building) }],
+    structuredContent: { ...report, building } as unknown as Record<
+      string,
+      unknown
+    >,
+  };
+}
+
+/**
+ * Nothing is known about whether the project is configured until the
+ * first build finishes, so a build in flight with no prior result says
+ * only that. A rebuild in flight still has a completed prior result to
+ * show beneath the same line.
+ */
+function statusText(
+  project: Project,
+  report: BuildReport,
+  building: boolean,
+): string {
+  if (building && !project.hasBuilt()) {
+    return BUILDING_LINE;
+  }
+  const lines = report.configured
     ? [
         `Answering from ${report.summaryDir}, rebuilt when a source file changes.`,
         ...report.ran.map((one) => `  ran: ${one}`),
         ...report.failed.map((one) => `  failed: ${one}`),
-      ].join("\n")
-    : `${project.root} has no suss.json, so nothing was extracted and every answer will be empty. Run \`suss init\` in that directory.`;
-  return {
-    content: [{ type: "text", text }],
-    structuredContent: report as unknown as Record<string, unknown>,
-  };
+      ]
+    : [
+        `${project.root} has no suss.json, so nothing was extracted and every answer will be empty. Run \`suss init\` in that directory.`,
+      ];
+  return building ? [BUILDING_LINE, ...lines].join("\n") : lines.join("\n");
 }
 
 /**

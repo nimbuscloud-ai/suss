@@ -41,12 +41,16 @@ export type { BuildReport, ProjectOptions } from "./project.js";
  *
  * The caller connects it to a transport, so the same server runs over
  * stdio from the binary or inside a host that speaks something else.
+ * The project starts building in the background rather than being
+ * awaited here, so the caller can connect before the first extract
+ * finishes; a tool call that arrives first waits on project.settled().
  */
-export async function createServer(
-  options: ProjectOptions,
-): Promise<{ server: McpServer; project: Project }> {
+export function createServer(options: ProjectOptions): {
+  server: McpServer;
+  project: Project;
+} {
   const project = new Project(options);
-  await project.start();
+  void project.start();
 
   const server = new McpServer({
     name: "suss",

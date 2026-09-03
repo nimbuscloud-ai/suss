@@ -210,6 +210,26 @@ describe("Project", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }, 60_000);
 
+  it("reports a build that throws instead of leaving settled() waiting forever", async () => {
+    // A malformed entry (nothing checks the shape of one) makes
+    // describeEntry throw a second time while reporting the first
+    // throw, and that second one is what nothing else catches.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-crash-"));
+    fs.writeFileSync(
+      path.join(root, "suss.json"),
+      JSON.stringify({ version: 1, read: [null] }),
+    );
+
+    const project = new Project({ root, watch: false });
+    const report = await project.start();
+
+    expect(report.failed).toHaveLength(1);
+    await project.settled();
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
   it("starts a rebuild on its own when a source file changes", async () => {
     // This is why the server watches rather than extracting once. An
     // agent edits a file and asks a question seconds later, and the
@@ -250,6 +270,55 @@ describe("Project", () => {
     project.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  it("returns before the first build finishes, so a caller can open a transport first", async () => {
+    const root = fs.mkdtempSync(
+      path.join(os.tmpdir(), "suss-proj-nonblocking-"),
+    );
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: false });
+
+    const build = project.start();
+    expect(project.building()).toBe(true);
+    expect(project.lastBuild().configured).toBe(false);
+
+    const report = await build;
+    expect(report.configured).toBe(true);
+    expect(project.building()).toBe(false);
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
+  it("waits for the first build in settled(), not just a later rebuild", async () => {
+    const root = fs.mkdtempSync(
+      path.join(os.tmpdir(), "suss-proj-settle-first-"),
+    );
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: false });
+
+    project.start();
+    await project.settled();
+
+    expect(project.lastBuild().configured).toBe(true);
+    expect(project.building()).toBe(false);
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
+  it("says hasBuilt only once a build has finished", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-hasbuilt-"));
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: false });
+
+    expect(project.hasBuilt()).toBe(false);
+    await project.start();
+    expect(project.hasBuilt()).toBe(true);
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
 });
 
 describe("worthRebuilding", () => {

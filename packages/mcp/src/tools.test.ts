@@ -217,11 +217,55 @@ describe("the tools, on a project bigger than one answer", () => {
         ran: ["extract tsconfig.json"],
         failed: ["contract openapi.yaml: unreadable"],
       }),
+      building: () => false,
     } as unknown as Project;
 
     const text = textOf(statusTool(project));
     expect(text).toContain("ran: extract tsconfig.json");
     expect(text).toContain("failed: contract openapi.yaml: unreadable");
+  });
+
+  it("says only that a build is in flight when the first one has not finished", () => {
+    const project = {
+      root: "/nowhere",
+      lastBuild: () => ({
+        configured: false,
+        summaryDir: "/nowhere/.suss",
+        ran: [],
+        failed: [],
+      }),
+      building: () => true,
+      hasBuilt: () => false,
+    } as unknown as Project;
+
+    const result = statusTool(project);
+    const text = textOf(result);
+    expect(text).toBe("Building: the first extract has not finished yet.");
+    const payload = result.structuredContent as { building: boolean };
+    expect(payload.building).toBe(true);
+  });
+
+  it("shows the last report ahead of a rebuild in flight, not just that it is building", () => {
+    const project = {
+      root: "/nowhere",
+      lastBuild: () => ({
+        configured: true,
+        summaryDir: "/nowhere/.suss",
+        ran: ["extract tsconfig.json"],
+        failed: [],
+      }),
+      building: () => true,
+      hasBuilt: () => true,
+    } as unknown as Project;
+
+    const result = statusTool(project);
+    const text = textOf(result);
+    expect(
+      text.startsWith("Building: the first extract has not finished yet."),
+    ).toBe(true);
+    expect(text).toContain("ran: extract tsconfig.json");
+    const payload = result.structuredContent as { building: boolean };
+    expect(payload.building).toBe(true);
   });
 
   it("says a project with nothing set up will answer nothing", async () => {
