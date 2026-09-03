@@ -1006,6 +1006,28 @@ export function paramToInput(param: RawParameter): Input {
   };
 }
 
+export {
+  buildUngatedExtractionReport,
+  createPackTallies,
+  emptyTally,
+  recordPackFailure,
+  summaryCountsByPack,
+  tallyUnit,
+} from "./extractionReport.js";
+export {
+  evaluatePackHealth,
+  formatPackHealth,
+  packGradients,
+} from "./packHealth.js";
+export { createTimer, noopTimer } from "./timing.js";
+
+export type {
+  EmptyStage,
+  ExtractionReport,
+  PackFailure,
+  PackFunnel,
+  PackTally,
+} from "./extractionReport.js";
 export type {
   AstCapableOps,
   CallOps,
@@ -1017,3 +1039,9 @@ export type {
   ValueEntry,
   ValueOps,
 } from "./ops.js";
+export type {
+  HealthCheck,
+  HealthViolation,
+  PackGradient,
+} from "./packHealth.js";
+export type { Timer, TimingReport } from "./timing.js";

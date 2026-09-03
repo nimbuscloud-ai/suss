@@ -36,8 +36,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
-import { evaluatePackHealth } from "../packages/adapter/typescript/dist/index.js";
 import { checkAll, pairSummaries } from "../packages/checker/dist/index.js";
+import { evaluatePackHealth } from "../packages/extractor/dist/index.js";
 import {
   declaredExports,
   librarySummariesBySurface,

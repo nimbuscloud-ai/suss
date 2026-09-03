@@ -6,13 +6,12 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { evaluatePackHealth, formatPackHealth } from "@suss/extractor";
 import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "./adapter.js";
-import { evaluatePackHealth, formatPackHealth } from "./packHealth.js";
 
-import type { PatternPack } from "@suss/extractor";
-import type { ExtractionReport } from "./diagnostics.js";
+import type { ExtractionReport, PatternPack } from "@suss/extractor";
 
 const SOURCE = "export const handler = () => ({ status: 200 });\n";
 

@@ -14,12 +14,12 @@
  * over a list of pairs rather than one check written per stage.
  */
 
-import type { DeclaredMatch } from "@suss/extractor";
 import type {
   ExtractionReport,
   PackFailure,
   PackFunnel,
-} from "./diagnostics.js";
+} from "./extractionReport.js";
+import type { DeclaredMatch } from "./framework.js";
 
 /** One thing that looks wrong, reported the way the dogfood invariants are. */
 export interface HealthViolation {

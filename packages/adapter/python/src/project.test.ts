@@ -8,6 +8,7 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
+import type { ExtractionReport, TimingReport } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 
 const flaskRestxLike: PythonPack = {
@@ -493,5 +494,69 @@ describe("a route whose body talks to the database", () => {
         effect.interaction.class === "storage-access",
     );
     expect(storage).toHaveLength(1);
+  });
+});
+
+describe("the extraction report", () => {
+  it("counts files, units and summaries by pack, and times each phase", async () => {
+    write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    write(
+      "myapp/routes/todos.py",
+      'from myapp.wrappers.restx import route\n\n\n@route("/todos")\nclass TodoList:\n    def get(self):\n        return []\n',
+    );
+    write("myapp/routes/README.py", "# not a route\n");
+    const files = [...findPythonFiles(tmpDir)];
+
+    let report: ExtractionReport | undefined;
+    let timing: TimingReport | undefined;
+    await extractPythonProject({
+      files,
+      roots: [tmpDir],
+      packs: [
+        {
+          ...flaskRestxLike,
+          projectModules: ["myapp.wrappers.restx"],
+        },
+      ],
+      onExtractionReport: (r) => {
+        report = r;
+      },
+      onTiming: (t) => {
+        timing = t;
+      },
+    });
+
+    expect(report?.filesWalked).toBe(files.length);
+    expect(report?.summaries).toBe(1);
+    const funnel = report?.packs.find((p) => p.pack === "flask-restx");
+    expect(funnel?.gates).toEqual([]);
+    expect(funnel?.candidateFiles).toBe(files.length);
+    expect(funnel?.unitsDiscovered).toBe(1);
+    expect(funnel?.summariesProduced).toBe(1);
+    expect(funnel?.summariesBound).toBe(1);
+
+    const phases = new Set(timing?.phases.map((phase) => phase.label));
+    expect(phases).toEqual(new Set(["parse", "discover", "summarize"]));
+  });
+
+  it("blames discovery when files were found but no route matched", async () => {
+    write("myapp/routes/todos.py", "def not_a_route():\n    return []\n");
+    const files = [...findPythonFiles(tmpDir)];
+
+    let report: ExtractionReport | undefined;
+    await extractPythonProject({
+      files,
+      roots: [tmpDir],
+      packs: [flaskRestxLike],
+      onExtractionReport: (r) => {
+        report = r;
+      },
+    });
+
+    expect(report?.summaries).toBe(0);
+    expect(report?.emptyStage).toBe("discovery");
   });
 });

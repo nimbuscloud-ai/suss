@@ -6,8 +6,8 @@ import {
   packGradients,
 } from "./packHealth.js";
 
-import type { DeclaredMatch } from "@suss/extractor";
-import type { PackFunnel } from "./diagnostics.js";
+import type { PackFunnel } from "./extractionReport.js";
+import type { DeclaredMatch } from "./framework.js";
 
 const funnel = (over: Partial<PackFunnel> = {}): PackFunnel => ({
   pack: "demo",
@@ -216,6 +216,23 @@ describe("the remaining checks", () => {
     expect(
       firedBy("no pack collides with itself", [funnel({ selfCollisions: 2 })]),
     ).toHaveLength(1);
+  });
+
+  it("names a pack that threw, with the file and message from its first failure", () => {
+    const found = firedBy("no pack throws while it reads", [
+      funnel({
+        failures: [
+          { hook: "discoverUnits", file: "a.ts", message: "boom" },
+          { hook: "discoverUnits", file: "b.ts", message: "also boom" },
+        ],
+      }),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.detail).toBe("discoverUnits on a.ts (+1 more): boom");
+  });
+
+  it("stays quiet about a pack whose hooks never threw", () => {
+    expect(firedBy("no pack throws while it reads", [funnel()])).toEqual([]);
   });
 });
 

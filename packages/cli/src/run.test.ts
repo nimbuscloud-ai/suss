@@ -541,6 +541,31 @@ describe("runCli extract", () => {
     expect(written.map((s) => s.identity.name)).toContain("read_item");
   });
 
+  it("prints a file-by-file funnel and phase timing for a Python project", async () => {
+    const outFile = path.join(tmpDir, "python-explain.json");
+    const { exit, io } = await capture(() =>
+      runCli([
+        "extract",
+        "--lang",
+        "python",
+        "--dir",
+        pythonFixture,
+        "-f",
+        "fastapi",
+        "-o",
+        outFile,
+        "--explain",
+        "--timing",
+      ]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("Where these came from:");
+    expect(io.stderr).toContain("files fastapi looked at");
+    expect(io.stderr).toContain("summaries from fastapi");
+    expect(io.stderr).toContain("Timing:");
+    expect(io.stderr).not.toContain("does not write a file-by-file breakdown");
+  });
+
   it("keeps reading a subdirectory of a TypeScript monorepo as TypeScript", async () => {
     // Source resolution walks up to the root tsconfig, so language
     // resolution has to agree with it.

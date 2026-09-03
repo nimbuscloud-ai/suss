@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { extractRubyProject, findRubyFiles } from "./project.js";
 
+import type { ExtractionReport, TimingReport } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
 
 let tmpDir: string;
@@ -491,5 +492,64 @@ describe("the method behind a field", () => {
           effect.interaction.class === "storage-access",
       );
     expect(storage).toHaveLength(1);
+  });
+});
+
+describe("the extraction report", () => {
+  it("counts files, units and summaries by pack, and times each phase", async () => {
+    const graphqlRoot = path.join(tmpDir, "app", "graphql");
+    const campaignType = write(
+      "app/graphql/types/campaign_type.rb",
+      "class Types::CampaignType < Types::BaseObject\n  field :id, ID, null: false\nend\n",
+    );
+    const notAType = write(
+      "app/graphql/types/README.rb",
+      "# not a graphql type\n",
+    );
+
+    let report: ExtractionReport | undefined;
+    let timing: TimingReport | undefined;
+    await extractRubyProject({
+      files: [campaignType, notAType],
+      packs: [graphqlRubyPack(graphqlRoot)],
+      workspaceRoot: tmpDir,
+      onExtractionReport: (r) => {
+        report = r;
+      },
+      onTiming: (t) => {
+        timing = t;
+      },
+    });
+
+    expect(report?.filesWalked).toBe(2);
+    expect(report?.summaries).toBe(1);
+    const funnel = report?.packs.find((p) => p.pack === "graphql-ruby");
+    expect(funnel?.gates).toEqual([]);
+    expect(funnel?.candidateFiles).toBe(2);
+    expect(funnel?.unitsDiscovered).toBe(1);
+    expect(funnel?.summariesProduced).toBe(1);
+    expect(funnel?.summariesBound).toBe(1);
+
+    const phases = new Set(timing?.phases.map((phase) => phase.label));
+    expect(phases).toEqual(new Set(["parse", "discover", "summarize"]));
+  });
+
+  it("blames discovery when files were found but no field matched", async () => {
+    const file = write(
+      "app/graphql/my_app_schema.rb",
+      "class MyAppSchema < GraphQL::Schema\n  query Types::QueryType\nend\n",
+    );
+
+    let report: ExtractionReport | undefined;
+    await extractRubyProject({
+      files: [file],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+      onExtractionReport: (r) => {
+        report = r;
+      },
+    });
+
+    expect(report?.summaries).toBe(0);
+    expect(report?.emptyStage).toBe("discovery");
   });
 });
