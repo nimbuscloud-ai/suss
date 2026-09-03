@@ -12,8 +12,14 @@ import { createServer } from "./index.js";
 
 async function main(): Promise<void> {
   const root = process.argv[2] ?? process.cwd();
-  const { server, project } = await createServer({ root });
+  const { server, project } = createServer({ root });
 
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+
+  // Written once the first build finishes rather than at startup, so
+  // the handshake above never waits on a cold extract.
+  await project.settled();
   const report = project.lastBuild();
   if (!report.configured) {
     process.stderr.write(
@@ -23,9 +29,6 @@ async function main(): Promise<void> {
   for (const failure of report.failed) {
     process.stderr.write(`[suss] ${failure}\n`);
   }
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
 
   const stop = (): void => {
     project.close();

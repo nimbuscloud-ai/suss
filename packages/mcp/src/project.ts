@@ -85,6 +85,8 @@ export class Project {
   private running: Promise<BuildReport> | null = null;
   /** The summary directory as last read, dropped when a build rewrites it. */
   private loaded: LoadedSummaries | null = null;
+  /** Whether a build has ever finished, so lastBuild() is known to describe the project rather than the placeholder set before the first one. */
+  private everBuilt = false;
 
   constructor(options: ProjectOptions) {
     // Resolved through any symlink, because a recursive watch reports
@@ -111,13 +113,25 @@ export class Project {
   /**
    * Read the project and run what it says. Split out of the
    * constructor because both commands it runs are async.
+   *
+   * Kicks the build off and returns before it finishes, so a caller can
+   * open its transport while the first extract still runs. A question
+   * asked in that window waits on settled() instead of blocking startup.
+   *
+   * The watcher is armed once that build finishes rather than
+   * alongside it, because a filesystem watch armed moments after a
+   * project's own files are written can echo those same writes back as
+   * change events and rebuild for no reason.
    */
-  async start(): Promise<BuildReport> {
-    const report = await this.build();
+  start(): Promise<BuildReport> {
+    const build = this.runBuild();
+    this.running = build.finally(() => {
+      this.running = null;
+    });
     if (this.watchWanted) {
-      this.watch();
+      void build.then(() => this.watch());
     }
-    return report;
+    return build;
   }
 
   /** The last build, so a tool can say where its answer came from. */
@@ -125,7 +139,17 @@ export class Project {
     return this.report;
   }
 
-  /** Wait for a rebuild in flight, so a question reads a settled directory. */
+  /** Whether the first build or a watch-triggered rebuild is still running. */
+  building(): boolean {
+    return this.running !== null;
+  }
+
+  /** Whether a build has ever finished, so a caller can tell the placeholder before the first one apart from a project that has no suss.json. */
+  hasBuilt(): boolean {
+    return this.everBuilt;
+  }
+
+  /** Wait for a build in flight, whether the first one or a rebuild, so a question reads a settled directory. */
   async settled(): Promise<void> {
     await this.running;
   }
@@ -156,6 +180,7 @@ export class Project {
 
     if (this.config === null) {
       this.loaded = null;
+      this.everBuilt = true;
       this.report = {
         summaryDir: this.summaryDir,
         ran,
@@ -178,6 +203,7 @@ export class Project {
     // Dropped after the writes rather than before, so a question asked
     // during a build cannot leave a half-written directory cached.
     this.loaded = null;
+    this.everBuilt = true;
     this.report = {
       summaryDir: this.summaryDir,
       ran,
@@ -185,6 +211,30 @@ export class Project {
       configured: true,
     };
     return this.report;
+  }
+
+  /**
+   * Run a build and never let it reject.
+   *
+   * Every command build() runs is already caught per entry, so this
+   * only guards against something outside that, such as the project
+   * file read. A rejection here would leave settled() waiting on a
+   * promise nobody catches, which is worse than reporting the failure.
+   */
+  private async runBuild(): Promise<BuildReport> {
+    try {
+      return await this.build();
+    } catch (error) {
+      this.loaded = null;
+      this.everBuilt = true;
+      this.report = {
+        summaryDir: this.summaryDir,
+        ran: [],
+        failed: [messageOf(error)],
+        configured: this.report.configured,
+      };
+      return this.report;
+    }
   }
 
   /**
@@ -230,7 +280,7 @@ export class Project {
     }
     this.pending = setTimeout(() => {
       this.pending = null;
-      this.running = this.build().finally(() => {
+      this.running = this.runBuild().finally(() => {
         this.running = null;
       });
     }, this.settleMs);

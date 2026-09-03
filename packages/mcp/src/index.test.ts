@@ -72,12 +72,18 @@ function writeProject(root: string): void {
   );
 }
 
-/** A client talking to the server over a linked pair of transports. */
+/**
+ * A client talking to the server over a linked pair of transports, with
+ * the first build already settled. Most tests here check what a tool
+ * returns once the project is built, not the startup order itself, so
+ * this waits rather than each test racing the build.
+ */
 async function connect(root: string): Promise<{ client: Client }> {
-  const { server } = await createServer({ root, watch: false });
+  const { server, project } = createServer({ root, watch: false });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+  await project.settled();
   return { client };
 }
 
@@ -260,14 +266,47 @@ describe("the suss MCP server", () => {
 
   it("says a project with no suss.json will answer nothing, rather than failing to start", async () => {
     const bare = fs.mkdtempSync(path.join(os.tmpdir(), "suss-mcp-bare-"));
-    const { project: bareProject } = await createServer({
+    const { project: bareProject } = createServer({
       root: bare,
       watch: false,
     });
+    await bareProject.settled();
     expect(bareProject.lastBuild().configured).toBe(false);
     bareProject.close();
     fs.rmSync(bare, { recursive: true, force: true });
   });
+
+  it("answers a tool call made right after createServer returns, before the first build finishes", async () => {
+    const freshRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-mcp-fresh-"));
+    writeProject(freshRoot);
+    const { server, project } = createServer({ root: freshRoot, watch: false });
+
+    // createServer does not wait on the first build, so this is still
+    // running by the time it returns.
+    expect(project.building()).toBe(true);
+
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    const freshClient = new Client({ name: "test", version: "0" });
+    await Promise.all([
+      server.connect(serverSide),
+      freshClient.connect(clientSide),
+    ]);
+
+    const result = await freshClient.callTool({
+      name: "suss_ask",
+      arguments: { question: "what does src/client.ts reach" },
+    });
+    const answer = result.structuredContent as {
+      found: boolean;
+      shape: string;
+    };
+    expect(answer.found).toBe(true);
+    expect(answer.shape).toBe("reaches");
+    expect(project.building()).toBe(false);
+
+    project.close();
+    fs.rmSync(freshRoot, { recursive: true, force: true });
+  }, 60_000);
 });
 
 describe("the stub draft tool on a Python project", () => {
@@ -280,7 +319,7 @@ describe("the stub draft tool on a Python project", () => {
         "from acme.routing.resource import Resource",
       ].join("\n"),
     );
-    const { server, project } = await createServer({
+    const { server, project } = createServer({
       root: pyRoot,
       watch: false,
     });

@@ -55,10 +55,16 @@ usually the thing to act on.
 
 ## Staying current
 
-On start the server reads `suss.json`, runs the extract and contract
-commands it says, and keeps the summaries in a directory of its own. It
-then watches the tree, and re-runs those commands when a source file
-changes, after the writes stop for 400ms.
+The server connects to its host first and reads `suss.json` in the
+background, so a host with a short connect timeout never waits on a
+cold extract. A tool call that arrives before that first build finishes
+waits for it rather than answering from nothing; `suss_status` says a
+build is in flight rather than waiting.
+
+Once the first build finishes, the server keeps the summaries in a
+directory of its own and watches the tree, re-running the extract and
+contract commands `suss.json` says when a source file changes, after
+the writes stop for 400ms.
 
 Re-extracting is cheap after the first run. `suss extract` keeps a
 per-file cache keyed on content, so an edit to one file rebuilds one
@@ -76,9 +82,13 @@ put it on its own transport:
 ```ts
 import { createServer } from "@suss/mcp";
 
-const { server, project } = await createServer({ root: "/path/to/project" });
+const { server, project } = createServer({ root: "/path/to/project" });
 await server.connect(myTransport);
 ```
+
+`createServer` does not wait on the first build, so connect right
+away. Await `project.settled()` first if a caller needs the build
+finished before doing anything else.
 
 Pass `watch: false` to extract once and leave it. Pass `summaryDir` to
 put the summaries somewhere you choose instead of a temporary
