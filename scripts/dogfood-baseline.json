@@ -2,7 +2,7 @@
   "totals": {
     "packages": 68,
     "packagesWithExports": 68,
-    "exports": 789,
+    "exports": 792,
     "internal": 2783,
     "consumers": 1426,
     "pairs": 1411,
@@ -355,7 +355,7 @@
     },
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
-      "exports": 2,
+      "exports": 4,
       "internal": 12,
       "consumers": 28,
       "unfollowedCalls": 6
@@ -439,7 +439,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 39,
+      "exports": 40,
       "internal": 135,
       "consumers": 0,
       "unfollowedCalls": 9
