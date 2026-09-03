@@ -2743,7 +2743,7 @@ describe("suss ask, when a subject picks out more than one boundary", () => {
     );
   });
 
-  it("refuses the same package name as a reads subject, since the check comes free from the same helper", () => {
+  it("refuses the same package name as a reads subject", () => {
     const { output, code } = answer("what reads @suss/checker", [
       analyzeFlow,
       checkAll,
