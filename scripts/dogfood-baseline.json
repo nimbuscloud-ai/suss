@@ -3,10 +3,10 @@
     "packages": 68,
     "packagesWithExports": 68,
     "exports": 772,
-    "internal": 2779,
-    "consumers": 1390,
-    "pairs": 1378,
-    "unfollowedCalls": 358,
+    "internal": 2783,
+    "consumers": 1391,
+    "pairs": 1379,
+    "unfollowedCalls": 365,
     "findingErrors": 0
   },
   "packages": {
@@ -20,9 +20,9 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 65,
-      "internal": 158,
-      "consumers": 48,
-      "unfollowedCalls": 27
+      "internal": 162,
+      "consumers": 49,
+      "unfollowedCalls": 34
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
