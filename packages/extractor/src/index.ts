@@ -1006,6 +1006,12 @@ export function paramToInput(param: RawParameter): Input {
   };
 }
 
+export {
+  computeContentHash,
+  computeDistHashFrom,
+  createAdapterStamp,
+  projectFileStamp,
+} from "./adapterStamp.js";
 export { createCacheLayer, MAX_ENTRIES } from "./cache.js";
 export {
   buildUngatedExtractionReport,
@@ -1022,6 +1028,7 @@ export {
 } from "./packHealth.js";
 export { createTimer, noopTimer } from "./timing.js";
 
+export type { AdapterCodeStamp, AdapterStamp } from "./adapterStamp.js";
 export type {
   CacheAttribution,
   CacheDiagnostic,
