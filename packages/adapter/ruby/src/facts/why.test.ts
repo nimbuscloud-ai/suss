@@ -45,6 +45,46 @@ describe("RubyWhySession", () => {
     ]);
   });
 
+  it("follows a bare module method read to its definition", () => {
+    fs.writeFileSync(
+      path.join(dir, "helpers.rb"),
+      "module Helpers\n  def self.fetch\n    1\n  end\nend\n",
+    );
+    fs.writeFileSync(path.join(dir, "app.rb"), "x = Helpers.fetch\n");
+
+    const session = new RubyWhySession({ dir });
+    const value = session.findExpression("app.rb", 1, "fetch");
+    expect(value).not.toBeNull();
+    const explained = value === null ? null : session.explain(value);
+
+    expect(explained).not.toBeNull();
+    expect(explained?.target).toEqual({
+      name: "fetch",
+      file: "helpers.rb",
+      line: 2,
+    });
+  });
+
+  it("follows a method read through a nested module", () => {
+    fs.writeFileSync(
+      path.join(dir, "helpers.rb"),
+      "module A\n  module B\n    def self.fetch\n      1\n    end\n  end\nend\n",
+    );
+    fs.writeFileSync(path.join(dir, "app.rb"), "x = A::B.fetch\n");
+
+    const session = new RubyWhySession({ dir });
+    const value = session.findExpression("app.rb", 1, "fetch");
+    expect(value).not.toBeNull();
+    const explained = value === null ? null : session.explain(value);
+
+    expect(explained).not.toBeNull();
+    expect(explained?.target).toEqual({
+      name: "fetch",
+      file: "helpers.rb",
+      line: 3,
+    });
+  });
+
   it("finds the callee a summary recorded, in the caller's own lines", () => {
     fs.writeFileSync(
       path.join(dir, "helpers.rb"),

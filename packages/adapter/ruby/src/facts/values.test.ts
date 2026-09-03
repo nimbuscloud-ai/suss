@@ -170,6 +170,38 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  it("makes a module an object containing its singleton methods", async () => {
+    const db = await factsFor("module Helpers\n  def self.fetch\n  end\nend\n");
+    const [mod] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([
+      [mod?.[0], "fetch", method?.[0]],
+    ]);
+  });
+
+  it("gives a nested module its own object, apart from its enclosing one", async () => {
+    const db = await factsFor(
+      "module A\n  module B\n    def self.fetch\n    end\n  end\nend\n",
+    );
+    const objects = rows(db, "objectValue").map((row) => row[0]);
+    expect(objects).toHaveLength(2);
+    const [method] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([
+      [objects[1], "fetch", method?.[0]],
+    ]);
+  });
+
+  it("resolves a module_function method the same way as one written with self.", async () => {
+    const db = await factsFor(
+      "module Helpers\n  module_function\n\n  def fetch\n  end\nend\n",
+    );
+    const [mod] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([
+      [mod?.[0], "fetch", method?.[0]],
+    ]);
+  });
+
   it("keeps two classes' methods of one name apart", async () => {
     const db = await factsFor(
       "class First\n  def load\n  end\nend\n\nclass Second\n  def load\n  end\nend\n",

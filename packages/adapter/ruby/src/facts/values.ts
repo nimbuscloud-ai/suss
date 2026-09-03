@@ -2,7 +2,7 @@
 // The relation names and shapes come from that package's own header, and the
 // README says which Ruby constructs differ from the other adapters.
 
-import { field, OWN_BODY_TYPES } from "../ast.js";
+import { field, NESTING_TYPES, OWN_BODY_TYPES } from "../ast.js";
 
 import type { Database } from "@suss/datalog";
 import type { RbNode } from "../parser.js";
@@ -387,9 +387,10 @@ function emitAssignment(emitter: Emitter, assignment: RbNode): void {
 const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
 /**
- * A class is an object containing its methods, which is the treatment an
- * array and a hash already get. That is what lets a method read off an
- * instance resolve to the method the class declares.
+ * A class or a module is an object containing its methods, which is the
+ * treatment an array and a hash already get. That is what lets a method
+ * read off an instance resolve to the method the class declares, and a
+ * bare call on a module resolve to a method it declares.
  */
 function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   const classKey = nodeId(emitter.filePath, cls);
@@ -418,6 +419,12 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
           valueKey(emitter, right),
         );
       }
+      continue;
+    }
+    if (NESTING_TYPES.has(statement.type)) {
+      // A nested class or module is an object of its own. Its key is the
+      // node collectFileConstants binds a qualified name like A::B to.
+      emitClassFacts(emitter, statement);
       continue;
     }
     if (!METHOD_TYPES.has(statement.type)) {
@@ -456,7 +463,7 @@ export function emitValueFacts(
 
   const walk = (node: RbNode): void => {
     for (const child of children(node)) {
-      if (child.type === "class") {
+      if (NESTING_TYPES.has(child.type)) {
         declaresName(child, emitClassFacts(emitter, child));
         // Its methods are its own; descending would make them the file's.
         continue;
