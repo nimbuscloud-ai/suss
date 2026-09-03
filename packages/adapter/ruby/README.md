@@ -6,7 +6,7 @@ Ruby language adapter for suss. It parses source with tree-sitter (WASM), resolv
 
 `@suss/adapter-ruby` is the Ruby language adapter, per [`docs/internal/facts-and-rules.md`](../../../docs/internal/facts-and-rules.md)'s Layer 1 contract: discover units, emit summaries in the shared IR, emit facts. It parses a file with `web-tree-sitter` and a vendored Ruby grammar (`grammar/tree-sitter-ruby.wasm`, no native build step), tracks class/module nesting to qualify a constant the way Ruby itself would resolve it lexically, and discovers graphql-ruby's class-based `field` DSL on a class extending a pack-configured base class. A `field :x, mutation: Mutations::Y` or `field :x, resolver: Queries::Z` reference is followed one hop: the referenced class's own file is located by Rails' constant-to-path convention and read for its declared return type. Discovered units become `RawCodeStructure` objects handed to `@suss/extractor`'s `assembleSummary`, the same assembly code the other adapters use.
 
-v0 (this slice) reads graphql-ruby only: `routes.rb` is a separate, much larger macro-expansion problem, which the [language-adapters proposal](../../../design/proposals/language-adapters.md) costs out and leaves for later. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since v0 does no path-engine work, and confidence is pinned low.
+The adapter reads graphql-ruby only. Rails routing (`config/routes.rb`) is a separate, much larger macro-expansion problem, which the [language-adapters proposal](../../../design/proposals/language-adapters.md) costs out and leaves for later. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since a graphql field does no path-engine work, and confidence is pinned low.
 
 ## The method behind a field
 
@@ -190,6 +190,34 @@ plain `require` is not followed, because where it loads from depends on the
 load path at run time. A file that depends on nothing in the project gets an
 empty list rather than no field, so a Lambda handler that only requires gems
 still tells the checker that its closure is the handler file alone.
+
+## What a field's resolver reaches
+
+A field's resolver method calls project methods, and those call others. Each method the field reaches this way gets a summary of its own, of kind `library`, bound as `function-call` with `transport: "in-process"` and `recognition: "reachable"`, with the calls, environment reads and database work its own body does. Each invocation effect on a field or a reached method says which summary the call lands on, in `summary`, so a reader answering "what does this field reach" follows `summary` from one unit to the next and never has to match a name.
+
+The walk starts at the resolver method behind every discovered field (the one the section above finds), and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A method two actions both reach gets one summary. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call into a gem, or one with no declaration this reader could find).
+
+Ruby has no lexical binder for a local variable, so a callee is only followed when the source spells out where it goes: through the class ancestry `ancestry.ts` already computes, or through a method the project writes outside any class, which Ruby mixes into every object as a private method.
+
+| Written as | Followed to |
+| --- | --- |
+| `helper` or `self.helper`, called bare in a method | that method in the enclosing class's own ancestry |
+| `helper`, when nothing in the enclosing ancestry defines it | `def helper` written outside any class, project-wide |
+| `Service.new.method` | `method` in `Service`'s own ancestry |
+| `Service.method` | `def self.method` written in `Service`'s own body |
+
+Where it stops, and what the gap says:
+
+| Written as | Reason |
+| --- | --- |
+| `obj.send(:method)`, `public_send`, `__send__` | a dynamic send this run does not follow |
+| a method the project writes with `define_method` | a body this reader cannot see |
+| a bare name two files each define at the top level | more than one possible source |
+| `Rails.cache.delete`, a call into a class this run does not define | outside the run (no gap) |
+| `user.orders`, a local variable, a parameter, or an instance variable | the value could not be settled |
+| `service_class.new.method` where `service_class` is not a constant | the value could not be settled |
+
+Not followed yet: a method found only on a superclass past an unread ancestor, a callable read out of a variable, and the body of a block passed to `define_method`.
 
 ## Where it fits in suss
 

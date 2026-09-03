@@ -51,7 +51,7 @@ function children(node: RbNode): RbNode[] {
  * thing the code does, and the outermost call's text spells out the whole
  * chain, so emitting the inner links too counts the same work three times.
  */
-function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
+export function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
   const isLink = new Set<number>();
   for (const call of calls) {
     const receiver = field(call, "receiver");
@@ -91,7 +91,7 @@ export function bodyCalls(node: RbNode, found: RbNode[] = []): RbNode[] {
 }
 
 /** The callee as it is written, which is what a reader matches against. */
-function calleeText(call: RbNode): string {
+export function calleeText(call: RbNode): string {
   const receiver = field(call, "receiver");
   const method = field(call, "method") ?? children(call)[0];
   if (method === undefined) {

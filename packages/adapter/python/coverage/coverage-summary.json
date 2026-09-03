@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 2427,
-      "covered": 2332,
+      "total": 2418,
+      "covered": 2324,
       "skipped": 0,
-      "pct": 96.08
+      "pct": 96.11
     },
     "statements": {
-      "total": 2458,
-      "covered": 2363,
+      "total": 2449,
+      "covered": 2355,
       "skipped": 0,
-      "pct": 96.13
+      "pct": 96.16
     },
     "functions": {
-      "total": 460,
-      "covered": 457,
+      "total": 459,
+      "covered": 456,
       "skipped": 0,
       "pct": 99.34
     },
     "branches": {
-      "total": 1908,
-      "covered": 1683,
+      "total": 1902,
+      "covered": 1678,
       "skipped": 0,
-      "pct": 88.2
+      "pct": 88.22
     },
     "branchesTrue": {
       "total": 0,
@@ -579,28 +579,28 @@
   },
   "src/reach/closure.ts": {
     "lines": {
-      "total": 161,
-      "covered": 155,
+      "total": 152,
+      "covered": 147,
       "skipped": 0,
-      "pct": 96.27
+      "pct": 96.71
     },
     "functions": {
-      "total": 21,
-      "covered": 21,
+      "total": 20,
+      "covered": 20,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 161,
-      "covered": 155,
+      "total": 152,
+      "covered": 147,
       "skipped": 0,
-      "pct": 96.27
+      "pct": 96.71
     },
     "branches": {
-      "total": 109,
-      "covered": 96,
+      "total": 103,
+      "covered": 91,
       "skipped": 0,
-      "pct": 88.07
+      "pct": 88.34
     }
   },
   "src/reach/resolveCallee.ts": {
