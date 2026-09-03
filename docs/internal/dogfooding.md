@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 15 consumers unpaired, plus the
+The run leaves 154 providers and 3 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -171,7 +171,7 @@ export path a pairing key needs. Anyone who wants the number
 smaller should change how `pairSummaries` reports, not what the
 adapter sees.
 
-**Of the 134 unmatched providers, 23 point at something suss
+**Of the 154 unmatched providers, 23 point at something suss
 should be recognizing.**
 
 - **17 are the `default` export of a package the CLI only ever
@@ -192,33 +192,28 @@ should be recognizing.**
   providers describe the same function, and following a re-export
   back to the package that declares it would collapse the pair.
 
-The remaining 111 are ordinary: exports whose only callers are
+The remaining 131 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
-scan.
+scan. Twenty of them are methods `factorySurface` now surfaces on
+a same-file builder function (`storageCalls`, `sqlStatements`, and
+the like in `@suss/recognize`, plus a few discovery-context
+factories in the TypeScript adapter): the method exists and pairs
+when something calls it, and today nothing outside the package
+does.
 
-**The 15 unmatched consumers ask for a method on a value a package
-returned or exported.** They are `SuppressionFileSchema.safeParse(...)`,
-`IntentDocSchema.safeParse(...)`, `evaluate(...).facts`, two of
-`storageCalls(...).methods(...)`, two of
-`sqlStatements(...).methods(...)`, four of
-`messageSends(...).methods(...)`, one of
-`unitInvokes(...).methods(...)`, and three in the TypeScript adapter's
-`version.ts`: `stamp.codeStamp()`, `stamp.packsDigest(...)`, and
-`stamp.declineWhenRunFromSource(...)`. The DynamoDB pack builds its chain
-inside a function because the chain depends on what a project
-configured, the Mongoose pack builds its own inside one because the
-scope a project asks for goes into the chain itself, and the Prisma and
-Drizzle packs do the same for their raw paths because the store and the
-scope are the pack's own options. `createAdapterStamp`, in
-`@suss/extractor`, builds the same kind of value: a plain object with
-`codeStamp`, `packsDigest`, and `declineWhenRunFromSource` on it, so
-`version.ts` binds what it returns to a local variable and calls each
-method off that, the same shape as the calls above it. The consumer
-records the member as part of its export path, so it asks for
-`@suss/checker::checkAll.findings`, and a package publishes providers
-for what it exports rather than for the members of what those exports
-return. Closing this means publishing a provider for a class method,
-which is a larger piece of work than the pairing pass.
+**The 3 unmatched consumers ask for a method that exists only on a
+value's declared return type.** `SuppressionFileSchema.safeParse(...)`
+and `IntentDocSchema.safeParse(...)` both call a method zod puts on
+every schema object, which comes from the imported `ZodType` type
+rather than from anything the schema's own file builds.
+`evaluate(...).facts(relation)`, in `@suss/resolution`'s tests, calls
+a method `@suss/datalog`'s `Database` class declares; `evaluate`
+returns the `Database` instance its caller handed it rather than
+building one, so the value the call chases back to is a function
+parameter, not an object literal a factory constructed. All three
+need reading a declared or inferred type to find the method, which
+`factorySurface` does not do: it reads what a function's own body
+returns, not what the type checker says that return is.
 
 A method the language declares on every value used to land here too,
 and that was noise: `readSqlAccess(...).map(...)` asked for
@@ -251,7 +246,7 @@ no git ref involved:
    export path we build a pairing key from. The transitive closure
    is the exception, since a helper we reached is not on a
    boundary.
-3. No more than ten consumers go unpaired while their provider
+3. No more than three consumers go unpaired while their provider
    is in the same run.
 
 These stay true whatever the source looks like. Move an export

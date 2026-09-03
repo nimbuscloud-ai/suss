@@ -53,16 +53,49 @@ async function extractWorkspace(): Promise<BehavioralSummary[]> {
       export function greet(name: string): string {
         return "hello " + name;
       }
+
+      export function createAdapterStamp(config: { moduleUrl: string }) {
+        function codeStamp(): string {
+          return config.moduleUrl;
+        }
+        function packsDigest(): string {
+          return codeStamp();
+        }
+        return { codeStamp, packsDigest };
+      }
+
+      export function messageSends(spec: { wire: string }) {
+        return chainFrom({ wire: spec.wire });
+      }
+
+      function chainFrom(declared: { wire: string }) {
+        return {
+          declared,
+          methods: (table: unknown) => chainFrom(declared),
+        };
+      }
     `,
     "packages/app/package.json": JSON.stringify({
       name: "@demo/app",
       main: "src/main.ts",
     }),
     "packages/app/src/main.ts": `
-      import { greet } from "@demo/greeter";
+      import { createAdapterStamp, greet, messageSends } from "@demo/greeter";
 
       export function run(): string {
         return greet("world");
+      }
+
+      const stamp = createAdapterStamp({ moduleUrl: "demo" });
+
+      export function useStamp(): string {
+        return stamp.packsDigest();
+      }
+
+      const sends = messageSends({ wire: "http" });
+
+      export function useSends(): unknown {
+        return sends.methods(null);
       }
     `,
   });
@@ -108,4 +141,51 @@ describe("the package-exports pack over a workspace on disk", () => {
     );
     expect(consumer).toBeDefined();
   }, 30000);
+
+  it("pairs a consumer of a shorthand-surfaced factory method with its provider", async () => {
+    const summaries = await extractWorkspace();
+
+    const provider = summaries.find(
+      (one) =>
+        one.identity.boundaryBinding?.semantics.name === "function-call" &&
+        one.identity.boundaryBinding.semantics.package === "@demo/greeter" &&
+        exportPathOf(one)?.join(".") === "createAdapterStamp.packsDigest",
+    );
+    expect(provider).toBeDefined();
+
+    const consumer = summaries.find(
+      (one) =>
+        one.identity.boundaryBinding?.semantics.name === "function-call" &&
+        one.identity.name.includes("useStamp") &&
+        exportPathOf(one)?.join(".") === "createAdapterStamp.packsDigest",
+    );
+    expect(consumer).toBeDefined();
+  }, 30000);
+
+  it("pairs a consumer of a factory method surfaced through a same-file helper with its provider", async () => {
+    const summaries = await extractWorkspace();
+
+    const provider = summaries.find(
+      (one) =>
+        one.identity.boundaryBinding?.semantics.name === "function-call" &&
+        one.identity.boundaryBinding.semantics.package === "@demo/greeter" &&
+        exportPathOf(one)?.join(".") === "messageSends.methods",
+    );
+    expect(provider).toBeDefined();
+
+    const consumer = summaries.find(
+      (one) =>
+        one.identity.boundaryBinding?.semantics.name === "function-call" &&
+        one.identity.name.includes("useSends") &&
+        exportPathOf(one)?.join(".") === "messageSends.methods",
+    );
+    expect(consumer).toBeDefined();
+  }, 30000);
 });
+
+function exportPathOf(summary: BehavioralSummary): string[] | undefined {
+  const semantics = summary.identity.boundaryBinding?.semantics;
+  return semantics && "exportPath" in semantics
+    ? semantics.exportPath
+    : undefined;
+}

@@ -17,19 +17,16 @@ import { declaredExports } from "./declaredSurface.mjs";
 
 /**
  * How many consumers may go unpaired while their provider is in the
- * same run. Every one of them asks for a method or a property on a
- * value a package returned, which nothing publishes a provider for, so
- * the number tracks how many places call a builder in that style and
- * moves when a pack is written rather than when resolution changes.
- * The dogfooding notes list every one under `## Where the unmatched
- * summaries come from`.
+ * same run. Every one of them calls a method that exists only on a
+ * value's declared return type, which nothing publishes a provider
+ * for without reading that type, so the number moves when a pack is
+ * written rather than when resolution changes. The dogfooding notes
+ * list every one under `## Where the unmatched summaries come from`.
  *
  * Lowering it is a fix landing. Raising it needs saying which call
- * sites arrived and why they match the rest, in the notes: the
- * thirteenth through fifteenth are the three methods on the object
- * `createAdapterStamp` returns, called from the TypeScript adapter.
+ * sites arrived and why they match the rest, in the notes.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 15;
+const KNOWN_UNPAIRED_CONSUMERS = 3;
 
 /**
  * Every function a package says it exports has a provider summary.
