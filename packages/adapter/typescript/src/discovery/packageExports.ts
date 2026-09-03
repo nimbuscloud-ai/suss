@@ -2,15 +2,14 @@
 // per public-API export of the target package. Pairs with the
 // resolver in ../packageExports.ts which reads package.json.
 
-import fs from "node:fs";
-
 import { Node, type SourceFile } from "ts-morph";
 
 import { exportedDeclarationsOf } from "../moduleExports.js";
 import {
   type ResolvedPackageExport,
-  resolvePackageExports,
+  resolvePackageExportsCached,
 } from "../packageExports.js";
+import { sourceDeclarationsBehind } from "../resolve/sourceDeclaration.js";
 import { surfaceMethods } from "./factorySurface.js";
 import { type DiscoveredUnit, toFunctionRoot } from "./shared.js";
 
@@ -18,46 +17,7 @@ import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
-// The handler fires once per (sourceFile × pattern) pair, so without a
-// cache we read each package.json many times over. This one lives as
-// long as the module, which outlives a run, so the key includes what the
-// file looked like when we read it: a rewritten package.json in a
-// watching process gets a new key rather than the old entry.
-const packageExportsCache = new Map<
-  string,
-  ReturnType<typeof resolvePackageExports>
->();
-
-/** A path cannot hold the ASCII unit separator, so the halves stay apart. */
-const PATH_STAMP_SEPARATOR = "\u001f";
-
-function packageJsonStamp(packageJsonPath: string): string {
-  try {
-    const stat = fs.statSync(packageJsonPath);
-    return `${stat.mtimeMs}:${stat.size}`;
-  } catch {
-    return "unreadable";
-  }
-}
-
-function resolvePackageExportsCached(
-  packageJsonPath: string,
-): ReturnType<typeof resolvePackageExports> {
-  const stamp = packageJsonStamp(packageJsonPath);
-  const key = `${packageJsonPath}${PATH_STAMP_SEPARATOR}${stamp}`;
-  const cached = packageExportsCache.get(key);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const fresh = resolvePackageExports(packageJsonPath);
-  packageExportsCache.set(key, fresh);
-  return fresh;
-}
-
-/** Drop every resolved package.json. Tests reach for this; a run does not. */
-export function clearPackageExportsCache(): void {
-  packageExportsCache.clear();
-}
+export { clearPackageExportsCache } from "../packageExports.js";
 
 export function discoverPackageExports(
   sourceFile: SourceFile,
@@ -113,7 +73,10 @@ export function discoverPackageExports(
         continue;
       }
 
-      for (const decl of decls) {
+      const candidates = decls.flatMap((decl) =>
+        sourceDeclarationsBehind(decl, resolution),
+      );
+      for (const decl of candidates) {
         // Variable initialisers (export const foo = () => ...).
         if (Node.isVariableDeclaration(decl)) {
           const init = decl.getInitializer();

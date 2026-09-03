@@ -152,6 +152,7 @@ import {
 } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import { pathFromArgument } from "./resolve/routePath.js";
+import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
 import { unfollowedCallGap } from "./resolve/unfollowedCall.js";
 import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
@@ -2491,6 +2492,8 @@ export function createTypeScriptAdapter(
                     resolution.resolveWrittenValue(value),
                   resolveCallableSources: (value, alsoFrom) =>
                     resolution.resolveCallableSources(value, alsoFrom),
+                  sourceDeclarationsBehind: (declaration) =>
+                    sourceDeclarationsBehind(declaration, resolution),
                 },
                 // Reached units the cache already serves emit nothing,
                 // the way a cold run's seeds do not.
