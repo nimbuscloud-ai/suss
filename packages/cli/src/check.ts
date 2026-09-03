@@ -76,16 +76,15 @@ export interface CheckOptions {
   /** Print every finding and every list, not the collapsed report. */
   all?: boolean;
   /**
-   * Opt out of the default: a run that doesn't compare anything exits
-   * non-zero.
+   * Let a run that compared nothing exit 0. Without it, the run fails.
    *
-   * A run that doesn't pair a single boundary produces no findings and
-   * reads as a pass, the same answer it gives when both sides agree.
-   * The two are worth telling apart: one means the code is consistent,
-   * the other means suss couldn't see enough of it to say. `extract`
-   * takes the same option for the same reason. Two-file `check` doesn't
-   * build a pairing count to gate on, so this option is refused there
-   * rather than read.
+   * A run that pairs no boundary produces no findings and reads as a
+   * pass, which is the same answer it gives when both sides agree. The
+   * two mean different things: one says the code is consistent, the
+   * other says suss could not see enough of it to say. `extract` takes
+   * the same option for the same reason. A two-file `check` has no
+   * pairing count to gate on, so it refuses this option instead of
+   * reading it.
    */
   allowEmpty?: boolean;
 }
@@ -98,7 +97,7 @@ export interface CheckDirOptions {
   sussignore?: string;
   noSuppressions?: boolean;
   all?: boolean;
-  /** Opt out of the default: a run that doesn't compare anything exits non-zero. See CheckOptions. */
+  /** Let a run that compared nothing exit 0. See CheckOptions. */
   allowEmpty?: boolean;
   /**
    * Exit non-zero when more boundaries went unpaired than this allows:
@@ -333,7 +332,7 @@ export function checkDir(
  *
  * A red exit with nothing to read stalls an automated fixer: it has
  * something to react to and nothing to act on. So a run that fails
- * because it didn't compare anything says so in the report, with what
+ * because it compared nothing says so in the report, with what
  * to do about it, and the exit code follows from the finding.
  *
  * A run over no summaries at all is a different mistake, and the empty

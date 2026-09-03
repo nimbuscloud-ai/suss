@@ -103,7 +103,7 @@ suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
 | `--timing` | no | Print the per-phase wall-clock breakdown to stderr. |
 | `--datalog-profile` | no | Print what the Datalog evaluator spent its time on, rule by rule. Reach for it when `--timing` says the rules phase is the slow one. |
 | `--no-cache` | no | Skip the on-disk extraction cache for this run. Normal runs benefit from it; reach for this when debugging cache invalidation. |
-| `--allow-empty` | no | A run that doesn't produce any summaries exits non-zero by default, since a silent zero otherwise looks the same as a passing check in CI. Pass this to opt back into exiting 0. |
+| `--allow-empty` | no | Let a run that produced no summaries exit 0. Without it the run fails, since a silent zero looks the same as a passing check in CI. |
 | `--fail-on-pack-error` | no | Exit non-zero when a pack throws while it reads. By default the run reports the throw and continues with the other packs. |
 
 ### When a run could not read everything
@@ -274,7 +274,7 @@ the project's own helpers rather than a package it depends on.
 ### Exit codes
 
 - `0`: extraction succeeded, produced at least one summary or ran with `--allow-empty`, and neither `--fail-on-pack-error` nor `--gaps strict` found something to fail on.
-- Non-zero: extraction threw (invalid tsconfig, unknown framework, missing files), it didn't produce any summaries and `--allow-empty` wasn't passed, or one of those flags fired.
+- Non-zero: extraction threw (invalid tsconfig, unknown framework, missing files), it produced no summaries and `--allow-empty` was not passed, or one of those flags fired.
 
 ## `suss contract`
 
@@ -384,7 +384,7 @@ suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
 | `--fail-on THRESHOLD` | `error` (default), exit non-zero when any error-severity finding exists. `warning`, also fail on warnings. `info`, fail on any finding. `none`, never fail (still prints). |
-| `--allow-empty` | A run over `--dir` that pairs nothing has nothing to report and reads as a pass, the same as it prints when both sides agree, so it fails by default: the report gets a `nothingPaired` run finding saying what happened and what to do, and the run exits non-zero. Pass this to opt back into exiting 0. Needs `--dir`; a two-file check has no pairing count to opt out of, and refuses the flag. |
+| `--allow-empty` | Let a run over `--dir` that paired nothing exit 0. Without it, that run fails: it has nothing to report and would read as a pass, the same as when both sides agree, so the report gets a `nothingPaired` run finding saying what happened and what to do, and the run exits non-zero. Needs `--dir`; a two-file check has no pairing count, and refuses the flag. |
 | `--fail-on-unpaired N\|N%` | Fail the run when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). Needs `--dir`. A run that pairs three boundaries out of hundreds otherwise exits the same as one that paired everything; the report gets a `mostlyUnpaired` run finding with the numbers. |
 | `--fail-on-unreadable` | Fail the run when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` output lists the skipped files either way. |
 | `--sussignore PATH` | Use this `.sussignore` file instead of searching for one nearby. |

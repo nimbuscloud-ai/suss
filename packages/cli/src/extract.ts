@@ -591,8 +591,8 @@ export interface ExtractOptions {
    */
   explain?: boolean;
   /**
-   * Opt out of the default: a run that doesn't produce any summaries
-   * exits non-zero. Set this when an empty run is expected.
+   * Let a run that produced no summaries exit 0. Without it, the run
+   * fails. Set this when an empty run is expected.
    */
   allowEmpty?: boolean;
   /** Exit non-zero when a pack threw while it was reading. */
