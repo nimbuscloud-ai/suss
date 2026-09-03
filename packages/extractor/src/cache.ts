@@ -188,7 +188,7 @@ export interface CacheLayer<Meta = unknown> {
 
 export interface CacheInput {
   /** Absolute paths of every file the run walks. */
-  files?: ReadonlyArray<string>;
+  files: ReadonlyArray<string>;
   adapterPacksDigest: string;
   /**
    * One file whose stamp guards the whole entry alongside the file
@@ -615,15 +615,11 @@ async function stampConfigFile(
 
 /** Resolve the file list, sorted and stamped with mtime and size. */
 async function resolveFileStamps(input: CacheInput): Promise<FileStamp[]> {
-  if (input.files === undefined) {
-    return [];
-  }
-  const files = input.files;
   // Concurrent stats: bounded by Node's libuv thread pool. For
   // 5,500-file projects this is the dominant cost of the coarse
   // key (~25ms total).
   const stamped = await Promise.all(
-    files.map(async (p) => {
+    input.files.map(async (p) => {
       try {
         const stat = await fs.stat(p);
         return { path: p, mtimeMs: stat.mtimeMs, size: stat.size };

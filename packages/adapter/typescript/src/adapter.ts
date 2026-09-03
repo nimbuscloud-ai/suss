@@ -2227,7 +2227,9 @@ export function createTypeScriptAdapter(
             });
 
       const cacheInput: CacheInput = {
-        ...(cacheFiles !== null ? { files: cacheFiles } : {}),
+        // Empty when cacheDir is null: a no-op cache layer never reads
+        // the file list, so there is nothing worth resolving early.
+        files: cacheFiles ?? [],
         adapterPacksDigest,
         ...(config.tsConfigFilePath !== undefined
           ? { configPath: config.tsConfigFilePath }
