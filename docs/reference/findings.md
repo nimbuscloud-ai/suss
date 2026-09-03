@@ -701,7 +701,7 @@ A third list, under `run` in the JSON. These are about the run rather than about
 
 The run read summaries and paired none of them. No boundary had both a provider and a consumer, so nothing was compared, and the report would otherwise say the same thing it says when both sides agree.
 
-It fires only when there was something to compare, and only without `--allow-empty`. A run over no summaries at all says so on its own.
+It fires only when there was something to compare, and only without `--allow-empty`. A run over no summaries at all says so on its own. A run with `--intent` that checked at least one intent doc did compare something, so it does not fire there either.
 
 **Legitimate when:** you meant to extract one side. Checking a service against a contract you have not read yet pairs nothing, correctly.
 

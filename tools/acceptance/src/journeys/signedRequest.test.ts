@@ -88,6 +88,9 @@ describe("read a project's own signed DynamoDB request", () => {
       `aws-dynamodb=${config}`,
       "-o",
       summariesFile,
+      // The effects pack alone discovers no routes, and the warning is
+      // what this run is for.
+      "--allow-empty",
     ]);
     // 0.20.0 told everyone setting this to write a dependency stub,
     // which was the wrong instruction for a first-party helper, so the

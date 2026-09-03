@@ -295,8 +295,16 @@ export function checkDir(
 
   const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
   const summariesWithGaps = countSummariesWithGaps(allSummaries);
+  // An intent pass that checked a boundary is a comparison too, so a
+  // directory of provider summaries checked against intent docs is not
+  // an empty run.
+  const comparedIntent = (intent?.checked.length ?? 0) > 0;
   const run = [
-    ...runFindings(options.allowEmpty !== true, allSummaries, result),
+    ...runFindings(
+      options.allowEmpty !== true && !comparedIntent,
+      allSummaries,
+      result,
+    ),
     ...unreadableFindings(options.failOnUnreadable === true, skipped),
     ...unpairedFindings(options.failOnUnpaired, result),
   ];

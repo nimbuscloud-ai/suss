@@ -1016,13 +1016,15 @@ describe("checkDir", () => {
         // The intent was paired and compared: coverage accounting.
         expect(result.intent?.checked).toHaveLength(1);
         expect(result.intent?.unchecked).toHaveLength(0);
+        // Provider summaries alone pair nothing, but checking them
+        // against an intent doc is a comparison, so the run is not empty.
+        expect(result.run).toBeUndefined();
 
         // --fail-on none keeps the same intent findings but never fails.
         const lenient = checkDir({
           dir: tmpDir,
           intent: intentDir,
           failOn: "none",
-          allowEmpty: true,
         });
         expect(lenient.intent?.findings).toHaveLength(
           result.intent?.findings.length ?? 0,
@@ -1095,7 +1097,6 @@ describe("checkDir", () => {
           dir: tmpDir,
           intent: intentDir,
           sussignore,
-          allowEmpty: true,
         });
         // The finding is still reported, annotated: but mark excludes
         // it from gating, so the run passes.
@@ -1201,11 +1202,7 @@ describe("checkDir", () => {
     );
     try {
       const output = captureStdout(() => {
-        const result = checkDir({
-          dir: tmpDir,
-          intent: intentDir,
-          allowEmpty: true,
-        });
+        const result = checkDir({ dir: tmpDir, intent: intentDir });
         const kinds = (result.intent?.findings ?? []).map((f) => f.kind);
         expect(kinds).toContain("unlinkedScenario"); // Missing id
         expect(kinds).toContain("danglingScenarioLink"); // links to unknown outcome
@@ -1226,7 +1223,6 @@ describe("checkDir", () => {
             dir: tmpDir,
             intent: intentDir,
             failOn: "warning",
-            allowEmpty: true,
           }).hasErrors,
         ).toBe(true);
       });
