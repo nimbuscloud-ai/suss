@@ -453,11 +453,26 @@ export const EffectSchema = z.discriminatedUnion("type", [
     type: z.literal("invocation"),
     callee: z.string(),
     /**
-     * The summary this call reaches, set only when exactly one summary in
-     * the run matches `callee`. Absent when several did, since a guess
-     * is worse than a gap.
+     * The summary this call reaches: the one whose unit is declared
+     * where the type checker resolved `callee` to. Absent when the
+     * callee is declared outside the run (a library method), when
+     * more than one summary describes that unit, or when nothing could
+     * be resolved and no summary in the same file has that name, since
+     * a guess is worse than a gap.
      */
     summary: z.string().optional(),
+    /**
+     * Where the type checker found the callee declared. The adapter
+     * sets it while extracting and naming consumes it into `summary`,
+     * so it is present only in between, which is where the extraction
+     * cache stores a summary.
+     */
+    declaredAt: z
+      .object({
+        file: z.string(),
+        span: z.object({ start: z.number(), end: z.number() }),
+      })
+      .optional(),
     args: z.array(z.unknown()),
     async: z.boolean(),
     /** Absent for a call that always fires within its transition. */

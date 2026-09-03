@@ -21,7 +21,9 @@ import {
   summaryIdFromParts,
 } from "@suss/behavioral-ir";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import { offsetKeyFor } from "./walk/nodeKeys.js";
+
+import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 
 /**
  * The one root a run measures its file paths from: the nearest
@@ -147,14 +149,18 @@ function idFor(
 /**
  * Point each call at the summary it reaches.
  *
- * A name is matched against the summaries in the same file first, since
- * that is where an unqualified call usually goes, and against the whole
- * run after that. Two matches mean the name does not settle it, and the
- * call is left saying only what it said before: a reader can see a
- * missing link, and cannot see a wrong one.
+ * A call the type checker placed says where its callee is declared,
+ * and the summary of the unit declared there is the one it reaches. A
+ * callee declared outside the run, `Array.prototype.push` say, has no
+ * summary there and gets no link, whatever else in the run is called
+ * `push`. Only a call the checker could not place at all is matched by
+ * name, and then only against the summaries in its own file, since
+ * that is where an unqualified call usually goes. Two summaries at one
+ * place, or two with one name, leave the call saying only what it said
+ * before: a reader can see a missing link, and cannot see a wrong one.
  */
 function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
-  const byName = new Map<string, BehavioralSummary[]>();
+  const byLocation = new Map<string, BehavioralSummary[]>();
   const byFileAndName = new Map<string, BehavioralSummary[]>();
   const remember = (
     index: Map<string, BehavioralSummary[]>,
@@ -177,7 +183,13 @@ function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
       continue;
     }
 
-    remember(byName, summary.identity.name, summary);
+    if (summary.location.span !== undefined) {
+      remember(
+        byLocation,
+        offsetKeyFor(summary.location.file, summary.location.span),
+        summary,
+      );
+    }
     remember(
       byFileAndName,
       `${summary.location.file}::${summary.identity.name}`,
@@ -185,30 +197,52 @@ function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
     );
   }
 
-  const onlyAnswer = (
-    index: Map<string, BehavioralSummary[]>,
-    key: string,
-  ): BehavioralSummary | null => {
-    const found = index.get(key) ?? [];
-    return found.length === 1 ? (found[0] as BehavioralSummary) : null;
-  };
-
   for (const summary of summaries) {
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
         if (effect.type !== "invocation") {
           continue;
         }
-        // A method call includes its receiver, and the last segment is
-        // the function, which is what a summary is named after.
-        const called = effect.callee.split(".").pop() ?? effect.callee;
-        const reached =
-          onlyAnswer(byFileAndName, `${summary.location.file}::${called}`) ??
-          onlyAnswer(byName, called);
+        const reached = summaryReachedBy(
+          effect,
+          summary.location.file,
+          byLocation,
+          byFileAndName,
+        );
+        // The declaration served its purpose here, and a reader of the
+        // output follows the link rather than the offsets.
+        delete effect.declaredAt;
         if (reached?.identity.id !== undefined) {
           effect.summary = reached.identity.id;
         }
       }
     }
   }
+}
+
+function summaryReachedBy(
+  effect: Extract<Effect, { type: "invocation" }>,
+  callerFile: string,
+  byLocation: ReadonlyMap<string, BehavioralSummary[]>,
+  byFileAndName: ReadonlyMap<string, BehavioralSummary[]>,
+): BehavioralSummary | null {
+  const declaredAt = effect.declaredAt;
+  if (declaredAt !== undefined) {
+    return onlyAnswer(
+      byLocation,
+      offsetKeyFor(declaredAt.file, declaredAt.span),
+    );
+  }
+  // A method call includes its receiver, and the last segment is the
+  // function, which is what a summary is named after.
+  const called = effect.callee.split(".").pop() ?? effect.callee;
+  return onlyAnswer(byFileAndName, `${callerFile}::${called}`);
+}
+
+function onlyAnswer(
+  index: ReadonlyMap<string, BehavioralSummary[]>,
+  key: string,
+): BehavioralSummary | null {
+  const found = index.get(key) ?? [];
+  return found.length === 1 ? (found[0] as BehavioralSummary) : null;
 }

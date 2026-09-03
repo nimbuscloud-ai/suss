@@ -31,7 +31,7 @@ import { extractCodeStructure } from "../adapter.js";
 import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { createDependencySink, withDependencySink } from "../depTracking.js";
-import { offsetKeyOf } from "../walk/nodeKeys.js";
+import { offsetKeyFor, offsetKeyOf } from "../walk/nodeKeys.js";
 import { type ReachableCandidate, resolveDecl } from "./functionBehind.js";
 import {
   classifyStop,
@@ -43,7 +43,7 @@ import {
   worthRecording,
 } from "./unfollowedCall.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 import type {
   AccessRecognizer,
   InvocationRecognizer,
@@ -95,11 +95,29 @@ function nodeKey(func: FunctionRoot): string {
 
 /**
  * What one call site came to: a function to walk into, or a stop the
- * closure describes rather than drops.
+ * closure describes rather than drops. A stop still says where the
+ * checker found the callee declared, when it found anything, so the
+ * call can be told apart from one nothing declares.
  */
 type CallOutcome =
   | { readonly kind: "followed"; readonly candidate: ReachableCandidate }
-  | { readonly kind: "stopped"; readonly stop: UnfollowedCall };
+  | {
+      readonly kind: "stopped";
+      readonly stop: UnfollowedCall;
+      readonly declaration: Node | null;
+    };
+
+/** Where a call was declared, spelled the way a summary spells its unit. */
+type CallTarget = NonNullable<
+  Extract<Effect, { type: "invocation" }>["declaredAt"]
+>;
+
+function targetOf(node: Node): CallTarget {
+  return {
+    file: node.getSourceFile().getFilePath(),
+    span: { start: node.getStart(), end: node.getEnd() },
+  };
+}
 
 function resolveCallee(
   call: Node,
@@ -142,6 +160,7 @@ function resolveCallee(
       return {
         kind: "stopped",
         stop: { callee: calleeName, reason: "multipleSources" },
+        declaration: declarations[0] ?? null,
       };
     }
   }
@@ -150,9 +169,18 @@ function resolveCallee(
     kind: "stopped",
     stop: {
       callee: calleeName,
-      reason: classifyStop(declarationsBehind(symbol), scan.scanning),
+      reason: classifyStop(declarations, scan.scanning),
     },
+    declaration: declarations[0] ?? null,
   };
+}
+
+/** Where the callee an outcome came from is declared, when anything declares it. */
+function declaredAtOf(outcome: CallOutcome): CallTarget | null {
+  if (outcome.kind === "followed") {
+    return targetOf(outcome.candidate.func);
+  }
+  return outcome.declaration === null ? null : targetOf(outcome.declaration);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,10 +207,15 @@ interface ScanContext {
   scanning?: FunctionRoot;
 }
 
-/** Everything one pass over a body found: edges to walk, and stops. */
+/**
+ * Everything one pass over a body found: edges to walk, stops, and
+ * where each callee the body writes is declared. A callee text the
+ * body resolved to two different declarations maps to null.
+ */
 interface ScanResult {
   readonly candidates: ReachableCandidate[];
   readonly stops: UnfollowedCall[];
+  readonly targets: ReadonlyMap<string, CallTarget | null>;
 }
 
 /**
@@ -213,6 +246,7 @@ function resolveJsxReference(
     outcome: {
       kind: "stopped",
       stop: { callee: name, reason: classifyStop(declarations) },
+      declaration: declarations[0] ?? null,
     },
   };
 }
@@ -221,7 +255,30 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
   const inFunc: ScanContext = { ...scan, scanning: func };
   const candidates: ReachableCandidate[] = [];
   const stops: UnfollowedCall[] = [];
+  const targets = new Map<string, CallTarget | null>();
   const seen = new Set<string>();
+
+  // The invocation effects on this body's summary join here by callee
+  // text, so the same text resolving two ways (a shadowed name) has to
+  // say so rather than pick one.
+  const rememberTarget = (calleeText: string, outcome: CallOutcome): void => {
+    const target = declaredAtOf(outcome);
+    if (target === null) {
+      return;
+    }
+    const known = targets.get(calleeText);
+    if (known === undefined) {
+      targets.set(calleeText, target);
+      return;
+    }
+    if (
+      known !== null &&
+      offsetKeyFor(known.file, known.span) !==
+        offsetKeyFor(target.file, target.span)
+    ) {
+      targets.set(calleeText, null);
+    }
+  };
 
   const record = (outcome: CallOutcome): void => {
     if (outcome.kind === "stopped") {
@@ -258,9 +315,10 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     // loop calling the same unresolved method twenty times is one
     // thing a reader cannot see, not twenty.
     record(outcome);
+    rememberTarget(calleeText, outcome);
   });
 
-  return { candidates, stops };
+  return { candidates, stops, targets };
 }
 
 /**
@@ -441,6 +499,10 @@ export function expandReachableClosure(
   // per function key, because the summary it belongs on is only built
   // once the walk has finished.
   const stopsByKey = new Map<string, UnfollowedCall[]>();
+  const targetsByKey = new Map<
+    string,
+    ReadonlyMap<string, CallTarget | null>
+  >();
   const summariesByKey = new Map<string, BehavioralSummary[]>();
 
   // The file a function was reached from, which is where whoever called
@@ -507,12 +569,13 @@ export function expandReachableClosure(
           : { resolveCallableSources: recognizers.resolveCallableSources }),
         ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
       };
-      const { candidates, stops } = scanWithRecording(key, facts, () =>
+      const { candidates, stops, targets } = scanWithRecording(key, facts, () =>
         collectReachable(source.func, scan),
       );
       if (stops.length > 0) {
         stopsByKey.set(key, stops);
       }
+      targetsByKey.set(key, targets);
       for (const candidate of candidates) {
         const calleeKey = nodeKey(candidate.func);
         if (!functionByKey.has(calleeKey)) {
@@ -561,6 +624,7 @@ export function expandReachableClosure(
   }
 
   recordStops(stopsByKey, summariesByKey, options);
+  recordTargets(targetsByKey, summariesByKey);
 
   return [...seeds, ...reached];
 }
@@ -615,6 +679,35 @@ function recordStops(
   for (const [key, stops] of stopsByKey) {
     for (const summary of summariesByKey.get(key) ?? []) {
       summary.gaps.push(...stops.map(unfollowedCallGap));
+    }
+  }
+}
+
+/**
+ * Put where each call was declared onto the invocation effects of the
+ * summaries describing that body. Naming later turns the declaration
+ * into the summary at that place, so the link a reader follows comes
+ * from the checker and never from a name that happened to match. A
+ * call the checker could not place stays bare, and naming falls back
+ * to the name within the same file for that one only.
+ */
+function recordTargets(
+  targetsByKey: ReadonlyMap<string, ReadonlyMap<string, CallTarget | null>>,
+  summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
+): void {
+  for (const [key, targets] of targetsByKey) {
+    for (const summary of summariesByKey.get(key) ?? []) {
+      for (const transition of summary.transitions) {
+        for (const effect of transition.effects) {
+          if (effect.type !== "invocation") {
+            continue;
+          }
+          const target = targets.get(normalizeCallee(effect.callee));
+          if (target !== undefined && target !== null) {
+            effect.declaredAt = target;
+          }
+        }
+      }
     }
   }
 }
