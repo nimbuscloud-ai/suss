@@ -20,6 +20,56 @@ function nameId(filePath: string, name: string): string {
   return `${filePath}#${name}`;
 }
 
+/** The identifier a parameter is declared with, `loader:` in `loader: ApplicationLoader` included. */
+function paramNameOf(param: RbNode): RbNode | null {
+  return param.type === "identifier" ? param : (field(param, "name") ?? null);
+}
+
+/** The parameters a method declares, by name, for a caller asking whether a read is one of them. */
+function declaredParamNames(method: RbNode): Set<string> {
+  const params = field(method, "parameters");
+  const declared = new Set<string>();
+  for (const param of params === null ? [] : children(params)) {
+    const name = paramNameOf(param);
+    if (name !== null) {
+      declared.add(name.text);
+    }
+  }
+  return declared;
+}
+
+/**
+ * The key a read of this expression joins on, for a caller that has an
+ * expression in hand and wants to ask the rules about it. `enclosing` is
+ * the method the expression is written in, or null outside one.
+ */
+export function readKey(
+  filePath: string,
+  node: RbNode,
+  enclosing: RbNode | null,
+): string {
+  if (node.type !== "identifier" && node.type !== "constant") {
+    return nodeId(filePath, node);
+  }
+  // A bare `receiver.method` read is keyed by the whole call, the way
+  // `emitPropertyRead` reads it back; `isPropertyRead` says which this is.
+  const parent = node.parent;
+  if (
+    parent !== null &&
+    parent.type === "call" &&
+    field(parent, "method")?.id === node.id &&
+    field(parent, "receiver") !== null
+  ) {
+    return isPropertyRead(parent)
+      ? nodeId(filePath, parent)
+      : nodeId(filePath, node);
+  }
+  if (enclosing !== null && declaredParamNames(enclosing).has(node.text)) {
+    return `${nodeId(filePath, enclosing)}#${node.text}`;
+  }
+  return nameId(filePath, node.text);
+}
+
 const WRITTEN_VALUE_TYPES = new Set([
   "string",
   "integer",
@@ -253,8 +303,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const declared = new Set<string>();
   let position = 0;
   for (const param of params === null ? [] : children(params)) {
-    const paramName =
-      param.type === "identifier" ? param : (field(param, "name") ?? null);
+    const paramName = paramNameOf(param);
     if (paramName !== null) {
       declared.add(paramName.text);
       const paramKey = `${funcKey}#${paramName.text}`;
