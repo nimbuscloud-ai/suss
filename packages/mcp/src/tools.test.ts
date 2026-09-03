@@ -139,7 +139,7 @@ describe("the tools, on a project bigger than one answer", () => {
   it("caps a long answer at 20 by default and says how to see more", async () => {
     const project = await projectWith(150);
     const result = await askTool(project, {
-      question: "what can I project from GET",
+      question: "what does src/app.ts provide",
     });
     const answer = result.structuredContent as {
       items: unknown[];
@@ -157,7 +157,7 @@ describe("the tools, on a project bigger than one answer", () => {
   it("honors a limit passed with the question", async () => {
     const project = await projectWith(150);
     const result = await askTool(project, {
-      question: "what can I project from GET",
+      question: "what does src/app.ts provide",
       limit: 50,
     });
     const answer = result.structuredContent as {
@@ -174,7 +174,7 @@ describe("the tools, on a project bigger than one answer", () => {
   it("shows everything and omits nothing when the limit covers the list", async () => {
     const project = await projectWith(150);
     const result = await askTool(project, {
-      question: "what can I project from GET",
+      question: "what does src/app.ts provide",
       limit: 150,
     });
     const answer = result.structuredContent as {
