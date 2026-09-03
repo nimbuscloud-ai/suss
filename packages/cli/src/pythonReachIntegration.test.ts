@@ -141,4 +141,24 @@ describe("what a Python route reaches", () => {
     expect(answer?.headline).toContain("reaches 1 boundary");
     expect(text).toContain("reads postgresql:sqlalchemy/select");
   });
+
+  it("walks the chain for a why question without asking TypeScript to prove a Python hop", async () => {
+    const summaries = await extracted();
+    const out = path.join(dir, "summaries");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
+
+    const { exitCode } = answerQuestion({
+      question: "why does GET /orders reach read_orders",
+      dir: out,
+      project: dir,
+      output: path.join(dir, "answer.txt"),
+    });
+
+    expect(exitCode).toBe(0);
+    const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
+    expect(text).toContain("list_orders -> orders_for -> read_orders");
+    expect(text).toContain("calls orders_for, and that call runs orders_for");
+    expect(text).not.toContain("without their resolution steps");
+  });
 });

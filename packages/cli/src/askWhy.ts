@@ -10,6 +10,7 @@
  * re-evaluates the resolution rules under the witness algebra. The
  * source has to be a TypeScript or JavaScript project; without it the
  * reach answer still prints the unit chain, and says what is missing.
+ * A hop written in Python or Ruby prints without a proof.
  */
 
 import fs from "node:fs";
@@ -27,6 +28,7 @@ import {
   readCallFacts,
   representativeUnit,
 } from "./callFacts.js";
+import { languageOfFile } from "./language.js";
 import { resolveTarget } from "./target.js";
 
 import type { ValueLocation, WhyExplained } from "@suss/adapter-typescript";
@@ -453,9 +455,8 @@ function reachAnswer(
 
   for (const hop of hops) {
     items.push({ text: hopLine(hop), data: hopJson(hop) });
-    const explained =
-      hop.recorded === "written" ? explainHop(session, hop) : null;
-    if (hop.recorded === "written" && explained === null) {
+    const explained = provable(hop) ? explainHop(session, hop) : null;
+    if (provable(hop) && explained === null) {
       missingProofs = true;
     }
     for (const item of explained === null ? [] : explanationItems(explained)) {
@@ -548,6 +549,15 @@ function hopJson(hop: WhyHop): Record<string, unknown> {
     to: hop.to === null ? null : summaryIdentifier(hop.to),
     recorded: hop.recorded,
   };
+}
+
+/** The proof step reads TypeScript, so a hop written in Python or Ruby shows without one. */
+function provable(hop: WhyHop): boolean {
+  const language = languageOfFile(hop.from.location.file);
+  return (
+    hop.recorded === "written" &&
+    (language === null || language === "typescript")
+  );
 }
 
 /** Null when the root cannot be read as a project at all. */
