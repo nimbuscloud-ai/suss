@@ -500,19 +500,6 @@ export const EffectSchema = z.discriminatedUnion("type", [
     callee: z.string().optional(),
     /** All the effects from one call site share this id. */
     groupId: z.string().optional(),
-    /**
-     * Where the work happens, when that is somewhere other than the unit's
-     * own body. A recognizer that walks into a called function sets this to
-     * the function it stepped into, so a reader can go there. Absent means
-     * the call is written in the unit itself.
-     */
-    origin: z
-      .object({
-        file: z.string(),
-        line: z.number(),
-        function: z.string().optional(),
-      })
-      .optional(),
     preconditions: z.array(PredicateSchema).optional(),
     interaction: z.discriminatedUnion("class", [
       z.object({

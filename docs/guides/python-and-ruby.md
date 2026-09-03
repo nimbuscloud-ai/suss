@@ -26,10 +26,11 @@ become invocation effects with the conditions that gate each one. With
 a storage pack composed in, a database call is classified: read or
 write, which model, which rows it picks and which columns it asks for.
 Python matches a query by what the method behind the call says it
-returns, which reads through a project's own base class, and follows a
-handler into the service functions it calls, with `origin` on each
-effect saying where the work happens. Ruby matches by what the
-receiver's class inherits, which reads through `ApplicationRecord`.
+returns, which reads through a project's own base class. A handler
+that hands off to a service function reports the call, and the service
+function's own summary reports the work, so a reach question follows
+the call to find it. Ruby matches by what the receiver's class
+inherits, which reads through `ApplicationRecord`.
 
 ## Let init find the project
 

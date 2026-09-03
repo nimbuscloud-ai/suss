@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { summaryIdentifier } from "@suss/behavioral-ir";
+
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { PythonPack } from "./pack.js";
@@ -378,7 +380,7 @@ describe("a route whose body talks to the database", () => {
     ],
   };
 
-  it("follows a handler into a service function that builds a query from an imported constructor", async () => {
+  it("puts a service function's query on its own summary and links the route's call to it", async () => {
     write(
       "myapp/wrappers/restx.py",
       "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
@@ -413,20 +415,30 @@ describe("a route whose body talks to the database", () => {
       roots: [tmpDir],
     });
 
-    const storageOn = (kind: string) =>
+    const effectsOn = (kind: string) =>
       summaries
         .filter((summary) => summary.kind === kind)
         .flatMap((summary) =>
           summary.transitions.flatMap((transition) => transition.effects),
-        )
-        .filter(
-          (effect) =>
-            effect.type === "interaction" &&
-            effect.interaction.class === "storage-access",
         );
-    expect(storageOn("handler")).toHaveLength(1);
-    // The service function reached from the route gets the same effect on its own summary.
+    const storageOn = (kind: string) =>
+      effectsOn(kind).filter(
+        (effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "storage-access",
+      );
+    // The route reports only its own work; the query lives on the service
+    // function's summary, and the call effect says which summary that is.
+    expect(storageOn("handler")).toHaveLength(0);
     expect(storageOn("library")).toHaveLength(1);
+    const helper = summaries.find((summary) => summary.kind === "library");
+    const call = effectsOn("handler").find(
+      (effect) =>
+        effect.type === "invocation" && effect.callee === "load_orders",
+    );
+    expect(call?.type === "invocation" ? call.summary : null).toBe(
+      helper === undefined ? null : summaryIdentifier(helper),
+    );
   });
 
   it("puts the database work on the route's own transitions", async () => {

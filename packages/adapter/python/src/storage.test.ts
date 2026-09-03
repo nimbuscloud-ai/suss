@@ -99,7 +99,6 @@ async function effectsFor(handler: string, base = BASE) {
     patterns: SQLALCHEMY,
     definitionAt: (key) => definitions.get(key),
     couldMatch: new Set(["query"]),
-    leadsToStorage: new Set(["load_orders", "one", "two"]),
   });
 }
 
@@ -190,12 +189,11 @@ describe("the database work a Python body does", () => {
         patterns: [],
         definitionAt: () => undefined,
         couldMatch: new Set(["query"]),
-        leadsToStorage: new Set<string>(),
       }),
     ).toEqual([]);
   });
 
-  it("counts the work a function it called does, not only its own", async () => {
+  it("leaves the work a called function does to that function's own summary", async () => {
     const effects = await effectsFor(
       [
         "def load_orders():",
@@ -205,39 +203,7 @@ describe("the database work a Python body does", () => {
         "",
       ].join("\n"),
     );
-    expect(effects).toHaveLength(1);
-    expect(
-      effects[0]?.type === "interaction" ? effects[0].binding.semantics : null,
-    ).toMatchObject({ container: "Orders" });
-    expect(
-      effects[0]?.type === "interaction" ? effects[0].origin : null,
-    ).toMatchObject({ function: "load_orders", line: 3 });
-  });
-
-  it("says nothing about where work in the route's own body happens, since the route says that", async () => {
-    const effects = await effectsFor(
-      "found = Orders.query().filter_by(id=1).first()\n",
-    );
-    expect(
-      effects[0]?.type === "interaction" ? effects[0].origin : "missing",
-    ).toBeUndefined();
-  });
-
-  it("stops rather than going round a pair of functions that call each other", async () => {
-    const effects = await effectsFor(
-      [
-        "def one():",
-        "    two()",
-        "    return Orders.query().first()",
-        "",
-        "def two():",
-        "    return one()",
-        "",
-        "found = one()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toHaveLength(1);
+    expect(effects).toEqual([]);
   });
 
   it("reads a query built from a function the file imported", async () => {
@@ -334,7 +300,7 @@ describe("the database work a Python body does", () => {
     expect(effects).toEqual([]);
   });
 
-  it("counts a query a called function builds from an imported constructor", async () => {
+  it("leaves a query a called function builds from an imported constructor to that function", async () => {
     const effects = await effectsFor(
       [
         "from sqlalchemy import select",
@@ -346,6 +312,6 @@ describe("the database work a Python body does", () => {
         "",
       ].join("\n"),
     );
-    expect(effects).toHaveLength(1);
+    expect(effects).toEqual([]);
   });
 });
