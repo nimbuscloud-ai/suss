@@ -444,11 +444,11 @@ describe("suss ask", () => {
     expect(output).toContain("then ask again");
   });
 
-  it("prints the eight shapes back when the question is not one of them", () => {
+  it("prints the shapes back when the question is not one of them", () => {
     const { output, code } = answer("why is the store slow");
 
     expect(code).toBe(1);
-    expect(output).toContain("suss ask takes one of nine questions");
+    expect(output).toContain("suss ask takes one of ten questions");
   });
 
   it("writes JSON an agent can read", () => {
@@ -2433,5 +2433,183 @@ describe("suss ask over a call passed by name to a parameter", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("suss ask what X provides", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  function exported(spec: {
+    file: string;
+    name: string;
+    line: number;
+    packageName: string;
+  }): BehavioralSummary {
+    return {
+      kind: "library",
+      location: {
+        file: spec.file,
+        range: { start: spec.line, end: spec.line + 5 },
+        exportName: spec.name,
+      },
+      identity: {
+        name: spec.name,
+        exportPath: [spec.name],
+        boundaryBinding: packageExportBinding({
+          recognition: "package-exports",
+          packageName: spec.packageName,
+          exportPath: [spec.name],
+        }),
+        id: `repo::${spec.file}::${spec.name}`,
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: CONFIDENT,
+    } as BehavioralSummary;
+  }
+
+  const analyzeFlow = exported({
+    file: "packages/checker/src/flow/reachability.ts",
+    name: "analyzeFlow",
+    line: 400,
+    packageName: "@suss/checker",
+  });
+  const checkAll = exported({
+    file: "packages/checker/src/index.ts",
+    name: "checkAll",
+    line: 12,
+    packageName: "@suss/checker",
+  });
+  const evaluate = exported({
+    file: "packages/datalog/src/index.ts",
+    name: "evaluate",
+    line: 5,
+    packageName: "@suss/datalog",
+  });
+
+  function answer(
+    question: string,
+    summaries: BehavioralSummary[],
+  ): { output: string; code: number } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-provides-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("lists every boundary a package provides, wherever its exports sit", () => {
+    const { output, code } = answer("what does @suss/checker provide", [
+      analyzeFlow,
+      checkAll,
+      evaluate,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain("@suss/checker provides 2 boundaries:");
+    expect(output).toContain(
+      "fn:@suss/checker::analyzeFlow, from analyzeFlow (packages/checker/src/flow/reachability.ts:400)",
+    );
+    expect(output).toContain(
+      "fn:@suss/checker::checkAll, from checkAll (packages/checker/src/index.ts:12)",
+    );
+    expect(output).not.toContain("@suss/datalog");
+  });
+
+  it("answers the export alias the same way as provide", () => {
+    const summaries = [analyzeFlow, checkAll];
+    const provide = answer("what does @suss/checker provide", summaries);
+    const exportAlias = answer("what does @suss/checker export", summaries);
+
+    expect(exportAlias.output).toBe(provide.output);
+  });
+
+  it("lists the boundaries a file provides", () => {
+    const { output, code } = answer(
+      "what does src/editions/routes.ts provide",
+      [route, nestedRoute],
+    );
+
+    expect(code).toBe(0);
+    expect(output).toContain("provides 2 boundaries:");
+    expect(output).toContain("GET /editions, from listEditions");
+    expect(output).toContain("GET /editions/{id}/comments, from listComments");
+  });
+
+  it("says plainly when the subject only consumes boundaries", () => {
+    const { output, code } = answer("what does byPublication provide", [dao]);
+
+    expect(code).toBe(0);
+    expect(output).toContain(
+      "Nothing here says byPublication provides a boundary.",
+    );
+    expect(output).toContain("only consume boundaries");
+  });
+
+  it("says a file that only consumes consumes, even though its path has a slash", () => {
+    const { output, code } = answer("what does src/editions/dao.ts provide", [
+      dao,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain(
+      "The units src/editions/dao.ts picked out only consume boundaries.",
+    );
+    expect(output).not.toContain("package-exports");
+  });
+
+  it("points at extracting package exports when only a caller of the package is here", () => {
+    const caller: BehavioralSummary = {
+      kind: "caller",
+      location: {
+        file: "src/uses.ts",
+        range: { start: 1, end: 5 },
+        exportName: "callsIt",
+      },
+      identity: {
+        name: "callsIt",
+        exportPath: ["callsIt"],
+        boundaryBinding: packageExportBinding({
+          recognition: "package-exports",
+          packageName: "@suss/missing",
+          exportPath: ["doThing"],
+        }),
+        id: "repo::src/uses.ts::callsIt",
+      },
+      inputs: [],
+      transitions: [],
+      gaps: [],
+      confidence: CONFIDENT,
+    };
+
+    const { output, code } = answer("what does @suss/missing provide", [
+      caller,
+    ]);
+
+    expect(code).toBe(0);
+    expect(output).toContain(
+      "Nothing here says @suss/missing provides a boundary.",
+    );
+    expect(output).toContain(
+      "No summary here provides @suss/missing. Extract the package that exports it with -f package-exports",
+    );
+  });
+
+  it("says so when nothing here is at the subject at all", () => {
+    const { output, code } = answer("what does nowhere.ts provide", [dao]);
+
+    expect(code).toBe(1);
+    expect(output).toContain("Nothing in these summaries is at nowhere.ts");
   });
 });

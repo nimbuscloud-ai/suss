@@ -143,13 +143,13 @@ describe("the suss MCP server", () => {
     expect(answer.shape).toBe("reaches");
   });
 
-  it("says the question was not one of the seven, rather than answering nothing", async () => {
+  it("says the question was not one of the ten, rather than answering nothing", async () => {
     const result = await client.callTool({
       name: "suss_ask",
       arguments: { question: "what is the meaning of this codebase" },
     });
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toContain("seven questions");
+    expect(JSON.stringify(result.content)).toContain("ten questions");
   });
 
   it("drafts a stub skeleton from the project's calls into a package", async () => {

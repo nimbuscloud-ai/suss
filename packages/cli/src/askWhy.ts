@@ -424,7 +424,7 @@ function hopsOf(
 }
 
 /** Where a summary is, the way an answer prints it. */
-function unitAt(summary: BehavioralSummary): string {
+export function unitAt(summary: BehavioralSummary): string {
   return `${summary.location.file}:${summary.location.range.start}`;
 }
 
