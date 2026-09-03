@@ -14,6 +14,7 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
 import { functionsSpelled, representativeUnit } from "./callFacts.js";
+import { providesKeyOf } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Answer, AnswerItem } from "./ask.js";
@@ -56,12 +57,15 @@ export function answerCalls(
 
   const items: AnswerItem[] = calls.map((call) => {
     const caller = representativeUnit(facts, call.caller);
+    const provides = providesKeyOf(caller);
+    const at = `${caller.location.file}:${caller.location.range.start}${provides === undefined ? "" : `, provides ${provides}`}`;
     return {
-      text: `${summaryIdentifier(caller)} (${caller.location.file}:${caller.location.range.start}) calls ${call.callee}`,
+      text: `${summaryIdentifier(caller)} (${at}) calls ${call.callee}`,
       data: {
         unit: summaryIdentifier(caller),
         file: caller.location.file,
         line: caller.location.range.start,
+        ...(provides !== undefined ? { provides } : {}),
         call: call.callee,
       },
     };

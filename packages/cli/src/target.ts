@@ -14,6 +14,8 @@
 import path from "node:path";
 
 import {
+  BOUNDARY_ROLE,
+  boundaryKey,
   settlingSuffix,
   summaryIdentifier,
   summaryRef,
@@ -340,6 +342,8 @@ export interface CollapsedTouch {
   unit: string;
   relations: Relation[];
   callee: string | undefined;
+  /** The boundary the unit itself provides, when it provides one. */
+  provides?: string;
   /** The calls between the asked unit and this one, when there were any. */
   through?: string[];
 }
@@ -358,11 +362,13 @@ export function collapseTouches(
     const key = `${touched.label}\u0000${unit}\u0000${touched.callee ?? ""}`;
     const seen = byPair.get(key);
     if (seen === undefined) {
+      const provides = providesKeyOf(summary);
       byPair.set(key, {
         boundary: touched.label,
         unit,
         relations: [touched.relation],
         callee: touched.callee,
+        ...(provides !== undefined ? { provides } : {}),
         ...(through !== undefined ? { through } : {}),
       });
       continue;
@@ -402,6 +408,19 @@ export function unitsServing(
         .map((touch) => touch.summary),
     ),
   ];
+}
+
+/**
+ * The boundary key a unit provides on its own binding, when it is a
+ * provider. Undefined when it provides nothing, so an answer item can
+ * leave the field out rather than say it provides nothing.
+ */
+export function providesKeyOf(summary: BehavioralSummary): string | undefined {
+  const binding = summary.identity.boundaryBinding;
+  if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
+    return undefined;
+  }
+  return boundaryKey(binding) ?? undefined;
 }
 
 function touchesOf(
