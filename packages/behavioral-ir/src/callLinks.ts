@@ -106,8 +106,36 @@ export function linkCallsToSummaries(summaries: BehavioralSummary[]): void {
         if (reached !== null) {
           effect.summary = summaryIdentifier(reached);
         }
+        linkArgs(effect, byLocation);
       }
     }
+  }
+}
+
+/**
+ * The same link, per argument position: an argument that is itself a
+ * project function reaches the summary declared there, by the same
+ * location join `declaredAt` uses for the callee.
+ */
+function linkArgs(
+  effect: InvocationEffect,
+  byLocation: ReadonlyMap<string, BehavioralSummary[]>,
+): void {
+  if (effect.argsDeclaredAt === undefined) {
+    return;
+  }
+  const argsSummary: Record<string, string> = {};
+  for (const [position, target] of Object.entries(effect.argsDeclaredAt)) {
+    const reached = summaryAtPlace(
+      byLocation.get(declarationKey(target.file, target.span)) ?? [],
+    );
+    if (reached !== null) {
+      argsSummary[position] = summaryIdentifier(reached);
+    }
+  }
+  delete effect.argsDeclaredAt;
+  if (Object.keys(argsSummary).length > 0) {
+    effect.argsSummary = argsSummary;
   }
 }
 

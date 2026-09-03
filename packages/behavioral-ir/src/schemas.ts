@@ -443,6 +443,12 @@ export const OutputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("void") }),
 ]);
 
+/** Where the type checker found something declared, by file and character span. */
+const DeclarationPlaceSchema = z.object({
+  file: z.string(),
+  span: z.object({ start: z.number(), end: z.number() }),
+});
+
 export const EffectSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("mutation"),
@@ -467,12 +473,23 @@ export const EffectSchema = z.discriminatedUnion("type", [
      * so it is present only in between, which is where the extraction
      * cache stores a summary.
      */
-    declaredAt: z
-      .object({
-        file: z.string(),
-        span: z.object({ start: z.number(), end: z.number() }),
-      })
-      .optional(),
+    declaredAt: DeclarationPlaceSchema.optional(),
+    /**
+     * Where an argument that is itself a project function is declared,
+     * keyed by its position among the call's arguments. Same lifecycle
+     * as `declaredAt`: an adapter sets it while extracting, naming
+     * turns each entry into `argsSummary` and removes it.
+     */
+    argsDeclaredAt: z.record(z.string(), DeclarationPlaceSchema).optional(),
+    /** The summary each `argsDeclaredAt` position reached, once resolved. */
+    argsSummary: z.record(z.string(), z.string()).optional(),
+    /**
+     * Set when the callee is one of this unit's own parameters: its
+     * index among them. A caller elsewhere that passes a function into
+     * that parameter (`argsSummary` at the matching position) reaches
+     * this call through it.
+     */
+    calleeParameter: z.number().optional(),
     args: z.array(z.unknown()),
     async: z.boolean(),
     /** Absent for a call that always fires within its transition. */

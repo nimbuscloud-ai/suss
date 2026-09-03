@@ -164,6 +164,28 @@ function isParameterOf(declaration: Node, scanning: FunctionRoot): boolean {
 }
 
 /**
+ * Which of `scanning`'s own parameters a `callerSupplied` callee is, by
+ * position. A caller that passes a function into that position is the
+ * join a `passes` fact makes against this call.
+ */
+export function parameterIndexOf(
+  declarations: readonly Node[],
+  scanning?: FunctionRoot,
+): number | undefined {
+  if (scanning === undefined) {
+    return undefined;
+  }
+  const params = scanning.getParameters();
+  for (const declaration of declarations) {
+    const index = params.findIndex((param) => param === declaration);
+    if (index !== -1) {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Which kind of stop a call site is, given every declaration the type
  * checker offered for its callee, and the function whose body the call
  * is in. Asked only once the walk has failed to reach a function with a

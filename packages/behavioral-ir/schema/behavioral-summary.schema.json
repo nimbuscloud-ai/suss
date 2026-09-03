@@ -788,6 +788,47 @@
                         "required": ["file", "span"],
                         "additionalProperties": false
                       },
+                      "argsDeclaredAt": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "file": {
+                              "type": "string"
+                            },
+                            "span": {
+                              "type": "object",
+                              "properties": {
+                                "start": {
+                                  "type": "number"
+                                },
+                                "end": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": ["start", "end"],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": ["file", "span"],
+                          "additionalProperties": false
+                        }
+                      },
+                      "argsSummary": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "calleeParameter": {
+                        "type": "number"
+                      },
                       "args": {
                         "type": "array",
                         "items": {}

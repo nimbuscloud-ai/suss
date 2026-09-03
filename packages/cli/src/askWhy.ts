@@ -545,6 +545,10 @@ const HOP_LINE: Record<CallRecord, (hop: WhyHop) => string> = {
     hop.to === null
       ? `${hop.from.identity.name} (${locationClause(hop.from)}) is bound to ${hop.callee}, which nothing here provides`
       : `${hop.from.identity.name} (${locationClause(hop.from)}) is bound to ${hop.callee}, which ${hop.to.identity.name} (${unitAt(hop.to)}) provides`,
+  // `hop.callee` is the receiving function's name plus the parameter it
+  // calls the passed function as, e.g. "walkStatements, which calls it as visit".
+  passed: (hop) =>
+    `${hop.from.identity.name} (${locationClause(hop.from)}) passes ${hop.to?.identity.name} to ${hop.callee}:`,
 };
 
 function hopLine(hop: WhyHop): string {
