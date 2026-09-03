@@ -202,3 +202,69 @@ describe("what a graphql-ruby field's resolver reaches", () => {
     expect(text).toContain("Query.orders");
   });
 });
+
+describe("what a graphql-ruby field's resolver reaches through a method passed by name", () => {
+  beforeEach(() => {
+    write("app/graphql/types/index_type.rb", [
+      "class Types::IndexType < Types::BaseObject",
+      "  field :build_result, String, null: false",
+      "",
+      "  def build_result",
+      "    register(method(:build_index))",
+      "  end",
+      "end",
+    ]);
+    write("app/lib/register.rb", [
+      "def build_index",
+      "  Order.where(user_id: 1)",
+      "end",
+      "",
+      "def register(handler)",
+      "  handler.call",
+      "end",
+    ]);
+  });
+
+  it("finds the caller of build_index through register, not just the field", async () => {
+    const summaries = await extracted();
+    const out = path.join(dir, "summaries");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
+
+    const { exitCode, answer } = answerQuestion({
+      question: "what calls build_index",
+      dir: out,
+      output: path.join(dir, "answer.txt"),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(answer?.headline).toContain("1 unit calls");
+    const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
+    expect(text).toContain("register");
+  });
+
+  it("no longer ends at the parameter: register's own gap is gone, and the field reaches the boundary through it", async () => {
+    const summaries = await extracted();
+    const register = summaries.find(
+      (summary) => summary.identity.name === "register",
+    );
+    expect(
+      register?.gaps.filter((gap) => gap.type === "unfollowedCall"),
+    ).toEqual([]);
+
+    const out = path.join(dir, "summaries");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
+
+    const { exitCode, answer } = answerQuestion({
+      question: "what does Index.buildResult reach",
+      dir: out,
+      output: path.join(dir, "answer.txt"),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(answer?.headline).toContain("reaches 1 boundary");
+    const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
+    expect(text).toContain("reads postgresql:ActiveRecord::Base/Order");
+  });
+});

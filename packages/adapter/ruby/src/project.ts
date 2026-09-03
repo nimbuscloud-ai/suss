@@ -14,7 +14,10 @@ import path from "node:path";
 import {
   disambiguateSummaryIds,
   linkCallsToSummaries,
+  placeArgTargets,
+  placeCalleeParameters,
   placeCalls,
+  recordParameterGaps,
   summaryIdFromParts,
   unfollowedCallGap,
 } from "@suss/behavioral-ir";
@@ -210,8 +213,15 @@ export async function extractRubyProject(
         ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
       );
       placeCalls(summary, reached.targetsByKey.get(key));
+      placeArgTargets(summary, reached.argTargetsByKey.get(key));
+      placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
     }
   }
+  recordParameterGaps(
+    reached.parameterCallsByKey,
+    summariesBySeed,
+    reached.passedPositions,
+  );
   summaries.push(...reached.summaries);
 
   const dependencies = fileDependenciesOf(db, displayPathOf);

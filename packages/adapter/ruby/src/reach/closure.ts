@@ -13,7 +13,10 @@
 
 import {
   functionCallBinding,
+  placeArgTargets,
+  placeCalleeParameters,
   placeCalls,
+  recordParameterGaps,
   unfollowedCallGap,
   worthRecording,
 } from "@suss/behavioral-ir";
@@ -31,11 +34,12 @@ import { bodyOfMethod } from "../discovery.js";
 import { nodeId } from "../facts/values.js";
 import { bodyCalls, calleeText, withoutChainLinks } from "../paths/effects.js";
 import { walkDefinitions } from "../scope.js";
-import { resolveCallee } from "./resolveCallee.js";
+import { resolveCallee, resolveMethodReference } from "./resolveCallee.js";
 
 import type {
   BehavioralSummary,
   DeclaredAt,
+  ParameterCall,
   UnfollowedCall,
 } from "@suss/behavioral-ir";
 import type { RawCodeStructure, RawParameter } from "@suss/extractor";
@@ -72,6 +76,15 @@ export interface ReachedUnits {
   readonly targetsByKey: ReadonlyMap<string, ReadonlyMap<string, DeclaredAt>>;
   /** The calls each scanned body could not follow, by the scanned method's key. */
   readonly stopsByKey: ReadonlyMap<string, UnfollowedCall[]>;
+  /** Where each `method(:name)` reference that is itself a project method was declared, by callee text and position, keyed by the scanned method's key. */
+  readonly argTargetsByKey: ReadonlyMap<
+    string,
+    ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
+  >;
+  /** The calls each scanned body makes through one of its own parameters, by the scanned method's key. */
+  readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
+  /** Every (method, position) some scanned body passed a named project method into, across the whole run. */
+  readonly passedPositions: ReadonlySet<string>;
 }
 
 const REACHABLE_RULES = [
@@ -94,6 +107,15 @@ export async function reachedFunctions(
   const scanned = new Set<string>();
   const targetsByKey = new Map<string, ReadonlyMap<string, DeclaredAt>>();
   const stopsByKey = new Map<string, UnfollowedCall[]>();
+  const argTargetsByKey = new Map<
+    string,
+    ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
+  >();
+  const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
+  // Every (method, position) some scanned body passes a named project
+  // method into. An inline block or a variable does not count, so a
+  // parameter call missing here is a gap even when a caller supplies one.
+  const passedPositions = new Set<string>();
 
   for (const seed of seeds) {
     seedKeys.add(seed.key);
@@ -127,6 +149,13 @@ export async function reachedFunctions(
         stopsByKey.set(key, scan.stops);
       }
       targetsByKey.set(key, scan.targets);
+      argTargetsByKey.set(key, scan.argTargets);
+      if (scan.parameterCalls.length > 0) {
+        parameterCallsByKey.set(key, scan.parameterCalls);
+      }
+      for (const position of scan.passedPositions) {
+        passedPositions.add(position);
+      }
       for (const target of scan.followed) {
         const calleeKey = keyOf(target);
         if (!functionByKey.has(calleeKey)) {
@@ -138,6 +167,7 @@ export async function reachedFunctions(
   }
 
   const summaries: BehavioralSummary[] = [];
+  const summariesByKey = new Map<string, BehavioralSummary[]>();
   for (const [keyAtom] of db.facts("reachable")) {
     const key = String(keyAtom);
     const target = functionByKey.get(key);
@@ -150,10 +180,21 @@ export async function reachedFunctions(
     summary.confidence = { source: "inferred_static", level: "low" };
     summary.gaps.push(...(stopsByKey.get(key) ?? []).map(unfollowedCallGap));
     placeCalls(summary, targetsByKey.get(key));
+    placeArgTargets(summary, argTargetsByKey.get(key));
+    placeCalleeParameters(summary, parameterCallsByKey.get(key));
+    summariesByKey.set(key, [summary]);
     summaries.push(summary);
   }
+  recordParameterGaps(parameterCallsByKey, summariesByKey, passedPositions);
 
-  return { summaries, targetsByKey, stopsByKey };
+  return {
+    summaries,
+    targetsByKey,
+    stopsByKey,
+    argTargetsByKey,
+    parameterCallsByKey,
+    passedPositions,
+  };
 }
 
 function keyOf(target: ReachedFunction): string {
@@ -234,11 +275,52 @@ function nestingOf(qualifiedName: string): string[] {
   return out;
 }
 
-/** What one pass over a body found: methods to walk into, stops, and where each callee was placed. */
+/**
+ * What one pass over a body found: methods to walk into, stops, where
+ * each callee was placed, where a `method(:name)` reference that is
+ * itself a project method was placed (by callee text and position),
+ * calls made through one of this body's own parameters, and the
+ * (method, position) pairs this body passes a method into.
+ */
 interface Scan {
   readonly followed: ReachedFunction[];
   readonly stops: UnfollowedCall[];
   readonly targets: ReadonlyMap<string, DeclaredAt>;
+  readonly argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
+  readonly parameterCalls: readonly ParameterCall[];
+  readonly passedPositions: ReadonlySet<string>;
+}
+
+const EMPTY_SCAN: Scan = {
+  followed: [],
+  stops: [],
+  targets: new Map(),
+  argTargets: new Map(),
+  parameterCalls: [],
+  passedPositions: new Set(),
+};
+
+/**
+ * A bare `method(:name)`, or one wrapped as an `&`-prefixed block
+ * argument, is a project method passed by name: the symbol node that
+ * spells it, if the shape matches, else null.
+ */
+function methodReferenceSymbol(node: RbNode): RbNode | null {
+  const target =
+    node.type === "block_argument" ? bodyStatements(node)[0] : node;
+  if (
+    target === undefined ||
+    target.type !== "call" ||
+    field(target, "receiver") !== null ||
+    field(target, "method")?.text !== "method"
+  ) {
+    return null;
+  }
+  const args = field(target, "arguments");
+  const argChildren = args === null ? [] : bodyStatements(args);
+  return argChildren.length === 1 && argChildren[0]?.type === "simple_symbol"
+    ? (argChildren[0] as RbNode)
+    : null;
 }
 
 async function scanBody(
@@ -248,22 +330,68 @@ async function scanBody(
 ): Promise<Scan> {
   const body = field(source.node, "body");
   if (body === null) {
-    return { followed: [], stops: [], targets: new Map() };
+    return EMPTY_SCAN;
   }
 
   const calls = withoutChainLinks(bodyCalls(body));
+  const ownParameters = positionalParameters(source.node).map((p) => p.name);
   const site: CallSite = {
     enclosingQualifiedName: source.enclosingQualifiedName,
     nesting:
       source.enclosingQualifiedName === null
         ? []
         : nestingOf(source.enclosingQualifiedName),
+    ownParameters,
   };
 
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
   const targets = new Map<string, DeclaredAt | null>();
+  const argTargets = new Map<string, Map<number, DeclaredAt | null>>();
+  const parameterCalls: ParameterCall[] = [];
+  const passedPositions = new Set<string>();
   const seen = new Set<string>();
+  const parameterCallsSeen = new Set<string>();
+
+  // A `method(:name)` reference joins a `passes` fact to whichever
+  // parameter of the followed callee it calls through.
+  const recordPassedArgs = async (
+    call: RbNode,
+    callee: string,
+    calleeKey: string | null,
+  ): Promise<void> => {
+    const args = field(call, "arguments");
+    if (args === null) {
+      return;
+    }
+    const argNodes = bodyStatements(args);
+    for (let position = 0; position < argNodes.length; position += 1) {
+      const symbol = methodReferenceSymbol(argNodes[position] as RbNode);
+      if (symbol === null) {
+        continue;
+      }
+      const resolved = await resolveMethodReference(
+        symbol.text.slice(1),
+        site,
+        ctx,
+      );
+      if (resolved === null) {
+        continue;
+      }
+      const key = keyOf(resolved);
+      if (!seen.has(key)) {
+        seen.add(key);
+        followed.push(resolved);
+      }
+      rememberArgTarget(argTargets, callee, position, {
+        file: displayPathOf(resolved.file),
+        span: spanOf(resolved.node),
+      });
+      if (calleeKey !== null) {
+        passedPositions.add(`${calleeKey}#${position}`);
+      }
+    }
+  };
 
   for (const call of calls) {
     const callee = calleeText(call);
@@ -280,12 +408,29 @@ async function scanBody(
           ? null
           : { file: displayPathOf(source.file), span: spanOf(call) };
     rememberTarget(targets, callee, placed);
+    await recordPassedArgs(
+      call,
+      callee,
+      outcome.kind === "followed" ? keyOf(outcome.target) : null,
+    );
 
     if (outcome.kind === "stopped") {
       const stopKey = `${outcome.reason}:${callee}`;
       if (!seen.has(stopKey) && worthRecording(outcome.reason)) {
         seen.add(stopKey);
         stops.push({ callee, reason: outcome.reason });
+      }
+      if (
+        outcome.reason === "callerSupplied" &&
+        !parameterCallsSeen.has(callee)
+      ) {
+        const receiverName = field(call, "receiver")?.text;
+        const parameterIndex =
+          receiverName === undefined ? -1 : ownParameters.indexOf(receiverName);
+        if (parameterIndex !== -1) {
+          parameterCallsSeen.add(callee);
+          parameterCalls.push({ callee, parameterIndex });
+        }
       }
       continue;
     }
@@ -302,7 +447,26 @@ async function scanBody(
       settled.set(callee, target);
     }
   }
-  return { followed, stops, targets: settled };
+  const settledArgs = new Map<string, ReadonlyMap<number, DeclaredAt>>();
+  for (const [callee, byPosition] of argTargets) {
+    const positions = new Map<number, DeclaredAt>();
+    for (const [position, target] of byPosition) {
+      if (target !== null) {
+        positions.set(position, target);
+      }
+    }
+    if (positions.size > 0) {
+      settledArgs.set(callee, positions);
+    }
+  }
+  return {
+    followed,
+    stops,
+    targets: settled,
+    argTargets: settledArgs,
+    parameterCalls,
+    passedPositions,
+  };
 }
 
 /** The same callee text placed two ways, a shadowed name say, has to say so rather than pick one. */
@@ -326,6 +490,31 @@ function rememberTarget(
       known.span.end !== placed.span.end)
   ) {
     targets.set(callee, null);
+  }
+}
+
+// Same shadow handling as `rememberTarget`, one level down: the
+// argument at this position in calls written as `callee`.
+function rememberArgTarget(
+  argTargets: Map<string, Map<number, DeclaredAt | null>>,
+  callee: string,
+  position: number,
+  placed: DeclaredAt,
+): void {
+  const byPosition = argTargets.get(callee) ?? new Map();
+  argTargets.set(callee, byPosition);
+  const known = byPosition.get(position);
+  if (known === undefined) {
+    byPosition.set(position, placed);
+    return;
+  }
+  if (
+    known !== null &&
+    (known.file !== placed.file ||
+      known.span.start !== placed.span.start ||
+      known.span.end !== placed.span.end)
+  ) {
+    byPosition.set(position, null);
   }
 }
 
