@@ -26,10 +26,10 @@ import { declaredExports } from "./declaredSurface.mjs";
  *
  * Lowering it is a fix landing. Raising it needs saying which call
  * sites arrived and why they are the same shape as the rest, in the
- * notes: the twentieth is `unitInvokes(...).methods(...)` in the
+ * notes: the twelfth is `unitInvokes(...).methods(...)` in the
  * aws-lambda pack, beside the sqs and eventbridge factories.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 20;
+const KNOWN_UNPAIRED_CONSUMERS = 12;
 
 /**
  * Every function a package says it exports has a provider summary.

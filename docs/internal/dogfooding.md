@@ -155,7 +155,7 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 134 providers and 14 consumers unpaired, plus the
+The run leaves 134 providers and 12 consumers unpaired, plus the
 753 with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
@@ -196,12 +196,11 @@ The remaining 111 are ordinary: exports whose only callers are
 inside their own package or in tests, which the run does not
 scan.
 
-**The 14 unmatched consumers ask for a method or a property on a
-value a package returned.** They are `checkAll(...).findings`,
-`groundStorageAccesses(...).accesses`,
-`SuppressionFileSchema.safeParse(...)`, `IntentDocSchema.parse(...)`,
-`evaluate(...).facts`, two of `storageCalls(...).methods(...)`, two
-of `sqlStatements(...).methods(...)`, two of
+**The 12 unmatched consumers ask for a method on a value a package
+returned or exported.** They are `SuppressionFileSchema.safeParse(...)`,
+`IntentDocSchema.safeParse(...)`, `evaluate(...).facts`, two of
+`storageCalls(...).methods(...)`, two of
+`sqlStatements(...).methods(...)`, four of
 `messageSends(...).methods(...)`, and one of
 `unitInvokes(...).methods(...)`. The DynamoDB pack builds its chain
 inside a function because the chain depends on what a project
@@ -218,11 +217,14 @@ work than the pairing pass.
 A method the language declares on every value used to land here too,
 and that was noise: `readSqlAccess(...).map(...)` asked for
 `@suss/sql::readSqlAccess.map`, and the count climbed by one for every
-pack that called a shared reader. The export path now stops at the
-call when the method is declared in TypeScript's own lib files, and
-runs through it when somebody declared the method, which is what keeps
-`client.send(...)` on an SDK client working. That took the count from
-eleven to seven and paired one more consumer.
+pack that called a shared reader. A call through a method declared in
+TypeScript's own lib files is now no consumer at all. When the value
+under it came from a call, that call is attributed on its own, and when
+it is an exported constant, as in `ROOT_CLASS_NAMES.join(", ")`, nothing
+of the package was called. A method somebody declared still runs
+through, which is what keeps `client.send(...)` on an SDK client
+working. The first half took the count from eleven to seven; the second
+took it from twenty to twelve without changing the pairs.
 
 ## What CI enforces
 
