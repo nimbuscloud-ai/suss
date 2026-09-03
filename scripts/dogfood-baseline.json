@@ -4,8 +4,8 @@
     "packagesWithExports": 68,
     "exports": 819,
     "internal": 2812,
-    "consumers": 1430,
-    "pairs": 1427,
+    "consumers": 1436,
+    "pairs": 1433,
     "unfollowedCalls": 410,
     "findingErrors": 0
   },
@@ -70,7 +70,7 @@
       "name": "@suss/client-axios",
       "exports": 2,
       "internal": 2,
-      "consumers": 29,
+      "consumers": 35,
       "unfollowedCalls": 0
     },
     "packages/client/web": {

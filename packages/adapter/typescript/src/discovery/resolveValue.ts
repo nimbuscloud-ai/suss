@@ -141,7 +141,22 @@ export function writtenNodeOf(
   resolution: ResolutionStore | undefined,
 ): Node | null {
   const written = factKeyOf(value);
-  if (Node.isCallExpression(written) || Node.isNewExpression(written)) {
+  if (Node.isNewExpression(written)) {
+    return written;
+  }
+  if (Node.isCallExpression(written)) {
+    // A library factory call has no project function behind it, and
+    // stays the construction itself. A call to a project function asks
+    // the store what the function's return value was written as first.
+    if (
+      resolution !== undefined &&
+      resolution.resolveCallable(written.getExpression()) !== null
+    ) {
+      const resolved = resolution.resolveWrittenValue(written);
+      if (resolved !== null) {
+        return resolved;
+      }
+    }
     return written;
   }
   if (resolution === undefined || !couldNameAValue(written)) {

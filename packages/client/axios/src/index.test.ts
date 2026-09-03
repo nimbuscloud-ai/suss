@@ -549,6 +549,112 @@ describe("axiosPack — instance built in another file", () => {
   });
 });
 
+describe("axiosPack — a call whose receiver is itself a call", () => {
+  it("matches a method called on what a guarded cached-instance wrapper returns", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios, { AxiosInstance } from "axios";
+
+      let cached: AxiosInstance | null = null;
+      function client() {
+        if (!cached) {
+          cached = axios.create({ baseURL: "/api" });
+        }
+        return cached;
+      }
+
+      export async function getUser() {
+        return client().get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
+    });
+  });
+
+  it("matches a method called on what a wrapper returns fresh from axios.create()", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios from "axios";
+
+      function client() {
+        return axios.create({ baseURL: "/api" });
+      }
+
+      export async function getUser() {
+        return client().get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
+    });
+  });
+
+  it("matches a call through a wrapper imported from another file", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "client.ts",
+      `
+      import axios, { AxiosInstance } from "axios";
+
+      let cached: AxiosInstance | null = null;
+      export function client() {
+        if (!cached) {
+          cached = axios.create({ baseURL: "/api" });
+        }
+        return cached;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { client } from "./client";
+
+      export async function getUser() {
+        return client().get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
+    });
+  });
+});
+
 describe("axiosPack fixtures", () => {
   const fixturesDir = path.resolve(__dirname, "../../../../fixtures/axios");
 
