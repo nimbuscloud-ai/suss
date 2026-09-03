@@ -48,13 +48,13 @@ import { UsageError } from "./usageError.js";
 
 import type { PythonPack } from "@suss/adapter-python";
 import type { RubyPack } from "@suss/adapter-ruby";
-import type { CacheDiagnostic } from "@suss/adapter-typescript";
 import type {
   BehavioralSummary,
   RenderNode,
   WrapperReference,
 } from "@suss/behavioral-ir";
 import type {
+  CacheDiagnostic,
   EmptyStage,
   ExtractionReport,
   PatternPack,

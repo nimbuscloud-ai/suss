@@ -24,8 +24,8 @@ import {
 } from "./extract.js";
 import { stubOverlayOf } from "./stubs.js";
 
-import type { CacheDiagnostic } from "@suss/adapter-typescript";
 import type { BehavioralSummary, RenderNode } from "@suss/behavioral-ir";
+import type { CacheDiagnostic } from "@suss/extractor";
 import type { Language } from "./language.js";
 
 const repoRoot = path.resolve(
