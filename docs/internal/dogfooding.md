@@ -36,33 +36,15 @@ under `fn:<package>::<exportPath>`.
 
 ## What the run produces
 
-**202 export + 785 internal + 278 consumer summaries across 38/38 `@suss/*` packages. 270 cross-package edges paired.**
+The current counts are in `scripts/dogfood-baseline.json`: export, internal and consumer summaries per package and in total, the number of cross-package edges paired, and the calls the walk could not follow. `scripts/dogfood.mjs` writes that file, we commit it, and CI runs the script on every push. [What CI enforces](#what-ci-enforces) covers what happens when a number moves. The script also prints the most consumed exports, which is the quickest way to see which packages the rest of the monorepo leans on.
 
 We count library summaries on two lines because the two move for different reasons.
 
-The 202 export summaries describe what the packages promise callers. Each one comes with a package and an export path that we build a pairing key from, and that path is either one a manifest declares or a method you reach through one. That number only moves when a package's public surface moves.
+The export summaries describe what the packages promise callers. Each one comes with a package and an export path that we build a pairing key from, and that path is either one a manifest declares or a method you reach through one. That number only moves when a package's public surface moves.
 
-The 785 internal summaries come from the transitive-closure pass. Every helper a pack-recognised entry point reaches through a static call chain gets its own summary, and `recognition: "reachable"` is what tells them apart. A helper we reached this way is inside a package rather than on its edge, so it has no export path and cannot pair, and `pairSummaries` reports all 785 under `unmatched.noBinding`. That number moves when extraction changes, and also when someone adds or removes a private helper.
+The internal summaries come from the transitive-closure pass. Every helper a pack-recognised entry point reaches through a static call chain gets its own summary, and `recognition: "reachable"` is what tells them apart. A helper we reached this way is inside a package rather than on its edge, so it has no export path and cannot pair, and `pairSummaries` reports every one of them under `unmatched.noBinding`. That number moves when extraction changes, and also when someone adds or removes a private helper.
 
 Mixed into one number, the two hid each other. `@suss/cli` declares ten exports, and adding one module of five module-private helpers to it moved the old provider count from 70 to 75, which looked like the package growing its API when no caller could reach any of the five.
-
-`scripts/dogfood.mjs` writes these counts to `scripts/dogfood-baseline.json`, which we commit, and CI runs the script on every push. [What CI enforces](#what-ci-enforces) covers what happens when a number moves.
-
-Top consumed exports (packages most depended on by others in the
-suss monorepo):
-
-| Export | Callers |
-|--------|--------:|
-| `@suss/adapter-typescript::createTypeScriptAdapter` | 43 |
-| `@suss/adapter-typescript::createTypeScriptAdapter.extractAll` | 43 |
-| `@suss/behavioral-ir::restBinding` | 22 |
-| `@suss/behavioral-ir::functionCallBinding` | 13 |
-| `@suss/behavioral-ir::messageBusBinding` | 12 |
-| `@suss/checker::checkAll` | 11 |
-| `@suss/manifest-aws::refTarget` | 8 |
-| `@suss/behavioral-ir::runtimeConfigBinding` | 6 |
-| `@suss/extractor::assembleSummary` | 6 |
-| `@suss/behavioral-ir::graphqlResolverBinding` | 5 |
 
 Every edge is a behavioural pair. The provider summary describes
 what the called function does (its conditions and outputs, branch by
@@ -264,8 +246,9 @@ The counts are there because the invariants cannot see a
 recognizer that stops firing at some call sites while it keeps
 firing at others. Every declared export still has its summary,
 every boundary still has its key, and the only thing that moved
-is how much of the closure suss reached. That closure is 785 of
-the 987 library summaries, so leaving it unguarded would leave
+is how much of the closure suss reached. That closure is most of
+the library summaries (the internal line in the baseline runs to
+several times the export line), so leaving it unguarded would leave
 most of the run unguarded. The internal line is where it shows
 up: stop the closure expanding and internal falls to nothing
 while every export and every invariant still passes.
@@ -340,8 +323,8 @@ the whole workspace by breadth.
   factory that returns a `PatternPack` data structure. Their
   public API is structurally small: one summary per pack, each
   with a minimal body. That's correct, because a pack is data
-  rather than behaviour. The 38/38 coverage counts them as
-  analysed, not as substantive.
+  rather than behaviour. The package count in the baseline counts
+  them as analysed, not as substantive.
 
 ## The in-process API holds up
 
