@@ -537,8 +537,8 @@ function touchAtTarget(
 }
 
 const HOP_LINE: Record<CallRecord, (hop: WhyHop) => string> = {
-  // hop.to's own provides is worth saying here; the bound line below
-  // already says as much about it through the boundary it is bound to.
+  // A bound hop already ends by saying what hop.to provides, so only
+  // the written line appends it to hop.to's location.
   written: (hop) =>
     `${hop.from.identity.name} (${locationClause(hop.from)}) calls ${hop.callee}, and that call runs ${hop.to?.identity.name} (${hop.to === null ? "" : locationClause(hop.to)}):`,
   bound: (hop) =>

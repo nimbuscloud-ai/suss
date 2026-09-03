@@ -537,12 +537,13 @@ spelling that is exactly one boundary's name takes that one:
 `GET /articles` is the collection route, not the comments route under
 it.
 
-When an item is about a unit that is itself a provider, an exported
-function or a route, it says so with `provides <key>`, apart from
-whatever its own id happens to look like. A function that calls
-nothing else in its own workspace keeps a plain id, and the item still
-says `discoverUnits (src/discovery.ts:150, provides
-fn:@suss/adapter-python::discoverUnits) calls builtSubjects`.
+When the unit an item is about provides a boundary itself, an exported
+function or a route, the item says which one after the location:
+`discoverUnits (src/discovery.ts:150, provides
+fn:@suss/adapter-python::discoverUnits) calls builtSubjects`. The JSON
+form has the same key in a `provides` field. Read that rather than the
+summary id, which only spells the boundary when two summaries share a
+name.
 
 ### The same questions in symbols
 
