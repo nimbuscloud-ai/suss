@@ -34,7 +34,30 @@ export interface RbStoragePattern {
   storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
-export type RubyDiscoveryPattern = GraphqlObjectFields;
+export type RubyDiscoveryPattern = GraphqlObjectFields | RailsControllerAction;
+
+/**
+ * A class whose ancestry reaches one of `baseClassNames` is a
+ * controller, and each of its own instance methods named for one of
+ * `actions` is an HTTP handler at that action's conventional verb and
+ * path. This reads the RESTful naming convention, not `config/routes.rb`:
+ * a project that maps an action to a different path than the
+ * convention gives will not be matched.
+ */
+export interface RailsControllerAction {
+  type: "railsControllerAction";
+  /** The library's own base a project's controllers extend, `ActionController::Base` say. */
+  baseClassNames: string[];
+  /** The directory a bare superclass name is looked up under, the project's own layout. */
+  root: string;
+  pathConvention: ConstantPathConvention;
+  /** The library's own classes a project's controller chain ends at. */
+  ancestryRootClassNames: string[];
+  /** Verb and path template for each conventional action name the library dispatches to. `:resource` is filled in from the controller's own name. */
+  actions: Record<string, { method: string; pathTemplate: string }>;
+  /** Status code a wire response gets when the action does not say otherwise. */
+  defaultStatusCode: number;
+}
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
 export interface GraphqlObjectFields {

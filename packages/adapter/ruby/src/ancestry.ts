@@ -25,6 +25,8 @@ const DEFINE_METHOD_CALL = "define_method";
 export interface ReachedBody {
   info: ClassInfo;
   knownClasses: ReadonlySet<string>;
+  /** Absolute path of the file the block is written in. */
+  file: string;
 }
 
 /** One ancestor: every block reopening its name, or the name alone when nothing reached it. Blocks stay together because Ruby treats a reopened class as one place in the chain. */
@@ -68,7 +70,10 @@ export async function reachDefinition(
     qualifiedName,
     lookup.pathConvention,
   );
-  const fileRoot = filePath === null ? null : await lookup.parsedFile(filePath);
+  if (filePath === null) {
+    return null;
+  }
+  const fileRoot = await lookup.parsedFile(filePath);
   if (fileRoot === null) {
     return null;
   }
@@ -79,7 +84,7 @@ export async function reachDefinition(
     return null;
   }
   const knownClasses = new Set(all.map((info) => info.qualifiedName));
-  return matches.map((info) => ({ info, knownClasses }));
+  return matches.map((info) => ({ info, knownClasses, file: filePath }));
 }
 
 export function ancestryOf(
@@ -237,15 +242,25 @@ function superclassOf(blocks: readonly ReachedBody[]): string | null {
 
 /** What searching an ancestry for one method name came to. */
 export type MethodLookup =
-  | { type: "found"; method: RbNode }
-  /** `reason` completes "could be answered by a method ...". */
-  | { type: "unsettled"; reason: string }
+  /** `block` is which ancestor's own body the method is written in, so a caller that needs its file can get there. */
+  | { type: "found"; method: RbNode; block: ReachedBody }
+  /**
+   * `reason` completes "could be answered by a method ...".
+   * `cause` says why the search stopped, since a caller deciding
+   * whether to look further needs more than the sentence: `unreadAncestor`
+   * is a base whose file this run could not open, and `dynamicDefine`
+   * is a body that calls `define_method`.
+   */
+  | {
+      type: "unsettled";
+      reason: string;
+      cause: "unreadAncestor" | "dynamicDefine";
+    }
   | { type: "none" };
 
 /**
- * The method `name` resolves to. An ancestor nearer than any definition
- * that nothing could read stops the search: whatever sits further along
- * is not what Ruby would have called.
+ * The method `name` resolves to. An unread ancestor nearer than any
+ * definition stops the search, since Ruby would have called that one first.
  */
 export function methodInAncestry(
   ancestry: Ancestry,
@@ -256,17 +271,19 @@ export function methodInAncestry(
       return {
         type: "unsettled",
         reason: `inherited from ${entry.name}, which this run did not read`,
+        cause: "unreadAncestor",
       };
     }
 
     const found = definitionIn(entry.blocks, name);
-    if (found.method !== null) {
-      return { type: "found", method: found.method };
+    if (found.method !== null && found.block !== null) {
+      return { type: "found", method: found.method, block: found.block };
     }
     if (found.dynamic) {
       return {
         type: "unsettled",
         reason: "defined with define_method, which this reader does not follow",
+        cause: "dynamicDefine",
       };
     }
   }
@@ -277,18 +294,23 @@ export function methodInAncestry(
 function definitionIn(
   blocks: readonly ReachedBody[],
   name: string,
-): { method: RbNode | null; dynamic: boolean } {
+): { method: RbNode | null; block: ReachedBody | null; dynamic: boolean } {
   let method: RbNode | null = null;
+  let block: ReachedBody | null = null;
   let dynamic = false;
-  for (const block of blocks) {
-    const body = block.info.bodyNode;
+  for (const candidate of blocks) {
+    const body = candidate.info.bodyNode;
     if (body === null) {
       continue;
     }
-    method = instanceMethodsByName(body).get(name) ?? method;
+    const found = instanceMethodsByName(body).get(name);
+    if (found !== undefined) {
+      method = found;
+      block = candidate;
+    }
     dynamic ||= bareCallArgumentGroups(body, DEFINE_METHOD_CALL).length > 0;
   }
-  return { method, dynamic };
+  return { method, block, dynamic };
 }
 
 /** Every statement of every body reached, most distant ancestor first, so a nearer declaration overwrites what it inherits. */

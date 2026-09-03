@@ -137,6 +137,26 @@ export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
 }
 
 /**
+ * Every `def self.name` a class body writes directly, keyed by the name
+ * it is defined under. Used for a call written straight on the
+ * constant, `OrderService.call` say, which runs on the class rather
+ * than an instance and so is never in `instanceMethodsByName`.
+ */
+export function singletonMethodsByName(body: RbNode): Map<string, RbNode> {
+  const methods = new Map<string, RbNode>();
+  for (const stmt of runStatements(body)) {
+    if (stmt.type !== "singleton_method") {
+      continue;
+    }
+    const name = field(stmt, "name")?.text;
+    if (name !== undefined) {
+      methods.set(name, stmt);
+    }
+  }
+  return methods;
+}
+
+/**
  * The arguments of each receiverless call to `name` the body runs, one
  * group per call, in source order. Grouped rather than flattened
  * because `include A, B` and `include A` then `include B` order their
