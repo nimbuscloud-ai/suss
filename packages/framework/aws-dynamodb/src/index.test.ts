@@ -190,6 +190,241 @@ describe("a DynamoDB command", () => {
     });
   });
 
+  it("reads the attribute a SET clause assigns", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function rename(id: string, name: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "SET customerName = :name",
+          ExpressionAttributeValues: { ":name": name },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: ["customerName"],
+      selector: ["orderId"],
+    });
+  });
+
+  it("reads the attributes a REMOVE clause drops", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function forget(id: string) {
+        return client.send(new UpdateCommand({
+          TableName: "profiles-v1",
+          Key: { accountId: id },
+          UpdateExpression: "remove email, phone, address",
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: ["email", "phone", "address"],
+      selector: ["accountId"],
+    });
+  });
+
+  it("reads the attribute an ADD clause increments", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function bump(id: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "ADD count :one",
+          ExpressionAttributeValues: { ":one": 1 },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: ["count"],
+    });
+  });
+
+  it("reads the attribute a DELETE clause takes a value out of", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function untag(id: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "DELETE tags :t",
+          ExpressionAttributeValues: { ":t": ["urgent"] },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: ["tags"],
+    });
+  });
+
+  it("looks a written attribute up through the alias the call declares", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function rename(id: string, name: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "SET #n = :name",
+          ExpressionAttributeNames: { "#n": "customerName" },
+          ExpressionAttributeValues: { ":name": name },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["customerName"],
+    });
+  });
+
+  it("touches the top-level attribute of a nested path and of an indexed one", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function update(id: string, city: string, first: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "SET address.city = :city, items[0] = :first",
+          ExpressionAttributeValues: { ":city": city, ":first": first },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["address", "items"],
+    });
+  });
+
+  it("still touches the attribute an if_not_exists default targets", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function seed(id: string, total: number) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "SET total = if_not_exists(total, :zero) + :total",
+          ExpressionAttributeValues: { ":zero": 0, ":total": total },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["total"],
+    });
+  });
+
+  it("leaves an alias out of the fields when nothing says which attribute it is", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function rename(id: string, name: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "SET #n = :name, status = :s",
+          ExpressionAttributeValues: { ":name": name, ":s": "active" },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["status"],
+    });
+  });
+
+  it("reads the same attributes off the raw client's UpdateItemCommand", () => {
+    const effects = effectsIn(`
+      import { DynamoDBClient, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+      declare const client: DynamoDBClient;
+      export async function forget(id: string) {
+        return client.send(new UpdateItemCommand({
+          TableName: "profiles-v1",
+          Key: { accountId: { S: id } },
+          UpdateExpression: "REMOVE email, phone",
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      operation: "UpdateItemCommand",
+      fields: ["email", "phone"],
+      selector: ["accountId"],
+    });
+  });
+
+  it("skips a SET item with no attribute path in front of the equals", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function odd(id: string, value: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "SET status = :s, = :stray",
+          ExpressionAttributeValues: { ":s": value, ":stray": value },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["status"],
+    });
+  });
+
+  it("skips an empty item left by a trailing comma in a clause", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function forget(id: string) {
+        return client.send(new UpdateCommand({
+          TableName: "profiles-v1",
+          Key: { accountId: id },
+          UpdateExpression: "REMOVE email, phone, ",
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["email", "phone"],
+    });
+  });
+
+  it("keeps fields empty when the UpdateExpression is not a string literal", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function rename(id: string, expression: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: expression,
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: [],
+    });
+  });
+
   it("reads a projection as the attributes it asks for", () => {
     const effects = effectsIn(`
       ${IMPORTS}
@@ -467,6 +702,28 @@ describe("a project's own request function", () => {
       kind: "write",
       operation: "PutItem",
       fields: ["orderId", "total"],
+    });
+  });
+
+  it("reads the attributes an UpdateExpression writes through the wire", () => {
+    const effects = calling(`
+      ${CLIENT_IMPORT}
+      declare const env: { ORDERS_TABLE: string };
+      export async function rename(orderId: string, name: string) {
+        return sendRequest(env, signer, "UpdateItem", {
+          TableName: "orders-v1",
+          Key: { orderId: { S: orderId } },
+          UpdateExpression: "SET customerName = :name",
+          ExpressionAttributeValues: { ":name": { S: name } },
+        });
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      operation: "UpdateItem",
+      fields: ["customerName"],
+      selector: ["orderId"],
     });
   });
 

@@ -9,6 +9,7 @@
   "ProjectionExpression": "DynamoDB command input: which attributes to read",
   "RequestItems": "DynamoDB command input: the tables a batch or transaction touches",
   "TableName": "DynamoDB command input: which table",
+  "UpdateExpression": "DynamoDB command input: the SET, REMOVE, ADD and DELETE clauses an update writes with",
   "dynamodb": "AWS transport name, Amazon DynamoDB",
   "read": "suss: access kind",
   "write": "suss: access kind"
