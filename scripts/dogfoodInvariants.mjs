@@ -21,15 +21,15 @@ import { declaredExports } from "./declaredSurface.mjs";
  * value a package returned, which nothing publishes a provider for, so
  * the number tracks how many places call a builder in that style and
  * moves when a pack is written rather than when resolution changes.
- * The dogfooding notes list every one of them under `## Where the
- * unmatched summaries come from`.
+ * The dogfooding notes list every one under `## Where the unmatched
+ * summaries come from`.
  *
  * Lowering it is a fix landing. Raising it needs saying which call
- * sites arrived and why they are the same shape as the rest, in the
- * notes: the twelfth is `unitInvokes(...).methods(...)` in the
- * aws-lambda pack, beside the sqs and eventbridge factories.
+ * sites arrived and why they match the rest, in the notes: the
+ * thirteenth through fifteenth are the three methods on the object
+ * `createAdapterStamp` returns, called from the TypeScript adapter.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 12;
+const KNOWN_UNPAIRED_CONSUMERS = 15;
 
 /**
  * Every function a package says it exports has a provider summary.
