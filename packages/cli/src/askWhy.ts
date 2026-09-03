@@ -2,21 +2,21 @@
  * The two why questions: why a unit reaches a boundary, and why a
  * value resolves to what it does.
  *
- * A why answer reads two layers. The summaries on disk say which unit
- * calls which and where the boundary is touched. The witness proof
- * over the resolution rules says why each callee comes down to the
- * function it does, computed when the question is asked rather than
- * during a run: the question re-reads the relevant source files and
- * re-evaluates the resolution rules under the witness algebra. The
- * source has to be a TypeScript or JavaScript project; without it the
- * reach answer still prints the unit chain, and says what is missing.
- * A hop written in Python or Ruby prints without a proof.
+ * The summaries on disk say which unit calls which and where a
+ * boundary is touched. The witness proof over the resolution rules
+ * says why a callee comes down to the function it does, computed when
+ * the question is asked by re-reading source through whichever
+ * language's adapter reads that file. A hop in a language with no
+ * session yet prints without a proof; a session that cannot make
+ * sense of the source says so as a caveat rather than crashing.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
-import { WhySession } from "@suss/adapter-typescript";
+import { PythonWhySession, preloadPythonGrammar } from "@suss/adapter-python";
+import { preloadRubyGrammar, RubyWhySession } from "@suss/adapter-ruby";
+import { TypeScriptWhySession } from "@suss/adapter-typescript";
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { gapCaveats } from "./askCaveats.js";
@@ -27,11 +27,11 @@ import {
   reachTargetOfTouches,
   representativeUnit,
 } from "./callFacts.js";
-import { languageOfFile } from "./language.js";
+import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
 import { providesKeyOf, resolveTarget } from "./target.js";
 
-import type { ValueLocation, WhyExplained } from "@suss/adapter-typescript";
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { ValueLocation, WhyExplained } from "@suss/resolution";
 import type { Answer, AnswerItem, AskOptions, ParsedQuestion } from "./ask.js";
 import type { TouchedBoundary } from "./boundaryReach.js";
 import type {
@@ -42,10 +42,51 @@ import type {
   ReachTarget,
   SpelledFunctions,
 } from "./callFacts.js";
+import type { Language } from "./language.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
 import type { TargetTouch } from "./target.js";
 
 export type WhyShape = "whyReaches" | "whyResolves";
+
+/**
+ * What a why question needs from a language's adapter: a way to find
+ * the node somebody pointed at, and the proof of what it resolves to.
+ * A found value is an opaque handle passed back into `explain` on the
+ * same session; nothing here inspects it.
+ */
+interface WhySessionLike {
+  findExpression(file: string, line: number, text: string): unknown | null;
+  findCallee(
+    file: string,
+    startLine: number,
+    endLine: number,
+    calleeText: string,
+  ): unknown | null;
+  explain(value: unknown, options?: { maxDepth?: number }): WhyExplained | null;
+}
+
+/** One session constructor per language that can answer a why question today. */
+const SESSION_FOR: Partial<
+  Record<Language, (options: { dir: string }) => WhySessionLike>
+> = {
+  typescript: (options) => new TypeScriptWhySession(options),
+  python: (options) => new PythonWhySession(options),
+  ruby: (options) => new RubyWhySession(options),
+};
+
+/** Loading a language's grammar is async; opening a session on it is not. */
+const PRELOAD: Partial<Record<Language, () => Promise<void>>> = {
+  python: preloadPythonGrammar,
+  ruby: preloadRubyGrammar,
+};
+
+/**
+ * Warm every language's parser before a why question runs, since
+ * `askWhy` itself has to stay synchronous for its other callers.
+ */
+export async function preloadWhySessions(): Promise<void> {
+  await Promise.all(Object.values(PRELOAD).map((preload) => preload()));
+}
 
 /**
  * How the why questions are written. The resolve spelling is tried
@@ -91,6 +132,7 @@ function miss(
   subject: string,
   headline: string,
   needs: string[] = [],
+  caveats: string[] = [],
 ): Answer {
   return {
     shape,
@@ -98,7 +140,7 @@ function miss(
     headline,
     items: [],
     needs,
-    caveats: [],
+    caveats,
     found: false,
   };
 }
@@ -121,8 +163,35 @@ function answerWhyResolves(
     ]);
   }
 
-  const session = new WhySession({ dir: root });
-  const value = session.findExpression(at.file, at.line, question.subject);
+  const language = languageOfFile(at.file) ?? "typescript";
+  const openSession = SESSION_FOR[language];
+  if (openSession === undefined) {
+    return miss(
+      "whyResolves",
+      asked,
+      `suss does not yet read ${LANGUAGE_LABEL[language]} source to explain a resolve.`,
+      [
+        `The summaries still record what ${question.subject} resolves to; they carry no step-by-step explanation for ${LANGUAGE_LABEL[language]} source.`,
+      ],
+    );
+  }
+
+  let value: unknown | null;
+  let explained: WhyExplained | null;
+  try {
+    const session = openSession({ dir: root });
+    value = session.findExpression(at.file, at.line, question.subject);
+    explained = value === null ? null : session.explain(value);
+  } catch (error) {
+    return miss(
+      "whyResolves",
+      asked,
+      `suss cannot explain ${asked}.`,
+      [],
+      [adapterReadFailure(root, error, language)],
+    );
+  }
+
   if (value === null) {
     return miss(
       "whyResolves",
@@ -131,7 +200,6 @@ function answerWhyResolves(
     );
   }
 
-  const explained = session.explain(value);
   if (explained === null) {
     return miss(
       "whyResolves",
@@ -157,6 +225,17 @@ function answerWhyResolves(
     found: matched,
     detail: { resolution: resolutionJson(explained) },
   };
+}
+
+/** The caveat for a thrown adapter error, with its own one-line message. */
+function adapterReadFailure(
+  root: string,
+  error: unknown,
+  language: Language,
+): string {
+  const message =
+    error instanceof Error ? error.message.split("\n")[0] : String(error);
+  return `The source under ${root} could not be read as a ${LANGUAGE_LABEL[language]} project: ${message}. --project says where the source is.`;
 }
 
 /** Whether the asked-for target is the resolved one, however spelled. */
@@ -454,13 +533,25 @@ function reachAnswer(
 
   const items: AnswerItem[] = [{ text: chain.join(" -> "), data: { chain } }];
   const caveats: string[] = [];
-  const session = openSession(root);
+  const sessions = new Map<Language, WhySessionLike | null>();
+  const sessionFor = (language: Language): WhySessionLike | null => {
+    const cached = sessions.get(language);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const opened = openSession(language, root);
+    sessions.set(language, opened);
+    return opened;
+  };
   const hopsJson: Array<Record<string, unknown>> = [];
   let missingProofs = false;
 
   for (const hop of hops) {
     items.push({ text: hopLine(hop), data: hopJson(hop) });
-    const explained = provable(hop) ? explainHop(session, hop) : null;
+    const hopLanguage = languageOfFile(hop.from.location.file) ?? "typescript";
+    const explained = provable(hop)
+      ? explainHop(sessionFor(hopLanguage), hop)
+      : null;
     if (provable(hop) && explained === null) {
       missingProofs = true;
     }
@@ -568,19 +659,23 @@ function hopJson(hop: WhyHop): Record<string, unknown> {
   };
 }
 
-/** The proof step reads TypeScript, so a hop written in Python or Ruby shows without one. */
+/** A hop written in a language with no session yet shows without a proof. */
 function provable(hop: WhyHop): boolean {
-  const language = languageOfFile(hop.from.location.file);
-  return (
-    hop.recorded === "written" &&
-    (language === null || language === "typescript")
-  );
+  if (hop.recorded !== "written") {
+    return false;
+  }
+  const language = languageOfFile(hop.from.location.file) ?? "typescript";
+  return SESSION_FOR[language] !== undefined;
 }
 
-/** Null when the root cannot be read as a project at all. */
-function openSession(root: string): WhySession | null {
+/** Null when the root cannot be read as this language's project at all. */
+function openSession(language: Language, root: string): WhySessionLike | null {
+  const create = SESSION_FOR[language];
+  if (create === undefined) {
+    return null;
+  }
   try {
-    return new WhySession({ dir: root });
+    return create({ dir: root });
   } catch {
     return null;
   }
@@ -593,21 +688,22 @@ function openSession(root: string): WhySession | null {
  * says once rather than per hop.
  */
 function explainHop(
-  session: WhySession | null,
+  session: WhySessionLike | null,
   hop: WhyHop,
 ): WhyExplained | null {
   if (session === null) {
     return null;
   }
-  const range = hop.from.location.range;
-  const callee = session.findCallee(
-    hop.from.location.file,
-    range.start,
-    range.end,
-    hop.callee,
-  );
-  if (callee === null) {
+  try {
+    const range = hop.from.location.range;
+    const callee = session.findCallee(
+      hop.from.location.file,
+      range.start,
+      range.end,
+      hop.callee,
+    );
+    return callee === null ? null : session.explain(callee);
+  } catch {
     return null;
   }
-  return session.explain(callee);
 }

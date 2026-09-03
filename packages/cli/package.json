@@ -78,6 +78,7 @@
     "@suss/extractor": "0.21.1",
     "@suss/intent-ir": "0.21.1",
     "@suss/packs": "0.21.1",
+    "@suss/resolution": "0.21.1",
     "@suss/terraform-aws": "0.21.1",
     "@suss/terraform-gcp": "0.21.1",
     "pip-requirements-js": "^1.0.3",

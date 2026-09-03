@@ -86,6 +86,11 @@ resolution. `needs` is the part to act on when `found` is false: it
 says which input would let suss answer, rather than leaving an empty
 list to interpret.
 
+A why question re-reads the file it is asked about, through
+whichever language's adapter reads that file: TypeScript, Python, and
+Ruby each have one. Source suss cannot make sense of shows up as a
+caveat on the answer, not a crash.
+
 Exit code 0 means the question parsed and its subject is in these
 summaries, including when the answer is empty. Exit code 1 means the
 question was not one of the ten, or nothing here is at the boundary
