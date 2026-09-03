@@ -2552,6 +2552,167 @@ describe("createTypeScriptAdapter: reachable closure", () => {
       "more than one possible source",
     );
   });
+
+  it("reaches a function passed by name to a helper that calls it through a parameter", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "routers.ts",
+      `
+      export function walkStatements(items: string[], visit: (item: string) => void) {
+        for (const item of items) {
+          visit(item);
+        }
+      }
+      export function recordMountStatement(item: string) {
+        return item;
+      }
+      export function collectMounts(items: string[]) {
+        walkStatements(items, recordMountStatement);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { collectMounts } from "./routers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          collectMounts([params.id]);
+          return { status: 200 as const, body: null };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const byName = Object.fromEntries(
+      summaries.map((s) => [s.identity.name, s]),
+    );
+    expect(byName.recordMountStatement).toBeDefined();
+    expect(byName.recordMountStatement.kind).toBe("library");
+
+    const passing = byName.collectMounts?.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "walkStatements");
+    expect(passing?.type).toBe("invocation");
+    expect(
+      passing?.type === "invocation" ? passing.argsSummary : undefined,
+    ).toEqual({ "1": byName.recordMountStatement.identity.id });
+
+    const called = byName.walkStatements?.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "visit");
+    expect(
+      called?.type === "invocation" ? called.calleeParameter : undefined,
+    ).toBe(1);
+
+    const unbound = (byName.walkStatements?.gaps ?? []).filter(
+      (gap) => gap.type === "unfollowedCall" && gap.callee === "visit",
+    );
+    expect(unbound).toHaveLength(0);
+  });
+
+  it("leaves an argument passed into an unresolved callee harmless", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "helpers.ts",
+      `
+      export function double(x: number) {
+        return x * 2;
+      }
+      export function run(arr: number[]) {
+        return arr.map(double);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { run } from "./helpers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          return { status: 200 as const, body: run([1, 2]) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const byName = Object.fromEntries(
+      summaries.map((s) => [s.identity.name, s]),
+    );
+    expect(byName.double).toBeDefined();
+    expect(byName.double.kind).toBe("library");
+
+    const mapCall = byName.run?.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "arr.map");
+    expect(mapCall?.type).toBe("invocation");
+    expect(
+      mapCall?.type === "invocation" ? mapCall.argsSummary : undefined,
+    ).toEqual({ "0": byName.double.identity.id });
+    expect(mapCall?.type === "invocation" ? mapCall.summary : undefined).toBe(
+      undefined,
+    );
+  });
+
+  it("gaps a call through a parameter nothing here passes a function into", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "routers.ts",
+      `
+      export function walkStatements(items: string[], visit: (item: string) => void) {
+        for (const item of items) {
+          visit(item);
+        }
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { walkStatements } from "./routers";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          walkStatements([params.id], (item) => item);
+          return { status: 200 as const, body: null };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const walkStatements = summaries.find(
+      (s) => s.identity.name === "walkStatements",
+    );
+    expect(walkStatements).toBeDefined();
+
+    const gap = (walkStatements?.gaps ?? []).find(
+      (g) => g.type === "unfollowedCall" && g.callee === "visit",
+    );
+    expect(gap).toBeDefined();
+    expect(gap?.description).toContain(
+      "nothing in this run passes a function into it",
+    );
+  });
 });
 
 describe("createTypeScriptAdapter: boundary effects closure", () => {

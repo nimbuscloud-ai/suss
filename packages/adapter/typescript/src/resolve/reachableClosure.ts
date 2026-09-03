@@ -32,12 +32,17 @@ import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { createDependencySink, withDependencySink } from "../depTracking.js";
 import { offsetKeyFor, offsetKeyOf } from "../walk/nodeKeys.js";
-import { type ReachableCandidate, resolveDecl } from "./functionBehind.js";
+import {
+  functionTargetOf,
+  type ReachableCandidate,
+  resolveDecl,
+} from "./functionBehind.js";
 import {
   classifyStop,
   declarationsBehind,
   hasBody,
   isDeclaredShape,
+  parameterIndexOf,
   type UnfollowedCall,
   unfollowedCallGap,
   worthRecording,
@@ -105,6 +110,8 @@ type CallOutcome =
       readonly kind: "stopped";
       readonly stop: UnfollowedCall;
       readonly declaration: Node | null;
+      /** Set for a `callerSupplied` stop: the parameter's index in `scanning`. */
+      readonly parameterIndex?: number;
     };
 
 /** Where a call was declared, spelled the way a summary spells its unit. */
@@ -165,13 +172,16 @@ function resolveCallee(
     }
   }
 
+  const reason = classifyStop(declarations, scan.scanning);
+  const parameterIndex =
+    reason === "callerSupplied"
+      ? parameterIndexOf(declarations, scan.scanning)
+      : undefined;
   return {
     kind: "stopped",
-    stop: {
-      callee: calleeName,
-      reason: classifyStop(declarations, scan.scanning),
-    },
+    stop: { callee: calleeName, reason },
     declaration: declarationToReport(declarations, calleeName, scan),
+    ...(parameterIndex === undefined ? {} : { parameterIndex }),
   };
 }
 
@@ -233,14 +243,32 @@ interface ScanContext {
 }
 
 /**
- * Everything one pass over a body found: edges to walk, stops, and
- * where each callee the body writes is declared. A callee text the
- * body resolved to two different declarations maps to null.
+ * Everything one pass over a body found: edges to walk, stops, where
+ * each callee the body writes is declared, where an argument that is
+ * itself a project function is declared (by callee text and its
+ * position in that call), calls made through one of this body's own
+ * parameters, and the (callee, position) pairs this body passes a
+ * function into. A callee or argument text the body resolved to two
+ * different declarations maps to null.
  */
 interface ScanResult {
   readonly candidates: ReachableCandidate[];
   readonly stops: UnfollowedCall[];
   readonly targets: ReadonlyMap<string, CallTarget | null>;
+  readonly argTargets: ReadonlyMap<
+    string,
+    ReadonlyMap<number, CallTarget | null>
+  >;
+  readonly parameterCalls: ReadonlyArray<{
+    callee: string;
+    parameterIndex: number;
+  }>;
+  readonly passedPositions: ReadonlySet<string>;
+}
+
+/** The key a (callee function, parameter position) pair is tracked under. */
+function passedPositionKey(target: CallTarget, position: number): string {
+  return `${offsetKeyFor(target.file, target.span)}#${position}`;
 }
 
 /**
@@ -282,7 +310,11 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
   const candidates: ReachableCandidate[] = [];
   const stops: UnfollowedCall[] = [];
   const targets = new Map<string, CallTarget | null>();
+  const argTargets = new Map<string, Map<number, CallTarget | null>>();
+  const parameterCalls: Array<{ callee: string; parameterIndex: number }> = [];
+  const passedPositions = new Set<string>();
   const seen = new Set<string>();
+  const parameterCallsSeen = new Set<string>();
 
   // The invocation effects on this body's summary join here by callee
   // text, so the same text resolving two ways (a shadowed name) has to
@@ -306,6 +338,29 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     }
   };
 
+  // Same shadow handling as `rememberTarget`, one level down: the
+  // argument at this position in calls written as `calleeText`.
+  const rememberArgTarget = (
+    calleeText: string,
+    position: number,
+    target: CallTarget,
+  ): void => {
+    const byPosition = argTargets.get(calleeText) ?? new Map();
+    argTargets.set(calleeText, byPosition);
+    const known = byPosition.get(position);
+    if (known === undefined) {
+      byPosition.set(position, target);
+      return;
+    }
+    if (
+      known !== null &&
+      offsetKeyFor(known.file, known.span) !==
+        offsetKeyFor(target.file, target.span)
+    ) {
+      byPosition.set(position, null);
+    }
+  };
+
   const record = (outcome: CallOutcome): void => {
     if (outcome.kind === "stopped") {
       const stopKey = `${outcome.stop.reason}:${outcome.stop.callee}`;
@@ -321,6 +376,34 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     }
     seen.add(key);
     candidates.push(outcome.candidate);
+  };
+
+  // An identifier argument that is a project function is reachable the
+  // same way a callee is, and its declaration joins a `passes` fact to
+  // whichever parameter the callee calls it through.
+  const recordPassedArgs = (
+    call: Node,
+    calleeText: string,
+    calleeOutcome: CallOutcome,
+  ): void => {
+    if (!Node.isCallExpression(call)) {
+      return;
+    }
+    const calleeTarget = declaredAtOf(calleeOutcome);
+    call.getArguments().forEach((arg, position) => {
+      if (!Node.isIdentifier(arg)) {
+        return;
+      }
+      const resolved = functionTargetOf(arg);
+      if (resolved === null) {
+        return;
+      }
+      record({ kind: "followed", candidate: resolved });
+      rememberArgTarget(calleeText, position, targetOf(resolved.func));
+      if (calleeTarget !== null) {
+        passedPositions.add(passedPositionKey(calleeTarget, position));
+      }
+    });
   };
 
   func.forEachDescendant((node) => {
@@ -342,9 +425,30 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     // thing a reader cannot see, not twenty.
     record(outcome);
     rememberTarget(calleeText, outcome);
+    recordPassedArgs(node, calleeText, outcome);
+
+    if (
+      outcome.kind === "stopped" &&
+      outcome.stop.reason === "callerSupplied" &&
+      outcome.parameterIndex !== undefined &&
+      !parameterCallsSeen.has(calleeText)
+    ) {
+      parameterCallsSeen.add(calleeText);
+      parameterCalls.push({
+        callee: calleeText,
+        parameterIndex: outcome.parameterIndex,
+      });
+    }
   });
 
-  return { candidates, stops, targets };
+  return {
+    candidates,
+    stops,
+    targets,
+    argTargets,
+    parameterCalls,
+    passedPositions,
+  };
 }
 
 /**
@@ -535,6 +639,18 @@ export function expandReachableClosure(
     string,
     ReadonlyMap<string, CallTarget | null>
   >();
+  const argTargetsByKey = new Map<
+    string,
+    ReadonlyMap<string, ReadonlyMap<number, CallTarget | null>>
+  >();
+  const parameterCallsByKey = new Map<
+    string,
+    ReadonlyArray<{ callee: string; parameterIndex: number }>
+  >();
+  // Every (callee function, position) this run passes a function into,
+  // across every body scanned. A parameter call whose position never
+  // shows up here is a gap: nothing here supplies it.
+  const passedPositions = new Set<string>();
   const summariesByKey = new Map<string, BehavioralSummary[]>();
 
   // The file a function was reached from, which is where whoever called
@@ -604,13 +720,27 @@ export function expandReachableClosure(
           : { sourceDeclarationsBehind: recognizers.sourceDeclarationsBehind }),
         ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
       };
-      const { candidates, stops, targets } = scanWithRecording(key, facts, () =>
+      const {
+        candidates,
+        stops,
+        targets,
+        argTargets,
+        parameterCalls,
+        passedPositions: scanPassedPositions,
+      } = scanWithRecording(key, facts, () =>
         collectReachable(source.func, scan),
       );
       if (stops.length > 0) {
         stopsByKey.set(key, stops);
       }
       targetsByKey.set(key, targets);
+      argTargetsByKey.set(key, argTargets);
+      if (parameterCalls.length > 0) {
+        parameterCallsByKey.set(key, parameterCalls);
+      }
+      for (const position of scanPassedPositions) {
+        passedPositions.add(position);
+      }
       for (const candidate of candidates) {
         const calleeKey = nodeKey(candidate.func);
         if (!functionByKey.has(calleeKey)) {
@@ -660,6 +790,14 @@ export function expandReachableClosure(
 
   recordStops(stopsByKey, summariesByKey, options);
   recordTargets(targetsByKey, summariesByKey);
+  recordArgTargets(argTargetsByKey, summariesByKey);
+  recordCalleeParameters(parameterCallsByKey, summariesByKey);
+  recordParameterGaps(
+    parameterCallsByKey,
+    summariesByKey,
+    passedPositions,
+    options,
+  );
 
   return [...seeds, ...reached];
 }
@@ -743,6 +881,115 @@ function recordTargets(
           }
         }
       }
+    }
+  }
+}
+
+/**
+ * Put where each identifier argument that is a project function is
+ * declared onto the matching invocation effect, keyed by its position.
+ * Naming later turns each one into `argsSummary`, the same way it turns
+ * `declaredAt` into `summary`.
+ */
+function recordArgTargets(
+  argTargetsByKey: ReadonlyMap<
+    string,
+    ReadonlyMap<string, ReadonlyMap<number, CallTarget | null>>
+  >,
+  summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
+): void {
+  for (const [key, argTargets] of argTargetsByKey) {
+    for (const summary of summariesByKey.get(key) ?? []) {
+      for (const transition of summary.transitions) {
+        for (const effect of transition.effects) {
+          if (effect.type !== "invocation") {
+            continue;
+          }
+          const byPosition = argTargets.get(normalizeCallee(effect.callee));
+          if (byPosition === undefined) {
+            continue;
+          }
+          const argsDeclaredAt: Record<string, CallTarget> = {};
+          for (const [position, target] of byPosition) {
+            if (target !== null) {
+              argsDeclaredAt[position] = target;
+            }
+          }
+          if (Object.keys(argsDeclaredAt).length > 0) {
+            effect.argsDeclaredAt = argsDeclaredAt;
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Say, on the matching invocation effect, which of this unit's own
+ * parameters a `callerSupplied` call goes through. A caller elsewhere
+ * that passes a function into that position joins to this call by it.
+ */
+function recordCalleeParameters(
+  parameterCallsByKey: ReadonlyMap<
+    string,
+    ReadonlyArray<{ callee: string; parameterIndex: number }>
+  >,
+  summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
+): void {
+  for (const [key, parameterCalls] of parameterCallsByKey) {
+    const byCallee = new Map(
+      parameterCalls.map(({ callee, parameterIndex }) => [
+        callee,
+        parameterIndex,
+      ]),
+    );
+    for (const summary of summariesByKey.get(key) ?? []) {
+      for (const transition of summary.transitions) {
+        for (const effect of transition.effects) {
+          if (effect.type !== "invocation") {
+            continue;
+          }
+          const parameterIndex = byCallee.get(normalizeCallee(effect.callee));
+          if (parameterIndex !== undefined) {
+            effect.calleeParameter = parameterIndex;
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * A call through one of this unit's own parameters is a gap only once
+ * the whole run is scanned and nothing anywhere passes a function into
+ * that position (#809): until then it is the ordinary `callerSupplied`
+ * stop, which nothing records.
+ */
+function recordParameterGaps(
+  parameterCallsByKey: ReadonlyMap<
+    string,
+    ReadonlyArray<{ callee: string; parameterIndex: number }>
+  >,
+  summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
+  passedPositions: ReadonlySet<string>,
+  options: ExtractorOptions | undefined,
+): void {
+  if (options?.gapHandling === "silent") {
+    return;
+  }
+  for (const [key, parameterCalls] of parameterCallsByKey) {
+    const unbound = parameterCalls.filter(
+      ({ parameterIndex }) => !passedPositions.has(`${key}#${parameterIndex}`),
+    );
+    if (unbound.length === 0) {
+      continue;
+    }
+    for (const summary of summariesByKey.get(key) ?? []) {
+      summary.gaps.push(
+        ...unbound.map(({ callee }) =>
+          unfollowedCallGap({ callee, reason: "unboundParameter" }),
+        ),
+      );
     }
   }
 }
