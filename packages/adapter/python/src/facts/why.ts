@@ -14,12 +14,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { Database, evaluate, proofOf, witnesses } from "@suss/datalog";
-import {
-  explainResolutionProof,
-  RESOLUTION_RULES,
-  renderExplanation,
-} from "@suss/resolution";
+import { Database } from "@suss/datalog";
+import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 
 import { field, fields } from "../ast.js";
 import { emitModuleImportFacts } from "../facts.js";
@@ -243,61 +239,14 @@ export class PythonWhySession {
     value: PythonValueHandle,
     options: { maxDepth?: number } = {},
   ): WhyExplained | null {
-    const key = readKey(value.file, value.node, enclosingFunction(value.node));
-
-    const proofDb = new Database();
-    let baseFacts = 0;
-    for (const relation of this.db.relationNames()) {
-      for (const tuple of this.db.facts(relation)) {
-        proofDb.add(relation, tuple);
-        baseFacts++;
-      }
-    }
-
-    const started = performance.now();
-    evaluate(proofDb, RESOLUTION_RULES, witnesses);
-    const evaluateMs = performance.now() - started;
-    const derivedFacts =
-      proofDb
-        .relationNames()
-        .reduce((count, relation) => count + proofDb.size(relation), 0) -
-      baseFacts;
-
-    const targets = new Set(
-      proofDb.lookup("resolves", 0, key).map((tuple) => String(tuple[1])),
-    );
-    if (targets.size !== 1) {
-      return null;
-    }
-    const target = [...targets][0] as string;
-
-    const proof = proofOf(
-      proofDb,
-      "resolves",
-      [key, target],
-      options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth },
-    );
-    const describe = (atom: string | number): string => {
-      const location = this.locate(String(atom));
-      return location === null
-        ? this.displayPath(String(atom))
-        : `${location.name} (${location.file}:${location.line})`;
-    };
-    const explanation = explainResolutionProof(proof, { describe });
-    if (explanation === null) {
-      return null;
-    }
-    const targetLocation = this.locate(target);
-    if (targetLocation === null) {
-      return null;
-    }
-    return {
-      explanation,
-      chain: explanation.atoms.map(describe),
-      lines: renderExplanation(explanation, describe),
-      target: targetLocation,
-      stats: { baseFacts, derivedFacts, evaluateMs },
-    };
+    return explainResolvedKey({
+      db: this.db,
+      rules: RESOLUTION_RULES,
+      key: readKey(value.file, value.node, enclosingFunction(value.node)),
+      locate: (key) => this.locate(key),
+      displayPath: (key) => this.displayPath(key),
+      ...options,
+    });
   }
 
   private locate(key: string): ValueLocation | null {
