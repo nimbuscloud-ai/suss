@@ -77,8 +77,15 @@ const ATTRIBUTES: InputRule = ({ input, entry, kind }: StatedInputs) => {
   if (projected !== null) {
     return projected;
   }
+  if (kind !== "write") {
+    return everything(kind);
+  }
   const written = namesIn(input.property("Item"));
-  return kind === "write" && written.length > 0 ? written : everything(kind);
+  if (written.length > 0) {
+    return written;
+  }
+  const updated = updatedAttributes(input);
+  return updated.length > 0 ? updated : everything(kind);
 };
 
 /**
@@ -194,6 +201,14 @@ function aliasesIn(input: ValueOps): Map<string, string> {
   return names;
 }
 
+/** The attributes an UpdateExpression states it writes, or none when it is not a string literal. */
+function updatedAttributes(input: ValueOps): string[] {
+  const expression = input.property("UpdateExpression")?.text() ?? null;
+  return expression === null
+    ? []
+    : updateExpressionAttributes(expression, aliasesIn(input));
+}
+
 /** Where a batch's requests state the attributes they touch. */
 const REQUESTED = ["Item", "Key", "Keys"];
 
@@ -241,13 +256,14 @@ const ATTRIBUTE_POSITIONS = [
 ];
 
 /**
- * The attributes a key condition keys on, with an alias looked up
- * through what the call says each one is written as.
+ * A collector that resolves a token through the aliases a call declares
+ * and keeps each settled attribute once. An alias with nothing behind it
+ * in the map is left out rather than guessed at.
  */
-function keyConditionAttributes(
-  expression: string,
-  names: Map<string, string>,
-): string[] {
+function attributeCollector(names: Map<string, string>): {
+  found: string[];
+  add: (token: string | undefined) => void;
+} {
   const found: string[] = [];
   const add = (token: string | undefined): void => {
     if (token === undefined) {
@@ -258,9 +274,104 @@ function keyConditionAttributes(
       found.push(name);
     }
   };
+  return { found, add };
+}
+
+/**
+ * The attributes a key condition keys on, with an alias looked up
+ * through what the call says each one is written as.
+ */
+function keyConditionAttributes(
+  expression: string,
+  names: Map<string, string>,
+): string[] {
+  const { found, add } = attributeCollector(names);
   for (const pattern of ATTRIBUTE_POSITIONS) {
     for (const match of expression.matchAll(pattern)) {
       add(match[1]);
+    }
+  }
+  return found;
+}
+
+/** An update expression clause keyword, always written before its list of items. */
+type UpdateClauseKeyword = "set" | "remove" | "add" | "delete";
+
+/**
+ * An update expression split at each clause keyword, so its SET, REMOVE,
+ * ADD and DELETE parts can be read one at a time.
+ */
+function updateClauses(
+  expression: string,
+): Array<{ keyword: UpdateClauseKeyword; body: string }> {
+  const clauses: Array<{ keyword: UpdateClauseKeyword; body: string }> = [];
+  const matches = [...expression.matchAll(/\b(set|remove|add|delete)\b/gi)];
+  for (const [index, match] of matches.entries()) {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = matches[index + 1]?.index ?? expression.length;
+    clauses.push({
+      keyword: match[0].toLowerCase() as UpdateClauseKeyword,
+      body: expression.slice(start, end),
+    });
+  }
+  return clauses;
+}
+
+/** The first whitespace-separated token in an ADD or DELETE item. */
+function firstToken(item: string): string | null {
+  return /^(\S+)/.exec(item)?.[1] ?? null;
+}
+
+/**
+ * How to read the attribute path out of one item of a clause: before the
+ * `=` in a SET assignment, the whole item in a REMOVE, or the first
+ * token ahead of the value in an ADD or a DELETE.
+ */
+const CLAUSE_PATH: Record<
+  UpdateClauseKeyword,
+  (item: string) => string | null
+> = {
+  set: (item) => {
+    const at = item.indexOf("=");
+    return at === -1 ? null : item.slice(0, at);
+  },
+  remove: (item) => item,
+  add: firstToken,
+  delete: firstToken,
+};
+
+/**
+ * The first path element of an attribute reference, before a `.` or a
+ * `[`, since `b.c` and `items[0]` both touch the attribute they start
+ * with.
+ */
+function firstPathElement(path: string): string | undefined {
+  return /^[#\w]+/.exec(path.trim())?.[0];
+}
+
+/**
+ * The attributes an update expression writes, with an alias looked up
+ * the same way a key condition resolves one. A SET item split apart by
+ * a comma inside a function call, as in `if_not_exists(a, :x)`, still
+ * settles on the same attribute, because only the text before its `=`
+ * ever says what one is.
+ */
+function updateExpressionAttributes(
+  expression: string,
+  names: Map<string, string>,
+): string[] {
+  const { found, add } = attributeCollector(names);
+  for (const clause of updateClauses(expression)) {
+    for (const raw of clause.body.split(",")) {
+      const item = raw.trim();
+      if (item === "") {
+        continue;
+      }
+      const path = CLAUSE_PATH[clause.keyword](item);
+      if (path === null) {
+        continue;
+      }
+      add(firstPathElement(path));
     }
   }
   return found;

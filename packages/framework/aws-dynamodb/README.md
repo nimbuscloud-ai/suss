@@ -44,18 +44,19 @@ A name the pack cannot settle comes out null, and null pairs with nothing rather
 | `Key` | the selector, the attributes that pick one item |
 | `KeyConditionExpression` | the selector for a query, the attributes it filters on |
 | `Item` | the fields a write touches |
+| `UpdateExpression` | the fields an update writes, read out of its SET, REMOVE, ADD and DELETE clauses, with `#alias` names resolved through `ExpressionAttributeNames` |
 | `ProjectionExpression` | the fields a read asks for, with `#alias` names resolved through `ExpressionAttributeNames` |
 | `RequestItems` | one effect per table, for a batch or a transaction |
 
 A read that states no projection reads whatever the item has, which is recorded as `*`, the same wildcard a Prisma call with no `select` uses. A DynamoDB table's contract declares its key attributes and nothing else, so the checker never calls an attribute unknown here. What it can say is which declared key nothing reads.
 
-## Why two of the links are code
+## Why three of the links are code
 
-The pack is a declaration in `@suss/recognize`, so most of what it knows is data: the command table, where the table name is, where the index is, where a batch lists the tables it touched. Two links are functions the pack wrote itself, and pack health prints them on every run.
+The pack is a declaration in `@suss/recognize`, so most of what it knows is data: the command table, where the table name is, where the index is, where a batch lists the tables it touched. Three links are functions the pack wrote itself, and pack health prints them on every run.
 
-Both are the same reason. `ProjectionExpression` and `KeyConditionExpression` are a little language of DynamoDB's own, with `ExpressionAttributeNames` beside them as the table an aliased name is looked up in. Reading one is a parse, and no arrangement of picks over arguments and properties expresses a parse. The pack is handed the request object and gives back which attributes the call touched, which keeps the parse out of the adapter and lets the same declaration run on another language's adapter once one implements the ops.
+All three are the same reason. `ProjectionExpression`, `KeyConditionExpression`, and `UpdateExpression` are a little language of DynamoDB's own, with `ExpressionAttributeNames` beside them as the table an aliased name is looked up in. Reading one is a parse, and no arrangement of picks over arguments and properties expresses a parse. The pack is handed the request object and gives back which attributes the call touched, which keeps the parse out of the adapter and lets the same declaration run on another language's adapter once one implements the ops.
 
-A parser that covered `FilterExpression` and the update expressions as well would replace both of these with one, and it is worth having the day those matter. Neither is read today.
+A parser that covered `FilterExpression` too would fold into the same one, and it is worth having the day that matters. It is not read today.
 
 ## A project that signs the request itself
 
@@ -108,7 +109,7 @@ library the helper itself imports is the usual entry.
 
 ## Out of scope for now
 
-- **A filter is not read.** `FilterExpression` narrows what a query returns after DynamoDB has read it, and the attributes it mentions are attributes the call touches. Only the key condition and the projection are read today.
+- **A filter is not read.** `FilterExpression` narrows what a query returns after DynamoDB has read it, and the attributes it mentions are attributes the call touches. The key condition, the projection, and the update expression are read; the filter is not.
 - **AWS SDK v2** (`new AWS.DynamoDB.DocumentClient().get(...)`) has a different call shape.
 - **A request helper is matched by name.** The pack knows which file it read the helper out of, and a call site reaches it by a relative path spelled differently at every depth, so there is nothing to match an import against. A same-named function from somewhere else would be read as the helper.
 
