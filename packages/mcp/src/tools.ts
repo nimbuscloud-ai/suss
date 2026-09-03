@@ -68,7 +68,7 @@ Reach for this when an answer looks thinner than the code suggests it should be.
 
 export async function askTool(
   project: Project,
-  args: { question: string },
+  args: { question: string; limit?: number | undefined },
 ): Promise<ToolResult> {
   await project.settled();
   const { answer } = answerQuestion({
@@ -83,14 +83,14 @@ export async function askTool(
       `"${args.question}" is not one of the seven questions. The tool description lists them.`,
     );
   }
-  const trimmed = trim(answer.items, () => "item");
+  const trimmed = trim(answer.items, () => "item", args.limit ?? SHOWN);
   const payload = {
     ...answer,
     items: trimmed.shown,
     ...(trimmed.omitted > 0
       ? {
           omitted: trimmed.omitted,
-          note: `${trimmed.omitted} more are not shown. Ask about one of the results above to narrow it.`,
+          note: `${trimmed.omitted} more are not shown. Pass a larger limit to see more.`,
         }
       : {}),
   };

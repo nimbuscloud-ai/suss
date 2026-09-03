@@ -63,6 +63,14 @@ export async function createServer(
         question: z
           .string()
           .describe("One of the seven questions, in the words listed above."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "How many results to show before the rest are counted and left out. Defaults to 20; pass a larger number to see more of a long list, such as every caller of a widely-used function.",
+          ),
       },
     },
     (args) => attempt("suss_ask", () => askTool(project, args)),

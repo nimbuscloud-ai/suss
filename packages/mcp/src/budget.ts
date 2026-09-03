@@ -35,6 +35,7 @@ export interface Trimmed<T> {
 export function trim<T>(
   items: readonly T[],
   kindOf: (item: T) => string,
+  limit: number = SHOWN,
 ): Trimmed<T> {
   const byKind: Record<string, number> = {};
   for (const item of items) {
@@ -42,8 +43,8 @@ export function trim<T>(
     byKind[kind] = (byKind[kind] ?? 0) + 1;
   }
   return {
-    shown: items.slice(0, SHOWN),
-    omitted: Math.max(0, items.length - SHOWN),
+    shown: items.slice(0, limit),
+    omitted: Math.max(0, items.length - limit),
     byKind,
   };
 }

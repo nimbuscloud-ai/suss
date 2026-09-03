@@ -136,6 +136,58 @@ describe("the tools, on a project bigger than one answer", () => {
     project.close();
   }, 60_000);
 
+  it("caps a long answer at 20 by default and says how to see more", async () => {
+    const project = await projectWith(150);
+    const result = await askTool(project, {
+      question: "what can I project from GET",
+    });
+    const answer = result.structuredContent as {
+      items: unknown[];
+      omitted?: number;
+      note?: string;
+    };
+
+    expect(answer.items).toHaveLength(20);
+    expect(answer.omitted).toBe(130);
+    expect(answer.note).toContain("Pass a larger limit to see more.");
+
+    project.close();
+  }, 60_000);
+
+  it("honors a limit passed with the question", async () => {
+    const project = await projectWith(150);
+    const result = await askTool(project, {
+      question: "what can I project from GET",
+      limit: 50,
+    });
+    const answer = result.structuredContent as {
+      items: unknown[];
+      omitted?: number;
+    };
+
+    expect(answer.items).toHaveLength(50);
+    expect(answer.omitted).toBe(100);
+
+    project.close();
+  }, 60_000);
+
+  it("shows everything and omits nothing when the limit covers the list", async () => {
+    const project = await projectWith(150);
+    const result = await askTool(project, {
+      question: "what can I project from GET",
+      limit: 150,
+    });
+    const answer = result.structuredContent as {
+      items: unknown[];
+      omitted?: number;
+    };
+
+    expect(answer.items).toHaveLength(150);
+    expect(answer.omitted).toBeUndefined();
+
+    project.close();
+  }, 60_000);
+
   it("answers a second question without reading the summaries again", async () => {
     const project = await projectWith(2);
     await askTool(project, { question: "what can I project from GET /thing0" });
