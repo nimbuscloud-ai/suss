@@ -118,8 +118,6 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     return table;
   };
 
-  let gapsDrained = false;
-
   const pattern: ControllerActions = {
     type: "controllerActions",
     baseClassNames: [
@@ -140,13 +138,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
         ? found.routeFor(key, actionName)
         : conventionalRoute(key, actionName);
     },
-    drainRoutingGaps: () => {
-      if (gapsDrained) {
-        return [];
-      }
-      gapsDrained = true;
-      return routeTable().gaps;
-    },
+    routingGaps: () => routeTable().gaps,
   };
 
   return {

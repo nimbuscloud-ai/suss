@@ -145,19 +145,18 @@ describe("railsFramework", () => {
       expect(routeFor("OrdersController", "preview")).toBeNull();
     });
 
-    it("drains the mount gap once, then reports nothing left to say", () => {
+    it("reports the mount gap the same way on every call, not just the first", () => {
       const pack = railsFramework({
         root: path.join(fixtureRoot, "app"),
         routesFile: path.join(fixtureRoot, "config/routes.rb"),
       });
       const p = pattern(pack);
-      // Trigger the lazy read before draining, the way the adapter does
-      // by calling routeFor on a discovered action first.
-      p.routeFor("OrdersController", "index");
-      expect(p.drainRoutingGaps?.()).toEqual([
+      expect(p.routingGaps?.()).toEqual([
         expect.stringContaining("also declares mount"),
       ]);
-      expect(p.drainRoutingGaps?.()).toEqual([]);
+      expect(p.routingGaps?.()).toEqual([
+        expect.stringContaining("also declares mount"),
+      ]);
     });
   });
 
@@ -197,11 +196,9 @@ describe("railsFramework", () => {
         ),
       });
       const p = pattern(pack);
-      p.routeFor("OrdersController", "index");
-      expect(p.drainRoutingGaps?.()).toEqual([
+      expect(p.routingGaps?.()).toEqual([
         expect.stringContaining("RESTful naming convention"),
       ]);
-      expect(p.drainRoutingGaps?.()).toEqual([]);
     });
   });
 

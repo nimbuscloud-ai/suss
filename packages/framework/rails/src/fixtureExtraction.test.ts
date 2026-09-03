@@ -181,4 +181,36 @@ describe("extraction over fixtures/ruby-rails", () => {
       semantics: { name: "rest", method: "GET", path: "/admin/reports" },
     });
   });
+
+  it("does not discover a private controller method as an action", async () => {
+    const { summaries } = await extractFixture();
+    expect(
+      summaries.some(
+        (s) => s.kind === "handler" && s.identity.name === "authorize_order!",
+      ),
+    ).toBe(false);
+  });
+
+  it("still gives a private controller method a summary once the action that calls it is reached", async () => {
+    const { summaries } = await extractFixture();
+    const cancel = action(summaries, "orders_controller", "cancel");
+    expect(
+      cancel.transitions[0]?.effects.some(
+        (effect) =>
+          effect.type === "invocation" &&
+          effect.callee.includes("authorize_order!"),
+      ),
+    ).toBe(true);
+
+    const helper = summaries.find(
+      (s) => s.kind === "library" && s.identity.name === "authorize_order!",
+    );
+    expect(helper).toBeDefined();
+    expect(
+      helper?.transitions[0]?.effects.some(
+        (effect) =>
+          effect.type === "invocation" && effect.callee.includes("find_order"),
+      ),
+    ).toBe(true);
+  });
 });
