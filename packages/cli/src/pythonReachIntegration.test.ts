@@ -184,3 +184,71 @@ describe("what a Python route reaches", () => {
     expect(text).not.toContain("in its own body");
   });
 });
+
+describe("what a Python route reaches through a function passed by name", () => {
+  beforeEach(() => {
+    write("app/register.py", [
+      "from sqlalchemy import select",
+      "",
+      "def build_index():",
+      "    return select(Orders.id).all()",
+      "",
+      "def register(handler):",
+      "    handler()",
+    ]);
+    write("app/build.py", [
+      "from fastapi import FastAPI",
+      "from app.register import build_index, register",
+      "",
+      "app = FastAPI()",
+      "",
+      '@app.get("/build")',
+      "def run_build():",
+      "    register(build_index)",
+    ]);
+  });
+
+  it("finds the caller of build_index through register, not just the route", async () => {
+    const summaries = await extracted();
+    const out = path.join(dir, "summaries");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
+
+    const { exitCode, answer } = answerQuestion({
+      question: "what calls build_index",
+      dir: out,
+      output: path.join(dir, "answer.txt"),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(answer?.headline).toContain("1 unit calls");
+    const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
+    expect(text).toContain("register");
+  });
+
+  it("no longer ends at the parameter: register's own gap is gone, and the route reaches the boundary through it", async () => {
+    const summaries = await extracted();
+    const register = summaries.find(
+      (summary) => summary.identity.name === "register",
+    );
+    expect(
+      register?.gaps.filter((gap) => gap.type === "unfollowedCall"),
+    ).toEqual([]);
+
+    const out = path.join(dir, "summaries");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
+
+    const { exitCode, answer } = answerQuestion({
+      question: "what does GET /build reach",
+      dir: out,
+      output: path.join(dir, "answer.txt"),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(answer?.headline).toContain("reaches 1 boundary");
+    const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
+    expect(text).toContain("reads postgresql:sqlalchemy/select");
+    expect(text).not.toContain("unfollowedCall");
+  });
+});

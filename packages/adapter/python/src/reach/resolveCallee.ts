@@ -76,6 +76,31 @@ export function resolveCallee(
   return asCallee(resolveExpression(callee, site, ctx), ctx);
 }
 
+/**
+ * What a bare name argument is, when it is itself a project function
+ * passed by name rather than called. A name bound by assignment stops
+ * here rather than following the value it was last given, since only a
+ * function passed by its own name counts, not a variable bound to one.
+ */
+export function resolveNamedFunctionArgument(
+  name: string,
+  site: CallSite,
+  ctx: ResolveContext,
+): ReachedFunction | null {
+  if (site.rebound.has(name)) {
+    return null;
+  }
+  const binding = resolveName(site.scope, name);
+  if (binding !== null && binding.kind === "assignment") {
+    return null;
+  }
+  const resolved =
+    binding === null
+      ? throughOpenImports(site.file, name, ctx, new Set())
+      : resolveBinding(binding, site.file, site.scope, ctx, new Set());
+  return resolved.kind === "function" ? resolved.target : null;
+}
+
 /** Calling a class runs its `__init__`; a module, a package, or a function's result is nothing this run can step into. */
 function asCallee(resolved: Resolved, ctx: ResolveContext): CalleeResolution {
   if (resolved.kind === "function") {
