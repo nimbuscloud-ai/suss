@@ -63,9 +63,55 @@ describe("RubyWhySession", () => {
     expect(explained?.target.file).toBe("helpers.rb");
   });
 
+  it("follows an instance method read through the object it was called on", () => {
+    fs.writeFileSync(
+      path.join(dir, "helpers.rb"),
+      "class Helpers\n  def fetch\n    1\n  end\nend\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "app.rb"),
+      "h = Helpers.new\nx = h.fetch\n",
+    );
+
+    const session = new RubyWhySession({ dir });
+    const value = session.findExpression("app.rb", 2, "fetch");
+    const explained = value === null ? null : session.explain(value);
+
+    expect(explained?.target).toEqual({
+      name: "fetch",
+      file: "helpers.rb",
+      line: 2,
+    });
+    expect(explained?.lines).toEqual([
+      "h.fetch (app.rb:2) -> fetch (helpers.rb:2)",
+      "  h.fetch (app.rb:2) reads fetch off h (app.rb:1), which contains fetch (helpers.rb:2)",
+    ]);
+  });
+
   it("returns null for a name with no expression on that line", () => {
     fs.writeFileSync(path.join(dir, "app.rb"), "x = 1\n");
     const session = new RubyWhySession({ dir });
     expect(session.findExpression("app.rb", 1, "nope")).toBeNull();
+  });
+
+  it("returns null for a file the project does not contain", () => {
+    fs.writeFileSync(path.join(dir, "app.rb"), "x = 1\n");
+    const session = new RubyWhySession({ dir });
+    expect(session.findExpression("missing.rb", 1, "x")).toBeNull();
+    expect(session.findCallee("missing.rb", 1, 1, "x")).toBeNull();
+  });
+
+  it("picks the innermost of two nodes with the same text on a line", () => {
+    fs.writeFileSync(
+      path.join(dir, "helpers.rb"),
+      "class Helpers\n  def self.fetch\n    1\n  end\nend\n",
+    );
+    fs.writeFileSync(path.join(dir, "app.rb"), "puts Helpers.fetch\n");
+
+    const session = new RubyWhySession({ dir });
+    const value = session.findExpression("app.rb", 1, "Helpers.fetch");
+    expect(value?.node.type).toBe("call");
+    const explained = value === null ? null : session.explain(value);
+    expect(explained?.target.file).toBe("helpers.rb");
   });
 });

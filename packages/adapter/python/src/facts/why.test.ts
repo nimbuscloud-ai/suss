@@ -81,4 +81,28 @@ describe("PythonWhySession", () => {
     const session = new PythonWhySession({ dir });
     expect(session.findExpression("app.py", 1, "nope")).toBeNull();
   });
+
+  it("returns null for a file the project does not contain", () => {
+    fs.writeFileSync(path.join(dir, "app.py"), "x = 1\n");
+    const session = new PythonWhySession({ dir });
+    expect(session.findExpression("missing.py", 1, "x")).toBeNull();
+    expect(session.findCallee("missing.py", 1, 1, "x")).toBeNull();
+  });
+
+  it("picks the innermost of two nodes with the same text on a line", () => {
+    fs.writeFileSync(
+      path.join(dir, "helpers.py"),
+      "def fetch():\n    return 1\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "app.py"),
+      "from helpers import fetch\n\nfetch\n",
+    );
+
+    const session = new PythonWhySession({ dir });
+    const value = session.findExpression("app.py", 3, "fetch");
+    expect(value?.node.type).toBe("identifier");
+    const explained = value === null ? null : session.explain(value);
+    expect(explained?.target.file).toBe("helpers.py");
+  });
 });
