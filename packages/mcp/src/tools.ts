@@ -206,6 +206,8 @@ function labelOf(one: { key: string | null; name: string }): string {
 }
 
 const BUILDING_LINE = "Building: the first extract has not finished yet.";
+const REBUILDING_LINE =
+  "Rebuilding: a source file changed and the extract is running again.";
 
 export function statusTool(project: Project): ToolResult {
   const report = project.lastBuild();
@@ -222,8 +224,8 @@ export function statusTool(project: Project): ToolResult {
 /**
  * Nothing is known about whether the project is configured until the
  * first build finishes, so a build in flight with no prior result says
- * only that. A rebuild in flight still has a completed prior result to
- * show beneath the same line.
+ * only that. A rebuild in flight still has a completed prior result,
+ * which stays true while it reruns, so it is shown beneath its own line.
  */
 function statusText(
   project: Project,
@@ -242,7 +244,7 @@ function statusText(
     : [
         `${project.root} has no suss.json, so nothing was extracted and every answer will be empty. Run \`suss init\` in that directory.`,
       ];
-  return building ? [BUILDING_LINE, ...lines].join("\n") : lines.join("\n");
+  return building ? [REBUILDING_LINE, ...lines].join("\n") : lines.join("\n");
 }
 
 /**

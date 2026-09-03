@@ -245,7 +245,7 @@ describe("the tools, on a project bigger than one answer", () => {
     expect(payload.building).toBe(true);
   });
 
-  it("shows the last report ahead of a rebuild in flight, not just that it is building", () => {
+  it("shows the last report ahead of a rebuild in flight, and says rebuilding rather than building", () => {
     const project = {
       root: "/nowhere",
       lastBuild: () => ({
@@ -261,8 +261,11 @@ describe("the tools, on a project bigger than one answer", () => {
     const result = statusTool(project);
     const text = textOf(result);
     expect(
-      text.startsWith("Building: the first extract has not finished yet."),
+      text.startsWith(
+        "Rebuilding: a source file changed and the extract is running again.",
+      ),
     ).toBe(true);
+    expect(text).not.toContain("the first extract has not finished yet");
     expect(text).toContain("ran: extract tsconfig.json");
     const payload = result.structuredContent as { building: boolean };
     expect(payload.building).toBe(true);
