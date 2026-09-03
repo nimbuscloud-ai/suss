@@ -369,6 +369,62 @@ describe("a DynamoDB command", () => {
     });
   });
 
+  it("skips a SET item with no attribute path in front of the equals", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function odd(id: string, value: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: "SET status = :s, = :stray",
+          ExpressionAttributeValues: { ":s": value, ":stray": value },
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["status"],
+    });
+  });
+
+  it("skips an empty item left by a trailing comma in a clause", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function forget(id: string) {
+        return client.send(new UpdateCommand({
+          TableName: "profiles-v1",
+          Key: { accountId: id },
+          UpdateExpression: "REMOVE email, phone, ",
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      fields: ["email", "phone"],
+    });
+  });
+
+  it("keeps fields empty when the UpdateExpression is not a string literal", () => {
+    const effects = effectsIn(`
+      import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+      declare const client: DynamoDBDocumentClient;
+      export async function rename(id: string, expression: string) {
+        return client.send(new UpdateCommand({
+          TableName: "orders-v1",
+          Key: { orderId: id },
+          UpdateExpression: expression,
+        }));
+      }
+    `);
+
+    expect(storageOf(effects[0]).interaction).toMatchObject({
+      kind: "write",
+      fields: [],
+    });
+  });
+
   it("reads a projection as the attributes it asks for", () => {
     const effects = effectsIn(`
       ${IMPORTS}

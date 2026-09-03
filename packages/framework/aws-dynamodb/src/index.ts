@@ -299,27 +299,45 @@ type UpdateClauseKeyword = "set" | "remove" | "add" | "delete";
 
 /**
  * An update expression split at each clause keyword, so its SET, REMOVE,
- * ADD and DELETE parts can be read one at a time.
+ * ADD and DELETE parts can be read one at a time. Built with `exec`
+ * rather than `matchAll`, since `exec` always says where a match started,
+ * where `matchAll`'s result types that as optional.
  */
 function updateClauses(
   expression: string,
 ): Array<{ keyword: UpdateClauseKeyword; body: string }> {
-  const clauses: Array<{ keyword: UpdateClauseKeyword; body: string }> = [];
-  const matches = [...expression.matchAll(/\b(set|remove|add|delete)\b/gi)];
-  for (const [index, match] of matches.entries()) {
-    const start = (match.index ?? 0) + match[0].length;
-    const end = matches[index + 1]?.index ?? expression.length;
-    clauses.push({
+  const pattern = /\b(set|remove|add|delete)\b/gi;
+  const starts: Array<{
+    keyword: UpdateClauseKeyword;
+    index: number;
+    bodyStart: number;
+  }> = [];
+  for (
+    let match = pattern.exec(expression);
+    match !== null;
+    match = pattern.exec(expression)
+  ) {
+    starts.push({
       keyword: match[0].toLowerCase() as UpdateClauseKeyword,
-      body: expression.slice(start, end),
+      index: match.index,
+      bodyStart: match.index + match[0].length,
     });
   }
-  return clauses;
+  return starts.map(({ keyword, bodyStart }, position) => ({
+    keyword,
+    body: expression.slice(
+      bodyStart,
+      starts[position + 1]?.index ?? expression.length,
+    ),
+  }));
 }
 
-/** The first whitespace-separated token in an ADD or DELETE item. */
-function firstToken(item: string): string | null {
-  return /^(\S+)/.exec(item)?.[1] ?? null;
+/**
+ * The first whitespace-separated token in an ADD or DELETE item, always
+ * non-empty since the caller trims the item before this runs.
+ */
+function firstToken(item: string): string {
+  return item.split(/\s+/)[0];
 }
 
 /**
