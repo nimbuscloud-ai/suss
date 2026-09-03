@@ -19,7 +19,7 @@ import {
   summaryIdFromParts,
   unfollowedCallGap,
 } from "@suss/behavioral-ir";
-import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
+import { Database } from "@suss/datalog";
 import {
   assembleSummary,
   moduleInitStructure,
@@ -141,17 +141,6 @@ export async function extractPythonProject(
   // through is missed, which is what asking about every call would cost a
   // minute to catch.
   const couldMatch = methodsDeclaredNear(db, storagePatterns, definitions);
-  // A body that builds a query from an imported function reaches the
-  // database too, so those functions seed the walk alongside the wrappers.
-  const startsAQuery = new Set([
-    ...couldMatch,
-    ...storagePatterns.flatMap((pattern) => pattern.queryFunctions ?? []),
-  ]);
-  const leadsToStorage = functionsReachingStorage(
-    db,
-    definitions,
-    startsAQuery,
-  );
 
   const routerIndex = buildRouterIndex(bound, options.packs, {
     roots: options.roots,
@@ -166,7 +155,6 @@ export async function extractPythonProject(
           patterns: storagePatterns,
           definitionAt: (key: string) => definitions.get(key),
           couldMatch,
-          leadsToStorage,
           rawSql: rawSqlPatterns,
         }
       : undefined;
@@ -362,69 +350,4 @@ function methodsDeclaredNear(
     }
   }
   return found;
-}
-
-/** The method a call says, `query` in `Model.query()`. */
-function calledName(call: PyNode): string {
-  const callee = field(call, "function");
-  if (callee === null) {
-    return "";
-  }
-  return callee.type === "attribute"
-    ? (field(callee, "attribute")?.text ?? "")
-    : callee.text;
-}
-
-/** Every call written under a node, nested functions included. */
-function callsUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
-    if (child.type === "call") {
-      found.push(child);
-    }
-    callsUnder(child, found);
-  }
-  return found;
-}
-
-const REACHES_STORAGE_RULES = [
-  rule(
-    "reachesStorage",
-    [v("f")],
-    [lit("defCallsName", v("f"), v("m")), lit("queryStart", v("m"))],
-  ),
-  rule(
-    "reachesStorage",
-    [v("f")],
-    [lit("defCallsName", v("f"), v("m")), lit("reachesStorage", v("m"))],
-  ),
-];
-
-/**
- * Which functions reach the database, by name, following calls until the set
- * stops growing. A walk that followed every call would ask the rules about
- * every call in the project, which costs a minute on a large one.
- */
-function functionsReachingStorage(
-  db: Database,
-  definitions: ReadonlyMap<string, PyNode>,
-  couldMatch: ReadonlySet<string>,
-): Set<string> {
-  for (const node of definitions.values()) {
-    const name = field(node, "name");
-    if (name === null) {
-      continue;
-    }
-    for (const called of callsUnder(node).map(calledName)) {
-      db.add("defCallsName", [name.text, called]);
-    }
-  }
-
-  for (const name of couldMatch) {
-    db.add("queryStart", [name]);
-  }
-  evaluate(db, REACHES_STORAGE_RULES);
-  return new Set(db.facts("reachesStorage").map((row) => String(row[0])));
 }

@@ -229,120 +229,18 @@ export interface StorageOptions {
   readonly definitionAt: (key: string) => PyNode | undefined;
   /** Method names a file importing the library declares, the only ones that can match. */
   readonly couldMatch: ReadonlySet<string>;
-  /** Names of functions that reach the database, so a walk follows only those. */
-  readonly leadsToStorage: ReadonlySet<string>;
 }
 
 /**
  * What discovery uses for one file. `factsPath` is the path the facts were
  * keyed under, which is the absolute one, while a summary shows the short one.
  */
-/** Every call in a body, so a walk can follow the ones that lead somewhere. */
-function callsIn(node: PyNode, found: PyNode[] = []): PyNode[] {
-  for (const child of node.namedChildren) {
-    if (child === null) {
-      continue;
-    }
-    if (child.type === "call") {
-      found.push(child);
-    }
-    callsIn(child, found);
-  }
-  return found;
-}
-
-/**
- * The database work a body does, its own and whatever it reaches by calling
- * something. A handler that hands off to a service function did the work that
- * function does, so stopping at the handler's own body reports almost none of
- * it on a codebase written that way.
- */
-export function storageEffects(
-  calls: readonly PyNode[],
-  options: StorageOptions,
-): Effect[] {
-  const seen = new Set<string>();
-  // Built once. Rebuilding it inside the walk reads every question asked so
-  // far at every step, which is most of the cost of walking at all.
-  const asked = new Set(
-    options.facts.facts("wanted").map((row) => String(row[0])),
-  );
-  const gather = (inCalls: readonly PyNode[], filePath: string): Effect[] => {
-    const found = [...directStorageEffects(inCalls, { ...options, filePath })];
-    resolveCalls(
-      options.facts,
-      inCalls
-        .filter((call) => options.leadsToStorage.has(methodName(call)))
-        .map((call) => field(call, "function"))
-        .filter((callee): callee is PyNode => callee !== null)
-        .map((callee) => calleeKeyOf(filePath, callee))
-        .filter((key) => {
-          const fresh = !asked.has(key);
-          asked.add(key);
-          return fresh;
-        }),
-    );
-    for (const call of inCalls) {
-      const callee = field(call, "function");
-      if (callee === null || !options.leadsToStorage.has(methodName(call))) {
-        continue;
-      }
-      const key = resolvedOnce(options, calleeKeyOf(filePath, callee));
-      const body = key === undefined ? undefined : options.definitionAt(key);
-      if (key === undefined || body === undefined || seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      // Work found inside a called function says where it happens, so a
-      // reader can go there rather than to the route that reached it.
-      const name = field(body, "name")?.text;
-      const origin = {
-        file: fileOf(key),
-        line: body.startPosition.row + 1,
-        ...(name === undefined ? {} : { function: name }),
-      };
-      found.push(
-        ...gather(callsIn(body), fileOf(key)).map((effect) =>
-          effect.type === "interaction" && effect.origin === undefined
-            ? { ...effect, origin }
-            : effect,
-        ),
-      );
-    }
-    return found;
-  };
-  return gather(calls, options.filePath);
-}
-
-/**
- * The key the facts gave a callee. A bare name joins on the name, the way the
- * fact emitter keys one; anything else joins on its own node.
- */
-function calleeKeyOf(filePath: string, callee: PyNode): string {
-  return callee.type === "identifier"
-    ? `${filePath}#${callee.text}`
-    : nodeId(filePath, callee);
-}
-
-/** What a callee settled on, when the rules settled it on one thing. */
-function resolvedOnce(
-  options: StorageOptions,
-  calleeKey: string,
-): string | undefined {
-  const resolved = options.facts
-    .facts("wantedResolves")
-    .filter((row) => String(row[0]) === calleeKey)
-    .map((row) => String(row[1]));
-  return resolved.length === 1 ? resolved[0] : undefined;
-}
-
 export interface StorageLookup {
   readonly facts: Database;
   readonly factsPath: string;
   readonly patterns: readonly StoragePattern[];
   readonly definitionAt: (key: string) => PyNode | undefined;
   readonly couldMatch: ReadonlySet<string>;
-  readonly leadsToStorage: ReadonlySet<string>;
   /** What a pack says about statements a project writes as SQL itself. */
   readonly rawSql?: readonly RawSqlPattern[];
 }
@@ -364,10 +262,12 @@ export function storageCallees(
 }
 
 /**
- * The database work a body does, one effect per chain. Empty when no pack
- * declares a storage pattern, or when nothing in the body settles on one.
+ * The database work a body does itself, one effect per chain. Work inside a
+ * function the body calls goes on that function's own summary, and the call
+ * links to it, so nothing here follows a call. Empty when no pack declares a
+ * storage pattern, or when nothing in the body settles on one.
  */
-function directStorageEffects(
+export function storageEffects(
   calls: readonly PyNode[],
   options: StorageOptions,
 ): Effect[] {
