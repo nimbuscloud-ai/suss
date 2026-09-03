@@ -6,6 +6,8 @@ Command-line interface for suss. It wraps the extraction pipeline, the human-rea
 
 `@suss/cli` is the user-facing entry point. It imports the language adapter and the pattern packs dynamically, so that starting the CLI doesn't pay the ts-morph cost unless extraction actually runs.
 
+The package ships its own `AGENTS.md`, at `node_modules/@suss/cli/AGENTS.md`, so a coding agent working from an installed copy has the same guide GitHub shows at the repo root.
+
 ### Commands
 
 ```sh

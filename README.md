@@ -116,7 +116,7 @@ A pack is then reached by name, `suss extract -f ts-rest -f axios`, and a declar
 ## Docs
 
 - [Get started](docs/tutorial/get-started.md): the smallest end-to-end example.
-- [AGENTS.md](AGENTS.md): driving suss from a coding agent, and which docs answer what. [`@suss/mcp`](packages/mcp) puts the same questions in front of a model as MCP tools.
+- [AGENTS.md](AGENTS.md): driving suss from a coding agent, and which docs answer what. [`@suss/mcp`](packages/mcp) puts the same questions in front of a model as MCP tools. `npm install @suss/cli` ships the same file at `node_modules/@suss/cli/AGENTS.md`, so an agent working from an installed copy has it too. Run `suss ask` with no question and it prints the ten it takes.
 - [Motivation](docs/motivation.md): the problem, why existing tools miss it, prior art, design principles.
 - [Glossary](docs/glossary.md): one canonical definition per term.
 - [FAQ](docs/faq.md): how suss relates to linters, types, OpenAPI, tests, observability.
