@@ -67,8 +67,10 @@ for (const { name, specifier } of builtins) {
   }
 
   const entryText = fs.readFileSync(entry, "utf8");
+  // The formatter breaks a long export list across lines, so the match
+  // allows any whitespace between the names.
   const reexported = entryText.match(
-    /export \{ default(?:, [\w, ]+)? \} from "(@suss\/[\w-]+)"/,
+    /export \{\s*default(?:,[\w,\s]+)?\s*\} from "(@suss\/[\w-]+)"/,
   );
   if (reexported === null) {
     problems.push(
