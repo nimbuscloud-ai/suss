@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 9335,
-      "covered": 8085,
+      "total": 9344,
+      "covered": 8094,
       "skipped": 0,
-      "pct": 86.6
+      "pct": 86.62
     },
     "statements": {
-      "total": 9444,
-      "covered": 8188,
+      "total": 9453,
+      "covered": 8197,
       "skipped": 0,
-      "pct": 86.7
+      "pct": 86.71
     },
     "functions": {
-      "total": 1445,
-      "covered": 1327,
+      "total": 1447,
+      "covered": 1329,
       "skipped": 0,
-      "pct": 91.83
+      "pct": 91.84
     },
     "branches": {
-      "total": 7240,
-      "covered": 5698,
+      "total": 7249,
+      "covered": 5706,
       "skipped": 0,
-      "pct": 78.7
+      "pct": 78.71
     },
     "branchesTrue": {
       "total": 0,
@@ -33,22 +33,22 @@
   },
   "src/adapter.ts": {
     "lines": {
-      "total": 926,
-      "covered": 667,
+      "total": 927,
+      "covered": 668,
       "skipped": 0,
-      "pct": 72.03
+      "pct": 72.06
     },
     "functions": {
-      "total": 145,
-      "covered": 114,
+      "total": 146,
+      "covered": 115,
       "skipped": 0,
-      "pct": 78.62
+      "pct": 78.76
     },
     "statements": {
-      "total": 940,
-      "covered": 679,
+      "total": 941,
+      "covered": 680,
       "skipped": 0,
-      "pct": 72.23
+      "pct": 72.26
     },
     "branches": {
       "total": 739,
@@ -423,28 +423,28 @@
   },
   "src/packageExports.ts": {
     "lines": {
-      "total": 71,
-      "covered": 63,
+      "total": 86,
+      "covered": 77,
       "skipped": 0,
-      "pct": 88.73
+      "pct": 89.53
     },
     "functions": {
-      "total": 9,
-      "covered": 9,
+      "total": 12,
+      "covered": 12,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 73,
-      "covered": 65,
+      "total": 88,
+      "covered": 79,
       "skipped": 0,
-      "pct": 89.04
+      "pct": 89.77
     },
     "branches": {
-      "total": 47,
-      "covered": 37,
+      "total": 49,
+      "covered": 39,
       "skipped": 0,
-      "pct": 78.72
+      "pct": 79.59
     }
   },
   "src/parameterReads.ts": {
@@ -1385,28 +1385,28 @@
   },
   "src/discovery/packageExports.ts": {
     "lines": {
-      "total": 91,
-      "covered": 84,
+      "total": 52,
+      "covered": 49,
       "skipped": 0,
-      "pct": 92.3
+      "pct": 94.23
     },
     "functions": {
-      "total": 10,
-      "covered": 10,
+      "total": 4,
+      "covered": 4,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 92,
-      "covered": 85,
+      "total": 52,
+      "covered": 49,
       "skipped": 0,
-      "pct": 92.39
+      "pct": 94.23
     },
     "branches": {
-      "total": 55,
-      "covered": 43,
+      "total": 29,
+      "covered": 25,
       "skipped": 0,
-      "pct": 78.18
+      "pct": 86.2
     }
   },
   "src/discovery/packageImport.ts": {
@@ -1957,28 +1957,28 @@
   },
   "src/resolve/reachableClosure.ts": {
     "lines": {
-      "total": 203,
-      "covered": 184,
+      "total": 211,
+      "covered": 192,
       "skipped": 0,
-      "pct": 90.64
+      "pct": 90.99
     },
     "functions": {
-      "total": 22,
-      "covered": 22,
+      "total": 23,
+      "covered": 23,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 203,
-      "covered": 184,
+      "total": 211,
+      "covered": 192,
       "skipped": 0,
-      "pct": 90.64
+      "pct": 90.99
     },
     "branches": {
-      "total": 130,
-      "covered": 105,
+      "total": 138,
+      "covered": 112,
       "skipped": 0,
-      "pct": 80.76
+      "pct": 81.15
     }
   },
   "src/resolve/readName.ts": {
@@ -2057,6 +2057,32 @@
       "covered": 73,
       "skipped": 0,
       "pct": 90.12
+    }
+  },
+  "src/resolve/sourceDeclaration.ts": {
+    "lines": {
+      "total": 24,
+      "covered": 21,
+      "skipped": 0,
+      "pct": 87.5
+    },
+    "functions": {
+      "total": 3,
+      "covered": 3,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 25,
+      "covered": 22,
+      "skipped": 0,
+      "pct": 88
+    },
+    "branches": {
+      "total": 25,
+      "covered": 17,
+      "skipped": 0,
+      "pct": 68
     }
   },
   "src/resolve/unfollowedCall.ts": {
