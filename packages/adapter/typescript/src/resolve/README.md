@@ -15,10 +15,26 @@ This layer runs after discovery and during summary assembly. It has three roles:
 - `readName.ts:readName`, what a name-valued expression says, as fixed text with a hole for each part built at run time. Every storage pack calls it for a table, a bucket or a cache key. The table below says what it reads.
 - `astResolve.ts:resolveNodeFromAst` — public entry; walks identifiers, property accesses, calls, and `await` expressions to resolve a node to a `TypeShape`. Caps at `MAX_HOPS` and uses a per-walk seen set.
 - `astResolve.ts:resolveCall` — single-return-only call resolver. Multi-return functions, overloads, and method calls fall through to the type checker.
-- `invocationEffects.ts:extractInvocationEffects` — captures bare expression-statement calls + container-building calls (array/object-literal-returning fns). Skips nested function bodies.
+- `invocationEffects.ts:extractInvocationEffects`, one `invocation` effect per `CallExpression` in the body, wherever the call is written. Descends into arrows and function expressions; stops at named nested declarations, pack-declared sub-unit boundaries and decorators. See "Every call is an invocation" below.
 - `invocationEffects.ts:runInvocationRecognizers` — dispatches recognizers from every loaded pack against every CallExpression in the unit's body.
 - `reachableClosure.ts:discoverReachableFunctions` — transitive-closure walk; emits library summaries with `recognition: "reachable"`.
 - `rethrowEnrichment.ts:enrichRethrows` — adds `rethrow.possibleSources` to throw transitions whose enclosing try-block calls into other summarized functions.
+
+## Every call is an invocation
+
+`extractInvocationEffects` records one `invocation` effect for every `CallExpression` in a unit's body. A call written as an argument to another call, inside a ternary, inside a template literal, or as the receiver of a method chain is a call all the same, and the `calls` facts a reader asks over are built from these effects. The walk does not keep a list of the positions a call may appear in (an expression statement, a spread, an initializer, a return, an element of a literal), because a list like that leaves out whatever nobody thought of, and `what calls buildPatternIndex` then says nothing does when the only call is `byPattern.set(pattern, buildPatternIndex(files))`.
+
+Everything a position list would have decided is settled by node identity instead:
+
+- Which call is the terminal. `res.json(body)` matched by a pack's terminal pattern is a response, and the same call must not also be an effect. Assembly compares the call node against the terminal nodes, and drops a call that is the terminal or a link in its receiver chain (`res.status(404)` inside `res.status(404).json(body)`). A call whose result a terminal describes, `return toView(row)`, and a call written as the terminal's argument, `res.json(toView(row))`, are different nodes and stay.
+- Which line the call is on. Every effect takes the line of the statement enclosing the call, which is what assembly compares against where each terminal ends to decide which branch the call fires on.
+- What had to be true first. Preconditions are collected from the call node itself, so a call in one arm of a ternary records the ternary's condition.
+
+The effects come out in the order the calls finish: a call in argument position comes before the call it feeds, and `f()()` records `f` and then `f()`. The `args` of the outer effect still describe the inner call as `{ kind: "call" }`, for readers that want the data flow.
+
+`async` is true when the caller awaits the result, `await f()`, through any parentheses. An `async` arrow whose concise body is a call no longer marks that call `async`; the arrow returns a promise, but the call inside it may be synchronous.
+
+The walk descends into arrows and function expressions the unit itself runs (`.then` callbacks, `forEach` bodies, Promise executors) and stops at named nested declarations and pack-declared sub-unit boundaries, the same rule every body walker takes from `walk/descent.ts`. A decorator's calls run when the class is defined, not when the method runs, so the walk skips decorators too.
 
 ## Which unfollowed calls leave a gap
 
@@ -116,7 +132,7 @@ Following a helper stops after two hops, and it stops at a body that does more t
 - **`isInformativeInitializer` filter.** When walking a variable's initializer, we only descend into call/await/new — those are the cases where the AST tells you something the type checker wouldn't (e.g. `const u = await db.find()` returns `T | null`; past a null guard the use site is only `T`). For other initializers (literals, expressions), we defer to the use-site type.
 - **Recognizer error isolation.** A recognizer that throws is caught, logged to stderr with file:line, and skipped for that call. The extraction continues — buggy recognizers don't crash the run.
 - **Closure walk is one-hop only.** `reachableClosure` resolves immediate callees of discovered units to library summaries. Transitive throws (`A` throws because `A → B → C` throws) are deferred to `rethrowEnrichment`, which only walks try-blocks one level deep.
-- **Container-building calls are flagged `neverTerminal`.** Calls like `someBuilder()` that return arrays/objects become invocation effects but shouldn't compete with `return` / `throw` in the terminal-line dedup. The flag tells assembly to keep them as effects, not collapse them into the unit's terminal output.
+- **Terminal dedup is by node, not by line.** Each invocation effect records the call node it came from, and assembly drops only the calls that are a terminal or a link in a terminal's receiver chain. Two calls on the line of a terminal, `return [...f(), ...g()]`, both survive.
 - **Rethrow lookup is by line range, not symbol.** `summary.location.range` (`startLine-endLine`) is the lookup key, not the function name or symbol identity. That works because we never have two summaries for the same function at the same line range.
 
 ## Sibling modules

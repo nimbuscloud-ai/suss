@@ -83,6 +83,37 @@ function firesOn(site: CallSite, branch: RawBranch): boolean {
   return site.alwaysRuns || runsBefore(site.line, branch.terminal.location.end);
 }
 
+/**
+ * Whether `call` is a terminal the reader matched, or a link in the
+ * receiver chain of one: `res.status(404)` inside
+ * `res.status(404).json(body)`. The chain is one write, and the
+ * terminal already records what each link contributed. A call written
+ * as the terminal's argument is not a link and stays an effect.
+ */
+function writesTerminal(call: Node, terminalNodes: ReadonlySet<Node>): boolean {
+  let current: Node = call;
+  for (;;) {
+    if (terminalNodes.has(current)) {
+      return true;
+    }
+    const parent = current.getParent();
+    if (parent === undefined || !isReceiverOf(current, parent)) {
+      return false;
+    }
+    current = parent;
+  }
+}
+
+/** Whether `parent` reads `node` as the thing it calls or accesses. */
+function isReceiverOf(node: Node, parent: Node): boolean {
+  return (
+    (Node.isPropertyAccessExpression(parent) ||
+      Node.isElementAccessExpression(parent) ||
+      Node.isCallExpression(parent)) &&
+    parent.getExpression() === node
+  );
+}
+
 const isDefaultConditionList = (conditions: ConditionInfo[]): boolean =>
   conditions.length === 0 ||
   conditions.every(
@@ -316,15 +347,8 @@ export function extractRawBranches(
     // the terminal and would otherwise count twice. A call whose result
     // a terminal describes, `return toView(row)`, is a different node.
     const terminalNodes = new Set(terminals.map(({ node }) => node));
-    const terminalLines = new Set(
-      distinctBranches.map((b) => b.terminal.location.start),
-    );
-    // A container-building call is never a terminal, so the line dedup
-    // would cost single-line orchestrators their effects.
-    const sideEffects = invocations.filter((i) =>
-      i.node !== undefined
-        ? !terminalNodes.has(i.node)
-        : i.neverTerminal || !terminalLines.has(i.line),
+    const sideEffects = invocations.filter(
+      (i) => !writesTerminal(i.node, terminalNodes),
     );
     for (const branch of distinctBranches) {
       branch.effects = sideEffects

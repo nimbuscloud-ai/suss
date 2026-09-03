@@ -327,7 +327,7 @@ Each `ConditionInfo` records the condition's source text, polarity, and provenan
 Two post-passes follow in `assembly.ts`:
 
 - **Fall-through synthesis.** When the pack opted in with a `functionFallthrough` terminal pattern and no existing terminal covers the default path, the adapter adds a synthetic terminal whose condition lists are the paths that fall off the end of the body (`pathConditions`' `fallthrough` result). Making the pack opt in keeps the semantics where they are declared: HTTP packs treat no-response as a gap, and React event handlers treat an implicit return as normal.
-- **Effect attachment.** Bare expression-statement calls and recognizer-typed effects attach to the default branch, the path that every call at the top level of the body runs on.
+- **Effect attachment.** Every call in the body, wherever it is written, becomes an invocation effect, and it attaches to each branch whose path runs it: the call's preconditions must be true on the branch, and the call's statement must come before the branch's terminal (or the call runs on every path, as a `finally` body does). A call that is itself a terminal, or a link in a terminal's receiver chain, is dropped, since the terminal already records it. Recognizer-typed effects attach by the same two tests.
 
 The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. That logic is already implemented and tested. Only the adapter side is described here.
 
