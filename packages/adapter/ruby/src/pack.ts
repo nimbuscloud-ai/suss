@@ -34,7 +34,30 @@ export interface RbStoragePattern {
   storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
-export type RubyDiscoveryPattern = GraphqlObjectFields;
+export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;
+
+/** A class whose ancestry reaches one of `baseClassNames` is a controller, and every instance method it defines directly is one of its actions, bound by `routeFor` to the method and path a project's own routing gives it, or discovered with no boundary binding when `routeFor` finds none. */
+export interface ControllerActions {
+  type: "controllerActions";
+  /** The library's own base a project's controllers extend, `ActionController::Base` say. */
+  baseClassNames: string[];
+  /** The directory a bare superclass name is looked up under, the project's own layout. */
+  root: string;
+  pathConvention: ConstantPathConvention;
+  /** The library's own classes a project's controller chain ends at. */
+  ancestryRootClassNames: string[];
+  /** Status code a wire response gets when the action does not say otherwise. */
+  defaultStatusCode: number;
+  /** Absolute path of the file this pattern's own routing came from, for the one gap `drainRoutingGaps` may report. */
+  routesFile: string;
+  /** The method and path a project's own routing gives one controller's action, or null when that action has none. */
+  routeFor: (
+    controllerQualifiedName: string,
+    actionName: string,
+  ) => { method: string; path: string } | null;
+  /** One message per routing declaration kind this pattern's reading left uncovered, returned once for the whole run and an empty array after. */
+  drainRoutingGaps?: () => readonly string[];
+}
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
 export interface GraphqlObjectFields {

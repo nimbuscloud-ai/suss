@@ -22,6 +22,16 @@ export {
   methodInAncestry,
   reachDefinition,
 } from "./ancestry.js";
+export {
+  bodyStatements,
+  booleanLiteralValue,
+  field,
+  hashKeySymbolName,
+  readCallArgs,
+  runStatements,
+  stringLiteralValue,
+  symbolValue,
+} from "./ast.js";
 export { resolveConstantFile, underscoreConstantPath } from "./constantPath.js";
 export {
   createFileCache,
@@ -58,6 +68,7 @@ export type {
   MethodLookup,
   ReachedBody,
 } from "./ancestry.js";
+export type { CallArgs, Range } from "./ast.js";
 export type { ConstantPathConvention } from "./constantPath.js";
 export type { FileConstants } from "./facts/constants.js";
 export type {
@@ -65,6 +76,7 @@ export type {
   RubyWhySessionOptions,
 } from "./facts/why.js";
 export type {
+  ControllerActions,
   GraphqlObjectFields,
   RbStoragePattern,
   RubyDiscoveryPattern,

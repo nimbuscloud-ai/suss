@@ -5,10 +5,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
+import {
+  controllerActionsPattern,
+  railsTestPack,
+} from "./__fixtures__/railsControllerPattern.js";
 import { createFileCache, discoverUnits } from "./discovery.js";
 import { parseRuby } from "./parser.js";
 
-import type { RubyPack } from "./pack.js";
+import type { ControllerActions, RubyPack } from "./pack.js";
 
 /** For tests that never resolve a `mutation:` or `resolver:` reference, and so never read a file. */
 function inMemoryCache(files: Record<string, string> = {}) {
@@ -669,5 +673,167 @@ describe("discoverUnits: camelize", () => {
       { name: "campaign_id", type: { type: "text" }, required: true },
     ]);
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+describe("discoverUnits: controller actions", () => {
+  const ROUTED_PACK: RubyPack = railsTestPack({
+    routeFor: (controllerQualifiedName, actionName) =>
+      controllerQualifiedName === "OrdersController" && actionName === "index"
+        ? { method: "get", path: "/orders" }
+        : null,
+  });
+
+  async function discoverActions(source: string, pack: RubyPack = ROUTED_PACK) {
+    const tree = await parseRuby(source);
+    return discoverUnits(tree.rootNode, {
+      packs: [pack],
+      filePath: "controllers/orders_controller.rb",
+      cache: inMemoryCache(),
+    });
+  }
+
+  it("discovers every instance method a controller defines directly, routed or not", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "  def preview\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["index", "preview"]);
+  });
+
+  it("binds a routed action with restBinding, at what routeFor gives it", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units[0]?.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/orders" },
+      recognition: "rails",
+    });
+  });
+
+  it("discovers an action routeFor answers null for, with no boundary binding", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def preview\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units[0]?.boundaryBinding).toBeNull();
+  });
+
+  it("does not discover methods on a class whose ancestry does not reach a configured base", async () => {
+    const units = await discoverActions(
+      "class OrdersController < SomeOtherBase\n" +
+        "  def index\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units).toEqual([]);
+  });
+
+  it("discovers a controller reaching a configured base through a project base two hops away", async () => {
+    const units = await discoverActions(
+      "class ApiController < ApplicationController\n" +
+        "end\n" +
+        "class OrdersController < ApiController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["index"]);
+  });
+
+  it("gives every discovered action the pattern's default status code", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def preview\n" +
+        "  end\n" +
+        "end\n",
+      railsTestPack({ defaultStatusCode: 204 }),
+    );
+    expect(units[0]?.branches[0]?.terminal.statusCode).toEqual({
+      type: "literal",
+      value: 204,
+    });
+  });
+
+  it("exports each action under [controllerQualifiedName, actionName]", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units[0]?.identity.exportPath).toEqual([
+      "OrdersController",
+      "index",
+    ]);
+  });
+
+  it("seeds the reach walk with every discovered action's own method", async () => {
+    const tree = await parseRuby(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "    OrderService.new.list_orders\n" +
+        "  end\n" +
+        "end\n",
+    );
+    const seeded: string[] = [];
+    await discoverUnits(tree.rootNode, {
+      packs: [ROUTED_PACK],
+      filePath: "controllers/orders_controller.rb",
+      absoluteFile: "/app/controllers/orders_controller.rb",
+      cache: inMemoryCache(),
+      onReachSeed: (raw) => seeded.push(raw.identity.name),
+    });
+    expect(seeded).toEqual(["index"]);
+  });
+
+  it("reports drainRoutingGaps' messages once, on the batch of units for the controller it fires on", async () => {
+    let calls = 0;
+    const pattern: ControllerActions = controllerActionsPattern({
+      drainRoutingGaps: () => {
+        calls += 1;
+        return calls === 1 ? ["config/routes.rb also declares mount"] : [];
+      },
+    });
+    const pack: RubyPack = {
+      name: "rails",
+      protocol: "http",
+      discovery: [pattern],
+    };
+
+    const first = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "end\n",
+      pack,
+    );
+    const reasons = first
+      .flatMap((u) => u.readings ?? [])
+      .filter(
+        (r): r is Extract<typeof r, { kind: "unreadable" }> =>
+          r.kind === "unreadable",
+      )
+      .map((r) => r.reason);
+    expect(reasons.some((reason) => reason.includes("mount"))).toBe(true);
+
+    const second = await discoverActions(
+      "class ItemsController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "end\n",
+      pack,
+    );
+    expect(second.some((u) => (u.readings ?? []).length > 0)).toBe(false);
   });
 });

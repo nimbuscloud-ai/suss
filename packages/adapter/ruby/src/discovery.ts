@@ -10,7 +10,11 @@
 // See this package's README for what a field's summary says about the
 // method behind it and where the reading stops.
 
-import { dispatchByType, graphqlResolverBinding } from "@suss/behavioral-ir";
+import {
+  dispatchByType,
+  graphqlResolverBinding,
+  restBinding,
+} from "@suss/behavioral-ir";
 import { unreadableReading } from "@suss/extractor";
 
 import {
@@ -22,6 +26,7 @@ import {
 import {
   booleanLiteralValue,
   field,
+  instanceMethodsByName,
   methodHasStatements,
   rangeOf,
   readCallArgs,
@@ -61,6 +66,7 @@ import type {
 } from "./ancestry.js";
 import type { BlockConfigures, CallArgs, Range } from "./ast.js";
 import type {
+  ControllerActions,
   GraphqlObjectFields,
   RubyDiscoveryPattern,
   RubyPack,
@@ -221,11 +227,10 @@ export async function discoverUnits(
 function reachesConfiguredBase(
   ancestry: Ancestry,
   self: string,
-  pattern: GraphqlObjectFields,
+  baseClassNames: readonly string[],
 ): boolean {
   return ancestry.some(
-    (entry) =>
-      entry.name !== self && pattern.baseClassNames.includes(entry.name),
+    (entry) => entry.name !== self && baseClassNames.includes(entry.name),
   );
 }
 
@@ -243,6 +248,8 @@ function unitsFor(
   > = {
     graphqlObjectFields: (p) =>
       graphqlObjectFieldUnits(p, pack, info, ownBlocks, fileBlocks, options),
+    controllerActions: (p) =>
+      controllerActionUnits(p, pack, info, ownBlocks, fileBlocks, options),
   };
   return dispatchByType(table, pattern);
 }
@@ -268,7 +275,9 @@ async function graphqlObjectFieldUnits(
     options.storage,
   );
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
-  if (!reachesConfiguredBase(ancestry, info.qualifiedName, pattern)) {
+  if (
+    !reachesConfiguredBase(ancestry, info.qualifiedName, pattern.baseClassNames)
+  ) {
     return [];
   }
   const typeName = graphqlTypeNameFromQualified(
@@ -298,6 +307,178 @@ async function graphqlObjectFieldUnits(
     }
     return raw;
   });
+}
+
+/**
+ * Every instance method a controller defines directly is one of its
+ * actions. Each becomes its own unit, bound when `routeFor` finds a
+ * route for it and left unbound otherwise, with its calls seeded into
+ * the reach walk either way.
+ */
+async function controllerActionUnits(
+  pattern: ControllerActions,
+  pack: RubyPack,
+  info: ClassInfo,
+  ownBlocks: readonly ReachedBody[],
+  fileBlocks: readonly ReachedBody[],
+  options: DiscoveryOptions,
+): Promise<RawCodeStructure[]> {
+  if (
+    info.bodyNode === null ||
+    pattern.baseClassNames.includes(info.qualifiedName)
+  ) {
+    return [];
+  }
+  const lookup: AncestorLookup = {
+    root: pattern.root,
+    pathConvention: pattern.pathConvention,
+    ancestryRootClassNames: pattern.ancestryRootClassNames,
+    parsedFile: (absPath) => options.cache.get(absPath),
+    localDefinition: (name) => sameFileBlocks(name, fileBlocks),
+  };
+  const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, lookup);
+  if (
+    !reachesConfiguredBase(ancestry, info.qualifiedName, pattern.baseClassNames)
+  ) {
+    return [];
+  }
+
+  const units: RawCodeStructure[] = [];
+  for (const block of ownBlocks) {
+    if (block.info.bodyNode === null) {
+      continue;
+    }
+    for (const [actionName, method] of instanceMethodsByName(
+      block.info.bodyNode,
+    )) {
+      const raw = buildControllerActionUnit(
+        pack,
+        pattern,
+        info.qualifiedName,
+        actionName,
+        method,
+        options.filePath,
+        options.storage,
+      );
+      units.push(raw);
+      options.onReachSeed?.(raw, {
+        file: block.file,
+        node: method,
+        enclosingQualifiedName: info.qualifiedName,
+      });
+    }
+  }
+
+  const routingGaps = pattern.drainRoutingGaps?.() ?? [];
+  if (routingGaps.length > 0) {
+    units.push(routingGapUnit(pattern, routingGaps));
+  }
+  return units;
+}
+
+function buildControllerActionUnit(
+  pack: RubyPack,
+  pattern: ControllerActions,
+  controllerQualifiedName: string,
+  actionName: string,
+  method: RbNode,
+  filePath: string,
+  storage?: RbStorageOptions,
+): RawCodeStructure {
+  const range = rangeOf(method);
+  const route = pattern.routeFor(controllerQualifiedName, actionName);
+  const body = bodyOfMethod(method, storage);
+  return {
+    identity: {
+      name: actionName,
+      nameKind: "binding",
+      kind: "handler",
+      file: filePath,
+      range,
+      span: spanOf(method),
+      exportName: actionName,
+      exportPath: [controllerQualifiedName, actionName],
+    },
+    boundaryBinding:
+      route === null
+        ? null
+        : restBinding({
+            transport: pack.protocol,
+            method: route.method,
+            path: route.path,
+            recognition: pack.name,
+          }),
+    parameters: [],
+    branches: [
+      {
+        conditions: [],
+        terminal: {
+          kind: "response",
+          statusCode: { type: "literal", value: pattern.defaultStatusCode },
+          body: null,
+          exceptionType: null,
+          message: null,
+          component: null,
+          renderTree: null,
+          delegateTarget: null,
+          emitEvent: null,
+          location: range,
+        },
+        effects: body.effects ?? [],
+        ...(body.extraEffects === undefined
+          ? {}
+          : { extraEffects: body.extraEffects }),
+        location: range,
+        isDefault: true,
+      },
+    ],
+    bodyContent: body.bodyContent ?? "absent",
+    dependencyCalls: [],
+    declaredContract: null,
+  };
+}
+
+/** One unit, with no boundary and nothing to call, saying what a run of this pattern's own routing read left uncovered. Built once per run, on the first controller found, rather than repeated per controller. */
+function routingGapUnit(
+  pattern: ControllerActions,
+  gaps: readonly string[],
+): RawCodeStructure {
+  const range = { start: 1, end: 1 };
+  return {
+    identity: {
+      name: "routes",
+      kind: "module-init",
+      file: pattern.routesFile,
+      range,
+      exportName: null,
+      exportPath: null,
+    },
+    boundaryBinding: null,
+    parameters: [],
+    branches: [
+      {
+        conditions: [],
+        terminal: {
+          kind: "void",
+          statusCode: null,
+          body: null,
+          exceptionType: null,
+          message: null,
+          component: null,
+          renderTree: null,
+          delegateTarget: null,
+          emitEvent: null,
+          location: range,
+        },
+        effects: [],
+        location: range,
+        isDefault: true,
+      },
+    ],
+    readings: gaps.map((gap) => unreadableReading(gap, range)),
+    dependencyCalls: [],
+    declaredContract: null,
+  };
 }
 
 /**
