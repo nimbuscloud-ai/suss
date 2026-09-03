@@ -17,6 +17,7 @@ export const IntentFindingKindSchema = z.enum([
   "outcomeShapeMismatch", // a matched outcome whose body shapes disagree
   "undeclaredOutcome", // code produces a REST status the intent doesn't declare
   "unkeyableBoundary", // intent boundary can't be keyed, so it can't be checked
+  "renamedBoundary", // a declared store vanished and an undeclared one of the same system appeared with the same outcomes
   // Outcome intent (kind: prd), scenario link coverage against system
   // intent. These concretise the proposal's "scenario not linked /
   // dangling / ambiguous" set (design/proposals/intent-specs.md);

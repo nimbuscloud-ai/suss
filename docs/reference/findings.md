@@ -569,7 +569,7 @@ They have a different shape from a behavioural finding. There is no `provider` a
 
 | Field | Type | Meaning |
 |---|---|---|
-| `kind` | string (one of the eight below) | Which failure mode this is. |
+| `kind` | string (one of the ten below) | Which failure mode this is. |
 | `severity` | `error` \| `warning` \| `info` | Default severity. |
 | `boundary` | string | A readable label, `GET /users/:id` or `fn:@suss/cli::contract`. The key the intent and the code paired on. |
 | `intent` | `{ name, outcomeId? }` | The intent doc's `name` (boundary intent) or `title` (PRD), and the declared outcome when the finding is about one. |
@@ -578,7 +578,7 @@ They have a different shape from a behavioural finding. There is no `provider` a
 | `message` | string | One line of human-readable text. |
 | `suppressed` | `IntentFindingSuppression?` | Present only when a `.sussignore` rule matched. |
 
-One rule cuts across all eight: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the doc restores the full severity. So an `error` you see at `warning` may mean nobody has confirmed the intent yet, not that the problem is smaller.
+One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the doc restores the full severity. So an `error` you see at `warning` may mean nobody has confirmed the intent yet, not that the problem is smaller.
 
 The severity split follows from what an intent doc is. A person sat down and wrote it, so code that does not satisfy it is a defect and reads as an error. An intent that cannot be checked, or a scenario that points at nothing, is a gap in the documents and reads as a warning. Code that does more than the document claims reads as info.
 
@@ -627,6 +627,16 @@ Statuses are limited to REST on purpose. Function-call returns are too numerous 
 **Legitimate when:** the status is a framework default or an infrastructure response nobody intended to write down. A 500 from an unhandled throw is not a promise anybody made. For a boundary, the intent may be scoped to one part of what the unit does.
 
 **Bug when:** the status is part of the contract callers depend on and the document does not say so, or the unit writes a store the document never mentions. Add it to the intent, since a person reading the document will not know about it.
+
+### `renamedBoundary` *(shipped)*
+
+**Severity:** error • **Emitted by:** `compareIntentToImpl`
+
+A declared store the unit never touches anywhere, paired with an undeclared store of the same system the unit touches instead, with the exact same verbs and outcomes. Renaming a store without updating the intent doc otherwise produces an `uncoveredOutcome` for every verb and outcome declared against the old store plus an `undeclaredOutcome` for every verb the code touches the new one with; this finding replaces that whole set with one. Pairing requires the two boundaries to share a system prefix, their verbs to match exactly, the new one to satisfy every declared use the old one had, and each side to have exactly one candidate on the other.
+
+**Legitimate when:** never. The document and the code disagree either way, and the pairing is a guess about the cause rather than a change in whether that disagreement matters.
+
+**Bug when:** always. Update the intent if the store was renamed, and fix the code if it was not.
 
 ### `unkeyableBoundary` *(shipped)*
 

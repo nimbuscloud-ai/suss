@@ -27,6 +27,7 @@ the same boundary key, and emits:
 - `undeclaredOutcome`: code produces a REST status, or reaches a boundary, that the intent doesn't declare (info; intent under-specifies).
 - `unkeyableBoundary`: the intent's boundary has no key to pair on, so nothing was compared (warning).
 - `undescribedOutcome`: a declared outcome no PRD scenario links to (info).
+- `renamedBoundary`: a declared store the unit never touches, paired with an undeclared store of the same system it touches with the same verbs on the same outcomes instead.
 
 v0 checks system intent (`kind: boundary`). PRD outcome intent
 (`kind: prd`), which covers scenarios and links, is a separate pass.
@@ -53,9 +54,15 @@ An access whose container the code cannot settle (a wrapper handed its table as 
 
 A `when` clause that says which boundary the branch read is compared too, which is what makes `when` more than prose.
 
-`boundaryGuardsOf` in `@suss/behavioral-ir` says, for each branch of the code, which boundary its guards turned on and whether the guard passed because something was there. A declared outcome then narrows to the branches whose guards match every boundary clause the intent stated, and `uncoveredOutcome` reports one that produces the ending on a different condition. So an intent saying "404 when a read of `aws.dynamodb:Invoices` finds nothing" fails when the code's 404 turns on the row being present.
+`boundaryGuardsOf` in `@suss/behavioral-ir` says, for each branch of the code, which boundary its guards turned on and whether the guard passed because something was there. A declared outcome then narrows to the branches whose guards match every boundary clause the intent stated, and `uncoveredOutcome` reports one that produces the ending on a different condition. So an intent saying "404 when a read of `aws.dynamodb:Invoices` finds nothing" fails when the code's 404 turns on the row being present. When the unit makes no effect against that boundary anywhere, in any transition, the message points at the boundary as the cause instead.
 
 The boundary resolves through `namesBoundary` again, and `finds` has to agree when the clause states it. A clause about an input, and a clause left as a sentence, are prose to this pass and are not compared: the paths and the words have no counterpart in the summary to check against.
+
+## When a store was renamed
+
+A store that gets renamed in code without the intent doc catching up produces a pile of findings from one cause: the old name is declared and never touched, the new one is touched and never declared, and both an `uncoveredOutcome` (for the vanished store) and an `undeclaredOutcome` (for the one that appeared) fire for every verb and every outcome that used it. `renamedBoundary` folds all of those into one finding when the pairing is unambiguous: the two boundaries share a system prefix, their verbs match exactly, the new one satisfies every declared use the old one had, and each side has exactly one candidate on the other. It stays an error, same as the findings it replaces: the document and the code still disagree, and folding is a guess about the cause rather than a change in whether that disagreement matters.
+
+Pairing only considers reads and writes. A queue channel or a deployed unit is addressed by name, so a different callee produces its own uncoveredOutcome and undeclaredOutcome findings without folding.
 
 ## The coverage question, both ways
 

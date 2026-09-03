@@ -918,11 +918,22 @@ describe("effect outcomes", () => {
   });
 
   it("reports a declared write the code never makes", () => {
+    // A different storage system than what the code writes, so this
+    // stays a plain missing effect rather than a renamed-boundary pair.
     const result = checkIntentAgreement(
       [
         boundaryIntent(
           busIntentBinding,
-          [effectOutcome("receipt-written", [writes("Receipts")])],
+          [
+            effectOutcome("receipt-written", [
+              {
+                does: "writes",
+                names: "postgresql:Receipts",
+                fields: [],
+                by: [],
+              },
+            ]),
+          ],
           "invoice-intake",
         ),
       ],
@@ -934,7 +945,7 @@ describe("effect outcomes", () => {
     );
     expect(uncovered).toHaveLength(1);
     expect(uncovered[0].message).toContain(
-      "results in a write to aws.dynamodb:Receipts",
+      "results in a write to postgresql:Receipts",
     );
   });
 
@@ -1193,19 +1204,87 @@ describe("a when clause that says which boundary", () => {
     expect(reported[0].message).toContain("on a different condition");
   });
 
-  it("reports a clause naming a store the branch never read", () => {
+  it("reports the default condition message when no single branch meets every clause", () => {
+    // Branch 0 checks Invoices, branch 1 checks Reserved: every clause
+    // is met by some branch, but never the same one.
+    const reservedTable = storageBinding({
+      recognition: "@suss/framework-aws-dynamodb",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
+      container: "Reserved",
+    });
+    const reservedRow: ValueRef = {
+      type: "derived",
+      from: { type: "dependency", name: "dynamo.send2", accessChain: [] },
+      derivation: { type: "propertyAccess", property: "Item" },
+    };
+    const summary = codeSummary(
+      restCodeBinding,
+      [restResponse(404, null), restResponse(404, null)],
+      "getInvoice",
+    );
+    summary.transitions[0].conditions = [
+      { type: "truthinessCheck", subject: theRow, negated: true },
+    ];
+    summary.transitions[0].effects = [invoiceRead];
+    summary.transitions[1].conditions = [
+      { type: "truthinessCheck", subject: reservedRow, negated: true },
+    ];
+    summary.transitions[1].effects = [
+      {
+        type: "interaction",
+        binding: reservedTable,
+        callee: "dynamo.send2",
+        interaction: { class: "storage-access", kind: "read", fields: [] },
+      },
+    ];
+
     const result = checkIntentAgreement(
       [
         boundaryIntent(
           restIntentBinding,
-          [whenOutcome(404, [reads("aws.dynamodb:Receipts", "nothing")])],
+          [
+            whenOutcome(404, [
+              reads("aws.dynamodb:Invoices", "nothing"),
+              reads("aws.dynamodb:Reserved", "nothing"),
+            ]),
+          ],
+          "invoice-lookup",
+        ),
+      ],
+      [summary],
+    );
+
+    const reported = uncovered(result.findings);
+    expect(reported).toHaveLength(1);
+    expect(reported[0].message).toBe(
+      'Intent "invoice-lookup" declares status 404 at GET /users/{id} when reads aws.dynamodb:Invoices finds nothing and reads aws.dynamodb:Reserved finds nothing; getInvoice produces it on a different condition.',
+    );
+  });
+
+  it("says the unit never reads a store the code touches nowhere at all", () => {
+    // A different storage system than the one the handler actually
+    // reads, so this stays a plain never-touched clause rather than a
+    // renamed-boundary pair.
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          restIntentBinding,
+          [whenOutcome(404, [reads("aws.secretsmanager:Receipts", "nothing")])],
           "invoice-lookup",
         ),
       ],
       [lookupHandler()],
     );
 
-    expect(uncovered(result.findings)).toHaveLength(1);
+    const reported = uncovered(result.findings);
+    expect(reported).toHaveLength(1);
+    expect(reported[0].message).toContain(
+      "declares status 404 at GET /users/{id} when reads aws.secretsmanager:Receipts finds nothing",
+    );
+    expect(reported[0].message).toContain(
+      "getInvoice never reads aws.secretsmanager:Receipts.",
+    );
   });
 
   it("resolves the boundary the way suss ask resolves what somebody types", () => {
@@ -1665,5 +1744,397 @@ describe("checkIntentAgreement over an invoked unit", () => {
         detail: "boundary can't be keyed for pairing against code",
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A declared store the unit never touches, paired with one it touches instead
+// ---------------------------------------------------------------------------
+
+const accountsPostIntentBinding = restBinding({
+  transport: "http",
+  method: "POST",
+  path: "/accounts/:id",
+  recognition: "intent",
+});
+const accountsPostCodeBinding = restBinding({
+  transport: "http",
+  method: "POST",
+  path: "/accounts/:id",
+  recognition: "express",
+});
+
+const customerAccountsTable = storageBinding({
+  recognition: "@suss/framework-aws-dynamodb",
+  storageSystem: "aws.dynamodb",
+  scope: "default",
+  container: "CustomerAccounts",
+});
+
+/** The result of a `dynamo.send` call, read down to `.Item`. */
+const theAccountRow: ValueRef = {
+  type: "derived",
+  from: { type: "dependency", name: "dynamo.send", accessChain: [] },
+  derivation: { type: "propertyAccess", property: "Item" },
+};
+
+const accountRead: Extract<
+  BehavioralSummary["transitions"][number]["effects"][number],
+  { type: "interaction" }
+> = {
+  type: "interaction",
+  binding: customerAccountsTable,
+  callee: "dynamo.send",
+  interaction: { class: "storage-access", kind: "read", fields: ["accountId"] },
+};
+
+const accountWrite: Extract<
+  BehavioralSummary["transitions"][number]["effects"][number],
+  { type: "interaction" }
+> = {
+  type: "interaction",
+  binding: customerAccountsTable,
+  callee: "dynamo.write",
+  interaction: {
+    class: "storage-access",
+    kind: "write",
+    fields: ["accountId"],
+    operation: "PutItemCommand",
+  },
+};
+
+/** A POST handler that returns 404 when the read finds nothing, and reads and writes CustomerAccounts on 200. */
+function accountsHandler(): BehavioralSummary {
+  const summary = codeSummary(
+    accountsPostCodeBinding,
+    [restResponse(404, null), restResponse(200, null)],
+    "post",
+  );
+  summary.transitions[0].conditions = [
+    { type: "truthinessCheck", subject: theAccountRow, negated: true },
+  ];
+  summary.transitions[1].conditions = [
+    {
+      type: "negation",
+      operand: {
+        type: "truthinessCheck",
+        subject: theAccountRow,
+        negated: true,
+      },
+    },
+  ];
+  summary.transitions[1].effects = [accountRead, accountWrite];
+  return summary;
+}
+
+function readsEffect(container: string): IntentEffect {
+  return {
+    does: "reads",
+    names: `aws.dynamodb:${container}`,
+    fields: [],
+    by: [],
+  };
+}
+
+function responseWithEffects(
+  status: number,
+  effects: IntentEffect[],
+): IntentOutcome {
+  return {
+    id: `s${status}`,
+    when: "",
+    conditions: [],
+    kind: "response",
+    status,
+    body: null,
+    errorType: null,
+    effects,
+  };
+}
+
+describe("a declared store the unit never touches, paired with one it touches instead", () => {
+  it("folds the vanished condition, the vanished effects and the undeclared ones into one finding", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          accountsPostIntentBinding,
+          [
+            whenOutcome(404, [reads("aws.dynamodb:Accounts", "nothing")]),
+            responseWithEffects(200, [
+              readsEffect("Accounts"),
+              writes("Accounts"),
+            ]),
+          ],
+          "accounts-update",
+        ),
+      ],
+      [accountsHandler()],
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      kind: "renamedBoundary",
+      severity: "error",
+      intent: { name: "accounts-update" },
+    });
+    expect(result.findings[0].message).toBe(
+      'Intent "accounts-update" declares aws.dynamodb:Accounts; post reads and writes aws.dynamodb:CustomerAccounts instead, with the same outcomes. If the store was renamed, update the intent.',
+    );
+  });
+
+  it("does not pair boundaries the unit touches with a different set of verbs", () => {
+    function readOnlyAccountsHandler(): BehavioralSummary {
+      const summary = codeSummary(
+        accountsPostCodeBinding,
+        [restResponse(200, null)],
+        "post",
+      );
+      summary.transitions[0].effects = [accountRead];
+      return summary;
+    }
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          accountsPostIntentBinding,
+          [
+            responseWithEffects(200, [
+              readsEffect("Accounts"),
+              writes("Accounts"),
+            ]),
+          ],
+          "accounts-update",
+        ),
+      ],
+      [readOnlyAccountsHandler()],
+    );
+
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "uncoveredOutcome",
+      "uncoveredOutcome",
+      "undeclaredOutcome",
+    ]);
+    expect(result.findings.some((f) => f.kind === "renamedBoundary")).toBe(
+      false,
+    );
+  });
+
+  it("leaves the findings alone when two undeclared stores could equally explain the vanished one", () => {
+    function consumerWritingTwoAccountsTables(): BehavioralSummary {
+      const summary = codeSummary(
+        busCodeBinding,
+        [{ type: "return", value: null }],
+        "AccountWorker.handler",
+      );
+      summary.transitions[0].effects = [
+        {
+          type: "interaction",
+          binding: storageBinding({
+            recognition: "@suss/framework-aws-dynamodb",
+            storageSystem: "aws.dynamodb",
+            scope: "default",
+            container: "CustomerAccounts",
+          }),
+          callee: "dynamo.send",
+          interaction: {
+            class: "storage-access",
+            kind: "write",
+            fields: ["accountId"],
+            operation: "PutItemCommand",
+          },
+        },
+        {
+          type: "interaction",
+          binding: storageBinding({
+            recognition: "@suss/framework-aws-dynamodb",
+            storageSystem: "aws.dynamodb",
+            scope: "default",
+            container: "ArchivedAccounts",
+          }),
+          callee: "dynamo.send2",
+          interaction: {
+            class: "storage-access",
+            kind: "write",
+            fields: ["accountId"],
+            operation: "PutItemCommand",
+          },
+        },
+      ];
+      return summary;
+    }
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("account-recorded", [writes("Accounts")])],
+          "account-intake",
+        ),
+      ],
+      [consumerWritingTwoAccountsTables()],
+    );
+
+    expect(result.findings.map((f) => f.kind).sort()).toEqual(
+      ["uncoveredOutcome", "undeclaredOutcome", "undeclaredOutcome"].sort(),
+    );
+    expect(result.findings.some((f) => f.kind === "renamedBoundary")).toBe(
+      false,
+    );
+  });
+
+  it("names one verb when only one was declared", () => {
+    function consumerWritingCustomerAccounts(): BehavioralSummary {
+      const summary = codeSummary(
+        busCodeBinding,
+        [{ type: "return", value: null }],
+        "AccountWorker.handler",
+      );
+      summary.transitions[0].effects = [
+        {
+          type: "interaction",
+          binding: customerAccountsTable,
+          callee: "dynamo.write",
+          interaction: {
+            class: "storage-access",
+            kind: "write",
+            fields: ["accountId"],
+            operation: "PutItemCommand",
+          },
+        },
+      ];
+      return summary;
+    }
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [effectOutcome("account-recorded", [writes("Accounts")])],
+          "account-intake",
+        ),
+      ],
+      [consumerWritingCustomerAccounts()],
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].message).toBe(
+      'Intent "account-intake" declares aws.dynamodb:Accounts; AccountWorker.handler writes aws.dynamodb:CustomerAccounts instead, with the same outcomes. If the store was renamed, update the intent.',
+    );
+  });
+
+  it("does not pair when the touch that satisfies the verb happens on a different branch", () => {
+    const summary = codeSummary(
+      accountsPostCodeBinding,
+      [
+        restResponse(200, null),
+        { type: "throw", exceptionType: "Error", message: null },
+      ],
+      "post",
+    );
+    summary.transitions[1].effects = [
+      {
+        type: "interaction",
+        binding: storageBinding({
+          recognition: "@suss/framework-aws-dynamodb",
+          storageSystem: "aws.dynamodb",
+          scope: "default",
+          container: "Ledger",
+        }),
+        callee: "dynamo.write",
+        interaction: {
+          class: "storage-access",
+          kind: "write",
+          fields: ["accountId"],
+          operation: "PutItemCommand",
+        },
+      },
+    ];
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          accountsPostIntentBinding,
+          [responseWithEffects(200, [writes("Accounts")])],
+          "accounts-update",
+        ),
+      ],
+      [summary],
+    );
+
+    expect(result.findings.map((f) => f.kind).sort()).toEqual(
+      ["uncoveredOutcome", "undeclaredOutcome"].sort(),
+    );
+    expect(result.findings.some((f) => f.kind === "renamedBoundary")).toBe(
+      false,
+    );
+  });
+
+  it("leaves the findings alone when two vanished boundaries could both explain the one undeclared boundary", () => {
+    function consumerWritingCustomerAccounts(): BehavioralSummary {
+      const summary = codeSummary(
+        busCodeBinding,
+        [{ type: "return", value: null }],
+        "AccountWorker.handler",
+      );
+      summary.transitions[0].effects = [
+        {
+          type: "interaction",
+          binding: customerAccountsTable,
+          callee: "dynamo.write",
+          interaction: {
+            class: "storage-access",
+            kind: "write",
+            fields: ["accountId"],
+            operation: "PutItemCommand",
+          },
+        },
+      ];
+      return summary;
+    }
+
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("accounts-recorded", [writes("Accounts")]),
+            effectOutcome("ledger-recorded", [writes("Ledger")]),
+          ],
+          "account-intake",
+        ),
+      ],
+      [consumerWritingCustomerAccounts()],
+    );
+
+    expect(result.findings.map((f) => f.kind).sort()).toEqual(
+      ["uncoveredOutcome", "uncoveredOutcome", "undeclaredOutcome"].sort(),
+    );
+    expect(result.findings.some((f) => f.kind === "renamedBoundary")).toBe(
+      false,
+    );
+  });
+
+  it("does not pair a declared name written without a system prefix", () => {
+    const result = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [
+            effectOutcome("ledger-recorded", [
+              { does: "writes", names: "Ledger", fields: [], by: [] },
+            ]),
+          ],
+          "ledger-intake",
+        ),
+      ],
+      [consumerWritingInvoices()],
+    );
+
+    expect(result.findings.map((f) => f.kind).sort()).toEqual(
+      ["uncoveredOutcome", "undeclaredOutcome"].sort(),
+    );
+    expect(result.findings.some((f) => f.kind === "renamedBoundary")).toBe(
+      false,
+    );
   });
 });
