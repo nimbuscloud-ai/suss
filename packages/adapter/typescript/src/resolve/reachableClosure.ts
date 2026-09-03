@@ -647,9 +647,9 @@ export function expandReachableClosure(
     string,
     ReadonlyArray<{ callee: string; parameterIndex: number }>
   >();
-  // Every (callee function, position) this run passes a function into,
-  // across every body scanned. A parameter call whose position never
-  // shows up here is a gap: nothing here supplies it.
+  // Every (callee function, position) some body passes a named project
+  // function into. An inline arrow or a variable does not count, so a
+  // parameter call missing here is a gap even when a caller supplies one.
   const passedPositions = new Set<string>();
   const summariesByKey = new Map<string, BehavioralSummary[]>();
 

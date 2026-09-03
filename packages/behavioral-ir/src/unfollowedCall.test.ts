@@ -30,7 +30,7 @@ describe("unfollowed calls", () => {
       noDeclaration: "has no declaration this run could find",
       callerSupplied: "runs the function this unit's caller passed in",
       multipleReceivers: "reads as 3 different values",
-      unboundParameter: "nothing in this run passes a function into it",
+      unboundParameter: "no caller in this run passes it a function by name",
     };
     for (const [reason, fragment] of Object.entries(sentences)) {
       const gap = unfollowedCallGap({

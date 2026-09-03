@@ -2710,7 +2710,7 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     );
     expect(gap).toBeDefined();
     expect(gap?.description).toContain(
-      "nothing in this run passes a function into it",
+      "no caller in this run passes it a function by name",
     );
   });
 });

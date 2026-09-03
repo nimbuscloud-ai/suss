@@ -86,7 +86,7 @@ const STOP_SENTENCE: Record<
   multipleReceivers: ({ callee, candidates }) =>
     `The call to ${callee} is made on a receiver this run reads as ${candidates ?? "several"} different values, so nothing says which one it registers on and the registration is left out`,
   unboundParameter: ({ callee }) =>
-    `The call to ${callee} runs through a parameter, and nothing in this run passes a function into it, so whatever runs there is missing from this summary`,
+    `The call to ${callee} runs through a parameter, and no caller in this run passes it a function by name, so whatever runs there is missing from this summary`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {
