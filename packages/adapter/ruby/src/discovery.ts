@@ -27,6 +27,7 @@ import {
   booleanLiteralValue,
   field,
   instanceMethodsByName,
+  instanceMethodVisibility,
   methodHasStatements,
   rangeOf,
   readCallArgs,
@@ -310,8 +311,11 @@ async function graphqlObjectFieldUnits(
 }
 
 /**
- * Every instance method a controller defines directly is one of its
- * actions. Each becomes its own unit, bound when `routeFor` finds a
+ * Every public instance method a controller defines directly is one
+ * of its actions; Rails dispatches to a public method only, so a
+ * private or protected one is not discovered here at all, though it
+ * still gets a summary through the reach walk once something calls
+ * it. Each action becomes its own unit, bound when `routeFor` finds a
  * route for it and left unbound otherwise, with its calls seeded into
  * the reach walk either way.
  */
@@ -348,9 +352,13 @@ async function controllerActionUnits(
     if (block.info.bodyNode === null) {
       continue;
     }
+    const visibility = instanceMethodVisibility(block.info.bodyNode);
     for (const [actionName, method] of instanceMethodsByName(
       block.info.bodyNode,
     )) {
+      if ((visibility.get(actionName) ?? "public") !== "public") {
+        continue;
+      }
       const raw = buildControllerActionUnit(
         pack,
         pattern,
@@ -367,11 +375,6 @@ async function controllerActionUnits(
         enclosingQualifiedName: info.qualifiedName,
       });
     }
-  }
-
-  const routingGaps = pattern.drainRoutingGaps?.() ?? [];
-  if (routingGaps.length > 0) {
-    units.push(routingGapUnit(pattern, routingGaps));
   }
   return units;
 }
@@ -438,8 +441,8 @@ function buildControllerActionUnit(
   };
 }
 
-/** One unit, with no boundary and nothing to call, saying what a run of this pattern's own routing read left uncovered. Built once per run, on the first controller found, rather than repeated per controller. */
-function routingGapUnit(
+/** One unit, with no boundary and nothing to call, saying what a run of this pattern's own routing read left uncovered. `project.ts` builds this once per pattern, after discovery has read every file, rather than once per controller. */
+export function routingGapUnit(
   pattern: ControllerActions,
   gaps: readonly string[],
 ): RawCodeStructure {

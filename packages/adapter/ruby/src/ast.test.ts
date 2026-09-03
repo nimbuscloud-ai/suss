@@ -6,6 +6,7 @@ import {
   field,
   hashKeySymbolName,
   instanceMethodsByName,
+  instanceMethodVisibility,
   isType,
   methodHasStatements,
   rangeOf,
@@ -202,6 +203,66 @@ describe("instanceMethodsByName", () => {
   it("leaves out a method defined on the class rather than its instances", async () => {
     const body = await classBody("class C\n  def self.build\n  end\nend\n");
     expect([...instanceMethodsByName(body).keys()]).toEqual([]);
+  });
+});
+
+describe("instanceMethodVisibility", () => {
+  it("leaves every method public when nothing narrows it", async () => {
+    const body = await classBody(
+      "class C\n  def a\n  end\n\n  def b\n  end\nend\n",
+    );
+    expect(instanceMethodVisibility(body).size).toBe(0);
+  });
+
+  it("marks everything after a bare private keyword, leaving what came before public", async () => {
+    const body = await classBody(
+      "class C\n  def a\n  end\n\n  private\n\n  def b\n  end\nend\n",
+    );
+    const visibility = instanceMethodVisibility(body);
+    expect(visibility.get("a")).toBeUndefined();
+    expect(visibility.get("b")).toBe("private");
+  });
+
+  it("marks a def wrapped in private def ... end alone, without narrowing what follows", async () => {
+    const body = await classBody(
+      "class C\n  private def a\n  end\n\n  def b\n  end\nend\n",
+    );
+    const visibility = instanceMethodVisibility(body);
+    expect(visibility.get("a")).toBe("private");
+    expect(visibility.get("b")).toBeUndefined();
+  });
+
+  it("marks methods already defined through private :a, :b", async () => {
+    const body = await classBody(
+      "class C\n  def a\n  end\n\n  def b\n  end\n\n  private :a, :b\nend\n",
+    );
+    const visibility = instanceMethodVisibility(body);
+    expect(visibility.get("a")).toBe("private");
+    expect(visibility.get("b")).toBe("private");
+  });
+
+  it("reads protected the same way as private, in all three spellings", async () => {
+    const body = await classBody(
+      "class C\n" +
+        "  protected def a\n  end\n\n" +
+        "  def b\n  end\n\n" +
+        "  protected :b\n\n" +
+        "  protected\n\n" +
+        "  def c\n  end\nend\n",
+    );
+    const visibility = instanceMethodVisibility(body);
+    expect(visibility.get("a")).toBe("protected");
+    expect(visibility.get("b")).toBe("protected");
+    expect(visibility.get("c")).toBe("protected");
+  });
+
+  it("returns to public after a bare public keyword", async () => {
+    const body = await classBody(
+      "class C\n  private\n\n  def a\n  end\n\n  public\n\n  def b\n  end\nend\n",
+    );
+    const visibility = instanceMethodVisibility(body);
+    expect(visibility.get("a")).toBe("private");
+    expect(visibility.get("b")).toBeUndefined();
   });
 });
 

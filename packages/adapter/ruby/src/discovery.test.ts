@@ -797,12 +797,12 @@ describe("discoverUnits: controller actions", () => {
     expect(seeded).toEqual(["index"]);
   });
 
-  it("reports drainRoutingGaps' messages once, on the batch of units for the controller it fires on", async () => {
+  it("never calls routingGaps and never builds a gap unit itself; that is project.ts's job", async () => {
     let calls = 0;
     const pattern: ControllerActions = controllerActionsPattern({
-      drainRoutingGaps: () => {
+      routingGaps: () => {
         calls += 1;
-        return calls === 1 ? ["config/routes.rb also declares mount"] : [];
+        return ["config/routes.rb also declares mount"];
       },
     });
     const pack: RubyPack = {
@@ -811,29 +811,72 @@ describe("discoverUnits: controller actions", () => {
       discovery: [pattern],
     };
 
-    const first = await discoverActions(
+    const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +
         "  def index\n" +
         "  end\n" +
         "end\n",
       pack,
     );
-    const reasons = first
-      .flatMap((u) => u.readings ?? [])
-      .filter(
-        (r): r is Extract<typeof r, { kind: "unreadable" }> =>
-          r.kind === "unreadable",
-      )
-      .map((r) => r.reason);
-    expect(reasons.some((reason) => reason.includes("mount"))).toBe(true);
+    expect(calls).toBe(0);
+    expect(units.every((u) => (u.readings ?? []).length === 0)).toBe(true);
+  });
 
-    const second = await discoverActions(
-      "class ItemsController < ApplicationController\n" +
+  it("does not discover a method the body marks private with a bare private keyword", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "\n" +
+        "  private\n" +
+        "\n" +
+        "  def order_params\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["index"]);
+  });
+
+  it("does not discover a method wrapped as private def name ... end", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  private def order_params\n" +
+        "  end\n" +
+        "\n" +
         "  def index\n" +
         "  end\n" +
         "end\n",
-      pack,
     );
-    expect(second.some((u) => (u.readings ?? []).length > 0)).toBe(false);
+    expect(units.map((u) => u.identity.name)).toEqual(["index"]);
+  });
+
+  it("does not discover a method marked private through private :name", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "\n" +
+        "  def order_params\n" +
+        "  end\n" +
+        "\n" +
+        "  private :order_params\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["index"]);
+  });
+
+  it("does not discover a protected method either", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  def index\n" +
+        "  end\n" +
+        "\n" +
+        "  protected\n" +
+        "\n" +
+        "  def order_params\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["index"]);
   });
 });

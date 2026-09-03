@@ -139,6 +139,87 @@ export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
   return methods;
 }
 
+export type MethodVisibility = "public" | "private" | "protected";
+
+const VISIBILITY_KEYWORDS: ReadonlySet<string> = new Set([
+  "private",
+  "protected",
+  "public",
+]);
+
+function visibilityKeyword(text: string): MethodVisibility | null {
+  return VISIBILITY_KEYWORDS.has(text) ? (text as MethodVisibility) : null;
+}
+
+/** A public entry is left out rather than written, so the result stays sparse and an explicit `public` can still clear an earlier narrowing. */
+function setVisibility(
+  visibility: Map<string, MethodVisibility>,
+  name: string,
+  keyword: MethodVisibility,
+): void {
+  if (keyword === "public") {
+    visibility.delete(name);
+    return;
+  }
+  visibility.set(name, keyword);
+}
+
+/** Each name a `private`/`protected`/`public` call marks, `private def name; end` or `private :a, :b`. */
+function markCalledOutMethods(
+  call: RbNode,
+  keyword: MethodVisibility,
+  visibility: Map<string, MethodVisibility>,
+): void {
+  const argumentList = field(call, "arguments");
+  if (argumentList === null) {
+    return;
+  }
+  for (const arg of bodyStatements(argumentList)) {
+    const name =
+      arg.type === "method" ? field(arg, "name")?.text : symbolValue(arg);
+    if (name !== undefined && name !== null) {
+      setVisibility(visibility, name, keyword);
+    }
+  }
+}
+
+/**
+ * The Ruby visibility of every instance method a class body defines
+ * directly, keyed by name. A body runs top to bottom: a bare
+ * `private`/`protected`/`public` changes what every later `def` gets,
+ * `private def name; end` marks that one definition without changing
+ * what follows, and `private :a, :b` marks methods already defined.
+ * A method absent from the result is public: nothing in the body
+ * narrowed it.
+ */
+export function instanceMethodVisibility(
+  body: RbNode,
+): Map<string, MethodVisibility> {
+  const visibility = new Map<string, MethodVisibility>();
+  let mode: MethodVisibility = "public";
+  for (const stmt of bodyStatements(body)) {
+    if (stmt.type === "method") {
+      const name = field(stmt, "name")?.text;
+      if (name !== undefined) {
+        setVisibility(visibility, name, mode);
+      }
+      continue;
+    }
+    if (stmt.type === "identifier") {
+      mode = visibilityKeyword(stmt.text) ?? mode;
+      continue;
+    }
+    if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
+      continue;
+    }
+    const keyword = visibilityKeyword(field(stmt, "method")?.text ?? "");
+    if (keyword !== null) {
+      markCalledOutMethods(stmt, keyword, visibility);
+    }
+  }
+  return visibility;
+}
+
 /**
  * Every `def self.name` a class body writes directly, keyed by the name
  * it is defined under. Used for a call written straight on the

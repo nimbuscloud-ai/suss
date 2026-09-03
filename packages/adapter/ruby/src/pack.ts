@@ -48,15 +48,15 @@ export interface ControllerActions {
   ancestryRootClassNames: string[];
   /** Status code a wire response gets when the action does not say otherwise. */
   defaultStatusCode: number;
-  /** Absolute path of the file this pattern's own routing came from, for the one gap `drainRoutingGaps` may report. */
+  /** Absolute path of the file this pattern's own routing came from, for the one gap `routingGaps` may report. */
   routesFile: string;
   /** The method and path a project's own routing gives one controller's action, or null when that action has none. */
   routeFor: (
     controllerQualifiedName: string,
     actionName: string,
   ) => { method: string; path: string } | null;
-  /** One message per routing declaration kind this pattern's reading left uncovered, returned once for the whole run and an empty array after. */
-  drainRoutingGaps?: () => readonly string[];
+  /** One message per routing declaration kind this pattern's reading left uncovered. A pure read: calling it again gives the same list. */
+  routingGaps?: () => readonly string[];
 }
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
