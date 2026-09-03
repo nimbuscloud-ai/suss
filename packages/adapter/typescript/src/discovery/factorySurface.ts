@@ -3,18 +3,26 @@
 // discovery to emit one library unit per method on top of the
 // single unit for the export itself.
 //
-// Two shapes covered:
+// Shapes covered:
 //
 // 1. Object-literal returns from a factory:
 //      function createX() {
 //        return { method() {}, prop: () => {} }
 //      }
 //    Each property whose value is a function expression / arrow /
-//    method-shorthand becomes a surfaced method. Shorthand value
-//    properties (`return { project }`), spreads (`return { ...x }`),
-//    and non-callable values are skipped.
+//    method-shorthand becomes a surfaced method. A shorthand property
+//    (`return { project }`) surfaces too when `project` binds to a
+//    function declared in the same file; spreads (`return { ...x }`)
+//    and other non-callable values are skipped.
 //
-// 2. Class declarations:
+// 2. A factory that returns through a same-file helper:
+//      function createX(spec) { return build(spec); }
+//      function build(spec) { return { method() {} }; }
+//    `build`'s own return is surfaced as `createX`'s, bounded by
+//    MAX_BUILDER_HOPS so a helper that returns another call into
+//    itself terminates.
+//
+// 3. Class declarations:
 //      export class ApiClient {
 //        get() {}
 //        static create() {}
@@ -23,17 +31,25 @@
 //    surfaced method. Constructors, getters, setters, and private
 //    members are skipped.
 //
-// Out of scope: factories returning a value resolved through type
-// inference (`return adapter` where `adapter` is a local), conditional
-// returns where branches return different shapes, generic factory
-// chains.
+// Out of scope: a returned local assigned from a call in another
+// file, a method that exists only on the declared return type (a
+// `safeParse` reached through a zod type), conditional returns where
+// branches return different shapes, and generic factory chains.
 
 import { Node, SyntaxKind } from "ts-morph";
 
 import { peelParens } from "../walk/unwrap.js";
 
-import type { ClassDeclaration, ReturnStatement } from "ts-morph";
+import type {
+  ClassDeclaration,
+  ReturnStatement,
+  ShorthandPropertyAssignment,
+} from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
+
+// One hop covers every same-file builder in the dogfood run; the bound
+// stops a helper whose return calls back into itself from recursing.
+const MAX_BUILDER_HOPS = 2;
 
 export interface SurfacedMethod {
   func: FunctionRoot;
@@ -87,14 +103,28 @@ function surfaceClassMethods(cls: ClassDeclaration): SurfacedMethod[] {
 function surfaceFactoryReturnMethods(fn: FunctionRoot): SurfacedMethod[] {
   const out: SurfacedMethod[] = [];
   const seen = new Set<string>();
+  collectFromFunctionReturns(fn, out, seen, 0);
+  return out;
+}
 
+/**
+ * Every return value of `fn`, fed to `collectFromReturnValue`. Shared
+ * by the entry-point factory and, one or two hops in, by a same-file
+ * helper its return calls into.
+ */
+function collectFromFunctionReturns(
+  fn: FunctionRoot,
+  out: SurfacedMethod[],
+  seen: Set<string>,
+  depth: number,
+): void {
   // Concise-arrow body: `() => ({ method() {} })`.
   // ts-morph's getBody() returns the expression directly for these.
   if (Node.isArrowFunction(fn)) {
     const body = fn.getBody();
     if (Node.isExpression(body)) {
-      collectFromObjectLiteral(body, out, seen);
-      return out;
+      collectFromReturnValue(body, out, seen, depth);
+      return;
     }
   }
 
@@ -103,7 +133,7 @@ function surfaceFactoryReturnMethods(fn: FunctionRoot): SurfacedMethod[] {
   // outer factory's surface.
   const body = fn.getBody?.();
   if (body === undefined) {
-    return out;
+    return;
   }
 
   const returns: ReturnStatement[] = [];
@@ -130,10 +160,78 @@ function surfaceFactoryReturnMethods(fn: FunctionRoot): SurfacedMethod[] {
     if (expr === undefined) {
       continue;
     }
+    collectFromReturnValue(expr, out, seen, depth);
+  }
+}
+
+/**
+ * An object literal returned directly surfaces its methods. A call to
+ * a same-file function, within MAX_BUILDER_HOPS, surfaces whatever
+ * that function's own return surfaces instead.
+ */
+function collectFromReturnValue(
+  node: Node,
+  out: SurfacedMethod[],
+  seen: Set<string>,
+  depth: number,
+): void {
+  const expr = peelParens(node);
+  if (Node.isObjectLiteralExpression(expr)) {
     collectFromObjectLiteral(expr, out, seen);
+    return;
   }
 
-  return out;
+  if (depth >= MAX_BUILDER_HOPS || !Node.isCallExpression(expr)) {
+    return;
+  }
+  const callee = expr.getExpression();
+  if (!Node.isIdentifier(callee)) {
+    return;
+  }
+  const helper = sameFileFunctionBehind(callee);
+  if (helper !== null) {
+    collectFromFunctionReturns(helper, out, seen, depth + 1);
+  }
+}
+
+/**
+ * The function declaration, function expression, or arrow that `id`
+ * binds to, when it is declared in the same file. Null for a binding
+ * from another file (an import) or anything not a plain function.
+ */
+function sameFileFunctionBehind(id: Node): FunctionRoot | null {
+  const symbol = id.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  return functionAmong(
+    symbol.getDeclarations(),
+    id.getSourceFile().getFilePath(),
+  );
+}
+
+function functionAmong(
+  declarations: Node[],
+  filePath: string,
+): FunctionRoot | null {
+  for (const decl of declarations) {
+    if (decl.getSourceFile().getFilePath() !== filePath) {
+      continue;
+    }
+    if (Node.isFunctionDeclaration(decl)) {
+      return decl;
+    }
+    if (Node.isVariableDeclaration(decl)) {
+      const init = decl.getInitializer();
+      if (
+        init !== undefined &&
+        (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
+      ) {
+        return init;
+      }
+    }
+  }
+  return null;
 }
 
 function collectFromObjectLiteral(
@@ -173,10 +271,39 @@ function collectFromObjectLiteral(
         out.push({ func: v as FunctionRoot, name });
       }
     }
-    // ShorthandPropertyAssignment (`{ project }`): value is a local
-    // binding, not a callable property literal. Skip; tracking what
-    // local resolves to a callable is out of v0 scope.
+    if (Node.isShorthandPropertyAssignment(prop)) {
+      collectShorthandFunction(prop, out, seen);
+    }
     // SpreadAssignment (`{ ...other }`): opaque source object.
     // GetAccessor/SetAccessor: not callable in the method-call sense.
+  }
+}
+
+/**
+ * A shorthand property (`{ project }`) surfaces `project` when it
+ * binds to a function declared in the same file. `getSymbol()` on the
+ * property node gives the property's own symbol, not the value it
+ * shorthands, so this reads `getValueSymbol()` instead.
+ */
+function collectShorthandFunction(
+  prop: ShorthandPropertyAssignment,
+  out: SurfacedMethod[],
+  seen: Set<string>,
+): void {
+  const name = prop.getName();
+  if (seen.has(name)) {
+    return;
+  }
+  const symbol = prop.getValueSymbol();
+  if (symbol === undefined) {
+    return;
+  }
+  const fn = functionAmong(
+    symbol.getDeclarations(),
+    prop.getSourceFile().getFilePath(),
+  );
+  if (fn !== null) {
+    seen.add(name);
+    out.push({ func: fn, name });
   }
 }

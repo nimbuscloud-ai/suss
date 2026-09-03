@@ -2,11 +2,11 @@
   "totals": {
     "packages": 68,
     "packagesWithExports": 68,
-    "exports": 792,
-    "internal": 2783,
+    "exports": 819,
+    "internal": 2790,
     "consumers": 1426,
-    "pairs": 1411,
-    "unfollowedCalls": 409,
+    "pairs": 1423,
+    "unfollowedCalls": 412,
     "findingErrors": 0
   },
   "packages": {
@@ -26,10 +26,10 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 78,
-      "internal": 807,
+      "exports": 86,
+      "internal": 816,
       "consumers": 136,
-      "unfollowedCalls": 104
+      "unfollowedCalls": 107
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -131,8 +131,8 @@
     },
     "packages/contract/serverless": {
       "name": "@suss/contract-serverless",
-      "exports": 9,
-      "internal": 19,
+      "exports": 10,
+      "internal": 18,
       "consumers": 11,
       "unfollowedCalls": 6
     },
@@ -166,8 +166,8 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 65,
-      "internal": 85,
+      "exports": 68,
+      "internal": 84,
       "consumers": 14,
       "unfollowedCalls": 15
     },
@@ -446,7 +446,7 @@
     },
     "packages/recognize": {
       "name": "@suss/recognize",
-      "exports": 13,
+      "exports": 28,
       "internal": 40,
       "consumers": 9,
       "unfollowedCalls": 6
