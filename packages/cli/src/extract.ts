@@ -743,6 +743,8 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       .map((submodule) => submodule.directory),
   ];
 
+  let timingReport: TimingReport | null = null;
+  let extractionReport: ExtractionReport | null = null;
   const { summaries } = await extractPythonProject({
     files,
     packs,
@@ -751,12 +753,20 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     ...(runOptions.options.gaps !== undefined
       ? { gapHandling: runOptions.options.gaps }
       : {}),
+    onTiming: (report) => {
+      timingReport = report;
+    },
+    onExtractionReport: (report) => {
+      extractionReport = report;
+    },
   });
   return languageRun(
     summaries,
     runOptions.root,
     files.length,
     packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+    timingReport,
+    extractionReport,
   );
 }
 
@@ -771,33 +781,45 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // notice that the .git directory means there is a separate repository
   // there.
   const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
+  let timingReport: TimingReport | null = null;
+  let extractionReport: ExtractionReport | null = null;
   const { summaries } = await extractRubyProject({
     files,
     packs,
     projectRoot: runOptions.root,
+    onTiming: (report) => {
+      timingReport = report;
+    },
+    onExtractionReport: (report) => {
+      extractionReport = report;
+    },
   });
   return languageRun(
     summaries,
     runOptions.root,
     files.length,
     packs.length > 0 && packs.every((p) => p.discovery.length === 0),
+    timingReport,
+    extractionReport,
   );
 }
 
-/** Null rather than zero, so a breakdown of nothing does not look instant. */
+/** cacheDiagnostic stays null here: neither Python nor Ruby caches yet. */
 function languageRun(
   summaries: BehavioralSummary[],
   root: string,
   filesRead: number,
   recognizersOnly: boolean,
+  timingReport: TimingReport | null,
+  extractionReport: ExtractionReport | null,
 ): LanguageRun {
   return {
     summaries,
     root,
     filesRead,
-    timingReport: null,
+    timingReport,
     cacheDiagnostic: null,
-    extractionReport: null,
+    extractionReport,
     recognizersOnly,
   };
 }
@@ -918,9 +940,7 @@ export async function extract(
 
   if (extractionReport === null && options.explain === true) {
     process.stderr.write(
-      language === "typescript"
-        ? "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n"
-        : `The ${language} reader does not write a file-by-file breakdown yet, so there is nothing more to show.\n`,
+      "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n",
     );
   }
 
