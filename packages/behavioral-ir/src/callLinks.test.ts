@@ -14,7 +14,13 @@ import {
 import type { DeclaredAt } from "./callLinks.js";
 import type { BehavioralSummary } from "./index.js";
 
-type Call = string | { callee: string; declaredAt: DeclaredAt };
+type Call =
+  | string
+  | {
+      callee: string;
+      declaredAt?: DeclaredAt;
+      argsDeclaredAt?: Record<string, DeclaredAt>;
+    };
 
 function summary(over: {
   name: string;
@@ -73,6 +79,9 @@ const callsOf = (summary: BehavioralSummary) =>
       e.type === "invocation" ? [{ callee: e.callee, reaches: e.summary }] : [],
     ),
   );
+
+const argEffectOf = (summary: BehavioralSummary) =>
+  summary.transitions[0]?.effects[0];
 
 describe("linkCallsToSummaries", () => {
   it("links a placed call to the summary declared there", () => {
@@ -222,6 +231,56 @@ describe("linkCallsToSummaries", () => {
     linkCallsToSummaries([caller]);
 
     expect(caller.transitions[0]?.effects).toEqual([read]);
+  });
+
+  it("links an argument that is itself a project function to the summary declared there", () => {
+    const handler = summary({
+      name: "recordMountStatement",
+      file: "src/routers.py",
+      id: "svc::src/routers.py::recordMountStatement",
+      start: 30,
+    });
+    const caller = summary({
+      name: "collectMounts",
+      file: "src/routers.py",
+      calls: [
+        {
+          callee: "walkStatements",
+          argsDeclaredAt: { "3": declaredAt(handler) },
+        },
+      ],
+    });
+
+    linkCallsToSummaries([caller, handler]);
+
+    expect(argEffectOf(caller)).toMatchObject({
+      argsSummary: { "3": "svc::src/routers.py::recordMountStatement" },
+    });
+    expect(argEffectOf(caller)).not.toHaveProperty("argsDeclaredAt");
+  });
+
+  it("drops argsDeclaredAt with no argsSummary when nothing here is declared there", () => {
+    const caller = summary({
+      name: "collectMounts",
+      file: "src/routers.py",
+      calls: [
+        {
+          callee: "walkStatements",
+          argsDeclaredAt: {
+            "3": {
+              file: "node_modules/lib/index.d.ts",
+              span: { start: 0, end: 1 },
+            },
+          },
+        },
+      ],
+    });
+
+    linkCallsToSummaries([caller]);
+
+    const effect = argEffectOf(caller);
+    expect(effect).not.toHaveProperty("argsDeclaredAt");
+    expect(effect).not.toHaveProperty("argsSummary");
   });
 
   it("spells a declaration key by file and offsets", () => {

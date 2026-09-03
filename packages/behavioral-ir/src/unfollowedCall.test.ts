@@ -14,6 +14,7 @@ describe("unfollowed calls", () => {
       noDeclaration: false,
       callerSupplied: false,
       multipleReceivers: true,
+      unboundParameter: true,
     };
     for (const [reason, expected] of Object.entries(recorded)) {
       expect(worthRecording(reason as UnfollowedReason)).toBe(expected);
@@ -29,6 +30,7 @@ describe("unfollowed calls", () => {
       noDeclaration: "has no declaration this run could find",
       callerSupplied: "runs the function this unit's caller passed in",
       multipleReceivers: "reads as 3 different values",
+      unboundParameter: "nothing in this run passes a function into it",
     };
     for (const [reason, fragment] of Object.entries(sentences)) {
       const gap = unfollowedCallGap({

@@ -32,7 +32,8 @@ export type UnfollowedReason =
   | "outsideRun"
   | "noDeclaration"
   | "callerSupplied"
-  | "multipleReceivers";
+  | "multipleReceivers"
+  | "unboundParameter";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
@@ -59,6 +60,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   noDeclaration: false,
   callerSupplied: false,
   multipleReceivers: true,
+  unboundParameter: true,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -83,6 +85,8 @@ const STOP_SENTENCE: Record<
     `The call to ${callee} runs the function this unit's caller passed in, so what happens there is decided at the call site`,
   multipleReceivers: ({ callee, candidates }) =>
     `The call to ${callee} is made on a receiver this run reads as ${candidates ?? "several"} different values, so nothing says which one it registers on and the registration is left out`,
+  unboundParameter: ({ callee }) =>
+    `The call to ${callee} runs through a parameter, and nothing in this run passes a function into it, so whatever runs there is missing from this summary`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {
