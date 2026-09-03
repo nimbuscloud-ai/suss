@@ -88,6 +88,14 @@ describe("railsFramework", () => {
     expect(p.routesFile).toBe("/srv/config/routes.rb");
   });
 
+  it("declares the routes file as a discovery input so the cache key reads it", () => {
+    const pack = railsFramework({
+      routesFile: "config/routes.rb",
+      configDirectory: "/repo",
+    });
+    expect(pack.discoveryInputs?.([])).toEqual(["/repo/config/routes.rb"]);
+  });
+
   it("is the module's default export too", async () => {
     const mod = await import("./index.js");
     expect(mod.default).toBe(railsFramework);

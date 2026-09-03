@@ -137,6 +137,33 @@ describe("extractRubyProject's on-disk cache", () => {
     expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
   });
 
+  it("misses with key-changed once a file a pack reads without walking changes", async () => {
+    const files = schemaProject();
+    const routes = write("config/routes.rb", "get 'a', to: 'a#show'\n");
+    const packs = testPacks().map((pack) => ({
+      ...pack,
+      discoveryInputs: () => [routes],
+    }));
+    const diagnostics: CacheDiagnostic[] = [];
+    const onCacheDiagnostic = (d: CacheDiagnostic) => diagnostics.push(d);
+
+    await extractRubyProject({
+      files,
+      packs,
+      projectRoot: tmpDir,
+      onCacheDiagnostic,
+    });
+    fs.writeFileSync(routes, "get 'b', to: 'b#show'\n");
+    await extractRubyProject({
+      files,
+      packs,
+      projectRoot: tmpDir,
+      onCacheDiagnostic,
+    });
+
+    expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
+  });
+
   it("never writes an entry when cacheDir is null", async () => {
     const files = schemaProject();
     const packs = testPacks();
