@@ -522,7 +522,7 @@ Eight questions, in these words:
 | `what calls <unit>` | Every unit whose calls the run resolved to it, with the file, the line, and the call. The unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A package export such as `fn:@suss/datalog::evaluate` is the function behind it, so that spelling, the bare name, and `what reads` on the export give one answer. A bare name that is two functions in different places is refused, with both listed. |
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads, writes or invokes each. |
 | `what reaches <target>` | Every boundary whose unit ends up going through the target, and the calls it took to get there. The same call facts as `what calls`, closed over every hop with no limit on the chain, which is what somebody changing a store or a function wants before they change it. A unit is listed only when it serves a boundary of its own, so the answer is routes, queues, and package exports rather than the functions between them. The answer says how many calls resolved to no unit, since a boundary reaching the target through one of those is missing from it. |
-| `why does <unit> reach <boundary>` | The call chain from the unit to the boundary, with each hop's resolution proved from source. |
+| `why does <unit> reach <target>` | The shortest call chain from the unit to a boundary, a function, or a package export, with each written hop's resolution proved from source. The same call facts as `what reaches`, so the chain is the one that answer lists under the unit. Both ends are spelled the way `what calls` takes a unit, and a bare name that is two functions is refused. |
 | `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
 
 The boundary is spelled the way reports spell it, and a shorter spelling
@@ -616,11 +616,17 @@ template that declares it: suss contract --from terraform <path> -o summaries/in
 ```
 
 A why question is answered from two layers. The summaries say which
-unit calls which and where the boundary is touched. The chain under each
-hop is proved from source: the question re-reads the relevant files
-and re-evaluates the resolution rules under the witness algebra, when
-asked and never during a normal run. `--project` says where the source
-is when it is not the working directory.
+unit calls which and where the boundary is touched, and the chain is
+the shortest one the call facts behind `what reaches` contain. The
+chain under each hop is proved from source: the question re-reads the
+relevant files and re-evaluates the resolution rules under the witness
+algebra, when asked and never during a normal run. `--project` says
+where the source is when it is not the working directory.
+
+A hop can be one the caller writes, `getOrder calls readRow`, or one
+only the caller's import records, as `analyzeFlow is bound to
+fn:@suss/datalog::evaluate, which evaluate provides`. A bound hop has
+no written call to prove, so it prints without resolution steps.
 [How suss follows a value](../resolving-values.md) walks through the
 facts, the rules and the proof behind one of these chains.
 
