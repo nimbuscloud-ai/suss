@@ -73,7 +73,7 @@ export async function askTool(
   await project.settled();
   const { answer } = answerQuestion({
     question: args.question,
-    dir: project.summaryDir,
+    loaded: project.summaries(),
     project: project.root,
     json: true,
     output: NOWHERE,

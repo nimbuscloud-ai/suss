@@ -29,14 +29,10 @@ import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
 import { askWhy, WHY_SHAPES } from "./askWhy.js";
-import {
-  callSpellings,
-  functionOf,
-  reachTargetOf,
-  readCallFacts,
-} from "./callFacts.js";
+import { callSpellings, functionOf, reachTargetOf } from "./callFacts.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
+import { loadedSummaries } from "./loadedSummaries.js";
 import {
   collapseTouches,
   type ResolvedTarget,
@@ -55,6 +51,7 @@ import type {
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
 import type { CallFacts, CallPath, FunctionKey } from "./callFacts.js";
+import type { LoadedSummaries } from "./loadedSummaries.js";
 
 /** The questions that ask who does one thing at a named boundary. */
 type Direction = "reads" | "writes" | "invokes";
@@ -71,6 +68,12 @@ export interface AskOptions {
   question: string;
   dir?: string;
   file?: string;
+  /**
+   * Summaries the caller already read, used instead of `dir` or `file`.
+   * A server that answers many questions over one directory reads it
+   * once and passes the same value each time.
+   */
+  loaded?: LoadedSummaries;
   json?: boolean;
   /** Print every item, rather than the first few and a count. */
   all?: boolean;
@@ -210,14 +213,16 @@ export function parseQuestion(raw: string): ParsedQuestion | null {
   return null;
 }
 
-function loadSummaries(options: AskOptions): BehavioralSummary[] {
+function loadSummaries(options: AskOptions): LoadedSummaries {
+  if (options.loaded !== undefined) {
+    return options.loaded;
+  }
   if (options.dir !== undefined) {
-    return readSummariesFromDir(options.dir);
+    return loadedSummaries(readSummariesFromDir(options.dir));
   }
   if (options.file !== undefined) {
-    return parseSummaryFile(
-      options.file,
-      fs.readFileSync(options.file, "utf-8"),
+    return loadedSummaries(
+      parseSummaryFile(options.file, fs.readFileSync(options.file, "utf-8")),
     );
   }
   throw new UsageError(
@@ -231,13 +236,12 @@ function loadSummaries(options: AskOptions): BehavioralSummary[] {
 
 const ANSWERS: Record<
   Exclude<QuestionShape, WhyShape>,
-  (subject: string, summaries: BehavioralSummary[]) => Answer
+  (subject: string, loaded: LoadedSummaries) => Answer
 > = {
-  declares: answerDeclares,
-  reads: (subject, summaries) => answerDirection("reads", subject, summaries),
-  writes: (subject, summaries) => answerDirection("writes", subject, summaries),
-  invokes: (subject, summaries) =>
-    answerDirection("invokes", subject, summaries),
+  declares: (subject, loaded) => answerDeclares(subject, loaded.summaries),
+  reads: (subject, loaded) => answerDirection("reads", subject, loaded),
+  writes: (subject, loaded) => answerDirection("writes", subject, loaded),
+  invokes: (subject, loaded) => answerDirection("invokes", subject, loaded),
   calls: answerCalls,
   reaches: answerReaches,
   reachedBy: answerReachedBy,
@@ -420,10 +424,11 @@ function isFunctionCallBoundary(
 function answerDirection(
   shape: Direction,
   subject: string,
-  summaries: BehavioralSummary[],
+  loaded: LoadedSummaries,
 ): Answer {
+  const { summaries } = loaded;
   if (isFunctionCallBoundary(subject, summaries)) {
-    return { ...answerCalls(subject, summaries), shape };
+    return { ...answerCalls(subject, loaded), shape };
   }
 
   const { touches, hints } = groundedTouchesAt(subject, summaries);
@@ -491,10 +496,7 @@ function answerDirection(
  * question is about the units serving it, so what they touch has to be
  * gathered from them rather than from what the spelling picked out.
  */
-function reachedFrom(
-  target: ResolvedTarget,
-  summaries: BehavioralSummary[],
-): ReachedTouch[] {
+function reachedFrom(target: ResolvedTarget, facts: CallFacts): ReachedTouch[] {
   const start =
     target.kind === "boundary"
       ? unitsServing(target.touches)
@@ -502,7 +504,7 @@ function reachedFrom(
   const direct = (
     target.kind === "boundary" ? touchesOfUnits(start) : target.touches
   ).filter((touch) => !servesItself(touch));
-  return [...direct, ...throughCalls(start, direct, summaries)];
+  return [...direct, ...throughCalls(start, direct, facts)];
 }
 
 /** A touch, and the calls between it and the unit somebody asked about. */
@@ -519,9 +521,8 @@ interface ReachedTouch extends TargetTouch {
 function throughCalls(
   start: readonly BehavioralSummary[],
   direct: readonly TargetTouch[],
-  summaries: BehavioralSummary[],
+  facts: CallFacts,
 ): ReachedTouch[] {
-  const facts = readCallFacts(summaries);
   const already = new Set(direct.map((touch) => touchKey(touch)));
   const found: ReachedTouch[] = [];
   const reached = facts.reachedFrom(start.map((unit) => functionOf(unit)));
@@ -593,10 +594,8 @@ function ownBoundariesOf(facts: CallFacts, fn: FunctionKey): TargetTouch[] {
  * rather than the list of functions in between, so a function is
  * reported only when it serves a boundary of its own.
  */
-function answerReachedBy(
-  subject: string,
-  summaries: BehavioralSummary[],
-): Answer {
+function answerReachedBy(subject: string, loaded: LoadedSummaries): Answer {
+  const { summaries } = loaded;
   const resolution = resolveTarget(subject, summaries);
   if (!resolution.matched) {
     return {
@@ -611,7 +610,7 @@ function answerReachedBy(
   }
 
   const target = resolution.target;
-  const facts = readCallFacts(summaries);
+  const facts = loaded.callFacts;
   const reaching = facts.reaching(reachTargetOf(target));
   const unresolved = unresolvedCallCount(summaries);
   const walkCaveats =
@@ -667,10 +666,8 @@ function answerReachedBy(
   };
 }
 
-function answerReaches(
-  subject: string,
-  summaries: BehavioralSummary[],
-): Answer {
+function answerReaches(subject: string, loaded: LoadedSummaries): Answer {
+  const { summaries } = loaded;
   const resolution = resolveTarget(subject, summaries);
   if (!resolution.matched) {
     return {
@@ -687,7 +684,7 @@ function answerReaches(
   const target = resolution.target;
   const seen = new Set<string>();
   const items: AnswerItem[] = [];
-  for (const touch of collapseTouches(reachedFrom(target, summaries))) {
+  for (const touch of collapseTouches(reachedFrom(target, loaded.callFacts))) {
     const data = {
       boundary: touch.boundary,
       relations: touch.relations,

@@ -23,9 +23,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { contract, extract } from "@suss/cli";
+import {
+  contract,
+  extract,
+  loadedSummaries,
+  readSummariesFromDir,
+} from "@suss/cli";
 
-import type { ContractSource, Language } from "@suss/cli";
+import type { ContractSource, Language, LoadedSummaries } from "@suss/cli";
 
 /** How long the writes have to stop before a rebuild starts. */
 const DEFAULT_SETTLE_MS = 400;
@@ -78,6 +83,8 @@ export class Project {
   private readonly ownsSummaryDir: boolean;
   /** A rebuild already running, so a burst does not start a second. */
   private running: Promise<BuildReport> | null = null;
+  /** The summary directory as last read, dropped when a build rewrites it. */
+  private loaded: LoadedSummaries | null = null;
 
   constructor(options: ProjectOptions) {
     // Resolved through any symlink, because a recursive watch reports
@@ -124,6 +131,18 @@ export class Project {
   }
 
   /**
+   * The summaries in the directory, read once and kept until a build
+   * writes new ones.
+   *
+   * Reading and parsing the directory is most of what a question costs
+   * on a large project, and an agent asks many questions between edits.
+   */
+  summaries(): LoadedSummaries {
+    this.loaded ??= loadedSummaries(readSummariesFromDir(this.summaryDir));
+    return this.loaded;
+  }
+
+  /**
    * Run everything `suss.json` says, into the summary directory.
    *
    * A command that throws takes down its own entry and nothing else. A
@@ -136,6 +155,7 @@ export class Project {
     const failed: string[] = [];
 
     if (this.config === null) {
+      this.loaded = null;
       this.report = {
         summaryDir: this.summaryDir,
         ran,
@@ -155,6 +175,9 @@ export class Project {
       }
     }
 
+    // Dropped after the writes rather than before, so a question asked
+    // during a build cannot leave a half-written directory cached.
+    this.loaded = null;
     this.report = {
       summaryDir: this.summaryDir,
       ran,
@@ -284,6 +307,8 @@ export function worthRebuilding(filename: string): boolean {
   return WATCHED_EXTENSIONS.has(path.extname(filename));
 }
 
+// ".suss" is where a build writes its own extraction cache, so a
+// rebuild would otherwise keep triggering itself.
 const IGNORED_DIRECTORIES = new Set([
   "node_modules",
   "dist",
@@ -292,6 +317,7 @@ const IGNORED_DIRECTORIES = new Set([
   ".next",
   ".turbo",
   "build",
+  ".suss",
 ]);
 
 const WATCHED_EXTENSIONS = new Set([

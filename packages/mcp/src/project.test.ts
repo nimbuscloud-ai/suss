@@ -2,9 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Project, worthRebuilding } from "./project.js";
+
+import type { LoadedSummaries } from "@suss/cli";
 
 function projectWithOneRoute(root: string, routePath: string): void {
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -62,6 +64,27 @@ function boundariesIn(dir: string): string[] {
     .filter((one) => one !== "");
 }
 
+/** The route paths in a set of summaries the project has read. */
+function routesIn(loaded: LoadedSummaries): string[] {
+  return loaded.summaries
+    .map((summary) => {
+      const binding = summary.identity.boundaryBinding as {
+        semantics: { path?: string };
+      } | null;
+      return binding?.semantics.path ?? "";
+    })
+    .filter((one) => one !== "");
+}
+
+/** How many times a spied `readFileSync` read a file under `dir`. */
+function summaryReads(
+  read: { mock: { calls: unknown[][] } },
+  dir: string,
+): number {
+  return read.mock.calls.filter(([file]) => String(file).startsWith(dir))
+    .length;
+}
+
 /**
  * Poll until it is true, or give up and let the assertion report what
  * it found. The budget is generous because a rebuild waits out its
@@ -106,6 +129,49 @@ describe("Project", () => {
     projectWithOneRoute(root, "/invoices");
     await project.build();
     expect(boundariesIn(project.summaryDir)).toEqual(["/invoices"]);
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
+  it("reads the summaries once and answers every question from that read", async () => {
+    // On a large project the read is most of what a question costs,
+    // and an agent asks many questions between edits.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-keep-"));
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: false });
+    await project.start();
+
+    const read = vi.spyOn(fs, "readFileSync");
+    const first = project.summaries();
+    const readsForFirst = summaryReads(read, project.summaryDir);
+    const second = project.summaries();
+
+    expect(readsForFirst).toBeGreaterThan(0);
+    expect(second).toBe(first);
+    expect(summaryReads(read, project.summaryDir)).toBe(readsForFirst);
+
+    read.mockRestore();
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
+  it("drops what it read when a rebuild writes new summaries", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-drop-"));
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: true, settleMs: 50 });
+    const first = await project.start();
+    const before = project.summaries();
+    expect(routesIn(before)).toEqual(["/orders"]);
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    projectWithOneRoute(root, "/invoices");
+    await waitFor(() => project.lastBuild() !== first);
+    await project.settled();
+
+    const after = project.summaries();
+    expect(after).not.toBe(before);
+    expect(routesIn(after)).toEqual(["/invoices"]);
 
     project.close();
     fs.rmSync(root, { recursive: true, force: true });
