@@ -11,6 +11,8 @@
  * join across the two spellings has nowhere to look plausible.
  */
 
+import { declarationKey } from "@suss/behavioral-ir";
+
 import type { Node } from "ts-morph";
 
 /**
@@ -28,13 +30,14 @@ export function offsetKeyOf(node: Node): string {
 /**
  * The same key minted from a summary's `location.span`, so a summary
  * that records its offsets joins the closure's facts without the
- * closure in the room.
+ * closure in the room. It is the spelling the shared call linker
+ * reads `declaredAt` with, so the two cannot drift apart.
  */
 export function offsetKeyFor(
   file: string,
   span: { start: number; end: number },
 ): string {
-  return `${file}:${span.start}-${span.end}`;
+  return declarationKey(file, span);
 }
 
 /**

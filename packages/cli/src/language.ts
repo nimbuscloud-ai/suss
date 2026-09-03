@@ -85,6 +85,14 @@ const MARKERS: Record<Language, LanguageMarkers> = {
   },
 };
 
+/** Which language a source file is written in, by its name, or null for one no adapter reads. */
+export function languageOfFile(file: string): Language | null {
+  const found = LANGUAGES.find((language) =>
+    MARKERS[language].sourceSuffixes.some((suffix) => file.endsWith(suffix)),
+  );
+  return found ?? null;
+}
+
 export function projectFilesOf(root: string, language: Language): string[] {
   return MARKERS[language].projectFiles.filter((name) =>
     fs.existsSync(path.join(root, name)),

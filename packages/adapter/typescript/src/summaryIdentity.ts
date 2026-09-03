@@ -16,15 +16,14 @@
 import path from "node:path";
 
 import {
-  BOUNDARY_ROLE,
   disambiguateSummaryIds,
+  linkCallsToSummaries,
   summaryIdFromParts,
 } from "@suss/behavioral-ir";
 
 import { namedPackageDirAbove, packageNameAt } from "./packageExports.js";
-import { offsetKeyFor } from "./walk/nodeKeys.js";
 
-import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 /**
  * The one root a run measures its file paths from: the nearest
@@ -90,7 +89,7 @@ export function nameSummaries(
   // separate them either, the line number does.
   disambiguateSummaryIds(summaries);
 
-  nameWhatEachCallReaches(summaries);
+  linkCallsToSummaries(summaries);
 }
 
 /** Relative to the project, so the id survives moving the checkout. */
@@ -113,118 +112,4 @@ function idFor(
     name: summary.identity.name,
     exportPath: summary.identity.exportPath,
   });
-}
-
-/**
- * Point each call at the summary it reaches.
- *
- * A call the type checker placed says where its callee is declared,
- * and the summary of the unit declared there is the one it reaches. A
- * callee declared outside the run, `Array.prototype.push` say, has no
- * summary there and gets no link, whatever else in the run is called
- * `push`. Only a call the checker could not place at all is matched by
- * name, and then only against the summaries in its own file, since
- * that is where an unqualified call usually goes. Two summaries at one
- * place, or two with one name, leave the call saying only what it said
- * before: a reader can see a missing link, and cannot see a wrong one.
- */
-function nameWhatEachCallReaches(summaries: BehavioralSummary[]): void {
-  const byLocation = new Map<string, BehavioralSummary[]>();
-  const byFileAndName = new Map<string, BehavioralSummary[]>();
-  const remember = (
-    index: Map<string, BehavioralSummary[]>,
-    key: string,
-    summary: BehavioralSummary,
-  ): void => {
-    const found = index.get(key);
-    if (found === undefined) {
-      index.set(key, [summary]);
-      return;
-    }
-    found.push(summary);
-  };
-
-  for (const summary of summaries) {
-    // A label is there for the reader and nothing in the code can call
-    // it, so a callee segment that matches one is a coincidence, as
-    // `Promise.all` is against a route registered with `.all`.
-    if (summary.identity.nameKind === "label") {
-      continue;
-    }
-
-    if (summary.location.span !== undefined) {
-      remember(
-        byLocation,
-        offsetKeyFor(summary.location.file, summary.location.span),
-        summary,
-      );
-    }
-    remember(
-      byFileAndName,
-      `${summary.location.file}::${summary.identity.name}`,
-      summary,
-    );
-  }
-
-  for (const summary of summaries) {
-    for (const transition of summary.transitions) {
-      for (const effect of transition.effects) {
-        if (effect.type !== "invocation") {
-          continue;
-        }
-        const reached = summaryReachedBy(
-          effect,
-          summary.location.file,
-          byLocation,
-          byFileAndName,
-        );
-        // The declaration served its purpose here, and a reader of the
-        // output follows the link rather than the offsets.
-        delete effect.declaredAt;
-        if (reached?.identity.id !== undefined) {
-          effect.summary = reached.identity.id;
-        }
-      }
-    }
-  }
-}
-
-function summaryReachedBy(
-  effect: Extract<Effect, { type: "invocation" }>,
-  callerFile: string,
-  byLocation: ReadonlyMap<string, BehavioralSummary[]>,
-  byFileAndName: ReadonlyMap<string, BehavioralSummary[]>,
-): BehavioralSummary | null {
-  const declaredAt = effect.declaredAt;
-  if (declaredAt !== undefined) {
-    return summaryAtPlace(
-      byLocation.get(offsetKeyFor(declaredAt.file, declaredAt.span)) ?? [],
-    );
-  }
-  // A method call includes its receiver, and the last segment is the
-  // function, which is what a summary is named after.
-  const called = effect.callee.split(".").pop() ?? effect.callee;
-  return onlyAnswer(byFileAndName, `${callerFile}::${called}`);
-}
-
-/**
- * Every summary at one place describes the same body: a function
- * exported through two packages has a provider summary per package,
- * and one that also calls out has a consumer summary beside them. The
- * link goes to a provider, since that is the id callers know it by,
- * else to the first one written.
- */
-function summaryAtPlace(found: BehavioralSummary[]): BehavioralSummary | null {
-  const provider = found.find(
-    (summary) => BOUNDARY_ROLE[summary.kind] === "provider",
-  );
-  return provider ?? found[0] ?? null;
-}
-
-function onlyAnswer(
-  index: ReadonlyMap<string, BehavioralSummary[]>,
-  key: string,
-): BehavioralSummary | null {
-  const found = index.get(key) ?? [];
-  return found.length === 1 ? (found[0] as BehavioralSummary) : null;
 }

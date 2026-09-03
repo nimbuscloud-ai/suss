@@ -413,16 +413,20 @@ describe("a route whose body talks to the database", () => {
       roots: [tmpDir],
     });
 
-    const storage = summaries
-      .flatMap((summary) =>
-        (summary.transitions ?? []).flatMap((transition) => transition.effects),
-      )
-      .filter(
-        (effect) =>
-          effect.type === "interaction" &&
-          effect.interaction.class === "storage-access",
-      );
-    expect(storage).toHaveLength(1);
+    const storageOn = (kind: string) =>
+      summaries
+        .filter((summary) => summary.kind === kind)
+        .flatMap((summary) =>
+          summary.transitions.flatMap((transition) => transition.effects),
+        )
+        .filter(
+          (effect) =>
+            effect.type === "interaction" &&
+            effect.interaction.class === "storage-access",
+        );
+    expect(storageOn("handler")).toHaveLength(1);
+    // The service function reached from the route gets the same effect on its own summary.
+    expect(storageOn("library")).toHaveLength(1);
   });
 
   it("puts the database work on the route's own transitions", async () => {

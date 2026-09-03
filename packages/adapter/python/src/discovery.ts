@@ -56,7 +56,7 @@ import { returnedBodyShape } from "./paths/returnedShape.js";
 import { rawSqlEffects } from "./rawSql.js";
 import { type StorageLookup, storageEffects } from "./storage.js";
 
-import type { DispatchTable, TypeShape } from "@suss/behavioral-ir";
+import type { DispatchTable, Effect, TypeShape } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   BodyContent,
@@ -1187,21 +1187,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // status declares no response at all, so the library's default status has
   // nothing to apply to.
   const effects = invocationEffects(definitionNode);
-  const storage =
-    storageLookup === undefined
-      ? []
-      : [
-          ...storageEffects(bodyCalls(definitionNode), {
-            ...storageLookup,
-            filePath: storageLookup.factsPath,
-          }),
-          ...rawSqlEffects(bodyCalls(definitionNode), {
-            facts: storageLookup.facts,
-            filePath: storageLookup.factsPath,
-            patterns: storageLookup.rawSql ?? [],
-          }),
-        ];
-  const extra = [...envReadEffects(definitionNode, module), ...storage];
+  const extra = recognizedBodyEffects(definitionNode, module, storageLookup);
   const perReturn = branchesFromReturns(
     readsReturnedStatus,
     definitionNode,
@@ -1299,8 +1285,31 @@ function unreadRoleReadings(
   ];
 }
 
+/** What a body does besides calling: config it reads, database work, SQL it writes itself. */
+export function recognizedBodyEffects(
+  definitionNode: PyNode,
+  module: ModuleBinding,
+  storageLookup: StorageLookup | undefined,
+): Effect[] {
+  const storage =
+    storageLookup === undefined
+      ? []
+      : [
+          ...storageEffects(bodyCalls(definitionNode), {
+            ...storageLookup,
+            filePath: storageLookup.factsPath,
+          }),
+          ...rawSqlEffects(bodyCalls(definitionNode), {
+            facts: storageLookup.facts,
+            filePath: storageLookup.factsPath,
+            patterns: storageLookup.rawSql ?? [],
+          }),
+        ];
+  return [...envReadEffects(definitionNode, module), ...storage];
+}
+
 /** Whether a body contains only a docstring and/or a bare `pass`, or something more. */
-function bodyContentOf(bodyNode: PyNode): BodyContent {
+export function bodyContentOf(bodyNode: PyNode): BodyContent {
   for (const stmt of bodyStatements(bodyNode)) {
     if (stmt.type === "pass_statement") {
       continue;

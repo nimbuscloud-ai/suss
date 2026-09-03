@@ -94,6 +94,11 @@ export {
 } from "@suss/ir-core";
 
 export {
+  type DeclaredAt,
+  declarationKey,
+  linkCallsToSummaries,
+} from "./callLinks.js";
+export {
   type BoundaryCall,
   type BoundaryGuard,
   boundaryCalls,
@@ -222,6 +227,12 @@ export {
   summaryIdFromParts,
   unsettledSummaryId,
 } from "./summaryId.js";
+export {
+  type UnfollowedCall,
+  type UnfollowedReason,
+  unfollowedCallGap,
+  worthRecording,
+} from "./unfollowedCall.js";
 
 export type {
   BoundaryBinding,

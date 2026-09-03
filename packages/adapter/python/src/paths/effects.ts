@@ -1,6 +1,12 @@
-// effects.ts: the calls a route's own body makes, as invocation effects.
-// A call written under an `if` records that test as a precondition, which is
-// what the IR means by a call that does not always fire.
+/**
+ * The calls a unit's own body makes, as invocation effects, wherever a
+ * call is written: a statement of its own, an argument, the receiver of
+ * a method chain. A call written under an `if` records that test as a
+ * precondition, which is what the IR means by a call that does not
+ * always fire. The walk descends into lambdas, whose calls are behavior
+ * of the enclosing unit, and stops at a nested `def`, whose calls
+ * belong to its own summary.
+ */
 
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 
@@ -12,7 +18,7 @@ import type { EffectArg, RawEffect } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
 
 /** A body written in one of these belongs to the function it declares. */
-const NESTED_FUNCTION_TYPES = new Set(["function_definition", "lambda"]);
+const NESTED_DEFINITION_TYPES = new Set(["function_definition"]);
 
 const LITERAL_ARGS: Record<string, (node: PyNode) => EffectArg | null> = {
   string: (node) => ({ kind: "string", value: node.text.slice(1, -1) }),
@@ -31,7 +37,7 @@ const LITERAL_ARGS: Record<string, (node: PyNode) => EffectArg | null> = {
 /** Every call written in this function's own body, in source order. */
 export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
   for (const child of node.namedChildren) {
-    if (child === null || NESTED_FUNCTION_TYPES.has(child.type)) {
+    if (child === null || NESTED_DEFINITION_TYPES.has(child.type)) {
       continue;
     }
     if (child.type === "call") {
@@ -81,7 +87,7 @@ function argsOf(call: PyNode): EffectArg[] {
 }
 
 /** The callee as it is written, which is what a reader matches against. */
-function calleeText(call: PyNode): string {
+export function calleeText(call: PyNode): string {
   return field(call, "function")?.text ?? call.text;
 }
 
@@ -90,26 +96,6 @@ function calleeText(call: PyNode): string {
  * it to run. A call nobody gated says so by carrying no preconditions, which
  * the IR reads as always firing.
  */
-/**
- * One invocation per chain. `Model.query().filter_by(x).first()` is one thing
- * the code does, and the outermost call's text spells out the whole chain, so
- * emitting the inner links too counts the same work three times.
- */
-function withoutChainLinks(calls: readonly PyNode[]): PyNode[] {
-  const isLink = new Set<number>();
-  for (const call of calls) {
-    const callee = field(call, "function");
-    if (callee === null || callee.type !== "attribute") {
-      continue;
-    }
-    const object = field(callee, "object");
-    if (object !== null && object.type === "call") {
-      isLink.add(object.id);
-    }
-  }
-  return calls.filter((call) => !isLink.has(call.id));
-}
-
 export function invocationEffects(
   definitionNode: PyNode,
 ): Extract<RawEffect, { type: "invocation" }>[] {
@@ -118,7 +104,9 @@ export function invocationEffects(
     return [];
   }
 
-  const calls = withoutChainLinks(bodyCalls(body));
+  // A call finishes after everything written inside it, so ordering by end
+  // puts a call in argument position before the call it feeds.
+  const calls = bodyCalls(body).sort((a, b) => a.endIndex - b.endIndex);
   if (calls.length === 0) {
     return [];
   }

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   detectLanguages,
+  languageOfFile,
   languageOfProject,
   parseLanguage,
   projectFilesOf,
@@ -101,5 +102,17 @@ describe("parseLanguage", () => {
 
   it("answers null for anything else, so the caller can say what it takes", () => {
     expect(parseLanguage("perl")).toBeNull();
+  });
+});
+
+describe("languageOfFile", () => {
+  it("reads the language off the file name", () => {
+    expect(languageOfFile("app/main.py")).toBe("python");
+    expect(languageOfFile("app/models/order.rb")).toBe("ruby");
+    expect(languageOfFile("src/orders.tsx")).toBe("typescript");
+  });
+
+  it("returns null for a file no adapter reads", () => {
+    expect(languageOfFile("src/orders.js")).toBeNull();
   });
 });
