@@ -2196,3 +2196,242 @@ describe("suss ask about one function, however it is spelled", () => {
     ]);
   });
 });
+
+describe("suss ask over a call passed by name to a parameter", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  /**
+   * A function reached only by being passed to something that calls it
+   * back, and one that touches a boundary of its own, so a "what does
+   * X reach" question over its caller has something to show.
+   */
+  const recordMountStatement: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/routers.ts",
+      range: { start: 30, end: 39 },
+      exportName: "recordMountStatement",
+    },
+    identity: {
+      name: "recordMountStatement",
+      exportPath: ["recordMountStatement"],
+      boundaryBinding: null,
+      id: "repo::src/routers.ts::recordMountStatement",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "recordMountStatement:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: storageBinding({
+              recognition: "aws-dynamodb",
+              storageSystem: "aws.dynamodb",
+              scope: "default",
+              container: "mounts",
+              accessPath: null,
+            }),
+            callee: "client.send",
+            interaction: {
+              class: "storage-access",
+              kind: "write",
+              fields: [],
+              operation: "put",
+            },
+          },
+        ],
+        location: { start: 31, end: 33 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** Calls its own `visit` parameter, at position 1, as `visit(stmt)`. */
+  const walkStatements: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/routers.ts",
+      range: { start: 1, end: 13 },
+      exportName: "walkStatements",
+    },
+    identity: {
+      name: "walkStatements",
+      exportPath: ["walkStatements"],
+      boundaryBinding: null,
+      id: "repo::src/routers.ts::walkStatements",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "walkStatements:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "visit",
+            calleeParameter: 1,
+            args: [],
+            async: false,
+          },
+        ],
+        location: { start: 3, end: 5 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  /** Passes `recordMountStatement` into `walkStatements`'s `visit` parameter. */
+  const collectMounts: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/routers.ts",
+      range: { start: 15, end: 28 },
+      exportName: "collectMounts",
+    },
+    identity: {
+      name: "collectMounts",
+      exportPath: ["collectMounts"],
+      boundaryBinding: null,
+      id: "repo::src/routers.ts::collectMounts",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "collectMounts:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "walkStatements",
+            summary: "repo::src/routers.ts::walkStatements",
+            argsSummary: { "1": "repo::src/routers.ts::recordMountStatement" },
+            args: [],
+            async: false,
+          },
+        ],
+        location: { start: 16, end: 17 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  const summaries = [recordMountStatement, walkStatements, collectMounts];
+
+  function answer(
+    question: string,
+    json = false,
+  ): { output: string; code: number } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-passed-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    const chunks: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const code = ask({ question, dir, json });
+      return { output: chunks.join(""), code };
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("says the unit that passes the callback calls it, for what calls", () => {
+    const { output, code } = answer("what calls recordMountStatement");
+
+    expect(code).toBe(0);
+    expect(output).toContain("collectMounts");
+  });
+
+  it("reaches the boundary the passed function touches", () => {
+    const { output, code } = answer("what does collectMounts reach");
+
+    expect(code).toBe(0);
+    expect(output).toContain("aws.dynamodb:mounts");
+  });
+
+  it("spells the hop through the parameter, for why does", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-passed-why-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify(summaries));
+    try {
+      const { exitCode, answer: json } = answerQuestion({
+        question: "why does collectMounts reach recordMountStatement",
+        dir,
+        output: path.join(dir, "answer.txt"),
+      });
+      expect(exitCode).toBe(0);
+      expect(json?.headline).toBe(
+        "collectMounts reaches repo::src/routers.ts::recordMountStatement:",
+      );
+      expect(json?.hops).toEqual([
+        expect.objectContaining({
+          callee: "walkStatements, which calls it as visit",
+          recorded: "passed",
+        }),
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves an argument passed into an unresolved callee harmless", () => {
+    const mapCall: BehavioralSummary = {
+      ...collectMounts,
+      identity: {
+        ...collectMounts.identity,
+        name: "runAll",
+        exportPath: ["runAll"],
+        id: "repo::src/routers.ts::runAll",
+      },
+      transitions: [
+        {
+          ...collectMounts.transitions[0],
+          effects: [
+            {
+              type: "invocation",
+              callee: "arr.map",
+              argsSummary: {
+                "0": "repo::src/routers.ts::recordMountStatement",
+              },
+              args: [],
+              async: false,
+            },
+          ],
+        },
+      ],
+    } as BehavioralSummary;
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-unresolved-"));
+    fs.writeFileSync(
+      path.join(dir, "code.json"),
+      JSON.stringify([recordMountStatement, mapCall]),
+    );
+    try {
+      const { exitCode, answer: json } = answerQuestion({
+        question: "what calls recordMountStatement",
+        dir,
+        output: path.join(dir, "answer.txt"),
+      });
+      expect(exitCode).toBe(0);
+      expect(json?.items).toEqual([]);
+      expect(json?.headline).toBe(
+        "Nothing in these summaries calls repo::src/routers.ts::recordMountStatement.",
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

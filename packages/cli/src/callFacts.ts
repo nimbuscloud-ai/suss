@@ -40,11 +40,13 @@ import type { ResolvedTarget, TargetTouch } from "./target.js";
 export type FunctionKey = string;
 
 /**
- * Where a call came from: the caller's body, or only the caller's
- * binding to the export it imports. A written call can be proved from
- * source; a bound one has no call expression to find.
+ * Where a call came from: the caller's body, only the caller's binding
+ * to the export it imports, or a function the caller passed to
+ * something else that calls it back. A written call can be proved from
+ * source; a bound one has no call expression to find; a passed one runs
+ * through a parameter one hop further in.
  */
-export type CallRecord = "written" | "bound";
+export type CallRecord = "written" | "bound" | "passed";
 
 export interface CallHop {
   callee: string;
@@ -98,18 +100,44 @@ export function readCallFacts(
   const invocation: Array<[FunctionKey, FunctionKey, string]> = [];
   const boundTo: Array<[FunctionKey, string, string]> = [];
   const provides: Array<[FunctionKey, string]> = [];
+  const passes: Array<[FunctionKey, FunctionKey, number, FunctionKey]> = [];
+  const callsParameter: Array<[FunctionKey, number, string]> = [];
 
   for (const summary of summaries) {
     const fn = functionOf(summary);
     units.set(fn, [...(units.get(fn) ?? []), summary]);
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
-        if (effect.type !== "invocation" || effect.summary === undefined) {
+        if (effect.type !== "invocation") {
           continue;
         }
-        const to = byId.get(effect.summary);
+        const to =
+          effect.summary === undefined ? undefined : byId.get(effect.summary);
         if (to !== undefined) {
           invocation.push([fn, functionOf(to), effect.callee]);
+        }
+        if (effect.calleeParameter !== undefined) {
+          callsParameter.push([
+            fn,
+            effect.calleeParameter,
+            `${summary.identity.name}, which calls it as ${effect.callee}`,
+          ]);
+        }
+        if (to === undefined || effect.argsSummary === undefined) {
+          continue;
+        }
+        for (const [position, summaryId] of Object.entries(
+          effect.argsSummary,
+        )) {
+          const passedTo = byId.get(summaryId);
+          if (passedTo !== undefined) {
+            passes.push([
+              fn,
+              functionOf(to),
+              Number(position),
+              functionOf(passedTo),
+            ]);
+          }
         }
       }
     }
@@ -142,6 +170,12 @@ export function readCallFacts(
     for (const fact of provides) {
       db.add("provides", fact);
     }
+    for (const fact of passes) {
+      db.add("passes", fact);
+    }
+    for (const fact of callsParameter) {
+      db.add("callsParameter", fact);
+    }
     return db;
   };
 
@@ -169,6 +203,8 @@ const K = v("k");
 const L = v("l");
 const T = v("t");
 const W = v("w");
+const B = v("b");
+const I = v("i");
 
 const CALLS: Rule[] = [
   rule(
@@ -182,6 +218,15 @@ const CALLS: Rule[] = [
     [F, G, L, constant("bound")],
     [lit("boundTo", F, K, L), lit("provides", G, K)],
     "calls-bound",
+  ),
+  // F passes G to B at position I, and B calls its own parameter I: the
+  // join is what makes a callback reachable through the function it was
+  // handed to, and L is the sentence B's own scan wrote for that call.
+  rule(
+    "calls",
+    [F, G, L, constant("passed")],
+    [lit("passes", F, B, I, G), lit("callsParameter", B, I, L)],
+    "calls-passed",
   ),
   rule("provided", [K], [lit("provides", G, K)], "provided"),
 ];
@@ -228,6 +273,13 @@ const REACHED: Rule[] = [
   ),
 ];
 
+/** Which `CallRecord` a `calls` fact's kind slot spells, "written" for anything else. */
+const CALL_RECORD_OF: Record<string, CallRecord> = {
+  written: "written",
+  bound: "bound",
+  passed: "passed",
+};
+
 /** The hop recorded by the `calls` fact at `index` in a rule body. */
 function callAt(body: readonly BodyMatch[], index: number): CallHop {
   const match = body[index];
@@ -237,7 +289,7 @@ function callAt(body: readonly BodyMatch[], index: number): CallHop {
   return {
     callee: String(match.tuple[2]),
     to: String(match.tuple[1]),
-    recorded: match.tuple[3] === "bound" ? "bound" : "written",
+    recorded: CALL_RECORD_OF[String(match.tuple[3])] ?? "written",
   };
 }
 
@@ -257,6 +309,7 @@ const PATH_OF: Record<
 > = {
   "calls-written": () => [],
   "calls-bound": () => [],
+  "calls-passed": () => [],
   provided: () => [],
   "reaches-at": () => [],
   "reaches-into": (body) => [callAt(body, 1)],
@@ -336,8 +389,14 @@ function directCallers(db: Database, target: ReachTarget): DirectCall[] {
   const own = new Set(target.functions);
   const calls: DirectCall[] = [];
   const seen = new Set<string>();
+  // Bound callers are placed below from boundTo/provides directly,
+  // since a "calls" fact of that kind says the same thing a second way.
+  evaluate(db, CALLS);
   for (const fn of target.functions) {
-    for (const tuple of db.lookup("invocation", 1, fn)) {
+    for (const tuple of db.lookup("calls", 1, fn)) {
+      if (tuple[3] === "bound") {
+        continue;
+      }
       const caller = String(tuple[0]);
       const callee = String(tuple[2]);
       if (own.has(caller) || seen.has(`${caller} ${callee}`)) {
