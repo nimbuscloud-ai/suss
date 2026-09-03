@@ -39,6 +39,8 @@ statements:
     of: fastapi
 ```
 
+`package` is the exact module a file in the project imports from, and the decorator match is exact per module, so a project with two wrapper modules needs two stubs. `suss infer stub myapp` reads the project's own imports and drafts one stub per wrapper it finds, guessing `of: fastapi` when the imported names are all ones the library exports.
+
 The `wrapperModules` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
 
 ## Coverage

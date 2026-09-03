@@ -1026,20 +1026,34 @@ suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
 ```
 
 Writes a [dependency stub](/dependency-stubs) skeleton for a package the
-project calls but extraction cannot read into: one `performs-call`
-candidate per export the code reaches, with the argument shapes observed
-at each call site as comments, and the semantic fields (`system`, `spec`)
-left blank for the author to fill from the package's own source.
+project uses but extraction cannot read into. The evidence, and what one
+draft file covers, depends on the language suss reads the directory as:
 
-The draft lands in `suss/stubs/<package>.yaml` under the resolved source
-root; an existing file is never overwritten. `-o` picks another path, and
-`-o -` prints the draft instead. MCP hosts get the same skeleton from the
-`suss_stub_draft` tool.
+- **TypeScript**: one `performs-call` candidate per export the code
+  calls, with the argument shapes observed at each call site as
+  comments, and the semantic fields (`system`, `spec`) left blank.
+- **Python**: a `re-exports` candidate per module the project imports
+  the package (or a submodule of it) from, since the decorator match is
+  exact per module. `of:` is filled in when the imported names all
+  belong to one known pack, and left blank otherwise.
+- **Ruby**: an `extends-base` candidate per superclass a project class
+  is found extending that is spelled from the package, except one of
+  graphql-ruby's own root classes, which a class can extend directly
+  without a stub ever being able to help it; when nothing else can be
+  drafted, the statement is blank, with the accepted graphql-ruby base
+  classes in a comment.
+
+A TypeScript or Ruby draft lands in `suss/stubs/<package>.yaml` under the
+resolved source root; an existing file is never overwritten. A Python
+draft lands in one file per imported module, so `-o` is only valid when
+there is exactly one. `-o -` prints the draft (or drafts) instead of
+writing them. MCP hosts get the same skeleton from the `suss_stub_draft`
+tool.
 
 | Flag | Description |
 |---|---|
 | `-p`, `--project` | Path to the tsconfig covering the code to read. Without it, the nearest tsconfig wins, or the directory is read as-is. |
-| `--dir` | Directory to read when there is no tsconfig. |
+| `--dir` | Directory to read when there is no tsconfig, or when the code is Python or Ruby. |
 | `-o`, `--output` | Where to write the draft; `-` prints it. |
 
 ### Exit codes

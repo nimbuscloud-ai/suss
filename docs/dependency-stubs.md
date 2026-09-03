@@ -42,7 +42,7 @@ $ suss infer stub @acme/ledger-native
 Drafted suss/stubs/acme-ledger-native.yaml: 3 exports from 3 call sites.
 ```
 
-The draft is built from what the project already shows: every call into the package, grouped by export, with the argument shapes observed at each site as comments. The semantic blanks are what the code cannot say, which system a call reaches and which argument means what:
+The draft is built from what the project already shows. For TypeScript that is every call into the package, grouped by export, with the argument shapes observed at each site as comments. The semantic blanks are what the code cannot say, which system a call reaches and which argument means what:
 
 ```yaml
 statements:
@@ -53,6 +53,15 @@ statements:
     system: ""  # what the call reaches: aws.sqs, aws.events, axios
     spec: {}  # argument meanings, e.g. { subject: { at: 0 }, payload: { at: 1 } }
 ```
+
+For a Python project, the evidence is every import of the package or a submodule of it. A `re-exports` decorator match is exact per module, so the draft writes one file per imported module, guessing `of:` when the imported names are all ones a known pack exports and leaving it blank otherwise:
+
+```
+$ suss infer stub myapp
+Drafted suss/stubs/myapp-routing-namespace.yaml, suss/stubs/myapp-routing-resource.yaml: 2 imported modules from 2 import sites.
+```
+
+For a Ruby project, the evidence is every `require` of the package and every class whose superclass is spelled from it; the draft writes an `extends-base` statement for each such superclass, except one of graphql-ruby's own root classes, which a class can extend directly without a stub ever being able to help it. When nothing else can be drafted, the statement is blank, with the accepted graphql-ruby base classes in a comment.
 
 Filling the blanks takes the package's own source. That is a job for whoever can read it, and an agent usually can, a Rust crate included: draft from the evidence, read the dependency, fill the semantics, record the provenance, commit. MCP hosts get the same skeleton from the `suss_stub_draft` tool. `-o -` prints the draft instead of writing it.
 
