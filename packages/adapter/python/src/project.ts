@@ -32,7 +32,6 @@ import { discoverUnits } from "./discovery.js";
 import { envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
-import { resolveAbsoluteModule } from "./moduleResolver.js";
 import { parsePython } from "./parser.js";
 import { reachedFunctions } from "./reach/closure.js";
 import { buildRouterIndex } from "./routers.js";
@@ -66,19 +65,27 @@ export interface ExtractPythonResult {
 }
 
 /**
- * A wrapper module a person configured that resolves to nothing finds
- * no decorator, so the run reports no routes and gives no reason. Say
- * which entry missed, once, before any of the work.
+ * A wrapper module a person configured that nothing imports never
+ * matches a decorator, so the run comes back empty without saying why.
+ * Say which one missed, once, after every file's imports are in the
+ * facts.
+ *
+ * A wrapper module is usually an installed dependency, which never
+ * resolves to a file under the project's own roots, so resolution is
+ * not the right test here; whether some file imports it is.
  */
-function reportUnresolvedProjectModules(options: ExtractPythonOptions): void {
+function reportUnresolvedProjectModules(
+  options: ExtractPythonOptions,
+  db: Database,
+): void {
+  const imported = new Set(db.facts("pyImport").map((row) => String(row[1])));
   for (const pack of options.packs) {
     for (const module of pack.projectModules ?? []) {
-      const resolved = resolveAbsoluteModule(module, { roots: options.roots });
-      if (resolved.status === "resolved") {
+      if (imported.has(module)) {
         continue;
       }
       process.stderr.write(
-        `[suss] ${pack.name}: the configured module ${module} does not resolve under ${options.roots.join(", ")}, so nothing it wraps will be discovered.\n`,
+        `[suss] ${pack.name}: no file under ${options.roots.join(", ")} imports ${module}, so the stub for it changes nothing.\n`,
       );
     }
   }
@@ -101,8 +108,6 @@ export async function extractPythonProject(
     options.workspaceRoot !== undefined
       ? path.relative(options.workspaceRoot, file)
       : file;
-
-  reportUnresolvedProjectModules(options);
 
   const bound: BoundPythonFile[] = [];
   for (const file of options.files) {
@@ -136,6 +141,8 @@ export async function extractPythonProject(
     }
     indexDefinitions(definitions, file, root);
   }
+
+  reportUnresolvedProjectModules(options, db);
 
   // A chain that matches starts at a method some file importing the library
   // declares, so its name is in here. A project that renames one on the way
