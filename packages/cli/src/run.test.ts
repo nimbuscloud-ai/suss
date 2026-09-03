@@ -556,6 +556,10 @@ describe("runCli extract", () => {
         outFile,
         "--explain",
         "--timing",
+        // The prior test in this file extracts the same fixture, and
+        // the adapter now caches. This test wants the full breakdown a
+        // cache hit skips, not the abbreviated one a hit prints.
+        "--no-cache",
       ]),
     );
     expect(exit).toBe(0);
