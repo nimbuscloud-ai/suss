@@ -1,34 +1,60 @@
 {
   "total": {
     "lines": {
-      "total": 949,
-      "covered": 918,
+      "total": 1006,
+      "covered": 974,
       "skipped": 0,
-      "pct": 96.73
+      "pct": 96.81
     },
     "statements": {
-      "total": 985,
-      "covered": 953,
+      "total": 1043,
+      "covered": 1010,
       "skipped": 0,
-      "pct": 96.75
+      "pct": 96.83
     },
     "functions": {
-      "total": 288,
-      "covered": 284,
+      "total": 300,
+      "covered": 296,
       "skipped": 0,
-      "pct": 98.61
+      "pct": 98.66
     },
     "branches": {
-      "total": 673,
-      "covered": 612,
+      "total": 695,
+      "covered": 633,
       "skipped": 0,
-      "pct": 90.93
+      "pct": 91.07
     },
     "branchesTrue": {
       "total": 0,
       "covered": 0,
       "skipped": 0,
       "pct": 100
+    }
+  },
+  "src/adapterStamp.ts": {
+    "lines": {
+      "total": 57,
+      "covered": 56,
+      "skipped": 0,
+      "pct": 98.24
+    },
+    "functions": {
+      "total": 12,
+      "covered": 12,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 58,
+      "covered": 57,
+      "skipped": 0,
+      "pct": 98.27
+    },
+    "branches": {
+      "total": 22,
+      "covered": 21,
+      "skipped": 0,
+      "pct": 95.45
     }
   },
   "src/cache.ts": {
