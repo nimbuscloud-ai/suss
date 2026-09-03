@@ -13,14 +13,15 @@
  * would have written down.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 
 import {
+  BOUNDARY_ROLE,
   disambiguateSummaryIds,
   summaryIdFromParts,
 } from "@suss/behavioral-ir";
 
+import { namedPackageDirAbove, packageNameAt } from "./packageExports.js";
 import { offsetKeyFor } from "./walk/nodeKeys.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
@@ -60,38 +61,6 @@ export function workspaceNameFor(root: string | undefined): string | null {
   }
   const folder = path.basename(path.resolve(root));
   return folder.length > 0 ? folder : null;
-}
-
-// The files a run reads are usually under `src`, and the project is
-// whatever declares itself above them. Looking only in the directory
-// the files are in named every package `src`.
-function namedPackageDirAbove(start: string): string | null {
-  let at = path.resolve(start);
-  for (let up = 0; up < 12; up += 1) {
-    if (packageNameAt(at) !== null) {
-      return at;
-    }
-    const parent = path.dirname(at);
-    if (parent === at) {
-      break;
-    }
-    at = parent;
-  }
-  return null;
-}
-
-function packageNameAt(dir: string): string | null {
-  try {
-    const manifest = JSON.parse(
-      fs.readFileSync(path.join(dir, "package.json"), "utf8"),
-    ) as { name?: unknown };
-    if (typeof manifest.name === "string" && manifest.name.length > 0) {
-      return manifest.name;
-    }
-  } catch {
-    // Nothing here, or nothing readable.
-  }
-  return null;
 }
 
 /**
@@ -228,15 +197,28 @@ function summaryReachedBy(
 ): BehavioralSummary | null {
   const declaredAt = effect.declaredAt;
   if (declaredAt !== undefined) {
-    return onlyAnswer(
-      byLocation,
-      offsetKeyFor(declaredAt.file, declaredAt.span),
+    return summaryAtPlace(
+      byLocation.get(offsetKeyFor(declaredAt.file, declaredAt.span)) ?? [],
     );
   }
   // A method call includes its receiver, and the last segment is the
   // function, which is what a summary is named after.
   const called = effect.callee.split(".").pop() ?? effect.callee;
   return onlyAnswer(byFileAndName, `${callerFile}::${called}`);
+}
+
+/**
+ * Every summary at one place describes the same body: a function
+ * exported through two packages has a provider summary per package,
+ * and one that also calls out has a consumer summary beside them. The
+ * link goes to a provider, since that is the id callers know it by,
+ * else to the first one written.
+ */
+function summaryAtPlace(found: BehavioralSummary[]): BehavioralSummary | null {
+  const provider = found.find(
+    (summary) => BOUNDARY_ROLE[summary.kind] === "provider",
+  );
+  return provider ?? found[0] ?? null;
 }
 
 function onlyAnswer(

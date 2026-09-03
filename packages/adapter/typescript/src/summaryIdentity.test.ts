@@ -19,10 +19,11 @@ function summary(over: {
   start?: number;
   calls?: Call[];
   binding?: BehavioralSummary["identity"]["boundaryBinding"];
+  kind?: BehavioralSummary["kind"];
 }): BehavioralSummary {
   const start = over.start ?? 1;
   return {
-    kind: "handler",
+    kind: over.kind ?? "handler",
     location: {
       file: over.file,
       range: { start, end: start + 8 },
@@ -145,6 +146,56 @@ describe("a call the checker placed", () => {
 
     expect(callsOf(caller)).toEqual([
       { callee: "store.read", reaches: "svc::src/store.ts::read" },
+    ]);
+  });
+
+  it("links to a provider when one body has several summaries", () => {
+    const exportedAs = (pkg: string) => ({
+      transport: "in-process" as const,
+      semantics: {
+        name: "function-call" as const,
+        package: pkg,
+        exportPath: ["read"],
+      },
+      recognition: "test",
+    });
+    // One function, exported through two packages and calling out to a
+    // third: a consumer reading and two provider readings, all at one
+    // place.
+    const asConsumer = summary({
+      name: "read",
+      file: "src/store.ts",
+      start: 30,
+      kind: "caller",
+      binding: exportedAs("@ex/db"),
+    });
+    const asInner = summary({
+      name: "read",
+      file: "src/store.ts",
+      start: 30,
+      kind: "library",
+      binding: exportedAs("@ex/inner"),
+    });
+    const asOuter = summary({
+      name: "read",
+      file: "src/store.ts",
+      start: 30,
+      kind: "library",
+      binding: exportedAs("@ex/outer"),
+    });
+    const caller = summary({
+      name: "handler",
+      file: "src/h.ts",
+      calls: [{ callee: "read", declaredAt: declaredAt(asInner) }],
+    });
+
+    nameSummaries([caller, asConsumer, asInner, asOuter], {
+      workspace: "svc",
+      projectRoot: undefined,
+    });
+
+    expect(callsOf(caller)).toEqual([
+      { callee: "read", reaches: asInner.identity.id },
     ]);
   });
 
