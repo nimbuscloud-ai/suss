@@ -132,6 +132,46 @@ export function resolvePackageExports(
 }
 
 /**
+ * A run asks for the same package.json many times over, once per
+ * (sourceFile × pattern) pair in discovery and once per call the
+ * closure places. The cache outlives a run, so the key includes what
+ * the file looked like when read: a rewritten package.json in a
+ * watching process gets a new key rather than the old entry.
+ */
+const packageExportsCache = new Map<string, ResolvePackageExportsResult>();
+
+/** A path cannot contain the ASCII unit separator, so the halves stay apart. */
+const PATH_STAMP_SEPARATOR = "\u001f";
+
+function packageJsonStamp(packageJsonPath: string): string {
+  try {
+    const stat = fs.statSync(packageJsonPath);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return "unreadable";
+  }
+}
+
+export function resolvePackageExportsCached(
+  packageJsonPath: string,
+): ResolvePackageExportsResult {
+  const stamp = packageJsonStamp(packageJsonPath);
+  const key = `${packageJsonPath}${PATH_STAMP_SEPARATOR}${stamp}`;
+  const cached = packageExportsCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const fresh = resolvePackageExports(packageJsonPath);
+  packageExportsCache.set(key, fresh);
+  return fresh;
+}
+
+/** Drop every resolved package.json. Tests reach for this; a run does not. */
+export function clearPackageExportsCache(): void {
+  packageExportsCache.clear();
+}
+
+/**
  * The nearest directory at or above `start` whose package.json has a
  * name. A built `dist/package.json` that only sets `type` is skipped,
  * so a declaration file under `dist/` resolves to the package that

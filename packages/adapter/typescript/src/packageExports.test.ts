@@ -877,8 +877,7 @@ describe("packageExports through a re-exported sibling package", () => {
     ]);
   });
 
-  it("pairs a consumer of the outer package with the one provider on the source", async () => {
-    root = writeReExportingWorkspace();
+  async function summariesOf(workspace: string): Promise<BehavioralSummary[]> {
     const pack: PatternPack = {
       name: "package-exports:@ex/outer",
       languages: ["typescript"],
@@ -888,7 +887,10 @@ describe("packageExports through a re-exported sibling package", () => {
           kind: "library",
           match: {
             type: "packageExports",
-            packageJsonPath: path.join(root, "packages/outer/package.json"),
+            packageJsonPath: path.join(
+              workspace,
+              "packages/outer/package.json",
+            ),
           },
         },
         {
@@ -911,10 +913,15 @@ describe("packageExports through a re-exported sibling package", () => {
     };
 
     const adapter = createTypeScriptAdapter({
-      tsConfigFilePath: path.join(root, "tsconfig.json"),
+      tsConfigFilePath: path.join(workspace, "tsconfig.json"),
       frameworks: [pack],
     });
-    const summaries = await adapter.extractAll();
+    return adapter.extractAll();
+  }
+
+  it("pairs a consumer of the outer package with the one provider on the source", async () => {
+    root = writeReExportingWorkspace();
+    const summaries = await summariesOf(root);
 
     expect(summaries.filter((s) => s.location.file.includes("/dist/"))).toEqual(
       [],
@@ -937,6 +944,23 @@ describe("packageExports through a re-exported sibling package", () => {
     }
     expect(boundaryKey(providerBinding)).toBe("fn:@ex/outer::double");
     expect(boundaryKey(consumerBinding)).toBe(boundaryKey(providerBinding));
+  });
+
+  it("links the consumer's call to the provider on the source, not the declaration file", async () => {
+    root = writeReExportingWorkspace();
+    const summaries = await summariesOf(root);
+
+    const provider = summaries.find(
+      (s) => s.identity.name === "double" && s.kind === "library",
+    );
+    const consumer = summaries.find((s) => s.identity.name === "useIt");
+    const calls = (consumer?.transitions ?? [])
+      .flatMap((t) => t.effects)
+      .filter((e) => e.type === "invocation" && e.callee === "double");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.type === "invocation" && calls[0].summary).toBe(
+      provider?.identity.id,
+    );
   });
 });
 

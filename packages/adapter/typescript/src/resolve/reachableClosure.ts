@@ -160,7 +160,7 @@ function resolveCallee(
       return {
         kind: "stopped",
         stop: { callee: calleeName, reason: "multipleSources" },
-        declaration: declarations[0] ?? null,
+        declaration: declarationToReport(declarations, calleeName, scan),
       };
     }
   }
@@ -171,8 +171,32 @@ function resolveCallee(
       callee: calleeName,
       reason: classifyStop(declarations, scan.scanning),
     },
-    declaration: declarations[0] ?? null,
+    declaration: declarationToReport(declarations, calleeName, scan),
   };
+}
+
+/**
+ * The declaration a stop says the callee has. An import of a sibling
+ * workspace package lands on its built declaration file, where no
+ * summary lives, so the stop reports the source declaration behind it
+ * instead, spelled as the function the summary there was built on.
+ * A declaration that maps to several sources, or to none, is kept.
+ */
+function declarationToReport(
+  declarations: Node[],
+  calleeName: string,
+  scan: ScanContext,
+): Node | null {
+  const first = declarations[0];
+  if (first === undefined) {
+    return null;
+  }
+  const sources = scan.sourceDeclarationsBehind?.(first) ?? [first];
+  const only = sources.length === 1 ? sources[0] : undefined;
+  if (only === undefined || only === first) {
+    return first;
+  }
+  return resolveDecl(only, calleeName)?.func ?? only;
 }
 
 /** Where the callee an outcome came from is declared, when anything declares it. */
@@ -203,6 +227,7 @@ function declaredAtOf(outcome: CallOutcome): CallTarget | null {
  */
 interface ScanContext {
   resolveCallableSources?: (value: Node, alsoFrom?: SourceFile) => Node[];
+  sourceDeclarationsBehind?: (declaration: Node) => Node[];
   reachedFrom?: SourceFile;
   scanning?: FunctionRoot;
 }
@@ -225,6 +250,7 @@ interface ScanResult {
  */
 function resolveJsxReference(
   node: Node,
+  scan: ScanContext,
 ): { tag: string; outcome: CallOutcome } | null {
   if (!Node.isJsxOpeningElement(node) && !Node.isJsxSelfClosingElement(node)) {
     return null;
@@ -246,7 +272,7 @@ function resolveJsxReference(
     outcome: {
       kind: "stopped",
       stop: { callee: name, reason: classifyStop(declarations) },
-      declaration: declarations[0] ?? null,
+      declaration: declarationToReport(declarations, name, scan),
     },
   };
 }
@@ -298,7 +324,7 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
   };
 
   func.forEachDescendant((node) => {
-    const jsx = resolveJsxReference(node);
+    const jsx = resolveJsxReference(node, inFunc);
     if (jsx !== null) {
       record(jsx.outcome);
       return;
@@ -415,6 +441,12 @@ export interface ClosureRecognizers {
    * the dependency was constructed.
    */
   resolveCallableSources?: (value: Node, alsoFrom?: SourceFile) => Node[];
+  /**
+   * The source declarations behind one a sibling workspace package
+   * publishes as a built declaration file, so a call the walk stops at
+   * is recorded where its summary is, rather than at a bodiless twin.
+   */
+  sourceDeclarationsBehind?: (declaration: Node) => Node[];
   invocation: InvocationRecognizer[];
   access: AccessRecognizer[];
 }
@@ -567,6 +599,9 @@ export function expandReachableClosure(
         ...(recognizers.resolveCallableSources === undefined
           ? {}
           : { resolveCallableSources: recognizers.resolveCallableSources }),
+        ...(recognizers.sourceDeclarationsBehind === undefined
+          ? {}
+          : { sourceDeclarationsBehind: recognizers.sourceDeclarationsBehind }),
         ...(cameFrom === undefined ? {} : { reachedFrom: cameFrom }),
       };
       const { candidates, stops, targets } = scanWithRecording(key, facts, () =>
