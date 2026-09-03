@@ -15,17 +15,22 @@
 import fs from "node:fs";
 
 import {
+  bindingIs,
+  boundaryKey,
   readHttpMetadata,
   readRuntimeContractMetadata,
   readStorageContractMetadata,
+  settlingSuffix,
   summaryIdentifier,
+  unsettledSummaryId,
 } from "@suss/behavioral-ir";
 
 import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
-import { askWhy, invocationEdges, WHY_SHAPES } from "./askWhy.js";
+import { askWhy, WHY_SHAPES } from "./askWhy.js";
+import { functionOf, readCallFacts } from "./callFacts.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import {
@@ -44,6 +49,12 @@ import type {
 } from "@suss/behavioral-ir";
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
+import type {
+  CallFacts,
+  CallPath,
+  FunctionKey,
+  ReachTarget,
+} from "./callFacts.js";
 
 /** The questions that ask who does one thing at a named boundary. */
 type Direction = "reads" | "writes" | "invokes";
@@ -269,8 +280,14 @@ const HIDDEN_ACTOR: Record<Direction, string> = {
  * when the answer spans more than one, so it comes back only then.
  */
 function unitLabel(summary: BehavioralSummary, withWorkspace: boolean): string {
-  const parts = summaryIdentifier(summary).split("::");
-  const symbol = parts[parts.length - 1] ?? summary.identity.name;
+  // The boundary settling added has its own `::`, and is not the symbol.
+  const settledWith = settlingSuffix(summary);
+  const parts = (
+    settledWith === ""
+      ? summaryIdentifier(summary)
+      : unsettledSummaryId(summary)
+  ).split("::");
+  const symbol = `${parts[parts.length - 1] ?? summary.identity.name}${settledWith}`;
   return withWorkspace && parts.length > 2 ? `${parts[0]}::${symbol}` : symbol;
 }
 
@@ -381,11 +398,34 @@ function touchedFields(touches: ReadonlyArray<TargetTouch>): AnswerItem[] {
   return items;
 }
 
+/**
+ * Whether the subject is a function-call boundary, which is read,
+ * written and invoked by one thing: calling it. That question has its
+ * own answer, over the call facts, so the two spellings agree.
+ */
+function isFunctionCallBoundary(
+  subject: string,
+  summaries: BehavioralSummary[],
+): boolean {
+  const resolution = resolveTarget(subject, summaries);
+  return (
+    resolution.matched &&
+    resolution.target.kind === "boundary" &&
+    resolution.target.touches.every((touch) =>
+      bindingIs(touch.touched.binding, "function-call"),
+    )
+  );
+}
+
 function answerDirection(
   shape: Direction,
   subject: string,
   summaries: BehavioralSummary[],
 ): Answer {
+  if (isFunctionCallBoundary(subject, summaries)) {
+    return { ...answerCalls(subject, summaries), shape };
+  }
+
   const { touches, hints } = groundedTouchesAt(subject, summaries);
   if (touches.length === 0) {
     return notHere(shape, subject, hints);
@@ -479,39 +519,30 @@ function throughCalls(
   direct: readonly TargetTouch[],
   summaries: BehavioralSummary[],
 ): ReachedTouch[] {
-  const byId = new Map(
-    summaries.map((summary) => [summaryIdentifier(summary), summary]),
-  );
-  const seen = new Set<BehavioralSummary>(start);
+  const facts = readCallFacts(summaries);
   const already = new Set(direct.map((touch) => touchKey(touch)));
   const found: ReachedTouch[] = [];
-  let frontier = start.map((summary) => ({
-    at: summary,
-    through: [] as string[],
-  }));
-
-  while (frontier.length > 0) {
-    const next: Array<{ at: BehavioralSummary; through: string[] }> = [];
-    for (const { at, through } of frontier) {
-      for (const edge of invocationEdges(at, byId)) {
-        if (seen.has(edge.to)) {
-          continue;
-        }
-        seen.add(edge.to);
-        const path = [...through, edge.callee];
-        for (const touch of touchesOfUnits([edge.to])) {
-          if (servesItself(touch) || already.has(touchKey(touch))) {
-            continue;
-          }
-          already.add(touchKey(touch));
-          found.push({ ...touch, through: path });
-        }
-        next.push({ at: edge.to, through: path });
+  const reached = facts.reachedFrom(start.map((unit) => functionOf(unit)));
+  for (const [fn, through] of shortestFirst(reached)) {
+    for (const touch of touchesOfUnits(facts.units.get(fn) ?? [])) {
+      if (servesItself(touch) || already.has(touchKey(touch))) {
+        continue;
       }
+      already.add(touchKey(touch));
+      found.push({ ...touch, through: [...through] });
     }
-    frontier = next;
   }
   return found;
+}
+
+/** Nearest functions first, so the path shown for a boundary is the shortest one. */
+function shortestFirst(
+  paths: ReadonlyMap<FunctionKey, CallPath>,
+): Array<[FunctionKey, CallPath]> {
+  return [...paths].sort(
+    ([, a], [, b]) =>
+      a.length - b.length || a.join(" ").localeCompare(b.join(" ")),
+  );
 }
 
 function touchKey(touch: TargetTouch): string {
@@ -559,40 +590,58 @@ function unresolvedCallCount(summaries: BehavioralSummary[]): number {
   return count;
 }
 
-/** Who calls each unit, over the same edges `reaches` walks forward. */
-function callersByUnit(
-  summaries: BehavioralSummary[],
-): Map<BehavioralSummary, Array<{ from: BehavioralSummary; callee: string }>> {
-  const byId = new Map(
-    summaries.map((summary) => [summaryIdentifier(summary), summary]),
-  );
-  const callers = new Map<
-    BehavioralSummary,
-    Array<{ from: BehavioralSummary; callee: string }>
-  >();
-  for (const summary of summaries) {
-    for (const edge of invocationEdges(summary, byId)) {
-      const list = callers.get(edge.to) ?? [];
-      list.push({ from: edge.from, callee: edge.callee });
-      callers.set(edge.to, list);
-    }
-  }
-  return callers;
+/** The boundaries a function serves, one per summary of it that serves one. */
+function ownBoundariesOf(facts: CallFacts, fn: FunctionKey): TargetTouch[] {
+  return touchesOfUnits(facts.units.get(fn) ?? []).filter(servesItself);
 }
 
-/** The boundary a unit serves, when it serves one. */
-function ownBoundaryOf(summary: BehavioralSummary): TargetTouch | null {
-  return touchesOfUnits([summary]).find(servesItself) ?? null;
+/**
+ * What a reach question ends at. A boundary is reached by touching it
+ * or by calling into whatever serves it; a unit is reached by calling
+ * it. A caller bound to a function-call boundary is placed by that
+ * binding, and anything else touching the boundary is at it already.
+ */
+function reachTargetOf(target: ResolvedTarget, facts: CallFacts): ReachTarget {
+  const providers = new Set(unitsServing(target));
+  const functions =
+    target.kind === "boundary" ? [...providers] : target.summaries;
+  const keys = new Set<string>();
+  const at = new Set<FunctionKey>();
+  for (const touch of target.touches) {
+    const binding = touch.touched.binding;
+    const key = boundaryKey(binding);
+    if (
+      key !== null &&
+      (target.kind === "boundary" || touch.touched.relation === "provides")
+    ) {
+      keys.add(key);
+    }
+    if (target.kind !== "boundary" || providers.has(touch.summary)) {
+      continue;
+    }
+    const placedByBinding =
+      binding === touch.summary.identity.boundaryBinding &&
+      bindingIs(binding, "function-call") &&
+      key !== null;
+    if (!placedByBinding) {
+      at.add(functionOf(touch.summary));
+    }
+  }
+  return {
+    functions: [...new Set(functions.map((unit) => functionOf(unit)))],
+    keys: [...keys],
+    at: [...at],
+  };
 }
 
 /**
  * Every boundary whose unit ends up calling into the target, and the
  * calls it took to get there.
  *
- * The mirror of `reaches`, walked backwards. Somebody changing a unit
- * wants the boundaries that behave differently afterwards rather than
- * the list of functions in between, so the walk reports a unit only
- * when it serves a boundary of its own.
+ * The mirror of `reaches`, over the same call facts. Somebody changing
+ * a unit wants the boundaries that behave differently afterwards
+ * rather than the list of functions in between, so a function is
+ * reported only when it serves a boundary of its own.
  */
 function answerReachedBy(
   subject: string,
@@ -612,15 +661,8 @@ function answerReachedBy(
   }
 
   const target = resolution.target;
-  // A store is touched rather than served, so the walk starts from
-  // every unit that goes through the target, not only one serving it.
-  // A unit that provides the target is the target, not something
-  // reaching it, so the walk starts from the units that go through it.
-  const provides = new Set(unitsServing(target));
-  const start = [
-    ...new Set(target.touches.map((touch) => touch.summary)),
-  ].filter((summary) => !provides.has(summary));
-  const callers = callersByUnit(summaries);
+  const facts = readCallFacts(summaries);
+  const reaching = facts.reaching(reachTargetOf(target, facts));
   const unresolved = unresolvedCallCount(summaries);
   const walkCaveats =
     unresolved === 0
@@ -628,58 +670,26 @@ function answerReachedBy(
       : [
           `warning: ${unresolved} call${unresolved === 1 ? "" : "s"} here resolved to no unit, so a boundary reaching ${subject} through one of them is missing from this answer.`,
         ];
-  const seen = new Set<BehavioralSummary>(start);
   const items: AnswerItem[] = [];
   const said = new Set<string>();
-  // A unit that goes through the target in its own body reaches it in
-  // no hops, and is the answer somebody most expects to see.
-  for (const at of start) {
-    const own = ownBoundaryOf(at);
-    if (own !== null && !said.has(own.touched.label)) {
-      said.add(own.touched.label);
+  for (const [fn, through] of shortestFirst(reaching)) {
+    for (const own of ownBoundariesOf(facts, fn)) {
+      const hops =
+        through.length === 0 ? "" : `, by calling ${through.join(", then ")}`;
+      const text = `${own.touched.label}${hops}`;
+      if (said.has(text)) {
+        continue;
+      }
+      said.add(text);
       items.push({
-        text: own.touched.label,
+        text,
         data: {
           boundary: own.touched.label,
-          unit: summaryIdentifier(at),
-          through: [],
+          unit: summaryIdentifier(own.summary),
+          through: [...through],
         },
       });
     }
-  }
-
-  let frontier = start.map((at) => ({ at, through: [] as string[] }));
-
-  while (frontier.length > 0) {
-    const next: Array<{ at: BehavioralSummary; through: string[] }> = [];
-    for (const { at, through } of frontier) {
-      for (const caller of callers.get(at) ?? []) {
-        if (seen.has(caller.from)) {
-          continue;
-        }
-        seen.add(caller.from);
-        const path = [caller.callee, ...through];
-        const own = ownBoundaryOf(caller.from);
-        if (own !== null) {
-          const hops =
-            path.length === 0 ? "" : `, by calling ${path.join(", then ")}`;
-          const text = `${own.touched.label}${hops}`;
-          if (!said.has(text)) {
-            said.add(text);
-            items.push({
-              text,
-              data: {
-                boundary: own.touched.label,
-                unit: summaryIdentifier(caller.from),
-                through: path,
-              },
-            });
-          }
-        }
-        next.push({ at: caller.from, through: path });
-      }
-    }
-    frontier = next;
   }
 
   if (items.length === 0) {

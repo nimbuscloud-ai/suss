@@ -20,10 +20,12 @@ import {
   runtimeConfigBinding,
   safeParseSummaries,
   safeParseSummary,
+  settlingSuffix,
   storageBinding,
   summaryIdentifier,
   summaryRef,
   type Transition,
+  unsettledSummaryId,
 } from "./index.js";
 
 function makeSummary(transitions: Transition[]): BehavioralSummary {
@@ -91,6 +93,35 @@ describe("summaryIdentifier", () => {
     summary.identity.name = "listUsers";
     summary.identity.exportPath = null;
     expect(summaryIdentifier(summary)).toBe("src/test.ts::listUsers");
+  });
+});
+
+describe("settlingSuffix", () => {
+  it("is what settling appended after the id built from the summary's own fields", () => {
+    const summary = makeSummary([]);
+    summary.location.workspace = "web";
+    summary.identity.id = "web::src/test.ts::test#fn:@suss/datalog::evaluate";
+    expect(unsettledSummaryId(summary)).toBe("web::src/test.ts::test");
+    expect(settlingSuffix(summary)).toBe("#fn:@suss/datalog::evaluate");
+  });
+
+  it("is empty when nothing was appended", () => {
+    const summary = makeSummary([]);
+    summary.identity.id = "src/test.ts::test";
+    expect(settlingSuffix(summary)).toBe("");
+  });
+
+  it("still finds the suffix when the producer left the workspace off the id", () => {
+    const summary = makeSummary([]);
+    summary.location.workspace = "web";
+    summary.identity.id = "src/test.ts::test@12";
+    expect(settlingSuffix(summary)).toBe("@12");
+  });
+
+  it("is empty when the id was not built from the summary's fields at all", () => {
+    const summary = makeSummary([]);
+    summary.identity.id = "something-else";
+    expect(settlingSuffix(summary)).toBe("");
   });
 });
 
