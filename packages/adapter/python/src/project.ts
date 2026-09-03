@@ -16,6 +16,7 @@ import path from "node:path";
 import {
   disambiguateSummaryIds,
   linkCallsToSummaries,
+  placeCalls,
   summaryIdFromParts,
   unfollowedCallGap,
 } from "@suss/behavioral-ir";
@@ -33,7 +34,7 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { resolveAbsoluteModule } from "./moduleResolver.js";
 import { parsePython } from "./parser.js";
-import { placeCalls, reachedFunctions } from "./reach/closure.js";
+import { reachedFunctions } from "./reach/closure.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 

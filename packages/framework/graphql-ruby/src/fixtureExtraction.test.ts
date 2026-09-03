@@ -122,9 +122,12 @@ describe("extraction over fixtures/ruby-graphql", () => {
     }
 
     it("attaches the method written below the field in the same class", async () => {
-      // The method's own calls are described now, so the sentence saying
-      // nothing matched is no longer true of it.
-      expect(await gapsFor("Organizer.displayName")).toEqual([]);
+      // `object` is a graphql-ruby DSL value this run has no binder for,
+      // so the reach walk the field now seeds leaves that call as a gap
+      // of its own, in place of the old "nothing matched" sentence.
+      expect(await gapsFor("Organizer.displayName")).toEqual([
+        "The call to [object.first_name, object.last_name].compact.join goes through a value this run could not settle, so whatever runs there is missing from this summary",
+      ]);
     });
 
     it("attaches the method a concern the class includes defines", async () => {
@@ -134,9 +137,12 @@ describe("extraction over fixtures/ruby-graphql", () => {
     });
 
     it("attaches the resolve method of the class a mutation-wired field points at", async () => {
-      // The method's own calls are described now, so the sentence saying
-      // nothing matched is no longer true of it.
-      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([]);
+      // `campaign` is a local variable this run has no binder for, so the
+      // reach walk the field now seeds leaves that call as a gap of its
+      // own, in place of the old "nothing matched" sentence.
+      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([
+        "The call to campaign.update goes through a value this run could not settle, so whatever runs there is missing from this summary",
+      ]);
     });
 
     it("attaches the resolve method of the class a resolver-wired field points at", async () => {

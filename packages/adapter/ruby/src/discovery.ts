@@ -97,9 +97,21 @@ export interface DiscoveryOptions {
   packs: RubyPack[];
   /** Repo-relative or absolute path recorded on each summary's `location.file`. */
   filePath: string;
+  /** Absolute path of the file being read, for a block's own `ReachedBody.file`. Falls back to `filePath` when nothing was written to disk. */
+  absoluteFile?: string;
   cache: FileCache;
   /** What a pack needs to say a call talks to the database. Absent when no pack does. */
   storage?: RbStorageOptions | undefined;
+  /** Called once per discovered unit whose own body is a method this run can follow calls out of, so the reach walk has a place to start. */
+  onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
+}
+
+/** The method behind a discovered unit's own body, and where it lives, so the reach walk can start there the way it starts at a `def` it found directly. */
+export interface ReachSeed {
+  readonly file: string;
+  readonly node: RbNode;
+  /** The class the method is written in, or null for one written outside any class. */
+  readonly enclosingQualifiedName: string | null;
 }
 
 /** What a bare constant is resolved against: the nesting chain in effect, plus every class the file defines, so we can spot shadowing. */
@@ -172,6 +184,7 @@ export async function discoverUnits(
   const fileBlocks: ReachedBody[] = classes.map((info) => ({
     info,
     knownClasses,
+    file: options.absoluteFile ?? options.filePath,
   }));
 
   const units: RawCodeStructure[] = [];
@@ -278,9 +291,13 @@ async function graphqlObjectFieldUnits(
       declsByName.set(decl.fieldName, decl);
     }
   }
-  return [...declsByName.values()].map((decl) =>
-    buildFieldUnit(pack, typeName, decl, options.filePath),
-  );
+  return [...declsByName.values()].map((decl) => {
+    const raw = buildFieldUnit(pack, typeName, decl, options.filePath);
+    if (decl.body.reachSeed !== undefined) {
+      options.onReachSeed?.(raw, decl.body.reachSeed);
+    }
+    return raw;
+  });
 }
 
 /**
@@ -369,7 +386,7 @@ interface FieldReading {
   body: BodyReport;
 }
 
-interface BodyReport {
+export interface BodyReport {
   /** Left unset when no value of it would be true: the extractor writes its own sentence from this one, and there is a truer sentence in `readings`. */
   bodyContent?: BodyContent;
   readings: Reading<unknown>[];
@@ -377,9 +394,14 @@ interface BodyReport {
   effects?: RawEffect[];
   /** Effects a recognizer built in IR form, the database work among them. */
   extraEffects?: Effect[];
+  /** Set when this body came from an actual method, so the reach walk can follow the calls it makes. */
+  reachSeed?: ReachSeed;
 }
 
-function bodyOfMethod(method: RbNode, storage?: RbStorageOptions): BodyReport {
+export function bodyOfMethod(
+  method: RbNode,
+  storage?: RbStorageOptions,
+): BodyReport {
   const effects = invocationEffects(method);
   const extra = [
     ...envReadEffects(method),
@@ -431,7 +453,14 @@ function bodyFromLookup(
   storage?: RbStorageOptions,
 ): BodyReport {
   const table: DispatchTable<MethodLookup, BodyReport> = {
-    found: (lookup) => bodyOfMethod(lookup.method, storage),
+    found: (lookup) => ({
+      ...bodyOfMethod(lookup.method, storage),
+      reachSeed: {
+        file: lookup.block.file,
+        node: lookup.method,
+        enclosingQualifiedName: lookup.block.info.qualifiedName,
+      },
+    }),
     unsettled: (lookup) =>
       methodNotSettled(
         `${subject} could be answered by a method ${lookup.reason}, so whether one exists was not settled here`,

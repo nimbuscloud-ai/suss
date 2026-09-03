@@ -769,7 +769,11 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // notice that the .git directory means there is a separate repository
   // there.
   const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
-  const { summaries } = await extractRubyProject({ files, packs });
+  const { summaries } = await extractRubyProject({
+    files,
+    packs,
+    projectRoot: runOptions.root,
+  });
   return languageRun(
     summaries,
     runOptions.root,

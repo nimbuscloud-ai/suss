@@ -11,6 +11,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  disambiguateSummaryIds,
+  linkCallsToSummaries,
+  placeCalls,
+  summaryIdFromParts,
+  unfollowedCallGap,
+} from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
 import {
   assembleSummary,
@@ -26,13 +33,17 @@ import {
   emitConstantBindings,
   type FileConstants,
 } from "./facts/constants.js";
-import { emitValueFacts } from "./facts/values.js";
+import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
+import { reachedFunctions } from "./reach/closure.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { RawCodeStructure } from "@suss/extractor";
+import type { ReachSeed } from "./discovery.js";
 import type { RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
+import type { Seed } from "./reach/closure.js";
 
 export interface ExtractRubyOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -40,6 +51,8 @@ export interface ExtractRubyOptions {
   packs: RubyPack[];
   /** When set, `location.file` on each summary is relativized against this. */
   workspaceRoot?: string;
+  /** The directory a summary's id measures its file from, when that differs from `workspaceRoot`. */
+  projectRoot?: string;
 }
 
 export interface ExtractRubyResult {
@@ -89,16 +102,25 @@ export async function extractRubyProject(
       ? path.relative(options.workspaceRoot, file)
       : file;
 
+  const seeds: Seed[] = [];
+  const summariesBySeed = new Map<string, BehavioralSummary[]>();
+
   for (const { file, root } of parsed) {
     const displayPath = displayPathOf(file);
 
+    // A unit whose own body is a method it found (a graphql-ruby field's
+    // resolver, say) hands that method back here, so the reach walk has
+    // somewhere to start.
+    const seedByRaw = new Map<RawCodeStructure, ReachSeed>();
     const rawUnits = await discoverUnits(root, {
       packs: options.packs,
       filePath: displayPath,
+      absoluteFile: file,
       cache,
       ...(storagePatterns.length > 0
         ? { storage: { facts: db, patterns: storagePatterns } }
         : {}),
+      onReachSeed: (raw, seed) => seedByRaw.set(raw, seed),
     });
     for (const raw of rawUnits) {
       const summary = assembleSummary(raw, { gapHandling: "permissive" });
@@ -108,6 +130,24 @@ export async function extractRubyProject(
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
+
+      const seed = seedByRaw.get(raw);
+      if (seed === undefined) {
+        continue;
+      }
+      const key = nodeId(seed.file, seed.node);
+      const sharing = summariesBySeed.get(key);
+      if (sharing === undefined) {
+        seeds.push({
+          key,
+          file: seed.file,
+          node: seed.node,
+          enclosingQualifiedName: seed.enclosingQualifiedName,
+        });
+        summariesBySeed.set(key, [summary]);
+      } else {
+        sharing.push(summary);
+      }
     }
 
     const loadTimeReads = envReadEffects(root);
@@ -126,8 +166,47 @@ export async function extractRubyProject(
     }
   }
 
+  const reached = await reachedFunctions(seeds, {
+    files: parsed,
+    displayPathOf,
+    ...(storagePatterns.length > 0
+      ? { storage: { facts: db, patterns: storagePatterns } }
+      : {}),
+  });
+  for (const [key, owners] of summariesBySeed) {
+    for (const summary of owners) {
+      summary.gaps.push(
+        ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
+      );
+      placeCalls(summary, reached.targetsByKey.get(key));
+    }
+  }
+  summaries.push(...reached.summaries);
+
   const dependencies = fileDependenciesOf(db, displayPathOf);
   stampModuleImports(summaries, (file) => dependencies.get(file) ?? []);
+
+  // A summary's id is measured from the project root, because the CLI
+  // shortens `location.file` to that root after this returns and an id
+  // written from the longer path would not match it.
+  const idRoot = options.projectRoot ?? options.workspaceRoot;
+  for (const summary of summaries) {
+    const absoluteFile =
+      options.workspaceRoot === undefined
+        ? summary.location.file
+        : path.resolve(options.workspaceRoot, summary.location.file);
+    summary.identity.id = summaryIdFromParts({
+      workspace: undefined,
+      file:
+        idRoot === undefined
+          ? absoluteFile
+          : path.relative(idRoot, absoluteFile),
+      name: summary.identity.name,
+      exportPath: summary.identity.exportPath,
+    });
+  }
+  disambiguateSummaryIds(summaries);
+  linkCallsToSummaries(summaries);
 
   return { summaries, facts: db };
 }
