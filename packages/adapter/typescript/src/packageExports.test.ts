@@ -844,9 +844,9 @@ describe("packageExports through a re-exported sibling package", () => {
     const units = discoverUnits(outer, [pattern], new ResolutionStore());
 
     expect(units.map((u) => u.name)).toEqual(["double"]);
-    expect(units[0]?.func.getSourceFile().getFilePath()).toBe(
+    expect(units.map((u) => u.func?.getSourceFile().getFilePath())).toEqual([
       path.join(root, "packages/inner/src/core.ts"),
-    );
+    ]);
     expect(units[0]?.packageExportInfo).toEqual({
       packageName: "@ex/outer",
       exportPath: ["double"],
@@ -872,7 +872,7 @@ describe("packageExports through a re-exported sibling package", () => {
 
     const units = discoverUnits(outer, [pattern], new ResolutionStore());
 
-    expect(units.map((u) => u.func.getSourceFile().getFilePath())).toEqual([
+    expect(units.map((u) => u.func?.getSourceFile().getFilePath())).toEqual([
       path.join(root, "packages/inner/dist/index.d.ts"),
     ]);
   });
