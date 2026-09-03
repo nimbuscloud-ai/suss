@@ -18,6 +18,7 @@ import path from "node:path";
 import { pythonImportEvidence } from "@suss/adapter-python";
 import { rubyStubEvidence } from "@suss/adapter-ruby";
 import { findNearestTsconfig, stubEvidence } from "@suss/adapter-typescript";
+import { GRAPHQL_RUBY_ROOT_CLASS_NAMES } from "@suss/packs/graphql-ruby";
 
 import { resolveSource } from "./extract.js";
 import { languageOfProject } from "./language.js";
@@ -185,24 +186,13 @@ function pythonStubFileName(moduleName: string): string {
   return `${moduleName.replaceAll(".", "-")}.yaml`;
 }
 
-const KNOWN_GRAPHQL_BASES = [
-  "GraphQL::Schema::Object",
-  "GraphQL::Schema::Mutation",
-  "GraphQL::Schema::Resolver",
-  "GraphQL::Schema::Interface",
-  "GraphQL::Schema::InputObject",
-  "GraphQL::Schema::Enum",
-  "GraphQL::Schema::Union",
-  "GraphQL::Schema::Scalar",
-];
-const KNOWN_GRAPHQL_BASE_SET = new Set(KNOWN_GRAPHQL_BASES);
+const KNOWN_GRAPHQL_BASE_SET = new Set(GRAPHQL_RUBY_ROOT_CLASS_NAMES);
 
 /**
- * A class extending one of graphql-ruby's own root classes directly
- * never shows up in another class's ancestry (the walk stops there
- * without recording an entry for it), so `baseClassNames` can never
- * match its name and a stub naming it changes nothing. Only a name
- * outside this set, an unread wrapper a project's own classes extend,
+ * The ancestry walk stops at one of graphql-ruby's own root classes
+ * without recording an entry for it, so `baseClassNames` can never
+ * match one and a stub with it in changes nothing. Only a superclass
+ * outside that set, an unread wrapper a project's own classes extend,
  * is worth drafting.
  */
 function actionableExtendsSites(
@@ -241,7 +231,7 @@ function rubyBlankStatementLines(evidence: RubyStubEvidence): string[] {
     ...comment,
     "  - kind: extends-base",
     '    class: ""',
-    `    extends: ""  # the graphql-ruby class this ultimately extends: ${KNOWN_GRAPHQL_BASES.join(", ")}`,
+    `    extends: ""  # the graphql-ruby class this ultimately extends: ${GRAPHQL_RUBY_ROOT_CLASS_NAMES.join(", ")}`,
   ];
 }
 
@@ -256,7 +246,7 @@ function rubyExtendsStatementLines(
       .slice(0, SITES_SHOWN)
       .map((site) => `  #   ${site.file}:${site.line}  (${site.className})`),
     "  - kind: extends-base",
-    `    class: ${JSON.stringify(sites[0].className)}`,
+    `    class: ""  # the package's own class that extends it, from its source`,
     `    extends: ${JSON.stringify(superclassName)}`,
   ];
 }

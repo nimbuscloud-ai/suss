@@ -49,14 +49,19 @@ function bareLetters(name: string): string {
 }
 
 /**
- * Whether a superclass's own top-level constant is the gem's name,
- * cased and split up the way a Ruby constant is. Rails' own
- * underscore convention breaks on a run of capitals like "GraphQL",
- * so this compares letters only rather than reusing that convention.
+ * Whether a superclass's leading constants spell the gem's name. A gem
+ * called `acme-graphql` conventionally lives under `Acme::GraphQL`,
+ * and `acme_graphql` under `AcmeGraphql`, so every prefix of the
+ * constant path is tried. Rails' own underscore convention breaks on
+ * a run of capitals like "GraphQL", so this compares letters only
+ * rather than reusing that convention.
  */
 function isSpelledFrom(qualifiedName: string, packageName: string): boolean {
-  const root = qualifiedName.split("::")[0] ?? qualifiedName;
-  return bareLetters(root) === bareLetters(packageName);
+  const wanted = bareLetters(packageName);
+  const constants = qualifiedName.split("::");
+  return constants.some(
+    (_, end) => bareLetters(constants.slice(0, end + 1).join("")) === wanted,
+  );
 }
 
 /** Bundler requires a gem under its name with every hyphen turned to an underscore, unless a Gemfile line says otherwise. */

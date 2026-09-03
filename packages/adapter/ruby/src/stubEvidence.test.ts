@@ -90,4 +90,27 @@ describe("rubyStubEvidence", () => {
     expect(evidence.requires).toHaveLength(1);
     expect(evidence.extendsSites).toHaveLength(1);
   });
+
+  it("matches a hyphenated gem name against its nested namespace", async () => {
+    write(
+      "app/graphql/types/campaign_type.rb",
+      "module Types\n  class CampaignType < Acme::GraphQL::BaseObject\n  end\nend\n",
+    );
+
+    const evidence = await rubyStubEvidence({
+      packageName: "acme-graphql",
+      directory: tmpDir,
+    });
+
+    expect(evidence.extendsSites).toHaveLength(1);
+    expect(evidence.extendsSites[0].superclassName).toBe(
+      "Acme::GraphQL::BaseObject",
+    );
+
+    const forAcme = await rubyStubEvidence({
+      packageName: "acme",
+      directory: tmpDir,
+    });
+    expect(forAcme.extendsSites).toHaveLength(1);
+  });
 });

@@ -61,7 +61,7 @@ $ suss infer stub myapp
 Drafted suss/stubs/myapp-routing-namespace.yaml, suss/stubs/myapp-routing-resource.yaml: 2 imported modules from 2 import sites.
 ```
 
-For a Ruby project, the evidence is every `require` of the package and every class whose superclass is spelled from it; the draft writes an `extends-base` statement for each such superclass, except one of graphql-ruby's own root classes, which a class can extend directly without a stub ever being able to help it. When nothing else can be drafted, the statement is blank, with the accepted graphql-ruby base classes in a comment.
+For a Ruby project, the evidence is every `require` of the package and every class whose superclass is spelled from it. The draft writes one `extends-base` statement per such superclass, with `extends:` filled in and `class:` left for the author. A class that extends one of graphql-ruby's own root classes directly is skipped, since the pack already stops there and a stub adds nothing. When that leaves nothing to draft, the statement is blank, with the graphql-ruby root classes in a comment.
 
 Filling the blanks takes the package's own source. That is a job for whoever can read it, and an agent usually can, a Rust crate included: draft from the evidence, read the dependency, fill the semantics, record the provenance, commit. MCP hosts get the same skeleton from the `suss_stub_draft` tool. `-o -` prints the draft instead of writing it.
 

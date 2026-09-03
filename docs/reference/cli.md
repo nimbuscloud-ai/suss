@@ -1036,12 +1036,12 @@ draft file covers, depends on the language suss reads the directory as:
   the package (or a submodule of it) from, since the decorator match is
   exact per module. `of:` is filled in when the imported names all
   belong to one known pack, and left blank otherwise.
-- **Ruby**: an `extends-base` candidate per superclass a project class
-  is found extending that is spelled from the package, except one of
-  graphql-ruby's own root classes, which a class can extend directly
-  without a stub ever being able to help it; when nothing else can be
-  drafted, the statement is blank, with the accepted graphql-ruby base
-  classes in a comment.
+- **Ruby**: an `extends-base` candidate per superclass spelled from
+  the package that a project class extends, with `extends:` filled in
+  and `class:` left blank. A class that extends one of graphql-ruby's
+  own root classes directly is skipped, since the pack already stops
+  there. When that leaves nothing to draft, the statement is blank,
+  with the graphql-ruby root classes in a comment.
 
 A TypeScript or Ruby draft lands in `suss/stubs/<package>.yaml` under the
 resolved source root; an existing file is never overwritten. A Python

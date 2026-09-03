@@ -54,9 +54,9 @@ points here.
 
 `suss infer stub acme-graphql` reads the project's own `require`s and
 class definitions and drafts one `extends-base` statement per
-superclass it finds spelled from the package, skipping a class that
-extends one of graphql-ruby's own root classes directly, since no stub
-can add to its ancestry.
+superclass it finds spelled from the package. A class that extends one
+of graphql-ruby's own root classes directly is skipped, since the pack
+already stops there and a stub adds nothing.
 
 ## Coverage
 
