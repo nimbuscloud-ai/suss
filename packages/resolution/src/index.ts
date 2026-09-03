@@ -22,6 +22,7 @@ export type {
   StepContext,
   StepPhrase,
 } from "./explain.js";
+export type { ExplainStats, ValueLocation, WhyExplained } from "./session.js";
 
 // @suss/resolution - following a value to the function it comes down to.
 //

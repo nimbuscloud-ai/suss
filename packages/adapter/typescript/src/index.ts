@@ -28,13 +28,10 @@ export { createTsDiscoveryContext } from "./discoveryContext.js";
 export {
   type ExplainCallableOptions,
   type ExplainedResolution,
-  type ExplainStats,
   ResolutionStore,
 } from "./facts/store.js";
 export {
-  type ValueLocation,
-  type WhyExplained,
-  WhySession,
+  TypeScriptWhySession,
   type WhySessionOptions,
 } from "./facts/why.js";
 // Reading a module's exports and following an import to its source are
@@ -76,6 +73,11 @@ export {
   computeContentHash,
 } from "./version.js";
 
+export type {
+  ExplainStats,
+  ValueLocation,
+  WhyExplained,
+} from "@suss/resolution";
 export type {
   TypeScriptAdapter,
   TypeScriptAdapterConfig,

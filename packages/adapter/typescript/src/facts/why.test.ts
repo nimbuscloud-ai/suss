@@ -8,9 +8,9 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { WhySession } from "./why.js";
+import { TypeScriptWhySession } from "./why.js";
 
-describe("WhySession", () => {
+describe("TypeScriptWhySession", () => {
   let dir: string;
 
   beforeEach(() => {
@@ -49,7 +49,7 @@ describe("WhySession", () => {
   });
 
   it("explains a resolution through an imported factory", () => {
-    const session = new WhySession({ dir });
+    const session = new TypeScriptWhySession({ dir });
     const value = session.findExpression("src/app.ts", 10, "handler");
     expect(value).not.toBeNull();
 
@@ -74,14 +74,14 @@ describe("WhySession", () => {
   });
 
   it("finds the callee of a recorded call inside a line range", () => {
-    const session = new WhySession({ dir });
+    const session = new TypeScriptWhySession({ dir });
     const callee = session.findCallee("src/app.ts", 9, 11, "handler");
     expect(callee).not.toBeNull();
     expect(callee?.getText()).toBe("handler");
   });
 
   it("returns null for a name the line does not contain", () => {
-    const session = new WhySession({ dir });
+    const session = new TypeScriptWhySession({ dir });
     expect(session.findExpression("src/app.ts", 10, "ghost")).toBeNull();
     expect(session.findExpression("src/missing.ts", 1, "handler")).toBeNull();
   });

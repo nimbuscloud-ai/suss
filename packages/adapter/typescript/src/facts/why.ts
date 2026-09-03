@@ -22,9 +22,8 @@ import {
 } from "../bootstrap/noTsconfigProject.js";
 import { ResolutionStore } from "./store.js";
 
-import type { ResolutionExplanation, StepPhrase } from "@suss/resolution";
+import type { StepPhrase, ValueLocation, WhyExplained } from "@suss/resolution";
 import type { SourceFile } from "ts-morph";
-import type { ExplainStats } from "./store.js";
 
 /** The phrase for the one step rule this adapter adds to the shared ones. */
 const JS_PHRASES: Record<string, StepPhrase> = {
@@ -38,25 +37,7 @@ export interface WhySessionOptions {
   dir: string;
 }
 
-/** A value or function said the way an answer prints it. */
-export interface ValueLocation {
-  name: string;
-  /** Relative to the session root when under it, absolute otherwise. */
-  file: string;
-  line: number;
-}
-
-export interface WhyExplained {
-  explanation: ResolutionExplanation;
-  /** The chain's atoms, each said in source terms. */
-  chain: string[];
-  /** The chain and its reasons as printable lines. */
-  lines: string[];
-  target: ValueLocation;
-  stats: ExplainStats;
-}
-
-export class WhySession {
+export class TypeScriptWhySession {
   private readonly project: Project;
   private readonly store: ResolutionStore;
   private readonly root: string;
