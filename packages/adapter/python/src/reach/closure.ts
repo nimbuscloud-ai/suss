@@ -17,6 +17,7 @@ import {
   placeCalleeParameters,
   placeCalls,
   recordParameterGaps,
+  TargetPlacements,
   unfollowedCallGap,
   worthRecording,
 } from "@suss/behavioral-ir";
@@ -239,8 +240,7 @@ const EMPTY_SCAN: Scan = {
 function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
-  const targets = new Map<string, DeclaredAt | null>();
-  const argTargets = new Map<string, Map<number, DeclaredAt | null>>();
+  const placements = new TargetPlacements();
   const parameterCalls: ParameterCall[] = [];
   const passedPositions = new Set<string>();
   const seen = new Set<string>();
@@ -283,7 +283,7 @@ function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
         seen.add(key);
         followed.push(resolved);
       }
-      rememberArgTarget(argTargets, callee, position, {
+      placements.placeArg(callee, position, {
         file: resolved.file.displayPath,
         span: spanOf(resolved.node),
       });
@@ -311,7 +311,7 @@ function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
         : outcome.reason === "noDeclaration"
           ? null
           : { file: file.displayPath, span: spanOf(call) };
-    rememberTarget(targets, callee, placed);
+    placements.place(callee, placed);
     recordPassedArgs(
       call,
       callee,
@@ -373,81 +373,14 @@ function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
     },
   );
 
-  const settled = new Map<string, DeclaredAt>();
-  for (const [callee, target] of targets) {
-    if (target !== null) {
-      settled.set(callee, target);
-    }
-  }
-  const settledArgs = new Map<string, ReadonlyMap<number, DeclaredAt>>();
-  for (const [callee, byPosition] of argTargets) {
-    const positions = new Map<number, DeclaredAt>();
-    for (const [position, target] of byPosition) {
-      if (target !== null) {
-        positions.set(position, target);
-      }
-    }
-    if (positions.size > 0) {
-      settledArgs.set(callee, positions);
-    }
-  }
   return {
     followed,
     stops,
-    targets: settled,
-    argTargets: settledArgs,
+    targets: placements.targets,
+    argTargets: placements.argTargets,
     parameterCalls,
     passedPositions,
   };
-}
-
-/** The same callee text placed two ways, a shadowed name say, has to say so rather than pick one. */
-function rememberTarget(
-  targets: Map<string, DeclaredAt | null>,
-  callee: string,
-  placed: DeclaredAt | null,
-): void {
-  if (placed === null) {
-    return;
-  }
-  const known = targets.get(callee);
-  if (known === undefined) {
-    targets.set(callee, placed);
-    return;
-  }
-  if (
-    known !== null &&
-    (known.file !== placed.file ||
-      known.span.start !== placed.span.start ||
-      known.span.end !== placed.span.end)
-  ) {
-    targets.set(callee, null);
-  }
-}
-
-// Same shadow handling as `rememberTarget`, one level down: the
-// argument at this position in calls written as `callee`.
-function rememberArgTarget(
-  argTargets: Map<string, Map<number, DeclaredAt | null>>,
-  callee: string,
-  position: number,
-  placed: DeclaredAt,
-): void {
-  const byPosition = argTargets.get(callee) ?? new Map();
-  argTargets.set(callee, byPosition);
-  const known = byPosition.get(position);
-  if (known === undefined) {
-    byPosition.set(position, placed);
-    return;
-  }
-  if (
-    known !== null &&
-    (known.file !== placed.file ||
-      known.span.start !== placed.span.start ||
-      known.span.end !== placed.span.end)
-  ) {
-    byPosition.set(position, null);
-  }
 }
 
 /** The binder's scope for a function, or the nearest one above a def it did not bind. */
