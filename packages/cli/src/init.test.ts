@@ -141,6 +141,14 @@ describe("inspectProject", () => {
     expect(names(dir)).toEqual(["graphql-ruby"]);
   });
 
+  it("suggests the rails pack for a project depending on the rails gem", () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "DEPENDENCIES\n  rails (~> 7.1)\n",
+    );
+    expect(names(dir)).toEqual(["rails"]);
+  });
+
   it("says which per-project config a suggested pack needs", () => {
     fs.writeFileSync(
       path.join(dir, "Gemfile.lock"),

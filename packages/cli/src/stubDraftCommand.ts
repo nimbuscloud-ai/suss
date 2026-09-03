@@ -19,6 +19,7 @@ import { pythonImportEvidence } from "@suss/adapter-python";
 import { rubyStubEvidence } from "@suss/adapter-ruby";
 import { findNearestTsconfig, stubEvidence } from "@suss/adapter-typescript";
 import { GRAPHQL_RUBY_ROOT_CLASS_NAMES } from "@suss/packs/graphql-ruby";
+import { RAILS_ROOT_CLASS_NAMES } from "@suss/packs/rails";
 
 import { resolveSource } from "./extract.js";
 import { languageOfProject } from "./language.js";
@@ -186,31 +187,35 @@ function pythonStubFileName(moduleName: string): string {
   return `${moduleName.replaceAll(".", "-")}.yaml`;
 }
 
-const KNOWN_GRAPHQL_BASE_SET = new Set(GRAPHQL_RUBY_ROOT_CLASS_NAMES);
+/** Every root class a shipped Ruby pack's own ancestry walk already stops at, across every pack an `extends-base` statement can reach. */
+const KNOWN_RUBY_ROOT_CLASS_NAMES = new Set([
+  ...GRAPHQL_RUBY_ROOT_CLASS_NAMES,
+  ...RAILS_ROOT_CLASS_NAMES,
+]);
 
 /**
- * The ancestry walk stops at one of graphql-ruby's own root classes
- * without recording an entry for it, so `baseClassNames` can never
- * match one and a stub with it in changes nothing. Only a superclass
- * outside that set, an unread wrapper a project's own classes extend,
- * is worth drafting.
+ * The ancestry walk stops at one of a pack's own root classes without
+ * recording an entry for it, so `baseClassNames` can never match one
+ * and a stub with it in changes nothing. Only a superclass outside
+ * that set, an unread wrapper a project's own classes extend, is worth
+ * drafting.
  */
 function actionableExtendsSites(
   evidence: RubyStubEvidence,
 ): RubyStubEvidence["extendsSites"] {
   return evidence.extendsSites.filter(
-    (site) => !KNOWN_GRAPHQL_BASE_SET.has(site.superclassName),
+    (site) => !KNOWN_RUBY_ROOT_CLASS_NAMES.has(site.superclassName),
   );
 }
 
 function rubyBlankStatementLines(evidence: RubyStubEvidence): string[] {
   const direct = evidence.extendsSites.filter((site) =>
-    KNOWN_GRAPHQL_BASE_SET.has(site.superclassName),
+    KNOWN_RUBY_ROOT_CLASS_NAMES.has(site.superclassName),
   );
   const comment =
     direct.length > 0
       ? [
-          `  # ${direct.length} ${direct.length === 1 ? "class extends" : "classes extend"} a graphql-ruby base directly, which no stub can add to baseClassNames`,
+          `  # ${direct.length} ${direct.length === 1 ? "class extends" : "classes extend"} a pack's own base directly, which no stub can add to baseClassNames`,
           ...direct
             .slice(0, SITES_SHOWN)
             .map(
@@ -231,7 +236,7 @@ function rubyBlankStatementLines(evidence: RubyStubEvidence): string[] {
     ...comment,
     "  - kind: extends-base",
     '    class: ""',
-    `    extends: ""  # the graphql-ruby class this ultimately extends: ${GRAPHQL_RUBY_ROOT_CLASS_NAMES.join(", ")}`,
+    `    extends: ""  # the class this ultimately extends, e.g. ${[...KNOWN_RUBY_ROOT_CLASS_NAMES].join(", ")}`,
   ];
 }
 

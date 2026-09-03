@@ -36,7 +36,7 @@ import {
   createPackTallies,
   tallyUnit,
 } from "./diagnostics.js";
-import { createFileCache, discoverUnits } from "./discovery.js";
+import { createFileCache, discoverUnits, routingGapUnit } from "./discovery.js";
 import { envReadEffects } from "./envReads.js";
 import {
   collectFileConstants,
@@ -192,6 +192,28 @@ export async function extractRubyProject(
           }),
           { gapHandling: "permissive" },
         ),
+      );
+      summary.confidence = { source: "inferred_static", level: "low" };
+      summaries.push(summary);
+    }
+  }
+
+  // One gap unit per controllerActions pattern that has something left
+  // to say about its own routing, read once here rather than once per
+  // controller discovery happened to visit first.
+  for (const pack of options.packs) {
+    for (const pattern of pack.discovery) {
+      if (pattern.type !== "controllerActions") {
+        continue;
+      }
+      const gaps = pattern.routingGaps?.() ?? [];
+      if (gaps.length === 0) {
+        continue;
+      }
+      const summary = timer.time("summarize", () =>
+        assembleSummary(routingGapUnit(pattern, gaps), {
+          gapHandling: "permissive",
+        }),
       );
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);

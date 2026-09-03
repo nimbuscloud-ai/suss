@@ -6,7 +6,7 @@ Ruby language adapter for suss. It parses source with tree-sitter (WASM), resolv
 
 `@suss/adapter-ruby` is the Ruby language adapter, per [`docs/internal/facts-and-rules.md`](../../../docs/internal/facts-and-rules.md)'s Layer 1 contract: discover units, emit summaries in the shared IR, emit facts. It parses a file with `web-tree-sitter` and a vendored Ruby grammar (`grammar/tree-sitter-ruby.wasm`, no native build step), tracks class/module nesting to qualify a constant the way Ruby itself would resolve it lexically, and discovers graphql-ruby's class-based `field` DSL on a class extending a pack-configured base class. A `field :x, mutation: Mutations::Y` or `field :x, resolver: Queries::Z` reference is followed one hop: the referenced class's own file is located by Rails' constant-to-path convention and read for its declared return type. Discovered units become `RawCodeStructure` objects handed to `@suss/extractor`'s `assembleSummary`, the same assembly code the other adapters use.
 
-The adapter reads graphql-ruby only. Rails routing (`config/routes.rb`) is a separate, much larger macro-expansion problem, which the [language-adapters proposal](../../../design/proposals/language-adapters.md) costs out and leaves for later. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since a graphql field does no path-engine work, and confidence is pinned low.
+The adapter also discovers a `controllerActions` pattern: a class whose ancestry reaches a pack-configured base is a Rails-shaped controller, and each of its own public instance methods is one of its actions, bound to whatever method and path the pack's `routeFor` gives it. `@suss/framework-rails` is the pack that reads `config/routes.rb` and supplies that callback; the adapter itself contains no Rails string. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since a graphql field does no path-engine work, and confidence is pinned low.
 
 ## The method behind a field
 
@@ -226,7 +226,7 @@ Not followed yet: a method found only on a superclass past an unread ancestor, a
 
 ## Where it fits in suss
 
-Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (starting with `@suss/framework-graphql-ruby`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes or DSL calls are named beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.
+Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (`@suss/framework-graphql-ruby` and `@suss/framework-rails`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes, DSL calls, or base classes are called beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.
 
 ## Grammar asset
 

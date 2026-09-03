@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
+import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
 import { extractRubyProject, findRubyFiles } from "./project.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
@@ -551,5 +552,67 @@ describe("the extraction report", () => {
 
     expect(report?.summaries).toBe(0);
     expect(report?.emptyStage).toBe("discovery");
+  });
+});
+
+describe("a controllerActions pattern's routing gaps", () => {
+  function gapDescriptions(summaries: { gaps: { description: string }[] }[]) {
+    return summaries.flatMap((s) => s.gaps.map((g) => g.description));
+  }
+
+  it("emits one gap unit per pattern, not one per controller it happens to visit", async () => {
+    const orders = write(
+      "app/controllers/orders_controller.rb",
+      "class OrdersController < ApplicationController\n  def index\n  end\nend\n",
+    );
+    const items = write(
+      "app/controllers/items_controller.rb",
+      "class ItemsController < ApplicationController\n  def index\n  end\nend\n",
+    );
+    const pack = railsTestPack({
+      routingGaps: () => ["routes.rb also declares mount"],
+    });
+
+    const { summaries } = await extractRubyProject({
+      files: [orders, items],
+      packs: [pack],
+    });
+    expect(gapDescriptions(summaries)).toEqual([
+      "routes.rb also declares mount",
+    ]);
+  });
+
+  it("calls routingGaps fresh on every run, so a second extraction with the same pack still reports it", async () => {
+    const orders = write(
+      "app/controllers/orders_controller.rb",
+      "class OrdersController < ApplicationController\n  def index\n  end\nend\n",
+    );
+    const pack = railsTestPack({
+      routingGaps: () => ["routes.rb also declares mount"],
+    });
+
+    const first = await extractRubyProject({ files: [orders], packs: [pack] });
+    const second = await extractRubyProject({ files: [orders], packs: [pack] });
+    expect(gapDescriptions(first.summaries)).toEqual([
+      "routes.rb also declares mount",
+    ]);
+    expect(gapDescriptions(second.summaries)).toEqual([
+      "routes.rb also declares mount",
+    ]);
+  });
+
+  it("emits nothing when the pattern has no gap to report", async () => {
+    const orders = write(
+      "app/controllers/orders_controller.rb",
+      "class OrdersController < ApplicationController\n  def index\n  end\nend\n",
+    );
+    const pack = railsTestPack({ routingGaps: () => [] });
+
+    const { summaries } = await extractRubyProject({
+      files: [orders],
+      packs: [pack],
+    });
+    expect(gapDescriptions(summaries)).toEqual([]);
+    expect(summaries.some((s) => s.kind === "module-init")).toBe(false);
   });
 });

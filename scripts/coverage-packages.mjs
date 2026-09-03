@@ -65,6 +65,7 @@ export const coveragePackages = [
   ["packages/framework/sqlalchemy", "sqlalchemy"],
   ["packages/framework/activerecord", "activerecord"],
   ["packages/framework/graphql-ruby", "graphql-ruby"],
+  ["packages/framework/rails", "rails"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],

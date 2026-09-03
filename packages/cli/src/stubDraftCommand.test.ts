@@ -162,9 +162,27 @@ describe("draftRubyYaml", () => {
     });
     expect(yaml).toContain('class: ""');
     expect(yaml).toContain('extends: ""');
-    expect(yaml).toContain("extends a graphql-ruby base directly");
+    expect(yaml).toContain("extends a pack's own base directly");
     expect(yaml).toContain(
       "app/graphql/types/campaign_type.rb:2  (Types::CampaignType < GraphQL::Schema::Object)",
+    );
+  });
+
+  it("drafts a blank statement when the only class found extends a Rails root directly", () => {
+    const yaml = draftRubyYaml("actioncontroller-api", {
+      requires: [],
+      extendsSites: [
+        {
+          className: "ApplicationController",
+          superclassName: "ActionController::API",
+          file: "app/controllers/application_controller.rb",
+          line: 1,
+        },
+      ],
+    });
+    expect(yaml).toContain("extends a pack's own base directly");
+    expect(yaml).toContain(
+      "app/controllers/application_controller.rb:1  (ApplicationController < ActionController::API)",
     );
   });
 });

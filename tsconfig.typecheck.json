@@ -155,6 +155,9 @@
       "path": "packages/framework/prisma/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/rails/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/react-router/tsconfig.typecheck.json"
     },
     {

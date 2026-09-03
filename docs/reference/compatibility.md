@@ -13,7 +13,7 @@ separate adapters with their own rules; see
 | TypeScript | Yes |
 | JavaScript | Yes, with `allowJs` in your tsconfig |
 | Python | Yes: `suss extract --lang python`. flask-restx and FastAPI routes with their branches and effects, and SQLAlchemy calls with the sqlalchemy pack composed in. |
-| Ruby | Yes: `suss extract --lang ruby`. graphql-ruby fields with their resolver bodies, and ActiveRecord calls with the activerecord pack composed in. |
+| Ruby | Yes: `suss extract --lang ruby`. graphql-ruby fields with their resolver bodies, Rails controller actions with the routes `config/routes.rb` gives them, and ActiveRecord calls with the activerecord pack composed in. |
 | Anything else | No |
 
 ## Modules and resolution

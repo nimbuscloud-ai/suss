@@ -215,6 +215,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "graphql-ruby": "@suss/packs/graphql-ruby",
   sqlalchemy: "@suss/packs/sqlalchemy",
   activerecord: "@suss/packs/activerecord",
+  rails: "@suss/packs/rails",
 };
 
 /** Packs that read something other than TypeScript. */
@@ -224,6 +225,7 @@ const PACK_LANGUAGE: Record<string, Language> = {
   "graphql-ruby": "ruby",
   sqlalchemy: "python",
   activerecord: "ruby",
+  rails: "ruby",
 };
 
 /** Which language's adapter reads the code this pack describes. */

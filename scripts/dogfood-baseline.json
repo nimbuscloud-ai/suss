@@ -1,12 +1,12 @@
 {
   "totals": {
-    "packages": 67,
-    "packagesWithExports": 67,
-    "exports": 766,
-    "internal": 2768,
-    "consumers": 1376,
-    "pairs": 1364,
-    "unfollowedCalls": 353,
+    "packages": 68,
+    "packagesWithExports": 68,
+    "exports": 777,
+    "internal": 2788,
+    "consumers": 1409,
+    "pairs": 1397,
+    "unfollowedCalls": 376,
     "findingErrors": 0
   },
   "packages": {
@@ -19,10 +19,10 @@
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
-      "exports": 57,
-      "internal": 165,
-      "consumers": 54,
-      "unfollowedCalls": 27
+      "exports": 65,
+      "internal": 163,
+      "consumers": 57,
+      "unfollowedCalls": 42
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 24,
       "internal": 445,
-      "consumers": 300,
+      "consumers": 302,
       "unfollowedCalls": 51
     },
     "packages/client/apollo": {
@@ -353,6 +353,13 @@
       "consumers": 8,
       "unfollowedCalls": 7
     },
+    "packages/framework/rails": {
+      "name": "@suss/framework-rails",
+      "exports": 2,
+      "internal": 12,
+      "consumers": 28,
+      "unfollowedCalls": 6
+    },
     "packages/framework/react": {
       "name": "@suss/framework-react",
       "exports": 4,
@@ -432,10 +439,10 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 38,
-      "internal": 125,
+      "exports": 39,
+      "internal": 135,
       "consumers": 0,
-      "unfollowedCalls": 7
+      "unfollowedCalls": 9
     },
     "packages/recognize": {
       "name": "@suss/recognize",
