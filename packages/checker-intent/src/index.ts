@@ -15,9 +15,9 @@
 // Severity conventions:
 //   error: the code fails a declared structural commitment
 //             (unimplementedBoundary, uncoveredOutcome,
-//             outcomeShapeMismatch). Intent is a deliberately authored
-//             artifact; code that doesn't satisfy it is a defect, not a
-//             style concern.
+//             outcomeShapeMismatch, renamedBoundary). Intent is a deliberately
+//             authored artifact; code that doesn't satisfy it is a defect,
+//             not a style concern.
 //   warning: the intent itself can't be checked (unkeyableBoundary), or a
 //             scenario refers to an outcome no system intent declares
 //             (danglingScenarioLink / ambiguousScenarioLink: a planning
