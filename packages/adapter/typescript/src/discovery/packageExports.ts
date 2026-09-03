@@ -3,11 +3,14 @@
 // resolver in ../packageExports.ts which reads package.json.
 
 import fs from "node:fs";
+import path from "node:path";
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { sourceFileFor } from "../facts/store.js";
 import { exportedDeclarationsOf } from "../moduleExports.js";
 import {
+  namedPackageDirAbove,
   type ResolvedPackageExport,
   resolvePackageExports,
 } from "../packageExports.js";
@@ -113,7 +116,10 @@ export function discoverPackageExports(
         continue;
       }
 
-      for (const decl of decls) {
+      const candidates = decls.flatMap((decl) =>
+        sourceDeclarationsBehind(decl, resolution, new Set()),
+      );
+      for (const decl of candidates) {
         // Variable initialisers (export const foo = () => ...).
         if (Node.isVariableDeclaration(decl)) {
           const init = decl.getInitializer();
@@ -156,6 +162,74 @@ export function discoverPackageExports(
   }
 
   return results;
+}
+
+/**
+ * The source declarations behind an exported declaration.
+ *
+ * A barrel that re-exports a sibling workspace package resolves through
+ * the sibling's manifest to its built declaration file, and a unit built
+ * on a declaration there has no body to read. The sibling's manifest
+ * also says which source file each published file was built from, so
+ * the export is looked up by name on the published file and taken from
+ * the source file instead. A declaration with no source behind it, such
+ * as one under node_modules, is returned as it is. The source file can
+ * itself re-export a third package, so the lookup repeats until it
+ * lands on a source declaration; `visited` stops a cycle.
+ */
+function sourceDeclarationsBehind(
+  decl: Node,
+  resolution: ResolutionStore,
+  visited: Set<string>,
+): Node[] {
+  const file = decl.getSourceFile();
+  if (!file.isDeclarationFile() || file.isInNodeModules()) {
+    return [decl];
+  }
+  const packageDir = namedPackageDirAbove(path.dirname(file.getFilePath()));
+  if (packageDir === null || visited.has(packageDir)) {
+    return [decl];
+  }
+  visited.add(packageDir);
+
+  const project = file.getProject();
+  const { entries } = resolvePackageExportsCached(
+    path.join(packageDir, "package.json"),
+  );
+  const found: Node[] = [];
+  for (const entry of entries) {
+    const published = sourceFileFor(project, entry.publishedFile);
+    const source = sourceFileFor(project, entry.sourceFile);
+    if (published === undefined || source === undefined) {
+      continue;
+    }
+    for (const [name, nodes] of resolution.exportsOf(published)) {
+      if (!nodes.some((node) => sameDeclaration(node, decl))) {
+        continue;
+      }
+      for (const behind of resolution.exportsOf(source).get(name) ?? []) {
+        for (const candidate of sourceDeclarationsBehind(
+          behind,
+          resolution,
+          visited,
+        )) {
+          if (!found.includes(candidate)) {
+            found.push(candidate);
+          }
+        }
+      }
+    }
+  }
+  return found.length > 0 ? found : [decl];
+}
+
+function sameDeclaration(a: Node, b: Node): boolean {
+  return (
+    a === b ||
+    (a.getSourceFile().getFilePath() === b.getSourceFile().getFilePath() &&
+      a.getStart() === b.getStart() &&
+      a.getEnd() === b.getEnd())
+  );
 }
 
 function buildUnit(

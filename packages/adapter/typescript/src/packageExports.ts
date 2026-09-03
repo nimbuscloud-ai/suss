@@ -40,6 +40,13 @@ export interface ResolvedPackageExport {
   exportPathPrefix: string[];
   /** Absolute path to the resolved source file. */
   sourceFile: string;
+  /**
+   * Absolute path to the file the manifest points at before the
+   * dist to src mapping, usually a built declaration file. A file
+   * that imports the package resolves to this one, so it is the key
+   * for asking which of this entry's exports a declaration is.
+   */
+  publishedFile: string;
 }
 
 export interface ResolvePackageExportsResult {
@@ -95,6 +102,7 @@ export function resolvePackageExports(
       subPath,
       exportPathPrefix: subPathToPrefix(subPath),
       sourceFile: src,
+      publishedFile: path.resolve(pkgDir, distPath),
     });
   };
 
@@ -121,6 +129,41 @@ export function resolvePackageExports(
   }
 
   return { packageName, entries, warnings };
+}
+
+/**
+ * The nearest directory at or above `start` whose package.json has a
+ * name. A built `dist/package.json` that only sets `type` is skipped,
+ * so a declaration file under `dist/` resolves to the package that
+ * built it.
+ */
+export function namedPackageDirAbove(start: string): string | null {
+  let at = path.resolve(start);
+  for (let up = 0; up < 12; up += 1) {
+    if (packageNameAt(at) !== null) {
+      return at;
+    }
+    const parent = path.dirname(at);
+    if (parent === at) {
+      break;
+    }
+    at = parent;
+  }
+  return null;
+}
+
+export function packageNameAt(dir: string): string | null {
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(dir, "package.json"), "utf8"),
+    ) as { name?: unknown };
+    if (typeof manifest.name === "string" && manifest.name.length > 0) {
+      return manifest.name;
+    }
+  } catch {
+    // Nothing here, or nothing readable.
+  }
+  return null;
 }
 
 function pickConditional(

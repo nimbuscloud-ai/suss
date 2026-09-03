@@ -1038,7 +1038,7 @@ export class ResolutionStore {
  * dependency's .d.ts, is added by its resolved path. A key that is a
  * bare specifier never resolved to a file, so there is nothing to add.
  */
-function sourceFileFor(
+export function sourceFileFor(
   project: Project,
   moduleKey: string,
 ): SourceFile | undefined {

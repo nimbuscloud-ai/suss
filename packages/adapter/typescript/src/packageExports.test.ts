@@ -8,11 +8,14 @@ import path from "node:path";
 import { Project } from "ts-morph";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { boundaryKey } from "@suss/behavioral-ir";
+
 import { createTypeScriptAdapter } from "./adapter.js";
 import { clearPackageExportsCache, discoverUnits } from "./discovery/index.js";
 import { ResolutionStore } from "./facts/store.js";
 import { resolvePackageExports } from "./packageExports.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
 // ---------------------------------------------------------------------------
@@ -707,6 +710,233 @@ describe("packageExports — end-to-end summary", () => {
       throw new Error("expected return output");
     }
     expect(wrapReturn.value?.type).toBe("record");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A barrel that re-exports a sibling workspace package
+// ---------------------------------------------------------------------------
+
+const workspaceTsconfig = JSON.stringify({
+  compilerOptions: {
+    target: "es2022",
+    module: "esnext",
+    moduleResolution: "bundler",
+    strict: true,
+  },
+  include: ["packages/*/src/**/*"],
+});
+
+/**
+ * Two workspace packages, where `@ex/outer` re-exports `double` from
+ * `@ex/inner`, and an app that imports it through `@ex/outer`. Both
+ * manifests point `types` at a built declaration file, and the outer
+ * barrel resolves through node_modules to the inner one, which is how a
+ * built monorepo looks to the compiler.
+ */
+function writeReExportingWorkspace(): string {
+  const root = fs.realpathSync(
+    writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({ name: "ex", workspaces: ["packages/*"] }),
+      },
+      { relPath: "tsconfig.json", content: workspaceTsconfig },
+      {
+        relPath: "packages/inner/package.json",
+        content: JSON.stringify({
+          name: "@ex/inner",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "packages/inner/src/index.ts",
+        content: `export { double } from "./core.js";`,
+      },
+      {
+        relPath: "packages/inner/src/core.ts",
+        content: `
+          export function double(x: number) {
+            if (x < 0) {
+              throw new Error("negative");
+            }
+            return x * 2;
+          }
+        `,
+      },
+      {
+        relPath: "packages/inner/dist/index.d.ts",
+        content:
+          "declare function double(x: number): number;\nexport { double };\n",
+      },
+      {
+        relPath: "packages/outer/package.json",
+        content: JSON.stringify({
+          name: "@ex/outer",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "packages/outer/src/index.ts",
+        content: `export { double } from "@ex/inner";`,
+      },
+      {
+        relPath: "packages/outer/dist/index.d.ts",
+        content: `export { double } from "@ex/inner";\n`,
+      },
+      {
+        relPath: "packages/app/package.json",
+        content: JSON.stringify({ name: "@ex/app" }),
+      },
+      {
+        relPath: "packages/app/src/use.ts",
+        content: `
+          import { double } from "@ex/outer";
+          export function useIt(x: number) {
+            return double(x);
+          }
+        `,
+      },
+    ]),
+  );
+  fs.mkdirSync(path.join(root, "node_modules/@ex"), { recursive: true });
+  for (const name of ["inner", "outer"]) {
+    fs.symlinkSync(
+      path.join(root, "packages", name),
+      path.join(root, "node_modules/@ex", name),
+      "dir",
+    );
+  }
+  return root;
+}
+
+describe("packageExports through a re-exported sibling package", () => {
+  let root: string | null = null;
+
+  beforeEach(() => {
+    clearPackageExportsCache();
+  });
+
+  afterEach(() => {
+    if (root !== null) {
+      cleanup(root);
+      root = null;
+    }
+    clearPackageExportsCache();
+  });
+
+  it("builds the unit on the sibling's source declaration, not its declaration file", async () => {
+    root = writeReExportingWorkspace();
+    const project = new Project({
+      tsConfigFilePath: path.join(root, "tsconfig.json"),
+    });
+    const outer = project.getSourceFileOrThrow(
+      path.join(root, "packages/outer/src/index.ts"),
+    );
+    const pattern: DiscoveryPattern = {
+      kind: "library",
+      match: {
+        type: "packageExports",
+        packageJsonPath: path.join(root, "packages/outer/package.json"),
+      },
+    };
+
+    const units = discoverUnits(outer, [pattern], new ResolutionStore());
+
+    expect(units.map((u) => u.name)).toEqual(["double"]);
+    expect(units[0]?.func.getSourceFile().getFilePath()).toBe(
+      path.join(root, "packages/inner/src/core.ts"),
+    );
+    expect(units[0]?.packageExportInfo).toEqual({
+      packageName: "@ex/outer",
+      exportPath: ["double"],
+    });
+  });
+
+  it("keeps the declaration when the sibling ships no source", async () => {
+    root = writeReExportingWorkspace();
+    fs.rmSync(path.join(root, "packages/inner/src"), { recursive: true });
+    const project = new Project({
+      tsConfigFilePath: path.join(root, "tsconfig.json"),
+    });
+    const outer = project.getSourceFileOrThrow(
+      path.join(root, "packages/outer/src/index.ts"),
+    );
+    const pattern: DiscoveryPattern = {
+      kind: "library",
+      match: {
+        type: "packageExports",
+        packageJsonPath: path.join(root, "packages/outer/package.json"),
+      },
+    };
+
+    const units = discoverUnits(outer, [pattern], new ResolutionStore());
+
+    expect(units.map((u) => u.func.getSourceFile().getFilePath())).toEqual([
+      path.join(root, "packages/inner/dist/index.d.ts"),
+    ]);
+  });
+
+  it("pairs a consumer of the outer package with the one provider on the source", async () => {
+    root = writeReExportingWorkspace();
+    const pack: PatternPack = {
+      name: "package-exports:@ex/outer",
+      languages: ["typescript"],
+      protocol: "in-process",
+      discovery: [
+        {
+          kind: "library",
+          match: {
+            type: "packageExports",
+            packageJsonPath: path.join(root, "packages/outer/package.json"),
+          },
+        },
+        {
+          kind: "caller",
+          match: { type: "packageImport", packages: ["@ex/outer"] },
+        },
+      ],
+      terminals: [
+        { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+        {
+          kind: "throw",
+          match: { type: "throwExpression" },
+          extraction: {},
+        },
+      ],
+      inputMapping: {
+        type: "positionalParams",
+        params: [{ position: 0, role: "arg0" }],
+      },
+    };
+
+    const adapter = createTypeScriptAdapter({
+      tsConfigFilePath: path.join(root, "tsconfig.json"),
+      frameworks: [pack],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(summaries.filter((s) => s.location.file.includes("/dist/"))).toEqual(
+      [],
+    );
+
+    const providers = summaries.filter(
+      (s) => s.identity.name === "double" && s.kind === "library",
+    );
+    expect(providers).toHaveLength(1);
+    const provider = providers[0] as BehavioralSummary;
+    expect(provider.location.file).toMatch(/packages\/inner\/src\/core\.ts$/);
+    expect(provider.transitions.length).toBeGreaterThan(0);
+
+    const consumer = summaries.find((s) => s.identity.name === "useIt");
+    expect(consumer?.kind).toBe("caller");
+    const providerBinding = provider.identity.boundaryBinding;
+    const consumerBinding = consumer?.identity.boundaryBinding;
+    if (providerBinding === null || consumerBinding == null) {
+      throw new Error("expected both sides to carry a binding");
+    }
+    expect(boundaryKey(providerBinding)).toBe("fn:@ex/outer::double");
+    expect(boundaryKey(consumerBinding)).toBe(boundaryKey(providerBinding));
   });
 });
 
