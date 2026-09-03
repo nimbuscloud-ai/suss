@@ -13,7 +13,11 @@
 
 import {
   functionCallBinding,
+  placeArgTargets,
+  placeCalleeParameters,
   placeCalls,
+  recordParameterGaps,
+  TargetPlacements,
   unfollowedCallGap,
   worthRecording,
 } from "@suss/behavioral-ir";
@@ -28,11 +32,15 @@ import { field, rangeOf, spanOf } from "../ast.js";
 import { bodyContentOf, recognizedBodyEffects } from "../discovery.js";
 import { nodeId } from "../facts/values.js";
 import { calleeText, invocationEffects } from "../paths/effects.js";
-import { resolveCallee } from "./resolveCallee.js";
+import {
+  resolveCallee,
+  resolveNamedFunctionArgument,
+} from "./resolveCallee.js";
 
 import type {
   BehavioralSummary,
   DeclaredAt,
+  ParameterCall,
   UnfollowedCall,
 } from "@suss/behavioral-ir";
 import type {
@@ -68,6 +76,15 @@ export interface ReachedUnits {
   readonly targetsByKey: ReadonlyMap<string, ReadonlyMap<string, DeclaredAt>>;
   /** The calls each scanned body could not follow, by the scanned function's key. */
   readonly stopsByKey: ReadonlyMap<string, UnfollowedCall[]>;
+  /** Where each identifier argument that is itself a project function was declared, by callee text and position, keyed by the scanned function's key. */
+  readonly argTargetsByKey: ReadonlyMap<
+    string,
+    ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
+  >;
+  /** The calls each scanned body makes through one of its own parameters, by the scanned function's key. */
+  readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
+  /** Every (function, position) some scanned body passed a named project function into, across the whole run. */
+  readonly passedPositions: ReadonlySet<string>;
 }
 
 const REACHABLE_RULES = [
@@ -93,6 +110,15 @@ export function reachedFunctions(
   const scanned = new Set<string>();
   const targetsByKey = new Map<string, ReadonlyMap<string, DeclaredAt>>();
   const stopsByKey = new Map<string, UnfollowedCall[]>();
+  const argTargetsByKey = new Map<
+    string,
+    ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
+  >();
+  const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
+  // Every (function, position) some scanned body passes a named project
+  // function into. An inline lambda or a variable does not count, so a
+  // parameter call missing here is a gap even when a caller supplies one.
+  const passedPositions = new Set<string>();
 
   for (const seed of seeds) {
     seedKeys.add(seed.key);
@@ -125,6 +151,13 @@ export function reachedFunctions(
         stopsByKey.set(key, scan.stops);
       }
       targetsByKey.set(key, scan.targets);
+      argTargetsByKey.set(key, scan.argTargets);
+      if (scan.parameterCalls.length > 0) {
+        parameterCallsByKey.set(key, scan.parameterCalls);
+      }
+      for (const position of scan.passedPositions) {
+        passedPositions.add(position);
+      }
       for (const target of scan.followed) {
         const calleeKey = keyOf(target);
         if (!functionByKey.has(calleeKey)) {
@@ -136,6 +169,7 @@ export function reachedFunctions(
   }
 
   const summaries: BehavioralSummary[] = [];
+  const summariesByKey = new Map<string, BehavioralSummary[]>();
   for (const [keyAtom] of db.facts("reachable")) {
     const key = String(keyAtom);
     const target = functionByKey.get(key);
@@ -150,21 +184,43 @@ export function reachedFunctions(
       summary.gaps.push(...(stopsByKey.get(key) ?? []).map(unfollowedCallGap));
     }
     placeCalls(summary, targetsByKey.get(key));
+    placeArgTargets(summary, argTargetsByKey.get(key));
+    placeCalleeParameters(summary, parameterCallsByKey.get(key));
+    summariesByKey.set(key, [summary]);
     summaries.push(summary);
   }
+  if (options.gapHandling !== "silent") {
+    recordParameterGaps(parameterCallsByKey, summariesByKey, passedPositions);
+  }
 
-  return { summaries, targetsByKey, stopsByKey };
+  return {
+    summaries,
+    targetsByKey,
+    stopsByKey,
+    argTargetsByKey,
+    parameterCallsByKey,
+    passedPositions,
+  };
 }
 
 function keyOf(target: ReachedFunction): string {
   return nodeId(target.file.file, target.node);
 }
 
-/** What one pass over a body found: functions to walk into, stops, and where each callee was placed. */
+/**
+ * What one pass over a body found: functions to walk into, stops,
+ * where each callee was placed, where an identifier argument that is
+ * itself a project function was placed (by callee text and position),
+ * calls made through one of this body's own parameters, and the
+ * (function, position) pairs this body passes a function into.
+ */
 interface Scan {
   readonly followed: ReachedFunction[];
   readonly stops: UnfollowedCall[];
   readonly targets: ReadonlyMap<string, DeclaredAt>;
+  readonly argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
+  readonly parameterCalls: readonly ParameterCall[];
+  readonly passedPositions: ReadonlySet<string>;
 }
 
 interface Where {
@@ -172,17 +228,70 @@ interface Where {
   readonly rebound: ReadonlySet<string>;
 }
 
+const EMPTY_SCAN: Scan = {
+  followed: [],
+  stops: [],
+  targets: new Map(),
+  argTargets: new Map(),
+  parameterCalls: [],
+  passedPositions: new Set(),
+};
+
 function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
-  const targets = new Map<string, DeclaredAt | null>();
+  const placements = new TargetPlacements();
+  const parameterCalls: ParameterCall[] = [];
+  const passedPositions = new Set<string>();
   const seen = new Set<string>();
+  const parameterCallsSeen = new Set<string>();
   const { file, node } = source;
 
   const body = field(node, "body");
   if (body === null) {
-    return { followed, stops, targets: new Map() };
+    return EMPTY_SCAN;
   }
+
+  const ownParameters = callParameterNames(node, source.exportPath.length > 1);
+
+  // An identifier argument that is a project function joins a `passes`
+  // fact to whichever parameter of the followed callee it calls through.
+  const recordPassedArgs = (
+    call: PyNode,
+    callee: string,
+    calleeKey: string | null,
+    where: Where,
+  ): void => {
+    const args = field(call, "arguments");
+    if (args === null) {
+      return;
+    }
+    args.namedChildren.forEach((arg, position) => {
+      if (arg === null || arg.type !== "identifier") {
+        return;
+      }
+      const resolved = resolveNamedFunctionArgument(
+        arg.text,
+        { file, scope: where.scope, rebound: where.rebound },
+        ctx,
+      );
+      if (resolved === null) {
+        return;
+      }
+      const key = keyOf(resolved);
+      if (!seen.has(key)) {
+        seen.add(key);
+        followed.push(resolved);
+      }
+      placements.placeArg(callee, position, {
+        file: resolved.file.displayPath,
+        span: spanOf(resolved.node),
+      });
+      if (calleeKey !== null) {
+        passedPositions.add(`${calleeKey}#${position}`);
+      }
+    });
+  };
 
   const record = (call: PyNode, where: Where): void => {
     const callee = calleeText(call);
@@ -202,7 +311,13 @@ function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
         : outcome.reason === "noDeclaration"
           ? null
           : { file: file.displayPath, span: spanOf(call) };
-    rememberTarget(targets, callee, placed);
+    placements.place(callee, placed);
+    recordPassedArgs(
+      call,
+      callee,
+      outcome.kind === "followed" ? keyOf(outcome.target) : null,
+      where,
+    );
 
     // One record per callee, however many times the body calls it.
     if (outcome.kind === "stopped") {
@@ -210,6 +325,16 @@ function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
       if (!seen.has(stopKey) && worthRecording(outcome.reason)) {
         seen.add(stopKey);
         stops.push({ callee, reason: outcome.reason });
+      }
+      if (
+        outcome.reason === "callerSupplied" &&
+        !parameterCallsSeen.has(callee)
+      ) {
+        const parameterIndex = ownParameters.indexOf(callee);
+        if (parameterIndex !== -1) {
+          parameterCallsSeen.add(callee);
+          parameterCalls.push({ callee, parameterIndex });
+        }
       }
       return;
     }
@@ -248,37 +373,14 @@ function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
     },
   );
 
-  const settled = new Map<string, DeclaredAt>();
-  for (const [callee, target] of targets) {
-    if (target !== null) {
-      settled.set(callee, target);
-    }
-  }
-  return { followed, stops, targets: settled };
-}
-
-/** The same callee text placed two ways, a shadowed name say, has to say so rather than pick one. */
-function rememberTarget(
-  targets: Map<string, DeclaredAt | null>,
-  callee: string,
-  placed: DeclaredAt | null,
-): void {
-  if (placed === null) {
-    return;
-  }
-  const known = targets.get(callee);
-  if (known === undefined) {
-    targets.set(callee, placed);
-    return;
-  }
-  if (
-    known !== null &&
-    (known.file !== placed.file ||
-      known.span.start !== placed.span.start ||
-      known.span.end !== placed.span.end)
-  ) {
-    targets.set(callee, null);
-  }
+  return {
+    followed,
+    stops,
+    targets: placements.targets,
+    argTargets: placements.argTargets,
+    parameterCalls,
+    passedPositions,
+  };
 }
 
 /** The binder's scope for a function, or the nearest one above a def it did not bind. */
@@ -439,6 +541,35 @@ function positionalParameters(node: PyNode, isMethod: boolean): RawParameter[] {
     position += 1;
   }
   return out;
+}
+
+/**
+ * A function's own parameters, in call order, with a method's leading
+ * `self`/`cls` left out since a caller never spells it. This is the
+ * position a `callerSupplied` call through one of them joins to a
+ * caller's argument by, which needs the receiver left out the way
+ * `positionalParameters` counts it in for a different purpose.
+ */
+function callParameterNames(node: PyNode, isMethod: boolean): string[] {
+  const parameters = field(node, "parameters");
+  if (parameters === null) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const param of parameters.namedChildren) {
+    if (param === null) {
+      continue;
+    }
+    const name = parameterName(param);
+    if (name === null) {
+      continue;
+    }
+    if (isMethod && names.length === 0 && (name === "self" || name === "cls")) {
+      continue;
+    }
+    names.push(name);
+  }
+  return names;
 }
 
 function parameterName(param: PyNode): string | null {

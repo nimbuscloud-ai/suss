@@ -12,7 +12,8 @@
  */
 
 import { ancestryOf, methodInAncestry } from "../ancestry.js";
-import { bodyStatements, field, singletonMethodsByName } from "../ast.js";
+import { field, singletonMethodsByName } from "../ast.js";
+import { calleeMethodName } from "../paths/effects.js";
 import { qualifyConstantRef, shadowingClassFor } from "../scope.js";
 
 import type { UnfollowedReason } from "@suss/behavioral-ir";
@@ -42,10 +43,16 @@ export interface ReachContext {
   readonly topLevelMethods: ReadonlyMap<string, ReachedFunction[]>;
 }
 
-/** Where a call is written: the class its enclosing method belongs to, if any, and the nesting that class's body runs a bare constant against. */
+/**
+ * Where a call is written: the class its enclosing method belongs to,
+ * if any, the nesting that class's body runs a bare constant against,
+ * and what the enclosing method calls its own parameters, in call
+ * order, so a call through one of them can be recognized.
+ */
 export interface CallSite {
   readonly enclosingQualifiedName: string | null;
   readonly nesting: readonly string[];
+  readonly ownParameters: readonly string[];
 }
 
 const DYNAMIC_SEND_NAMES = new Set(["send", "public_send", "__send__"]);
@@ -59,16 +66,12 @@ function followed(target: ReachedFunction): CalleeResolution {
   return { kind: "followed", target };
 }
 
-function methodNameOf(call: RbNode): string | undefined {
-  return (field(call, "method") ?? bodyStatements(call)[0])?.text;
-}
-
 export async function resolveCallee(
   call: RbNode,
   site: CallSite,
   ctx: ReachContext,
 ): Promise<CalleeResolution> {
-  const methodName = methodNameOf(call);
+  const methodName = calleeMethodName(call);
   if (methodName === undefined) {
     return stop("noDeclaration");
   }
@@ -80,7 +83,31 @@ export async function resolveCallee(
   if (receiver === null || receiver.type === "self") {
     return resolveImplicitSelf(methodName, site, ctx);
   }
+  // `handler.call` or `handler.()`, where `handler` is one of this
+  // method's own parameters, runs whatever a caller passed into it.
+  if (
+    receiver.type === "identifier" &&
+    methodName === "call" &&
+    site.ownParameters.includes(receiver.text)
+  ) {
+    return stop("callerSupplied");
+  }
   return resolveOnReceiver(receiver, methodName, site, ctx);
+}
+
+/**
+ * What `method(:name)` refers to, resolved the same way a bare call to
+ * `name` would be: a project method this run can follow, or null for
+ * anything else. Used for a `method(:name)` reference passed by name
+ * into a call, as an argument or as an `&`-prefixed block argument.
+ */
+export async function resolveMethodReference(
+  name: string,
+  site: CallSite,
+  ctx: ReachContext,
+): Promise<ReachedFunction | null> {
+  const resolved = await resolveImplicitSelf(name, site, ctx);
+  return resolved.kind === "followed" ? resolved.target : null;
 }
 
 /** Whether the enclosing class's ancestry saying nothing here still leaves Object's own private methods worth a look, rather than a case this run already settled. */
@@ -133,7 +160,7 @@ async function resolveOnReceiver(
   // `Service.new.run`: the receiver is itself a call that builds an
   // instance, and the method runs on that instance.
   if (receiver.type === "call") {
-    const innerName = methodNameOf(receiver);
+    const innerName = calleeMethodName(receiver);
     const innerReceiver = field(receiver, "receiver");
     if (innerName === "new" && innerReceiver !== null) {
       const classRef = classRefOf(innerReceiver, site, ctx);

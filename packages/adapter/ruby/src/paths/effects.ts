@@ -62,9 +62,26 @@ export function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
   return calls.filter((call) => !isLink.has(call.id));
 }
 
-/** A receiver call with no arguments reads a property rather than doing work. */
+/**
+ * The method name a call spells, reading the `.()` shorthand as
+ * calling `call`: with no `method` field, its only other children are
+ * the receiver and the argument list, so the plain fallback below
+ * would otherwise read the receiver's own text as the method name.
+ */
+export function calleeMethodName(call: RbNode): string | undefined {
+  const method = field(call, "method");
+  if (method !== null) {
+    return method.text;
+  }
+  return field(call, "receiver") !== null ? "call" : children(call)[0]?.text;
+}
+
+/** A receiver call with no arguments reads a property, unless it invokes a Proc or Method held in the receiver. */
 function isPropertyRead(node: RbNode): boolean {
-  return field(node, "receiver") !== null && field(node, "arguments") === null;
+  if (field(node, "receiver") === null || field(node, "arguments") !== null) {
+    return false;
+  }
+  return calleeMethodName(node) !== "call";
 }
 
 function isRaise(node: RbNode): boolean {
@@ -93,12 +110,12 @@ export function bodyCalls(node: RbNode, found: RbNode[] = []): RbNode[] {
 /** The callee as it is written, which is what a reader matches against. */
 export function calleeText(call: RbNode): string {
   const receiver = field(call, "receiver");
-  const method = field(call, "method") ?? children(call)[0];
+  const method = calleeMethodName(call);
   if (method === undefined) {
     return call.text;
   }
 
-  return receiver === null ? method.text : `${receiver.text}.${method.text}`;
+  return receiver === null ? method : `${receiver.text}.${method}`;
 }
 
 function argOf(node: RbNode): EffectArg {

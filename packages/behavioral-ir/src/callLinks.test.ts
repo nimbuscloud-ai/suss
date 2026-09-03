@@ -8,10 +8,14 @@ import { describe, expect, it } from "vitest";
 import {
   declarationKey,
   linkCallsToSummaries,
+  placeArgTargets,
+  placeCalleeParameters,
   placeCalls,
+  recordParameterGaps,
+  TargetPlacements,
 } from "./callLinks.js";
 
-import type { DeclaredAt } from "./callLinks.js";
+import type { DeclaredAt, ParameterCall } from "./callLinks.js";
 import type { BehavioralSummary } from "./index.js";
 
 type Call =
@@ -290,6 +294,72 @@ describe("linkCallsToSummaries", () => {
   });
 });
 
+describe("TargetPlacements", () => {
+  const at = (start: number): DeclaredAt => ({
+    file: "src/h.py",
+    span: { start, end: start + 8 },
+  });
+
+  it("keeps the first place a callee was declared", () => {
+    const placements = new TargetPlacements();
+    placements.place("helper", at(10));
+
+    expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
+  });
+
+  it("settles a callee text placed two ways to nothing, a shadowed name say", () => {
+    const placements = new TargetPlacements();
+    placements.place("load", at(10));
+    placements.place("load", at(20));
+
+    expect(placements.targets.has("load")).toBe(false);
+  });
+
+  it("leaves a callee placed the same way twice settled", () => {
+    const placements = new TargetPlacements();
+    placements.place("helper", at(10));
+    placements.place("helper", at(10));
+
+    expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
+  });
+
+  it("drops a null placement rather than unsettling what is already known", () => {
+    const placements = new TargetPlacements();
+    placements.place("helper", at(10));
+    placements.place("helper", null);
+
+    expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
+  });
+
+  it("keeps an argument's position under the callee it was passed to", () => {
+    const placements = new TargetPlacements();
+    placements.placeArg("walkStatements", 1, at(30));
+
+    expect(placements.argTargets).toEqual(
+      new Map([["walkStatements", new Map([[1, at(30)]])]]),
+    );
+  });
+
+  it("settles one position placed two ways to nothing, independently of other positions", () => {
+    const placements = new TargetPlacements();
+    placements.placeArg("walkStatements", 1, at(30));
+    placements.placeArg("walkStatements", 1, at(40));
+    placements.placeArg("walkStatements", 2, at(50));
+
+    expect(placements.argTargets).toEqual(
+      new Map([["walkStatements", new Map([[2, at(50)]])]]),
+    );
+  });
+
+  it("leaves a callee out of argTargets once every one of its positions settles to nothing", () => {
+    const placements = new TargetPlacements();
+    placements.placeArg("walkStatements", 1, at(30));
+    placements.placeArg("walkStatements", 1, at(40));
+
+    expect(placements.argTargets.has("walkStatements")).toBe(false);
+  });
+});
+
 describe("placeCalls", () => {
   it("writes declaredAt on the invocation effect a target names", () => {
     const caller = summary({
@@ -337,5 +407,147 @@ describe("placeCalls", () => {
     );
 
     expect(caller.transitions[0]?.effects).toEqual([read]);
+  });
+});
+
+describe("placeArgTargets", () => {
+  it("writes argsDeclaredAt on the invocation effect a target names, by position, and leaves a non-call effect alone", () => {
+    const caller = summary({
+      name: "collectMounts",
+      file: "src/routers.py",
+      calls: ["walkStatements", "untouched"],
+    });
+    const target = { file: "src/routers.py", span: { start: 300, end: 340 } };
+    const read = {
+      type: "interaction" as const,
+      interaction: {
+        class: "storage-access" as const,
+        target: { system: "postgresql", collection: "orders" },
+        operation: "read" as const,
+      },
+      target: "orders",
+      operation: "read",
+    };
+    caller.transitions[0]?.effects.push(read as never);
+
+    placeArgTargets(
+      caller,
+      new Map([["walkStatements", new Map([[3, target]])]]),
+    );
+
+    const effects = caller.transitions[0]?.effects ?? [];
+    expect(effects[0]).toMatchObject({
+      callee: "walkStatements",
+      argsDeclaredAt: { "3": target },
+    });
+    expect(effects[1]).not.toHaveProperty("argsDeclaredAt");
+    expect(effects[2]).toEqual(read);
+  });
+
+  it("does nothing when there are no arg targets for this summary", () => {
+    const caller = summary({ name: "handler", file: "src/h.py", calls: ["x"] });
+
+    placeArgTargets(caller, undefined);
+
+    expect(caller.transitions[0]?.effects[0]).not.toHaveProperty(
+      "argsDeclaredAt",
+    );
+  });
+});
+
+describe("placeCalleeParameters", () => {
+  it("writes calleeParameter on the invocation effect a call passes through, and leaves a non-call effect alone", () => {
+    const callee = summary({
+      name: "walkStatements",
+      file: "src/routers.py",
+      calls: ["visit", "untouched"],
+    });
+    const parameterCalls: ParameterCall[] = [
+      { callee: "visit", parameterIndex: 1 },
+    ];
+    const read = {
+      type: "interaction" as const,
+      interaction: {
+        class: "storage-access" as const,
+        target: { system: "postgresql", collection: "orders" },
+        operation: "read" as const,
+      },
+      target: "orders",
+      operation: "read",
+    };
+    callee.transitions[0]?.effects.push(read as never);
+
+    placeCalleeParameters(callee, parameterCalls);
+
+    const effects = callee.transitions[0]?.effects ?? [];
+    expect(effects[0]).toMatchObject({ callee: "visit", calleeParameter: 1 });
+    expect(effects[1]).not.toHaveProperty("calleeParameter");
+    expect(effects[2]).toEqual(read);
+  });
+
+  it("does nothing when there are no parameter calls for this summary", () => {
+    const callee = summary({
+      name: "walkStatements",
+      file: "src/routers.py",
+      calls: ["visit"],
+    });
+
+    placeCalleeParameters(callee, undefined);
+
+    expect(callee.transitions[0]?.effects[0]).not.toHaveProperty(
+      "calleeParameter",
+    );
+  });
+});
+
+describe("recordParameterGaps", () => {
+  it("gaps a parameter call nothing anywhere passes a function into", () => {
+    const callee = summary({
+      name: "walkStatements",
+      file: "src/routers.py",
+      calls: ["visit"],
+    });
+    const parameterCallsByKey = new Map<string, ParameterCall[]>([
+      ["walkStatements-key", [{ callee: "visit", parameterIndex: 1 }]],
+    ]);
+
+    recordParameterGaps(
+      parameterCallsByKey,
+      new Map([["walkStatements-key", [callee]]]),
+      new Set(),
+    );
+
+    expect(callee.gaps).toEqual([
+      expect.objectContaining({ type: "unfollowedCall", callee: "visit" }),
+    ]);
+  });
+
+  it("leaves a parameter call alone once something passes a function into its position", () => {
+    const callee = summary({
+      name: "walkStatements",
+      file: "src/routers.py",
+      calls: ["visit"],
+    });
+    const parameterCallsByKey = new Map<string, ParameterCall[]>([
+      ["walkStatements-key", [{ callee: "visit", parameterIndex: 1 }]],
+    ]);
+
+    recordParameterGaps(
+      parameterCallsByKey,
+      new Map([["walkStatements-key", [callee]]]),
+      new Set(["walkStatements-key#1"]),
+    );
+
+    expect(callee.gaps).toEqual([]);
+  });
+
+  it("does nothing for a key with no summaries", () => {
+    const parameterCallsByKey = new Map<string, ParameterCall[]>([
+      ["missing-key", [{ callee: "visit", parameterIndex: 0 }]],
+    ]);
+
+    expect(() =>
+      recordParameterGaps(parameterCallsByKey, new Map(), new Set()),
+    ).not.toThrow();
   });
 });

@@ -320,7 +320,7 @@ A read inside a route body goes on that route's summary. A read at module level,
 
 A route's body calls project functions, and those call others. Each function a route reaches this way gets a summary of its own, of kind `library`, bound as `function-call` with `transport: "in-process"` and `recognition: "reachable"`, with the calls, environment reads and database work its own body does. Each invocation effect on a route or a reached function says which summary the call lands on, in `summary`, so a reader answering "what does this route reach" follows `summary` from one unit to the next and never has to match a name. This is the same walk the TypeScript adapter runs, and it produces the same shape.
 
-The walk starts at every discovered route, and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A function two routes both reach gets one summary. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call to a parameter, or into a package that is not in the run).
+The walk starts at every discovered route, and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A function two routes both reach gets one summary. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call to a parameter that some caller passes a function by name into, or a call into a package that is not in the run).
 
 A callee is followed only through a binding that says where it came from. The binder's scopes settle a name written in the file; the import resolver settles a name brought in from another file in the run.
 
@@ -338,12 +338,16 @@ A callee is followed only through a binding that says where it came from. The bi
 | a call written as an argument, or as the receiver of a chain | followed like any other, in the order it finishes |
 | a call inside a lambda | the enclosing function's call |
 | `inner()` with `def inner` nested in the body | `inner`, which gets a summary of its own with the calls its body makes |
+| `register(build_index)`, where `register(handler)` calls `handler()` | `build_index`, followed from wherever a caller in the run named it, through the parameter `register`'s own body calls |
+
+A function passed by name into a call is followed one hop further than the call itself. `register(build_index)` records where `build_index` is declared, keyed to its position among `register`'s arguments; `register`'s own body calling `handler()` records which of its parameters that call goes through. A reader asking what calls `build_index` finds `register`, and what `register` reaches includes `build_index`, even though the join crosses two separate calls. Only a bare name counts, so a lambda written inline and a variable bound to a function are both out of scope, the same as a callee written that way.
 
 Where it stops, and what the gap says:
 
 | Written as | Reason |
 | --- | --- |
-| a call on a parameter, `callback()` | the caller supplies it (no gap) |
+| a call on a parameter, `callback()`, that some caller in the run passes a function by name into | followed through the join above (no gap) |
+| a call on a parameter, `callback()`, that no caller in the run passes a function by name into | the caller supplies it, and nothing named what it passed |
 | a name a `for`, `with`, `except ... as`, walrus, or lambda parameter rebinds | the value could not be settled |
 | a name assigned inside an `if`, `try`, or `with` block, or by unpacking | the value could not be settled |
 | `from a import *` and `from b import *` when both define the name | more than one possible source |

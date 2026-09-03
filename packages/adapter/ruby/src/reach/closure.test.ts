@@ -499,6 +499,119 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
+  it("reaches a method passed by name to a helper that calls it through a parameter", async () => {
+    writeQueryType("orders", ["register(method(:build_index))"]);
+    write("app/lib/register.rb", [
+      "def build_index",
+      "  1",
+      "end",
+      "",
+      "def register(handler)",
+      "  handler.call",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const buildIndex = unitNamed(summaries, "build_index");
+    expect(buildIndex.kind).toBe("library");
+
+    const field = unitNamed(summaries, "Query.orders");
+    const passing = field.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "register");
+    expect(
+      passing?.type === "invocation" ? passing.argsSummary : undefined,
+    ).toEqual({ "0": buildIndex.identity.id });
+
+    const register = unitNamed(summaries, "register");
+    const called = register.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "handler.call");
+    expect(
+      called?.type === "invocation" ? called.calleeParameter : undefined,
+    ).toBe(0);
+    expect(
+      register.gaps.filter(
+        (gap) => gap.type === "unfollowedCall" && gap.callee === "handler.call",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("reaches a method passed by name as an &-prefixed block argument", async () => {
+    writeQueryType("orders", ["apply(1, &method(:build_index))"]);
+    write("app/lib/apply.rb", [
+      "def build_index(x)",
+      "  x",
+      "end",
+      "",
+      "def apply(x, &blk)",
+      "  blk.call(x)",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const buildIndex = unitNamed(summaries, "build_index");
+    expect(buildIndex.kind).toBe("library");
+
+    const field = unitNamed(summaries, "Query.orders");
+    const passing = field.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "apply");
+    expect(
+      passing?.type === "invocation" ? passing.argsSummary : undefined,
+    ).toEqual({ "1": buildIndex.identity.id });
+
+    const apply = unitNamed(summaries, "apply");
+    const called = apply.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "blk.call");
+    expect(
+      called?.type === "invocation" ? called.calleeParameter : undefined,
+    ).toBe(1);
+  });
+
+  it("gaps a call through a parameter nothing here passes a method into", async () => {
+    writeQueryType("orders", ["apply { 1 }"]);
+    write("app/lib/apply.rb", ["def apply(&blk)", "  blk.call", "end"]);
+
+    const summaries = await extract();
+    const apply = unitNamed(summaries, "apply");
+    const gap = apply.gaps.find(
+      (g) => g.type === "unfollowedCall" && g.callee === "blk.call",
+    );
+    expect(gap).toBeDefined();
+    expect(gap?.description).toContain(
+      "no caller in this run passes it a function by name",
+    );
+  });
+
+  it("reaches a method passed by name to a helper that calls it with the .() shorthand", async () => {
+    writeQueryType("orders", ["register(method(:build_index))"]);
+    write("app/lib/register.rb", [
+      "def build_index",
+      "  1",
+      "end",
+      "",
+      "def register(handler)",
+      "  handler.()",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const buildIndex = unitNamed(summaries, "build_index");
+    const register = unitNamed(summaries, "register");
+    const called = register.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "handler.call");
+    expect(
+      called?.type === "invocation" ? called.calleeParameter : undefined,
+    ).toBe(0);
+    expect(
+      register.gaps.filter((gap) => gap.type === "unfollowedCall"),
+    ).toHaveLength(0);
+    expect(buildIndex.kind).toBe("library");
+  });
+
   it("gives a reached method with no parameters and no body an empty summary", async () => {
     writeQueryType("orders", ["OrderService.call(current_user)"]);
     write("app/services/order_service.rb", [

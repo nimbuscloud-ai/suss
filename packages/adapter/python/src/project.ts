@@ -16,7 +16,10 @@ import path from "node:path";
 import {
   disambiguateSummaryIds,
   linkCallsToSummaries,
+  placeArgTargets,
+  placeCalleeParameters,
   placeCalls,
+  recordParameterGaps,
   summaryIdFromParts,
   unfollowedCallGap,
 } from "@suss/behavioral-ir";
@@ -275,7 +278,16 @@ export async function extractPythonProject(
         );
       }
       placeCalls(summary, reached.targetsByKey.get(key));
+      placeArgTargets(summary, reached.argTargetsByKey.get(key));
+      placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
     }
+  }
+  if (gapHandling !== "silent") {
+    recordParameterGaps(
+      reached.parameterCallsByKey,
+      summariesBySeed,
+      reached.passedPositions,
+    );
   }
   summaries.push(...reached.summaries);
 

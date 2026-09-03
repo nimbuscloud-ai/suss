@@ -23,7 +23,7 @@
 
 import { Node, type Project, type SourceFile } from "ts-morph";
 
-import { functionCallBinding } from "@suss/behavioral-ir";
+import { functionCallBinding, TargetPlacements } from "@suss/behavioral-ir";
 import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
@@ -249,16 +249,13 @@ interface ScanContext {
  * position in that call), calls made through one of this body's own
  * parameters, and the (callee, position) pairs this body passes a
  * function into. A callee or argument text the body resolved to two
- * different declarations maps to null.
+ * different declarations is left out of `targets`/`argTargets`.
  */
 interface ScanResult {
   readonly candidates: ReachableCandidate[];
   readonly stops: UnfollowedCall[];
-  readonly targets: ReadonlyMap<string, CallTarget | null>;
-  readonly argTargets: ReadonlyMap<
-    string,
-    ReadonlyMap<number, CallTarget | null>
-  >;
+  readonly targets: ReadonlyMap<string, CallTarget>;
+  readonly argTargets: ReadonlyMap<string, ReadonlyMap<number, CallTarget>>;
   readonly parameterCalls: ReadonlyArray<{
     callee: string;
     parameterIndex: number;
@@ -309,57 +306,11 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
   const inFunc: ScanContext = { ...scan, scanning: func };
   const candidates: ReachableCandidate[] = [];
   const stops: UnfollowedCall[] = [];
-  const targets = new Map<string, CallTarget | null>();
-  const argTargets = new Map<string, Map<number, CallTarget | null>>();
+  const placements = new TargetPlacements();
   const parameterCalls: Array<{ callee: string; parameterIndex: number }> = [];
   const passedPositions = new Set<string>();
   const seen = new Set<string>();
   const parameterCallsSeen = new Set<string>();
-
-  // The invocation effects on this body's summary join here by callee
-  // text, so the same text resolving two ways (a shadowed name) has to
-  // say so rather than pick one.
-  const rememberTarget = (calleeText: string, outcome: CallOutcome): void => {
-    const target = declaredAtOf(outcome);
-    if (target === null) {
-      return;
-    }
-    const known = targets.get(calleeText);
-    if (known === undefined) {
-      targets.set(calleeText, target);
-      return;
-    }
-    if (
-      known !== null &&
-      offsetKeyFor(known.file, known.span) !==
-        offsetKeyFor(target.file, target.span)
-    ) {
-      targets.set(calleeText, null);
-    }
-  };
-
-  // Same shadow handling as `rememberTarget`, one level down: the
-  // argument at this position in calls written as `calleeText`.
-  const rememberArgTarget = (
-    calleeText: string,
-    position: number,
-    target: CallTarget,
-  ): void => {
-    const byPosition = argTargets.get(calleeText) ?? new Map();
-    argTargets.set(calleeText, byPosition);
-    const known = byPosition.get(position);
-    if (known === undefined) {
-      byPosition.set(position, target);
-      return;
-    }
-    if (
-      known !== null &&
-      offsetKeyFor(known.file, known.span) !==
-        offsetKeyFor(target.file, target.span)
-    ) {
-      byPosition.set(position, null);
-    }
-  };
 
   const record = (outcome: CallOutcome): void => {
     if (outcome.kind === "stopped") {
@@ -399,7 +350,7 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
         return;
       }
       record({ kind: "followed", candidate: resolved });
-      rememberArgTarget(calleeText, position, targetOf(resolved.func));
+      placements.placeArg(calleeText, position, targetOf(resolved.func));
       if (calleeTarget !== null) {
         passedPositions.add(passedPositionKey(calleeTarget, position));
       }
@@ -424,7 +375,7 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     // loop calling the same unresolved method twenty times is one
     // thing a reader cannot see, not twenty.
     record(outcome);
-    rememberTarget(calleeText, outcome);
+    placements.place(calleeText, declaredAtOf(outcome));
     recordPassedArgs(node, calleeText, outcome);
 
     if (
@@ -444,8 +395,8 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
   return {
     candidates,
     stops,
-    targets,
-    argTargets,
+    targets: placements.targets,
+    argTargets: placements.argTargets,
     parameterCalls,
     passedPositions,
   };
@@ -635,13 +586,10 @@ export function expandReachableClosure(
   // per function key, because the summary it belongs on is only built
   // once the walk has finished.
   const stopsByKey = new Map<string, UnfollowedCall[]>();
-  const targetsByKey = new Map<
-    string,
-    ReadonlyMap<string, CallTarget | null>
-  >();
+  const targetsByKey = new Map<string, ReadonlyMap<string, CallTarget>>();
   const argTargetsByKey = new Map<
     string,
-    ReadonlyMap<string, ReadonlyMap<number, CallTarget | null>>
+    ReadonlyMap<string, ReadonlyMap<number, CallTarget>>
   >();
   const parameterCallsByKey = new Map<
     string,
@@ -865,7 +813,7 @@ function recordStops(
  * to the name within the same file for that one only.
  */
 function recordTargets(
-  targetsByKey: ReadonlyMap<string, ReadonlyMap<string, CallTarget | null>>,
+  targetsByKey: ReadonlyMap<string, ReadonlyMap<string, CallTarget>>,
   summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
 ): void {
   for (const [key, targets] of targetsByKey) {
@@ -876,7 +824,7 @@ function recordTargets(
             continue;
           }
           const target = targets.get(normalizeCallee(effect.callee));
-          if (target !== undefined && target !== null) {
+          if (target !== undefined) {
             effect.declaredAt = target;
           }
         }
@@ -894,7 +842,7 @@ function recordTargets(
 function recordArgTargets(
   argTargetsByKey: ReadonlyMap<
     string,
-    ReadonlyMap<string, ReadonlyMap<number, CallTarget | null>>
+    ReadonlyMap<string, ReadonlyMap<number, CallTarget>>
   >,
   summariesByKey: ReadonlyMap<string, BehavioralSummary[]>,
 ): void {
@@ -911,9 +859,7 @@ function recordArgTargets(
           }
           const argsDeclaredAt: Record<string, CallTarget> = {};
           for (const [position, target] of byPosition) {
-            if (target !== null) {
-              argsDeclaredAt[position] = target;
-            }
+            argsDeclaredAt[position] = target;
           }
           if (Object.keys(argsDeclaredAt).length > 0) {
             effect.argsDeclaredAt = argsDeclaredAt;

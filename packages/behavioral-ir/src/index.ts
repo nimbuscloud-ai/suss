@@ -97,7 +97,12 @@ export {
   type DeclaredAt,
   declarationKey,
   linkCallsToSummaries,
+  type ParameterCall,
+  placeArgTargets,
+  placeCalleeParameters,
   placeCalls,
+  recordParameterGaps,
+  TargetPlacements,
 } from "./callLinks.js";
 export {
   type BoundaryCall,

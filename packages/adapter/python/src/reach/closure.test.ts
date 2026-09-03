@@ -232,7 +232,178 @@ describe("the functions a route reaches", () => {
     ]);
     expect(route.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual([
       expect.objectContaining({ callee: "step" }),
+      expect.objectContaining({ callee: "callback" }),
     ]);
+  });
+
+  it("reaches a function passed by name to a helper that calls it through a parameter", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def build_index():",
+      "    return 1",
+      "",
+      "def register(handler):",
+      "    handler()",
+      "",
+      '@app.get("/run")',
+      "def run():",
+      "    register(build_index)",
+    ]);
+
+    const summaries = await extract();
+    const buildIndex = unitNamed(summaries, "build_index");
+    expect(buildIndex.kind).toBe("library");
+
+    const run = unitNamed(summaries, "run");
+    const passing = run.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "register");
+    expect(
+      passing?.type === "invocation" ? passing.argsSummary : undefined,
+    ).toEqual({ "0": buildIndex.identity.id });
+
+    const register = unitNamed(summaries, "register");
+    const called = register.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "handler");
+    expect(
+      called?.type === "invocation" ? called.calleeParameter : undefined,
+    ).toBe(0);
+    expect(
+      register.gaps.filter(
+        (gap) => gap.type === "unfollowedCall" && gap.callee === "handler",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("leaves an argument passed into an unresolved callee harmless", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def double(x):",
+      "    return x * 2",
+      "",
+      '@app.get("/run")',
+      "def run(items):",
+      "    return list(map(double, items))",
+    ]);
+
+    const summaries = await extract();
+    const doubled = unitNamed(summaries, "double");
+    expect(doubled.kind).toBe("library");
+
+    const run = unitNamed(summaries, "run");
+    const mapCall = run.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "map");
+    expect(
+      mapCall?.type === "invocation" ? mapCall.argsSummary : undefined,
+    ).toEqual({ "0": doubled.identity.id });
+    expect(mapCall?.type === "invocation" ? mapCall.summary : undefined).toBe(
+      undefined,
+    );
+  });
+
+  it("leaves a variable bound to a function out of the passed-by-name join", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def build_index():",
+      "    return 1",
+      "",
+      "def register(handler):",
+      "    handler()",
+      "",
+      '@app.get("/run")',
+      "def run():",
+      "    alias = build_index",
+      "    register(alias)",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries.filter((summary) => summary.identity.name === "alias"),
+    ).toEqual([]);
+    const run = unitNamed(summaries, "run");
+    const passing = run.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "register");
+    expect(
+      passing?.type === "invocation" ? passing.argsSummary : undefined,
+    ).toBeUndefined();
+  });
+
+  it("leaves a name a loop rebinds out of the passed-by-name join", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def register(handler):",
+      "    handler()",
+      "",
+      '@app.get("/run")',
+      "def run(handlers):",
+      "    for handler in handlers:",
+      "        register(handler)",
+    ]);
+
+    const summaries = await extract();
+    const run = unitNamed(summaries, "run");
+    const passing = run.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "register");
+    expect(
+      passing?.type === "invocation" ? passing.argsSummary : undefined,
+    ).toBeUndefined();
+  });
+
+  it("drops an argument position resolved to two different declarations", async () => {
+    write("app/first.py", ["def build_index():", "    return 1"]);
+    write("app/second.py", ["def build_index():", "    return 2"]);
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from app.first import build_index",
+      "",
+      "def register(handler):",
+      "    handler()",
+      "",
+      '@app.get("/both")',
+      "def both():",
+      "    class Fallback:",
+      "        from app.second import build_index",
+      "        register(build_index)",
+      "    register(build_index)",
+    ]);
+
+    const summaries = await extract();
+    const route = unitNamed(summaries, "both");
+    expect(
+      summaries.filter((summary) => summary.identity.name === "build_index"),
+    ).toHaveLength(2);
+    const passing = route.transitions
+      .flatMap((t) => t.effects)
+      .find((e) => e.type === "invocation" && e.callee === "register");
+    expect(
+      passing?.type === "invocation" ? passing.argsSummary : undefined,
+    ).toBeUndefined();
+  });
+
+  it("gaps a call through a parameter nothing here passes a function into", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def apply(handler):",
+      "    handler()",
+      "",
+      '@app.get("/run")',
+      "def run():",
+      "    apply(lambda: 1)",
+    ]);
+
+    const summaries = await extract();
+    const apply = unitNamed(summaries, "apply");
+    const gap = apply.gaps.find(
+      (g) => g.type === "unfollowedCall" && g.callee === "handler",
+    );
+    expect(gap).toBeDefined();
+    expect(gap?.description).toContain(
+      "no caller in this run passes it a function by name",
+    );
   });
 
   it("keeps a nested def and a lambda inside the body apart from the names outside", async () => {
