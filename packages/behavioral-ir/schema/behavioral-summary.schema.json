@@ -765,6 +765,29 @@
                       "summary": {
                         "type": "string"
                       },
+                      "declaredAt": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "span": {
+                            "type": "object",
+                            "properties": {
+                              "start": {
+                                "type": "number"
+                              },
+                              "end": {
+                                "type": "number"
+                              }
+                            },
+                            "required": ["start", "end"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": ["file", "span"],
+                        "additionalProperties": false
+                      },
                       "args": {
                         "type": "array",
                         "items": {}

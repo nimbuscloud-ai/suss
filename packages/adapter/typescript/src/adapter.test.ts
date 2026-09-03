@@ -1946,6 +1946,100 @@ describe("createTypeScriptAdapter: reachable closure", () => {
     expect(names).not.toContain("unused");
   });
 
+  it("links a call to the unit declared where the checker resolved it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "store.ts",
+      `
+      export function read(id: string) {
+        return { id };
+      }
+      export const write = (id: string) => ({ id });
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { read, write } from "./store";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          write(params.id);
+          return { status: 200 as const, body: read(params.id) };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const handler = summaries.find((s) => s.identity.name === "go");
+    const linkOf = (callee: string) => {
+      const call = handler?.transitions
+        .flatMap((t) => t.effects)
+        .find((e) => e.type === "invocation" && e.callee === callee);
+      return call?.type === "invocation" ? call.summary : undefined;
+    };
+    const unitNamed = (name: string) =>
+      summaries.find((s) => s.identity.name === name)?.identity.id;
+    expect(unitNamed("read")).toBeDefined();
+    expect(unitNamed("write")).toBeDefined();
+    expect(linkOf("read")).toBe(unitNamed("read"));
+    expect(linkOf("write")).toBe(unitNamed("write"));
+  });
+
+  it("never links a call to a library method to a unit that shares its name", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "queue.ts",
+      `
+      export function push(item: string) {
+        return item;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "handlers.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { push } from "./queue";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        go: async ({ params }: { params: { id: string } }) => {
+          const items: string[] = [];
+          const item = push(params.id);
+          items.push(item);
+          return { status: 200 as const, body: items };
+        },
+      });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestPack],
+    });
+
+    const summaries = await adapter.extractAll();
+    const push = summaries.find((s) => s.identity.name === "push");
+    const handler = summaries.find((s) => s.identity.name === "go");
+    const linkOf = (callee: string) => {
+      const call = handler?.transitions
+        .flatMap((t) => t.effects)
+        .find((e) => e.type === "invocation" && e.callee === callee);
+      expect(call).toBeDefined();
+      return call?.type === "invocation" ? call.summary : undefined;
+    };
+    expect(push).toBeDefined();
+    expect(linkOf("push")).toBe(push?.identity.id);
+    // Array.prototype.push is declared in a library file, and the
+    // project's own push is a different function.
+    expect(linkOf("items.push")).toBeUndefined();
+  });
+
   it("stops at declaration-file boundaries (skips external deps)", async () => {
     const project = createTestProject();
     project.createSourceFile(
