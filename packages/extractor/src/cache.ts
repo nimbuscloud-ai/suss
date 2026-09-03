@@ -1,16 +1,16 @@
 /**
- * cache.ts: the on-disk extraction cache.
+ * The on-disk extraction cache, shared by every language adapter.
  *
  * A run reuses the previous one's summaries whole when nothing
  * changed, and per file when some files did. The entry directory is
  * named after everything that has to agree before any reuse is sound:
  * schema version, adapter version and code hash, pack versions, the
- * extraction config stamp and the tsconfig path. Inside it, the
- * manifest records a stamp and content hash per file, each summary's
- * owning files, and per owning file the other files its walk read, so
- * a change to any of those re-extracts the owner instead of serving a
- * stale answer. The full design, including what per-file reuse can
- * and cannot promise, is in this package's README.
+ * extraction config stamp and the config file path. The manifest
+ * inside records a stamp and content hash per file, each summary's
+ * owning files, and per owning file the other files its walk read.
+ * An adapter attaches whatever it needs to a cached file's record
+ * through `meta`, which the cache stores and returns opaquely. The
+ * full design is in this package's README.
  */
 
 import { createHash } from "node:crypto";
@@ -18,9 +18,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { Project } from "ts-morph";
 
-const SCHEMA_VERSION = "6";
+const SCHEMA_VERSION = "7";
 
 /**
  * How many keys' worth of entries a cache directory keeps. Two lets a
@@ -48,17 +47,19 @@ interface FileStamp {
  * `deps` are the other files whose content went into this file's
  * summaries; a change to any of them re-extracts this file. `claims`
  * are the units this file's walk claimed, replayed before a partial
- * run walks anything so precedence comes out the same. A file marked
- * `cacheable: false` recorded a dependency the cache cannot pin to
- * files, and is re-extracted on every partial run.
+ * run walks anything so precedence comes out the same. `meta` is
+ * whatever else the adapter needs to revalidate this file on a
+ * partial run (a route's mount prefixes, for instance); the cache
+ * never reads it. A file marked `cacheable: false` recorded a
+ * dependency the cache cannot pin to files, and is re-extracted on
+ * every partial run.
  */
-export interface RootRecord {
+export interface RootRecord<Meta = unknown> {
   path: string;
   cacheable: boolean;
   deps: string[];
   claims: { key: string; pack: string }[];
-  /** Mount prefixes the walk consumed, by mounted router node id. */
-  mountPrefixes: Record<string, string>;
+  meta: Meta;
   /** Packs that applied to the file, re-checked on a partial run. */
   packs: string[];
 }
@@ -68,29 +69,29 @@ export interface RootRecord {
  * files whose reuse keeps `summaries[i]` alive; an empty list marks a
  * run-level summary that a partial run always recomputes.
  */
-export interface CacheAttribution {
-  roots: RootRecord[];
+export interface CacheAttribution<Meta = unknown> {
+  roots: RootRecord<Meta>[];
   owners: string[][];
 }
 
-interface StoredRootMeta {
+interface StoredRootMeta<Meta> {
   cacheable: boolean;
   /** Indices into the manifest's depPaths table. */
   deps: number[];
   claims: { key: string; pack: string }[];
-  mountPrefixes: Record<string, string>;
+  meta: Meta;
   packs: string[];
 }
 
-interface Manifest {
+interface Manifest<Meta> {
   schemaVersion: string;
   adapterPacksDigest: string;
-  tsconfigStamp: FileStamp | null;
+  configStamp: FileStamp | null;
   files: FileStamp[];
   summaries: BehavioralSummary[];
   /** The per-file layer. Absent when written without attribution. */
   roots?: string[];
-  rootMeta?: StoredRootMeta[];
+  rootMeta?: StoredRootMeta<Meta>[];
   depPaths?: string[];
   /** Parallel to summaries: indices into roots, [] for run-level. */
   owners?: number[][];
@@ -102,14 +103,14 @@ export interface CacheDiagnostic {
   /**
    * Reason the lookup missed (only set when kind === "miss").
    * `key-changed` means the cache directory contains entries, but none
-   * under this run's schema, adapter, packs and tsconfig path.
+   * under this run's schema, adapter, packs and config path.
    * `files-changed` means the include set is not the one the entry
    * was written from.
    */
   missReason?:
     | "no-manifest"
     | "key-changed"
-    | "tsconfig-changed"
+    | "config-changed"
     | "files-changed";
   /** Set when kind === "partial". */
   partial?: {
@@ -142,11 +143,11 @@ export type CacheLookup =
  * least one surviving root, in stored order, with their owners, so
  * the caller can merge them and write the result back.
  */
-export interface PartialPlan {
+export interface PartialPlan<Meta = unknown> {
   /** Paths whose content hash differs, plus paths new to the set. */
   changed: Set<string>;
   removed: Set<string>;
-  roots: Map<string, RootRecord>;
+  roots: Map<string, RootRecord<Meta>>;
   validRoots: Set<string>;
   rootsDeclined: number;
   reuse(valid: ReadonlySet<string>): {
@@ -155,10 +156,10 @@ export interface PartialPlan {
   };
   allSummaries(): BehavioralSummary[];
   /** The stored attribution decoded, for a write that changes nothing. */
-  attribution(): CacheAttribution;
+  attribution(): CacheAttribution<Meta>;
 }
 
-export interface CacheLayer {
+export interface CacheLayer<Meta = unknown> {
   /** The summary list on a hit, null on a miss. */
   tryHit(input: CacheInput): Promise<BehavioralSummary[] | null>;
   /**
@@ -171,32 +172,30 @@ export interface CacheLayer {
    * work out which files' summaries survive. Null when the entry has
    * no per-file layer to reuse, or no entry matches the key at all.
    */
-  plan(input: CacheInput): Promise<PartialPlan | null>;
+  plan(input: CacheInput): Promise<PartialPlan<Meta> | null>;
   /**
    * Persist a fresh extraction's summaries to the cache, keyed
-   * against the same Project state. Subsequent `lookup` calls with
-   * the same state return them. Without `attribution` the entry can
-   * only ever be reused whole.
+   * against the same file list. Subsequent `lookup` calls with the
+   * same files return them. Without `attribution` the entry can only
+   * ever be reused whole.
    */
   write(
     input: CacheInput,
     summaries: BehavioralSummary[],
-    attribution?: CacheAttribution,
+    attribution?: CacheAttribution<Meta>,
   ): Promise<void>;
 }
 
 export interface CacheInput {
-  /**
-   * Either a list of absolute file paths OR a Project. The first
-   * form lets the cache run BEFORE the project's lazy bootstrap
-   *, pass the file list from the tsconfig parse so a cache hit
-   * doesn't pay for the bootstrap. The Project form keeps back-
-   * compat for callers that already have a populated Project.
-   */
+  /** Absolute paths of every file the run walks. */
   files?: ReadonlyArray<string>;
-  project?: Project;
   adapterPacksDigest: string;
-  tsconfigPath?: string;
+  /**
+   * One file whose stamp guards the whole entry alongside the file
+   * list, such as a tsconfig or a project manifest. Optional because
+   * not every adapter has one.
+   */
+  configPath?: string;
 }
 
 /**
@@ -205,7 +204,9 @@ export interface CacheInput {
  * always misses and `write` is a no-op. Useful for one-shot
  * extracts where caching adds latency without payoff.
  */
-export function createCacheLayer(cacheDir: string | null): CacheLayer {
+export function createCacheLayer<Meta = unknown>(
+  cacheDir: string | null,
+): CacheLayer<Meta> {
   if (cacheDir === null) {
     return {
       tryHit: async () => null,
@@ -224,16 +225,18 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
     },
     async lookup(input: CacheInput): Promise<CacheLookup> {
       const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await readManifest(path.join(entryDir, "manifest.json"));
+      const manifest = await readManifest<Meta>(
+        path.join(entryDir, "manifest.json"),
+      );
       if (manifest === null) {
         // Nothing compares the manifest's own schema, digest and
-        // tsconfig path against this run's: the entry directory is
+        // config path against this run's: the entry directory is
         // named after them, so reaching a manifest at all settles it.
         return missDiag(await describeAbsentEntry(cacheDir));
       }
-      const currentTsconfigStamp = await stampTsconfig(input.tsconfigPath);
-      if (!fileStampEquals(manifest.tsconfigStamp, currentTsconfigStamp)) {
-        return missDiag("tsconfig-changed");
+      const currentConfigStamp = await stampConfigFile(input.configPath);
+      if (!fileStampEquals(manifest.configStamp, currentConfigStamp)) {
+        return missDiag("config-changed");
       }
       const currentFiles = await resolveFileStamps(input);
       if (!fileStampsEqual(manifest.files, currentFiles)) {
@@ -249,9 +252,11 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
         diagnostic: { kind: "hit" },
       };
     },
-    async plan(input: CacheInput): Promise<PartialPlan | null> {
+    async plan(input: CacheInput): Promise<PartialPlan<Meta> | null> {
       const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await readManifest(path.join(entryDir, "manifest.json"));
+      const manifest = await readManifest<Meta>(
+        path.join(entryDir, "manifest.json"),
+      );
       if (
         manifest === null ||
         manifest.roots === undefined ||
@@ -260,8 +265,8 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
       ) {
         return null;
       }
-      const currentTsconfigStamp = await stampTsconfig(input.tsconfigPath);
-      if (!fileStampEquals(manifest.tsconfigStamp, currentTsconfigStamp)) {
+      const currentConfigStamp = await stampConfigFile(input.configPath);
+      if (!fileStampEquals(manifest.configStamp, currentConfigStamp)) {
         return null;
       }
       await markUsed(entryDir);
@@ -270,16 +275,18 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
     async write(
       input: CacheInput,
       summaries: BehavioralSummary[],
-      attribution?: CacheAttribution,
+      attribution?: CacheAttribution<Meta>,
     ): Promise<void> {
       const entryDir = entryDirFor(cacheDir, input);
-      const previous = await readManifest(path.join(entryDir, "manifest.json"));
-      const tsconfigStamp = await stampTsconfig(input.tsconfigPath);
+      const previous = await readManifest<Meta>(
+        path.join(entryDir, "manifest.json"),
+      );
+      const configStamp = await stampConfigFile(input.configPath);
       const files = await hashStamps(await resolveFileStamps(input), previous);
-      const manifest: Manifest = {
+      const manifest: Manifest<Meta> = {
         schemaVersion: SCHEMA_VERSION,
         adapterPacksDigest: input.adapterPacksDigest,
-        tsconfigStamp,
+        configStamp,
         files,
         summaries,
         ...(attribution === undefined ? {} : encodeAttribution(attribution)),
@@ -300,10 +307,10 @@ export function createCacheLayer(cacheDir: string | null): CacheLayer {
  * content alone does not count as a change. A stored file without a
  * hash counts as changed whenever its stamp moved.
  */
-async function buildPlan(
-  manifest: Manifest,
+async function buildPlan<Meta>(
+  manifest: Manifest<Meta>,
   currentStamps: FileStamp[],
-): Promise<PartialPlan> {
+): Promise<PartialPlan<Meta>> {
   const stored = new Map(manifest.files.map((f) => [f.path, f]));
   const current = new Map(currentStamps.map((f) => [f.path, f]));
 
@@ -336,7 +343,7 @@ async function buildPlan(
     }),
   );
 
-  const roots = new Map<string, RootRecord>();
+  const roots = new Map<string, RootRecord<Meta>>();
   const rootNames = manifest.roots ?? [];
   const depPaths = manifest.depPaths ?? [];
   let rootsDeclined = 0;
@@ -356,7 +363,7 @@ async function buildPlan(
         return p === undefined ? [] : [p];
       }),
       claims: meta.claims,
-      mountPrefixes: meta.mountPrefixes,
+      meta: meta.meta,
       packs: meta.packs,
     });
   });
@@ -414,9 +421,9 @@ async function buildPlan(
   };
 }
 
-function encodeAttribution(
-  attribution: CacheAttribution,
-): Pick<Manifest, "roots" | "rootMeta" | "depPaths" | "owners"> {
+function encodeAttribution<Meta>(
+  attribution: CacheAttribution<Meta>,
+): Pick<Manifest<Meta>, "roots" | "rootMeta" | "depPaths" | "owners"> {
   const roots = attribution.roots.map((r) => r.path);
   const rootIndex = new Map(roots.map((p, i) => [p, i]));
   const depIndex = new Map<string, number>();
@@ -431,11 +438,11 @@ function encodeAttribution(
     depIndex.set(p, id);
     return id;
   };
-  const rootMeta: StoredRootMeta[] = attribution.roots.map((r) => ({
+  const rootMeta: StoredRootMeta<Meta>[] = attribution.roots.map((r) => ({
     cacheable: r.cacheable,
     deps: r.deps.map(depIdOf),
     claims: r.claims,
-    mountPrefixes: r.mountPrefixes,
+    meta: r.meta,
     packs: r.packs,
   }));
   const owners = attribution.owners.map((ownerPaths) =>
@@ -448,9 +455,9 @@ function encodeAttribution(
 }
 
 /** Reuse the previous hash when the stamp did not move; hash the rest. */
-async function hashStamps(
+async function hashStamps<Meta>(
   stamps: FileStamp[],
-  previous: Manifest | null,
+  previous: Manifest<Meta> | null,
 ): Promise<FileStamp[]> {
   const before = new Map((previous?.files ?? []).map((f) => [f.path, f]));
   return Promise.all(
@@ -506,7 +513,7 @@ function entryDirFor(cacheDir: string, input: CacheInput): string {
   const key = [
     SCHEMA_VERSION,
     input.adapterPacksDigest,
-    input.tsconfigPath ?? "",
+    input.configPath ?? "",
   ].join(" ");
   const name = createHash("sha256").update(key).digest("hex").slice(0, 16);
   return path.join(cacheDir, `${ENTRY_PREFIX}${name}`);
@@ -578,10 +585,12 @@ function missDiag(reason: NonNullable<CacheDiagnostic["missReason"]>): {
   };
 }
 
-async function readManifest(manifestPath: string): Promise<Manifest | null> {
+async function readManifest<Meta>(
+  manifestPath: string,
+): Promise<Manifest<Meta> | null> {
   try {
     const raw = await fs.readFile(manifestPath, "utf-8");
-    return JSON.parse(raw) as Manifest;
+    return JSON.parse(raw) as Manifest<Meta>;
   } catch {
     // Missing file, invalid JSON, permission denied, all manifest
     // failures collapse to "miss." Cache reads are advisory; the
@@ -590,46 +599,26 @@ async function readManifest(manifestPath: string): Promise<Manifest | null> {
   }
 }
 
-async function stampTsconfig(
-  tsconfigPath: string | undefined,
+async function stampConfigFile(
+  configPath: string | undefined,
 ): Promise<FileStamp | null> {
-  if (tsconfigPath === undefined) {
+  if (configPath === undefined) {
     return null;
   }
   try {
-    const stat = await fs.stat(tsconfigPath);
-    return { path: tsconfigPath, mtimeMs: stat.mtimeMs, size: stat.size };
+    const stat = await fs.stat(configPath);
+    return { path: configPath, mtimeMs: stat.mtimeMs, size: stat.size };
   } catch {
     return null;
   }
 }
 
-/**
- * Resolve the file list from whichever input form the caller used.
- * `files` (paths) takes precedence, the cache-pre-bootstrap path
- * passes that. `project` falls back to the Project's loaded
- * source files.
- */
+/** Resolve the file list, sorted and stamped with mtime and size. */
 async function resolveFileStamps(input: CacheInput): Promise<FileStamp[]> {
-  if (input.files !== undefined) {
-    return stampPaths(input.files);
+  if (input.files === undefined) {
+    return [];
   }
-  if (input.project !== undefined) {
-    return stampProjectFiles(input.project);
-  }
-  return [];
-}
-
-async function stampProjectFiles(project: Project): Promise<FileStamp[]> {
-  const files = project
-    .getSourceFiles()
-    .filter((sf) => !sf.isDeclarationFile())
-    .map((sf) => sf.getFilePath());
-  return stampPaths(files);
-}
-
-async function stampPaths(paths: ReadonlyArray<string>): Promise<FileStamp[]> {
-  const files = paths;
+  const files = input.files;
   // Concurrent stats: bounded by Node's libuv thread pool. For
   // 5,500-file projects this is the dominant cost of the coarse
   // key (~25ms total).
@@ -639,15 +628,15 @@ async function stampPaths(paths: ReadonlyArray<string>): Promise<FileStamp[]> {
         const stat = await fs.stat(p);
         return { path: p, mtimeMs: stat.mtimeMs, size: stat.size };
       } catch {
-        // File disappeared between project enumeration and stat.
-        // Returning a sentinel makes the cache always miss,
-        // that's correct; the project is in flux.
+        // File disappeared between enumeration and stat. Returning a
+        // sentinel makes the cache always miss, that's correct; the
+        // file list is in flux.
         return { path: p, mtimeMs: -1, size: -1 };
       }
     }),
   );
-  // Sort by path so the manifest is stable regardless of project's
-  // traversal order: important for git-friendly storage if anyone
+  // Sort by path so the manifest is stable regardless of the caller's
+  // enumeration order: important for git-friendly storage if anyone
   // ever versions the cache.
   stamped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return stamped;

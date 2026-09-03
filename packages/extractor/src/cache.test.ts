@@ -2,12 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { testCompilerOptions } from "@suss/test-project";
-
-import { extractionConfigStamp } from "./adapter.js";
 import {
   type CacheAttribution,
   createCacheLayer,
@@ -20,24 +16,18 @@ async function makeTempDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "suss-cache-"));
 }
 
-async function makeProjectWith(files: Record<string, string>): Promise<{
-  project: Project;
-  dir: string;
-}> {
+async function writeFiles(
+  files: Record<string, string>,
+): Promise<{ dir: string; paths: string[] }> {
   const dir = await makeTempDir();
+  const paths: string[] = [];
   for (const [rel, contents] of Object.entries(files)) {
     const abs = path.join(dir, rel);
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, contents);
+    paths.push(abs);
   }
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { ...testCompilerOptions },
-  });
-  for (const rel of Object.keys(files)) {
-    project.addSourceFileAtPath(path.join(dir, rel));
-  }
-  return { project, dir };
+  return { dir, paths };
 }
 
 const fakeSummary: BehavioralSummary = {
@@ -61,24 +51,20 @@ const fakeSummary: BehavioralSummary = {
 describe("createCacheLayer", () => {
   it("misses when no manifest exists", async () => {
     const cacheDir = await makeTempDir();
-    const { project } = await makeProjectWith({
-      "a.ts": "export const a = 1;",
-    });
+    const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(cacheDir);
     const result = await cache.tryHit({
-      project,
+      files: paths,
       adapterPacksDigest: "test@1",
     });
     expect(result).toBeNull();
   });
 
-  it("hits when project files are unchanged after a write", async () => {
+  it("hits when the file list is unchanged after a write", async () => {
     const cacheDir = await makeTempDir();
-    const { project } = await makeProjectWith({
-      "a.ts": "export const a = 1;",
-    });
+    const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     await cache.write(input, [fakeSummary]);
     const result = await cache.tryHit(input);
     expect(result).toEqual([fakeSummary]);
@@ -86,13 +72,13 @@ describe("createCacheLayer", () => {
 
   it("misses when the adapter+packs digest changes", async () => {
     const cacheDir = await makeTempDir();
-    const { project } = await makeProjectWith({
-      "a.ts": "export const a = 1;",
-    });
+    const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(cacheDir);
-    await cache.write({ project, adapterPacksDigest: "test@1" }, [fakeSummary]);
+    await cache.write({ files: paths, adapterPacksDigest: "test@1" }, [
+      fakeSummary,
+    ]);
     const result = await cache.tryHit({
-      project,
+      files: paths,
       adapterPacksDigest: "test@2",
     });
     expect(result).toBeNull();
@@ -100,11 +86,9 @@ describe("createCacheLayer", () => {
 
   it("misses when a file is touched (mtime change)", async () => {
     const cacheDir = await makeTempDir();
-    const { project, dir } = await makeProjectWith({
-      "a.ts": "export const a = 1;",
-    });
+    const { dir, paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     await cache.write(input, [fakeSummary]);
 
     // Wait a bit (mtime resolution is ms; some FS round to seconds)
@@ -117,11 +101,9 @@ describe("createCacheLayer", () => {
   });
 
   it("returns a no-op layer when cacheDir is null", async () => {
-    const { project } = await makeProjectWith({
-      "a.ts": "export const a = 1;",
-    });
+    const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(null);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     await cache.write(input, [fakeSummary]); // no-op
     const result = await cache.tryHit(input);
     expect(result).toBeNull();
@@ -130,12 +112,10 @@ describe("createCacheLayer", () => {
   describe("one directory per key", () => {
     it("leaves another key's entry alone instead of overwriting it", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
-      const first = { project, adapterPacksDigest: "test@1" };
-      const second = { project, adapterPacksDigest: "test@2" };
+      const first = { files: paths, adapterPacksDigest: "test@1" };
+      const second = { files: paths, adapterPacksDigest: "test@2" };
       await cache.write(first, [fakeSummary]);
       await cache.write(second, []);
 
@@ -144,12 +124,10 @@ describe("createCacheLayer", () => {
 
     it("keeps only the most recently used keys", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
       for (const digest of ["test@1", "test@2", "test@3"]) {
-        await cache.write({ project, adapterPacksDigest: digest }, [
+        await cache.write({ files: paths, adapterPacksDigest: digest }, [
           fakeSummary,
         ]);
         // Eviction orders entries by timestamp, so the writes have to
@@ -159,26 +137,24 @@ describe("createCacheLayer", () => {
 
       expect((await fs.readdir(cacheDir)).length).toBe(MAX_ENTRIES);
       expect(
-        await cache.tryHit({ project, adapterPacksDigest: "test@1" }),
+        await cache.tryHit({ files: paths, adapterPacksDigest: "test@1" }),
       ).toBeNull();
       expect(
-        await cache.tryHit({ project, adapterPacksDigest: "test@3" }),
+        await cache.tryHit({ files: paths, adapterPacksDigest: "test@3" }),
       ).toEqual([fakeSummary]);
     });
 
     it("spares an entry a hit said was still wanted", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
-      const oldest = { project, adapterPacksDigest: "test@1" };
+      const oldest = { files: paths, adapterPacksDigest: "test@1" };
       // Eviction orders entries by timestamp, so the steps have to land
       // in different milliseconds for the order to mean anything.
       const tick = () => new Promise((r) => setTimeout(r, 10));
       await cache.write(oldest, [fakeSummary]);
       await tick();
-      await cache.write({ project, adapterPacksDigest: "test@2" }, [
+      await cache.write({ files: paths, adapterPacksDigest: "test@2" }, [
         fakeSummary,
       ]);
       await tick();
@@ -186,7 +162,7 @@ describe("createCacheLayer", () => {
       // eviction order, since a run that hits the cache never writes.
       expect(await cache.tryHit(oldest)).toEqual([fakeSummary]);
       await tick();
-      await cache.write({ project, adapterPacksDigest: "test@3" }, [
+      await cache.write({ files: paths, adapterPacksDigest: "test@3" }, [
         fakeSummary,
       ]);
 
@@ -195,13 +171,11 @@ describe("createCacheLayer", () => {
 
     it("clears out the single manifest older versions wrote", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const legacy = path.join(cacheDir, "manifest.json");
       await fs.writeFile(legacy, "{}");
       const cache = createCacheLayer(cacheDir);
-      await cache.write({ project, adapterPacksDigest: "test@1" }, [
+      await cache.write({ files: paths, adapterPacksDigest: "test@1" }, [
         fakeSummary,
       ]);
 
@@ -210,14 +184,12 @@ describe("createCacheLayer", () => {
 
     it("leaves a directory it did not write alone", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const theirs = path.join(cacheDir, "somebody-elses-work");
       await fs.mkdir(theirs);
       const cache = createCacheLayer(cacheDir);
       for (const digest of ["test@1", "test@2", "test@3"]) {
-        await cache.write({ project, adapterPacksDigest: digest }, [
+        await cache.write({ files: paths, adapterPacksDigest: digest }, [
           fakeSummary,
         ]);
       }
@@ -227,16 +199,14 @@ describe("createCacheLayer", () => {
 
     it("says a key changed when another build has cached here", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
-      await cache.write({ project, adapterPacksDigest: "test@1" }, [
+      await cache.write({ files: paths, adapterPacksDigest: "test@1" }, [
         fakeSummary,
       ]);
 
       const result = await cache.lookup({
-        project,
+        files: paths,
         adapterPacksDigest: "test@2",
       });
       expect(result.diagnostic.missReason).toBe("key-changed");
@@ -244,11 +214,9 @@ describe("createCacheLayer", () => {
 
     it("says no manifest when nothing has cached here at all", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const result = await createCacheLayer(cacheDir).lookup({
-        project,
+        files: paths,
         adapterPacksDigest: "test@1",
       });
       expect(result.diagnostic.missReason).toBe("no-manifest");
@@ -258,11 +226,9 @@ describe("createCacheLayer", () => {
   describe("lookup", () => {
     it("returns kind=hit with the full summary list when fresh", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
-      const input = { project, adapterPacksDigest: "test@1" };
+      const input = { files: paths, adapterPacksDigest: "test@1" };
       await cache.write(input, [fakeSummary]);
       const result = await cache.lookup(input);
       expect(result.kind).toBe("hit");
@@ -273,12 +239,10 @@ describe("createCacheLayer", () => {
 
     it("returns kind=miss with a missReason when no manifest", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
       const result = await cache.lookup({
-        project,
+        files: paths,
         adapterPacksDigest: "test@1",
       });
       expect(result.kind).toBe("miss");
@@ -287,7 +251,7 @@ describe("createCacheLayer", () => {
 
     it("misses whole when one file in the include set changed", async () => {
       const cacheDir = await makeTempDir();
-      const { project, dir } = await makeProjectWith({
+      const { dir, paths } = await writeFiles({
         "a.ts": "export const a = 1;",
         "b.ts": "export const b = 2;",
       });
@@ -304,13 +268,12 @@ describe("createCacheLayer", () => {
         identity: { ...fakeSummary.identity, name: "summaryB" },
       };
       const cache = createCacheLayer(cacheDir);
-      const input = { project, adapterPacksDigest: "test@1" };
+      const input = { files: paths, adapterPacksDigest: "test@1" };
       await cache.write(input, [summaryA, summaryB]);
 
-      // Touching a.ts alone used to give back b.ts's summary and then
-      // re-extract a.ts on its own. Walking a.ts by itself does not find
-      // what walking the whole project finds, so summaryA came back
-      // short or missing.
+      // Touching a.ts alone used to re-extract it by itself, which finds
+      // less than a whole-project walk does, so summaryA came back short
+      // or missing.
       await new Promise((r) => setTimeout(r, 20));
       await fs.writeFile(path.join(dir, "a.ts"), "export const a = 1;");
 
@@ -321,52 +284,50 @@ describe("createCacheLayer", () => {
 
     it("misses when a file left the include set", async () => {
       const cacheDir = await makeTempDir();
-      const { project, dir } = await makeProjectWith({
+      const { dir, paths } = await writeFiles({
         "keep.ts": "export const k = 1;",
         "gone.ts": "export const g = 2;",
       });
       const cache = createCacheLayer(cacheDir);
-      const input = { project, adapterPacksDigest: "test@1" };
+      const input = { files: paths, adapterPacksDigest: "test@1" };
       await cache.write(input, [fakeSummary]);
 
-      project.removeSourceFile(
-        project.getSourceFileOrThrow(path.join(dir, "gone.ts")),
-      );
-      await fs.unlink(path.join(dir, "gone.ts"));
+      const gonePath = path.join(dir, "gone.ts");
+      await fs.unlink(gonePath);
+      const shrunk = { ...input, files: paths.filter((p) => p !== gonePath) };
 
-      const result = await cache.lookup(input);
+      const result = await cache.lookup(shrunk);
       expect(result.kind).toBe("miss");
       expect(result.diagnostic.missReason).toBe("files-changed");
     });
 
     it("misses when a file joined the include set", async () => {
       const cacheDir = await makeTempDir();
-      const { project, dir } = await makeProjectWith({
+      const { dir, paths } = await writeFiles({
         "a.ts": "export const a = 1;",
       });
       const cache = createCacheLayer(cacheDir);
-      const input = { project, adapterPacksDigest: "test@1" };
+      const input = { files: paths, adapterPacksDigest: "test@1" };
       await cache.write(input, [fakeSummary]);
 
-      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 2;");
-      project.addSourceFileAtPath(path.join(dir, "b.ts"));
+      const bPath = path.join(dir, "b.ts");
+      await fs.writeFile(bPath, "export const b = 2;");
+      const grown = { ...input, files: [...paths, bPath] };
 
-      const result = await cache.lookup(input);
+      const result = await cache.lookup(grown);
       expect(result.kind).toBe("miss");
       expect(result.diagnostic.missReason).toBe("files-changed");
     });
 
     it("misses when the packs digest changes", async () => {
       const cacheDir = await makeTempDir();
-      const { project } = await makeProjectWith({
-        "a.ts": "export const a = 1;",
-      });
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
       const cache = createCacheLayer(cacheDir);
-      await cache.write({ project, adapterPacksDigest: "test@1" }, [
+      await cache.write({ files: paths, adapterPacksDigest: "test@1" }, [
         fakeSummary,
       ]);
       const result = await cache.lookup({
-        project,
+        files: paths,
         adapterPacksDigest: "test@2",
       });
       expect(result.kind).toBe("miss");
@@ -400,7 +361,7 @@ describe("per-file plan", () => {
         cacheable: r.cacheable ?? true,
         deps: (r.deps ?? []).map((d) => path.join(dir, d)),
         claims: r.claims ?? [],
-        mountPrefixes: {},
+        meta: undefined,
         packs: [],
       })),
       owners: summaries.map((s) => s.owners.map((o) => path.join(dir, o))),
@@ -409,14 +370,14 @@ describe("per-file plan", () => {
 
   async function writeTwoFileEntry(files?: Record<string, string>) {
     const cacheDir = await makeTempDir();
-    const { project, dir } = await makeProjectWith(
+    const { dir, paths } = await writeFiles(
       files ?? {
         "a.ts": "export const a = 1;",
         "b.ts": "export const b = 2;",
       },
     );
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
     const summaryB = summaryIn(path.join(dir, "b.ts"), "summaryB");
     await cache.write(
@@ -437,11 +398,9 @@ describe("per-file plan", () => {
 
   it("returns null for an entry written without attribution", async () => {
     const cacheDir = await makeTempDir();
-    const { project } = await makeProjectWith({
-      "a.ts": "export const a = 1;",
-    });
+    const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     await cache.write(input, [fakeSummary]);
 
     expect(await cache.plan(input)).toBeNull();
@@ -490,25 +449,23 @@ describe("per-file plan", () => {
 
   it("invalidates the reader when a recorded dependency is deleted", async () => {
     const { cache, input, dir } = await writeTwoFileEntry();
-    const { project } = input as { project: Project };
-    project.removeSourceFile(
-      project.getSourceFileOrThrow(path.join(dir, "b.ts")),
-    );
-    await fs.unlink(path.join(dir, "b.ts"));
+    const bPath = path.join(dir, "b.ts");
+    await fs.unlink(bPath);
+    const shrunk = { ...input, files: input.files.filter((p) => p !== bPath) };
 
-    const plan = await cache.plan(input);
-    expect(plan?.removed).toEqual(new Set([path.join(dir, "b.ts")]));
+    const plan = await cache.plan(shrunk);
+    expect(plan?.removed).toEqual(new Set([bPath]));
     expect(plan?.validRoots).toEqual(new Set());
   });
 
   it("never reuses a file that declined caching", async () => {
     const cacheDir = await makeTempDir();
-    const { project, dir } = await makeProjectWith({
+    const { dir, paths } = await writeFiles({
       "a.ts": "export const a = 1;",
       "b.ts": "export const b = 2;",
     });
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
     await cache.write(
       input,
@@ -528,12 +485,12 @@ describe("per-file plan", () => {
 
   it("never reuses a run-level summary on a partial plan", async () => {
     const cacheDir = await makeTempDir();
-    const { project, dir } = await makeProjectWith({
+    const { dir, paths } = await writeFiles({
       "a.ts": "export const a = 1;",
       "b.ts": "export const b = 2;",
     });
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
     const marker = summaryIn(path.join(dir, "a.ts"), "marker");
     await cache.write(
@@ -558,13 +515,13 @@ describe("per-file plan", () => {
 
   it("keeps a shared summary alive while any owner survives", async () => {
     const cacheDir = await makeTempDir();
-    const { project, dir } = await makeProjectWith({
+    const { dir, paths } = await writeFiles({
       "a.ts": "export const a = 1;",
       "b.ts": "export const b = 2;",
       "shared.ts": "export const s = 3;",
     });
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     const shared = summaryIn(path.join(dir, "shared.ts"), "shared");
     await cache.write(
       input,
@@ -590,11 +547,9 @@ describe("per-file plan", () => {
 
   it("hands back stored claims through the plan's records", async () => {
     const cacheDir = await makeTempDir();
-    const { project, dir } = await makeProjectWith({
-      "a.ts": "export const a = 1;",
-    });
+    const { dir, paths } = await writeFiles({ "a.ts": "export const a = 1;" });
     const cache = createCacheLayer(cacheDir);
-    const input = { project, adapterPacksDigest: "test@1" };
+    const input = { files: paths, adapterPacksDigest: "test@1" };
     const summaryA = summaryIn(path.join(dir, "a.ts"), "summaryA");
     const claims = [{ key: "a.ts:0-10-handler", pack: "test-pack" }];
     await cache.write(
@@ -627,24 +582,5 @@ describe("per-file plan", () => {
     await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
     const after = await cache.plan(input);
     expect(after?.validRoots).toEqual(new Set());
-  });
-});
-
-describe("extractionConfigStamp", () => {
-  it("separates runs that differ only in extraction config", () => {
-    const on = extractionConfigStamp({});
-    const off = extractionConfigStamp({ includeReachable: false });
-    expect(on).not.toBe(off);
-
-    const strict = extractionConfigStamp({
-      extractorOptions: { gapHandling: "strict" },
-    });
-    expect(strict).not.toBe(on);
-  });
-
-  it("is stable for the default config", () => {
-    expect(extractionConfigStamp({})).toBe(
-      extractionConfigStamp({ includeReachable: true }),
-    );
   });
 });
