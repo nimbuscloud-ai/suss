@@ -141,24 +141,31 @@ describe("python invocation effects", () => {
     expect(invocationEffects(statement)).toEqual([]);
   });
 
-  it("counts a method chain once, as the outermost call", async () => {
+  it("records each receiver in a method chain as a call of its own", async () => {
     const effects = await effectsFor([
       "def get(self):",
       "    return Orders.query().filter_by(id=1).first()",
     ]);
     expect(effects.map((effect) => effect.callee)).toEqual([
+      "Orders.query",
+      "Orders.query().filter_by",
       "Orders.query().filter_by(id=1).first",
     ]);
   });
 
-  it("keeps a call written as an argument separate from the chain around it", async () => {
+  it("puts a call in argument position before the call it feeds", async () => {
     const effects = await effectsFor([
       "def get(self):",
-      "    return Orders.query().filter_by(id=parse(raw)).first()",
+      "    return helper(build(x))",
     ]);
-    expect(effects.map((effect) => effect.callee)).toEqual([
-      "Orders.query().filter_by(id=parse(raw)).first",
-      "parse",
+    expect(effects.map((effect) => effect.callee)).toEqual(["build", "helper"]);
+  });
+
+  it("keeps a lambda's calls with the unit that wrote it", async () => {
+    const effects = await effectsFor([
+      "def get(self):",
+      "    return sorted(rows, key=lambda row: weigh(row))",
     ]);
+    expect(effects.map((effect) => effect.callee)).toEqual(["weigh", "sorted"]);
   });
 });
