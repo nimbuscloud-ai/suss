@@ -60,6 +60,86 @@ export function placeCalls(
 }
 
 /**
+ * Where a scanned body's calls, and the arguments passed by name into
+ * them, are declared: fed by `place`/`placeArg` as a walk visits each
+ * call, and read back by `targets`/`argTargets` once it finishes, in
+ * the shape `placeCalls` and `placeArgTargets` themselves take. Every
+ * adapter's reachable-closure walk built this same bookkeeping by
+ * hand; centralizing it here keeps the shadow-name rule in one place.
+ */
+export class TargetPlacements {
+  private readonly byCallee = new Map<string, DeclaredAt | null>();
+  private readonly byCalleeAndPosition = new Map<
+    string,
+    Map<number, DeclaredAt | null>
+  >();
+
+  /** The same callee text placed two ways, a shadowed name say, has to say so rather than pick one. */
+  place(calleeText: string, placed: DeclaredAt | null): void {
+    if (placed === null) {
+      return;
+    }
+    settle(this.byCallee, calleeText, placed);
+  }
+
+  // Same shadow handling as `place`, one level down: the argument at
+  // this position in calls written as `calleeText`.
+  placeArg(calleeText: string, position: number, placed: DeclaredAt): void {
+    const byPosition = this.byCalleeAndPosition.get(calleeText) ?? new Map();
+    this.byCalleeAndPosition.set(calleeText, byPosition);
+    settle(byPosition, position, placed);
+  }
+
+  /** Every callee text settled to one declaration, the shape `placeCalls` takes. */
+  get targets(): ReadonlyMap<string, DeclaredAt> {
+    return onlySettled(this.byCallee);
+  }
+
+  /** Every callee text's settled argument positions, the shape `placeArgTargets` takes. */
+  get argTargets(): ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>> {
+    const settled = new Map<string, ReadonlyMap<number, DeclaredAt>>();
+    for (const [calleeText, byPosition] of this.byCalleeAndPosition) {
+      const positions = onlySettled(byPosition);
+      if (positions.size > 0) {
+        settled.set(calleeText, positions);
+      }
+    }
+    return settled;
+  }
+}
+
+function settle<K>(
+  map: Map<K, DeclaredAt | null>,
+  key: K,
+  placed: DeclaredAt,
+): void {
+  const known = map.get(key);
+  if (known === undefined) {
+    map.set(key, placed);
+    return;
+  }
+  if (
+    known !== null &&
+    declarationKey(known.file, known.span) !==
+      declarationKey(placed.file, placed.span)
+  ) {
+    map.set(key, null);
+  }
+}
+
+function onlySettled<K>(
+  map: ReadonlyMap<K, DeclaredAt | null>,
+): ReadonlyMap<K, DeclaredAt> {
+  const out = new Map<K, DeclaredAt>();
+  for (const [key, value] of map) {
+    if (value !== null) {
+      out.set(key, value);
+    }
+  }
+  return out;
+}
+
+/**
  * Say on each invocation effect where an identifier argument that is
  * itself a project function is declared, keyed by its position among
  * the call's arguments. `linkArgs` later turns each entry into

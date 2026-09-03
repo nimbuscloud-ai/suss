@@ -12,6 +12,7 @@ import {
   placeCalleeParameters,
   placeCalls,
   recordParameterGaps,
+  TargetPlacements,
 } from "./callLinks.js";
 
 import type { DeclaredAt, ParameterCall } from "./callLinks.js";
@@ -290,6 +291,72 @@ describe("linkCallsToSummaries", () => {
     expect(declarationKey("src/h.py", { start: 3, end: 9 })).toBe(
       "src/h.py:3-9",
     );
+  });
+});
+
+describe("TargetPlacements", () => {
+  const at = (start: number): DeclaredAt => ({
+    file: "src/h.py",
+    span: { start, end: start + 8 },
+  });
+
+  it("keeps the first place a callee was declared", () => {
+    const placements = new TargetPlacements();
+    placements.place("helper", at(10));
+
+    expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
+  });
+
+  it("settles a callee text placed two ways to nothing, a shadowed name say", () => {
+    const placements = new TargetPlacements();
+    placements.place("load", at(10));
+    placements.place("load", at(20));
+
+    expect(placements.targets.has("load")).toBe(false);
+  });
+
+  it("leaves a callee placed the same way twice settled", () => {
+    const placements = new TargetPlacements();
+    placements.place("helper", at(10));
+    placements.place("helper", at(10));
+
+    expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
+  });
+
+  it("drops a null placement rather than unsettling what is already known", () => {
+    const placements = new TargetPlacements();
+    placements.place("helper", at(10));
+    placements.place("helper", null);
+
+    expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
+  });
+
+  it("keeps an argument's position under the callee it was passed to", () => {
+    const placements = new TargetPlacements();
+    placements.placeArg("walkStatements", 1, at(30));
+
+    expect(placements.argTargets).toEqual(
+      new Map([["walkStatements", new Map([[1, at(30)]])]]),
+    );
+  });
+
+  it("settles one position placed two ways to nothing, independently of other positions", () => {
+    const placements = new TargetPlacements();
+    placements.placeArg("walkStatements", 1, at(30));
+    placements.placeArg("walkStatements", 1, at(40));
+    placements.placeArg("walkStatements", 2, at(50));
+
+    expect(placements.argTargets).toEqual(
+      new Map([["walkStatements", new Map([[2, at(50)]])]]),
+    );
+  });
+
+  it("leaves a callee out of argTargets once every one of its positions settles to nothing", () => {
+    const placements = new TargetPlacements();
+    placements.placeArg("walkStatements", 1, at(30));
+    placements.placeArg("walkStatements", 1, at(40));
+
+    expect(placements.argTargets.has("walkStatements")).toBe(false);
   });
 });
 
