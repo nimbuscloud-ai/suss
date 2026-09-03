@@ -511,7 +511,7 @@ there is nowhere to put it, so the next best thing is being able to ask.
 suss ask "QUESTION" [--dir DIR | SUMMARIES.json] [--project DIR] [--json] [-o OUTPUT]
 ```
 
-Eight questions, in these words:
+Ten questions, in these words:
 
 | Question | What comes back |
 |---|---|
@@ -522,6 +522,7 @@ Eight questions, in these words:
 | `what calls <unit>` | Every unit whose calls the run resolved to it, with the file, the line, and the call. The unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A package export such as `fn:@suss/datalog::evaluate` is the function behind it, so that spelling, the bare name, and `what reads` on the export give one answer. A bare name that is two functions in different places is refused, with both listed. |
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads, writes or invokes each. |
 | `what reaches <target>` | Every boundary whose unit ends up going through the target, and the calls it took to get there. The same call facts as `what calls`, closed over every hop with no limit on the chain, which is what somebody changing a store or a function wants before they change it. A unit is listed only when it serves a boundary of its own, so the answer is routes, queues, and package exports rather than the functions between them. The answer says how many calls resolved to no unit, since a boundary reaching the target through one of those is missing from it. |
+| `what does <package or unit> provide` | Every boundary it provides, one per line, sorted by boundary key. A package is spelled by its name, `@suss/checker`, and the answer gathers its exports wherever they sit in the run. Also written `what does <package> export`. |
 | `why does <unit> reach <target>` | The shortest call chain from the unit to a boundary, a function, or a package export, with each written hop's resolution proved from source. The same call facts as `what reaches`, so the chain is the one that answer lists under the unit. Both ends are spelled the way `what calls` takes a unit, and a bare name that is two functions is refused. |
 | `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
 
@@ -595,6 +596,17 @@ $ suss ask 'what calls src/orderStore.ts' --dir .suss
   storage-wrapper::src/orders.ts::GetOrderFunction.getOrder (src/orders.ts:6) calls readRow
 ```
 
+A provides question lists what a package or a file exports, one
+boundary per line, so an agent that needs a package's whole surface
+gets it in one call instead of reading every export's own summary:
+
+```
+$ suss ask 'what does @suss/checker provide' --dir .suss
+@suss/checker provides 2 boundaries:
+  fn:@suss/checker::analyzeFlow, from analyzeFlow (packages/checker/src/flow/reachability.ts:400)
+  fn:@suss/checker::checkAll, from checkAll (packages/checker/src/index.ts:12)
+```
+
 ```
 $ suss ask 'what can I project from dynamodb:editions#by-publication' --dir .suss
 dynamodb:editions#by-publication declares 3 things you can ask it for:
@@ -661,9 +673,9 @@ re-evaluation cost.
 
 ### Exit codes
 
-- `0`: the question was one of the seven and its subject is in these
+- `0`: the question was one of the ten and its subject is in these
   summaries, including when the answer is empty.
-- `1`: the question was not one of the seven, nothing here is at the
+- `1`: the question was not one of the ten, nothing here is at the
   boundary it asked about, or a why question's chain is not one the
   run contains.
 

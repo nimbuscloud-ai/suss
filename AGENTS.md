@@ -118,7 +118,7 @@ can ask one mid-task instead of remembering this file:
 npx @suss/mcp /path/to/project
 ```
 
-`suss_ask` takes the seven questions. `suss_check` compares both sides
+`suss_ask` takes the eight questions. `suss_check` compares both sides
 of every boundary. `suss_boundaries` lists them. `suss_status` says
 which commands the server ran and which failed.
 

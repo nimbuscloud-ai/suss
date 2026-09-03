@@ -28,7 +28,7 @@ import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
-import { askWhy, WHY_SHAPES } from "./askWhy.js";
+import { askWhy, unitAt, WHY_SHAPES } from "./askWhy.js";
 import { callSpellings, functionOf, reachTargetOf } from "./callFacts.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
@@ -63,6 +63,7 @@ export type QuestionShape =
   | "calls"
   | "reaches"
   | "reachedBy"
+  | "provides"
   | WhyShape;
 
 export interface AskOptions {
@@ -124,9 +125,10 @@ const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "calls", pattern: /^what calls\s+(.+)$/i },
   { shape: "reaches", pattern: /^what does\s+(.+?)\s+reach$/i },
   { shape: "reachedBy", pattern: /^what reaches\s+(.+)$/i },
+  { shape: "provides", pattern: /^what does\s+(.+?)\s+(?:provide|export)$/i },
 ];
 
-const HOW_TO_ASK = `suss ask takes one of nine questions:
+const HOW_TO_ASK = `suss ask takes one of ten questions:
   suss ask 'what can I project from aws.dynamodb:editions#by-publication'
   suss ask 'what reads aws.dynamodb:editions'
   suss ask 'what writes aws.dynamodb:editions'
@@ -134,6 +136,7 @@ const HOW_TO_ASK = `suss ask takes one of nine questions:
   suss ask 'what calls src/editions/dao.ts'
   suss ask 'what does src/editions/dao.ts reach'
   suss ask 'what reaches src/editions/dao.ts'
+  suss ask 'what does @suss/checker provide'
   suss ask 'why does src/editions/dao.ts reach aws.dynamodb:editions'
   suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
 The same five, in symbols: '<- <unit>', '<unit> ->',
@@ -246,6 +249,7 @@ const ANSWERS: Record<
   calls: answerCalls,
   reaches: answerReaches,
   reachedBy: answerReachedBy,
+  provides: answerProvides,
 };
 
 /**
@@ -736,6 +740,111 @@ function answerReaches(subject: string, loaded: LoadedSummaries): Answer {
     caveats: gapCaveats(target.summaries),
     found: true,
   };
+}
+
+/**
+ * The package name on a summary's own binding, when it provides a
+ * public export. Undefined for anything else, so a subject that names
+ * a package never matches a summary that only calls into one.
+ */
+function packageOf(summary: BehavioralSummary): string | undefined {
+  const binding = summary.identity.boundaryBinding;
+  return bindingIs(binding, "function-call")
+    ? binding.semantics.package
+    : undefined;
+}
+
+function providersOfPackage(
+  pkg: string,
+  summaries: ReadonlyArray<BehavioralSummary>,
+): BehavioralSummary[] {
+  return summaries.filter(
+    (summary) =>
+      providesKeyOf(summary) !== undefined && packageOf(summary) === pkg,
+  );
+}
+
+/**
+ * The one thing missing when a subject picked out something but none of
+ * it provides a boundary. A subject spelled like a package points at
+ * code this run never read; anything else already had its summaries
+ * read, and they only ever called out.
+ */
+function providesGapNeed(subject: string): string {
+  if (subject.includes("/") || subject.startsWith("@")) {
+    return `No summary here provides a package export for ${subject}. Extract with -f package-exports so package.json exports become boundaries.`;
+  }
+  return `The units ${subject} picked out only consume boundaries.`;
+}
+
+function providesAnswer(
+  subject: string,
+  providers: BehavioralSummary[],
+): Answer {
+  if (providers.length === 0) {
+    return {
+      shape: "provides",
+      subject,
+      headline: `Nothing here says ${subject} provides a boundary.`,
+      items: [],
+      needs: [providesGapNeed(subject)],
+      caveats: [],
+      found: true,
+    };
+  }
+
+  const items = [...providers]
+    .sort((a, b) =>
+      (providesKeyOf(a) ?? "").localeCompare(providesKeyOf(b) ?? ""),
+    )
+    .map((summary) => {
+      const boundary = providesKeyOf(summary) ?? "";
+      return {
+        text: `${boundary}, from ${summary.identity.name} (${unitAt(summary)})`,
+        data: {
+          boundary,
+          unit: summaryIdentifier(summary),
+          name: summary.identity.name,
+          file: summary.location.file,
+          line: summary.location.range.start,
+          kind: summary.kind,
+        },
+      };
+    });
+
+  return {
+    shape: "provides",
+    subject,
+    headline: `${subject} provides ${items.length} boundar${items.length === 1 ? "y" : "ies"}:`,
+    items,
+    needs: [],
+    caveats: [],
+    found: true,
+  };
+}
+
+/**
+ * The boundaries a package, a file, or a function provides. A package
+ * is matched by name against every provider's own binding first, since
+ * its exports can sit in files all over the run; anything else goes
+ * through the same resolution the other questions use.
+ */
+function answerProvides(subject: string, loaded: LoadedSummaries): Answer {
+  const { summaries } = loaded;
+  const packageProviders = providersOfPackage(subject, summaries);
+  if (packageProviders.length > 0) {
+    return providesAnswer(subject, packageProviders);
+  }
+
+  const resolution = resolveTarget(subject, summaries);
+  if (!resolution.matched) {
+    return notHere("provides", subject, []);
+  }
+
+  const providers = resolution.target.summaries.filter(
+    (summary) => providesKeyOf(summary) !== undefined,
+  );
+  return providesAnswer(subject, providers);
 }
 
 // ---------------------------------------------------------------------------

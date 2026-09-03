@@ -835,7 +835,7 @@ describe("runCli ask", () => {
       runCli(["ask", "why is x.ts slow", "--dir", tmpDir]),
     );
     expect(exit).toBe(1);
-    expect(io.stdout).toContain("one of nine questions");
+    expect(io.stdout).toContain("one of ten questions");
   });
 });
 
