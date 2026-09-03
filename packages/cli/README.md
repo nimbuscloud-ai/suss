@@ -6,6 +6,8 @@ Command-line interface for suss. It wraps the extraction pipeline, the human-rea
 
 `@suss/cli` is the user-facing entry point. It imports the language adapter and the pattern packs dynamically, so that starting the CLI doesn't pay the ts-morph cost unless extraction actually runs.
 
+The package ships its own `AGENTS.md`, at `node_modules/@suss/cli/AGENTS.md`, so a coding agent working from an installed copy has the same guide GitHub shows at the repo root.
+
 ### Commands
 
 ```sh
@@ -74,7 +76,7 @@ Two measurements decided this. The unpaired lists are the bulk of a report on an
 The flag changes what is printed and nothing else. `--json` always includes every finding and every list, so a CI job that parses the JSON sees no difference. The exit code still comes from `--fail-on`, which defaults to `error`. `--at` prints in full whether or not `--all` is passed, because a reader who has narrowed the run to one file or one boundary has already said what they want to see.
 
 **`ask`**
-- Positional argument: the question, one of `what can I project from <boundary>`, `what reads <boundary>`, `what writes <boundary>`, `what invokes <boundary>`, `what does <unit> reach`, `why does <unit> reach <boundary>`, `why does <name> at <file>:<line> resolve to <target>`
+- Positional argument: the question, one of `what can I project from <boundary>`, `what reads <boundary>`, `what writes <boundary>`, `what invokes <boundary>`, `what calls <unit>`, `what does <unit> reach`, `what reaches <target>`, `what does <package or unit> provide`, `why does <unit> reach <boundary>`, `why does <name> at <file>:<line> resolve to <target>`. Run `suss ask` with no question to print the list back.
 - `--dir`: directory of summary JSON files, or pass one summaries file instead
 - `--project`: where the source is, for a why question (default: the working directory)
 - `--json`: emit the answer as JSON

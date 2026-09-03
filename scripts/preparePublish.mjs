@@ -177,6 +177,27 @@ let problems = 0;
 // --check has something to assert against in CI.
 const LICENSE = fs.readFileSync(path.join(ROOT, "LICENSE"), "utf8");
 
+// AGENTS.md stays at the repo root, and @suss/cli ships a committed
+// copy the same way, so an npm install has it too.
+const AGENTS = fs.readFileSync(path.join(ROOT, "AGENTS.md"), "utf8");
+const cliAgentsFile = path.join(PACKAGES_DIR, "cli", "AGENTS.md");
+const agentsSynced =
+  fs.existsSync(cliAgentsFile) &&
+  fs.readFileSync(cliAgentsFile, "utf8") === AGENTS;
+if (!agentsSynced) {
+  if (check) {
+    problems += 1;
+    process.stdout.write(
+      `  ${path.relative(ROOT, cliAgentsFile)}: out of date with the root AGENTS.md\n`,
+    );
+  } else {
+    fs.writeFileSync(cliAgentsFile, AGENTS);
+    process.stdout.write(
+      `fixed ${path.relative(ROOT, cliAgentsFile)}: synced with the root AGENTS.md\n`,
+    );
+  }
+}
+
 for (const manifest of manifests) {
   const licenseFile = path.join(path.dirname(manifest), "LICENSE");
   const licensed =
