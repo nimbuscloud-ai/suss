@@ -539,7 +539,15 @@ describe("the extraction report", () => {
     expect(funnel?.summariesBound).toBe(1);
 
     const phases = new Set(timing?.phases.map((phase) => phase.label));
-    expect(phases).toEqual(new Set(["parse", "discover", "summarize"]));
+    expect(phases).toEqual(
+      new Set([
+        "parse",
+        "discover",
+        "summarize",
+        "cache.lookup",
+        "cache.write",
+      ]),
+    );
   });
 
   it("blames discovery when files were found but no route matched", async () => {

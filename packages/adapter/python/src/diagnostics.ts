@@ -30,7 +30,7 @@ export function buildPythonExtractionReport(args: {
   return buildUngatedExtractionReport({
     packs: args.packs.map((pack) => ({
       name: pack.name,
-      version: null,
+      version: pack.version ?? null,
       discovers: pack.discovery.length > 0,
     })),
     tallies: args.tallies,
