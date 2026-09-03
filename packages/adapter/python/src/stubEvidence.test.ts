@@ -76,4 +76,24 @@ describe("pythonImportEvidence", () => {
     expect(evidence[0].module).toBe("myapp.routing.namespace");
     expect(evidence[0].sites[0].name).toBeNull();
   });
+
+  it("reads through an alias to the module and name as the package spells them", async () => {
+    write(
+      "app.py",
+      "import myapp.routing.namespace as ns\n" +
+        "from myapp.routing.resource import Resource as Base\n",
+    );
+
+    const evidence = await pythonImportEvidence({
+      packageName: "myapp",
+      directory: tmpDir,
+    });
+
+    expect(evidence.map((one) => one.module)).toEqual([
+      "myapp.routing.namespace",
+      "myapp.routing.resource",
+    ]);
+    expect(evidence[0].sites[0].name).toBeNull();
+    expect(evidence[1].sites[0].name).toBe("Resource");
+  });
 });
