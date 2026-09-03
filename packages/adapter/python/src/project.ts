@@ -23,11 +23,18 @@ import {
 import { Database } from "@suss/datalog";
 import {
   assembleSummary,
+  createTimer,
   moduleInitStructure,
+  noopTimer,
   stampModuleImports,
 } from "@suss/extractor";
 
 import { field, rangeOf } from "./ast.js";
+import {
+  buildPythonExtractionReport,
+  createPackTallies,
+  tallyUnit,
+} from "./diagnostics.js";
 import { discoverUnits } from "./discovery.js";
 import { envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
@@ -38,7 +45,11 @@ import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { ExtractorOptions } from "@suss/extractor";
+import type {
+  ExtractionReport,
+  ExtractorOptions,
+  TimingReport,
+} from "@suss/extractor";
 import type { PythonPack, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { Seed } from "./reach/closure.js";
@@ -57,6 +68,10 @@ export interface ExtractPythonOptions {
   projectRoot?: string;
   /** As well as deciding how much of what nobody could read reaches a summary, "strict" lets a route that cannot be built stop the run. */
   gapHandling?: ExtractorOptions["gapHandling"];
+  /** Called once with the run's per-phase wall time, for `suss extract --timing`. */
+  onTiming?: (report: TimingReport) => void;
+  /** Called once with the file-by-file funnel, for `suss extract --explain`. */
+  onExtractionReport?: (report: ExtractionReport) => void;
 }
 
 export interface ExtractPythonResult {
@@ -97,6 +112,8 @@ export async function extractPythonProject(
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
   const gapHandling = options.gapHandling ?? "permissive";
+  const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
+  const tallies = createPackTallies(options.packs);
 
   // Every file is parsed and bound before discovery runs on any of them,
   // because the router index has to see a mount written in one file and the
@@ -111,13 +128,15 @@ export async function extractPythonProject(
 
   const bound: BoundPythonFile[] = [];
   for (const file of options.files) {
-    const source = fs.readFileSync(file, "utf8");
-    const tree = await parsePython(source);
-    bound.push({
-      file,
-      displayPath: displayPathOf(file),
-      root: tree.rootNode,
-      module: bindModule(tree.rootNode),
+    await timer.timeAsync("parse", async () => {
+      const source = fs.readFileSync(file, "utf8");
+      const tree = await parsePython(source);
+      bound.push({
+        file,
+        displayPath: displayPathOf(file),
+        root: tree.rootNode,
+        module: bindModule(tree.rootNode),
+      });
     });
   }
 
@@ -134,13 +153,15 @@ export async function extractPythonProject(
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns and the call walk can start from a route.
   const definitions = new Map<string, PyNode>();
-  for (const { file, root, module: moduleBinding } of bound) {
-    emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
-    if (needsValues) {
-      emitValueFacts(db, file, root);
+  timer.time("discover", () => {
+    for (const { file, root, module: moduleBinding } of bound) {
+      emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
+      if (needsValues) {
+        emitValueFacts(db, file, root);
+      }
+      indexDefinitions(definitions, file, root);
     }
-    indexDefinitions(definitions, file, root);
-  }
+  });
 
   reportUnresolvedProjectModules(options, db);
 
@@ -148,12 +169,16 @@ export async function extractPythonProject(
   // declares, so its name is in here. A project that renames one on the way
   // through is missed, which is what asking about every call would cost a
   // minute to catch.
-  const couldMatch = methodsDeclaredNear(db, storagePatterns, definitions);
+  const couldMatch = timer.time("discover", () =>
+    methodsDeclaredNear(db, storagePatterns, definitions),
+  );
 
-  const routerIndex = buildRouterIndex(bound, options.packs, {
-    roots: options.roots,
-    ...(mountsRouters ? { facts: db } : {}),
-  });
+  const routerIndex = timer.time("discover", () =>
+    buildRouterIndex(bound, options.packs, {
+      roots: options.roots,
+      ...(mountsRouters ? { facts: db } : {}),
+    }),
+  );
 
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
     storagePatterns.length > 0 || rawSqlPatterns.length > 0
@@ -174,23 +199,28 @@ export async function extractPythonProject(
     const displayPath = displayPathOf(file);
     const storage = storageFor(boundFile);
 
-    const rawUnits = discoverUnits(root, moduleBinding, {
-      packs: options.packs,
-      filePath: displayPath,
-      absoluteFile: file,
-      routerIndex,
-      gapHandling,
-      ...(needsValues ? { facts: db } : {}),
-      ...(storage === undefined ? {} : { storage }),
-    });
+    const rawUnits = timer.time("discover", () =>
+      discoverUnits(root, moduleBinding, {
+        packs: options.packs,
+        filePath: displayPath,
+        absoluteFile: file,
+        routerIndex,
+        gapHandling,
+        ...(needsValues ? { facts: db } : {}),
+        ...(storage === undefined ? {} : { storage }),
+      }),
+    );
     for (const raw of rawUnits) {
-      const summary = assembleSummary(raw, { gapHandling });
+      const summary = timer.time("summarize", () =>
+        assembleSummary(raw, { gapHandling }),
+      );
       // `assembleSummary` scores confidence on the assumption that a unit's
       // branches came from tracing its body. Nothing here traces a body, so
       // that score would be meaningless and we set confidence directly.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
+      tallyUnit(tallies, raw.boundaryBinding?.recognition);
 
       // Two routes on one function, one per method say, share a seed.
       const span = raw.identity.span;
@@ -209,28 +239,34 @@ export async function extractPythonProject(
       }
     }
 
-    const loadTimeReads = envReadEffects(root, moduleBinding);
+    const loadTimeReads = timer.time("discover", () =>
+      envReadEffects(root, moduleBinding),
+    );
     if (loadTimeReads.length > 0) {
-      const summary = assembleSummary(
-        moduleInitStructure({
-          name: path.basename(displayPath),
-          file: displayPath,
-          range: rangeOf(root),
-          effects: loadTimeReads,
-        }),
-        { gapHandling },
+      const summary = timer.time("summarize", () =>
+        assembleSummary(
+          moduleInitStructure({
+            name: path.basename(displayPath),
+            file: displayPath,
+            range: rangeOf(root),
+            effects: loadTimeReads,
+          }),
+          { gapHandling },
+        ),
       );
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
     }
   }
 
-  const reached = reachedFunctions(seeds, {
-    files: bound,
-    roots: options.roots,
-    gapHandling,
-    storageFor,
-  });
+  const reached = timer.time("summarize", () =>
+    reachedFunctions(seeds, {
+      files: bound,
+      roots: options.roots,
+      gapHandling,
+      storageFor,
+    }),
+  );
   for (const [key, owners] of summariesBySeed) {
     for (const summary of owners) {
       if (gapHandling !== "silent") {
@@ -267,6 +303,16 @@ export async function extractPythonProject(
   }
   disambiguateSummaryIds(summaries);
   linkCallsToSummaries(summaries);
+
+  options.onExtractionReport?.(
+    buildPythonExtractionReport({
+      packs: options.packs,
+      tallies,
+      filesWalked: options.files.length,
+      summaries,
+    }),
+  );
+  options.onTiming?.(timer.report());
 
   return { summaries, facts: db };
 }
