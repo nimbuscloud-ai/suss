@@ -11,6 +11,7 @@ import { extractRawBranches } from "./assembly.js";
 import type {
   InvocationRecognizer,
   RawBranch,
+  RawEffect,
   TerminalPattern,
 } from "@suss/extractor";
 import type { Project } from "ts-morph";
@@ -32,6 +33,19 @@ function getExportedFunction(project: Project, source: string): FunctionRoot {
     throw new Error("No exported function found");
   }
   return fn;
+}
+
+/** The invocation effect on the first branch whose callee is written as `callee`. */
+function invocationOf(
+  branches: RawBranch[],
+  callee: string,
+): Extract<RawEffect, { type: "invocation" }> {
+  for (const effect of branches[0].effects) {
+    if (effect.type === "invocation" && effect.callee === callee) {
+      return effect;
+    }
+  }
+  throw new Error(`expected an invocation effect for ${callee}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,10 +1386,7 @@ describe("edge cases", () => {
       },
     ];
     const branches = extractRawBranches(fn, patterns).branches;
-    const effect = branches[0].effects.find((e) => e.type === "invocation");
-    if (effect === undefined || effect.type !== "invocation") {
-      throw new Error("expected invocation effect");
-    }
+    const effect = invocationOf(branches, "log");
     expect(effect.args).toEqual([
       {
         kind: "call",
@@ -1584,10 +1595,7 @@ describe("edge cases", () => {
       },
     ];
     const branches = extractRawBranches(fn, patterns).branches;
-    const effect = branches[0].effects.find((e) => e.type === "invocation");
-    if (effect === undefined || effect.type !== "invocation") {
-      throw new Error("expected invocation effect");
-    }
+    const effect = invocationOf(branches, "db.article.create");
     expect(effect.args).toEqual([
       {
         kind: "object",
@@ -1651,10 +1659,7 @@ describe("edge cases", () => {
       },
     ];
     const branches = extractRawBranches(fn, patterns).branches;
-    const effect = branches[0].effects.find((e) => e.type === "invocation");
-    if (effect === undefined || effect.type !== "invocation") {
-      throw new Error("expected invocation effect");
-    }
+    const effect = invocationOf(branches, "db.tag.createMany");
     expect(effect.args).toEqual([
       {
         kind: "object",
@@ -1692,10 +1697,7 @@ describe("edge cases", () => {
       },
     ];
     const branches = extractRawBranches(fn, patterns).branches;
-    const effect = branches[0].effects.find((e) => e.type === "invocation");
-    if (effect === undefined || effect.type !== "invocation") {
-      throw new Error("expected invocation effect");
-    }
+    const effect = invocationOf(branches, "db.tag.createMany");
     expect(effect.args).toEqual([
       {
         kind: "object",
@@ -1737,10 +1739,7 @@ describe("edge cases", () => {
       },
     ];
     const branches = extractRawBranches(fn, patterns).branches;
-    const effect = branches[0].effects.find((e) => e.type === "invocation");
-    if (effect === undefined || effect.type !== "invocation") {
-      throw new Error("expected invocation effect");
-    }
+    const effect = invocationOf(branches, "db.tag.createMany");
     expect(effect.args).toEqual([
       {
         kind: "object",
@@ -1881,31 +1880,120 @@ describe("edge cases", () => {
     expect(callees).toEqual(["foo", "bar"]);
   });
 
-  it("does not capture call expressions in argument positions", () => {
-    // `foo(bar())`: bar is an argument to foo, not a composition
-    // sibling. The expression-statement-level foo call IS captured;
-    // the nested bar should not be double-captured.
-    const project = createProject();
-    const fn = getExportedFunction(
-      project,
-      `
-      export function handler(input: any) {
-        logger.info(formatMessage(input));
-      }
-    `,
-    );
-    const patterns: TerminalPattern[] = [
+  describe("a call is recorded wherever it is written", () => {
+    const fallthrough: TerminalPattern[] = [
       {
         kind: "return",
         match: { type: "functionFallthrough" },
         extraction: {},
       },
     ];
-    const branches = extractRawBranches(fn, patterns).branches;
-    const callees = branches[0].effects
-      .filter((e) => e.type === "invocation")
-      .map((e) => (e.type === "invocation" ? e.callee : null));
-    expect(callees).toEqual(["logger.info"]);
+    const returns: TerminalPattern[] = [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ];
+    const calleesOf = (branches: RawBranch[]): string[] =>
+      branches[0].effects.flatMap((e) =>
+        e.type === "invocation" ? [e.callee] : [],
+      );
+
+    it("records a call written as an argument, before the call it feeds", () => {
+      const project = createProject();
+      const fn = getExportedFunction(
+        project,
+        `
+        export function index(byPattern: Map<string, unknown>, files: string[]) {
+          byPattern.set("users", buildPatternIndex(files));
+        }
+      `,
+      );
+      const branches = extractRawBranches(fn, fallthrough).branches;
+      expect(calleesOf(branches)).toEqual([
+        "buildPatternIndex",
+        "byPattern.set",
+      ]);
+      expect(invocationOf(branches, "byPattern.set").args[1]).toEqual({
+        kind: "call",
+        callee: "buildPatternIndex",
+        args: [{ kind: "identifier", name: "files" }],
+      });
+    });
+
+    it("records a call spread into an argument, awaited", () => {
+      const project = createProject();
+      const fn = getExportedFunction(
+        project,
+        `
+        export async function discover(units: unknown[], pattern: string) {
+          units.push(...(await unitsFor(pattern)));
+        }
+      `,
+      );
+      const branches = extractRawBranches(fn, fallthrough).branches;
+      expect(calleesOf(branches)).toEqual(["unitsFor", "units.push"]);
+      expect(invocationOf(branches, "unitsFor").async).toBe(true);
+      expect(invocationOf(branches, "units.push").async).toBe(false);
+    });
+
+    it("records a call inside a ternary inside a literal, under the ternary's condition", () => {
+      const project = createProject();
+      const fn = getExportedFunction(
+        project,
+        `
+        export function effectsOf(method: unknown, storage: unknown) {
+          return [
+            ...(storage === undefined ? [] : storageEffects(callsUnder(method), storage)),
+          ];
+        }
+      `,
+      );
+      const branches = extractRawBranches(fn, returns).branches;
+      expect(calleesOf(branches)).toEqual(["callsUnder", "storageEffects"]);
+      const guards = invocationOf(branches, "storageEffects").preconditions;
+      expect(guards?.map((c) => [c.sourceText, c.polarity])).toEqual([
+        ["storage === undefined", "negative"],
+      ]);
+    });
+
+    it("records a call of a call's result as two calls", () => {
+      const project = createProject();
+      const fn = getExportedFunction(
+        project,
+        `
+        export function run(f: () => () => void) {
+          f()();
+        }
+      `,
+      );
+      const branches = extractRawBranches(fn, fallthrough).branches;
+      expect(calleesOf(branches)).toEqual(["f", "f()"]);
+    });
+
+    it("leaves a call inside a callback a pack claimed as its own unit unread", () => {
+      const project = createProject();
+      const fn = getExportedFunction(
+        project,
+        `
+        export function handler(input: unknown) {
+          defer(() => {
+            audit.record(input);
+          });
+          logger.info(input);
+        }
+      `,
+      );
+      const claimed = fn.getDescendants().find(Node.isArrowFunction);
+      if (claimed === undefined) {
+        throw new Error("expected an arrow in the source");
+      }
+      const branches = extractRawBranches(
+        fn,
+        fallthrough,
+        [],
+        [],
+        new Set([claimed]),
+      ).branches;
+      expect(calleesOf(branches)).toEqual(["defer", "logger.info"]);
+    });
   });
 
   it("handles deeply nested if chains (4 levels)", () => {

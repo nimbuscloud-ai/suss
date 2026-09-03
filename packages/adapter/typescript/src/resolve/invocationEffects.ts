@@ -1,26 +1,17 @@
-// invocationEffects.ts: Capture call expressions as `invocation`
-// RawEffects. Two patterns covered:
-//
-//   1. Bare expression-statement calls: `setCount(n);`,
-//      `onChange(value);`, `emitter.emit("x", y);`. Result is
-//      discarded; the call fires for side effect.
-//   2. Container-building calls: `return [...checkProviderCoverage(p, c),
-//      ...checkConsumerSatisfaction(p, c)]` and similar. The call's
-//      return value is composed into an array or object literal;
-//      the call still *fires* when the container expression
-//      evaluates. Without this, orchestrator functions that
-//      compose sub-checks via spread show `effects: []` and the
-//      graph has no edges through them.
-//
-// Scope:
-//   * Descend into nested function expressions / arrows (Promise
-//     executors, `.then` callbacks, `forEach` bodies, IIFEs): their
-//     calls are behavior of the enclosing unit. Named nested
-//     declarations and pack-declared sub-unit boundaries are hard
-//     stops (see `walk/descent.ts`).
-//   * Don't classify semantics. All captured calls become
-//     `invocation` effects with the callee's source text.
-//   * Async detection via `Node.isAwaitExpression` on the call.
+/**
+ * invocationEffects.ts: capture every call in a unit's body as an
+ * `invocation` RawEffect, wherever the call is written: a statement of
+ * its own, an argument, an element of a literal, an arm of a ternary,
+ * the receiver of a method chain. Which calls a summary keeps is
+ * decided in assembly by node identity, so no position needs a rule of
+ * its own here.
+ *
+ * The walk descends into nested arrows and function expressions, since
+ * their calls are behavior of the enclosing unit, and stops at named
+ * nested declarations, pack-declared sub-unit boundaries and
+ * decorators. The README beside this file says how the effects are
+ * ordered and what `async` means.
+ */
 
 import {
   type CallExpression,
@@ -62,25 +53,16 @@ export interface InvocationEffectLocation {
   effect: RawEffect;
   /**
    * The call this came from, so the assembly pass can tell a call
-   * apart from a terminal on the same line. A terminal built from a
-   * call, `res.json(body)`, is that same node; a call whose result the
+   * apart from a terminal. A terminal built from a call,
+   * `res.json(body)`, is that same node; a call whose result the
    * terminal describes, `return toView(row)`, is a different one.
    */
-  node?: Node;
+  node: CallExpression;
   /**
-   * Start line of the containing statement (expression statement or
-   * the statement enclosing a container-building call). Used by the
+   * Start line of the statement enclosing the call. Used by the
    * assembly pass to assign effects to the right branch.
    */
   line: number;
-  /**
-   * True when the effect is a container-building call (spread or
-   * direct element in an array/object literal) rather than an
-   * expression-statement call. Container calls are never themselves
-   * terminals, so the assembly-level terminal-line dedup must skip
-   * them: otherwise single-line orchestrators lose their effects.
-   */
-  neverTerminal: boolean;
   /**
    * True for a call in a `finally` body, which runs on every path
    * through the try, including the ones that left before it.
@@ -357,202 +339,62 @@ export function extractInvocationEffects(
   func: FunctionRoot,
   barriers: DescentBarriers = NO_BARRIERS,
 ): InvocationEffectLocation[] {
-  const results: InvocationEffectLocation[] = [];
+  const calls: CallExpression[] = [];
 
   func.forEachDescendant((node, traversal) => {
-    if (isDescentStop(node, func, barriers)) {
+    if (isDescentStop(node, func, barriers) || Node.isDecorator(node)) {
       traversal.skip();
       return;
     }
-
-    // Case 1: bare expression statement: `foo();`, `await foo();`.
-    if (Node.isExpressionStatement(node)) {
-      const { call, async } = unwrapCall(node.getExpression());
-      if (call !== null) {
-        const preconditions = collectPreconditions(node, func);
-        results.push({
-          effect: {
-            type: "invocation",
-            callee: call.getExpression().getText(),
-            args: extractArgs(call),
-            async,
-            ...(preconditions.length > 0 ? { preconditions } : {}),
-          },
-          line: startLineOf(node),
-          neverTerminal: false,
-          alwaysRuns: runsOnEveryPath(node, func),
-        });
-      }
-      return;
-    }
-
-    // Case 2: spread-element call in an array/object literal ,
-    // `[...foo()]`, `{...foo()}`. The spread could be inside a
-    // return, a variable declaration, a function argument: in
-    // each case the call still fires when the container is built.
-    if (Node.isSpreadElement(node)) {
-      const parent = node.getParent();
-      if (
-        parent !== undefined &&
-        (Node.isArrayLiteralExpression(parent) ||
-          Node.isObjectLiteralExpression(parent))
-      ) {
-        const { call, async } = unwrapCall(node.getExpression());
-        if (call !== null) {
-          const preconditions = collectPreconditions(node, func);
-          results.push({
-            effect: {
-              type: "invocation",
-              callee: call.getExpression().getText(),
-              args: extractArgs(call),
-              async,
-              ...(preconditions.length > 0 ? { preconditions } : {}),
-            },
-            line: enclosingStatementLine(node),
-            neverTerminal: true,
-            alwaysRuns: runsOnEveryPath(node, func),
-          });
-        }
-      }
-      return;
-    }
-
-    // Case 4: a call whose result is given a name, `const a = foo()`.
-    // The commonest call there is, and the one this walker used to miss,
-    // so a handler that fetched something and then answered looked as
-    // though it had called nothing. What a summary said about the code
-    // and what the code did came apart there.
-    if (Node.isVariableDeclaration(node)) {
-      const initializer = node.getInitializer();
-      if (initializer !== undefined) {
-        const { call, async } = unwrapCall(initializer);
-        if (call !== null) {
-          const preconditions = collectPreconditions(node, func);
-          results.push({
-            effect: {
-              type: "invocation",
-              callee: call.getExpression().getText(),
-              args: extractArgs(call),
-              async,
-              ...(preconditions.length > 0 ? { preconditions } : {}),
-            },
-            line: enclosingStatementLine(node),
-            neverTerminal: true,
-            alwaysRuns: runsOnEveryPath(node, func),
-          });
-        }
-      }
-      return;
-    }
-
-    // Case 4: the call a return hands back: `return toView(row)`.
-    // The terminal reader describes what comes out of it, and nothing
-    // recorded that the call happened, so nothing knew this unit calls
-    // that one.
-    if (Node.isReturnStatement(node)) {
-      const returned = node.getExpression();
-      const { call, async } =
-        returned === undefined
-          ? { call: null, async: false }
-          : unwrapCall(returned);
-      if (call !== null) {
-        const preconditions = collectPreconditions(node, func);
-        results.push({
-          effect: {
-            type: "invocation",
-            callee: call.getExpression().getText(),
-            args: extractArgs(call),
-            async,
-            ...(preconditions.length > 0 ? { preconditions } : {}),
-          },
-          line: startLineOf(node),
-          neverTerminal: false,
-          alwaysRuns: runsOnEveryPath(node, func),
-          node: call,
-        });
-      }
-      return;
-    }
-
-    // Case 5: the call an arrow hands back with no `return` written,
-    // `xs.map(x => toView(x))`. The walk descends into the arrow, and
-    // the call is in a position none of the cases above cover, so
-    // nothing recorded it.
-    if (Node.isArrowFunction(node)) {
-      const body = node.getBody();
-      const { call, async } = Node.isExpression(body)
-        ? unwrapCall(body)
-        : { call: null, async: false };
-      if (call !== null) {
-        const preconditions = collectPreconditions(node, func);
-        results.push({
-          effect: {
-            type: "invocation",
-            callee: call.getExpression().getText(),
-            args: extractArgs(call),
-            async: async || node.isAsync(),
-            ...(preconditions.length > 0 ? { preconditions } : {}),
-          },
-          line: startLineOf(node),
-          neverTerminal: false,
-          alwaysRuns: runsOnEveryPath(node, func),
-          node: call,
-        });
-      }
-      return;
-    }
-
-    // Case 3: direct call element in an array literal or property
-    // assignment value: `[foo(), bar()]`, `{ key: foo() }`. These
-    // also fire when the container evaluates. Skip arguments to
-    // other calls (`foo(bar())`): those are argument positions,
-    // not composition positions.
     if (Node.isCallExpression(node)) {
-      const parent = node.getParent();
-      if (parent === undefined) {
-        return;
-      }
-      const isArrayElement = Node.isArrayLiteralExpression(parent);
-      const isPropertyValue =
-        Node.isPropertyAssignment(parent) && parent.getInitializer() === node;
-      if (isArrayElement || isPropertyValue) {
-        const preconditions = collectPreconditions(node, func);
-        results.push({
-          effect: {
-            type: "invocation",
-            callee: node.getExpression().getText(),
-            args: extractArgs(node),
-            async: false,
-            ...(preconditions.length > 0 ? { preconditions } : {}),
-          },
-          line: enclosingStatementLine(node),
-          neverTerminal: true,
-          alwaysRuns: runsOnEveryPath(node, func),
-        });
-      }
+      calls.push(node);
     }
   });
 
-  return results;
+  // A call finishes after everything written inside it, so ordering by
+  // end puts a call in argument position before the call it feeds.
+  calls.sort((a, b) => a.getEnd() - b.getEnd());
+  return calls.map((call) => invocationAt(call, func));
+}
+
+function invocationAt(
+  call: CallExpression,
+  func: FunctionRoot,
+): InvocationEffectLocation {
+  const preconditions = collectPreconditions(call, func);
+  return {
+    effect: {
+      type: "invocation",
+      callee: call.getExpression().getText(),
+      args: extractArgs(call),
+      async: isAwaited(call),
+      ...(preconditions.length > 0 ? { preconditions } : {}),
+    },
+    node: call,
+    line: enclosingStatementLine(call),
+    alwaysRuns: runsOnEveryPath(call, func),
+  };
+}
+
+/** Whether the caller waits on the result: `await f()`, through any parentheses. */
+function isAwaited(call: CallExpression): boolean {
+  let current: Node | undefined = call.getParent();
+  while (current !== undefined && Node.isParenthesizedExpression(current)) {
+    current = current.getParent();
+  }
+  return current !== undefined && Node.isAwaitExpression(current);
 }
 
 /**
  * Walk the function body for `InvocationRecognizer` dispatch only.
- * Visits EVERY `CallExpression` in the body, descending through nested
- * function expressions / arrows so a recognizer fires inside a Promise
- * executor or `.then` callback as if the call were inline. Named nested
- * declarations and pack-declared sub-unit boundaries are hard stops.
+ * Visits every `CallExpression` in the body under the same descent
+ * rule as `extractInvocationEffects`, so a recognizer fires inside a
+ * Promise executor or `.then` callback as if the call were inline.
  *
- * Distinct from `extractInvocationEffects` because the existing
- * walker is intentionally narrow: it captures a specific subset
- * of call positions (bare expression statement, container building)
- * to avoid double-counting calls that already become terminals
- * (`return foo()`) or whose return value is consumed (`const x =
- * foo()`). Recognizers don't have those concerns: emitting a
- * `interaction(class: "storage-access")` for `const user = await db.user.findUnique(...)`
- * is exactly what the demo needs. Coupling recognizer reach to the
- * invocation walker's scope would silently drop the dominant
- * Prisma pattern.
+ * Kept apart from the invocation walk because what it hands back is
+ * different: a recognized effect is additive to the invocation effect
+ * from the same call and skips assembly's terminal dedup, so it
+ * records its own line and preconditions rather than a node.
  */
 export function runInvocationRecognizers(
   func: FunctionRoot,
@@ -1126,10 +968,10 @@ function unwrapCasts(node: Node): Node {
 }
 
 /**
- * Walk up from a composition-position call to find the enclosing
- * statement line. This is what should be used for branch
- * attribution: the line of the statement that contains the
- * container expression.
+ * The line of the statement enclosing `node`, which is the line branch
+ * attribution goes by. Assembly compares it against where each
+ * terminal ends, and the statement is the smallest thing that has an
+ * order relative to a terminal.
  */
 function enclosingStatementLine(node: Node): number {
   let current: Node | undefined = node;
@@ -1140,32 +982,4 @@ function enclosingStatementLine(node: Node): number {
     current = current.getParent();
   }
   return startLineOf(node);
-}
-
-/**
- * If the expression is a `CallExpression` (possibly awaited / `void`'d /
- * parenthesised), return the call and whether it's `await`-wrapped.
- * Handles the two common forms of top-level side-effecting calls:
- *
- *   setCount(n);
- *   await fetchUser(id);
- */
-function unwrapCall(node: Node): {
-  call: CallExpression | null;
-  async: boolean;
-} {
-  if (Node.isAwaitExpression(node)) {
-    const inner = node.getExpression();
-    if (Node.isCallExpression(inner)) {
-      return { call: inner, async: true };
-    }
-    return { call: null, async: false };
-  }
-  if (Node.isParenthesizedExpression(node)) {
-    return unwrapCall(node.getExpression());
-  }
-  if (Node.isCallExpression(node)) {
-    return { call: node, async: false };
-  }
-  return { call: null, async: false };
 }
