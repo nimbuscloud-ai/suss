@@ -610,6 +610,16 @@ It does not touch the evaluator.
     `emitBindingValues`, so every corpus run states the number. The
     reading that decides on scoped reaching definitions comes off the
     next large-corpus runs.
+12. Done (#737, the cheap half). `sameConstructionAcrossWrites` in
+    `assignments.ts` reads a name whose writes cannot be ordered but
+    agree on one construction, so a client cached behind a guard
+    resolves without any control-flow rule at all. A `null` or
+    `undefined` write is set aside first, since it means the name was
+    not yet assigned rather than a value of its own; two different
+    constructions still resolve to nothing. On this repo's adapter
+    package, `reassignedNamesUnstated` fell from 66 to 63. The
+    control-flow half, a config object a guard decides whether to
+    assign at all, stays open.
 
 Each step shipped behind the existing gates: summaries byte-identical
 where discovery finds the same units, the fuzzer's pinned bugs as the

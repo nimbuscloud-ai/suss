@@ -13,9 +13,9 @@
 // change the result: every write is directly in the module's own
 // statement list, so each runs exactly once in the order it is
 // written, and nothing at that level reads the binding before the last
-// one. Anywhere else, a write inside a branch, a loop, or a function
-// body, this cannot decide and says so, and the name resolves to
-// nothing.
+// one. A write inside a branch, a loop, or a function body cannot be
+// ordered this way, but it can still be read when every such write is
+// the same construction. Short of that, the name resolves to nothing.
 
 import { Node, SyntaxKind, VariableDeclarationKind } from "ts-morph";
 
@@ -128,6 +128,56 @@ function writesToBindingUncached(
   }
 
   return { values, inOrder: writesRunInOrder(declaration, writes) };
+}
+
+/**
+ * Whether every write in a set the adapter could not order is the same
+ * construction, so the name was assigned that no matter which write
+ * ran last. A write of `null` or `undefined` is set aside first: that
+ * is a placeholder for "not yet assigned", not a value in its own
+ * right, and a name whose writes are only placeholders stays
+ * unresolved rather than resolving to one of them.
+ *
+ * Returns the shared construction, or null when the writes do not
+ * agree, or agree on nothing but placeholders.
+ */
+export function sameConstructionAcrossWrites(
+  values: ReadonlyArray<Node>,
+): Expression | null {
+  const candidates = values.filter((value) => !isNotYetPlaceholder(value));
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  let construction: Expression | null = null;
+  for (const value of candidates) {
+    if (!isConstruction(value)) {
+      return null;
+    }
+    if (construction !== null && sourceOf(value) !== sourceOf(construction)) {
+      return null;
+    }
+    construction = value;
+  }
+  return construction;
+}
+
+/** A `null` or `undefined` literal, standing in for "not written yet". */
+function isNotYetPlaceholder(value: Node): boolean {
+  return (
+    value.getKind() === SyntaxKind.NullKeyword ||
+    (Node.isIdentifier(value) && value.getText() === "undefined")
+  );
+}
+
+/** A call or a `new`, the two ways a value can be constructed. */
+function isConstruction(value: Node): value is Expression {
+  return Node.isCallExpression(value) || Node.isNewExpression(value);
+}
+
+/** Source text with whitespace runs collapsed, so formatting alone never tells two constructions apart. */
+function sourceOf(node: Node): string {
+  return node.getText().replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -292,6 +342,20 @@ function isAssignmentOperator(kind: SyntaxKind): boolean {
   );
 }
 
+/**
+ * `??=` and `||=` only run when the left side is nullish or falsy, but
+ * the value they assign when they do run is the whole right side, the
+ * same as a plain `=`. `+=` and the rest combine the right side with
+ * whatever is already there, so their value is not written anywhere.
+ */
+function writesItsWholeValue(kind: SyntaxKind): boolean {
+  return (
+    kind === SyntaxKind.EqualsToken ||
+    kind === SyntaxKind.QuestionQuestionEqualsToken ||
+    kind === SyntaxKind.BarBarEqualsToken
+  );
+}
+
 /** The write a node performs on a name, when it performs one. */
 function writeAt(node: Node): { target: Node; write: Write } | null {
   if (Node.isBinaryExpression(node)) {
@@ -303,7 +367,7 @@ function writeAt(node: Node): { target: Node; write: Write } | null {
     ) {
       return null;
     }
-    const value = operator === SyntaxKind.EqualsToken ? node.getRight() : null;
+    const value = writesItsWholeValue(operator) ? node.getRight() : null;
     return { target, write: { value, node } };
   }
 
