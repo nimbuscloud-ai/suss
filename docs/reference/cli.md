@@ -537,6 +537,14 @@ spelling that is exactly one boundary's name takes that one:
 `GET /articles` is the collection route, not the comments route under
 it.
 
+When the unit an item is about provides a boundary itself, an exported
+function or a route, the item says which one after the location:
+`discoverUnits (src/discovery.ts:150, provides
+fn:@suss/adapter-python::discoverUnits) calls builtSubjects`. The JSON
+form has the same key in a `provides` field. Read that rather than the
+summary id, which only spells the boundary when two summaries share a
+name.
+
 ### The same questions in symbols
 
 Five of the questions have a symbol form, for somebody asking the same

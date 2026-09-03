@@ -87,7 +87,7 @@ describe("check a storage layer that is told which table to read", () => {
       "1 unit calls storage-wrapper::src/orderStore.ts::readRow:",
     );
     expect(asked.stdout).toContain(
-      "storage-wrapper::src/orders.ts::GetOrderFunction.getOrder (src/orders.ts:6) calls readRow",
+      "storage-wrapper::src/orders.ts::GetOrderFunction.getOrder (src/orders.ts:6, provides GET /orders/{customer}) calls readRow",
     );
   });
 });

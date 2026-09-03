@@ -28,7 +28,7 @@ import {
   representativeUnit,
 } from "./callFacts.js";
 import { languageOfFile } from "./language.js";
-import { resolveTarget } from "./target.js";
+import { providesKeyOf, resolveTarget } from "./target.js";
 
 import type { ValueLocation, WhyExplained } from "@suss/adapter-typescript";
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
@@ -428,6 +428,12 @@ function unitAt(summary: BehavioralSummary): string {
   return `${summary.location.file}:${summary.location.range.start}`;
 }
 
+/** Where a summary is, with the boundary it provides appended when it has one. */
+function locationClause(summary: BehavioralSummary): string {
+  const provides = providesKeyOf(summary);
+  return `${unitAt(summary)}${provides === undefined ? "" : `, provides ${provides}`}`;
+}
+
 function reachAnswer(
   subject: string,
   start: BehavioralSummary,
@@ -472,8 +478,9 @@ function reachAnswer(
       ending.callee === undefined ? "" : ` through ${ending.callee}`;
     const where =
       hops.length === 0
-        ? `, in its own body (${unitAt(last)})`
-        : ` (${unitAt(last)})`;
+        ? `, in its own body (${locationClause(last)})`
+        : ` (${locationClause(last)})`;
+    const provides = providesKeyOf(last);
     items.push({
       text: `${last.identity.name} ${ending.relation} ${ending.label}${through}${where}`,
       data: {
@@ -481,6 +488,7 @@ function reachAnswer(
         relation: ending.relation,
         boundary: ending.label,
         ...(ending.callee !== undefined ? { via: ending.callee } : {}),
+        ...(provides !== undefined ? { provides } : {}),
       },
     });
   }
@@ -529,12 +537,14 @@ function touchAtTarget(
 }
 
 const HOP_LINE: Record<CallRecord, (hop: WhyHop) => string> = {
+  // A bound hop already ends by saying what hop.to provides, so only
+  // the written line appends it to hop.to's location.
   written: (hop) =>
-    `${hop.from.identity.name} (${unitAt(hop.from)}) calls ${hop.callee}, and that call runs ${hop.to?.identity.name} (${hop.to === null ? "" : unitAt(hop.to)}):`,
+    `${hop.from.identity.name} (${locationClause(hop.from)}) calls ${hop.callee}, and that call runs ${hop.to?.identity.name} (${hop.to === null ? "" : locationClause(hop.to)}):`,
   bound: (hop) =>
     hop.to === null
-      ? `${hop.from.identity.name} (${unitAt(hop.from)}) is bound to ${hop.callee}, which nothing here provides`
-      : `${hop.from.identity.name} (${unitAt(hop.from)}) is bound to ${hop.callee}, which ${hop.to.identity.name} (${unitAt(hop.to)}) provides`,
+      ? `${hop.from.identity.name} (${locationClause(hop.from)}) is bound to ${hop.callee}, which nothing here provides`
+      : `${hop.from.identity.name} (${locationClause(hop.from)}) is bound to ${hop.callee}, which ${hop.to.identity.name} (${unitAt(hop.to)}) provides`,
 };
 
 function hopLine(hop: WhyHop): string {
@@ -542,10 +552,14 @@ function hopLine(hop: WhyHop): string {
 }
 
 function hopJson(hop: WhyHop): Record<string, unknown> {
+  const fromProvides = providesKeyOf(hop.from);
+  const toProvides = hop.to === null ? undefined : providesKeyOf(hop.to);
   return {
     from: summaryIdentifier(hop.from),
+    ...(fromProvides !== undefined ? { fromProvides } : {}),
     callee: hop.callee,
     to: hop.to === null ? null : summaryIdentifier(hop.to),
+    ...(toProvides !== undefined ? { toProvides } : {}),
     recorded: hop.recorded,
   };
 }

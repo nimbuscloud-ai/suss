@@ -35,6 +35,8 @@ The question must be one of these seven, in these words:
 
 A boundary is spelled the way reports spell it: "GET /users/:id", "aws.dynamodb:orders", "postgres:public.users". A unit is a file, a file:line, a summary id, or a function name.
 
+When an item is about a unit that itself provides a boundary, such as an exported function or a route, it says so in a "provides" field, whether or not the unit's own id happens to say the same thing.
+
 Read "found" first. When it is false, "needs" says which input would let suss answer, and that is usually the thing to act on rather than concluding nothing is there. An empty "items" with found true means suss looked and there genuinely is nothing.`;
 
 export const CHECK_DESCRIPTION = `Compare both sides of every boundary in this codebase and report where they disagree: a caller reading a field the provider never returns, a status nothing handles, a queue nobody consumes.

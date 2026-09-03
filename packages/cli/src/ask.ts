@@ -35,6 +35,7 @@ import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import { loadedSummaries } from "./loadedSummaries.js";
 import {
   collapseTouches,
+  providesKeyOf,
   type ResolvedTarget,
   resolveTarget,
   type TargetTouch,
@@ -630,12 +631,14 @@ function answerReachedBy(subject: string, loaded: LoadedSummaries): Answer {
         continue;
       }
       said.add(text);
+      const provides = providesKeyOf(own.summary);
       items.push({
         text,
         data: {
           boundary: own.touched.label,
           unit: summaryIdentifier(own.summary),
           through: [...through],
+          ...(provides !== undefined ? { provides } : {}),
         },
       });
     }
@@ -690,6 +693,7 @@ function answerReaches(subject: string, loaded: LoadedSummaries): Answer {
       relations: touch.relations,
       unit: touch.unit,
       ...(touch.callee !== undefined ? { via: touch.callee } : {}),
+      ...(touch.provides !== undefined ? { provides: touch.provides } : {}),
       ...(touch.through !== undefined ? { through: touch.through } : {}),
     };
     const hops =

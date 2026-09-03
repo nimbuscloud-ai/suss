@@ -1209,6 +1209,42 @@ describe("suss ask what calls", () => {
     expect(code).toBe(1);
     expect(output).toContain("No summary here is src/nowhere.ts");
   });
+
+  it("says the boundary a caller itself provides, after its location", () => {
+    const exported: BehavioralSummary = {
+      ...handler,
+      identity: {
+        ...handler.identity,
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: {
+            name: "function-call",
+            package: "@demo/orders",
+            exportPath: ["getOrder"],
+          },
+          recognition: "package-exports",
+        },
+      },
+    } as BehavioralSummary;
+
+    const { output } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      exported,
+    ]);
+
+    expect(output).toContain(
+      "(src/orders.ts:6, provides fn:@demo/orders::getOrder) calls readRow",
+    );
+  });
+
+  it("leaves provides off a caller that is not itself an export", () => {
+    const { output } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      handler,
+    ]);
+
+    expect(output).not.toContain("provides");
+  });
 });
 
 describe("suss ask across a grounded name", () => {
@@ -1624,6 +1660,144 @@ describe("suss ask what reaches, over a chain", () => {
     expect(code).toBe(1);
     expect(output).toContain("Nothing here is at");
   });
+
+  it("says what boundary the route at the top of the chain provides", () => {
+    const { answer: json } = answerQuestion({
+      question: "what reaches aws.dynamodb:editions",
+      dir,
+      output: path.join(dir, "answer.txt"),
+    });
+    const items = json?.items as
+      | Array<{ boundary: string; provides?: string }>
+      | undefined;
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        boundary: "POST /orders",
+        provides: "POST /orders",
+      }),
+    ]);
+  });
+});
+
+describe("suss ask what does X reach, when a hop is itself a package export", () => {
+  const CONFIDENT = { source: "inferred_static", level: "high" } as const;
+
+  const readRowExport = packageExportBinding({
+    recognition: "package-exports",
+    packageName: "@demo/orderstore",
+    exportPath: ["readRow"],
+  });
+
+  const readRow: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/orderStore.ts",
+      range: { start: 1, end: 3 },
+      exportName: "readRow",
+    },
+    identity: {
+      name: "readRow",
+      exportPath: ["readRow"],
+      boundaryBinding: readRowExport,
+      id: "repo::src/orderStore.ts::readRow",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "readRow:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: storageBinding({
+              recognition: "aws-dynamodb",
+              storageSystem: "aws.dynamodb",
+              scope: "default",
+              container: "orders",
+              accessPath: null,
+            }),
+            callee: "client.send",
+            interaction: {
+              class: "storage-access",
+              kind: "read",
+              fields: [],
+              operation: "get",
+            },
+          },
+        ],
+        location: { start: 1, end: 3 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  const getOrder: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/orders.ts",
+      range: { start: 3, end: 6 },
+      exportName: "getOrder",
+    },
+    identity: {
+      name: "getOrder",
+      exportPath: ["getOrder"],
+      boundaryBinding: null,
+      id: "repo::src/orders.ts::getOrder",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "getOrder:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "invocation",
+            callee: "readRow",
+            args: [],
+            async: true,
+            summary: "repo::src/orderStore.ts::readRow",
+          },
+        ],
+        location: { start: 4, end: 5 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+
+  it("says what boundary the unit that does the reaching itself provides", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-reaches-export-"));
+    fs.writeFileSync(
+      path.join(dir, "code.json"),
+      JSON.stringify([getOrder, readRow]),
+    );
+    try {
+      const { answer: json } = answerQuestion({
+        question: "what does getOrder reach",
+        dir,
+        output: path.join(dir, "answer.txt"),
+      });
+      const items = json?.items as
+        | Array<{ unit: string; boundary: string; provides?: string }>
+        | undefined;
+
+      expect(items).toEqual([
+        expect.objectContaining({
+          unit: "repo::src/orderStore.ts::readRow",
+          boundary: "aws.dynamodb:orders",
+          provides: "fn:@demo/orderstore::readRow",
+        }),
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("suss ask about one function, however it is spelled", () => {
@@ -1814,6 +1988,25 @@ describe("suss ask about one function, however it is spelled", () => {
     expect(callers("what reads fn:@demo/datalog::evaluate")).toEqual(byName);
   });
 
+  it("says what a caller itself provides, apart from what its id happens to say", () => {
+    const items = answer("what calls evaluate", all).items as Array<{
+      unit: string;
+      provides?: string;
+    }>;
+
+    const provider = items.find(
+      (item) =>
+        item.unit ===
+        "repo::packages/checker/src/reachability.ts::analyzeFlow#fn:@demo/checker::analyzeFlow",
+    );
+    const plain = items.find(
+      (item) => item.unit === "repo::packages/ruby/src/storage.ts::reachesBase",
+    );
+
+    expect(provider?.provides).toBe("fn:@demo/checker::analyzeFlow");
+    expect(plain?.provides).toBeUndefined();
+  });
+
   it("says when a bare name could mean several functions, and which", () => {
     const twin = unit({
       kind: "library",
@@ -1902,6 +2095,8 @@ describe("suss ask about one function, however it is spelled", () => {
         from: "repo::packages/checker/src/reachability.ts::analyzeFlow#fn:@demo/checker::analyzeFlow",
         callee: "evaluate",
         to: "repo::packages/datalog/src/index.ts::evaluate",
+        fromProvides: "fn:@demo/checker::analyzeFlow",
+        toProvides: "fn:@demo/datalog::evaluate",
       }),
     ]);
   });
@@ -1928,6 +2123,14 @@ describe("suss ask about one function, however it is spelled", () => {
         "repo::packages/ruby/src/storage.ts::reachesBase",
         "repo::packages/datalog/src/index.ts::evaluate",
       ],
+    ]);
+    expect(
+      (json.hops as Array<{ fromProvides?: string; toProvides?: string }>).map(
+        (hop) => [hop.fromProvides, hop.toProvides],
+      ),
+    ).toEqual([
+      [undefined, undefined],
+      [undefined, "fn:@demo/datalog::evaluate"],
     ]);
   });
 
