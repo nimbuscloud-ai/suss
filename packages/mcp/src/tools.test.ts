@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Project } from "./project.js";
 import {
@@ -132,6 +132,78 @@ describe("the tools, on a project bigger than one answer", () => {
     const answer = result.structuredContent as { found: boolean };
 
     expect(answer.found).toBe(true);
+
+    project.close();
+  }, 60_000);
+
+  it("caps a long answer at 20 by default and says how to see more", async () => {
+    const project = await projectWith(150);
+    const result = await askTool(project, {
+      question: "what can I project from GET",
+    });
+    const answer = result.structuredContent as {
+      items: unknown[];
+      omitted?: number;
+      note?: string;
+    };
+
+    expect(answer.items).toHaveLength(20);
+    expect(answer.omitted).toBe(130);
+    expect(answer.note).toContain("Pass a larger limit to see more.");
+
+    project.close();
+  }, 60_000);
+
+  it("honors a limit passed with the question", async () => {
+    const project = await projectWith(150);
+    const result = await askTool(project, {
+      question: "what can I project from GET",
+      limit: 50,
+    });
+    const answer = result.structuredContent as {
+      items: unknown[];
+      omitted?: number;
+    };
+
+    expect(answer.items).toHaveLength(50);
+    expect(answer.omitted).toBe(100);
+
+    project.close();
+  }, 60_000);
+
+  it("shows everything and omits nothing when the limit covers the list", async () => {
+    const project = await projectWith(150);
+    const result = await askTool(project, {
+      question: "what can I project from GET",
+      limit: 150,
+    });
+    const answer = result.structuredContent as {
+      items: unknown[];
+      omitted?: number;
+    };
+
+    expect(answer.items).toHaveLength(150);
+    expect(answer.omitted).toBeUndefined();
+
+    project.close();
+  }, 60_000);
+
+  it("answers a second question without reading the summaries again", async () => {
+    const project = await projectWith(2);
+    await askTool(project, { question: "what can I project from GET /thing0" });
+
+    const read = vi.spyOn(fs, "readFileSync");
+    const result = await askTool(project, {
+      question: "what does src/app.ts reach",
+    });
+    const answer = result.structuredContent as { found: boolean };
+    const reads = read.mock.calls.filter(([file]) =>
+      String(file).startsWith(project.summaryDir),
+    );
+    read.mockRestore();
+
+    expect(answer.found).toBe(true);
+    expect(reads).toHaveLength(0);
 
     project.close();
   }, 60_000);

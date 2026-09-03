@@ -25,7 +25,6 @@ import { boundariesTouchedBy } from "./boundaryReach.js";
 import {
   functionsSpelled,
   reachTargetOfTouches,
-  readCallFacts,
   representativeUnit,
 } from "./callFacts.js";
 import { languageOfFile } from "./language.js";
@@ -43,6 +42,7 @@ import type {
   ReachTarget,
   SpelledFunctions,
 } from "./callFacts.js";
+import type { LoadedSummaries } from "./loadedSummaries.js";
 import type { TargetTouch } from "./target.js";
 
 export type WhyShape = "whyReaches" | "whyResolves";
@@ -78,7 +78,7 @@ export const WHY_SHAPES: ReadonlyArray<{
 export function askWhy(
   question: ParsedQuestion,
   options: AskOptions,
-  loadSummaries: () => BehavioralSummary[],
+  loadSummaries: () => LoadedSummaries,
 ): Answer {
   if (question.shape === "whyResolves") {
     return answerWhyResolves(question, options);
@@ -250,9 +250,8 @@ interface WhyHop {
 function answerWhyReaches(
   question: ParsedQuestion,
   options: AskOptions,
-  summaries: BehavioralSummary[],
+  { summaries, callFacts: facts }: LoadedSummaries,
 ): Answer {
-  const facts = readCallFacts(summaries);
   const subject = functionsSpelled(question.subject, summaries, facts);
   if (!subject.found) {
     return miss("whyReaches", question.subject, subject.headline);

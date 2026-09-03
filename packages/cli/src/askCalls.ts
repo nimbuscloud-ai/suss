@@ -13,20 +13,16 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
-import {
-  functionsSpelled,
-  readCallFacts,
-  representativeUnit,
-} from "./callFacts.js";
+import { functionsSpelled, representativeUnit } from "./callFacts.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Answer, AnswerItem } from "./ask.js";
+import type { LoadedSummaries } from "./loadedSummaries.js";
 
 export function answerCalls(
   subject: string,
-  summaries: BehavioralSummary[],
+  { summaries, callFacts: facts }: LoadedSummaries,
 ): Answer {
-  const facts = readCallFacts(summaries);
   const spelled = functionsSpelled(subject, summaries, facts);
   if (!spelled.found) {
     return {

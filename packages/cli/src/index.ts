@@ -12,7 +12,12 @@ export {
   corroborate,
 } from "./corroborateCommand.js";
 export { extract } from "./extract.js";
-export { inspect, inspectDiff, inspectDir } from "./inspect.js";
+export {
+  inspect,
+  inspectDiff,
+  inspectDir,
+  readSummariesFromDir,
+} from "./inspect.js";
 export {
   type DraftedIntent,
   type IntentDraftOptions,
@@ -22,6 +27,10 @@ export {
   type UndraftedBoundary,
 } from "./intentDraftCommand.js";
 export { LANGUAGES, type Language } from "./language.js";
+export {
+  type LoadedSummaries,
+  loadedSummaries,
+} from "./loadedSummaries.js";
 export { runCli, USAGE } from "./run.js";
 export {
   draftYaml,
