@@ -9,6 +9,7 @@ import {
   computeContentHash,
   createAdapterStamp,
   projectFileStamp,
+  runDigest,
 } from "./adapterStamp.js";
 
 function tempModuleUrl(): { dir: string; moduleUrl: string } {
@@ -185,5 +186,42 @@ describe("projectFileStamp", () => {
 
   it("says none when no pack reads anything", () => {
     expect(projectFileStamp([])).toBe("none");
+  });
+});
+
+describe("runDigest", () => {
+  it("folds in none when no pack declares discoveryInputs", () => {
+    expect(
+      runDigest("adapter@1.0.0+source|express@1.0.0", [{}], ["a.ts"]),
+    ).toBe("adapter@1.0.0+source|express@1.0.0|reads:none");
+  });
+
+  it("changes when a discovery input file changes", () => {
+    const file = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-run-digest-")),
+      "template.yaml",
+    );
+    fs.writeFileSync(file, "Resources: {}");
+    const pack = { discoveryInputs: () => [file] };
+    const before = runDigest("adapter@1.0.0+source", [pack], ["a.ts"]);
+    fs.writeFileSync(file, "Resources: { Worker: {} }");
+    expect(runDigest("adapter@1.0.0+source", [pack], ["a.ts"])).not.toBe(
+      before,
+    );
+  });
+
+  it("asks every pack for its discovery inputs given the same files", () => {
+    const seen: (readonly string[])[] = [];
+    const pack = {
+      discoveryInputs: (files: readonly string[]) => {
+        seen.push(files);
+        return [];
+      },
+    };
+    runDigest("adapter@1.0.0+source", [pack, pack], ["a.ts", "b.ts"]);
+    expect(seen).toEqual([
+      ["a.ts", "b.ts"],
+      ["a.ts", "b.ts"],
+    ]);
   });
 });

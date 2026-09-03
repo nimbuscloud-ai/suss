@@ -194,6 +194,25 @@ export function projectFileStamp(paths: readonly string[]): string {
 }
 
 /**
+ * The digest a run looks its cache entry up under. A pack may read
+ * project files that are not among the ones a run walks, a SAM template
+ * that decides which handlers exist for instance, so those belong in
+ * the key next to the pack's own config. Which files they are depends
+ * on the files this run walks, so the digest is settled per run rather
+ * than once per adapter.
+ */
+export function runDigest(
+  packsDigest: string,
+  packs: ReadonlyArray<{
+    discoveryInputs?: (files: readonly string[]) => string[];
+  }>,
+  files: readonly string[],
+): string {
+  const inputs = packs.flatMap((pack) => pack.discoveryInputs?.(files) ?? []);
+  return `${packsDigest}|reads:${projectFileStamp(inputs)}`;
+}
+
+/**
  * Where the analysis packages were loaded from. Only consulted once the
  * adapter has found its own bundle, so a run from source keeps the empty
  * stamp and its deterministic keys. A package that cannot be located is

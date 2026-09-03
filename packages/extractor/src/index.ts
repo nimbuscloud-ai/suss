@@ -1011,6 +1011,7 @@ export {
   computeDistHashFrom,
   createAdapterStamp,
   projectFileStamp,
+  runDigest,
 } from "./adapterStamp.js";
 export { createCacheLayer, MAX_ENTRIES } from "./cache.js";
 export {

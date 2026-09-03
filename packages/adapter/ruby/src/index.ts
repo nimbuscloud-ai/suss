@@ -60,11 +60,7 @@ export {
 } from "./scope.js";
 export { rubyStubEvidence } from "./stubEvidence.js";
 export { typeShapeFromNode } from "./typeShape.js";
-export {
-  ADAPTER_VERSION,
-  adapterCodeStamp,
-  computeAdapterPacksDigest,
-} from "./version.js";
+export { ADAPTER_VERSION } from "./version.js";
 
 export type {
   AncestorEntry,

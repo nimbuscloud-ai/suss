@@ -28,7 +28,7 @@ import {
   createTimer,
   moduleInitStructure,
   noopTimer,
-  projectFileStamp,
+  runDigest,
   stampModuleImports,
 } from "@suss/extractor";
 
@@ -49,10 +49,7 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
 import { reachedFunctions } from "./reach/closure.js";
-import {
-  computeAdapterPacksDigest,
-  declineWhenRunFromSource,
-} from "./version.js";
+import { adapterStamp } from "./version.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
@@ -96,7 +93,7 @@ export async function extractRubyProject(
 ): Promise<ExtractRubyResult> {
   const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
 
-  const cacheDir = declineWhenRunFromSource(
+  const cacheDir = adapterStamp.declineWhenRunFromSource(
     options.cacheDir === null
       ? null
       : (options.cacheDir ??
@@ -105,23 +102,19 @@ export async function extractRubyProject(
             : null)),
   );
   const extractionCache: CacheLayer = createCacheLayer(cacheDir);
-  const packsDigest = computeAdapterPacksDigest(
+  const packsDigest = adapterStamp.packsDigest(
     options.packs.map((pack) =>
       pack.version !== undefined
         ? { name: pack.name, version: pack.version }
         : { name: pack.name },
     ),
   );
-  const digestFor = (files: readonly string[]): string => {
-    const inputs = options.packs.flatMap(
-      (pack) => pack.discoveryInputs?.(files) ?? [],
-    );
-    return `${packsDigest}|reads:${projectFileStamp(inputs)}`;
-  };
   const cacheInput: CacheInput = {
     files: cacheDir === null ? [] : options.files,
     adapterPacksDigest:
-      cacheDir === null ? packsDigest : digestFor(options.files),
+      cacheDir === null
+        ? packsDigest
+        : runDigest(packsDigest, options.packs, options.files),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     extractionCache.lookup(cacheInput),

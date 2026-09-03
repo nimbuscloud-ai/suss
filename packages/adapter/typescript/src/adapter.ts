@@ -65,6 +65,7 @@ import {
   type RawParameter,
   type ResponsePropertyMapping,
   type RootRecord,
+  runDigest,
   stampModuleImports,
   type TerminalPattern,
 } from "@suss/extractor";
@@ -168,7 +169,6 @@ import { createTimer, type Timer, type TimingReport } from "./timing.js";
 import {
   computeAdapterPacksDigest,
   declineWhenRunFromSource,
-  projectFileStamp,
 } from "./version.js";
 import {
   type DescentBarriers,
@@ -2122,20 +2122,6 @@ export function createTypeScriptAdapter(
     ),
   )}|${extractionConfigStamp(config)}|ws:${workspaceExpansionStamp(config.frameworks)}`;
 
-  /**
-   * The digest a run looks its cache entry up under. A pack may read
-   * project files that are not source files, and a SAM template decides
-   * which handlers exist, so those belong in the key next to the pack's
-   * own config. Which files they are depends on the files this run
-   * walks, so the digest is settled per run rather than per adapter.
-   */
-  const digestFor = (files: readonly string[]): string => {
-    const inputs = config.frameworks.flatMap(
-      (pack) => pack.discoveryInputs?.(files) ?? [],
-    );
-    return `${packsDigest}|reads:${projectFileStamp(inputs)}`;
-  };
-
   const packWrappers = config.frameworks.flatMap(
     (pack) => pack.transparentWrappers ?? [],
   );
@@ -2208,7 +2194,7 @@ export function createTypeScriptAdapter(
               cacheFiles =
                 tsconfigFileList ??
                 project.getSourceFiles().map((sf) => sf.getFilePath());
-              return digestFor(cacheFiles);
+              return runDigest(packsDigest, config.frameworks, cacheFiles);
             });
 
       const cacheInput: CacheInput = {

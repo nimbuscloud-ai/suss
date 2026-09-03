@@ -3,9 +3,9 @@
  *
  * Running under vitest gives the adapter a "source" code stamp, and a
  * run from source always declines to cache. `./version.js` is mocked
- * here so `declineWhenRunFromSource` passes `cacheDir` through
- * unchanged. That is what puts the cache layer itself under test,
- * the same one a built CLI run reaches.
+ * here so `adapterStamp.declineWhenRunFromSource` passes `cacheDir`
+ * through unchanged. That is what puts the cache layer itself under
+ * test, the same one a built CLI run reaches.
  */
 
 import fs from "node:fs";
@@ -18,7 +18,10 @@ vi.mock("./version.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./version.js")>();
   return {
     ...actual,
-    declineWhenRunFromSource: (cacheDir: string | null) => cacheDir,
+    adapterStamp: {
+      ...actual.adapterStamp,
+      declineWhenRunFromSource: (cacheDir: string | null) => cacheDir,
+    },
   };
 });
 
