@@ -105,7 +105,7 @@ No. suss reads your source as it is today, with no decorators, no JSDoc tags, no
 
 suss reads TypeScript and JavaScript through `@suss/adapter-typescript`, which uses ts-morph. It reads Python through `@suss/adapter-python` and Ruby through `@suss/adapter-ruby`, and those two parse with tree-sitter compiled to WASM, so neither needs an installed interpreter. `suss extract --lang python` and `--lang ruby` pick them, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag.
 
-On the Python side it reads FastAPI and flask-restx routes and SQLAlchemy queries. On the Ruby side it reads graphql-ruby's class-based `field` DSL and ActiveRecord queries. Over this repository's own `fixtures/python-webapp`, `suss extract --dir fixtures/python-webapp -f fastapi -f flask-restx` finds eight routes. Two of them, with the other six cut:
+On the Python side it reads FastAPI and flask-restx routes and SQLAlchemy queries. On the Ruby side it reads Rails controller actions and their routes, graphql-ruby's class-based `field` DSL, and ActiveRecord queries. Over this repository's own `fixtures/python-webapp`, `suss extract --dir fixtures/python-webapp -f fastapi -f flask-restx` finds eight routes. Two of them, with the other six cut:
 
 ```
 myapp/fastapi_app.py
@@ -136,7 +136,7 @@ There the provider is a Prisma model and the consumers are the queries against i
 
 ## What boundaries are modelled?
 
-suss reads HTTP through Express, Hono, Fastify, NestJS REST, Next.js route handlers, ts-rest, AWS Lambda and Cloudflare Workers, and it reads the calling side through `fetch` and axios. It reads GraphQL through Apollo Server, NestJS GraphQL, AppSync and graphql-ruby, with Apollo Client on the calling side. On the front end it reads React components, event handlers and `useEffect` bodies, plus React Router loaders and actions. For storage it reads Prisma, Drizzle, Mongoose, DynamoDB, S3, GCS, Redis, SQLAlchemy and ActiveRecord. For the message bus it reads SQS and EventBridge producers, and takes the consumer side from CloudFormation event-source mappings. It reads runtime configuration from `process.env` and from the `Environment` blocks that supply it.
+suss reads HTTP through Express, Hono, Fastify, NestJS REST, Next.js route handlers, ts-rest, AWS Lambda, Cloudflare Workers and Rails controller actions, and it reads the calling side through `fetch` and axios. It reads GraphQL through Apollo Server, NestJS GraphQL, AppSync and graphql-ruby, with Apollo Client on the calling side. On the front end it reads React components, event handlers and `useEffect` bodies, plus React Router loaders and actions. For storage it reads Prisma, Drizzle, Mongoose, DynamoDB, S3, GCS, Redis, SQLAlchemy and ActiveRecord. For the message bus it reads SQS and EventBridge producers, and takes the consumer side from CloudFormation event-source mappings. It reads runtime configuration from `process.env` and from the `Environment` blocks that supply it.
 
 The contract readers turn a declared artifact into the same summaries: OpenAPI 3.x, CloudFormation and SAM, Serverless Framework, AppSync, Terraform, wrangler, GraphQL SDL and operation documents, Storybook CSF3, and Prisma schemas. Adding a boundary means adding a pack, and nothing around it changes. See [Packs](/packs) for the model and [Packages](/reference/packages) for the current list.
 

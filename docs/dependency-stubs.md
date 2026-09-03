@@ -61,7 +61,7 @@ $ suss infer stub myapp
 Drafted suss/stubs/myapp-routing-namespace.yaml, suss/stubs/myapp-routing-resource.yaml: 2 imported modules from 2 import sites.
 ```
 
-For a Ruby project, the evidence is every `require` of the package and every class whose superclass is spelled from it. The draft writes one `extends-base` statement per such superclass, with `extends:` filled in and `class:` left for the author. A class that extends one of graphql-ruby's own root classes directly is skipped, since the pack already stops there and a stub adds nothing. When that leaves nothing to draft, the statement is blank, with the graphql-ruby root classes in a comment.
+For a Ruby project, the evidence is every `require` of the package and every class whose superclass is spelled from it. The draft writes one `extends-base` statement per such superclass, with `extends:` filled in and `class:` left for the author. A class that extends one of the shipped Ruby packs' own root classes directly is skipped, graphql-ruby's or Rails', since the pack already stops there and a stub adds nothing. When that leaves nothing to draft, the statement is blank, with those root classes in a comment. `baseClassNames` on both graphql-ruby and rails reads the same `extends-base` statement, so one stub covers a base a project's own classes share.
 
 Filling the blanks takes the package's own source. That is a job for whoever can read it, and an agent usually can, a Rust crate included: draft from the evidence, read the dependency, fill the semantics, record the provenance, commit. MCP hosts get the same skeleton from the `suss_stub_draft` tool. `-o -` prints the draft instead of writing it.
 
@@ -69,7 +69,7 @@ The loader compares the version in a stub's `from:` line against the installed p
 
 ## The options stubs replaced
 
-Nine pack options stated dependency facts before stubs existed: `classDecorators` on the NestJS packs, `producers` on aws-sqs and aws-eventbridge, `factories` on axios, `wrapperModules` on fastapi and flask-restx, and `baseClassNames` on graphql-ruby.
+Nine pack options stated dependency facts before stubs existed: `classDecorators` on the NestJS packs, `producers` on aws-sqs and aws-eventbridge, `factories` on axios, `wrapperModules` on fastapi and flask-restx, and `baseClassNames` on graphql-ruby. `rails` shipped after and reads the same `baseClassNames` stub key.
 
 0.20.0 routed them through stubs and printed a pointer for a project still configuring one. 0.21.0 removed them, so a pack config setting one stops the run and says which stub kind takes it over. The difference is more than location: an option configures one pack, while a stub states the fact once and every pack that consumes it is fed, hand-written entries first.
 

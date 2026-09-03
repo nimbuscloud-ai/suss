@@ -154,6 +154,7 @@ something about your project, which you pass through
 | `fastapi` | `@suss/packs/fastapi` | FastAPI routes (Python): the verb comes from the decorator's attribute name, and router prefixes are composed one mount hop deep. |
 | `flask-restx` | `@suss/packs/flask-restx` | flask-restx `Resource` routes (Python), one per HTTP-verb-named method. |
 | `graphql-ruby` | `@suss/packs/graphql-ruby` | graphql-ruby's class-based `field` DSL (Ruby), one resolver per field. It needs `root`, and reads nothing without it. |
+| `rails` | `@suss/packs/rails` | Rails controller actions (Ruby), each bound to the method and path `config/routes.rb` gives it. Needs nothing: `root` and `routesFile` default to `app` and `config/routes.rb`. |
 
 Five more names are built in the same way, and discover no units of
 their own. They attach typed effects to calls inside whatever units
@@ -1044,9 +1045,9 @@ draft file covers, depends on the language suss reads the directory as:
 - **Ruby**: an `extends-base` candidate per superclass spelled from
   the package that a project class extends, with `extends:` filled in
   and `class:` left blank. A class that extends one of graphql-ruby's
-  own root classes directly is skipped, since the pack already stops
-  there. When that leaves nothing to draft, the statement is blank,
-  with the graphql-ruby root classes in a comment.
+  or rails' own root classes directly is skipped, since the pack
+  already stops there. When that leaves nothing to draft, the
+  statement is blank, with those root classes in a comment.
 
 A TypeScript or Ruby draft lands in `suss/stubs/<package>.yaml` under the
 resolved source root; an existing file is never overwritten. A Python

@@ -4,7 +4,7 @@ suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and co
 
 Twenty-two packs read code today, across eighteen frameworks, three HTTP and GraphQL clients, and the Node runtime. Eight contract readers turn a declared artifact into the same summary structure. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
 
-Most of that is TypeScript and JavaScript, which is what `suss extract` reads. Three of the framework packs are not: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby reads Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well; the [Python and Ruby guide](/guides/python-and-ruby) shows how.
+Most of that is TypeScript and JavaScript, which is what `suss extract` reads. Some of the framework packs are not: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well; the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
 ## What to run, by stack
 
@@ -50,7 +50,7 @@ integration end-to-end.
 | [`@suss/packs`](../../packages/packs) | Every pack, one subpath each, so `@suss/packs/express` reaches the Express pack. The CLI resolves `-f` names to these on its own. | tested through each pack |
 | [`@suss/adapter-typescript`](../../packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](../../.github/badges/coverage-typescript.svg) |
 | [`@suss/adapter-python`](../../packages/adapter/python) | Python language adapter: tree-sitter (WASM) parsing, a lexical binder, repo-scoped module resolution. v0, no path-engine work yet. | ![](../../.github/badges/coverage-python.svg) |
-| [`@suss/adapter-ruby`](../../packages/adapter/ruby) | Ruby language adapter: tree-sitter (WASM) parsing, a lexical binder over class/module nesting, Rails' constant-to-path convention for `mutation:` / `resolver:` wiring. v0, graphql-ruby only, no `routes.rb`, no path-engine work yet. | ![](../../.github/badges/coverage-ruby.svg) |
+| [`@suss/adapter-ruby`](../../packages/adapter/ruby) | Ruby language adapter: tree-sitter (WASM) parsing, a lexical binder over class/module nesting, Rails' constant-to-path convention for `mutation:` / `resolver:` wiring and controller discovery. v0, graphql-ruby and rails, no path-engine work yet. | ![](../../.github/badges/coverage-ruby.svg) |
 | [`@suss/checker`](../../packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](../../.github/badges/coverage-checker.svg) |
 | [`@suss/checker-intent`](../../packages/checker-intent) | Pairs team-authored intent against derived code; emits `IntentFinding` coverage. | ![](../../.github/badges/coverage-checker-intent.svg) |
 | [`@suss/cli`](../../packages/cli) | CLI wrapper. | ![](../../.github/badges/coverage-cli.svg) |
@@ -101,6 +101,7 @@ the source.
 | [`sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
 | [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when the constant its receivers start at reaches `ActiveRecord::Base`, following what each class extends through the project. | ![](../../.github/badges/coverage-activerecord.svg) |
 | [`graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby), including `mutation:` / `resolver:` wiring one hop out to what the referenced class itself declares. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
+| [`rails`](../../packages/framework/rails) | Rails controller actions (Ruby), bound to the method and path `config/routes.rb` gives each one; an action the routes file does not reach is discovered with no boundary. | ![](../../.github/badges/coverage-rails.svg) |
 
 ## Clients
 

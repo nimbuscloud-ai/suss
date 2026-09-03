@@ -187,7 +187,9 @@ function routeStatement(
   }
 
   if (statement.kind === "extends-base") {
+    // Reaches every Ruby pack this option means the same thing for; one whose ancestry never crosses it just never matches.
     append(overlay, "graphql-ruby", "baseClassNames", statement.extends);
+    append(overlay, "rails", "baseClassNames", statement.extends);
     return;
   }
 
@@ -227,6 +229,7 @@ const STUB_ONLY_OPTIONS: Record<string, readonly string[]> = {
   fastapi: ["wrapperModules"],
   "flask-restx": ["wrapperModules"],
   "graphql-ruby": ["baseClassNames"],
+  rails: ["baseClassNames"],
 };
 
 export function stubOnlyOptionsOf(packName: string): readonly string[] {

@@ -328,10 +328,14 @@ npx suss extract --lang python --dir services/orders -f fastapi -o summaries/ord
 
 # graphql-ruby fields
 npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/schema.json
+
+# Rails controller actions and their routes
+npx suss extract --lang ruby --dir . -f rails -o summaries/controllers.json
 ```
 
-One of these packs needs a sentence about your project before it can
-read it. The built-in TypeScript packs never do. graphql-ruby needs the
+`rails` needs nothing from you: it reads `app` and `config/routes.rb`
+by default, the paths `rails new` scaffolds, and `-f
+rails=suss.rails.json` overrides either. graphql-ruby needs the
 directory a `mutation:` or `resolver:` field's class is looked up
 under, and it reads nothing without one:
 

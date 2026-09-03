@@ -18,7 +18,9 @@ followed the whole way: through the app factory, through a loader class
 the entry file hands over, and through the loop that mounts what the
 loader returns. The Ruby adapter reads graphql-ruby's class-based
 `field` DSL, one resolver per field, and the resolver method behind it,
-found through the class ancestry whichever file declares it.
+found through the class ancestry whichever file declares it. It also
+reads a Rails controller's own instance methods as actions, each bound
+to the method and path `config/routes.rb` gives it.
 
 Both adapters read bodies. Each return becomes a branch with its
 status and the conditions that reach it, and the calls a body makes
@@ -345,8 +347,39 @@ followed one hop: the referenced class's file is located under `root`,
 and its own `field` and `argument` calls become the payload and the
 arguments. An `argument` counts as required unless it says otherwise.
 
-Rails routes are out of scope. `routes.rb` expands macros in a way that
-needs its own reader, and that reader does not exist yet.
+### What the rails pack reads
+
+```bash
+npx suss extract --dir . -f rails=suss.rails.json -o summaries/controllers.json
+```
+
+```json
+{ "root": "app", "routesFile": "config/routes.rb" }
+```
+
+Every instance method a controller extending `ApplicationController`
+defines directly is discovered as one of its actions. `config/routes.rb`
+decides which method and path answer it: `resources`/`resource` with
+`only:`/`except:`, `member`/`collection` blocks, one level of nested
+resources, `namespace`, `scope module:`/`scope path:`, the bare
+`get`/`post`/`patch`/`put`/`delete` calls with `to:` or the
+`"path" => "controller#action"` spelling, and `root`. `mount`, `draw`,
+`concern`, `constraints`, `match` and `direct` are left unread, and the
+run records one gap saying so rather than guessing at them.
+
+An action the routes file does not reach, a private helper a project
+never routes, is still discovered, with its own calls followed into
+whatever it calls, only with no boundary, the same way a method
+nothing routes to but something calls still gets a summary. When the
+routes file this run was pointed at does not exist at all, every
+action named for one of Rails' seven conventional actions (`index`,
+`show`, `new`, `create`, `edit`, `update`, `destroy`) is bound at the
+path Rails' own naming convention gives it instead, and the run
+records that it did so.
+
+Compose `-f activerecord=suss.activerecord.json` the same way the
+graphql-ruby example above does, to classify the database calls a
+controller action's own calls make.
 
 ## Abstention is the design
 
@@ -386,12 +419,14 @@ has to avoid being wrong. It never has to be complete.
   recorded as invocation effects; nothing turns one into a channel or
   a config key the way the TypeScript packs do.
 - **Plain Flask** (`@app.route`) has no pack yet.
-- **Ruby reads graphql-ruby only.** A `graphql_name` override, and
-  interfaces, unions and enums, are unread, and Ruby's predicates are
-  plain source text rather than structured.
+- **Ruby reads graphql-ruby and Rails.** A `graphql_name` override, and
+  interfaces, unions and enums, are unread on the GraphQL side; `mount`,
+  `draw`, `concern`, `constraints`, `match` and `direct` are unread in
+  `routes.rb`; and Ruby's predicates are plain source text rather than
+  structured.
 - **`suss corroborate` is TypeScript only.**
 
 For what each package does in more detail, read the package READMEs:
 `packages/adapter/python`, `packages/adapter/ruby`, and the packs
-under `packages/framework`, `sqlalchemy` and `activerecord` among
-them.
+under `packages/framework`, `sqlalchemy`, `activerecord` and `rails`
+among them.

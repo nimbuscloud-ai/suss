@@ -86,7 +86,7 @@ Options (extract):
                    fastify, ts-rest, nestjs-rest, nestjs-graphql, apollo,
                    aws-lambda, react, react-router, fetch, axios,
                    apollo-client, node, and for the other two languages
-                   fastapi, flask-restx, and graphql-ruby.
+                   fastapi, flask-restx, graphql-ruby, and rails.
                    Other packs resolve as @suss/framework-<name>.
                    Write -f <pack>=<config.json> to configure a pack, for
                    example to name the dispatcher your project sends
