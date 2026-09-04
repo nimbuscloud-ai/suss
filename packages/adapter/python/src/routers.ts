@@ -44,6 +44,7 @@ import {
   containedValues,
   objectReturnedBy,
   resolveCalls,
+  subjectConstructions,
 } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
 import { resolveModule } from "./moduleResolver.js";
@@ -630,6 +631,10 @@ function buildPatternIndex(
     collectConstructions(bound, importModule, composition, index);
   }
 
+  for (const bound of files) {
+    collectReturnedConstructions(bound, importModule, composition, index);
+  }
+
   if (objectPrefix?.carrier !== undefined) {
     const carrier = objectPrefix.carrier;
     for (const bound of files) {
@@ -926,6 +931,57 @@ function collectConstructions(
 }
 
 /**
+ * A `return <Constructor>(...)` written directly in a module-level
+ * function's own body. A project wrapper built this way binds no
+ * module-level name to the construction, so this only reaches
+ * `byValueKey`, keyed by the call itself: a mount whose argument is
+ * the wrapper's result finds it there once the resolution rules have
+ * settled the argument on this call.
+ */
+function collectReturnedConstructions(
+  bound: BoundPythonFile,
+  importModule: string[],
+  composition: RouterComposition,
+  index: PatternIndex,
+): void {
+  for (const stmt of bodyStatements(bound.root)) {
+    const definition = stripDecorators(stmt).definition;
+    if (definition.type !== "function_definition") {
+      continue;
+    }
+    // The binder gives every top-level def a scope of its own.
+    const scope = bound.module.scopeFor.get(definition.id);
+
+    for (const inner of nestedStatements(definition)) {
+      if (inner.type !== "return_statement" || scope === undefined) {
+        continue;
+      }
+      const returned = inner.namedChildren[0];
+      if (returned?.type !== "call") {
+        continue;
+      }
+      const callee = field(returned, "function");
+      const constructorName =
+        callee === null
+          ? null
+          : importedConstructorName(callee, scope, importModule);
+      if (constructorName !== composition.routerConstructorName) {
+        continue;
+      }
+
+      const { keywordArgs } = readCallArguments(field(returned, "arguments"));
+      const valueKey = nodeId(bound.file, returned);
+      index.byValueKey.set(valueKey, {
+        constructorName,
+        valueKey,
+        prefix: constructorPrefix(keywordArgs, composition, scope),
+        reassigned: false,
+      });
+    }
+  }
+}
+
+/**
  * Keeps every construction from the carrier's modules, not only the
  * carrier's own: the plain app is in the same argument position and
  * has no prefix, and telling it from a name this reading could not
@@ -1019,6 +1075,36 @@ function constructionNamed(
     };
 
   return resolvers[binding.kind]?.() ?? null;
+}
+
+/**
+ * The construction a name is bound to through a project wrapper's
+ * call, once `constructionNamed` does not find an entry by name.
+ * Restricted to the two binding kinds `constructionNamed` itself
+ * reads, so a parameter or another name this reading cannot key
+ * correctly is left alone rather than asked about under the wrong key.
+ */
+function constructionThroughFacts(
+  name: string,
+  scope: Scope,
+  scan: Scan,
+): Construction | null {
+  const facts = scan.index.facts;
+  const binding = resolveName(scope, name);
+  if (facts === undefined || binding === null) {
+    return null;
+  }
+  if (binding.kind !== "assignment" && binding.kind !== "importFrom") {
+    return null;
+  }
+
+  const nameKey = `${scan.bound.file}#${name}`;
+  const constructionKey = subjectConstructions(facts, [nameKey]).get(
+    nameKey,
+  )?.constructionKey;
+  return constructionKey === undefined
+    ? null
+    : (scan.index.byValueKey.get(constructionKey) ?? null);
 }
 
 /** What a prefix written on the mount call does to where the router is mounted. A mount that writes no prefix never gets here. */
@@ -1324,11 +1410,12 @@ function constructionsReturnedBy(
   // What the object contains are names, and each has to be asked about in
   // its own right before the rules will follow it to what it was built as.
   const contained = containedValues(facts, returned);
-  resolveCalls(facts, contained);
+  const settled = subjectConstructions(facts, contained);
 
   const found: Construction[] = [];
   for (const value of contained) {
-    const resolved = resolvedValueKey(facts, value);
+    // A value the rules did not settle is looked up as a construction call itself.
+    const resolved = settled.get(value)?.constructionKey ?? value;
     const construction = index.byValueKey.get(resolved);
     if (construction === undefined) {
       return {
@@ -1342,14 +1429,6 @@ function constructionsReturnedBy(
     found.push(construction);
   }
   return { kind: "settled", found };
-}
-
-/** A contained value is a name, and `isWrittenAs` gives the expression it was written as, which for a router is the constructor call. */
-function resolvedValueKey(facts: Database, value: string): string {
-  const row = facts
-    .facts("wantedIsWrittenAs")
-    .find((entry: readonly unknown[]) => String(entry[0]) === value);
-  return row === undefined ? value : String(row[1]);
 }
 
 /**
@@ -1373,7 +1452,9 @@ function mountedConstructions(
   }
 
   const named = (name: string): Construction[] => {
-    const construction = constructionNamed(name, position.scope, scan);
+    const construction =
+      constructionNamed(name, position.scope, scan) ??
+      constructionThroughFacts(name, position.scope, scan);
     return construction === null ? [] : [construction];
   };
 

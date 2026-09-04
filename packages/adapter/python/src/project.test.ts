@@ -344,6 +344,288 @@ describe("extractPythonProject", () => {
     ).toBe(true);
   });
 
+  it("composes the prefix of a router a project wrapper function returns", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+          routerComposition: {
+            routerConstructorName: "APIRouter",
+            includeMethodName: "include_router",
+            prefixKeyword: "prefix",
+          },
+        },
+      ],
+    };
+    const routers = write(
+      "shop/routers.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "def build_items_router():",
+        '    return APIRouter(prefix="/items")',
+        "",
+      ].join("\n"),
+    );
+    const items = write(
+      "shop/items.py",
+      [
+        "from shop.routers import build_items_router",
+        "",
+        "router = build_items_router()",
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const main = write(
+      "shop/main.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "from shop.items import router as items_router",
+        "",
+        "app = FastAPI()",
+        "",
+        'app.include_router(items_router, prefix="/api")',
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [routers, items, main],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/api/items/{item_id}",
+    });
+  });
+
+  it("abstains as unmounted when nothing mounts a router a project wrapper function returns", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+          routerComposition: {
+            routerConstructorName: "APIRouter",
+            includeMethodName: "include_router",
+            prefixKeyword: "prefix",
+          },
+        },
+      ],
+    };
+    const routers = write(
+      "shop/routers.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "def build_items_router():",
+        '    return APIRouter(prefix="/items")',
+        "",
+      ].join("\n"),
+    );
+    const items = write(
+      "shop/items.py",
+      [
+        "from shop.routers import build_items_router",
+        "",
+        "router = build_items_router()",
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [routers, items],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(
+      readItem?.gaps.some(
+        (gap) =>
+          gap.type === "unreadOutcome" &&
+          gap.description.includes(
+            "is never mounted through a single variable binding in the files read",
+          ),
+      ),
+    ).toBe(true);
+  });
+
+  it("abstains where a router a project wrapper function returns states a computed prefix", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+          routerComposition: {
+            routerConstructorName: "APIRouter",
+            includeMethodName: "include_router",
+            prefixKeyword: "prefix",
+          },
+        },
+      ],
+    };
+    const routers = write(
+      "shop/routers.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "def items_prefix():",
+        '    return "/items"',
+        "",
+        "def build_items_router():",
+        "    return APIRouter(prefix=items_prefix())",
+        "",
+      ].join("\n"),
+    );
+    const items = write(
+      "shop/items.py",
+      [
+        "from shop.routers import build_items_router",
+        "",
+        "router = build_items_router()",
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const main = write(
+      "shop/main.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "from shop.items import router as items_router",
+        "",
+        "app = FastAPI()",
+        "",
+        'app.include_router(items_router, prefix="/api")',
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [routers, items, main],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(
+      readItem?.gaps.some(
+        (gap) =>
+          gap.type === "unreadOutcome" &&
+          gap.description.includes("not a string literal"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not mount a router under a function parameter that shadows another router's own name", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+          routerComposition: {
+            routerConstructorName: "APIRouter",
+            includeMethodName: "include_router",
+            prefixKeyword: "prefix",
+          },
+        },
+      ],
+    };
+    const main = write(
+      "shop/main.py",
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        "",
+        'router = APIRouter(prefix="/items")',
+        'other_router = APIRouter(prefix="/other")',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def register(router):",
+        "    app.include_router(router)",
+        "",
+        "",
+        "register(other_router)",
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [main],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(
+      readItem?.gaps.some(
+        (gap) =>
+          gap.type === "unreadOutcome" &&
+          gap.description.includes(
+            "is never mounted through a single variable binding in the files read",
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps location.file absolute when no workspaceRoot is given", async () => {
     const todos = write(
       "myapp/routes/todos.py",
