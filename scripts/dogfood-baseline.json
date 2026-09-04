@@ -4,8 +4,8 @@
     "packagesWithExports": 68,
     "exports": 821,
     "internal": 2820,
-    "consumers": 1454,
-    "pairs": 1451,
+    "consumers": 1455,
+    "pairs": 1452,
     "unfollowedCalls": 410,
     "findingErrors": 0
   },
@@ -455,7 +455,7 @@
       "name": "@suss/resolution",
       "exports": 9,
       "internal": 11,
-      "consumers": 53,
+      "consumers": 54,
       "unfollowedCalls": 20
     },
     "packages/runtime/node": {
