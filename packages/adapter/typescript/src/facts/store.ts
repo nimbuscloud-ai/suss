@@ -373,12 +373,32 @@ export class ResolutionStore {
     const settled = this.askAbout(target, "wantedSubject", () =>
       this.lookupSubjectConstruction(target, importModule, importName),
     );
+    const walked = [...this.lastQueryWalked];
+
+    // The rule that unwraps a call's return fires only for a call asked
+    // about directly, so a candidate that is itself a project function's
+    // call gets a second, separate query with the call as the subject.
+    let resolved = settled;
+    if (
+      settled.construction === null &&
+      settled.candidate !== null &&
+      Node.isCallExpression(settled.candidate) &&
+      this.resolveCallable(settled.candidate.getExpression()) !== null
+    ) {
+      const call = settled.candidate;
+      resolved = this.askAbout(call, "wantedSubject", () =>
+        this.lookupSubjectConstruction(call, importModule, importName),
+      );
+      walked.push(...this.lastQueryWalked);
+    }
+
     this.subjectConstructions.set(key, {
-      ...settled,
-      walked: [...this.lastQueryWalked],
+      construction: resolved.construction,
+      candidates: resolved.candidates,
+      walked,
       extractedAt: this.fullyExtracted.size,
     });
-    return settled.construction;
+    return resolved.construction;
   }
 
   /**
@@ -407,7 +427,7 @@ export class ResolutionStore {
     value: Node,
     importModule: string,
     importName: string,
-  ): { construction: Node | null; candidates: number } {
+  ): { construction: Node | null; candidate: Node | null; candidates: number } {
     this.derive();
 
     const valueId = nodeId(value);
@@ -426,6 +446,7 @@ export class ResolutionStore {
     if (candidates.size > 1) {
       return {
         construction: null,
+        candidate: null,
         candidates: [...candidates].filter((one) =>
           this.constructionComesFrom(valueId, one, importModule, importName),
         ).length,
@@ -433,7 +454,7 @@ export class ResolutionStore {
     }
     const single = [...candidates][0];
     if (single === undefined) {
-      return { construction: null, candidates: 0 };
+      return { construction: null, candidate: null, candidates: 0 };
     }
 
     return {
@@ -445,6 +466,7 @@ export class ResolutionStore {
       )
         ? single
         : null,
+      candidate: single,
       candidates: 1,
     };
   }

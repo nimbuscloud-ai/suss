@@ -263,4 +263,50 @@ describe("honoFramework, app.route mount prefix", () => {
       .map((sem) => sem.path);
     expect(paths).toEqual(["/_health"]);
   });
+
+  it("composes a mount prefix into a route on a sub-app a project wrapper builds", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/subApps.ts",
+      `
+        import { Hono } from "hono";
+        export function buildOrdersApp() {
+          return new Hono();
+        }
+      `,
+    );
+    project.createSourceFile(
+      "/ordersApp.ts",
+      `
+        import { buildOrdersApp } from "./subApps";
+        export const ordersApp = buildOrdersApp();
+        ordersApp.get("/_health", (c) => c.json({ ok: true }));
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        import { ordersApp } from "./ordersApp";
+        const app = new Hono();
+        app.route("/api/orders", ordersApp);
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const paths = summaries
+      .map((s) => s.identity.boundaryBinding?.semantics)
+      .filter(
+        (sem): sem is Extract<typeof sem, { name: "rest" }> =>
+          sem?.name === "rest",
+      )
+      .map((sem) => sem.path);
+    expect(paths).toEqual(["/api/orders/_health"]);
+  });
 });
