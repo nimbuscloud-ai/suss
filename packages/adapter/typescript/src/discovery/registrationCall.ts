@@ -475,7 +475,10 @@ export function registrationSubjectsOf(
   );
 
   const subjects = new Map<string, Node>();
-  if (importedLocalName === null) {
+  // A file that never imports this directly can still declare a
+  // variable set to what a project function returns, so only bail out
+  // here when the store cannot check that either.
+  if (importedLocalName === null && resolution === undefined) {
     return subjects;
   }
 
@@ -492,9 +495,27 @@ export function registrationSubjectsOf(
         Node.isCallExpression(init) || Node.isNewExpression(init)
           ? init.getExpression().getText()
           : null;
-      if (calleeText === importedLocalName) {
+      if (importedLocalName !== null && calleeText === importedLocalName) {
         subjects.set(node.getName(), init);
+        return;
       }
+      // A variable set to what a project function returns, as in
+      // `const router = buildRouter()`. The import name never appears
+      // at this declaration, so only the store can say what it built.
+      if (Node.isCallExpression(init)) {
+        const construction = resolution?.subjectConstructionOf(
+          init,
+          importModule,
+          importName,
+        );
+        if (construction !== null && construction !== undefined) {
+          subjects.set(node.getName(), construction);
+        }
+      }
+      return;
+    }
+
+    if (importedLocalName === null) {
       return;
     }
 

@@ -1,4 +1,4 @@
-import { type Node, type Project, type SourceFile, SyntaxKind } from "ts-morph";
+import { Node, type Project, type SourceFile, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -1525,6 +1525,90 @@ describe("resolveWrittenValue on a call whose receiver is itself a call", () => 
     expect(
       store.resolveWrittenValue(callNamed(project, "/handlers.ts", "pick")),
     ).toBe(null);
+  });
+});
+
+describe("subjectConstructionOf through a project wrapper", () => {
+  function subjectReceiverOf(
+    project: Project,
+    file: string,
+    methodName: string,
+  ): Node {
+    const call = project
+      .getSourceFileOrThrow(file)
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((c) => {
+        const callee = c.getExpression();
+        return (
+          Node.isPropertyAccessExpression(callee) &&
+          callee.getName() === methodName
+        );
+      });
+    const callee = call?.getExpression();
+    if (callee === undefined || !Node.isPropertyAccessExpression(callee)) {
+      throw new Error(`No .${methodName}() call in ${file}`);
+    }
+    return callee.getExpression();
+  }
+
+  it("resolves a name bound to a wrapper call to the construction it returns", () => {
+    const project = projectOf({
+      "/routers.ts": `
+        import { Router } from "express";
+        export function buildItems() {
+          return Router();
+        }
+      `,
+      "/items.ts": `
+        import { buildItems } from "./routers";
+        export const router = buildItems();
+        router.get("/:id", () => {});
+      `,
+    });
+    const store = new ResolutionStore();
+    const subject = subjectReceiverOf(project, "/items.ts", "get");
+
+    expect(
+      store.subjectConstructionOf(subject, "express", "Router")?.getText(),
+    ).toBe("Router()");
+  });
+
+  it("declines a name bound to a wrapper whose branches build two different routers", () => {
+    const project = projectOf({
+      "/routers.ts": `
+        import { Router, default as express } from "express";
+        export function buildItems(flag: boolean) {
+          return flag ? Router() : express();
+        }
+      `,
+      "/items.ts": `
+        import { buildItems } from "./routers";
+        export const router = buildItems(true);
+        router.get("/:id", () => {});
+      `,
+    });
+    const store = new ResolutionStore();
+    const subject = subjectReceiverOf(project, "/items.ts", "get");
+
+    expect(store.subjectConstructionOf(subject, "express", "Router")).toBe(
+      null,
+    );
+  });
+
+  it("declines a name bound to a call whose callee is not a project function", () => {
+    const project = projectOf({
+      "/items.ts": `
+        import { createHash } from "crypto";
+        export const router = createHash("sha256");
+        router.get("/:id", () => {});
+      `,
+    });
+    const store = new ResolutionStore();
+    const subject = subjectReceiverOf(project, "/items.ts", "get");
+
+    expect(store.subjectConstructionOf(subject, "express", "Router")).toBe(
+      null,
+    );
   });
 });
 

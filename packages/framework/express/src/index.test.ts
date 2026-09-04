@@ -316,3 +316,148 @@ describe("expressFramework, mount prefix composition (aws-alb fixture)", () => {
     expect(paths).toEqual(["* /api/orders/*", "GET /api/orders/_health"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A router built by a project wrapper function
+// ---------------------------------------------------------------------------
+
+describe("expressFramework: a router a project wrapper builds", () => {
+  const restPaths = (summaries: BehavioralSummary[]): string[] =>
+    summaries
+      .map((one) => one.identity.boundaryBinding?.semantics)
+      .filter(
+        (sem): sem is Extract<typeof sem, { name: "rest" }> =>
+          sem?.name === "rest",
+      )
+      .map((sem) => `${sem.method} ${sem.path}`)
+      .sort();
+
+  it("discovers a route on a router a wrapper builds in another file, mounted under a prefix", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "routers.ts",
+      `
+      import { Router } from "express";
+      export function buildItems() {
+        return Router();
+      }
+    `,
+    );
+    project.createSourceFile(
+      "items.ts",
+      `
+      import { buildItems } from "./routers";
+      export const router = buildItems();
+      router.get("/:id", (req: any, res: any) => {
+        res.status(200).json({});
+      });
+    `,
+    );
+    project.createSourceFile(
+      "app.ts",
+      `
+      import express from "express";
+      import { router } from "./items";
+      const app = express();
+      app.use("/api/items", router);
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(restPaths(summaries)).toEqual(["GET /api/items/:id"]);
+  });
+
+  it("discovers a route on a router a wrapper builds in the same file, mounted under a prefix", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "app.ts",
+      `
+      import express, { Router } from "express";
+      function buildItems() {
+        return Router();
+      }
+      const router = buildItems();
+      router.get("/:id", (req: any, res: any) => {
+        res.status(200).json({});
+      });
+      const app = express();
+      app.use("/api/items", router);
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(restPaths(summaries)).toEqual(["GET /api/items/:id"]);
+  });
+
+  it("keeps a wrapper-built router's own path when nothing mounts it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "routers.ts",
+      `
+      import { Router } from "express";
+      export function buildItems() {
+        return Router();
+      }
+    `,
+    );
+    project.createSourceFile(
+      "items.ts",
+      `
+      import { buildItems } from "./routers";
+      export const router = buildItems();
+      router.get("/:id", (req: any, res: any) => {
+        res.status(200).json({});
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(restPaths(summaries)).toEqual(["GET /:id"]);
+  });
+
+  it("drops a route registered through a wrapper whose branches build two different routers", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "routers.ts",
+      `
+      import { Router, default as express } from "express";
+      export function buildItems(flag: boolean) {
+        return flag ? Router() : express();
+      }
+    `,
+    );
+    project.createSourceFile(
+      "items.ts",
+      `
+      import { buildItems } from "./routers";
+      export const router = buildItems(true);
+      router.get("/:id", (req: any, res: any) => {
+        res.status(200).json({});
+      });
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(restPaths(summaries)).toEqual([]);
+  });
+});

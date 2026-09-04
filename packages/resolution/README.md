@@ -251,8 +251,8 @@ and the rule that says a call is written as what its callee returns
 only fires for the call itself, never for a name that reaches one. An
 adapter that wants the deeper answer asks `wantedSubject` a second
 time with the call as the subject and takes that answer. The
-TypeScript store does the same in `resolveWrittenValue` when a name
-resolves to a call.
+TypeScript store does the same in `resolveWrittenValue` and in
+`subjectConstructionOf`, whenever a name resolves to a call.
 
 ## Explaining an answer
 
