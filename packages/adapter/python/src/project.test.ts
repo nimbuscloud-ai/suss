@@ -356,6 +356,58 @@ describe("extractPythonProject", () => {
     });
     expect(summaries[0]?.location.file).toBe(todos);
   });
+
+  it("discovers a route registered through a router a project wrapper builds", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+        },
+      ],
+    };
+    const routers = write(
+      "shop/routers.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "def build_items_router():",
+        '    return APIRouter(prefix="/items")',
+        "",
+      ].join("\n"),
+    );
+    const items = write(
+      "shop/items.py",
+      [
+        "from shop.routers import build_items_router",
+        "",
+        "router = build_items_router()",
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [routers, items],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/{item_id}",
+    });
+  });
 });
 
 describe("a route whose body talks to the database", () => {

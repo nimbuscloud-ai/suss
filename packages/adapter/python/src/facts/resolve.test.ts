@@ -180,4 +180,69 @@ describe("resolving a value across files", () => {
       .map((row) => String(row[1]));
     expect(written).toContain(String(innerCall?.[0]));
   });
+
+  it("settles a name bound to a wrapper call on the construction the wrapper returns", async () => {
+    const { facts, dir } = await factsFor({
+      "lib.py": "def connect():\n    pass\n",
+      "client.py": [
+        "from lib import connect",
+        "",
+        "def make_client():",
+        "    return connect()",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from client import make_client",
+        "",
+        "router = make_client()",
+        "",
+      ].join("\n"),
+    });
+
+    const construction = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#connect"));
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    const nameKey = `${path.join(dir, "app.py")}#router`;
+    const settled = subjectConstructions(facts, [nameKey]);
+    expect(settled.get(nameKey)).toEqual({
+      constructionKey: String(construction?.[0]),
+      origins: [{ module: path.join(dir, "lib.py"), name: "connect" }],
+    });
+  });
+
+  it("settles a call to a wrapper on the construction the wrapper returns", async () => {
+    const { facts, dir } = await factsFor({
+      "lib.py": "def connect():\n    pass\n",
+      "client.py": [
+        "from lib import connect",
+        "",
+        "def make_client():",
+        "    return connect()",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from client import make_client",
+        "",
+        "make_client().send()",
+        "",
+      ].join("\n"),
+    });
+
+    const wrapperCall = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#make_client"));
+    expect(wrapperCall, "the wrapper call was not recorded").toBeDefined();
+    const construction = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#connect"));
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    const settled = subjectConstructions(facts, [String(wrapperCall?.[0])]);
+    expect(settled.get(String(wrapperCall?.[0]))).toEqual({
+      constructionKey: String(construction?.[0]),
+      origins: [{ module: path.join(dir, "lib.py"), name: "connect" }],
+    });
+  });
 });

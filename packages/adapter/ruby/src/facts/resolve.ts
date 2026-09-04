@@ -14,6 +14,7 @@ import {
   ANSWER_RELATIONS,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
+  singleAnswers,
   VALUE_STEP,
 } from "@suss/resolution";
 
@@ -67,4 +68,25 @@ export function resolvedFunctions(db: Database, key: string): string[] {
     .facts("wantedResolves")
     .filter((row) => String(row[0]) === key)
     .map((row) => String(row[1]));
+}
+
+/**
+ * The single expression a value was written as, once `resolveValues`
+ * has asked about it. A call to a project function is asked about
+ * as well, so the answer is what that function returns.
+ */
+export function writtenValueOf(db: Database, key: string): string | null {
+  const direct = singleAnswers(db.facts("wantedIsWrittenAs")).get(key);
+  if (direct === undefined) {
+    return null;
+  }
+
+  const isCall = db.facts("call").some((row) => String(row[0]) === direct);
+  if (!isCall) {
+    return direct;
+  }
+
+  resolveValues(db, [direct]);
+  const deeper = singleAnswers(db.facts("wantedIsWrittenAs")).get(direct);
+  return deeper ?? direct;
 }

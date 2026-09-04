@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { parseRuby } from "../parser.js";
-import { resolveValues } from "./resolve.js";
+import { resolveValues, writtenValueOf } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
 async function factsFor(source: string) {
@@ -41,5 +41,67 @@ describe("resolving a value across a Ruby file", () => {
       .filter((row) => row[0] === wrapperCall?.[0])
       .map((row) => String(row[1]));
     expect(written).toContain(String(clientClass?.[0]));
+  });
+
+  it("settles a name bound to a wrapper call on the construction the wrapper returns", async () => {
+    const db = await factsFor(
+      [
+        "def build_client",
+        "  connect()",
+        "end",
+        "",
+        "table = build_client()",
+      ].join("\n"),
+    );
+
+    const construction = db
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#connect"));
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    const nameKey = "f.rb#table";
+    resolveValues(db, [nameKey]);
+    expect(writtenValueOf(db, nameKey)).toBe(String(construction?.[0]));
+  });
+
+  it("settles a call to a wrapper on the construction the wrapper returns", async () => {
+    const db = await factsFor(
+      [
+        "def build_client",
+        "  connect()",
+        "end",
+        "",
+        "build_client().send_request(1)",
+      ].join("\n"),
+    );
+
+    const wrapperCall = db
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#build_client"));
+    expect(wrapperCall, "the wrapper call was not recorded").toBeDefined();
+    const construction = db
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#connect"));
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    resolveValues(db, [String(wrapperCall?.[0])]);
+    expect(writtenValueOf(db, String(wrapperCall?.[0]))).toBe(
+      String(construction?.[0]),
+    );
+  });
+
+  it("returns null for a key nobody asked resolveValues about", async () => {
+    const db = await factsFor("value = 1\n");
+    expect(writtenValueOf(db, "f.rb#value")).toBeNull();
+  });
+
+  it("settles a name written as a literal on that literal", async () => {
+    const db = await factsFor("value = 1\n");
+    const literal = db.facts("writtenValue")[0];
+    expect(literal, "the literal was not recorded").toBeDefined();
+
+    const nameKey = "f.rb#value";
+    resolveValues(db, [nameKey]);
+    expect(writtenValueOf(db, nameKey)).toBe(String(literal?.[0]));
   });
 });
