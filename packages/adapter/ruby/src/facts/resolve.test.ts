@@ -104,4 +104,33 @@ describe("resolving a value across a Ruby file", () => {
     resolveValues(db, [nameKey]);
     expect(writtenValueOf(db, nameKey)).toBe(String(literal?.[0]));
   });
+
+  it("settles a name written as nil and then as a construction behind a guard", async () => {
+    const db = await factsFor(
+      [
+        "client = nil",
+        "client = connect() if client.nil?",
+        "client.send_request(1)",
+      ].join("\n"),
+    );
+
+    const construction = db
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#connect"));
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    const nameKey = "f.rb#client";
+    resolveValues(db, [nameKey]);
+    expect(writtenValueOf(db, nameKey)).toBe(String(construction?.[0]));
+  });
+
+  it("keeps nil for a name written only as nil", async () => {
+    const db = await factsFor("value = nil\n");
+    const placeholder = db.facts("placeholderValue")[0];
+    expect(placeholder, "the nil was not recorded").toBeDefined();
+
+    const nameKey = "f.rb#value";
+    resolveValues(db, [nameKey]);
+    expect(writtenValueOf(db, nameKey)).toBe(String(placeholder?.[0]));
+  });
 });

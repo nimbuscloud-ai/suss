@@ -33,4 +33,32 @@ describe("the single-answer policy over a [key, answer] relation", () => {
     const settled = singleAnswers([]);
     expect(settled.size).toBe(0);
   });
+
+  it("sets a placeholder answer aside when the key has another", () => {
+    const settled = singleAnswers(
+      [
+        ["a", "none"],
+        ["a", "b"],
+      ],
+      new Set(["none"]),
+    );
+    expect(settled.get("a")).toBe("b");
+  });
+
+  it("keeps a placeholder answer when it is the only one", () => {
+    const settled = singleAnswers([["a", "none"]], new Set(["none"]));
+    expect(settled.get("a")).toBe("none");
+  });
+
+  it("still leaves out a key with two answers besides the placeholder", () => {
+    const settled = singleAnswers(
+      [
+        ["a", "none"],
+        ["a", "b"],
+        ["a", "c"],
+      ],
+      new Set(["none"]),
+    );
+    expect(settled.has("a")).toBe(false);
+  });
 });

@@ -12,6 +12,7 @@ import {
 } from "@suss/datalog";
 import {
   ANSWER_RELATIONS,
+  placeholderValues,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
   singleAnswers,
@@ -76,7 +77,10 @@ export function resolvedFunctions(db: Database, key: string): string[] {
  * as well, so the answer is what that function returns.
  */
 export function writtenValueOf(db: Database, key: string): string | null {
-  const direct = singleAnswers(db.facts("wantedIsWrittenAs")).get(key);
+  const placeholders = placeholderValues(db);
+  const direct = singleAnswers(db.facts("wantedIsWrittenAs"), placeholders).get(
+    key,
+  );
   if (direct === undefined) {
     return null;
   }
@@ -87,6 +91,8 @@ export function writtenValueOf(db: Database, key: string): string | null {
   }
 
   resolveValues(db, [direct]);
-  const deeper = singleAnswers(db.facts("wantedIsWrittenAs")).get(direct);
+  const deeper = singleAnswers(db.facts("wantedIsWrittenAs"), placeholders).get(
+    direct,
+  );
   return deeper ?? direct;
 }
