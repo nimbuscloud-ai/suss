@@ -84,18 +84,17 @@ export function discoverRegistrationCalls(
     match.importName,
     resolution,
   );
+  const registrationMethods = match.registrationChain.map((c) =>
+    c.startsWith(".") ? c.slice(1) : c,
+  );
   if (
     registrationSubjects.size === 0 &&
-    !storeCanFindSubjects(sourceFile, match, resolution)
+    !storeCanFindSubjects(sourceFile, match, resolution, registrationMethods)
   ) {
     return results;
   }
 
   // Step 3: Walk all call expressions and match registration chains
-  const registrationMethods = match.registrationChain.map((c) =>
-    c.startsWith(".") ? c.slice(1) : c,
-  );
-
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
       return;
@@ -436,16 +435,59 @@ export function receiverOf(
  * for the constructor, because a function the app was passed to never
  * calls `express()`. The README's "a receiver is what the store says
  * it is" explains why widening this stays safe.
+ *
+ * A file that never imports the library can still register on a
+ * router a project function returned, `const router = buildItems()`.
+ * It is let through only when one of `methods` is called on a variable
+ * set to a call's result, so the store is asked about nothing else.
  */
 export function storeCanFindSubjects(
   sourceFile: SourceFile,
   match: { importModule: string },
   resolution: ResolutionStore | undefined,
+  methods: readonly string[] = [],
 ): boolean {
-  return (
-    resolution !== undefined &&
-    importDeclarationsOf(sourceFile, [match.importModule]).length > 0
-  );
+  if (resolution === undefined) {
+    return false;
+  }
+  if (importDeclarationsOf(sourceFile, [match.importModule]).length > 0) {
+    return true;
+  }
+  return methods.length > 0 && callsOnCallResult(sourceFile, methods);
+}
+
+/**
+ * Whether the file calls one of `methods` on a variable it set to the
+ * result of a call. Read from the syntax alone, so the check costs one
+ * walk of the file and no store question.
+ */
+function callsOnCallResult(
+  sourceFile: SourceFile,
+  methods: readonly string[],
+): boolean {
+  const receivers = new Set<string>();
+  const setToCalls = new Set<string>();
+  sourceFile.forEachDescendant((node) => {
+    if (Node.isVariableDeclaration(node)) {
+      const init = node.getInitializer();
+      if (init !== undefined && Node.isCallExpression(init)) {
+        setToCalls.add(node.getName());
+      }
+      return;
+    }
+    if (!Node.isCallExpression(node)) {
+      return;
+    }
+    const callee = node.getExpression();
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      methods.includes(callee.getName()) &&
+      Node.isIdentifier(callee.getExpression())
+    ) {
+      receivers.add(callee.getExpression().getText());
+    }
+  });
+  return [...receivers].some((name) => setToCalls.has(name));
 }
 
 /**
@@ -475,10 +517,7 @@ export function registrationSubjectsOf(
   );
 
   const subjects = new Map<string, Node>();
-  // A file that never imports this directly can still declare a
-  // variable set to what a project function returns, so only bail out
-  // here when the store cannot check that either.
-  if (importedLocalName === null && resolution === undefined) {
+  if (importedLocalName === null) {
     return subjects;
   }
 
@@ -495,27 +534,9 @@ export function registrationSubjectsOf(
         Node.isCallExpression(init) || Node.isNewExpression(init)
           ? init.getExpression().getText()
           : null;
-      if (importedLocalName !== null && calleeText === importedLocalName) {
+      if (calleeText === importedLocalName) {
         subjects.set(node.getName(), init);
-        return;
       }
-      // A variable set to what a project function returns, as in
-      // `const router = buildRouter()`. The import name never appears
-      // at this declaration, so only the store can say what it built.
-      if (Node.isCallExpression(init)) {
-        const construction = resolution?.subjectConstructionOf(
-          init,
-          importModule,
-          importName,
-        );
-        if (construction !== null && construction !== undefined) {
-          subjects.set(node.getName(), construction);
-        }
-      }
-      return;
-    }
-
-    if (importedLocalName === null) {
       return;
     }
 
@@ -601,8 +622,47 @@ export function registrationSubjectIdsOf(
     ).values()) {
       ids.add(nodeId(node));
     }
+    for (const node of unboundConstructionsOf(
+      sourceFile,
+      match.importModule,
+      match.importName,
+    )) {
+      ids.add(nodeId(node));
+    }
   }
   return ids;
+}
+
+/**
+ * Every call to the imported constructor that no variable is set to,
+ * such as the `Router()` a project function returns. A mount whose
+ * target resolves to one of these through the store is a mount of a
+ * router this run tracks, so its creation site has to be known here.
+ */
+function unboundConstructionsOf(
+  sourceFile: SourceFile,
+  importModule: string,
+  importName: string,
+): Node[] {
+  const importedLocalName = resolveImportedLocalName(
+    sourceFile,
+    importModule,
+    importName,
+  );
+  if (importedLocalName === null) {
+    return [];
+  }
+  const constructions: Node[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (
+      (Node.isCallExpression(node) || Node.isNewExpression(node)) &&
+      node.getExpression().getText() === importedLocalName &&
+      !Node.isVariableDeclaration(node.getParent())
+    ) {
+      constructions.push(node);
+    }
+  });
+  return constructions;
 }
 
 /**
@@ -639,7 +699,7 @@ export function discoverMountEdges(
   );
   if (
     subjects.size === 0 &&
-    !storeCanFindSubjects(sourceFile, match, resolution)
+    !storeCanFindSubjects(sourceFile, match, resolution, [mount.method])
   ) {
     return [];
   }

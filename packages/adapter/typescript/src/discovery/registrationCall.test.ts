@@ -11,6 +11,7 @@ import {
   type MountPrefixIndex,
   registrationSubjectIdsOf,
   registrationSubjectsOf,
+  storeCanFindSubjects,
 } from "./registrationCall.js";
 
 import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
@@ -600,12 +601,11 @@ describe("discoverMountEdges", () => {
     ).toEqual([]);
   });
 
-  it("records nothing for an inline router the subjects map never named", () => {
-    // Router() written directly at the call, with no variable
-    // set to it, is not in registrationSubjectsOf's map: nothing
-    // else in the file could ever ask "is this router mounted"
-    // about a node with no name to look it up by, so the mount
-    // scan does not track it either.
+  it("records a router written directly at the mount call", () => {
+    // A Router() no variable is set to is still a router this run
+    // tracks: a project function returns one the same way, and a
+    // route registered on what that function returned asks about
+    // this creation site.
     const sf = sourceFile(`
       import express, { Router } from "express";
       const app = express();
@@ -613,15 +613,15 @@ describe("discoverMountEdges", () => {
     `);
     const store = new ResolutionStore();
 
-    expect(
-      discoverMountEdges(
-        sf,
-        expressAppMatch,
-        useMount,
-        expressSubjectIds(sf),
-        store,
-      ),
-    ).toEqual([]);
+    const edges = discoverMountEdges(
+      sf,
+      expressAppMatch,
+      useMount,
+      expressSubjectIds(sf),
+      store,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.prefix).toBe("/api/orders");
   });
 
   it("records nothing when the prefix isn't a string literal", () => {
@@ -1152,3 +1152,85 @@ function twoApps() {
     `,
   });
 }
+
+describe("storeCanFindSubjects", () => {
+  const registrationMethods = ["get", "post", "use"];
+
+  it("lets through a file that imports the library", () => {
+    const sf = sourceFile(`
+      import express from "express";
+      export function mount(app: express.Application) {}
+    `);
+    expect(
+      storeCanFindSubjects(sf, expressAppMatch, new ResolutionStore()),
+    ).toBe(true);
+  });
+
+  it("lets through a file that registers on what a call returned", () => {
+    const sf = sourceFile(`
+      import { buildItems } from "./routers";
+      const router = buildItems();
+      router.get("/:id", () => {});
+    `);
+    expect(
+      storeCanFindSubjects(
+        sf,
+        expressAppMatch,
+        new ResolutionStore(),
+        registrationMethods,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps out a file whose receiver was never set to a call", () => {
+    const sf = sourceFile(`
+      const cache = new Map<string, string>();
+      cache.get("key");
+    `);
+    expect(
+      storeCanFindSubjects(
+        sf,
+        expressAppMatch,
+        new ResolutionStore(),
+        registrationMethods,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps out a file whose calls are on nothing registration-shaped", () => {
+    const sf = sourceFile(`
+      import { openDb } from "./db";
+      const db = openDb();
+      db.query("select 1");
+    `);
+    expect(
+      storeCanFindSubjects(
+        sf,
+        expressAppMatch,
+        new ResolutionStore(),
+        registrationMethods,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps out a non-importing file when no methods are given", () => {
+    const sf = sourceFile(`
+      import { buildItems } from "./routers";
+      const router = buildItems();
+      router.get("/:id", () => {});
+    `);
+    expect(
+      storeCanFindSubjects(sf, expressAppMatch, new ResolutionStore()),
+    ).toBe(false);
+  });
+
+  it("keeps out every file when there is no store", () => {
+    const sf = sourceFile(`
+      import express from "express";
+      const app = express();
+    `);
+    expect(
+      storeCanFindSubjects(sf, expressAppMatch, undefined, registrationMethods),
+    ).toBe(false);
+  });
+});
