@@ -88,9 +88,12 @@ export function discoverClientCalls(
         matched = true;
       }
     } else if (Node.isPropertyAccessExpression(callee)) {
-      // Method call, matched four ways: built in this file
-      // (`clientVarNames`), the import itself, a name the fact layer
-      // resolves to an instance elsewhere, or a call that does.
+      /**
+       * Method call, matched four ways: `client.getUser()` on an
+       * instance built here, `axios.get()` on the import itself,
+       * `api.get()` on an instance the fact layer finds elsewhere, and
+       * `client().get()` on what a project function returns.
+       */
       const subject = callee.getExpression();
       if (
         (Node.isIdentifier(subject) &&

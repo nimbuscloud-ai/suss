@@ -557,7 +557,7 @@ describe("a call written as what its callee returns", () => {
     expect(writtenAsOf(wrapper, "site")).toEqual(["construction"]);
   });
 
-  it("still comes to nothing, since a call keeps no comesTo answer", () => {
+  it("comes to nothing", () => {
     expect(resolutionsOf(wrapper, "site")).toEqual([]);
   });
 

@@ -17,6 +17,7 @@ import { toFunctionRoot } from "./shared.js";
 
 import type {
   ArrayLiteralExpression,
+  CallExpression,
   ObjectLiteralElementLike,
   ObjectLiteralExpression,
 } from "ts-morph";
@@ -145,24 +146,37 @@ export function writtenNodeOf(
     return written;
   }
   if (Node.isCallExpression(written)) {
-    // A library factory call has no project function behind it, and
-    // stays the construction itself. A call to a project function asks
-    // the store what the function's return value was written as first.
-    if (
-      resolution !== undefined &&
-      resolution.resolveCallable(written.getExpression()) !== null
-    ) {
-      const resolved = resolution.resolveWrittenValue(written);
-      if (resolved !== null) {
-        return resolved;
-      }
-    }
-    return written;
+    return writtenThroughCall(written, resolution);
   }
   if (resolution === undefined || !couldNameAValue(written)) {
     return null;
   }
-  return resolution.resolveWrittenValue(written);
+  const resolved = resolution.resolveWrittenValue(written);
+  return resolved !== null && Node.isCallExpression(resolved)
+    ? writtenThroughCall(resolved, resolution)
+    : resolved;
+}
+
+/**
+ * A call's own construction, or what its callee's return value is
+ * written as when the callee is a project function. A name bound to
+ * `client()` and `client()` itself both land here, so a wrapper called
+ * through a variable resolves the same way as one called directly.
+ */
+function writtenThroughCall(
+  call: CallExpression,
+  resolution: ResolutionStore | undefined,
+): Node {
+  if (
+    resolution !== undefined &&
+    resolution.resolveCallable(call.getExpression()) !== null
+  ) {
+    const resolved = resolution.resolveWrittenValue(call);
+    if (resolved !== null) {
+      return resolved;
+    }
+  }
+  return call;
 }
 
 /**

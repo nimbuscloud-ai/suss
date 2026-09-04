@@ -171,8 +171,8 @@ describe("resolving a value across files", () => {
       .find((row) => String(row[1]).endsWith("#Client"));
     expect(innerCall, "the construction was not recorded").toBeDefined();
 
-    // Seeds and evaluates the shared rules; read the relation directly,
-    // apart from the single-answer map subjectConstructions builds on it.
+    // The relation itself, since subjectConstructions folds it into one
+    // answer or none.
     subjectConstructions(facts, [String(outerCall?.[0])]);
     const written = facts
       .facts("wantedSubjectWritten")
