@@ -7,6 +7,7 @@ import {
   ANSWER_RELATIONS,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
+  singleAnswers,
 } from "@suss/resolution";
 
 import type { Database } from "@suss/datalog";
@@ -68,17 +69,25 @@ export function subjectConstructions(
     return found;
   }
 
-  for (const valueKey of valueKeys) {
-    db.add("wantedSubject", [valueKey]);
-  }
-  evaluate(db, RESOLUTION_PROGRAM.rules);
+  const askSubjects = (keys: Iterable<string>): void => {
+    for (const key of keys) {
+      db.add("wantedSubject", [key]);
+    }
+    evaluate(db, RESOLUTION_PROGRAM.rules);
+  };
+  askSubjects(valueKeys);
+  const written = singleAnswers(db.facts("wantedSubjectWritten"));
 
-  const writtenAs = new Map<string, Set<string>>();
-  for (const row of db.facts("wantedSubjectWritten")) {
-    const written = writtenAs.get(String(row[0])) ?? new Set<string>();
-    written.add(String(row[1]));
-    writtenAs.set(String(row[0]), written);
+  // A name's one answer can be a call to a project function; asking
+  // about that call as its own subject reaches what it returns.
+  const calls = new Set(db.facts("call").map((row) => String(row[0])));
+  const throughCalls = new Set(
+    [...written.values()].filter((candidate) => calls.has(candidate)),
+  );
+  if (throughCalls.size > 0) {
+    askSubjects(throughCalls);
   }
+  const writtenThroughCall = singleAnswers(db.facts("wantedSubjectWritten"));
 
   const origins = new Map<string, SubjectOrigin[]>();
   for (const row of db.facts("wantedSubjectConstruction")) {
@@ -89,12 +98,17 @@ export function subjectConstructions(
   }
 
   for (const valueKey of valueKeys) {
-    const written = writtenAs.get(valueKey);
-    if (written === undefined || written.size !== 1) {
+    const direct = written.get(valueKey);
+    if (direct === undefined) {
       continue;
     }
-    const constructionKey = [...written][0] as string;
-    const from = origins.get(`${valueKey}|${constructionKey}`);
+    const deeper = calls.has(direct)
+      ? writtenThroughCall.get(direct)
+      : undefined;
+    const constructionKey = deeper ?? direct;
+    const originOf = deeper === undefined ? valueKey : direct;
+
+    const from = origins.get(`${originOf}|${constructionKey}`);
     if (from !== undefined) {
       found.set(valueKey, { constructionKey, origins: from });
     }
