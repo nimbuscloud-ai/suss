@@ -29,9 +29,16 @@ that version is already tagged, and publishes. `dry-run` publishes
 nothing and still writes the release notes to the job summary, so you
 can read what the release would say before it says it.
 
-Start with a dry run. It reports which credential it found before it
-lists anything, so a rehearsal that says "would publish 30 packages" is
-one that would in fact have published them.
+Start with a dry run. Before it lists anything it asks the registry for
+a publishing credential for every package the run would write, which is
+the only thing that proves a package will publish. A rehearsal that says
+"would publish 30 packages" is one that would in fact have published
+them. A publishing run asks the same question before it writes the
+first package, so a release that cannot finish publishes nothing and says
+which packages need setting up.
+
+Asking mints a short-lived token and writes nothing, so a dry run can
+ask about every package as often as you like.
 
 You can publish from a laptop with `npm run release -- --otp <code>`,
 which does the same thing without the tag or the GitHub release. It
@@ -108,9 +115,9 @@ set up, which is why setting them up and re-running worked.
 
 Publish the first version of a genuinely new package by hand, then
 configure its trusted publisher, and every release after that goes the
-same way as the rest. Check before the release rather than during it:
-a release that stops on a new package leaves the packages that
-depend on it pointing at a version nobody can install.
+same way as the rest. The dry run now catches this on its own: it asks
+for a credential per package and stops on the one that has none, and it
+says which of the other packages depend on it.
 
 Nothing needs to change in the repository. The pieces the workflow has
 to supply are already there:
@@ -135,9 +142,9 @@ by itself when it publishes this way, so nothing passes `--provenance`.
 Once a package is switched over, set **Settings → Publishing access → Require
 two-factor authentication and disallow tokens** on it. That setting does
 not affect trusted publishing, which is not token authentication, and it
-means a stolen token cannot publish even if one is minted later. Do it
-only after an actual release has gone out over OIDC; a dry run does not
-exercise the exchange.
+means a stolen token cannot publish even if one is minted later. A dry
+run exercises the exchange for every package, so a green dry run is
+enough to tell you the package is switched over.
 
 ## When a release fails
 
