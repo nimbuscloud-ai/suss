@@ -40,6 +40,10 @@ import { parseArgs } from "node:util";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const ROOT_MANIFEST = path.join(ROOT, "package.json");
 
+/** Where the packages go, and whose hostname the OIDC audience is built from. */
+const REGISTRY =
+  process.env.npm_config_registry ?? "https://registry.npmjs.org";
+
 /** How many publishes run at once. Enough to finish inside one password. */
 const CONCURRENCY = 10;
 
@@ -110,10 +114,23 @@ if (pending.length === 0) {
   process.exit(0);
 }
 
+// Asking the registry for each package's credential is the only thing
+// that proves the package will publish, so a dry run does it too.
+const unpublishable = await packagesMissingAPublisher(
+  pending.map(({ name }) => name),
+);
+if (unpublishable !== null && unpublishable.length > 0) {
+  reportMissingPublishers(unpublishable, pending);
+  process.exit(1);
+}
+
 if (dryRun) {
   console.log(`\nWould publish ${pending.length} packages:`);
   for (const { name } of pending) {
     console.log(`  ${name}`);
+  }
+  if (unpublishable !== null) {
+    console.log("\nThe registry offered a credential for every one of them.");
   }
   process.exit(0);
 }
@@ -292,6 +309,109 @@ function checkPublishCredential({ fatal }) {
     fail(message.charAt(0).toUpperCase() + message.slice(1));
   }
   console.log(`\nNot publishing, but note: ${message}\n`);
+}
+
+/**
+ * The npm registry hands out a publishing credential one package at a
+ * time, and only for a package that lists this repository and this
+ * workflow as its trusted publisher on npmjs.com. Asking for one
+ * mints a short-lived token and
+ * writes nothing, so every package can be asked before the first
+ * publish and a release that cannot finish publishes nothing.
+ *
+ * Documented in docs/internal/releasing.md, including what to do with
+ * the packages a run turns down.
+ */
+async function packagesMissingAPublisher(names) {
+  const idToken = await githubIdToken();
+  if (idToken === null) {
+    return null;
+  }
+
+  const asked = await Promise.all(
+    names.map(async (name) => ({ name, ok: await canMintFor(name, idToken) })),
+  );
+  return asked.filter(({ ok }) => !ok).map(({ name }) => name);
+}
+
+/** The token GitHub signs for this job, which npm trades for a publishing one. */
+async function githubIdToken() {
+  const requestUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+  const requestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+  if (requestUrl === undefined || requestToken === undefined) {
+    return null;
+  }
+
+  const url = new URL(requestUrl);
+  url.searchParams.set("audience", `npm:${new URL(REGISTRY).hostname}`);
+  const response = await fetch(url.href, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${requestToken}`,
+    },
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const body = await response.json();
+  return typeof body.value === "string" ? body.value : null;
+}
+
+/** Whether the registry will hand this job a credential for one package. */
+async function canMintFor(name, idToken) {
+  // npm escapes the slash in a scoped name and leaves the @ alone.
+  const escaped = name.replace("/", "%2f");
+  const response = await fetch(
+    new URL(`/-/npm/v1/oidc/token/exchange/package/${escaped}`, REGISTRY),
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+    },
+  );
+  if (!response.ok) {
+    return false;
+  }
+  const body = await response.json().catch(() => ({}));
+  return typeof body.token === "string";
+}
+
+/**
+ * What a stopped release needs before somebody can fix it: which
+ * packages the registry turned down, and which of the others would
+ * install broken without them. The dependency is what hurt last time,
+ * and reading it off the log took a while.
+ */
+function reportMissingPublishers(missing, pending) {
+  console.error(
+    `\n${missing.length} of ${pending.length} packages have no trusted publisher` +
+      " for this workflow, so nothing was published:",
+  );
+  for (const name of missing) {
+    console.error(`  ${name}`);
+  }
+
+  const turnedDown = new Set(missing);
+  for (const { dir, name } of pending) {
+    const manifest = readJson(path.join(dir, "package.json"));
+    const blocked = Object.keys(manifest.dependencies ?? {}).filter((dep) =>
+      turnedDown.has(dep),
+    );
+    if (blocked.length > 0) {
+      console.error(
+        `\n${name} depends on ${blocked.length} of them, so publishing the rest` +
+          ` would leave ${name} uninstallable.`,
+      );
+    }
+  }
+
+  console.error(
+    "\nOn npmjs.com, under the package's Settings and then Trusted Publisher," +
+      " pick GitHub Actions and fill in nimbuscloud-ai, suss, and release.yml." +
+      " Then run this again.",
+  );
 }
 
 /** Say what a wall of identical failures is actually about. */
