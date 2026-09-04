@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { singleAnswers } from "./singleAnswer.js";
+import { Database } from "@suss/datalog";
+
+import { placeholderValues, singleAnswers } from "./singleAnswer.js";
 
 describe("the single-answer policy over a [key, answer] relation", () => {
   it("settles a key with exactly one answer", () => {
@@ -48,6 +50,14 @@ describe("the single-answer policy over a [key, answer] relation", () => {
   it("keeps a placeholder answer when it is the only one", () => {
     const settled = singleAnswers([["a", "none"]], new Set(["none"]));
     expect(settled.get("a")).toBe("none");
+  });
+
+  it("reads the placeholder keys an adapter marked out of the database", () => {
+    const db = new Database();
+    db.add("placeholderValue", ["f.py:1-5"]);
+    db.add("writtenValue", ["f.py:1-5"]);
+    db.add("writtenValue", ["f.py:7-12"]);
+    expect([...placeholderValues(db)]).toEqual(["f.py:1-5"]);
   });
 
   it("still leaves out a key with two answers besides the placeholder", () => {
