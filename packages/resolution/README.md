@@ -238,6 +238,23 @@ The construction end needs no fact of its own. Every call is already a
 `call` fact, a `new` expression included, and the join against
 `comesFrom` is what makes one of them a subject seed.
 
+A call is written as itself, the same base case that makes a class its
+own ancestor at the top of the chain. Asking `wantedSubjectWritten`
+about a call directly turns up that match alongside whatever else the
+walk reaches, so a call with exactly one other answer would otherwise
+count as two and get refused along with any actual ambiguity.
+`singleAnswers` is where every adapter drops a row whose answer repeats
+its own key before the count runs.
+
+A name bound to a call gets no help from that trivial match, since the
+name is not the call. Its one answer is the call itself, and the rules
+say nothing more without another question: the rule that lets a call
+carry what its callee returns only fires when the thing asked about is
+the call, not a name that happens to reach one. An adapter that wants
+the deeper answer for a name asks `wantedSubject` again with the call
+as the new subject and takes what comes back, the same second ask
+`resolveWrittenValue` makes of a call reached through a name.
+
 ## Explaining an answer
 
 Evaluate the same rules under `@suss/datalog`'s `witnesses` algebra and

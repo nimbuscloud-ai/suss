@@ -8,6 +8,7 @@ export {
   mountPathsOf,
 } from "./mount.js";
 export { explainResolvedKey } from "./session.js";
+export { singleAnswers } from "./singleAnswer.js";
 
 export type {
   CaseFiles,
