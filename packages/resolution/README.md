@@ -239,21 +239,20 @@ The construction end needs no fact of its own. Every call is already a
 `comesFrom` is what makes one of them a subject seed.
 
 A call is written as itself, the same base case that makes a class its
-own ancestor at the top of the chain. Asking `wantedSubjectWritten`
-about a call directly turns up that match alongside whatever else the
-walk reaches, so a call with exactly one other answer would otherwise
-count as two and get refused along with any actual ambiguity.
-`singleAnswers` is where every adapter drops a row whose answer repeats
-its own key before the count runs.
+own ancestor at the top of the chain. So when an adapter asks
+`wantedSubjectWritten` about a call directly, the answers include the
+call itself next to whatever the walk reaches. A call with one other
+answer would count as two and be refused as ambiguous. `singleAnswers`
+drops the row whose answer is its own key before counting, and every
+adapter reads the relation through it.
 
-A name bound to a call gets no help from that trivial match, since the
-name is not the call. Its one answer is the call itself, and the rules
-say nothing more without another question: the rule that lets a call
-carry what its callee returns only fires when the thing asked about is
-the call, not a name that happens to reach one. An adapter that wants
-the deeper answer for a name asks `wantedSubject` again with the call
-as the new subject and takes what comes back, the same second ask
-`resolveWrittenValue` makes of a call reached through a name.
+A name bound to a call is a separate case. Its one answer is the call,
+and the rule that says a call is written as what its callee returns
+only fires for the call itself, never for a name that reaches one. An
+adapter that wants the deeper answer asks `wantedSubject` a second
+time with the call as the subject and takes that answer. The
+TypeScript store does the same in `resolveWrittenValue` when a name
+resolves to a call.
 
 ## Explaining an answer
 

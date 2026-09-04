@@ -1,8 +1,9 @@
 /**
  * The single-answer policy shared by every question shaped `[key,
- * answer]`, such as `wantedIsWrittenAs` or `wantedSubjectWritten`. The
- * README's subject section says why a call asked about directly needs
- * its match against itself dropped first.
+ * answer]`, such as `wantedIsWrittenAs` or `wantedSubjectWritten`. A
+ * call is written as itself, so a call asked about directly always
+ * matches its own key; that row is dropped before the count so one
+ * other answer settles it instead of counting as two.
  */
 
 import type { Tuple } from "@suss/datalog";

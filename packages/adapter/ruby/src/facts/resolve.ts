@@ -72,9 +72,8 @@ export function resolvedFunctions(db: Database, key: string): string[] {
 
 /**
  * The single expression a value was written as, once `resolveValues`
- * has asked about it. Chases one call deeper when that expression is
- * itself a call to a project function, asking about the call in its
- * own right for what it returns.
+ * has asked about it. A call to a project function is asked about
+ * as well, so the answer is what that function returns.
  */
 export function writtenValueOf(db: Database, key: string): string | null {
   const direct = singleAnswers(db.facts("wantedIsWrittenAs")).get(key);
