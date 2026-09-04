@@ -949,9 +949,7 @@ function collectReturnedConstructions(
     if (definition.type !== "function_definition") {
       continue;
     }
-    // The binder gives every top-level def its own scope, so this is
-    // only ever undefined for one nested inside a block this reading
-    // does not descend, which the statement above already excluded.
+    // The binder gives every top-level def a scope of its own.
     const scope = bound.module.scopeFor.get(definition.id);
 
     for (const inner of nestedStatements(definition)) {
@@ -1416,7 +1414,7 @@ function constructionsReturnedBy(
 
   const found: Construction[] = [];
   for (const value of contained) {
-    // A value nothing settled is presumably a construction call already.
+    // A value the rules did not settle is looked up as a construction call itself.
     const resolved = settled.get(value)?.constructionKey ?? value;
     const construction = index.byValueKey.get(resolved);
     if (construction === undefined) {
