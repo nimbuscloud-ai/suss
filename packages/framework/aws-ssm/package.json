@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-aws-ssm",
-  "version": "0.21.1",
+  "version": "0.22.0",
   "type": "module",
   "description": "Recognize AWS SSM Parameter Store calls in TypeScript code and emit storage-access effects against the parameter.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/recognize": "0.21.1"
+    "@suss/recognize": "0.22.0"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
