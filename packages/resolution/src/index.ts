@@ -310,6 +310,19 @@ export const RESOLUTION_RULES = [
     [lit("reaches", v("x"), v("z"), VALUE_STEP), lit("objectValue", v("z"))],
   ),
 
+  // A call is written as whatever its callee's return value is written
+  // as. Unlike `comesTo`, this has nothing to protect: which expression
+  // a value was written as does not compete with unwrapping it.
+  rule(
+    "isWrittenAs",
+    [v("x"), v("z")],
+    [
+      lit("invokes", v("x"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("isWrittenAs", v("ret"), v("z")),
+    ],
+  ),
+
   // What one call site put in a parameter, told apart from what the
   // other callers passed.
   rule(

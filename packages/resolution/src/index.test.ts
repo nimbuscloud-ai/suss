@@ -541,6 +541,42 @@ describe("what a call gives back", () => {
   });
 });
 
+describe("a call written as what its callee returns", () => {
+  // function client() { return construction; }, and construction is
+  // itself a call, so it has no comesTo answer of its own.
+  const wrapper: Array<[string, ...string[]]> = [
+    ["writtenValue", "construction"],
+    ["call", "construction", "clsRef"],
+    ["func", "client"],
+    ["returnsValue", "client", "construction"],
+    ["binds", "clientRef", "client"],
+    ["call", "site", "clientRef"],
+  ];
+
+  it("is written as the construction its callee returns", () => {
+    expect(writtenAsOf(wrapper, "site")).toEqual(["construction"]);
+  });
+
+  it("comes to nothing", () => {
+    expect(resolutionsOf(wrapper, "site")).toEqual([]);
+  });
+
+  it("is written as nothing when the callee returns one of its own parameters", () => {
+    expect(
+      writtenAsOf(
+        [
+          ["func", "pick"],
+          ["paramOf", "pick", "0", "pick#a"],
+          ["returnsValue", "pick", "pick#a"],
+          ["binds", "pickRef", "pick"],
+          ["call", "site", "pickRef"],
+        ],
+        "site",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("a value reached through a property", () => {
   it("follows a name to what an object holds under it", () => {
     // const routes = { list: f }; routes.list

@@ -17,6 +17,7 @@ import { toFunctionRoot } from "./shared.js";
 
 import type {
   ArrayLiteralExpression,
+  CallExpression,
   ObjectLiteralElementLike,
   ObjectLiteralExpression,
 } from "ts-morph";
@@ -141,13 +142,41 @@ export function writtenNodeOf(
   resolution: ResolutionStore | undefined,
 ): Node | null {
   const written = factKeyOf(value);
-  if (Node.isCallExpression(written) || Node.isNewExpression(written)) {
+  if (Node.isNewExpression(written)) {
     return written;
+  }
+  if (Node.isCallExpression(written)) {
+    return writtenThroughCall(written, resolution);
   }
   if (resolution === undefined || !couldNameAValue(written)) {
     return null;
   }
-  return resolution.resolveWrittenValue(written);
+  const resolved = resolution.resolveWrittenValue(written);
+  return resolved !== null && Node.isCallExpression(resolved)
+    ? writtenThroughCall(resolved, resolution)
+    : resolved;
+}
+
+/**
+ * A call's own construction, or what its callee's return value is
+ * written as when the callee is a project function. A name bound to
+ * `client()` and `client()` itself both land here, so a wrapper called
+ * through a variable resolves the same way as one called directly.
+ */
+function writtenThroughCall(
+  call: CallExpression,
+  resolution: ResolutionStore | undefined,
+): Node {
+  if (
+    resolution !== undefined &&
+    resolution.resolveCallable(call.getExpression()) !== null
+  ) {
+    const resolved = resolution.resolveWrittenValue(call);
+    if (resolved !== null) {
+      return resolved;
+    }
+  }
+  return call;
 }
 
 /**

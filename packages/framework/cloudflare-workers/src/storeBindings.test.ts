@@ -64,8 +64,19 @@ beforeAll(() => {
          return new Response("ok");
        },
      };
-     function buildQuery(): string {
-       return "SELECT 1";
+     declare function buildQuery(): string;`,
+  );
+  write(
+    "src/functionReturnedStatement.ts",
+    `interface Env { LEDGER: D1Database }
+     export default {
+       async fetch(request: Request, env: Env): Promise<Response> {
+         await env.LEDGER.prepare(ledgerQuery());
+         return new Response("ok");
+       },
+     };
+     function ledgerQuery(): string {
+       return "SELECT * FROM ledger";
      }`,
   );
   write(
@@ -215,6 +226,24 @@ describe("storeBindingRecognizer", () => {
 
   it("records nothing for a statement nobody can read", async () => {
     expect(storageEffects(await run(), "unreadable.ts")).toEqual([]);
+  });
+
+  it("reads a statement a project function returns", async () => {
+    const effects = storageEffects(await run(), "functionReturnedStatement.ts");
+    expect(effects).toEqual([
+      expect.objectContaining({
+        binding: expect.objectContaining({
+          semantics: expect.objectContaining({
+            storageSystem: "d1",
+            container: "LEDGER",
+          }),
+        }),
+        interaction: expect.objectContaining({
+          kind: "read",
+          operation: "prepare",
+        }),
+      }),
+    ]);
   });
 
   it("leaves a binding whose type is not a store alone", async () => {

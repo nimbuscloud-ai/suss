@@ -399,9 +399,9 @@ describe("axiosPack — instance built in another file", () => {
     project.createSourceFile(
       "apiClient.ts",
       `
-      import axios from "axios";
+      declare function externalFactory(): unknown;
       export function createApiClient() {
-        return axios.create({ baseURL: "/api" });
+        return externalFactory();
       }
     `,
     );
@@ -544,6 +544,183 @@ describe("axiosPack — instance built in another file", () => {
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      recognition: "axios",
+    });
+  });
+});
+
+describe("axiosPack — a call whose receiver is itself a call", () => {
+  it("matches a method called on what a guarded cached-instance wrapper returns", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios, { AxiosInstance } from "axios";
+
+      let cached: AxiosInstance | null = null;
+      function client() {
+        if (!cached) {
+          cached = axios.create({ baseURL: "/api" });
+        }
+        return cached;
+      }
+
+      export async function getUser() {
+        return client().get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
+    });
+  });
+
+  it("matches a method called on what a wrapper returns fresh from axios.create()", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios from "axios";
+
+      function client() {
+        return axios.create({ baseURL: "/api" });
+      }
+
+      export async function getUser() {
+        return client().get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
+    });
+  });
+
+  it("matches a call through a wrapper imported from another file", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "client.ts",
+      `
+      import axios, { AxiosInstance } from "axios";
+
+      let cached: AxiosInstance | null = null;
+      export function client() {
+        if (!cached) {
+          cached = axios.create({ baseURL: "/api" });
+        }
+        return cached;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import { client } from "./client";
+
+      export async function getUser() {
+        return client().get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
+    });
+  });
+
+  it("matches a call on a name a function binds the wrapper's result to", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios, { AxiosInstance } from "axios";
+
+      let cached: AxiosInstance | null = null;
+      function client() {
+        if (!cached) {
+          cached = axios.create({ baseURL: "/api" });
+        }
+        return cached;
+      }
+
+      export async function getUser() {
+        const c = client();
+        return c.get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      recognition: "axios",
+    });
+  });
+
+  it("matches a call on a module-level name bound to the wrapper's result", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios, { AxiosInstance } from "axios";
+
+      let cached: AxiosInstance | null = null;
+      function client() {
+        if (!cached) {
+          cached = axios.create({ baseURL: "/api" });
+        }
+        return cached;
+      }
+
+      const c = client();
+
+      export async function getUser() {
+        return c.get("/users/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const getUser = summaries.find((s) => s.identity.name === "getUser");
+    expect(getUser?.identity.boundaryBinding).toEqual({
+      transport: "http",
+      semantics: { name: "rest", method: "GET", path: "/users/1" },
       recognition: "axios",
     });
   });

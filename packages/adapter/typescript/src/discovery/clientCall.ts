@@ -88,21 +88,18 @@ export function discoverClientCalls(
         matched = true;
       }
     } else if (Node.isPropertyAccessExpression(callee)) {
-      // Method call. Three shapes:
-      //   1. client.getUser(...)   `client` is a variable set to the
-      //      result of calling the import (e.g. `const client =
-      //      initClient(...)`), built in THIS file.
-      //   2. axios.get("/users")   the import itself is the client and
-      //      methods are called on it directly.
-      //   3. api.get("/users")     `api` is a name imported from
-      //      wherever the instance was built, resolved through the
-      //      fact layer rather than read off this file.
+      /**
+       * Method call, matched four ways: `client.getUser()` on an
+       * instance built here, `axios.get()` on the import itself,
+       * `api.get()` on an instance the fact layer finds elsewhere, and
+       * `client().get()` on what a project function returns.
+       */
       const subject = callee.getExpression();
       if (
-        Node.isIdentifier(subject) &&
-        (isClientImport(subject, match, resolution, true) ||
-          clientVarNames.has(subject.getText()) ||
-          resolvesToKnownInstance(subject, match, resolution))
+        (Node.isIdentifier(subject) &&
+          (isClientImport(subject, match, resolution, true) ||
+            clientVarNames.has(subject.getText()))) ||
+        resolvesToKnownInstance(subject, match, resolution)
       ) {
         methodName = callee.getName();
         if (methodFilter === null || methodFilter.has(methodName)) {

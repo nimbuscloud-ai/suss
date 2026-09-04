@@ -1408,6 +1408,126 @@ describe("a call reached through a cached-client wrapper", () => {
   });
 });
 
+describe("resolveWrittenValue on a call whose receiver is itself a call", () => {
+  function callNamed(project: Project, file: string, calleeText: string): Node {
+    const call = project
+      .getSourceFileOrThrow(file)
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((c) => c.getExpression().getText() === calleeText);
+    if (call === undefined) {
+      throw new Error(`No call to ${calleeText} in ${file}`);
+    }
+    return call;
+  }
+
+  it("resolves to the construction a guarded wrapper's guard settles on", () => {
+    const project = projectOf({
+      "/docClient.ts": `
+        declare class DynamoDBDocumentClient {
+          static from(base: unknown): DynamoDBDocumentClient;
+        }
+        declare function baseClient(): unknown;
+
+        let cachedDocClient: DynamoDBDocumentClient | null = null;
+
+        export function docClient() {
+          if (!cachedDocClient) {
+            cachedDocClient = DynamoDBDocumentClient.from(baseClient());
+          }
+          return cachedDocClient;
+        }
+      `,
+      "/handlers.ts": `
+        import { docClient } from "./docClient";
+        function handler() {
+          return docClient();
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store
+        .resolveWrittenValue(callNamed(project, "/handlers.ts", "docClient"))
+        ?.getText(),
+    ).toBe("DynamoDBDocumentClient.from(baseClient())");
+  });
+
+  it("resolves to the construction a wrapper returns fresh", () => {
+    const project = projectOf({
+      "/client.ts": `
+        declare class Client {
+          static create(): Client;
+        }
+        export function client() {
+          return Client.create();
+        }
+      `,
+      "/handlers.ts": `
+        import { client } from "./client";
+        function handler() {
+          return client();
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store
+        .resolveWrittenValue(callNamed(project, "/handlers.ts", "client"))
+        ?.getText(),
+    ).toBe("Client.create()");
+  });
+
+  it("resolves to the construction a wrapper returns from a module const", () => {
+    const project = projectOf({
+      "/client.ts": `
+        declare class Client {
+          static create(): Client;
+        }
+        const shared = Client.create();
+        export function client() {
+          return shared;
+        }
+      `,
+      "/handlers.ts": `
+        import { client } from "./client";
+        function handler() {
+          return client();
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store
+        .resolveWrittenValue(callNamed(project, "/handlers.ts", "client"))
+        ?.getText(),
+    ).toBe("Client.create()");
+  });
+
+  it("resolves to nothing when a wrapper returns one of its own parameters", () => {
+    const project = projectOf({
+      "/pick.ts": `
+        export function pick(a?: unknown) {
+          return a;
+        }
+      `,
+      "/handlers.ts": `
+        import { pick } from "./pick";
+        function handler() {
+          return pick();
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    expect(
+      store.resolveWrittenValue(callNamed(project, "/handlers.ts", "pick")),
+    ).toBe(null);
+  });
+});
+
 describe("a binding declared without a value", () => {
   function bindingFor(project: Project, file: string, name: string): Node {
     return project

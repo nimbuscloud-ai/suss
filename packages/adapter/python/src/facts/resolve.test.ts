@@ -10,7 +10,12 @@ import { emitModuleImportFacts } from "../facts.js";
 import { findPythonFiles } from "../index.js";
 import { parsePython } from "../parser.js";
 import { bindModule } from "../scope.js";
-import { containedValues, objectReturnedBy, resolveCalls } from "./resolve.js";
+import {
+  containedValues,
+  objectReturnedBy,
+  resolveCalls,
+  subjectConstructions,
+} from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
 /** A project on disk, since resolution is about how files reach each other. */
@@ -137,5 +142,42 @@ describe("resolving a value across files", () => {
       `${path.join(dir, "loader.py")}#second`,
       `${path.join(dir, "loader.py")}#third`,
     ]);
+  });
+
+  it("derives a call reached through a wrapper as written by the construction it returns", async () => {
+    const { facts } = await factsFor({
+      "lib.py": "class Client:\n    pass\n",
+      "client.py": [
+        "from lib import Client",
+        "",
+        "def make_client():",
+        "    return Client()",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from client import make_client",
+        "",
+        "make_client().send()",
+        "",
+      ].join("\n"),
+    });
+
+    const outerCall = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#make_client"));
+    expect(outerCall, "the wrapper call was not recorded").toBeDefined();
+    const innerCall = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#Client"));
+    expect(innerCall, "the construction was not recorded").toBeDefined();
+
+    // The relation itself, since subjectConstructions folds it into one
+    // answer or none.
+    subjectConstructions(facts, [String(outerCall?.[0])]);
+    const written = facts
+      .facts("wantedSubjectWritten")
+      .filter((row) => row[0] === outerCall?.[0])
+      .map((row) => String(row[1]));
+    expect(written).toContain(String(innerCall?.[0]));
   });
 });
