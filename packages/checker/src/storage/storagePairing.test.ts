@@ -1370,15 +1370,30 @@ describe("a write written under another table's data", () => {
     expect(descriptions.join(" ")).not.toContain('Article declares "name"');
   });
 
-  it("counts every column as written when the payload was built elsewhere", () => {
+  it("makes no per-column claim when the payload was built elsewhere", () => {
     const descriptions = checkStorage([
       article(),
       tag(),
       writer(["*"], ["tagList"]),
     ]).map((f) => f.description);
 
-    expect(descriptions.join(" ")).toContain('Tag declares "id" and code');
+    expect(descriptions.join(" ")).not.toContain("Tag declares");
+  });
+
+  it("still reports a column another access writes by name", () => {
+    const descriptions = checkStorage([
+      article(),
+      tag(),
+      writer(["*"], ["tagList"]),
+      makeAccessSummary({
+        name: "renameTag",
+        file: "src/tag.service.ts",
+        accesses: [{ container: "Tag", kind: "write", fields: ["name"] }],
+      }),
+    ]).map((f) => f.description);
+
     expect(descriptions.join(" ")).toContain('Tag declares "name" and code');
+    expect(descriptions.join(" ")).not.toContain('Tag declares "id"');
   });
 
   it("drops a write to a relation without saying anything about it", () => {

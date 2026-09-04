@@ -129,6 +129,7 @@ export function checkStorage(
     const readNames = new Set<string>();
     const writtenNames = new Set<string>();
     let anyDefaultShapeRead = false;
+    let anyUnknownWrite = false;
 
     for (const access of inScope) {
       const fields = access.effect.interaction.fields;
@@ -181,13 +182,10 @@ export function checkStorage(
         }
       } else {
         if (wildcards) {
-          // A wildcard write isn't a meaningful Prisma / Drizzle
-          // pattern (you can't `create` without naming columns), but
-          // future packs might emit it. Treat as "wrote everything"
-          //, symmetric with default-shape reads.
-          for (const col of declaredFields) {
-            writtenNames.add(col);
-          }
+          // Nobody read the payload, so which columns this wrote is
+          // unknown. Naming them all reports a column the database
+          // sets as one this code writes.
+          anyUnknownWrite = true;
         } else {
           for (const field of fields) {
             writtenNames.add(field);
@@ -214,7 +212,9 @@ export function checkStorage(
         }
         const isRead = readNames.has(field.name);
         const isWritten = writtenNames.has(field.name);
-        if (!isRead && !isWritten) {
+        // An unknown write may have written this field, so nobody can
+        // say it went unused.
+        if (!isRead && !isWritten && !anyUnknownWrite) {
           findings.push(makeFieldUnusedFinding(provider, binding, field.name));
         } else if (isWritten && !isRead) {
           findings.push(makeWriteOnlyFinding(provider, binding, field.name));
