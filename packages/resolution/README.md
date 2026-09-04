@@ -23,6 +23,8 @@ func(f)                     f is a function
 objectValue(o)              o is an object written out literally
 writtenValue(x)             x is an expression written out in source
                             rather than a name for one
+placeholderValue(x)         x is a written value a later write is
+                            expected to replace, such as None or nil
 holdsProperty(o, n, x)      object o holds x under the name n
 readsProperty(x, o, n)      x is the expression o.n
 binds(x, y)                 the name x is declared as y
@@ -245,6 +247,14 @@ call itself next to whatever the walk reaches. A call with one other
 answer would count as two and be refused as ambiguous. `singleAnswers`
 drops the row whose answer is its own key before counting, and every
 adapter reads the relation through it.
+
+A name written as a placeholder before a guard fills it in, `_client =
+None` at module level and `_client = make_client()` inside a getter, is
+two answers the same way. An adapter marks the placeholder write with
+`placeholderValue(x)` and passes those keys to `singleAnswers`, which
+sets them aside whenever the key has another answer. A name written only
+as a placeholder keeps that answer. The TypeScript store does the same
+for `null` and `undefined` in `sameConstructionAcrossWrites`.
 
 A name bound to a call is a separate case. Its one answer is the call,
 and the rule that says a call is written as what its callee returns

@@ -245,4 +245,57 @@ describe("resolving a value across files", () => {
       origins: [{ module: path.join(dir, "lib.py"), name: "connect" }],
     });
   });
+
+  it("settles a name written as None and then as a construction behind a guard", async () => {
+    const { facts, dir } = await factsFor({
+      "lib.py": "def connect():\n    pass\n",
+      "client.py": [
+        "from lib import connect",
+        "",
+        "_client = None",
+        "",
+        "def client():",
+        "    global _client",
+        "    if _client is None:",
+        "        _client = connect()",
+        "    return _client",
+        "",
+      ].join("\n"),
+    });
+
+    const construction = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#connect"));
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    const nameKey = `${path.join(dir, "client.py")}#_client`;
+    const settled = subjectConstructions(facts, [nameKey]);
+    expect(settled.get(nameKey)).toEqual({
+      constructionKey: String(construction?.[0]),
+      origins: [{ module: path.join(dir, "lib.py"), name: "connect" }],
+    });
+  });
+
+  it("declines a name written as None and then as two different constructions", async () => {
+    const { facts, dir } = await factsFor({
+      "lib.py": "def connect():\n    pass\n\ndef attach():\n    pass\n",
+      "client.py": [
+        "from lib import connect, attach",
+        "",
+        "_client = None",
+        "",
+        "def client(local):",
+        "    global _client",
+        "    if local:",
+        "        _client = attach()",
+        "    else:",
+        "        _client = connect()",
+        "    return _client",
+        "",
+      ].join("\n"),
+    });
+
+    const nameKey = `${path.join(dir, "client.py")}#_client`;
+    expect(subjectConstructions(facts, [nameKey]).has(nameKey)).toBe(false);
+  });
 });

@@ -5,6 +5,7 @@
 import { deriveOnDemand, evaluate } from "@suss/datalog";
 import {
   ANSWER_RELATIONS,
+  placeholderValues,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
   singleAnswers,
@@ -76,7 +77,8 @@ export function subjectConstructions(
     evaluate(db, RESOLUTION_PROGRAM.rules);
   };
   askSubjects(valueKeys);
-  const written = singleAnswers(db.facts("wantedSubjectWritten"));
+  const placeholders = placeholderValues(db);
+  const written = singleAnswers(db.facts("wantedSubjectWritten"), placeholders);
 
   // A name's one answer can be a call to a project function; asking
   // about that call as its own subject reaches what it returns.
@@ -87,7 +89,10 @@ export function subjectConstructions(
   if (throughCalls.size > 0) {
     askSubjects(throughCalls);
   }
-  const writtenThroughCall = singleAnswers(db.facts("wantedSubjectWritten"));
+  const writtenThroughCall = singleAnswers(
+    db.facts("wantedSubjectWritten"),
+    placeholders,
+  );
 
   const origins = new Map<string, SubjectOrigin[]>();
   for (const row of db.facts("wantedSubjectConstruction")) {

@@ -258,6 +258,9 @@ function emitExpressionFact(emitter: Emitter, child: PyNode): void {
   if (WRITTEN_VALUE_TYPES.has(child.type)) {
     add(emitter, "writtenValue", nodeId(emitter.filePath, child));
   }
+  if (child.type === "none") {
+    add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
+  }
 }
 
 function emitExpressionFacts(emitter: Emitter, node: PyNode): void {

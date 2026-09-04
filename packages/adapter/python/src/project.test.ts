@@ -690,6 +690,64 @@ describe("extractPythonProject", () => {
       path: "/{item_id}",
     });
   });
+
+  it("discovers a route on an app a guarded getter builds after writing None", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+        },
+      ],
+    };
+    const factory = write(
+      "shop/factory.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "_app = None",
+        "",
+        "",
+        "def get_app():",
+        "    global _app",
+        "    if _app is None:",
+        "        _app = FastAPI()",
+        "    return _app",
+        "",
+      ].join("\n"),
+    );
+    const items = write(
+      "shop/items.py",
+      [
+        "from shop.factory import get_app",
+        "",
+        "app = get_app()",
+        "",
+        "",
+        '@app.get("/items/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [factory, items],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/items/{item_id}",
+    });
+  });
 });
 
 describe("a route whose body talks to the database", () => {

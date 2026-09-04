@@ -8,7 +8,7 @@ export {
   mountPathsOf,
 } from "./mount.js";
 export { explainResolvedKey } from "./session.js";
-export { singleAnswers } from "./singleAnswer.js";
+export { placeholderValues, singleAnswers } from "./singleAnswer.js";
 
 export type {
   CaseFiles,
@@ -51,6 +51,8 @@ export type {
 //   objectValue(o)              o is an object written out literally
 //   writtenValue(x)             x is an expression written out in
 //                               source rather than a name for one
+//   placeholderValue(x)         x is a written value a later write is
+//                               expected to replace, such as None
 //   holdsProperty(o, n, x)      object o holds x under the name n
 //   readsProperty(x, o, n)      x is the expression o.n
 //   binds(x, y)                 the name x is declared as y

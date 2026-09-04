@@ -279,6 +279,9 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     if (WRITTEN_VALUE_TYPES.has(child.type)) {
       add(emitter, "writtenValue", nodeId(emitter.filePath, child));
     }
+    if (child.type === "nil") {
+      add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
+    }
   });
 }
 
