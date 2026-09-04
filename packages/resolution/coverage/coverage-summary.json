@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 255,
-      "covered": 245,
+      "total": 269,
+      "covered": 259,
       "skipped": 0,
-      "pct": 96.07
+      "pct": 96.28
     },
     "statements": {
-      "total": 271,
-      "covered": 261,
+      "total": 285,
+      "covered": 275,
       "skipped": 0,
-      "pct": 96.3
+      "pct": 96.49
     },
     "functions": {
-      "total": 68,
-      "covered": 68,
+      "total": 69,
+      "covered": 69,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 179,
-      "covered": 154,
+      "total": 185,
+      "covered": 160,
       "skipped": 0,
-      "pct": 86.03
+      "pct": 86.48
     },
     "branchesTrue": {
       "total": 0,
@@ -159,6 +159,32 @@
       "covered": 10,
       "skipped": 0,
       "pct": 83.33
+    }
+  },
+  "src/singleAnswer.ts": {
+    "lines": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 1,
+      "covered": 1,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 6,
+      "covered": 6,
+      "skipped": 0,
+      "pct": 100
     }
   }
 }
