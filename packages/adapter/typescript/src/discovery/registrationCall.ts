@@ -458,15 +458,32 @@ export function storeCanFindSubjects(
 
 /**
  * Whether the file calls one of `methods` on a variable it set to the
- * result of a call. Read from the syntax alone, so the check costs one
- * walk of the file and no store question.
+ * result of a call. Read from the syntax alone, once per file, since
+ * every pattern of every pack asks this of a file it applies to.
  */
 function callsOnCallResult(
   sourceFile: SourceFile,
   methods: readonly string[],
 ): boolean {
-  const receivers = new Set<string>();
+  let called = methodsCalledOnCallResults.get(sourceFile);
+  if (called === undefined) {
+    called = collectMethodsCalledOnCallResults(sourceFile);
+    methodsCalledOnCallResults.set(sourceFile, called);
+  }
+  return methods.some((method) => called.has(method));
+}
+
+const methodsCalledOnCallResults = new WeakMap<
+  SourceFile,
+  ReadonlySet<string>
+>();
+
+/** The method names called on a variable the file set to a call's result. */
+function collectMethodsCalledOnCallResults(
+  sourceFile: SourceFile,
+): ReadonlySet<string> {
   const setToCalls = new Set<string>();
+  const calledOn = new Map<string, Set<string>>();
   sourceFile.forEachDescendant((node) => {
     if (Node.isVariableDeclaration(node)) {
       const init = node.getInitializer();
@@ -480,14 +497,23 @@ function callsOnCallResult(
     }
     const callee = node.getExpression();
     if (
-      Node.isPropertyAccessExpression(callee) &&
-      methods.includes(callee.getName()) &&
-      Node.isIdentifier(callee.getExpression())
+      !Node.isPropertyAccessExpression(callee) ||
+      !Node.isIdentifier(callee.getExpression())
     ) {
-      receivers.add(callee.getExpression().getText());
+      return;
     }
+    const receiver = callee.getExpression().getText();
+    const methods = calledOn.get(receiver) ?? new Set<string>();
+    methods.add(callee.getName());
+    calledOn.set(receiver, methods);
   });
-  return [...receivers].some((name) => setToCalls.has(name));
+  const called = new Set<string>();
+  for (const name of setToCalls) {
+    for (const method of calledOn.get(name) ?? []) {
+      called.add(method);
+    }
+  }
+  return called;
 }
 
 /**
