@@ -822,8 +822,8 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     expect(claimedBodyOf(listItems)?.type).toBe("ref");
   });
 
-  it("keeps a route whose path is not a literal, with no path and a stated gap", async () => {
-    const dynamicPath = [
+  it("reads a route path built from a module constant", async () => {
+    const computedPath = [
       "from fastapi import FastAPI",
       "",
       "app = FastAPI()",
@@ -832,6 +832,30 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       "",
       "",
       '@app.get("/reports/" + SECTION)',
+      "def report():",
+      "    pass",
+      "",
+    ].join("\n");
+    const units = await unitsOf(computedPath, [fastapiLike]);
+    const report = units.find((u) => u.identity.name === "report");
+    expect(report?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/reports/summary",
+    });
+    expect(unreadTextOf(report)).toBe("");
+  });
+
+  it("keeps a route whose path comes from a call nobody can follow, with no path and a stated gap", async () => {
+    const dynamicPath = [
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      'SECTION = "summary"',
+      "",
+      "",
+      "@app.get(SECTION.upper())",
       "def report():",
       "    pass",
       "",

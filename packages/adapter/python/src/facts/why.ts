@@ -17,7 +17,7 @@ import path from "node:path";
 import { Database } from "@suss/datalog";
 import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 
-import { field, fields } from "../ast.js";
+import { enclosingFunction, field, fields, isFunction } from "../ast.js";
 import { emitModuleImportFacts } from "../facts.js";
 import { parsePythonSync } from "../parser.js";
 import { findPythonFiles } from "../project.js";
@@ -43,7 +43,6 @@ interface Located {
   node: PyNode;
 }
 
-const FUNCTION_TYPES = new Set(["function_definition", "lambda"]);
 const IMPORT_TYPES = new Set(["import_statement", "import_from_statement"]);
 
 function namedChildrenOf(node: PyNode): PyNode[] {
@@ -77,18 +76,6 @@ function indexImportNames(
   }
 }
 
-/** The nearest `function_definition` or `lambda` a node is written inside, or null at module level. */
-function enclosingFunction(node: PyNode): PyNode | null {
-  let current = node.parent;
-  while (current !== null) {
-    if (FUNCTION_TYPES.has(current.type)) {
-      return current;
-    }
-    current = current.parent;
-  }
-  return null;
-}
-
 /**
  * Every declaration site in a file, indexed under the same key
  * `emitValueFacts` gave it: a function or class by its own node, a
@@ -106,7 +93,7 @@ function indexFile(
     if (IMPORT_TYPES.has(node.type)) {
       indexImportNames(file, node, locations);
     }
-    if (FUNCTION_TYPES.has(node.type) || node.type === "class_definition") {
+    if (isFunction(node) || node.type === "class_definition") {
       const name = field(node, "name");
       if (name !== null) {
         locations.set(`${file}#${name.text}`, { file, node: name });

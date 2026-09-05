@@ -4,6 +4,8 @@
  * values. A row is one line that calls one of these.
  */
 
+import { posix } from "node:path";
+
 import { join, joinAll } from "./lattice.js";
 import {
   concat,
@@ -15,6 +17,7 @@ import {
   literalOf,
   type Piece,
   string,
+  text,
   textPiece,
   unbounded,
   type Value,
@@ -191,4 +194,42 @@ export function isPresent(value: Value): boolean | null {
     return true;
   }
   return present.some(Boolean) ? null : false;
+}
+
+/** An operand a row was handed nothing for. */
+export function operand(value: Value | null | undefined): Value {
+  return value ?? hole("value");
+}
+
+/**
+ * `a ?? b` and `a || b` when one side is a hole: the other side, which
+ * is how the resolution rules read a fallback. `process.env.X ?? "/v1"`
+ * is then `/v1`, the one thing the source says about its shape.
+ */
+export function readableFallback(
+  a: Value,
+  b: Value,
+  takesLeft: (left: Value) => boolean | null,
+): Value {
+  const left = force(a);
+  const right = force(b);
+  if (left.kind === "hole") {
+    return right;
+  }
+  if (right.kind === "hole") {
+    return left;
+  }
+  return fallback(left, right, takesLeft);
+}
+
+/** A path join of literal segments is folded as the library would; otherwise the segments are joined with `/`. */
+export function joinedPath(args: readonly Value[]): Value {
+  const forced = args.map(force);
+  const literals = forced.map(literalOf);
+  if (literals.every((literal) => literal !== null)) {
+    return text(posix.join(...(literals as string[])));
+  }
+  return concat(
+    forced.flatMap((arg, i) => (i === 0 ? [arg] : [text("/"), arg])),
+  );
 }

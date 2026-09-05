@@ -19,7 +19,10 @@ import type { Range } from "./ast.js";
 import type { PyNode } from "./parser.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
-export type DecoratorArg =
+/** An argument as written, plus its node so a reader can evaluate what it comes down to. */
+export type DecoratorArg = DecoratorArgShape & { readonly node: PyNode };
+
+type DecoratorArgShape =
   | { kind: "string"; value: string }
   | { kind: "number"; value: number }
   | { kind: "boolean"; value: boolean }
@@ -101,6 +104,10 @@ export function decoratorReceiver(
 }
 
 function readArg(node: PyNode): DecoratorArg {
+  return { ...argShapeOf(node), node };
+}
+
+function argShapeOf(node: PyNode): DecoratorArgShape {
   const literal = stringLiteralValue(node);
   if (literal !== null) {
     return { kind: "string", value: literal };

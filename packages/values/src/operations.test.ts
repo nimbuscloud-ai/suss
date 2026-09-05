@@ -7,8 +7,11 @@ import {
   fallback,
   isPresent,
   joined,
+  joinedPath,
   negated,
+  operand,
   plus,
+  readableFallback,
   isPresent as takesLeftWhenPresent,
 } from "./operations.js";
 import {
@@ -181,5 +184,37 @@ describe("fallback and isPresent", () => {
     expect(isPresent(unbounded(hole("x")))).toBe(true);
     expect(isPresent(constant(undefined))).toBe(false);
     expect(isPresent(hole("x"))).toBeNull();
+  });
+});
+
+describe("row helpers", () => {
+  it("stands in a hole for an operand a row was handed nothing for", () => {
+    expect(operand(undefined)).toEqual(hole("value"));
+    expect(operand(null)).toEqual(hole("value"));
+    expect(operand(text("a"))).toEqual(text("a"));
+  });
+
+  it("reads a fallback as the side that is not a hole", () => {
+    expect(readableFallback(hole("x"), text("/v1"), isPresent)).toEqual(
+      text("/v1"),
+    );
+    expect(readableFallback(text("/v1"), hole("x"), isPresent)).toEqual(
+      text("/v1"),
+    );
+  });
+
+  it("falls back as usual when neither side is a hole", () => {
+    expect(readableFallback(constant(null), text("b"), isPresent)).toEqual(
+      text("b"),
+    );
+  });
+
+  it("folds a path join of literals and joins anything else with a slash", () => {
+    expect(literalOf(joinedPath([text("/a/"), text("b"), text("../c")]))).toBe(
+      "/a/c",
+    );
+    expect(joinedPath([text("/a"), hole("x")])).toEqual(
+      string([textPiece(["/a/"]), holePiece("x")]),
+    );
   });
 });

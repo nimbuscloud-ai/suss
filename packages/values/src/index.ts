@@ -37,8 +37,11 @@ export {
   fallback,
   isPresent,
   joined,
+  joinedPath,
   negated,
+  operand,
   plus,
+  readableFallback,
 } from "./operations.js";
 export { pathOf } from "./routePath.js";
 export {

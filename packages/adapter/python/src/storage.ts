@@ -4,7 +4,7 @@
 
 import { storageBinding } from "@suss/ir-core";
 
-import { field } from "./ast.js";
+import { children, field } from "./ast.js";
 import { resolveCalls } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
 
@@ -193,11 +193,6 @@ function effectFor(
       ...(picked.length > 0 ? { selector: picked } : {}),
     },
   };
-}
-
-/** tree-sitter types a named child as nullable; dropping them keeps the walks flat. */
-function children(node: PyNode): PyNode[] {
-  return node.namedChildren.filter((child): child is PyNode => child !== null);
 }
 
 /** The file part of a node key, which says where a definition was written. */

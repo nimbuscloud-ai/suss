@@ -67,9 +67,9 @@ export class Evaluator<N extends object> {
   private nextAllocation = 0;
   private statements = 0;
   private readonly statementBudget: number;
-  private readonly stateAfterStatement = new Map<N, State>();
-  private readonly outerByNode = new Map<N, Value>();
-  private readonly computing = new Set<N>();
+  private readonly stateAfterStatement = new Map<unknown, State>();
+  private readonly outerByNode = new Map<unknown, Value>();
+  private readonly computing = new Set<unknown>();
   private readonly methodRows: ReadonlyMap<
     string,
     readonly Extract<Row, { kind: "method" }>[]
@@ -101,6 +101,14 @@ export class Evaluator<N extends object> {
         .filter((row) => row.kind === "operator")
         .map((row) => [`${row.operator}/${row.arity}`, row]),
     );
+  }
+
+  private idOf(node: N): unknown {
+    return this.lowering.idOf === undefined ? node : this.lowering.idOf(node);
+  }
+
+  private same(a: N, b: N): boolean {
+    return this.idOf(a) === this.idOf(b);
   }
 
   /** The value of an expression where it is written. */
@@ -148,13 +156,13 @@ export class Evaluator<N extends object> {
     state: State,
     root: N,
     depth: number,
-    memo: Map<N, State> | null,
+    memo: Map<unknown, State> | null,
   ): State {
     const [target, ...rest] = path;
     if (target === undefined) {
       return state;
     }
-    const at = body.indexOf(target);
+    const at = body.findIndex((stmt) => this.same(stmt, target));
     if (at === -1) {
       return state;
     }
@@ -163,7 +171,8 @@ export class Evaluator<N extends object> {
     if (memo !== null) {
       for (let i = at - 1; i >= 0; i--) {
         const stmt = body[i];
-        const remembered = stmt === undefined ? undefined : memo.get(stmt);
+        const remembered =
+          stmt === undefined ? undefined : memo.get(this.idOf(stmt));
         if (remembered !== undefined) {
           current = cloneState(remembered);
           from = i + 1;
@@ -177,7 +186,7 @@ export class Evaluator<N extends object> {
         continue;
       }
       const outcome = this.execute(stmt, current, root, depth);
-      memo?.set(stmt, cloneState(current));
+      memo?.set(this.idOf(stmt), cloneState(current));
       if (!outcome.completes) {
         break;
       }
@@ -202,7 +211,9 @@ export class Evaluator<N extends object> {
       return state;
     }
     if (shape.kind === "branch") {
-      const arm = shape.arms.find((candidate) => candidate.includes(next));
+      const arm = shape.arms.find((candidate) =>
+        candidate.some((stmt) => this.same(stmt, next)),
+      );
       return arm === undefined
         ? state
         : this.runPath(arm, rest, state, root, depth, null);
@@ -358,11 +369,14 @@ export class Evaluator<N extends object> {
     const written = this.expression(valueNode, state, depth);
     const shape = this.lowering.expression(target);
     if (shape.kind === "name") {
-      const previous = this.expression(target, state, depth);
       const value =
         operator === null
           ? named(written, shape.text)
-          : this.operator(operator, [previous, written]);
+          : this.operator(
+              operator,
+              [this.expression(target, state, depth), written],
+              state,
+            );
       state.bindings.set(
         shape.text,
         this.unlessNestedWrite(root, shape.text, value, state),
@@ -488,6 +502,7 @@ export class Evaluator<N extends object> {
       return this.operator(
         shape.operator,
         shape.operands.map((operand) => this.expression(operand, state, depth)),
+        state,
       );
     }
     if (shape.kind === "conditional") {
@@ -646,7 +661,8 @@ export class Evaluator<N extends object> {
    * only a call site can say what it is.
    */
   private outer(node: N, name: string, throughScopes: boolean): Value {
-    const cached = this.outerByNode.get(node);
+    const id = this.idOf(node);
+    const cached = this.outerByNode.get(id);
     if (cached !== undefined) {
       return cached;
     }
@@ -655,7 +671,7 @@ export class Evaluator<N extends object> {
         throughScopes ? this.outerName(node, name) : this.outerValue(node),
       name,
     );
-    this.outerByNode.set(node, value);
+    this.outerByNode.set(id, value);
     return value;
   }
 
@@ -685,14 +701,15 @@ export class Evaluator<N extends object> {
 
   /** The value of the expression a name or member was written as. */
   private outerValue(node: N): Value {
-    if (this.computing.has(node)) {
+    const id = this.idOf(node);
+    if (this.computing.has(id)) {
       return hole(this.lowering.holeNameOf(node));
     }
     const written = this.lowering.writtenTo(node);
-    if (written === null || written === node) {
+    if (written === null || this.same(written, node)) {
       return hole(this.lowering.holeNameOf(node));
     }
-    this.computing.add(node);
+    this.computing.add(id);
     try {
       // Forced here so a chain of writes that comes back to this node
       // meets the guard while it is still set.
@@ -701,7 +718,7 @@ export class Evaluator<N extends object> {
         this.lowering.holeNameOf(node),
       );
     } finally {
-      this.computing.delete(node);
+      this.computing.delete(id);
     }
   }
 
@@ -883,9 +900,16 @@ export class Evaluator<N extends object> {
     });
   }
 
-  private operator(operator: string, operands: readonly Value[]): Value {
+  private operator(
+    operator: string,
+    operands: readonly Value[],
+    state: State,
+  ): Value {
     const row = this.operatorRows.get(`${operator}/${operands.length}`);
-    return row === undefined ? hole("value") : row.apply(operands);
+    if (row === undefined) {
+      return hole("value");
+    }
+    return row.apply(operands, (value) => this.contentOf(value, state));
   }
 
   /** A callback handed to an unknown call may run any time; what it reaches is gone. */

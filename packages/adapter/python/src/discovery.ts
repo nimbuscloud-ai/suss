@@ -26,6 +26,7 @@ import {
   walkDescendants,
   writtenReading,
 } from "@suss/extractor";
+import { literalOf, pathOf } from "@suss/values";
 
 import {
   annotationToShape,
@@ -55,6 +56,7 @@ import { predicateOf } from "./paths/predicates.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { rawSqlEffects } from "./rawSql.js";
 import { type StorageLookup, storageEffects } from "./storage.js";
+import { evaluatedValue } from "./values/evaluator.js";
 
 import type { DispatchTable, Effect, TypeShape } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -372,10 +374,15 @@ function unitsFor(
 /** The library requires a path here, so a first argument nobody can read is unreadable rather than absent. */
 function readPathArgument(
   classification: DecoratorClassification,
+  options: DiscoveryOptions,
 ): Reading<string> {
   const first = classification.args[0];
-  if (first?.kind === "string") {
-    return writtenReading(first.value, classification.range);
+  if (first !== undefined) {
+    const value = evaluatedValue(first.node, options.facts);
+    const path = literalOf(value) ?? pathOf(value);
+    if (path !== undefined) {
+      return writtenReading(path, classification.range);
+    }
   }
 
   return unreadableReading(
@@ -444,7 +451,7 @@ function classRouteUnits(
 ): RawCodeStructure[] {
   // The path is all a class decorator says about the route, so if we cannot
   // read one, the class is not discovered at all.
-  const pathArgument = readPathArgument(classification);
+  const pathArgument = readPathArgument(classification, options);
   if (pathArgument.kind !== "written") {
     return [];
   }
@@ -1008,7 +1015,7 @@ function functionRouteUnits(
   const ctx = createAnnotationContext(module.scopeFor);
   return readRoutePaths(
     pattern,
-    readPathArgument(classification),
+    readPathArgument(classification, options),
     classification,
     module,
     options,

@@ -3,26 +3,21 @@
 This fixture is invented for the FastAPI pack (sourced from nothing
 private). It covers the shapes the pack reads and the two it abstains
 on: plain routes on the app, a prefixed router mounted under a second
-prefix, a route path built at runtime, and a mount whose prefix is
-computed.
+prefix, a route path read from the environment, and a mount whose
+prefix is read from the environment.
 """
 
 from fastapi import FastAPI
 
+from shop.config import settings
 from shop.routers.admin import router as admin_router
 from shop.routers.items import router as items_router
 
 app = FastAPI()
 
-REPORT_SECTION = "summary"
-
 
 class HealthStatus:
     ok: bool
-
-
-def admin_prefix():
-    return "/internal"
 
 
 @app.get("/health", response_model=HealthStatus)
@@ -35,10 +30,10 @@ def create_order():
     pass
 
 
-@app.get("/reports/" + REPORT_SECTION)
+@app.get(settings.report_path)
 def report():
     pass
 
 
 app.include_router(items_router, prefix="/api")
-app.include_router(admin_router, prefix=admin_prefix())
+app.include_router(admin_router, prefix=settings.admin_prefix)

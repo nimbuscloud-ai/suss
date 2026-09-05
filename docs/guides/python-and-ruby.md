@@ -383,21 +383,23 @@ controller action's own calls make.
 
 ## Abstention is the design
 
-Neither adapter guesses. A route whose path the source does not state
-is still discovered, keeps its name, has no path, and records a gap
-saying why:
+Neither adapter guesses. A path built from values the source states,
+such as `"/reports/" + REPORT_SECTION` or a prefix returned by a
+project function, is read to the string the app serves. A route whose
+path the source does not state is still discovered, keeps its name,
+has no path, and records a gap saying why:
 
 ```python
-@app.get("/reports/" + REPORT_SECTION)
+@app.get(settings.report_path)
 def report(): ...
 ```
 
 That route pairs with nothing, which is the outcome you want. A guessed
 path would point at some other team's handler, and every finding that
 came back would be about a boundary that does not exist. The same
-applies one level up, for a FastAPI router whose prefix is computed, or
-one that is mounted twice, or mounted onto another router: the routes
-on it keep their names and lose their paths.
+applies one level up, for a FastAPI router whose prefix comes from the
+environment, or one whose name is rebound before it is mounted: the
+routes on it keep their names and lose their paths.
 
 Ruby abstains the same way per field. `field :status, status_label_for(:organizer)`
 is discovered as `Organizer.status` with no declared contract at all,

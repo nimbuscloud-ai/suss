@@ -53,7 +53,7 @@ export interface FastapiRouteSpec {
   hasPathParam: boolean;
   /** Writes the path parameter with Starlette's typed-converter spelling (`{x_id:int}`) instead of the bare `{x_id}`. Meaningful only with `hasPathParam`. */
   pathParamTyped: boolean;
-  /** Path written as `BASE + "/x"`, which the pack abstains on while the app serves the composed value. */
+  /** Path written as `BASE + "/x"`, which the pack reads to the composed value the app serves. */
   pathComputed: boolean;
   status: PyStatusSpec;
   response: PyResponseDecl;
@@ -121,7 +121,7 @@ export interface FlaskResourceSpec {
   hasPathParam: boolean;
   /** Writes the converter with Werkzeug's argument spelling (`<int(min=0):x>`) instead of the bare `<int:x>`. Meaningful only with `hasPathParam`. */
   converterArgs: boolean;
-  /** Path written as `BASE + "/x"`: discovery drops the whole class, the app serves the composed value. */
+  /** Path written as `BASE + "/x"`, which the pack reads to the composed value the app serves. */
   pathComputed: boolean;
   methods: FlaskMethodSpec[];
 }
@@ -437,7 +437,7 @@ function renderRoutes(options: RenderRoutesOptions): string[] {
       name: fastapiRouteName(route, n),
       method: route.verb,
       servedPaths: paths,
-      expectation: claimable && !route.pathComputed ? "claim" : "abstain",
+      expectation: claimable ? "claim" : "abstain",
       requestBody: route.hasBodyParam ? MODEL_BODY : null,
     });
   }
@@ -572,6 +572,8 @@ function fastapiGroupRenderers(
       };
     },
     mounted: (group) => mountedGroupRendering(group, gi, state),
+    // A prefix returned by a project function is inlined at the call,
+    // so both computed prefixes claim the path the app serves.
     computedOwnPrefix: (group) =>
       routerGroup({
         routes: group.routes,
@@ -579,6 +581,7 @@ function fastapiGroupRenderers(
         prelude: [`def own_prefix_${gi}():`, `    return "/po${gi}"`, "", ""],
         mountLines: [`app.include_router(router_${gi}, prefix="/m${gi}")`],
         prefixes: `/m${gi}/po${gi}`,
+        claimable: true,
       }),
     computedMountPrefix: (group) =>
       routerGroup({
@@ -589,6 +592,7 @@ function fastapiGroupRenderers(
           `app.include_router(router_${gi}, prefix=mount_prefix_${gi}())`,
         ],
         prefixes: `/pm${gi}/g${gi}`,
+        claimable: true,
       }),
     unmounted: (group) =>
       routerGroup({
@@ -931,8 +935,7 @@ function renderFlaskResources(options: RenderFlaskResourcesOptions): string[] {
           options.servedPathsOf !== undefined
             ? options.servedPathsOf(served)
             : [served],
-        expectation:
-          options.claimable && !declared.pathComputed ? "claim" : "abstain",
+        expectation: options.claimable ? "claim" : "abstain",
         requestBody: null,
       });
     }

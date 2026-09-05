@@ -53,6 +53,7 @@
     "@suss/ir-core": "0.22.1",
     "@suss/resolution": "0.22.1",
     "@suss/sql": "0.22.1",
+    "@suss/values": "0.22.1",
     "web-tree-sitter": "^0.26.11"
   },
   "devDependencies": {
