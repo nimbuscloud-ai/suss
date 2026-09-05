@@ -5,6 +5,7 @@
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 
 import { field, OWN_BODY_TYPES } from "../ast.js";
+import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
 
 import type { EffectArg, RawEffect } from "@suss/extractor";
@@ -63,12 +64,16 @@ export function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
 }
 
 /**
- * The method name a call spells, reading the `.()` shorthand as
- * calling `call`: with no `method` field, its only other children are
- * the receiver and the argument list, so the plain fallback below
- * would otherwise read the receiver's own text as the method name.
+ * The method name a call spells. A bare call is an identifier and
+ * spells its own name. The `.()` shorthand has no `method` field, and
+ * its only other children are the receiver and the argument list, so
+ * without the middle branch the fallback would read the receiver's own
+ * text as the method name.
  */
 export function calleeMethodName(call: RbNode): string | undefined {
+  if (call.type === "identifier") {
+    return call.text;
+  }
   const method = field(call, "method");
   if (method !== null) {
     return method.text;
@@ -93,18 +98,37 @@ function isRaise(node: RbNode): boolean {
   );
 }
 
-/** Every call this method's own body makes, leaving out property reads and raises. */
-export function bodyCalls(node: RbNode, found: RbNode[] = []): RbNode[] {
+function isCall(node: RbNode, locals: ReadonlySet<string>): boolean {
+  if (node.type === "call") {
+    return !isPropertyRead(node) && !isRaise(node);
+  }
+  return isBareMethodCall(node, locals) && !RAISE_NAMES.has(node.text);
+}
+
+function collectCalls(
+  node: RbNode,
+  locals: ReadonlySet<string>,
+  found: RbNode[],
+): RbNode[] {
   for (const child of children(node)) {
     if (OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
-    if (child.type === "call" && !isPropertyRead(child) && !isRaise(child)) {
+    if (isCall(child, locals)) {
       found.push(child);
     }
-    bodyCalls(child, found);
+    collectCalls(child, locals, found);
   }
   return found;
+}
+
+/** Every call this method's own body makes, leaving out property reads and raises. */
+export function bodyCalls(definitionNode: RbNode): RbNode[] {
+  const body = field(definitionNode, "body");
+  if (body === null) {
+    return [];
+  }
+  return collectCalls(body, localNamesIn(definitionNode), []);
 }
 
 /** The callee as it is written, which is what a reader matches against. */
@@ -164,7 +188,7 @@ export function invocationEffects(definitionNode: RbNode): InvocationEffect[] {
     return [];
   }
 
-  const calls = withoutChainLinks(bodyCalls(body));
+  const calls = withoutChainLinks(bodyCalls(definitionNode));
   if (calls.length === 0) {
     return [];
   }

@@ -201,9 +201,11 @@ The walk starts at the resolver method behind every discovered field (the one th
 
 Ruby has no lexical binder for a local variable, so a callee is only followed when the source spells out where it goes: through the class ancestry `ancestry.ts` already computes, through a method the project writes outside any class, which Ruby mixes into every object as a private method, or through a method passed by name into the parameter that calls it.
 
+A call written as a bare name, with no receiver, no arguments and no parentheses, is one of these. `visible_items` on its own parses as an identifier, the same node a local variable read parses as, so `bareCalls.ts` tells the two apart the way Ruby does: a name the method binds is a local variable, and every other identifier read is a call on self. A name is bound by a parameter, an assignment, a block or lambda parameter, a `for` variable, or a `rescue => err` clause. Binding is over-approximated on purpose: a name assigned anywhere in the method counts as a local even below the read, so the mistake this can make is missing a call rather than inventing one. An identifier written where a name is spelled rather than a value read, a method's own name or an assignment's left side, is left alone. So is one written as another call's receiver, since `orders.first` gives no way to resolve what `first` runs on.
+
 | Written as | Followed to |
 | --- | --- |
-| `helper` or `self.helper`, called bare in a method | that method in the enclosing class's own ancestry |
+| `helper`, `helper(x)` or `self.helper(x)`, called in a method | that method in the enclosing class's own ancestry |
 | `helper`, when nothing in the enclosing ancestry defines it | `def helper` written outside any class, project-wide |
 | `Service.new.method` | `method` in `Service`'s own ancestry |
 | `Service.method` | `def self.method` written in `Service`'s own body |
@@ -220,6 +222,7 @@ Where it stops, and what the gap says:
 | a bare name two files each define at the top level | more than one possible source |
 | `Rails.cache.delete`, a call into a class this run does not define | outside the run (no gap) |
 | `user.orders`, a local variable, or an instance variable | the value could not be settled |
+| `visible_items.first`, where the receiver is itself a bare call | the value could not be settled |
 | `handler.call` or `handler.()`, where `handler` is a parameter that some caller in the run passes a method by name into | followed through the join above (no gap) |
 | `handler.call` or `handler.()`, where `handler` is a parameter that no caller in the run passes a method by name into | the caller supplies it, and nothing named what it passed |
 | `service_class.new.method` where `service_class` is not a constant | the value could not be settled |

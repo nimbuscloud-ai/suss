@@ -23,13 +23,17 @@ function shape(effects: Awaited<ReturnType<typeof effectsFor>>) {
 
 describe("ruby invocation effects", () => {
   it("records a call the body always makes", async () => {
-    const effects = await effectsFor(["def total", "  log(event)", "end"]);
+    const effects = await effectsFor([
+      "def total(event)",
+      "  log(event)",
+      "end",
+    ]);
     expect(shape(effects)).toEqual([["log", []]]);
   });
 
   it("records the test that has to pass for a gated call to run", async () => {
     const effects = await effectsFor([
-      "def total",
+      "def total(discounted, event)",
       "  if discounted",
       "    audit(event)",
       "  end",
@@ -40,7 +44,7 @@ describe("ruby invocation effects", () => {
 
   it("negates the test for a call after an early return", async () => {
     const effects = await effectsFor([
-      "def total",
+      "def total(discounted, event)",
       "  if discounted",
       "    audit(event)",
       "    return 1",
@@ -56,7 +60,7 @@ describe("ruby invocation effects", () => {
 
   it("writes the receiver into the callee, the way it is written", async () => {
     const effects = await effectsFor([
-      "def total",
+      "def total(metrics, name)",
       "  metrics.increment(name)",
       "end",
     ]);
@@ -156,7 +160,7 @@ describe("ruby invocation effects", () => {
 
   it("keeps a call gated by a case arm", async () => {
     const effects = await effectsFor([
-      "def total",
+      "def total(kind, one)",
       "  case kind",
       "  when 1",
       "    publish(one)",
@@ -167,7 +171,7 @@ describe("ruby invocation effects", () => {
   });
   it("keeps only what every path to a call agrees on", async () => {
     const effects = await effectsFor([
-      "def total",
+      "def total(a, b, one, two)",
       "  if a",
       "    send(one)",
       "  end",
@@ -184,12 +188,81 @@ describe("ruby invocation effects", () => {
 
   it("counts a method chain once, as the outermost call", async () => {
     const effects = await effectsFor([
-      "def total",
+      "def total(x)",
       "  Order.where(id: 1).limit(10).update(name: x)",
       "end",
     ]);
     expect(effects.map((effect) => effect.callee)).toEqual([
       "Order.where(id: 1).limit(10).update",
     ]);
+  });
+
+  it("records a bare name the method never binds as the call it is", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  render json: visible_items",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual([
+      "render",
+      "visible_items",
+    ]);
+  });
+
+  it("records a bare name written as a statement of its own", async () => {
+    const effects = await effectsFor(["def index", "  refresh_cache", "end"]);
+    expect(shape(effects).map((row) => row[0])).toEqual(["refresh_cache"]);
+  });
+
+  it("gates a bare call the same way it gates any other", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  if stale?",
+      "    refresh_cache",
+      "  end",
+      "end",
+    ]);
+    expect(shape(effects)).toEqual([
+      ["stale?", []],
+      ["refresh_cache", ["stale?"]],
+    ]);
+  });
+
+  it("reads a name the method assigns as a local variable, not a call", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  items = load",
+      "  render json: items",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual(["load", "render"]);
+  });
+
+  it("reads a name assigned below the read as a local variable too", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  render json: items",
+      "  items = []",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual(["render"]);
+  });
+
+  it("reads a block parameter and a rescue variable as local variables", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  begin",
+      "    rows.each { |row| publish(row) }",
+      "  rescue StandardError => err",
+      "    report(err)",
+      "  end",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual(["publish", "report"]);
+  });
+
+  it("leaves a bare raise out, the same as a raise with an argument", async () => {
+    const effects = await effectsFor(["def index", "  raise", "end"]);
+    expect(effects).toEqual([]);
   });
 });

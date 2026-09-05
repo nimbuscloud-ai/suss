@@ -67,6 +67,7 @@ describe("extraction over fixtures/ruby-rails", () => {
         "index",
         "index",
         "show",
+        "show",
         "cancel",
         "summary",
         "preview",
@@ -158,6 +159,29 @@ describe("extraction over fixtures/ruby-rails", () => {
           effect.binding.semantics.name === "storage" &&
           effect.binding.semantics.storageSystem === "postgresql" &&
           effect.binding.semantics.container === "Order",
+      ),
+    ).toBe(true);
+  });
+
+  it("reaches a private helper an action calls by its bare name", async () => {
+    const { summaries } = await extractFixture();
+    const show = action(summaries, "items_controller", "show");
+    expect(
+      show.transitions[0]?.effects.some(
+        (effect) =>
+          effect.type === "invocation" &&
+          effect.callee.includes("visible_items"),
+      ),
+    ).toBe(true);
+
+    const helper = summaries.find(
+      (s) => s.kind === "library" && s.identity.name === "visible_items",
+    );
+    expect(helper).toBeDefined();
+    expect(
+      helper?.transitions[0]?.effects.some(
+        (effect) =>
+          effect.type === "invocation" && effect.callee.includes("list_items"),
       ),
     ).toBe(true);
   });
