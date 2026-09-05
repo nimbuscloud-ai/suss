@@ -127,6 +127,28 @@ It pairs with nothing. A REST `method` of `"*"` means the handler
 responds to every method, and it pairs with whatever method each
 consumer uses.
 
+### Route paths
+
+A REST `path` is the route as the pack read it. A path a route
+declares outright keeps its own spelling, so an Express route keeps
+`:id`. A path suss had to work out, from a prefix a variable supplies
+or a piece the code joins together, is written in the pattern grammar
+below, and pairing normalizes every path to that grammar first. A
+consumer that reads paths should expect either form.
+
+| Spelling | Meaning |
+| --- | --- |
+| `/users/{id}` | one segment the code fills in at runtime |
+| `/files/{tenant?}` | zero or one segment |
+| `/files/{rest+}` | one or more segments |
+| `/files/{rest*}` | zero or more segments, the same as a bare `*` segment |
+| `(/api\|/api/v2)/orders` | one of the options, and an option may contain a slash |
+
+A hole's name is what the code called it, or a placeholder such as
+`value` when the expression had no name. Two paths pair when some request satisfies both, so
+`/api/orders/{rest*}` pairs with a consumer of `/api/orders`, and
+`(/api|/api/v2)/orders` pairs with a consumer of either option.
+
 `recognition: "reachable"` marks library summaries produced by transitive closure: internal functions called from an entry point a pack recognised, but not themselves matched by any pack. They have no pairing identity yet, so nothing cross-checks them, but their transitions and effects are fully extracted.
 
 ## Effects and argument shape
