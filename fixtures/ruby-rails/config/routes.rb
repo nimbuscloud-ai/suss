@@ -9,6 +9,8 @@ Rails.application.routes.draw do
 
   get "/orders/:id/summary", to: "orders#summary"
 
+  resource :profile, only: [:show, :update]
+
   namespace :admin do
     resources :reports, only: [:index]
   end
