@@ -111,8 +111,8 @@ statements:
 package: acme_api
 statements:
   - kind: extends-base
-    class: BaseResolver
-    extends: AcmeResolver
+    class: AcmeResolver
+    extends: BaseResolver
   - kind: re-exports
     of: fastapi
 `,
@@ -121,7 +121,44 @@ statements:
     expect(overlay.get("graphql-ruby")?.get("baseClassNames")).toEqual([
       "AcmeResolver",
     ]);
+    expect(overlay.get("rails")?.get("baseClassNames")).toEqual([
+      "AcmeResolver",
+    ]);
     expect(overlay.get("fastapi")?.get("wrapperModules")).toEqual(["acme_api"]);
+  });
+
+  it("gives a base class to graphql-ruby alone when it extends one of that pack's roots", () => {
+    const root = projectWith({
+      "gql.yaml": `
+package: acme_graphql
+statements:
+  - kind: extends-base
+    class: AcmeGraphql::AuthenticatedObject
+    extends: GraphQL::Schema::Object
+`,
+    });
+    const overlay = stubOverlayOf(loadStubs(root));
+    expect(overlay.get("graphql-ruby")?.get("baseClassNames")).toEqual([
+      "AcmeGraphql::AuthenticatedObject",
+    ]);
+    expect(overlay.get("rails")).toBeUndefined();
+  });
+
+  it("gives a base class to rails alone when it extends one of that pack's roots", () => {
+    const root = projectWith({
+      "api.yaml": `
+package: acme_api
+statements:
+  - kind: extends-base
+    class: Acme::ApiController
+    extends: ActionController::API
+`,
+    });
+    const overlay = stubOverlayOf(loadStubs(root));
+    expect(overlay.get("rails")?.get("baseClassNames")).toEqual([
+      "Acme::ApiController",
+    ]);
+    expect(overlay.get("graphql-ruby")).toBeUndefined();
   });
 
   it("drops statements no pack consumes", () => {

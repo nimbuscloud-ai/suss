@@ -120,7 +120,7 @@ describe("draftPythonYaml", () => {
 });
 
 describe("draftRubyYaml", () => {
-  it("fills extends from an observed superclass outside graphql-ruby's own root classes, and leaves class for the author", () => {
+  it("fills class from an observed superclass outside graphql-ruby's own root classes, and leaves extends for the author", () => {
     const yaml = draftRubyYaml("acme_graphql", {
       requires: [],
       extendsSites: [
@@ -134,8 +134,9 @@ describe("draftRubyYaml", () => {
     });
     expect(yaml).toContain('package: "acme_graphql"');
     expect(yaml).toContain("kind: extends-base");
-    expect(yaml).toContain('class: ""');
-    expect(yaml).toContain('extends: "AcmeGraphql::AuthenticatedObject"');
+    expect(yaml).toContain('class: "AcmeGraphql::AuthenticatedObject"');
+    expect(yaml).toContain('extends: ""');
+    expect(yaml).toContain("GraphQL::Schema::Object");
   });
 
   it("drafts a blank statement from a require alone, with the known bases in a comment", () => {
@@ -244,8 +245,8 @@ describe("stubDraft for a Ruby project", () => {
     expect(stubs).toHaveLength(1);
     expect(stubs[0].statements[0]).toMatchObject({
       kind: "extends-base",
-      class: "",
-      extends: "AcmeGraphql::AuthenticatedObject",
+      class: "AcmeGraphql::AuthenticatedObject",
+      extends: "",
     });
   });
 

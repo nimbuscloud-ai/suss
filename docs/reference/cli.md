@@ -1043,8 +1043,8 @@ draft file covers, depends on the language suss reads the directory as:
   exact per module. `of:` is filled in when the imported names all
   belong to one known pack, and left blank otherwise.
 - **Ruby**: an `extends-base` candidate per superclass spelled from
-  the package that a project class extends, with `extends:` filled in
-  and `class:` left blank. A class that extends one of graphql-ruby's
+  the package that a project class extends, with `class:` filled in
+  and `extends:` left blank. A class that extends one of graphql-ruby's
   or rails' own root classes directly is skipped, since the pack
   already stops there. When that leaves nothing to draft, the
   statement is blank, with those root classes in a comment.

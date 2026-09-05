@@ -330,7 +330,7 @@ statements:
 ```
 
 The pack then reads a class of yours that extends
-`Acme::GraphQL::BaseObject` as a set of resolvers. `suss infer stub
+`Acme::GraphQL::AuthenticatedObject` as a set of resolvers. `suss infer stub
 acme-graphql` drafts this from the project's own `require`s and class
 definitions; that read of `require` is only for the draft, not for
 extraction itself.

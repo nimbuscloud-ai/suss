@@ -47,8 +47,8 @@ statements:
     extends: Acme::GraphQL::BaseObject
 ```
 
-The pack then reads a class extending `Acme::GraphQL::BaseObject` as a
-set of resolvers. The `baseClassNames` pack option said the same thing
+The pack then reads a class extending `Acme::GraphQL::AuthenticatedObject`
+as a set of resolvers. The `baseClassNames` pack option said the same thing
 until 0.21.0 removed it. A config file setting it now stops the run and
 points here.
 
