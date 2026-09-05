@@ -54,9 +54,28 @@ describe("walkClasses: qualified names", () => {
     expect(info?.superclassQualifiedName).toBe("Types::BaseObject");
   });
 
+  it("lists every name a bare superclass could mean, innermost nesting first and the bare name last", async () => {
+    const [info] = await classesIn(
+      "module Api\n  module V1\n    class Users < Base\n    end\n  end\nend\n",
+    );
+    expect(info?.superclassCandidates).toEqual([
+      "Api::V1::Base",
+      "Api::Base",
+      "Base",
+    ]);
+  });
+
+  it("lists a compound superclass as its own one candidate", async () => {
+    const [info] = await classesIn(
+      "module Api\n  class Users < Types::Base\n  end\nend\n",
+    );
+    expect(info?.superclassCandidates).toEqual(["Types::Base"]);
+  });
+
   it("records null for a class with no superclass", async () => {
     const [info] = await classesIn("class Types::BaseObject\nend\n");
     expect(info?.superclassQualifiedName).toBeNull();
+    expect(info?.superclassCandidates).toEqual([]);
   });
 
   it("walks a class nested inside another class's body", async () => {

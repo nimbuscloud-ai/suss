@@ -42,6 +42,25 @@ export function qualifyConstantRef(
 }
 
 /**
+ * Every qualified name a constant reference could mean, in the order Ruby
+ * tries them. `module Api; class UsersController < ApplicationController`
+ * gives `Api::ApplicationController` then `ApplicationController`, and which
+ * one is meant depends on which is defined, so the caller decides.
+ */
+export function constantRefCandidates(
+  node: RbNode,
+  nesting: readonly string[],
+): string[] {
+  if (node.type === "scope_resolution") {
+    return [node.text];
+  }
+  if (node.type === "constant") {
+    return [...nesting.map((level) => `${level}::${node.text}`), node.text];
+  }
+  return [];
+}
+
+/**
  * The project class a bare `constant` resolves to before Ruby ever
  * reaches a scalar. Ruby searches `Module.nesting` innermost first, so
  * the first match wins.
@@ -71,6 +90,13 @@ export interface ClassInfo {
   qualifiedName: string;
   /** Null when it declares no superclass, or the expression is not a literal constant path. */
   superclassQualifiedName: string | null;
+  /**
+   * Every name the superclass expression can resolve to, in the order Ruby
+   * tries them: each level of the enclosing nesting innermost first, then the
+   * bare name at top level. A compound path is one entry. Empty when there is
+   * no readable superclass.
+   */
+  superclassCandidates: readonly string[];
   /** `body_statement` node, or null for `class Foo; end`. */
   bodyNode: RbNode | null;
   /** `Module.nesting` in effect inside this class's own body, innermost first. */
@@ -147,6 +173,10 @@ function visitClass(
     superclassExpr !== null
       ? qualifyConstantRef(superclassExpr, nesting)
       : null;
+  const superclassCandidates =
+    superclassExpr !== null
+      ? constantRefCandidates(superclassExpr, nesting)
+      : [];
   const bodyNode = field(node, "body");
 
   visit({
@@ -154,6 +184,7 @@ function visitClass(
     kind: "class",
     qualifiedName: identity.qualifiedName,
     superclassQualifiedName,
+    superclassCandidates,
     bodyNode,
     bodyNesting: identity.bodyNesting,
   });
@@ -180,6 +211,7 @@ function visitModule(
     kind: "module",
     qualifiedName: identity.qualifiedName,
     superclassQualifiedName: null,
+    superclassCandidates: [],
     bodyNode,
     bodyNesting: identity.bodyNesting,
   });

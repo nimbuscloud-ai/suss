@@ -751,6 +751,36 @@ describe("discoverUnits: controller actions", () => {
     expect(units.map((u) => u.identity.name)).toEqual(["index"]);
   });
 
+  it("discovers a controller nested in a module whose bare superclass is defined at top level", async () => {
+    const units = await discoverActions(
+      "module Api\n" +
+        "  class OrdersController < ApplicationController\n" +
+        "    def index\n" +
+        "    end\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["index"]);
+    expect(units[0]?.identity.exportPath).toEqual([
+      "Api::OrdersController",
+      "index",
+    ]);
+  });
+
+  it("prefers the base the enclosing module defines over the top-level one of the same name", async () => {
+    const units = await discoverActions(
+      "module Api\n" +
+        "  class ApplicationController < SomeOtherBase\n" +
+        "  end\n" +
+        "  class OrdersController < ApplicationController\n" +
+        "    def index\n" +
+        "    end\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units).toEqual([]);
+  });
+
   it("gives every discovered action the pattern's default status code", async () => {
     const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +
