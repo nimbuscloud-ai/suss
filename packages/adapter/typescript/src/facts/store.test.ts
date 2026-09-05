@@ -1296,6 +1296,25 @@ describe("a binding written more than once", () => {
     expect(written?.getText()).toBe("new Client()");
   });
 
+  it("resolves an uninitialized name to the object literal a guard writes", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare const parsed: Record<string, string | undefined>;
+        let db: { instance: string | undefined };
+        if (parsed.DB_INSTANCE) {
+          db = { instance: parsed.DB_INSTANCE };
+        }
+        export { db };
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      bindingOf(project, "/mod.ts", "db"),
+    );
+    expect(written?.getText()).toBe("{ instance: parsed.DB_INSTANCE }");
+  });
+
   it("resolves to the construction when a guard writes it once with ??=", () => {
     const project = projectOf({
       "/mod.ts": `

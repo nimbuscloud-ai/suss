@@ -170,9 +170,14 @@ function isNotYetPlaceholder(value: Node): boolean {
   );
 }
 
-/** A call or a `new`, the two ways a value can be constructed. */
+/** A call, a `new`, or an object or array literal: a value built where it is written. */
 function isConstruction(value: Node): value is Expression {
-  return Node.isCallExpression(value) || Node.isNewExpression(value);
+  return (
+    Node.isCallExpression(value) ||
+    Node.isNewExpression(value) ||
+    Node.isObjectLiteralExpression(value) ||
+    Node.isArrayLiteralExpression(value)
+  );
 }
 
 /** Source text with whitespace runs collapsed, so formatting alone never tells two constructions apart. */
