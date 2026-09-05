@@ -488,6 +488,31 @@ describe("functions", () => {
     expect(literalOf(subject("routes.rb"))).toBe("/api/x");
   });
 
+  it("follows a constant computed from another constant across files", async () => {
+    const { subject } = await projectValues({
+      "config.rb":
+        'module Config\n  BASE = "/api"\n  PREFIX = BASE + "/v1"\nend',
+      "routes.rb": 'require "config"\nsubject = Config::PREFIX + "/x"',
+    });
+    expect(literalOf(subject("routes.rb"))).toBe("/api/v1/x");
+  });
+
+  it("follows a constant written as an interpolated string across files", async () => {
+    const { subject } = await projectValues({
+      "config.rb": 'BASE = "/api"\nPREFIX = "#{BASE}/v1"',
+      "routes.rb": 'require "config"\nsubject = PREFIX + "/x"',
+    });
+    expect(literalOf(subject("routes.rb"))).toBe("/api/v1/x");
+  });
+
+  it("follows a word array from another file", async () => {
+    const { subject } = await projectValues({
+      "config.rb": "ROLES = %w[admin editor]",
+      "routes.rb": 'require "config"\nsubject = "/" + ROLES[1]',
+    });
+    expect(literalOf(subject("routes.rb"))).toBe("/editor");
+  });
+
   it("runs the module body a constant is computed in", async () => {
     const tree = await parseRuby(
       'module Config\n  BASE = "/api"\n  PREFIX = BASE + "/v1"\nend',

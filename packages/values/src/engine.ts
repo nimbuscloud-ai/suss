@@ -633,14 +633,21 @@ export class Evaluator<N extends object> {
   ): Value {
     const object = this.expression(objectNode, state, depth);
     if (object.kind === "deferred") {
-      return deferred(() => {
-        const content = force(object);
-        return content.kind === "record"
-          ? this.fieldOf(content, name, node)
-          : this.outerValue(node);
-      });
+      // An object read from outside this function has already been
+      // materialized, so there is no heap to follow. When it is not
+      // something to index, the facts are asked about the member itself.
+      return deferred(
+        () => this.memberOf(force(object), name, node) ?? this.outerValue(node),
+      );
     }
-    const content = this.contentOf(object, state);
+    return (
+      this.memberOf(this.contentOf(object, state), name, node) ??
+      hole(this.lowering.holeNameOf(node))
+    );
+  }
+
+  /** What a record, a sequence or an unbounded list has under a name, or null when it is none of those. */
+  private memberOf(content: Value, name: string, node: N): Value | null {
     if (content.kind === "record") {
       return this.fieldOf(content, name, node);
     }
@@ -656,7 +663,7 @@ export class Evaluator<N extends object> {
     if (content.kind === "unbounded" && Number.isInteger(Number(name))) {
       return content.element;
     }
-    return hole(this.lowering.holeNameOf(node));
+    return null;
   }
 
   private fieldOf(
