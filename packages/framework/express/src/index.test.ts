@@ -109,6 +109,64 @@ describe("expressFramework: a path built by joining strings", () => {
   });
 });
 
+describe("expressFramework: response chains", () => {
+  const extract = async (source: string): Promise<BehavioralSummary[]> => {
+    const project = createTestProject();
+    project.createSourceFile("app.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    return await adapter.extractAll();
+  };
+
+  const statusesOf = (summary: BehavioralSummary | undefined): unknown[] =>
+    (summary?.transitions ?? []).map((t) =>
+      t.output.type === "response" ? t.output.statusCode : t.output.type,
+    );
+
+  it("reads res.end() with and without a status", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const app = express();
+      app.delete("/items/:id", (req: any, res: any) => {
+        if (!req.params.id) {
+          res.status(400).end();
+          return;
+        }
+        res.end();
+      });
+    `);
+    expect(statusesOf(summaries[0])).toEqual([
+      { type: "literal", value: 400 },
+      { type: "literal", value: 200 },
+    ]);
+  });
+
+  it("reads a status and body through a header set inside the chain", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const app = express();
+      app.post("/items", (req: any, res: any) => {
+        if (req.body.dryRun) {
+          res.set("Cache-Control", "no-store").status(202).json({ queued: true });
+          return;
+        }
+        if (req.body.legacy) {
+          res.type("json").send({ id: 1 });
+          return;
+        }
+        res.status(201).location("/items/1").json({ id: 1 });
+      });
+    `);
+    expect(statusesOf(summaries[0])).toEqual([
+      { type: "literal", value: 202 },
+      { type: "literal", value: 200 },
+      { type: "literal", value: 201 },
+    ]);
+  });
+});
+
 describe("expressFramework: registration options", () => {
   it("asks for the project's own route helpers to be read", () => {
     expect(expressFramework().projectHelpers?.find).toEqual({ by: "subject" });

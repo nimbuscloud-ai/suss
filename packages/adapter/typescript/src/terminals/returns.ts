@@ -42,10 +42,10 @@ import type { FoundTerminal } from "./shared.js";
  */
 function unwrapMethodChain(
   call: CallExpression,
-  methodChain: string[],
+  match: Extract<TerminalPattern["match"], { type: "parameterMethodCall" }>,
   func: FunctionRoot,
-  paramPos: number,
 ): { calls: CallExpression[] } | null {
+  const { methodChain, parameterPosition: paramPos } = match;
   if (methodChain.length === 0) {
     return null;
   }
@@ -67,7 +67,10 @@ function unwrapMethodChain(
 
     collected.unshift(current); // will end up innermost-first
 
-    const subject = callee.getExpression();
+    const subject = withoutPassThroughCalls(
+      callee.getExpression(),
+      match.passThroughMethods ?? [],
+    );
 
     if (i === 0) {
       // The subject of the innermost method call must be a parameter identifier
@@ -84,6 +87,25 @@ function unwrapMethodChain(
   }
 
   return { calls: collected };
+}
+
+/**
+ * The receiver under any calls that hand it back unchanged, so
+ * `res.set(h).status(201)` and `res.status(201)` have the same subject.
+ */
+function withoutPassThroughCalls(subject: Node, passThrough: string[]): Node {
+  let current = subject;
+  while (Node.isCallExpression(current)) {
+    const callee = current.getExpression();
+    if (
+      !Node.isPropertyAccessExpression(callee) ||
+      !passThrough.includes(callee.getName())
+    ) {
+      break;
+    }
+    current = callee.getExpression();
+  }
+  return current;
 }
 
 /**
@@ -285,12 +307,7 @@ export function tryMatchParameterMethodCall(
     return [];
   }
 
-  const result = unwrapMethodChain(
-    node,
-    match.methodChain,
-    func,
-    match.parameterPosition,
-  );
+  const result = unwrapMethodChain(node, match, func);
 
   if (result === null) {
     return [];
@@ -389,12 +406,7 @@ function returnCoveredByParameterMethodCall(
     if (pattern.match.type !== "parameterMethodCall") {
       continue;
     }
-    const result = unwrapMethodChain(
-      current,
-      pattern.match.methodChain,
-      func,
-      pattern.match.parameterPosition,
-    );
+    const result = unwrapMethodChain(current, pattern.match, func);
     if (result !== null) {
       return true;
     }

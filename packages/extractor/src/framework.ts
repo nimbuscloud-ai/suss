@@ -744,6 +744,13 @@ export type TerminalMatch =
       type: "parameterMethodCall";
       parameterPosition: number; // which param is the response object (1 for Express res)
       methodChain: string[]; // e.g. ["status", "json"]
+      /**
+       * Methods that return the response itself and change nothing the
+       * terminal reads, so they may appear anywhere in the chain.
+       * `res.set(h).status(201).json(b)` matches `["status", "json"]`
+       * when `set` is listed here.
+       */
+      passThroughMethods?: string[];
     }
   | {
       type: "throwExpression";

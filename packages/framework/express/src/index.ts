@@ -12,6 +12,31 @@ import type { PatternPack } from "@suss/extractor";
 
 const METHODS = [".get", ".post", ".put", ".delete", ".patch", ".all"];
 
+// The response methods that return `res` itself, so a header set inside
+// the chain leaves what it sends unchanged.
+const HEADER_SETTERS = [
+  "set",
+  "header",
+  "type",
+  "contentType",
+  "location",
+  "cookie",
+  "clearCookie",
+  "append",
+  "vary",
+  "links",
+  "attachment",
+];
+
+function responseChain(...methodChain: string[]) {
+  return {
+    type: "parameterMethodCall" as const,
+    parameterPosition: 1,
+    methodChain,
+    passThroughMethods: HEADER_SETTERS,
+  };
+}
+
 /** The express pack takes no configuration. */
 export const optionsSchema = z.object({}).strict();
 
@@ -69,11 +94,7 @@ export function expressFramework(
       {
         // res.status(N).json(body)
         kind: "response",
-        match: {
-          type: "parameterMethodCall",
-          parameterPosition: 1,
-          methodChain: ["status", "json"],
-        },
+        match: responseChain("status", "json"),
         extraction: {
           statusCode: { from: "argument", position: 0 },
           body: { from: "argument", position: 0 },
@@ -82,11 +103,7 @@ export function expressFramework(
       {
         // res.json(body): implicit 200
         kind: "response",
-        match: {
-          type: "parameterMethodCall",
-          parameterPosition: 1,
-          methodChain: ["json"],
-        },
+        match: responseChain("json"),
         extraction: {
           body: { from: "argument", position: 0 },
           defaultStatusCode: 200,
@@ -95,11 +112,7 @@ export function expressFramework(
       {
         // res.status(N).send(body)
         kind: "response",
-        match: {
-          type: "parameterMethodCall",
-          parameterPosition: 1,
-          methodChain: ["status", "send"],
-        },
+        match: responseChain("status", "send"),
         extraction: {
           statusCode: { from: "argument", position: 0 },
           body: { from: "argument", position: 0 },
@@ -108,11 +121,25 @@ export function expressFramework(
       {
         // res.send(body): implicit 200
         kind: "response",
-        match: {
-          type: "parameterMethodCall",
-          parameterPosition: 1,
-          methodChain: ["send"],
+        match: responseChain("send"),
+        extraction: {
+          body: { from: "argument", position: 0 },
+          defaultStatusCode: 200,
         },
+      },
+      {
+        // res.status(N).end(): a status with no body, 204 most often
+        kind: "response",
+        match: responseChain("status", "end"),
+        extraction: {
+          statusCode: { from: "argument", position: 0 },
+          body: { from: "argument", position: 0 },
+        },
+      },
+      {
+        // res.end(): implicit 200 with no body
+        kind: "response",
+        match: responseChain("end"),
         extraction: {
           body: { from: "argument", position: 0 },
           defaultStatusCode: 200,
@@ -121,11 +148,7 @@ export function expressFramework(
       {
         // res.sendStatus(N): sends status code with status text as body
         kind: "response",
-        match: {
-          type: "parameterMethodCall",
-          parameterPosition: 1,
-          methodChain: ["sendStatus"],
-        },
+        match: responseChain("sendStatus"),
         extraction: {
           statusCode: { from: "argument", position: 0 },
         },
@@ -135,11 +158,7 @@ export function expressFramework(
         // Arg 0 is a status code only in the 2-arg form; minArgs prevents
         // extracting the URL string as a status code in the 1-arg form.
         kind: "response",
-        match: {
-          type: "parameterMethodCall",
-          parameterPosition: 1,
-          methodChain: ["redirect"],
-        },
+        match: responseChain("redirect"),
         extraction: {
           statusCode: { from: "argument", position: 0, minArgs: 2 },
           defaultStatusCode: 302,
