@@ -124,11 +124,21 @@ export function extractStatusCode(
   if (result !== null) {
     return result;
   }
-  // Fall back to pack-declared default (e.g. Express res.json() → 200)
-  if (ctx.extraction.defaultStatusCode !== undefined) {
-    return { type: "literal", value: ctx.extraction.defaultStatusCode };
-  }
-  return null;
+  return declaredStatusCode(ctx.extraction);
+}
+
+/**
+ * The status a pack declares for a terminal that spells none of its
+ * own, as Express does for `res.json()` and Nest does for a handler
+ * that returns nothing. A pack whose terminal is `kind: "return"`
+ * declares no default, and this comes back null for it.
+ */
+export function declaredStatusCode(
+  extraction: TerminalExtraction,
+): RawTerminal["statusCode"] {
+  return extraction.defaultStatusCode !== undefined
+    ? { type: "literal", value: extraction.defaultStatusCode }
+    : null;
 }
 
 /**

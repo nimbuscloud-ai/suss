@@ -280,15 +280,15 @@ export function extractRawBranches(
   // transition records the body's side effects). Pack opt-in via
   // the `functionFallthrough` match keeps the decision close to
   // where the semantics are declared.
-  const wantsFallthrough = terminalPatterns.some(
+  const fallthroughPattern = terminalPatterns.find(
     (p) => p.match.type === "functionFallthrough",
   );
-  if (wantsFallthrough && functionMayFallThrough(func)) {
+  if (fallthroughPattern !== undefined && functionMayFallThrough(func)) {
     const hasDefaultTerminal = terminals.some(({ node }) =>
       (byTerminal.get(node) ?? []).some(isDefaultConditionList),
     );
     if (!hasDefaultTerminal) {
-      const synthetic = makeFallthroughTerminal(func);
+      const synthetic = makeFallthroughTerminal(func, fallthroughPattern);
       terminals.push(synthetic);
       // The synthetic terminal anchors at the body itself; its
       // condition lists are the paths that fall through the body's end.

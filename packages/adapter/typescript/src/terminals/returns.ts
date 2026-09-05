@@ -16,6 +16,7 @@ import { endLineOf, startLineOf } from "../lines.js";
 import { parseConditionExpression } from "../predicates.js";
 import { extractShape } from "../shapes/shapes.js";
 import {
+  declaredStatusCode,
   type ExtractionContext,
   extractBody,
   extractStatusCode,
@@ -482,18 +483,9 @@ function buildReturnTerminal(
   pattern: TerminalPattern,
   body: RawTerminal["body"],
 ): FoundTerminal {
-  // Honour the pack's `defaultStatusCode` when one is declared. Used by
-  // packs like Fastify whose returnStatement matcher emits `kind:
-  // "response"`: `return user` is a 200 response. Packs that emit
-  // `kind: "return"` (clients) leave defaultStatusCode unset, so this
-  // collapses to null for them.
-  const statusCode: RawTerminal["statusCode"] =
-    pattern.extraction.defaultStatusCode !== undefined
-      ? { type: "literal", value: pattern.extraction.defaultStatusCode }
-      : null;
   const terminal: RawTerminal = {
     kind: pattern.kind,
-    statusCode,
+    statusCode: declaredStatusCode(pattern.extraction),
     body,
     exceptionType: null,
     message: null,

@@ -7,7 +7,7 @@ Framework pack for [Fastify](https://fastify.dev/) handlers. Declarative pattern
 `@suss/framework-fastify` returns a `PatternPack` object describing:
 
 - **Discovery** via `Fastify().get/post/put/delete/patch/head/options(path, handler)` registration calls (both default and named imports)
-- **Terminals**: `reply.code(N).send(body)`, `reply.status(N).send(body)`, `reply.send(body)`, `reply.redirect(...)`, and `throw`
+- **Terminals**: `reply.code(N).send(body)`, `reply.status(N).send(body)`, `reply.send(body)`, `reply.redirect(...)`, `throw`, and a return with a value (`return user`), which Fastify serializes as the body of a 200
 - **Input mapping**: positional parameters `(request, reply)` with semantic roles
 - **Project helpers**: a function the code hands its app to is read before extraction, and what it registers is filled in at each call site, so `registerCrud(app, "users", h)` and `registerCrud(app, "orders", h)` give both routes
 
@@ -17,7 +17,7 @@ None. `registrationHelpers` used to say what a route helper of the project's own
 
 ### Limitations (v0)
 
-- The "return value becomes the body" pattern (`return user`, where Fastify serializes the return) is **not** matched as a response terminal. Only `reply.<method>(...)` chains are recognized today. Workaround: use `return reply.send(value)` (also valid Fastify) when you want suss to see the response.
+- A bare `return;` is not matched as a response terminal, and neither is a handler that runs off the end of its body. Fastify does not send anything for either one, so the handler comes back with no transition and a gap saying nothing in the body matched. Write `return reply.send(value)` or return a value when the route is meant to answer.
 
 ## Where it fits in suss
 
