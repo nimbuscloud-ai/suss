@@ -203,6 +203,9 @@
       "path": "packages/terraform/gcp/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/values/tsconfig.typecheck.json"
+    },
+    {
       "path": "tools/acceptance/tsconfig.typecheck.json"
     },
     {
