@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-rails",
-  "version": "0.22.1",
+  "version": "0.22.2",
   "type": "module",
   "description": "Pattern pack for extracting suss behavioral summaries from Rails controller actions and the routes config/routes.rb gives them.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.22.1",
+    "@suss/adapter-ruby": "0.22.2",
     "zod": "^4.0.0"
   },
   "devDependencies": {
