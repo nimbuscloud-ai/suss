@@ -66,8 +66,11 @@ every statement that comes before it at each level of nesting.
   inlined call is worth.
 - A call is looked up in the rows first. Otherwise, when the lowering
   can resolve the callee to a project function without a loop, the body
-  is inlined under a depth cap. Otherwise the call is a hole and every
-  allocation it was handed escapes.
+  is inlined under a depth cap. Otherwise the lowering is asked what
+  the call is written to through `writtenTo`, which is how a declared
+  wrapper that passes one argument through reads as that argument.
+  Otherwise the call is a hole and every allocation it was handed
+  escapes.
 
 Arrays and object literals are allocated in a local heap and bound as a
 `ref`, so a push through an alias is seen by every name bound to the

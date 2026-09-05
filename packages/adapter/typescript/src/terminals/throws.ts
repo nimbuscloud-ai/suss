@@ -12,13 +12,14 @@ import {
 } from "./extract.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 import type { FoundTerminal } from "./shared.js";
 
 export function tryMatchThrowExpression(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "throwExpression" }>,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
 ): FoundTerminal | null {
   if (!Node.isThrowStatement(node)) {
     return null;
@@ -36,7 +37,7 @@ export function tryMatchThrowExpression(
     extraction: pattern.extraction,
     ...(callArgs !== null ? { throwCallArgs: callArgs } : {}),
     ...(exceptionType !== null ? { exceptionType } : {}),
-    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
+    ...(resolution !== undefined ? { resolution } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);

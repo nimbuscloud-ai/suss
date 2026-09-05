@@ -5,7 +5,14 @@ import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
-import { constantOf, literalOf, piecesOf, type Value } from "@suss/values";
+import {
+  constantOf,
+  force,
+  hole,
+  literalOf,
+  piecesOf,
+  type Value,
+} from "@suss/values";
 
 import { ResolutionStore } from "../facts/store.js";
 import { evaluatedValue } from "./evaluator.js";
@@ -389,6 +396,36 @@ describe("functions", () => {
         },
       ),
     ).toBe("/v1/x");
+  });
+
+  it("reads a call to a declared wrapper as the argument it passes through", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/routes.ts",
+      `
+      import { createRoute } from "@hono/zod-openapi";
+      export const routes = { mint: createRoute({ method: "post", path: "/p" }) };
+      `,
+    );
+    const file = project.createSourceFile(
+      "/repo.ts",
+      `
+      import { routes } from "./routes.js";
+      export const subject = routes.mint;
+      `,
+    );
+    const store = new ResolutionStore([
+      { callee: "createRoute", argument: 0, module: "@hono/zod-openapi" },
+    ]);
+    const value = evaluatedValue(
+      file.getVariableDeclarationOrThrow("subject").getInitializerOrThrow(),
+      store,
+    );
+    expect(value.kind).toBe("record");
+    expect(
+      value.kind === "record" &&
+        literalOf(force(value.fields.get("path")?.value ?? hole("path"))),
+    ).toBe("/p");
   });
 
   it("skips a destructured parameter", () => {

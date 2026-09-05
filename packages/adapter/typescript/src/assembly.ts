@@ -46,6 +46,7 @@ import type {
   TerminalPattern,
 } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
+import type { ResolutionStore } from "./facts/store.js";
 import type {
   AnchorCallsOf,
   OriginatesFrom,
@@ -219,7 +220,7 @@ export function extractRawBranches(
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
@@ -228,10 +229,14 @@ export function extractRawBranches(
     func,
     terminalPatterns,
     barriers,
-    resolveWrittenValue,
+    resolution,
     originatesFrom,
     resolveCallee,
   );
+  const resolveWrittenValue =
+    resolution === undefined
+      ? undefined
+      : (value: Node) => resolution.resolveWrittenValue(value);
   const invocations = extractInvocationEffects(func, barriers);
   const recognized = [
     ...runInvocationRecognizers(

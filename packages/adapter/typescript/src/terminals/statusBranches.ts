@@ -16,10 +16,13 @@
 
 import { Node } from "ts-morph";
 
+import { constantOf } from "@suss/values";
+
 import { writesToBinding } from "../facts/assignments.js";
-import { peelSyntax } from "../walk/unwrap.js";
+import { evaluatedValue } from "../values/evaluator.js";
 
 import type { Expression, Node as TsNode } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 
 /** One arm of a status written as a choice. */
 export interface StatusChoice {
@@ -40,13 +43,16 @@ export interface StatusChoice {
  * arms are not both numbers. A partial result would put one status on a
  * boundary that has two.
  */
-export function statusChoicesOf(argument: TsNode): StatusChoice[] | null {
+export function statusChoicesOf(
+  argument: TsNode,
+  resolution: ResolutionStore | undefined,
+): StatusChoice[] | null {
   const chosen = asConditional(argument);
   if (chosen === null) {
     return null;
   }
-  const whenTrue = numberOf(chosen.getWhenTrue());
-  const whenFalse = numberOf(chosen.getWhenFalse());
+  const whenTrue = numberOf(chosen.getWhenTrue(), resolution);
+  const whenFalse = numberOf(chosen.getWhenFalse(), resolution);
   if (whenTrue === null || whenFalse === null) {
     return null;
   }
@@ -89,16 +95,11 @@ function asConditional(node: TsNode): ReturnType<typeof toConditional> {
 const toConditional = (node: TsNode) =>
   Node.isConditionalExpression(node) ? node : null;
 
-/** The number a node is, looking through parentheses and an `as`. */
-function numberOf(node: TsNode): number | null {
-  const inner = unwrap(node);
-  if (!Node.isNumericLiteral(inner)) {
-    return null;
-  }
-  const value = Number(inner.getText());
-  return Number.isFinite(value) ? value : null;
-}
-
-function unwrap(node: TsNode): TsNode {
-  return peelSyntax(node);
+/** The one number an arm settles to, through whatever names it was given. */
+function numberOf(
+  node: TsNode,
+  resolution: ResolutionStore | undefined,
+): number | null {
+  const value = constantOf(evaluatedValue(node, resolution));
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
