@@ -148,7 +148,10 @@ export interface Lowering<N> {
 export interface CallInput {
   /** The receiver's content, with a `ref` already followed into the heap. */
   readonly receiver: Value | null;
+  /** Arguments as written; an array or record argument is a `ref`. */
   readonly args: readonly Value[];
+  /** The content behind a `ref`, for a row that copies rather than aliases. */
+  contentOf(value: Value): Value;
 }
 
 export interface CallOutput {

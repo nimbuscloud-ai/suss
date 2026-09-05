@@ -151,9 +151,9 @@ const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [
     kind: "method",
     method: "concat",
     on: on as "sequence" | "unbounded",
-    apply: ({ receiver, args }) => ({
+    apply: ({ receiver, args, contentOf }) => ({
       result: args.reduce<Value>(
-        (sequence, other) => extended(sequence, other),
+        (sequence, other) => extended(sequence, contentOf(other)),
         operand(receiver),
       ),
     }),
