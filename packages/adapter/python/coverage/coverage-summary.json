@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3070,
-      "covered": 2959,
-      "skipped": 0,
-      "pct": 96.38
-    },
-    "statements": {
-      "total": 3108,
-      "covered": 2996,
+      "total": 3077,
+      "covered": 2966,
       "skipped": 0,
       "pct": 96.39
     },
+    "statements": {
+      "total": 3116,
+      "covered": 3004,
+      "skipped": 0,
+      "pct": 96.4
+    },
     "functions": {
-      "total": 618,
-      "covered": 614,
+      "total": 620,
+      "covered": 616,
       "skipped": 0,
       "pct": 99.35
     },
     "branches": {
-      "total": 2373,
-      "covered": 2083,
+      "total": 2377,
+      "covered": 2086,
       "skipped": 0,
-      "pct": 87.77
+      "pct": 87.75
     },
     "branchesTrue": {
       "total": 0,
@@ -527,22 +527,22 @@
   },
   "src/facts/values.ts": {
     "lines": {
-      "total": 203,
-      "covered": 198,
-      "skipped": 0,
-      "pct": 97.53
-    },
-    "functions": {
-      "total": 28,
-      "covered": 28,
-      "skipped": 0,
-      "pct": 100
-    },
-    "statements": {
       "total": 204,
       "covered": 199,
       "skipped": 0,
       "pct": 97.54
+    },
+    "functions": {
+      "total": 30,
+      "covered": 30,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 206,
+      "covered": 201,
+      "skipped": 0,
+      "pct": 97.57
     },
     "branches": {
       "total": 142,
@@ -761,10 +761,10 @@
   },
   "src/values/lowering.ts": {
     "lines": {
-      "total": 232,
-      "covered": 227,
+      "total": 238,
+      "covered": 233,
       "skipped": 0,
-      "pct": 97.84
+      "pct": 97.89
     },
     "functions": {
       "total": 66,
@@ -773,16 +773,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 235,
-      "covered": 230,
+      "total": 241,
+      "covered": 236,
       "skipped": 0,
-      "pct": 97.87
+      "pct": 97.92
     },
     "branches": {
-      "total": 207,
-      "covered": 186,
+      "total": 211,
+      "covered": 189,
       "skipped": 0,
-      "pct": 89.85
+      "pct": 89.57
     }
   },
   "src/values/origin.ts": {
