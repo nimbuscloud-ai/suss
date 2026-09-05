@@ -248,6 +248,38 @@ describe("packs for the other two languages", () => {
     );
   });
 
+  it("reads a bare pack's default paths against the directory the run reads", async () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-run-"));
+    const pack = await resolveRubyPack("rails", undefined, projectRoot);
+    const pattern = pack.discovery[0];
+    expect(pattern?.type).toBe("controllerActions");
+    if (pattern?.type === "controllerActions") {
+      expect(pattern.routesFile).toBe(
+        path.join(projectRoot, "config/routes.rb"),
+      );
+      expect(pattern.root).toBe(path.join(projectRoot, "app"));
+    }
+  });
+
+  it("reads a configured pack's paths against its config file, not the run directory", async () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-run-"));
+    const file = writeConfig(JSON.stringify({ routesFile: "routes.rb" }));
+    const pack = await resolveRubyPack(`rails=${file}`, undefined, projectRoot);
+    const pattern = pack.discovery[0];
+    if (pattern?.type === "controllerActions") {
+      expect(pattern.routesFile).toBe(
+        path.join(path.dirname(file), "routes.rb"),
+      );
+    }
+  });
+
+  it("does not hand the run directory to a pack that never declared it", async () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-run-"));
+    await expect(
+      resolvePythonPack("fastapi", undefined, projectRoot),
+    ).resolves.toBeDefined();
+  });
+
   it("refuses a key the pack does not take, by name", async () => {
     const file = writeConfig(
       JSON.stringify({

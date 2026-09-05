@@ -268,24 +268,47 @@ export function parseFrameworkSpec(spec: string): {
 
 /**
  * A pack option that gives a path is written relative to its own config
- * file, and only the pack knows which of its options are paths, so the
+ * file, or to the directory the run reads when there is no config file,
+ * and only the pack knows which of its options are paths, so the
  * directory goes along with them. Resolving against the working
- * directory instead fails silently: every field then looks unwired
- * rather than like an error.
+ * directory instead fails silently: a routes file the project keeps
+ * looks missing, and every field looks unwired rather than like an error.
  */
-function optionsForFactory(options: unknown, configFile?: string): unknown {
+function optionsForFactory(
+  options: unknown,
+  configFile: string | undefined,
+  projectRoot: string | undefined,
+  schema: z.ZodObject<z.ZodRawShape> | undefined,
+): unknown {
+  const directory =
+    configFile !== undefined ? path.dirname(configFile) : projectRoot;
   if (
-    configFile === undefined ||
-    options === null ||
-    typeof options !== "object" ||
-    Array.isArray(options)
+    directory === undefined ||
+    !takesConfigDirectory(schema, configFile) ||
+    Array.isArray(options) ||
+    (options !== undefined && (options === null || typeof options !== "object"))
   ) {
     return options;
   }
   return {
-    ...(options as Record<string, unknown>),
-    configDirectory: path.dirname(configFile),
+    ...(options as Record<string, unknown> | undefined),
+    configDirectory: directory,
   };
+}
+
+/**
+ * A pack without a schema cannot say whether it reads the directory, so
+ * it keeps getting one with a config file, as it always has, and never
+ * without one, since a strict factory would refuse the extra key.
+ */
+function takesConfigDirectory(
+  schema: z.ZodObject<z.ZodRawShape> | undefined,
+  configFile: string | undefined,
+): boolean {
+  if (schema === undefined) {
+    return configFile !== undefined;
+  }
+  return "configDirectory" in schema.shape;
 }
 
 interface LoadedFactory {
@@ -434,22 +457,31 @@ function unknownKeys(keys: readonly string[]): string {
   return `${quoted} is not an option this pack takes.`;
 }
 
-async function loadPackFactory(spec: string): Promise<LoadedFactory> {
+async function loadPackFactory(
+  spec: string,
+  projectRoot?: string,
+): Promise<LoadedFactory> {
   const { name, options, configFile } = parseFrameworkSpec(spec);
-  const handedOver = optionsForFactory(options, configFile);
-
-  const builtin = BUILTIN_FRAMEWORKS[name];
-  if (builtin !== undefined) {
-    const mod = (await import(builtin)) as PackModule;
+  const loaded = (mod: PackModule, specifier: string): LoadedFactory => {
     assertOptionsArePackable(name, mod, options, configFile);
-    loadedFrom.set(name, builtin);
+    loadedFrom.set(name, specifier);
     return {
       name,
       options,
-      handedOver,
+      handedOver: optionsForFactory(
+        options,
+        configFile,
+        projectRoot,
+        mod.optionsSchema,
+      ),
       factory: mod.default,
-      specifier: builtin,
+      specifier,
     };
+  };
+
+  const builtin = BUILTIN_FRAMEWORKS[name];
+  if (builtin !== undefined) {
+    return loaded((await import(builtin)) as PackModule, builtin);
   }
 
   const candidates = looksLikeAPackage(name)
@@ -458,9 +490,7 @@ async function loadPackFactory(spec: string): Promise<LoadedFactory> {
   for (const specifier of candidates) {
     const mod = await importPack(specifier);
     if (mod !== null) {
-      assertOptionsArePackable(name, mod, options, configFile);
-      loadedFrom.set(name, specifier);
-      return { name, options, handedOver, factory: mod.default, specifier };
+      return loaded(mod, specifier);
     }
   }
 
@@ -486,11 +516,17 @@ function assertPackLanguage(name: string, language: Language): void {
   );
 }
 
+/**
+ * `projectRoot` is the directory the run reads. A pack that resolves a
+ * relative path option reads it against that directory when the options
+ * did not come from a config file of their own.
+ */
 export async function resolveFramework(
   spec: string,
   stubOverlay?: StubOverlay,
+  projectRoot?: string,
 ): Promise<PatternPack> {
-  const loaded = await loadPackFactory(spec);
+  const loaded = await loadPackFactory(spec, projectRoot);
   assertPackLanguage(loaded.name, "typescript");
   return instantiatePack<PatternPack>(
     withStubbedOptions(loaded, stubOverlay),
@@ -522,8 +558,12 @@ function withStubbedOptions(
 export async function resolvePythonPack(
   spec: string,
   stubOverlay?: StubOverlay,
+  projectRoot?: string,
 ): Promise<PythonPack> {
-  const loaded = withStubbedOptions(await loadPackFactory(spec), stubOverlay);
+  const loaded = withStubbedOptions(
+    await loadPackFactory(spec, projectRoot),
+    stubOverlay,
+  );
   assertPackLanguage(loaded.name, "python");
   return instantiatePack<PythonPack>(loaded, loaded.specifier, loaded.name);
 }
@@ -531,8 +571,12 @@ export async function resolvePythonPack(
 export async function resolveRubyPack(
   spec: string,
   stubOverlay?: StubOverlay,
+  projectRoot?: string,
 ): Promise<RubyPack> {
-  const loaded = withStubbedOptions(await loadPackFactory(spec), stubOverlay);
+  const loaded = withStubbedOptions(
+    await loadPackFactory(spec, projectRoot),
+    stubOverlay,
+  );
   assertPackLanguage(loaded.name, "ruby");
   return instantiatePack<RubyPack>(loaded, loaded.specifier, loaded.name);
 }
@@ -667,7 +711,9 @@ async function runTypeScript(
   const runRoot = workspaceRootFor(source.root);
   const stubOverlay = stubOverlayOf(loadStubs(runRoot));
   const packs = await Promise.all(
-    options.frameworks.map((one) => resolveFramework(one, stubOverlay)),
+    options.frameworks.map((one) =>
+      resolveFramework(one, stubOverlay, runRoot),
+    ),
   );
   process.stderr.write(formatSecondCopies(checkOneTsMorph(packsLoadedSoFar())));
 
@@ -723,7 +769,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
   const packs = await Promise.all(
     runOptions.options.frameworks.map((one) =>
-      resolvePythonPack(one, stubOverlay),
+      resolvePythonPack(one, stubOverlay, runOptions.root),
     ),
   );
   // A submodule has to be a root of its own, or imports into the shared
@@ -774,7 +820,7 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const stubOverlay = pythonStubOverlay(runOptions);
   const packs = await Promise.all(
     runOptions.options.frameworks.map((one) =>
-      resolveRubyPack(one, stubOverlay),
+      resolveRubyPack(one, stubOverlay, runOptions.root),
     ),
   );
   // findRubyFiles skips any directory called .git, but it does not

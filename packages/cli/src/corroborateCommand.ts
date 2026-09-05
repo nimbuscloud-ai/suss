@@ -168,7 +168,7 @@ export async function corroborate(
   const source = resolveSource(options);
   const runRoot = workspaceRootFor(source.root);
   const packs = await Promise.all(
-    options.frameworks.map((one) => resolveFramework(one)),
+    options.frameworks.map((one) => resolveFramework(one, undefined, runRoot)),
   );
 
   const adapter = createTypeScriptAdapter({
