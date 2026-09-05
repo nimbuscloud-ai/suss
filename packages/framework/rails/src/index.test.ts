@@ -48,6 +48,27 @@ describe("railsFramework", () => {
     expect(p.defaultStatusCode).toBe(200);
   });
 
+  it("declares the two calls Rails gives an action for writing a status", () => {
+    const p = pattern(railsFramework({ configDirectory: "/repo" }));
+    expect(p.responseStatusCalls).toEqual([
+      { name: "render", statusKeyword: "status" },
+      { name: "head", statusArgument: 0, statusKeyword: "status" },
+    ]);
+  });
+
+  it("declares Rack's status symbols, including the ones Rack renamed", () => {
+    const p = pattern(railsFramework({ configDirectory: "/repo" }));
+    expect(p.statusCodeNames).toMatchObject({
+      ok: 200,
+      created: 201,
+      no_content: 204,
+      not_found: 404,
+      unprocessable_entity: 422,
+      unprocessable_content: 422,
+      internal_server_error: 500,
+    });
+  });
+
   it("adds a project's own base class names alongside the default", () => {
     const pack = railsFramework({
       root: path.join(fixtureRoot, "app"),

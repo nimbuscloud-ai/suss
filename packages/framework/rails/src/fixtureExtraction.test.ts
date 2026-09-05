@@ -68,6 +68,8 @@ describe("extraction over fixtures/ruby-rails", () => {
         "index",
         "show",
         "cancel",
+        "create",
+        "destroy",
         "summary",
         "preview",
       ].sort(),
@@ -110,12 +112,30 @@ describe("extraction over fixtures/ruby-rails", () => {
     });
   });
 
-  it("gives every bound action the pattern's default status code", async () => {
+  it("gives an action that writes no status of its own Rails' own default", async () => {
     const { summaries } = await extractFixture();
     const index = action(summaries, "orders_controller", "index");
     expect(index.transitions[0]?.output).toMatchObject({
       type: "response",
       statusCode: { type: "literal", value: 200 },
+    });
+  });
+
+  it("reads the status a render call gives, written as a Rack symbol", async () => {
+    const { summaries } = await extractFixture();
+    const create = action(summaries, "items_controller", "create");
+    expect(create.transitions[0]?.output).toMatchObject({
+      type: "response",
+      statusCode: { type: "literal", value: 201 },
+    });
+  });
+
+  it("reads the status a head call gives", async () => {
+    const { summaries } = await extractFixture();
+    const destroy = action(summaries, "items_controller", "destroy");
+    expect(destroy.transitions[0]?.output).toMatchObject({
+      type: "response",
+      statusCode: { type: "literal", value: 204 },
     });
   });
 

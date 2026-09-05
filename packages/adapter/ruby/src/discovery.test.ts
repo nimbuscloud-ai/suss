@@ -781,7 +781,7 @@ describe("discoverUnits: controller actions", () => {
     expect(units).toEqual([]);
   });
 
-  it("gives every discovered action the pattern's default status code", async () => {
+  it("hands the pattern's default status code over as the library default", async () => {
     const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +
         "  def preview\n" +
@@ -789,9 +789,9 @@ describe("discoverUnits: controller actions", () => {
         "end\n",
       railsTestPack({ defaultStatusCode: 204 }),
     );
-    expect(units[0]?.branches[0]?.terminal.statusCode).toEqual({
-      type: "literal",
-      value: 204,
+    expect(units[0]?.branches[0]?.statusCodeReading).toEqual({
+      reading: { kind: "absent" },
+      libraryDefault: 204,
     });
   });
 

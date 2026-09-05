@@ -8,6 +8,17 @@ Ruby language adapter for suss. It parses source with tree-sitter (WASM), resolv
 
 The adapter also discovers a `controllerActions` pattern: a class whose ancestry reaches a pack-configured base is a Rails-shaped controller, and each of its own public instance methods is one of its actions, bound to whatever method and path the pack's `routeFor` gives it. `@suss/framework-rails` is the pack that reads `config/routes.rb` and supplies that callback; the adapter itself contains no Rails string. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since a graphql field does no path-engine work, and confidence is pinned low.
 
+## The status an action writes
+
+A controller action's response status comes from `responseStatusCalls` on the `controllerActions` pattern. Each entry says a receiverless call the library gives an action for writing a status and where that call takes it, either as a keyword or at a positional index; when a call is written with both, the keyword wins. `statusCodeNames` on the same pattern gives the number behind each name the library accepts where a number could go, which for Rails is Rack's symbol table. No call name and no status name appears in this package.
+
+The status argument goes through the shared value evaluator, so a number, a name, and a local variable that settles on either all read the same way. The reading is then handed to `assembleSummary` as `statusCodeReading`, alongside the pattern's `defaultStatusCode` as the library default, which is the same shared collapse the Python adapter uses for a status a Flask route returns in a tuple:
+
+- An action that writes no status at all leaves the reading absent, and the summary claims the pattern's declared default.
+- An action whose calls all settle on one status claims that status.
+- An action whose calls settle on two different statuses claims neither, keeps both as candidates, and gets one gap. A call that writes no status of its own contributes the pattern's default as one of those candidates.
+- A status argument that does not settle on a number, `params[:code]` or a name the pack does not declare, claims nothing and gets one gap saying so.
+
 ## The method behind a field
 
 Most fields in a graphql-ruby schema get their value from a method. A summary should say a field has nothing behind it only when the adapter looked and found no such method.
