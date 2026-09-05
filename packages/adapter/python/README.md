@@ -66,7 +66,8 @@ Every cell describes what the library itself does. We read that off the library'
 | `"/"`                | the route path, no prefix  | the app does not start     | stated, and trimming leaves nothing                                          |
 | `""`                 | `/` + the namespace's name | the route path, no prefix  | unstated where the pack says a no-value prefix is unstated, otherwise stated |
 | `None`, `False`, `0` | `/` + the namespace's name | the app does not start     | unstated where the pack says so, otherwise unreadable                        |
-| a name or a call     | whatever it evaluates to   | whatever it evaluates to   | unreadable                                                                   |
+| a name, a call, or an f-string the evaluator settles | whatever it evaluates to | whatever it evaluates to | stated, with the string it settles on                     |
+| anything the evaluator cannot settle | whatever it evaluates to | whatever it evaluates to | unreadable                                                   |
 
 **At the mount** (`add_namespace(ns, path=...)`, `include_router(router, prefix=...)`):
 
@@ -77,7 +78,8 @@ Every cell describes what the library itself does. We read that off the library'
 | `"/api/"`            | `/api/` + the route path, kept as written            | the app does not start                             | stated                                                |
 | `""`                 | where the constructor put it                         | the constructor's prefix + the route path          | unstated where the pack says so, otherwise stated     |
 | `None`, `False`, `0` | where the constructor put it                         | the app does not start                             | unstated where the pack says so, otherwise unreadable |
-| a name or a call     | whatever it evaluates to                             | whatever it evaluates to                           | unreadable                                            |
+| a name, a call, or an f-string the evaluator settles | whatever it evaluates to              | whatever it evaluates to                           | stated, with the string it settles on                 |
+| anything the evaluator cannot settle | whatever it evaluates to             | whatever it evaluates to                           | unreadable                                            |
 
 The two libraries differ on one property, and the pack says which way each one goes. flask-restx checks whether the path is truthy, so all four no-value spellings mean the same thing as writing nothing, at both places. FastAPI wants a string, so an empty string is an ordinary prefix that happens to add nothing, and the other three stop the app from starting.
 
@@ -101,7 +103,8 @@ FastAPI has no column here: its app has no prefix of its own, and the pack decla
 | `"/"` | the rest of the path, once the merge collapses the doubled slash | stated, and merging leaves nothing |
 | `""`, `None` | the rest of the path, no prefix | unstated |
 | `False`, `0` | the app does not start: Flask hands the value straight to `rstrip` | unstated |
-| a name or a call | whatever it evaluates to | unreadable |
+| a name, a call, or an f-string the evaluator settles | whatever it evaluates to | stated, with the string it settles on |
+| anything the evaluator cannot settle | whatever it evaluates to | unreadable |
 
 **At the `Api`** (`Api(bp, prefix=...)`):
 
@@ -111,7 +114,8 @@ FastAPI has no column here: its app has no prefix of its own, and the pack decla
 | `"/extra"` | the blueprint's prefix + `/extra` + the rest | stated |
 | `"/extra/"` | the same, concatenated as written, and Werkzeug answers the merged path | stated, and the composed path is merged |
 | `""`, `None`, `False`, `0` | the blueprint's prefix + the rest | unstated |
-| a name or a call | whatever it evaluates to | unreadable |
+| a name, a call, or an f-string the evaluator settles | whatever it evaluates to | stated, with the string it settles on |
+| anything the evaluator cannot settle | whatever it evaluates to | unreadable |
 
 ### A call that spreads a dictionary
 
@@ -296,7 +300,7 @@ Taking the only mount it could follow would put the route at `/test`, where no r
 
 Both of those qualifiers matter. Only counting loops keeps the ordinary case working: two factories that each register their own routers by name are not competing, because neither one could have registered the other's. Only counting a loop in a *different* place keeps a factory working when it mixes an explicit registration with a loop, since both of those run together whenever that function runs.
 
-A module-level mount is never dropped this way. It runs whichever factory the app calls. flask-restx trims at the constructor and not at the mount, because only the constructor's path goes through the property that strips it. The pack declares trimming per library, and the mount side does not need it, since a mount that states a prefix on that library abstains anyway.
+A module-level mount is never dropped this way. It runs whichever factory the app calls.
 
 ## What a file reads from the environment
 

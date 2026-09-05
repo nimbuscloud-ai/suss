@@ -7,7 +7,7 @@ Framework pack for [FastAPI](https://fastapi.tiangolo.com/) routes, read by the 
 `@suss/framework-fastapi` returns a `PythonPack` object describing:
 
 - **Discovery**: a function decorated with a verb-named method on the app or on a router (`@app.get(path)`, `@router.post(path)`), where the decorator's own attribute name is the HTTP verb (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`). The app and router are recognized by construction: `app = FastAPI()`, `router = APIRouter()`, one assignment back from an import of `fastapi`.
-- **Router prefix composition**: a route on a router composes its path from the router's own `prefix` and the `prefix` at the single `app.include_router(...)` call that mounts it, when both are string literals and the mount reaches the router through one variable binding (same file, or imported from the file that constructed it). Beyond that, the pack abstains: it still discovers the route by name, with no path, and the summary's gap says why.
+- **Router prefix composition**: a route on a router composes its path from the router's own `prefix` and the `prefix` at the single `app.include_router(...)` call that mounts it, when both settle on one string and the mount reaches the router through one variable binding (same file, or imported from the file that constructed it). Beyond that, the pack abstains: it still discovers the route by name, with no path, and the summary's gap says why.
 - **Boundary bindings**: `rest(method, path)`, with the declared `response_model` / `status_code` keywords and parameter / return annotations read as the route's contract.
 
 ## Where it fits in suss
@@ -16,10 +16,12 @@ Depends only on `@suss/adapter-python` (for the `PythonPack` type and the Python
 
 ## What abstains
 
+The decorator's path argument and both prefixes go through the value evaluator, so a name, two strings joined with `+`, and an f-string over a name the evaluator settles all read as the path they produce. An f-string spells a literal brace by doubling it, so `@app.get(f"/v1/{{id}}")` reads as `/v1/{id}`, which is where FastAPI serves it. A placeholder in the path argument that the evaluator cannot settle stays in the path as a hole, which is how a path parameter is written anyway.
+
 The pack never guesses a path. A route keeps its name and has no path when:
 
-- the decorator's path argument is not a string literal,
-- the router's own `prefix` or the mount call's `prefix` is not a string literal,
+- the decorator's path argument does not come out as a string,
+- the router's own `prefix` or the mount call's `prefix` does not settle on one string,
 - nothing mounts the router through a single variable binding in the files read,
 - the router is mounted more than once,
 - the router is mounted onto another router (a second hop), or

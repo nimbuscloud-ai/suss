@@ -58,7 +58,30 @@ export function enclosingFunction(node: PyNode): PyNode | null {
   return null;
 }
 
-/** The text inside a plain string node, with the quotes removed. An f-string returns null. */
+/**
+ * The text of one `string_content` run, with an f-string's doubled braces
+ * halved. Python serves `f"/v1/{{id}}"` at `/v1/{id}`, so a reader that kept
+ * the doubling would pair the route with a path no request ever arrives at.
+ * The grammar marks each doubled brace with an `escape_interpolation` child
+ * and emits none of them for a plain string, which keeps its braces as
+ * written.
+ */
+export function stringContentValue(content: PyNode): string {
+  const base = content.startIndex;
+  let text = "";
+  let cursor = 0;
+  for (const child of children(content)) {
+    if (child.type !== "escape_interpolation") {
+      continue;
+    }
+    text += content.text.slice(cursor, child.startIndex - base);
+    text += child.text.slice(0, 1);
+    cursor = child.endIndex - base;
+  }
+  return text + content.text.slice(cursor);
+}
+
+/** The text inside a plain string node, with the quotes removed. An f-string with an interpolation returns null. */
 export function stringLiteralValue(node: PyNode): string | null {
   if (node.type !== "string") {
     return null;
@@ -69,7 +92,7 @@ export function stringLiteralValue(node: PyNode): string | null {
       continue;
     }
     if (child.type === "string_content") {
-      content += child.text;
+      content += stringContentValue(child);
       continue;
     }
     if (child.type === "interpolation") {

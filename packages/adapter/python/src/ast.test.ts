@@ -17,6 +17,16 @@ async function moduleOf(source: string) {
   return tree.rootNode;
 }
 
+/** The value read off the right side of a module's single `x = ...` line. */
+async function rightOfX(source: string): Promise<string | null> {
+  const root = await moduleOf(source);
+  const value = root.namedChild(0)?.namedChild(0)?.childForFieldName("right");
+  if (value === null || value === undefined) {
+    throw new Error("no assignment to read");
+  }
+  return stringLiteralValue(value);
+}
+
 describe("stringLiteralValue", () => {
   it("reads a plain string literal", async () => {
     const root = await moduleOf('x = "/todos"\n');
@@ -39,6 +49,23 @@ describe("stringLiteralValue", () => {
   it("returns null for a non-string node", async () => {
     const root = await moduleOf("x = 1\n");
     expect(stringLiteralValue(root)).toBeNull();
+  });
+
+  it("halves the doubled braces of an f-string", async () => {
+    expect(await rightOfX('x = f"/v1/{{literal}}"\n')).toBe("/v1/{literal}");
+  });
+
+  it("halves doubled braces under any f-string spelling", async () => {
+    expect(await rightOfX("x = F'/v1/{{a}}'\n")).toBe("/v1/{a}");
+    expect(await rightOfX('x = f"""/v1/{{a}}"""\n')).toBe("/v1/{a}");
+  });
+
+  it("halves a run of doubled braces down to one pair", async () => {
+    expect(await rightOfX('x = f"/v1/{{{{a}}}}"\n')).toBe("/v1/{{a}}");
+  });
+
+  it("keeps the doubled braces of a plain string", async () => {
+    expect(await rightOfX('x = "/v1/{{literal}}"\n')).toBe("/v1/{{literal}}");
   });
 });
 
