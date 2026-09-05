@@ -2,7 +2,7 @@
   "totals": {
     "packages": 69,
     "packagesWithExports": 69,
-    "exports": 865,
+    "exports": 866,
     "internal": 2891,
     "consumers": 1507,
     "pairs": 1504,
@@ -27,8 +27,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 86,
-      "internal": 829,
-      "consumers": 181,
+      "internal": 819,
+      "consumers": 178,
       "unfollowedCalls": 104
     },
     "packages/behavioral-ir": {
@@ -488,9 +488,9 @@
     },
     "packages/values": {
       "name": "@suss/values",
-      "exports": 35,
-      "internal": 52,
-      "consumers": 0,
+      "exports": 36,
+      "internal": 62,
+      "consumers": 3,
       "unfollowedCalls": 26
     }
   }

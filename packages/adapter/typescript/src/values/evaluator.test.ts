@@ -442,4 +442,22 @@ describe("functions", () => {
       "hole",
     );
   });
+
+  it("follows a callee read out of an array through the store", () => {
+    expect(
+      literal(`
+        const routes = [(p: string) => "/v1" + p];
+        export const subject = routes[0]("/x");
+      `),
+    ).toBe("/v1/x");
+  });
+
+  it("reads a call through a comma expression as unknown", () => {
+    expect(
+      subjectOf(`
+        const route = (p: string) => "/v1" + p;
+        export const subject = (0, route)("/x");
+      `).kind,
+    ).toBe("hole");
+  });
 });

@@ -40,6 +40,7 @@ export {
   negated,
   plus,
 } from "./operations.js";
+export { pathOf } from "./routePath.js";
 export {
   type Constant,
   concat,

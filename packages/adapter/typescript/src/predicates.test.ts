@@ -927,6 +927,27 @@ describe("Array.includes() expansion", () => {
     });
   });
 
+  it("leaves an includes call that is not over an array of literals alone", () => {
+    const project = createTestProject();
+    const tmpFile = project.createSourceFile(
+      "__tmp_includes.ts",
+      [
+        "declare const allowed: number[];",
+        "declare const code: number;",
+        "export function a(x: number) { if (allowed.includes(x)) return 1; }",
+        "export function b(x: number) { if ([1, 2].includes(x, 0)) return 1; }",
+        "export function c(x: number) { if ([].includes(x)) return 1; }",
+        "export function d(x: number) { if ([code, 2].includes(x)) return 1; }",
+      ].join("\n"),
+    );
+    for (const fn of tmpFile.getFunctions()) {
+      const cond = fn
+        .getDescendantsOfKind(SyntaxKind.IfStatement)[0]
+        .getExpression();
+      expect(parseConditionExpression(cond)?.type).not.toBe("compound");
+    }
+  });
+
   it("handles negated Array.includes()", () => {
     const expr = getFirstIfCondition(sourceFile, "checkNegatedIncludes");
     const result = parseConditionExpression(expr);

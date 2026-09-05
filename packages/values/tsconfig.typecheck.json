@@ -6,5 +6,10 @@
     "tsBuildInfoFile": "./.tsbuild/tsconfig.tsbuildinfo",
     "noEmit": false,
     "emitDeclarationOnly": true
-  }
+  },
+  "references": [
+    {
+      "path": "../ir-core/tsconfig.typecheck.json"
+    }
+  ]
 }
