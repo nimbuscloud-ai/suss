@@ -112,6 +112,27 @@ export function semanticsAgree(a: Semantics, b: Semantics): boolean {
   return agree === undefined ? true : agree(a, b);
 }
 
+/** Whether the binding's bucket can meet buckets with other keys. */
+export function spansBuckets(binding: BoundaryBinding): boolean {
+  return (
+    behaviorOf(binding.semantics).spansBuckets?.(binding.semantics) ?? false
+  );
+}
+
+/** Whether two bindings' buckets describe a boundary in common. */
+export function bucketsMeet(a: BoundaryBinding, b: BoundaryBinding): boolean {
+  if (a.semantics.name !== b.semantics.name) {
+    return false;
+  }
+  const meet = behaviorOf(a.semantics).bucketsMeet;
+  return meet !== undefined && meet(a.semantics, b.semantics);
+}
+
+/** How narrowly the binding's bucket states what it serves; see `compareRanks`. */
+export function bucketRank(binding: BoundaryBinding): readonly number[] {
+  return behaviorOf(binding.semantics).bucketRank?.(binding.semantics) ?? [];
+}
+
 export function boundaryLabel(binding: BoundaryBinding): string | null {
   const behavior = behaviorOf(binding.semantics);
   return (behavior.displayLabel ?? behavior.identityKey)(binding.semantics);

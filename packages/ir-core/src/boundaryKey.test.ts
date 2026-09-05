@@ -4,7 +4,10 @@ import {
   bindingIs,
   boundaryKey,
   boundaryLabel,
+  bucketRank,
+  bucketsMeet,
   canPair,
+  compareRanks,
   displayLabel,
   exchangesHttpResponses,
   functionCallBinding,
@@ -22,12 +25,13 @@ import {
   reportsUnpairedItself,
   restBinding,
   semanticsAgree,
+  spansBuckets,
   storageBinding,
   unitInvocationBinding,
   withRewrittenPaths,
 } from "./index.js";
 
-import type { Deployment } from "./index.js";
+import type { BoundaryBinding, Deployment } from "./index.js";
 
 describe("normalizePath", () => {
   it("converts :param to {param} and lowercases static segments", () => {
@@ -39,6 +43,13 @@ describe("normalizePath", () => {
   });
   it("preserves param-name case inside braces", () => {
     expect(normalizePath("/orgs/:orgId/Members")).toBe("/orgs/{orgId}/members");
+  });
+  it("keeps a range modifier inside the braces", () => {
+    expect(normalizePath("/api/:version/:tenant?/orders")).toBe(
+      "/api/{version}/{tenant?}/orders",
+    );
+    expect(normalizePath("/files/:rest+")).toBe("/files/{rest+}");
+    expect(normalizePath("/files/:rest*")).toBe("/files/{rest*}");
   });
 });
 
@@ -120,6 +131,40 @@ describe("boundaryKey", () => {
       channel: null,
     });
     expect(pairingKey(unnamed)).toBeNull();
+  });
+
+  it("buckets a route on its parameters' positions and ranges, and says when it spans other buckets", () => {
+    const route = (path: string): BoundaryBinding =>
+      restBinding({ transport: "http", method: "get", path, recognition: "x" });
+    expect(pairingKey(route("/api/:version/orders/:id"))).toBe(
+      "rest /api/{}/orders/{}",
+    );
+    expect(pairingKey(route("/api/{version}/{tenant?}/orders/{id}"))).toBe(
+      "rest /api/{}/{?}/orders/{}",
+    );
+    expect(spansBuckets(route("/api/{version}/orders/{id}"))).toBe(false);
+    expect(spansBuckets(route("/api/{version}/{tenant?}/orders/{id}"))).toBe(
+      true,
+    );
+    expect(spansBuckets(route("/api/orders/*"))).toBe(true);
+    expect(
+      bucketsMeet(
+        route("/api/{version}/{tenant?}/orders/{id}"),
+        route("/api/v1/orders/:id"),
+      ),
+    ).toBe(true);
+    expect(
+      bucketsMeet(
+        route("/api/{version}/{tenant?}/orders/{id}"),
+        route("/api/v1/acme/eu/orders/:id"),
+      ),
+    ).toBe(false);
+    expect(
+      compareRanks(
+        bucketRank(route("/api/v1/orders/:id")),
+        bucketRank(route("/api/{version}/{tenant?}/orders/{id}")),
+      ),
+    ).toBeGreaterThan(0);
   });
 
   it("agrees methods the way buses agree: equal, or a wildcard on either side", () => {
