@@ -483,6 +483,27 @@ describe("Evaluator", () => {
       expect(literalOf(evaluate(target))).toBe("/elsewhere");
     });
 
+    it("reads a call it cannot inline as what the call was written to", () => {
+      const passedThrough = lit("/p");
+      const target = call(null, "wrap", [passedThrough]);
+      target.writtenTo = passedThrough;
+      module([expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/p");
+    });
+
+    it("keeps an array handed to a call it can follow", () => {
+      const parts = name("parts");
+      const wrapped = call(null, "wrap", [parts]);
+      wrapped.writtenTo = lit("/p");
+      const target = call(name("parts"), "join", [lit("/")]);
+      module([
+        declare({ parts: array(lit("a")) }),
+        expr(wrapped),
+        expr(target),
+      ]);
+      expect(literalOf(evaluate(target))).toBe("a");
+    });
+
     it("gives a hole for a name that resolves to itself", () => {
       const target = name("base");
       target.writtenTo = target;
