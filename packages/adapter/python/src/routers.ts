@@ -32,13 +32,7 @@
 
 import { type MountEdge, mountPathsOf } from "@suss/resolution";
 
-import {
-  bodyStatements,
-  field,
-  rangeOf,
-  stringLiteralValue,
-  stripDecorators,
-} from "./ast.js";
+import { bodyStatements, field, rangeOf, stripDecorators } from "./ast.js";
 import { readCallArguments } from "./decorators.js";
 import {
   containedValues,
@@ -49,6 +43,7 @@ import {
 import { nodeId } from "./facts/values.js";
 import { resolveModule } from "./moduleResolver.js";
 import { resolveName } from "./scope.js";
+import { stringValueOf } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
 import type { DecoratorArg } from "./decorators.js";
@@ -716,38 +711,16 @@ const NO_VALUE_LITERALS: Partial<
 };
 
 /**
- * The string a prefix argument comes down to, or null when nothing here
- * can say. A bare name is followed to what it was assigned, because
- * `prefix=API_V1` and `prefix="/api/v1"` describe the same route, and a
- * settings module is where most projects put the value.
+ * Every site reads a prefix through here, so the same spelling means the
+ * same thing at a constructor and at a mount. The argument is evaluated,
+ * because `prefix=API_V1` and `prefix="/api/v1"` describe the same route,
+ * and a settings module is where most projects put the value.
  */
-function prefixStringOf(
-  arg: DecoratorArg,
-  scope: Scope | undefined,
-): string | null {
-  if (arg.kind === "string") {
-    return arg.value;
-  }
-  if (arg.kind !== "identifier" || scope === undefined) {
-    return null;
-  }
-  const binding = resolveName(scope, arg.name);
-  if (
-    binding === null ||
-    binding.kind !== "assignment" ||
-    binding.value === null
-  ) {
-    return null;
-  }
-  return stringLiteralValue(binding.value);
-}
-
-/** Every site reads a prefix through here, so the same spelling means the same thing at a constructor and at a mount. */
 function readPrefixKeyword(
   keywordArgs: Record<string, DecoratorArg>,
   keyword: string,
   composition: RouterComposition,
-  scope: Scope,
+  facts: Database | undefined,
 ): PrefixReading {
   const arg = keywordArgs[keyword];
   if (arg === undefined) {
@@ -761,20 +734,20 @@ function readPrefixKeyword(
     return UNSTATED_PREFIX;
   }
 
-  const value = prefixStringOf(arg, scope);
+  const value = stringValueOf(arg.node, facts);
   return value === null ? UNREADABLE_PREFIX : { kind: "stated", value };
 }
 
 function constructorPrefix(
   keywordArgs: Record<string, DecoratorArg>,
   composition: RouterComposition,
-  scope: Scope,
+  facts: Database | undefined,
 ): PrefixReading {
   const reading = readPrefixKeyword(
     keywordArgs,
     composition.prefixKeyword,
     composition,
-    scope,
+    facts,
   );
   if (reading.kind !== "stated") {
     return reading;
@@ -922,8 +895,7 @@ function collectConstructions(
       construction,
       bound.module,
       bound.file,
-      (keywordArgs) =>
-        constructorPrefix(keywordArgs, composition, bound.module.moduleScope),
+      (keywordArgs) => constructorPrefix(keywordArgs, composition, index.facts),
       index.constructions,
       index.byValueKey,
     );
@@ -974,7 +946,7 @@ function collectReturnedConstructions(
       index.byValueKey.set(valueKey, {
         constructorName,
         valueKey,
-        prefix: constructorPrefix(keywordArgs, composition, scope),
+        prefix: constructorPrefix(keywordArgs, composition, index.facts),
         reassigned: false,
       });
     }
@@ -1018,7 +990,7 @@ function collectCarrierConstructions(
             keywordArgs,
             carrier.prefixKeyword,
             composition,
-            scan.bound.module.moduleScope,
+            scan.index.facts,
           ),
         scan.index.carriers,
         scan.index.byValueKey,
@@ -1575,7 +1547,7 @@ function recordMountStatement(
     objectPrefix,
     scan.composition,
     position.site,
-    position.scope,
+    scan.index.facts,
   );
   const mounted =
     args[0] ??
@@ -1595,7 +1567,7 @@ function mountStateOf(
   objectPrefix: OwnPrefixResolution,
   composition: RouterComposition,
   site: MountSite,
-  scope: Scope,
+  facts: Database | undefined,
 ): MountState {
   const base = mountBaseOf(
     includerConstructorName,
@@ -1611,7 +1583,7 @@ function mountStateOf(
     keywordArgs,
     composition.prefixKeyword,
     composition,
-    scope,
+    facts,
   );
   if (mountPrefix.kind === "unreadable") {
     return {
@@ -1931,7 +1903,7 @@ function readMountObjectPrefix(
           keywordArgs,
           spec.prefixKeyword,
           scan.composition,
-          scan.bound.module.moduleScope,
+          scan.index.facts,
         );
   if (own.kind === "unreadable") {
     return {

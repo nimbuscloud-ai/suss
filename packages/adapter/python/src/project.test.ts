@@ -249,7 +249,7 @@ describe("extractPythonProject", () => {
     expect(summaries).toEqual([]);
   });
 
-  it("composes a router's path across files, and abstains where a prefix is computed", async () => {
+  it("composes a router's path across files, reading a prefix a function returns and abstaining where a call nobody can follow supplies it", async () => {
     const fastapiLike: PythonPack = {
       name: "fastapi-test",
       protocol: "http",
@@ -294,6 +294,20 @@ describe("extractPythonProject", () => {
         "",
       ].join("\n"),
     );
+    const reports = write(
+      "shop/routers/reports.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        'router = APIRouter(prefix="/reports")',
+        "",
+        "",
+        '@router.get("/daily")',
+        "def daily_report():",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
     const main = write(
       "shop/main.py",
       [
@@ -301,6 +315,7 @@ describe("extractPythonProject", () => {
         "",
         "from shop.routers.admin import router as admin_router",
         "from shop.routers.items import router as items_router",
+        "from shop.routers.reports import router as reports_router",
         "",
         "app = FastAPI()",
         "",
@@ -311,12 +326,13 @@ describe("extractPythonProject", () => {
         "",
         'app.include_router(items_router, prefix="/api")',
         "app.include_router(admin_router, prefix=admin_prefix())",
+        "app.include_router(reports_router, prefix=admin_prefix().upper())",
         "",
       ].join("\n"),
     );
 
     const { summaries } = await extractPythonProject({
-      files: [admin, items, main],
+      files: [admin, items, reports, main],
       packs: [fastapiLike],
       roots: [tmpDir],
       workspaceRoot: tmpDir,
@@ -333,10 +349,19 @@ describe("extractPythonProject", () => {
     expect(adminStats?.identity.boundaryBinding?.semantics).toEqual({
       name: "rest",
       method: "GET",
+      path: "/internal/admin/stats",
+    });
+
+    const dailyReport = summaries.find(
+      (s) => s.identity.name === "daily_report",
+    );
+    expect(dailyReport?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
       path: null,
     });
     expect(
-      adminStats?.gaps.some(
+      dailyReport?.gaps.some(
         (gap) =>
           gap.type === "unreadOutcome" &&
           gap.description.includes("not a string literal"),
@@ -480,7 +505,7 @@ describe("extractPythonProject", () => {
     ).toBe(true);
   });
 
-  it("abstains where a router a project wrapper function returns states a computed prefix", async () => {
+  it("reads the prefix a router a project wrapper function returns gets from another function", async () => {
     const fastapiLike: PythonPack = {
       name: "fastapi-test",
       protocol: "http",
@@ -549,15 +574,70 @@ describe("extractPythonProject", () => {
     expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
       name: "rest",
       method: "GET",
-      path: null,
+      path: "/api/items/{item_id}",
     });
-    expect(
-      readItem?.gaps.some(
-        (gap) =>
-          gap.type === "unreadOutcome" &&
-          gap.description.includes("not a string literal"),
-      ),
-    ).toBe(true);
+    expect(readItem?.gaps).toEqual([]);
+  });
+
+  it("reads a prefix a lambda builds", async () => {
+    const fastapiLike: PythonPack = {
+      name: "fastapi-test",
+      protocol: "http",
+      discovery: [
+        {
+          type: "decoratedFunctionRoute",
+          importModule: ["fastapi"],
+          verbAttributeNames: { get: "GET" },
+          routerComposition: {
+            routerConstructorName: "APIRouter",
+            includeMethodName: "include_router",
+            prefixKeyword: "prefix",
+          },
+        },
+      ],
+    };
+    const items = write(
+      "shop/items.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        'versioned = lambda p: "/v1" + p',
+        'router = APIRouter(prefix=versioned("/items"))',
+        "",
+        "",
+        '@router.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const main = write(
+      "shop/main.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "from shop.items import router as items_router",
+        "",
+        "app = FastAPI()",
+        "",
+        'app.include_router(items_router, prefix="/api")',
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [items, main],
+      packs: [fastapiLike],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const readItem = summaries.find((s) => s.identity.name === "read_item");
+    expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/api/v1/items/{item_id}",
+    });
   });
 
   it("does not mount a router under a function parameter that shadows another router's own name", async () => {

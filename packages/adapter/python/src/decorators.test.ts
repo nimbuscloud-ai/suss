@@ -42,7 +42,7 @@ describe("classifyDecorator: direct import", () => {
     const result = classifyDecorator(decorator, scope);
     expect(result.module).toBe("myapp.wrappers.restx");
     expect(result.importedName).toBe("route");
-    expect(result.args).toEqual([{ kind: "string", value: "/todos" }]);
+    expect(result.args).toMatchObject([{ kind: "string", value: "/todos" }]);
   });
 
   it("classifies through an aliased import, resolving to the original name", async () => {
@@ -59,7 +59,7 @@ describe("classifyDecorator: direct import", () => {
       'from flask_restx import route\n\n\n@route("/todos", methods=["GET", "POST"])\ndef f():\n    pass\n',
     );
     const result = classifyDecorator(decorator, scope);
-    expect(result.keywordArgs.methods).toEqual({
+    expect(result.keywordArgs.methods).toMatchObject({
       kind: "list",
       items: [
         { kind: "string", value: "GET" },
@@ -73,11 +73,11 @@ describe("classifyDecorator: direct import", () => {
       'from myapp.wrappers.restx import route\n\n\n@route("/items", status_code=201, response_model=TodoResponse)\ndef f():\n    pass\n',
     );
     const result = classifyDecorator(decorator, scope);
-    expect(result.keywordArgs.status_code).toEqual({
+    expect(result.keywordArgs.status_code).toMatchObject({
       kind: "number",
       value: 201,
     });
-    expect(result.keywordArgs.response_model).toEqual({
+    expect(result.keywordArgs.response_model).toMatchObject({
       kind: "identifier",
       name: "TodoResponse",
     });
