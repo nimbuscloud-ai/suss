@@ -64,6 +64,10 @@ export interface ControllerActions {
   ancestryRootClassNames: string[];
   /** Status code a wire response gets when the action does not say otherwise. */
   defaultStatusCode: number;
+  /** The receiverless calls the library gives an action for writing a wire status. Leave it out and every action reports the default. */
+  responseStatusCalls?: RbStatusCall[];
+  /** The number behind each name the library accepts where a status number could go, Rack's own symbol table for Rails. */
+  statusCodeNames?: Record<string, number>;
   /** Absolute path of the file this pattern's own routing came from, for the one gap `routingGaps` may report. */
   routesFile: string;
   /** The method and path a project's own routing gives one controller's action, or null when that action has none. */
@@ -73,6 +77,20 @@ export interface ControllerActions {
   ) => { method: string; path: string } | null;
   /** One message per routing declaration kind this pattern's reading left uncovered. A pure read: calling it again gives the same list. */
   routingGaps?: () => readonly string[];
+}
+
+/**
+ * One call an action writes to send a response, and where that call takes
+ * the status. A call may take it both ways, and then the keyword wins,
+ * which is what Rails does with `head :ok, status: :created`.
+ */
+export interface RbStatusCall {
+  /** The call's own name as an action writes it, `render` for Rails. */
+  name: string;
+  /** The keyword whose value gives the status, `status` for Rails. */
+  statusKeyword?: string;
+  /** The index of the positional argument giving the status, 0 for Rails' `head :no_content`. */
+  statusArgument?: number;
 }
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */

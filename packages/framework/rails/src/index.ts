@@ -16,6 +16,7 @@ import { z } from "zod";
 import { underscoreConstantPath } from "@suss/adapter-ruby";
 
 import { readRoutesFile } from "./routes.js";
+import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
 import type { ControllerActions, RubyPack } from "@suss/adapter-ruby";
 import type { Route } from "./routes.js";
@@ -67,6 +68,18 @@ const RESTFUL_ACTIONS: Record<
   update: { method: "PATCH", pathTemplate: "/:resource/:id" },
   destroy: { method: "DELETE", pathTemplate: "/:resource/:id" },
 };
+
+/**
+ * The two calls Rails gives an action for setting the response status.
+ * `render` takes it as `status:`, `head` takes it first and also accepts
+ * the keyword. `redirect_to` is left out: it defaults to 302 rather than
+ * to the 200 every other action gets, and this pattern declares one
+ * default for the whole controller.
+ */
+const RESPONSE_STATUS_CALLS = [
+  { name: "render", statusKeyword: "status" },
+  { name: "head", statusArgument: 0, statusKeyword: "status" },
+];
 
 /** The routing key `config/routes.rb` gives a controller, from the class name the adapter reads: `Admin::OrdersController` -> `admin/orders`. */
 function controllerKeyFromQualified(qualifiedName: string): string {
@@ -130,6 +143,8 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     pathConvention: "railsUnderscore",
     ancestryRootClassNames: [...RAILS_ROOT_CLASS_NAMES],
     defaultStatusCode: 200,
+    responseStatusCalls: RESPONSE_STATUS_CALLS,
+    statusCodeNames: RACK_STATUS_CODE_NAMES,
     routesFile,
     routeFor: (controllerQualifiedName, actionName) => {
       const key = controllerKeyFromQualified(controllerQualifiedName);
