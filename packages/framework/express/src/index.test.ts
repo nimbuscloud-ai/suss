@@ -379,6 +379,81 @@ describe("expressFramework, mount prefix composition (aws-alb fixture)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// A router reached through the default import
+// ---------------------------------------------------------------------------
+
+describe("expressFramework: a router built through the default import", () => {
+  const restPaths = (summaries: BehavioralSummary[]): string[] =>
+    summaries
+      .map((one) => one.identity.boundaryBinding?.semantics)
+      .filter(
+        (sem): sem is Extract<typeof sem, { name: "rest" }> =>
+          sem?.name === "rest",
+      )
+      .map((sem) => `${sem.method} ${sem.path}`)
+      .sort();
+
+  const extract = async (source: string): Promise<BehavioralSummary[]> => {
+    const project = createTestProject();
+    project.createSourceFile("app.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    return await adapter.extractAll();
+  };
+
+  it("reads routes off `express.Router()`", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const router = express.Router();
+      router.get("/items", (req: any, res: any) => {
+        res.status(200).json([]);
+      });
+      router.post("/items", (req: any, res: any) => {
+        res.status(201).json({});
+      });
+    `);
+    expect(restPaths(summaries)).toEqual(["GET /items", "POST /items"]);
+  });
+
+  it("reads routes off a namespace import's Router", async () => {
+    const summaries = await extract(`
+      import * as express from "express";
+      const router = express.Router();
+      router.get("/items", (req: any, res: any) => {
+        res.status(200).json([]);
+      });
+    `);
+    expect(restPaths(summaries)).toEqual(["GET /items"]);
+  });
+
+  it("composes the mount prefix of a router the default import built", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const router = express.Router();
+      router.get("/:id", (req: any, res: any) => {
+        res.status(200).json({});
+      });
+      const app = express();
+      app.use("/api/items", router);
+    `);
+    expect(restPaths(summaries)).toEqual(["GET /api/items/:id"]);
+  });
+
+  it("does not read a route off an unrelated member call", async () => {
+    const summaries = await extract(`
+      import express from "express";
+      const other = express.static("public");
+      other.get("/items", (req: any, res: any) => {
+        res.status(200).json([]);
+      });
+    `);
+    expect(restPaths(summaries)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A router built by a project wrapper function
 // ---------------------------------------------------------------------------
 

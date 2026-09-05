@@ -17,7 +17,7 @@ import { joinMountedPath } from "@suss/resolution";
 import { nodeId } from "../facts/extract.js";
 import { pathFromArgument } from "../resolve/routePath.js";
 import { importDeclarationsOf } from "./importScan.js";
-import { resolveImportedLocalName } from "./resolveImport.js";
+import { importedReferenceSpellings } from "./resolveImport.js";
 import {
   functionValueOf,
   stringPropertyOf,
@@ -536,14 +536,14 @@ export function registrationSubjectsOf(
   importName: string,
   resolution?: ResolutionStore,
 ): Map<string, Node> {
-  const importedLocalName = resolveImportedLocalName(
+  const spellings = importedReferenceSpellings(
     sourceFile,
     importModule,
     importName,
   );
 
   const subjects = new Map<string, Node>();
-  if (importedLocalName === null) {
+  if (spellings.length === 0) {
     return subjects;
   }
 
@@ -560,7 +560,7 @@ export function registrationSubjectsOf(
         Node.isCallExpression(init) || Node.isNewExpression(init)
           ? init.getExpression().getText()
           : null;
-      if (calleeText === importedLocalName) {
+      if (calleeText !== null && spellings.includes(calleeText)) {
         subjects.set(node.getName(), init);
       }
       return;
@@ -577,8 +577,10 @@ export function registrationSubjectsOf(
     }
     const typeText = typeNode.getText();
     if (
-      typeText === importedLocalName ||
-      typeText.startsWith(`${importedLocalName}<`)
+      spellings.some(
+        (spelling) =>
+          typeText === spelling || typeText.startsWith(`${spelling}<`),
+      )
     ) {
       subjects.set(node.getName(), creationSiteBehind(node, resolution));
     }
@@ -670,19 +672,19 @@ function unboundConstructionsOf(
   importModule: string,
   importName: string,
 ): Node[] {
-  const importedLocalName = resolveImportedLocalName(
+  const spellings = importedReferenceSpellings(
     sourceFile,
     importModule,
     importName,
   );
-  if (importedLocalName === null) {
+  if (spellings.length === 0) {
     return [];
   }
   const constructions: Node[] = [];
   sourceFile.forEachDescendant((node) => {
     if (
       (Node.isCallExpression(node) || Node.isNewExpression(node)) &&
-      node.getExpression().getText() === importedLocalName &&
+      spellings.includes(node.getExpression().getText()) &&
       !Node.isVariableDeclaration(node.getParent())
     ) {
       constructions.push(node);
