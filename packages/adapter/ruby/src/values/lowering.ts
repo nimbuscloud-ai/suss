@@ -28,6 +28,7 @@ import type {
   FunctionShape,
   Lowering,
   Origin,
+  Parameter,
   Row,
   Site,
   Statement,
@@ -84,9 +85,6 @@ const LITERAL_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
   bare_string: (node) => ({ kind: "literal", value: node.text }),
   bare_symbol: (node) => ({ kind: "literal", value: node.text }),
 };
-
-/** A keyword-argument `pair` or a `**opts` has no position in the argument list. */
-const KEYWORD_ARGUMENT_TYPES = new Set(["pair", "hash_splat_argument"]);
 
 /** The method rows that write to their receiver rather than read it. */
 const WRITING_ROWS = new Set(["push", "append", "concat", "<<"]);
@@ -185,21 +183,16 @@ function fromFields<T>(
   return build(...(found as RbNode[]));
 }
 
-/** `ENV["X"]` and `ENV.fetch("X")` read the environment variable `X`. */
+/** `ENV["X"]` reads the environment variable `X`; `ENV.fetch` is a row. */
 function environmentVariableOf(node: RbNode): string | null {
-  const receiver =
-    node.type === "element_reference"
-      ? field(node, "object")
-      : node.type === "call"
-        ? field(node, "receiver")
-        : null;
+  if (node.type !== "element_reference") {
+    return null;
+  }
+  const receiver = field(node, "object");
   if (receiver === null || receiver.text !== "ENV") {
     return null;
   }
-  const index =
-    node.type === "element_reference"
-      ? named(node).find((child) => child.id !== receiver.id)
-      : positionalArguments(node)[0];
+  const index = named(node).find((child) => child.id !== receiver.id);
   return index === undefined ? null : stringLiteralValue(index);
 }
 
@@ -339,7 +332,7 @@ function callExpression(node: RbNode): Expression<RbNode> {
       name: method.text,
       origin: () => originOf(node),
     },
-    args: positionalArguments(node).map(elementOf),
+    args: argumentsOf(node),
     constructs: method.text === "new",
   };
 }
@@ -405,18 +398,27 @@ function blockOf(call: RbNode): RbNode | null {
   return field(call, "block");
 }
 
-/** The arguments at a position. A keyword argument has no position, so it is left out. */
-function positionalArguments(call: RbNode): RbNode[] {
+/** Every argument of a call. A `key: value` pair is a keyword argument; a `**opts` could fill any parameter, so it is left out. */
+function argumentsOf(call: RbNode): Element<RbNode>[] {
   const argumentList = field(call, "arguments");
   if (argumentList === null) {
     return [];
   }
-  return named(argumentList).filter(
-    (argument) => !KEYWORD_ARGUMENT_TYPES.has(argument.type),
-  );
+  return named(argumentList).flatMap((argument) => {
+    if (argument.type === "hash_splat_argument") {
+      return [];
+    }
+    if (argument.type !== "pair") {
+      return [elementOf(argument)];
+    }
+    return fromFields(argument, ["key", "value"], [], (key, value) => {
+      const name = hashKeySymbolName(key) ?? symbolValue(key);
+      return name === null ? [] : [{ kind: "named", name, node: value }];
+    });
+  });
 }
 
-/** A call the engine can run the callee's body for: positional arguments only, and no block to yield to. */
+/** A call the engine can run the callee's body for: no `**opts`, and no block to yield to. */
 function isInlinableCall(call: RbNode): boolean {
   if (call.type !== "call" || blockOf(call) !== null) {
     return false;
@@ -425,7 +427,7 @@ function isInlinableCall(call: RbNode): boolean {
   return (
     argumentList === null ||
     named(argumentList).every(
-      (argument) => !KEYWORD_ARGUMENT_TYPES.has(argument.type),
+      (argument) => argument.type !== "hash_splat_argument",
     )
   );
 }
@@ -747,17 +749,19 @@ function siteOf(node: RbNode): Site<RbNode> | null {
   }
 }
 
-/** The names a parameter list declares, in order; a keyword or optional parameter by its `name`. */
-function parameterNames(parameters: RbNode | null): string[] {
+/** The parameters a list declares, in order; an optional or keyword parameter with its default. */
+function parametersOf(parameters: RbNode | null): Parameter<RbNode>[] {
   if (parameters === null) {
     return [];
   }
   return named(parameters).flatMap((parameter) => {
     if (parameter.type === "identifier") {
-      return [parameter.text];
+      return [{ name: parameter.text, default: null }];
     }
     const name = field(parameter, "name");
-    return name === null ? [] : [name.text];
+    return name === null
+      ? []
+      : [{ name: name.text, default: field(parameter, "value") }];
   });
 }
 
@@ -771,19 +775,19 @@ function functionOf(node: RbNode): FunctionShape<RbNode> | null {
       return null;
     }
     return {
-      parameters: parameterNames(field(node, "parameters")),
+      parameters: parametersOf(field(node, "parameters")),
       body: bodyOf(block),
     };
   }
   if (BLOCK_TYPES.has(node.type)) {
     return {
-      parameters: parameterNames(field(node, "parameters")),
+      parameters: parametersOf(field(node, "parameters")),
       body: bodyOf(node),
     };
   }
   if (METHOD_TYPES.has(node.type)) {
     const body = field(node, "body");
-    const parameters = parameterNames(field(node, "parameters"));
+    const parameters = parametersOf(field(node, "parameters"));
     if (body === null) {
       return { parameters, body: [] };
     }

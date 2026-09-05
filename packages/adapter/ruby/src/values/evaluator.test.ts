@@ -434,9 +434,35 @@ describe("functions", () => {
     );
   });
 
-  it("leaves a call with keyword arguments or a block as a hole", async () => {
+  it("binds a keyword argument and takes a keyword default", async () => {
+    expect(await literal('def p(v:)\n  v\nend\nsubject = p(v: "/x")')).toBe(
+      "/x",
+    );
     expect(
-      await literal('def p(v:)\n  v\nend\nsubject = p(v: "/x")'),
+      await literal(
+        'def p(base, v: "/v1", x: "/z")\n  base + v + x\nend\nsubject = p("/api", x: "/y")',
+      ),
+    ).toBe("/api/v1/y");
+  });
+
+  it("takes an optional parameter default when the call leaves it out", async () => {
+    expect(
+      await literal(
+        'def p(v = "v1")\n  "/api/" + v\nend\nsubject = p() + "/x"',
+      ),
+    ).toBe("/api/v1/x");
+    expect(
+      await literal(
+        'VERSION = "v2"\ndef p(a, v = VERSION, w = v)\n  a + v + w\nend\nsubject = p("/")',
+      ),
+    ).toBe("/v2v2");
+  });
+
+  it("leaves a call with a hash splat or a block as a hole", async () => {
+    expect(
+      await literal(
+        'def p(v: "/x")\n  v\nend\nopts = { v: "/y" }\nsubject = p(**opts)',
+      ),
     ).toBeNull();
     expect(
       await literal('def p\n  yield\nend\nsubject = p { "/x" }'),

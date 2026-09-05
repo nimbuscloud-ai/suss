@@ -457,7 +457,14 @@ function functionOf(node: Node): FunctionShape<Node> | null {
   }
   const parameters = node.getParameters().flatMap((parameter) => {
     const nameNode = parameter.getNameNode();
-    return Node.isIdentifier(nameNode) ? [nameNode.getText()] : [];
+    return Node.isIdentifier(nameNode)
+      ? [
+          {
+            name: nameNode.getText(),
+            default: parameter.getInitializer() ?? null,
+          },
+        ]
+      : [];
   });
   const body = Node.isBodied(node)
     ? node.getBody()

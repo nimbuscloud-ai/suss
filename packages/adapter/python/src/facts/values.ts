@@ -5,6 +5,7 @@
 import { children, field, isFunction } from "../ast.js";
 
 import type { Database } from "@suss/datalog";
+import type { Parameter } from "@suss/values";
 import type { PyNode } from "../parser.js";
 
 /**
@@ -74,15 +75,20 @@ function parameterName(param: PyNode): PyNode | null {
 
 /** What a function calls its parameters, in order. `*args` and `**kwargs` are left out. */
 export function parameterList(fn: PyNode): string[] {
+  return parameterShapes(fn).map((parameter) => parameter.name);
+}
+
+/** Each parameter with the expression it defaults to, in order. `*args` and `**kwargs` are left out. */
+export function parameterShapes(fn: PyNode): Parameter<PyNode>[] {
   const params = field(fn, "parameters");
-  const declared: string[] = [];
+  const declared: Parameter<PyNode>[] = [];
   for (const param of params === null ? [] : children(params)) {
     if (SPLAT_TYPES.has(param.type)) {
       continue;
     }
     const name = parameterName(param);
     if (name !== null) {
-      declared.push(name.text);
+      declared.push({ name: name.text, default: field(param, "value") });
     }
   }
   return declared;

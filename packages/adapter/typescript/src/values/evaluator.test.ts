@@ -382,6 +382,22 @@ describe("functions", () => {
     ).toBe("/v1/x");
   });
 
+  it("takes a parameter default when the call leaves it out", () => {
+    expect(
+      literal(`
+        const VERSION = "/v2";
+        const route = (p: string, base = VERSION, tail = p) => base + p + tail;
+        export const subject = route("/x");
+      `),
+    ).toBe("/v2/x/x");
+    expect(
+      literal(`
+        const route = (p: string, base = "/v1") => base + p;
+        export const subject = route("/x", "/v3");
+      `),
+    ).toBe("/v3/x");
+  });
+
   it("reads a function from another file", () => {
     expect(
       literal(
