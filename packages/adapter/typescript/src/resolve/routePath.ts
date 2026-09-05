@@ -6,14 +6,14 @@
  * `fetch(USERS)`, and the two only pair when both are read the same way.
  * This file is that single reading. The argument is evaluated over the
  * abstract value domain, so a prefix constant, a `path.join`, or a name
- * written in a branch all fold. Each hole the evaluator could not fill
- * becomes `{name}`, which the path normalizer treats the same way as
- * `:name`. An absolute URL loses its origin, since the host is the
- * deployable unit rather than the path, and a query string ends the
- * path where it starts.
+ * written in a branch all fold. A hole the evaluator could not fill is
+ * spelled `{name}`, or `{name*}` when it is a joined list, and a piece
+ * that is one of a few texts is spelled `(v1|v2)`. An absolute URL loses
+ * its origin, since the host is the deployable unit rather than the
+ * path, and a query string ends the path where it starts.
  */
 
-import { patternHole } from "@suss/behavioral-ir";
+import { patternHole, rangedHole, setPiece } from "@suss/behavioral-ir";
 import { literalOf, type Piece } from "@suss/values";
 
 import { evaluatedValue } from "../values/evaluator.js";
@@ -127,8 +127,17 @@ function flattenedPiece(piece: Piece): string {
     : SUBSTITUTION;
 }
 
-function holeNameOf(piece: Piece): string {
-  return piece.kind === "hole" ? piece.name : "value";
+/**
+ * How a piece the evaluator could not settle to one text is spelled in
+ * the path. A hole keeps the number of segments it takes, and a piece
+ * that is one of a few texts is spelled as that set, so a version
+ * prefix written in a branch is read back as each of its branches.
+ */
+function openPiece(piece: Piece): string {
+  if (piece.kind === "hole") {
+    return rangedHole(piece.name, piece.range);
+  }
+  return setPiece(piece.options) ?? patternHole("value");
 }
 
 // A string with holes in it: `/pet/{id}` for `` `/pet/${id}` ``. A hole
@@ -148,7 +157,7 @@ function pathFromPieces(pieces: readonly Piece[]): string | undefined {
     const flattened = flattenedPiece(piece);
     if (flattened === SUBSTITUTION) {
       if (at >= originEnd) {
-        path += patternHole(holeNameOf(piece));
+        path += openPiece(piece);
       }
     } else {
       const appended = appendPathText(

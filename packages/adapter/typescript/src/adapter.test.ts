@@ -3369,6 +3369,47 @@ describe("consumer extraction", () => {
     ]);
   });
 
+  it("spells a prefix written in a branch as a set, and a joined list as a hole over segments", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function loadOrders(v2: boolean) {
+        const prefix = v2 ? "/api/v2" : "/api";
+        return fetch(prefix + "/orders");
+      }
+      export async function loadFile(names: string[]) {
+        const parts: string[] = [];
+        for (const name of names) {
+          parts.push(encodeURIComponent(name));
+        }
+        return fetch("/files/" + parts.join("/"));
+      }
+      export async function loadChoice(flag: boolean) {
+        const kind = flag ? "a?b" : "c";
+        return fetch("/items/" + kind);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? `${sem.method} ${sem.path}` : null;
+      })
+      .sort();
+    expect(paths).toEqual([
+      "GET (/api|/api/v2)/orders",
+      "GET /files/{value*}",
+      "GET /items/{value}",
+    ]);
+  });
+
   it("extracts a consumer summary from a function with fetch()", async () => {
     const project = createTestProject();
     project.createSourceFile(

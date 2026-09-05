@@ -2,11 +2,11 @@
   "totals": {
     "packages": 69,
     "packagesWithExports": 69,
-    "exports": 856,
-    "internal": 2884,
-    "consumers": 1491,
-    "pairs": 1488,
-    "unfollowedCalls": 439,
+    "exports": 865,
+    "internal": 2897,
+    "consumers": 1499,
+    "pairs": 1496,
+    "unfollowedCalls": 445,
     "findingErrors": 0
   },
   "packages": {
@@ -28,12 +28,12 @@
       "name": "@suss/adapter-typescript",
       "exports": 86,
       "internal": 835,
-      "consumers": 170,
+      "consumers": 173,
       "unfollowedCalls": 107
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 116,
+      "exports": 118,
       "internal": 39,
       "consumers": 11,
       "unfollowedCalls": 7
@@ -42,8 +42,8 @@
       "name": "@suss/checker",
       "exports": 42,
       "internal": 220,
-      "consumers": 178,
-      "unfollowedCalls": 39
+      "consumers": 183,
+      "unfollowedCalls": 42
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
@@ -418,10 +418,10 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 75,
-      "internal": 14,
+      "exports": 82,
+      "internal": 27,
       "consumers": 0,
-      "unfollowedCalls": 12
+      "unfollowedCalls": 15
     },
     "packages/manifest/aws": {
       "name": "@suss/manifest-aws",
