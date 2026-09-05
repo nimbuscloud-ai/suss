@@ -369,11 +369,14 @@ export class Evaluator<N extends object> {
     const written = this.expression(valueNode, state, depth);
     const shape = this.lowering.expression(target);
     if (shape.kind === "name") {
-      const previous = this.expression(target, state, depth);
       const value =
         operator === null
           ? named(written, shape.text)
-          : this.operator(operator, [previous, written]);
+          : this.operator(
+              operator,
+              [this.expression(target, state, depth), written],
+              state,
+            );
       state.bindings.set(
         shape.text,
         this.unlessNestedWrite(root, shape.text, value, state),
@@ -499,6 +502,7 @@ export class Evaluator<N extends object> {
       return this.operator(
         shape.operator,
         shape.operands.map((operand) => this.expression(operand, state, depth)),
+        state,
       );
     }
     if (shape.kind === "conditional") {
@@ -896,9 +900,16 @@ export class Evaluator<N extends object> {
     });
   }
 
-  private operator(operator: string, operands: readonly Value[]): Value {
+  private operator(
+    operator: string,
+    operands: readonly Value[],
+    state: State,
+  ): Value {
     const row = this.operatorRows.get(`${operator}/${operands.length}`);
-    return row === undefined ? hole("value") : row.apply(operands);
+    if (row === undefined) {
+      return hole("value");
+    }
+    return row.apply(operands, (value) => this.contentOf(value, state));
   }
 
   /** A callback handed to an unknown call may run any time; what it reaches is gone. */

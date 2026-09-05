@@ -5,8 +5,6 @@
  * does not match the `path` row.
  */
 
-import { posix } from "node:path";
-
 import {
   appended,
   concat,
@@ -14,44 +12,19 @@ import {
   equals,
   extended,
   fallback,
-  force,
-  hole,
   isPresent,
   joined,
-  literalOf,
+  joinedPath,
   negated,
+  operand,
   plus,
   type Row,
-  text,
+  readableFallback,
   truthOf,
   type Value,
 } from "@suss/values";
 
 const PATH_MODULES = ["path", "node:path", "path/posix", "node:path/posix"];
-
-const operand = (value: Value | null | undefined): Value =>
-  value ?? hole("value");
-
-/**
- * `a ?? b` and `a || b` when one side is a hole: the other side, which
- * is how the resolution rules read a fallback. `process.env.X ?? "/v1"`
- * is then `/v1`, the one thing the source says about its shape.
- */
-function readableFallback(
-  a: Value,
-  b: Value,
-  takesLeft: (left: Value) => boolean | null,
-): Value {
-  const left = force(a);
-  const right = force(b);
-  if (left.kind === "hole") {
-    return right;
-  }
-  if (right.kind === "hole") {
-    return left;
-  }
-  return fallback(left, right, takesLeft);
-}
 
 const operatorRows: Row[] = [
   {
@@ -182,18 +155,6 @@ const calleeRows: Row[] = [
     }),
   ),
 ];
-
-/** `path.join` of literal segments is folded as the library would; otherwise they are joined with `/`. */
-function joinedPath(args: readonly Value[]): Value {
-  const forced = args.map(force);
-  const literals = forced.map(literalOf);
-  if (literals.every((literal) => literal !== null)) {
-    return text(posix.join(...(literals as string[])));
-  }
-  return concat(
-    forced.flatMap((arg, i) => (i === 0 ? [arg] : [text("/"), arg])),
-  );
-}
 
 export const typescriptRows: readonly Row[] = [
   ...operatorRows,

@@ -172,7 +172,11 @@ export type Row =
       readonly kind: "operator";
       readonly operator: string;
       readonly arity: number;
-      readonly apply: (operands: readonly Value[]) => Value;
+      /** Operands as written; an array or record operand is a `ref`, read through `contentOf`. */
+      readonly apply: (
+        operands: readonly Value[],
+        contentOf: (value: Value) => Value,
+      ) => Value;
     }
   | {
       readonly kind: "method";
