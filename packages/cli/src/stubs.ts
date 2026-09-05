@@ -16,6 +16,9 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
+import { GRAPHQL_RUBY_ROOT_CLASS_NAMES } from "@suss/packs/graphql-ruby";
+import { RAILS_ROOT_CLASS_NAMES } from "@suss/packs/rails";
+
 import { UsageError } from "./usageError.js";
 
 const StatementSchema = z.discriminatedUnion("kind", [
@@ -26,7 +29,9 @@ const StatementSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("extends-base"),
+    /** The class the package defines, which a project spells as its superclass. */
     class: z.string(),
+    /** The root class that class descends from, which decides the pack. */
     extends: z.string(),
   }),
   z.object({
@@ -158,6 +163,27 @@ const CALL_CONSUMERS: Record<string, { pack: string; option: string }> = {
   axios: { pack: "axios", option: "factories" },
 };
 
+const GRAPHQL_RUBY_ROOTS = new Set(GRAPHQL_RUBY_ROOT_CLASS_NAMES);
+const RAILS_ROOTS = new Set(RAILS_ROOT_CLASS_NAMES);
+
+/**
+ * Which Ruby packs read a base class, decided by the root class a stub
+ * says it descends from. A root in neither pack's list, such as another
+ * class the project wrote, leaves the pack undecided, so both get it and
+ * the one whose ancestry never reaches the class never matches.
+ */
+function rubyPacksExtending(rootClassName: string): string[] {
+  if (GRAPHQL_RUBY_ROOTS.has(rootClassName)) {
+    return ["graphql-ruby"];
+  }
+
+  if (RAILS_ROOTS.has(rootClassName)) {
+    return ["rails"];
+  }
+
+  return ["graphql-ruby", "rails"];
+}
+
 const RE_EXPORT_CONSUMERS: Record<string, string> = {
   fastapi: "fastapi",
   flask_restx: "flask-restx",
@@ -187,9 +213,9 @@ function routeStatement(
   }
 
   if (statement.kind === "extends-base") {
-    // Reaches every Ruby pack this option means the same thing for; one whose ancestry never crosses it just never matches.
-    append(overlay, "graphql-ruby", "baseClassNames", statement.extends);
-    append(overlay, "rails", "baseClassNames", statement.extends);
+    for (const pack of rubyPacksExtending(statement.extends)) {
+      append(overlay, pack, "baseClassNames", statement.class);
+    }
     return;
   }
 

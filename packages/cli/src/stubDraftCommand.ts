@@ -208,6 +208,9 @@ function actionableExtendsSites(
   );
 }
 
+/** The author fills this from the package's own source, so every draft writes the same blank and the same list of roots to pick from. */
+const BLANK_EXTENDS_LINE = `    extends: ""  # the class this ultimately extends, e.g. ${[...KNOWN_RUBY_ROOT_CLASS_NAMES].join(", ")}`;
+
 function rubyBlankStatementLines(evidence: RubyStubEvidence): string[] {
   const direct = evidence.extendsSites.filter((site) =>
     KNOWN_RUBY_ROOT_CLASS_NAMES.has(site.superclassName),
@@ -235,8 +238,8 @@ function rubyBlankStatementLines(evidence: RubyStubEvidence): string[] {
   return [
     ...comment,
     "  - kind: extends-base",
-    '    class: ""',
-    `    extends: ""  # the class this ultimately extends, e.g. ${[...KNOWN_RUBY_ROOT_CLASS_NAMES].join(", ")}`,
+    '    class: ""  # the package class a project spells as its superclass',
+    BLANK_EXTENDS_LINE,
   ];
 }
 
@@ -251,8 +254,8 @@ function rubyExtendsStatementLines(
       .slice(0, SITES_SHOWN)
       .map((site) => `  #   ${site.file}:${site.line}  (${site.className})`),
     "  - kind: extends-base",
-    `    class: ""  # the package's own class that extends it, from its source`,
-    `    extends: ${JSON.stringify(superclassName)}`,
+    `    class: ${JSON.stringify(superclassName)}`,
+    BLANK_EXTENDS_LINE,
   ];
 }
 
