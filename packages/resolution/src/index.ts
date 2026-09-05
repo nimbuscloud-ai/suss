@@ -9,6 +9,7 @@ export {
 } from "./mount.js";
 export { explainResolvedKey } from "./session.js";
 export { placeholderValues, singleAnswers } from "./singleAnswer.js";
+export { writtenValueOf } from "./writtenValue.js";
 
 export type {
   CaseFiles,
