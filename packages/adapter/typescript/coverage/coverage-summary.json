@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 9354,
-      "covered": 8137,
+      "total": 9356,
+      "covered": 8144,
       "skipped": 0,
-      "pct": 86.98
+      "pct": 87.04
     },
     "statements": {
-      "total": 9450,
-      "covered": 8227,
+      "total": 9452,
+      "covered": 8234,
       "skipped": 0,
-      "pct": 87.05
+      "pct": 87.11
     },
     "functions": {
       "total": 1404,
@@ -20,9 +20,9 @@
     },
     "branches": {
       "total": 7376,
-      "covered": 5862,
+      "covered": 5869,
       "skipped": 0,
-      "pct": 79.47
+      "pct": 79.56
     },
     "branchesTrue": {
       "total": 0,
@@ -86,9 +86,9 @@
   "src/conditions.ts": {
     "lines": {
       "total": 63,
-      "covered": 56,
+      "covered": 61,
       "skipped": 0,
-      "pct": 88.88
+      "pct": 96.82
     },
     "functions": {
       "total": 9,
@@ -98,15 +98,15 @@
     },
     "statements": {
       "total": 63,
-      "covered": 56,
+      "covered": 61,
       "skipped": 0,
-      "pct": 88.88
+      "pct": 96.82
     },
     "branches": {
       "total": 50,
-      "covered": 39,
+      "covered": 44,
       "skipped": 0,
-      "pct": 78
+      "pct": 88
     }
   },
   "src/configuredCall.ts": {
@@ -1983,10 +1983,10 @@
   },
   "src/resolve/routePath.ts": {
     "lines": {
-      "total": 59,
-      "covered": 58,
+      "total": 61,
+      "covered": 60,
       "skipped": 0,
-      "pct": 98.3
+      "pct": 98.36
     },
     "functions": {
       "total": 12,
@@ -1995,16 +1995,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 59,
-      "covered": 58,
+      "total": 61,
+      "covered": 60,
       "skipped": 0,
-      "pct": 98.3
+      "pct": 98.36
     },
     "branches": {
-      "total": 42,
-      "covered": 39,
+      "total": 44,
+      "covered": 42,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 95.45
     }
   },
   "src/resolve/sourceDeclaration.ts": {
@@ -2443,10 +2443,10 @@
       "pct": 96.2
     },
     "branches": {
-      "total": 221,
-      "covered": 205,
+      "total": 219,
+      "covered": 204,
       "skipped": 0,
-      "pct": 92.76
+      "pct": 93.15
     }
   },
   "src/values/rows.ts": {
