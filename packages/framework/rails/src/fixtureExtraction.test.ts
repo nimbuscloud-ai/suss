@@ -67,6 +67,8 @@ describe("extraction over fixtures/ruby-rails", () => {
         "index",
         "index",
         "show",
+        "show",
+        "update",
         "cancel",
         "create",
         "destroy",
@@ -191,6 +193,21 @@ describe("extraction over fixtures/ruby-rails", () => {
         method: "GET",
         path: "/orders/:order_id/items",
       },
+    });
+  });
+
+  it("binds a singular resource's actions with no :id, on the plural controller", async () => {
+    const { summaries } = await extractFixture();
+    expect(
+      action(summaries, "profiles_controller", "show").identity.boundaryBinding,
+    ).toMatchObject({
+      semantics: { name: "rest", method: "GET", path: "/profile" },
+    });
+    expect(
+      action(summaries, "profiles_controller", "update").identity
+        .boundaryBinding,
+    ).toMatchObject({
+      semantics: { name: "rest", method: "PATCH", path: "/profile" },
     });
   });
 

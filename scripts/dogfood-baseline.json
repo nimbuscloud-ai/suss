@@ -3,9 +3,9 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 880,
-    "internal": 2956,
-    "consumers": 1657,
-    "pairs": 1654,
+    "internal": 2954,
+    "consumers": 1652,
+    "pairs": 1649,
     "unfollowedCalls": 485,
     "findingErrors": 0
   },
@@ -356,7 +356,7 @@
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
       "exports": 4,
-      "internal": 12,
+      "internal": 13,
       "consumers": 28,
       "unfollowedCalls": 6
     },

@@ -324,13 +324,75 @@ describe("railsFramework", () => {
       });
     });
 
-    it("does not bind a bare verb route inside a resources block with no on: and no wrapper", () => {
+    it("nests a bare verb route inside a resources block under the parent's id", () => {
       const source =
         "Rails.application.routes.draw do\n" +
         "  resources :orders do\n" +
         "    get :search\n" +
         "  end\nend\n";
-      expect(routeFor(source, "OrdersController", "search")).toBeNull();
+      expect(routeFor(source, "OrdersController", "search")).toEqual({
+        method: "GET",
+        path: "/orders/:order_id/search",
+      });
+    });
+
+    it("hangs a bare verb route inside a singular resource block off the resource itself", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resource :profile do\n" +
+        "    get :avatar\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "ProfilesController", "avatar")).toEqual({
+        method: "GET",
+        path: "/profile/avatar",
+      });
+    });
+
+    it("nests a resource inside a singular resource under its path, with no id", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resource :profile do\n" +
+        "    resources :photos, only: [:index]\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "PhotosController", "index")).toEqual({
+        method: "GET",
+        path: "/profile/photos",
+      });
+    });
+
+    it("routes a resource to the controller: it says, plural or singular", () => {
+      const plural =
+        "Rails.application.routes.draw do\n" +
+        '  resources :items, controller: "widgets", only: [:index]\nend\n';
+      expect(routeFor(plural, "WidgetsController", "index")).toEqual({
+        method: "GET",
+        path: "/items",
+      });
+      expect(routeFor(plural, "ItemsController", "index")).toBeNull();
+
+      const singular =
+        "Rails.application.routes.draw do\n" +
+        '  resource :profile, controller: "users", only: [:show]\nend\n';
+      expect(routeFor(singular, "UsersController", "show")).toEqual({
+        method: "GET",
+        path: "/profile",
+      });
+    });
+
+    it("serves a resource at the path: it says, keyed by its own name", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  resources :items, path: "things" do\n' +
+        "    resources :tags, only: [:index]\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "ItemsController", "show")).toEqual({
+        method: "GET",
+        path: "/things/:id",
+      });
+      expect(routeFor(source, "TagsController", "index")).toEqual({
+        method: "GET",
+        path: "/things/:item_id/tags",
+      });
     });
 
     it("applies scope path: and scope module: to everything nested inside it", () => {
