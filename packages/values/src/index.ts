@@ -17,6 +17,8 @@ export {
   type Literal,
   type Lowering,
   type Origin,
+  type Parameter,
+  parameter,
   type Row,
   type Site,
   type Statement,

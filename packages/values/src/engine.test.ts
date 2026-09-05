@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Evaluator } from "./engine.js";
+import { parameter } from "./language.js";
 import {
   array,
   assign,
@@ -390,6 +391,55 @@ describe("Evaluator", () => {
       });
       module([helper, expr(target)]);
       expect(literalOf(evaluate(target))).toBe("/a/b");
+    });
+
+    it("takes a parameter default when the call leaves it out", () => {
+      const helper = fn(
+        ["a", parameter("b", lit("/v1"))],
+        op("+", name("a"), name("b")),
+      );
+      const short = call(null, "helper", [lit("/api")], { calls: helper });
+      const full = call(null, "helper", [lit("/api"), lit("/v2")], {
+        calls: helper,
+      });
+      module([helper, expr(short), expr(full)]);
+      expect(literalOf(evaluate(short))).toBe("/api/v1");
+      expect(literalOf(evaluate(full))).toBe("/api/v2");
+    });
+
+    it("reads a default from a constant above and from an earlier parameter", () => {
+      const helper = fn(
+        ["a", parameter("b", name("SUFFIX")), parameter("c", name("b"))],
+        op("+", name("a"), name("c")),
+      );
+      const target = call(null, "helper", [lit("/api")], { calls: helper });
+      module([declare({ SUFFIX: lit("/x") }), helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/api/x");
+    });
+
+    it("binds a keyword argument by name ahead of position", () => {
+      const helper = fn(
+        ["a", parameter("b", lit("/v1")), parameter("c", lit("/z"))],
+        op("+", op("+", name("a"), name("b")), name("c")),
+      );
+      const target = call(
+        null,
+        "helper",
+        [lit("/api"), { named: "c", node: lit("/y") }],
+        { calls: helper },
+      );
+      module([helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/api/v1/y");
+    });
+
+    it("loses an array handed to an unknown call by keyword", () => {
+      const target = call(name("parts"), "join", [lit("/")]);
+      module([
+        declare({ parts: array(lit("a")) }),
+        expr(call(null, "register", [{ named: "items", node: name("parts") }])),
+        expr(target),
+      ]);
+      expect(literalOf(evaluate(target))).toBeNull();
     });
 
     it("refuses to inline a function with a loop", () => {

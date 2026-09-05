@@ -12,6 +12,8 @@ import {
   type Field,
   type FunctionShape,
   type Lowering,
+  type Parameter,
+  parameter,
   type Row,
   type Site,
   type Statement,
@@ -125,7 +127,11 @@ export const computedRecord = (
 export const call = (
   receiver: TestNode | null,
   method: string | null,
-  args: (TestNode | { spread: TestNode })[] = [],
+  args: (
+    | TestNode
+    | { spread: TestNode }
+    | { named: string; node: TestNode }
+  )[] = [],
   extra: Partial<TestNode> & {
     origin?: { module: string; name: string };
     constructs?: boolean;
@@ -140,22 +146,28 @@ export const call = (
         name: method,
         origin: () => origin ?? null,
       },
-      args: args.map(
-        (arg): Element<TestNode> =>
-          "spread" in arg
-            ? { kind: "spread", node: arg.spread }
-            : { kind: "value", node: arg },
-      ),
+      args: args.map((arg): Element<TestNode> => {
+        if ("spread" in arg) {
+          return { kind: "spread", node: arg.spread };
+        }
+        if ("named" in arg) {
+          return { kind: "named", name: arg.named, node: arg.node };
+        }
+        return { kind: "value", node: arg };
+      }),
       constructs: constructs ?? false,
     },
     rest,
   );
 };
 export const fn = (
-  parameters: string[],
+  parameterList: (string | Parameter<TestNode>)[],
   body: TestNode[] | TestNode,
   extra: Partial<TestNode> = {},
 ): TestNode => {
+  const parameters = parameterList.map((entry) =>
+    typeof entry === "string" ? parameter<TestNode>(entry) : entry,
+  );
   const shape: FunctionShape<TestNode> = Array.isArray(body)
     ? { parameters, body }
     : { parameters, body: { expression: body } };
@@ -213,8 +225,14 @@ function link(child: TestNode, parent: TestNode): void {
 
 function childrenOf(n: TestNode): TestNode[] {
   if (n.fn !== undefined) {
+    const defaults = n.fn.parameters.flatMap((entry) =>
+      entry.default === null ? [] : [entry.default],
+    );
     const returned = expressionBodyOf(n.fn.body);
-    return returned === null ? [...statementsOf(n.fn.body)] : [returned];
+    return [
+      ...defaults,
+      ...(returned === null ? statementsOf(n.fn.body) : [returned]),
+    ];
   }
   const shape = n.shape;
   const table: Record<string, () => TestNode[]> = {
