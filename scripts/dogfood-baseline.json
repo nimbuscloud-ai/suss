@@ -4,8 +4,8 @@
     "packagesWithExports": 69,
     "exports": 880,
     "internal": 2948,
-    "consumers": 1643,
-    "pairs": 1640,
+    "consumers": 1645,
+    "pairs": 1642,
     "unfollowedCalls": 477,
     "findingErrors": 0
   },
@@ -21,14 +21,14 @@
       "name": "@suss/adapter-ruby",
       "exports": 69,
       "internal": 187,
-      "consumers": 112,
+      "consumers": 113,
       "unfollowedCalls": 69
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 86,
       "internal": 819,
-      "consumers": 190,
+      "consumers": 191,
       "unfollowedCalls": 105
     },
     "packages/behavioral-ir": {

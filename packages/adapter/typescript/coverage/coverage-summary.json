@@ -20,9 +20,9 @@
     },
     "branches": {
       "total": 7304,
-      "covered": 5816,
+      "covered": 5813,
       "skipped": 0,
-      "pct": 79.62
+      "pct": 79.58
     },
     "branchesTrue": {
       "total": 0,
@@ -2444,9 +2444,9 @@
     },
     "branches": {
       "total": 221,
-      "covered": 211,
+      "covered": 209,
       "skipped": 0,
-      "pct": 95.47
+      "pct": 94.57
     }
   },
   "src/values/rows.ts": {
@@ -2470,9 +2470,9 @@
     },
     "branches": {
       "total": 2,
-      "covered": 2,
+      "covered": 1,
       "skipped": 0,
-      "pct": 100
+      "pct": 50
     }
   },
   "src/walk/descent.ts": {
