@@ -68,6 +68,8 @@ describe("extraction over fixtures/ruby-rails", () => {
         "index",
         "show",
         "show",
+        "show",
+        "update",
         "cancel",
         "create",
         "destroy",

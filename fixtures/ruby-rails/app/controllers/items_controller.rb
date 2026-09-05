@@ -9,6 +9,15 @@ class ItemsController < ApplicationController
     visible_items
   end
 
+  def create
+    render json: OrderService.new.list_items(params[:order_id]), status: :created
+  end
+
+  def destroy
+    OrderService.new.find_order(params[:id])
+    head :no_content
+  end
+
   private
 
   def visible_items
