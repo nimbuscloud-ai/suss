@@ -90,9 +90,14 @@ describe("resolving a value across a Ruby file", () => {
     );
   });
 
-  it("returns null for a key nobody asked resolveValues about", async () => {
+  it("asks about a key on its own", async () => {
     const db = await factsFor("value = 1\n");
-    expect(writtenValueOf(db, "f.rb#value")).toBeNull();
+    expect(writtenValueOf(db, "f.rb#value")).toBe("f.rb:8-9");
+  });
+
+  it("returns null for a name nothing writes", async () => {
+    const db = await factsFor("value = 1\n");
+    expect(writtenValueOf(db, "f.rb#other")).toBeNull();
   });
 
   it("settles a name written as a literal on that literal", async () => {

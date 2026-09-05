@@ -421,6 +421,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
           left.text,
           valueKey(emitter, right),
         );
+        emitExpressionFacts(emitter, statement);
       }
       continue;
     }
