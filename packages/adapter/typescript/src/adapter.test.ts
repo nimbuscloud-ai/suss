@@ -3293,6 +3293,82 @@ describe("consumer extraction", () => {
     expect(paths).toEqual(["GET /api/users", "POST /api/orders"]);
   });
 
+  it("reads the method off a shorthand property, a named options object and a spread", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      const base = { headers: { "content-type": "application/json" } };
+      const removal = { method: "DELETE" };
+      export async function patchSettings() {
+        const method = "PATCH";
+        return fetch("/settings", { method, headers: {} });
+      }
+      export async function removeSetting(id: string) {
+        return fetch(\`/settings/\${id}\`, removal);
+      }
+      export async function createSetting() {
+        return fetch("/settings", { ...base, method: "POST" });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? `${sem.method} ${sem.path}` : null;
+      })
+      .sort();
+    expect(paths).toEqual([
+      "DELETE /settings/{id}",
+      "PATCH /settings",
+      "POST /settings",
+    ]);
+  });
+
+  it("reads a path joined with + the way it reads the same template", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      const BASE = "https://api.example.com";
+      const CARTS = "/carts/";
+      export async function loadUser(id: string) {
+        const url = "/users/" + id;
+        return fetch(url);
+      }
+      export async function removeCart(id: string) {
+        return fetch(BASE + CARTS + id, { method: "DELETE" });
+      }
+      export async function loadItem(cartId: string, itemId: string) {
+        return fetch(BASE + \`/carts/\${cartId}\` + "/items/" + itemId);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? `${sem.method} ${sem.path}` : null;
+      })
+      .sort();
+    expect(paths).toEqual([
+      "DELETE /carts/{id}",
+      "GET /carts/{cartId}/items/{itemId}",
+      "GET /users/{id}",
+    ]);
+  });
+
   it("extracts a consumer summary from a function with fetch()", async () => {
     const project = createTestProject();
     project.createSourceFile(
@@ -3831,8 +3907,8 @@ describe("consumer extraction", () => {
     project.createSourceFile(
       "consumer.ts",
       `
-      export async function getUser(id: string) {
-        const url = "/users/" + id;
+      export async function getUser(id: string, urlFor: (id: string) => string) {
+        const url = urlFor(id);
         const res = await fetch(url);
         return res.json();
       }
