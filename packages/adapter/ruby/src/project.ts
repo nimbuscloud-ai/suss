@@ -49,6 +49,7 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
 import { reachedFunctions } from "./reach/closure.js";
+import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -143,6 +144,7 @@ export async function extractRubyProject(
   // across the whole run, and the storage recognizer asks about that
   // during discovery.
   const parsed: { file: string; root: RbNode }[] = [];
+  const definitions = new Map<string, RbNode>();
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const root = await cache.get(file);
@@ -151,6 +153,9 @@ export async function extractRubyProject(
       }
       parsed.push({ file, root });
       emitValueFacts(db, file, root);
+      for (const [key, method] of methodDefinitionsIn(file, root)) {
+        definitions.set(key, method);
+      }
       constants.push(collectFileConstants(file, root));
     });
   }
@@ -160,6 +165,7 @@ export async function extractRubyProject(
     for (const { file, root } of parsed) {
       emitRequireFacts(db, file, root, known);
     }
+    bindEvaluator(db, { files: parsed, definitions });
   });
 
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
