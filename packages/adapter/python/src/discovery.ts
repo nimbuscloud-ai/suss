@@ -37,6 +37,7 @@ import {
 import {
   bodyStatements,
   field,
+  parameterNameAndType,
   rangeOf,
   spanOf,
   stringLiteralValue,
@@ -55,7 +56,11 @@ import { lowerPythonBody } from "./paths/lowering.js";
 import { predicateOf } from "./paths/predicates.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { rawSqlEffects } from "./rawSql.js";
-import { type StorageLookup, storageEffects } from "./storage.js";
+import {
+  type StorageLookup,
+  storageCallIds,
+  storageEffects,
+} from "./storage.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { DispatchTable, Effect, TypeShape } from "@suss/behavioral-ir";
@@ -1315,6 +1320,20 @@ export function recognizedBodyEffects(
   return [...envReadEffects(definitionNode, module), ...storage];
 }
 
+/** The calls in a body that storage recognition already read the meaning of, by node id, so the reach walk does not report them as lost. */
+export function recognizedCallIds(
+  definitionNode: PyNode,
+  storageLookup: StorageLookup | undefined,
+): ReadonlySet<number> {
+  if (storageLookup === undefined) {
+    return new Set();
+  }
+  return storageCallIds(bodyCalls(definitionNode), {
+    ...storageLookup,
+    filePath: storageLookup.factsPath,
+  });
+}
+
 /** Whether a body contains only a docstring and/or a bare `pass`, or something more. */
 export function bodyContentOf(bodyNode: PyNode): BodyContent {
   for (const stmt of bodyStatements(bodyNode)) {
@@ -1499,33 +1518,4 @@ function isInjectedParameter(
   };
 
   return containsInjectorCall(field(param, "type"), 0);
-}
-
-function parameterNameAndType(
-  param: PyNode,
-): { name: string; typeNode: PyNode | null } | null {
-  if (param.type === "identifier") {
-    return { name: param.text, typeNode: null };
-  }
-  if (param.type === "typed_parameter") {
-    const inner = param.namedChildren.find(
-      (child) => child !== null && child.type === "identifier",
-    );
-    return inner !== undefined
-      ? { name: inner.text, typeNode: field(param, "type") }
-      : null;
-  }
-  if (param.type === "default_parameter") {
-    const nameNode = field(param, "name");
-    return nameNode?.type === "identifier"
-      ? { name: nameNode.text, typeNode: null }
-      : null;
-  }
-  if (param.type === "typed_default_parameter") {
-    const nameNode = field(param, "name");
-    return nameNode !== null
-      ? { name: nameNode.text, typeNode: field(param, "type") }
-      : null;
-  }
-  return null;
 }

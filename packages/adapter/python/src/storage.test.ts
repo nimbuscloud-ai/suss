@@ -14,21 +14,24 @@ import { findPythonFiles } from "./project.js";
 import { bindModule } from "./scope.js";
 import { storageEffects } from "./storage.js";
 
+import type { Effect } from "@suss/behavioral-ir";
 import type { StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 
 const SQLALCHEMY: StoragePattern[] = [
   {
     module: "sqlalchemy.orm",
-    queryTypes: ["Query"],
-    writes: ["update", "delete", "add"],
+    queryTypes: ["Query", "Session"],
+    writes: ["update", "delete", "add", "commit"],
+    recordsNothing: ["execute", "close"],
     storageSystem: "postgresql",
   },
   {
     module: "sqlalchemy",
     queryTypes: ["Select"],
-    writes: ["update", "delete"],
-    queryFunctions: ["select"],
+    writes: ["update", "delete", "insert"],
+    queryFunctions: ["select", "update", "delete", "insert"],
+    valueMethods: ["values"],
     storageSystem: "postgresql",
   },
 ];
@@ -56,7 +59,11 @@ const MODELS = [
   "",
 ].join("\n");
 
-async function effectsFor(handler: string, base = BASE) {
+/**
+ * The effects of the handler module's own body, or, when `inFunction` is
+ * given, of the body of that function within it.
+ */
+async function effectsFor(handler: string, base = BASE, inFunction?: string) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-storage-"));
   fs.writeFileSync(path.join(dir, "base.py"), base);
   fs.writeFileSync(path.join(dir, "models.py"), MODELS);
@@ -93,13 +100,32 @@ async function effectsFor(handler: string, base = BASE) {
     }
   }
 
-  return storageEffects(bodyCalls(handlerRoot as PyNode), {
+  const scanned =
+    inFunction === undefined
+      ? (handlerRoot as PyNode)
+      : [...definitions.entries()].find(
+          ([key, node]) =>
+            key.startsWith(handlerPath) &&
+            node.childForFieldName("name")?.text === inFunction,
+        )?.[1];
+  if (scanned === undefined) {
+    throw new Error(`no function ${inFunction} in the handler`);
+  }
+
+  return storageEffects(bodyCalls(scanned), {
     facts: db,
     filePath: handlerPath,
     patterns: SQLALCHEMY,
     definitionAt: (key) => definitions.get(key),
-    couldMatch: new Set(["query"]),
+    couldMatch: new Set(["query", "open_session"]),
   });
+}
+
+function accessOf(effect: Effect | undefined) {
+  return effect?.type === "interaction" &&
+    effect.interaction.class === "storage-access"
+    ? effect.interaction
+    : null;
 }
 
 describe("the database work a Python body does", () => {
@@ -311,6 +337,152 @@ describe("the database work a Python body does", () => {
         "found = load_orders()",
         "",
       ].join("\n"),
+    );
+    expect(effects).toEqual([]);
+  });
+
+  it("says a statement function is the write it is named for, whatever it ends with", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import delete, insert, update",
+        "",
+        "update(Orders).where(Orders.id == 1).values(total=2)",
+        "delete(Orders).where(Orders.id == 1)",
+        "insert(Orders).values(id=1, total=3)",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "update", fields: ["total"] },
+      { kind: "write", operation: "delete", fields: [] },
+      { kind: "write", operation: "insert", fields: ["id", "total"] },
+    ]);
+    expect(accessOf(effects[0])?.selector).toBeUndefined();
+  });
+
+  it("reads a session the handler takes as an annotated parameter", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def create(db: Session):",
+        "    db.add(Orders())",
+        "    db.commit()",
+        "    return db.query(Orders).filter_by(id=1).first()",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "add" },
+      { kind: "write", operation: "commit" },
+      { kind: "read", operation: "first", selector: ["id"] },
+    ]);
+  });
+
+  it("reads a session the body builds or opens itself", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def create():",
+        "    session = Session()",
+        "    session.add(Orders())",
+        "    with Session() as opened:",
+        "        opened.commit()",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "add" },
+      { kind: "write", operation: "commit" },
+    ]);
+  });
+
+  it("reads a session a project function says it returns", async () => {
+    const effects = await effectsFor(
+      [
+        "from base import open_session",
+        "",
+        "open_session().add(Orders())",
+        "",
+      ].join("\n"),
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def open_session() -> Session:",
+        "    return Session()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "add" },
+    ]);
+  });
+
+  it("records nothing for a session method the pack says touches no rows", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "from sqlalchemy.orm import Session",
+        "",
+        "def rows(db: Session):",
+        "    found = db.execute(select(Orders.id)).all()",
+        "    db.close()",
+        "    return found",
+        "",
+      ].join("\n"),
+      BASE,
+      "rows",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "read", operation: "select", fields: ["id"] },
+    ]);
+  });
+
+  it("reads the session type through a forward reference, Annotated, and Optional", async () => {
+    const effects = await effectsFor(
+      [
+        "from typing import Annotated, Optional",
+        "from sqlalchemy.orm import Session",
+        "",
+        'def create(db: "Session", other: Annotated[Session, 1], third: Optional[Session], fourth: list[Session]):',
+        "    db.add(Orders())",
+        "    other.add(Orders())",
+        "    third.add(Orders())",
+        "    fourth.add(Orders())",
+        "    def inner():",
+        "        db = Store()",
+        "    return inner",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { operation: "add" },
+      { operation: "add" },
+      { operation: "add" },
+    ]);
+  });
+
+  it("says nothing about a parameter of a type the library does not export", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "class Store:",
+        "    pass",
+        "",
+        "def create(db: Store):",
+        "    db.add(Orders())",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
     );
     expect(effects).toEqual([]);
   });

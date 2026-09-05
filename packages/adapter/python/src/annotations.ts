@@ -126,7 +126,8 @@ export function shapeFromName(
   return { type: "ref", name };
 }
 
-function genericTypeArgs(node: PyNode): PyNode[] {
+/** The `type` nodes inside the brackets of `Outer[A, B]`. */
+export function genericTypeArgs(node: PyNode): PyNode[] {
   const typeParameter = node.namedChildren.find(
     (child) => child !== null && child.type === "type_parameter",
   );

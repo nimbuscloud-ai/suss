@@ -13,5 +13,20 @@
   "merge": "SQLAlchemy: the Session method that writes detached state back",
   "commit": "SQLAlchemy: the Session method that makes staged work permanent",
   "insert": "SQLAlchemy: the 2.0 construct that adds rows",
-  "select": "SQLAlchemy: the 2.0 function that builds a SELECT, imported at the call site"
+  "select": "SQLAlchemy: the 2.0 function that builds a SELECT, imported at the call site",
+  "flush": "SQLAlchemy: the Session method that sends staged work to the database without committing",
+  "bulk_save_objects": "SQLAlchemy: the Session method that writes a list of objects in bulk",
+  "bulk_insert_mappings": "SQLAlchemy: the Session method that inserts rows from a list of dicts",
+  "bulk_update_mappings": "SQLAlchemy: the Session method that updates rows from a list of dicts",
+  "execute": "SQLAlchemy: the Session method that runs a statement built elsewhere",
+  "scalars": "SQLAlchemy: the Session method that runs a statement and returns its first column",
+  "scalar": "SQLAlchemy: the Session method that runs a statement and returns one value",
+  "begin": "SQLAlchemy: the Session method that opens a transaction",
+  "rollback": "SQLAlchemy: the Session method that discards staged work",
+  "close": "SQLAlchemy: the Session method that ends the session",
+  "expire": "SQLAlchemy: the Session method that marks an object's attributes stale",
+  "expire_all": "SQLAlchemy: the Session method that marks every loaded object stale",
+  "expunge": "SQLAlchemy: the Session method that detaches an object",
+  "expunge_all": "SQLAlchemy: the Session method that detaches every object",
+  "values": "SQLAlchemy: the 2.0 statement method that supplies column values"
 }

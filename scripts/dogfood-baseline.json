@@ -3,7 +3,7 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 880,
-    "internal": 2955,
+    "internal": 2969,
     "consumers": 1652,
     "pairs": 1649,
     "unfollowedCalls": 485,
@@ -13,7 +13,7 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 58,
-      "internal": 270,
+      "internal": 284,
       "consumers": 180,
       "unfollowedCalls": 62
     },

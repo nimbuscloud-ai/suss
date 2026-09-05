@@ -29,7 +29,11 @@ import {
 } from "@suss/extractor";
 
 import { field, rangeOf, spanOf } from "../ast.js";
-import { bodyContentOf, recognizedBodyEffects } from "../discovery.js";
+import {
+  bodyContentOf,
+  recognizedBodyEffects,
+  recognizedCallIds,
+} from "../discovery.js";
 import { nodeId } from "../facts/values.js";
 import { calleeText, invocationEffects } from "../paths/effects.js";
 import {
@@ -146,7 +150,11 @@ export function reachedFunctions(
       if (source === undefined) {
         continue;
       }
-      const scan = scanBody(source, ctx);
+      const scan = scanBody(
+        source,
+        ctx,
+        recognizedCallIds(source.node, options.storageFor(source.file)),
+      );
       if (scan.stops.length > 0) {
         stopsByKey.set(key, scan.stops);
       }
@@ -237,7 +245,11 @@ const EMPTY_SCAN: Scan = {
   passedPositions: new Set(),
 };
 
-function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
+function scanBody(
+  source: ReachedFunction,
+  ctx: ResolveContext,
+  recognized: ReadonlySet<number>,
+): Scan {
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
   const placements = new TargetPlacements();
@@ -319,10 +331,15 @@ function scanBody(source: ReachedFunction, ctx: ResolveContext): Scan {
       where,
     );
 
-    // One record per callee, however many times the body calls it.
+    // One record per callee, however many times the body calls it. A call
+    // storage recognition read is not lost, whatever the walk made of it.
     if (outcome.kind === "stopped") {
       const stopKey = `${outcome.reason}:${callee}`;
-      if (!seen.has(stopKey) && worthRecording(outcome.reason)) {
+      if (
+        !seen.has(stopKey) &&
+        !recognized.has(call.id) &&
+        worthRecording(outcome.reason)
+      ) {
         seen.add(stopKey);
         stops.push({ callee, reason: outcome.reason });
       }

@@ -56,9 +56,17 @@ One `interaction` effect per chain, with `class: "storage-access"`. The three
 calls above are one read, not three. The method the chain ends with tells a
 read from a write, and the model it was called on becomes the table.
 
-`fields` and `selector` come back empty, so an effect says which model and
-which operation and not which columns. Raw SQL handed to `session.execute` is
-not read.
+A `Session` is read the same way wherever the body gets it: a parameter
+annotated `db: Session`, a local built by `Session()` or opened by `with
+Session() as db:`, or a project function annotated `-> Session`. `db.add`,
+`db.commit`, `db.merge` and the bulk methods are writes. `db.execute(stmt)`
+records nothing of its own, since the statement it runs is its own chain, and
+neither do `begin`, `rollback` or `close`.
+
+A 2.0 statement is the operation its constructor says: `update(User).where(...).values(name="x")` is an update whose `fields` are the `values` keywords. `select(User.id)` puts the column in `fields`, and a keyword the chain picks rows by, `id` in `filter_by(id=1)`, goes in `selector`. A comparison written positionally, `where(User.id == 1)`, is not read.
+
+Raw SQL handed to `text("...")` is read as its own effect, with the kind and
+the table taken from the statement.
 
 ## License
 
