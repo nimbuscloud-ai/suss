@@ -4,6 +4,7 @@
 
 import { storageBinding } from "@suss/ir-core";
 
+import { genericTypeArgs } from "./annotations.js";
 import {
   bodyStatements,
   children,
@@ -160,10 +161,13 @@ function typeNameOf(annotation: PyNode): string | null {
   if (quoted !== null) {
     return quoted;
   }
-  if (annotation.type === "subscript") {
-    const outer = field(annotation, "value")?.text;
-    const first = annotation.childrenForFieldName("subscript")[0];
-    if ((outer === "Annotated" || outer === "Optional") && first) {
+  if (annotation.type === "generic_type") {
+    const outer = annotation.namedChildren[0];
+    const first = genericTypeArgs(annotation)[0];
+    if (
+      (outer?.text === "Annotated" || outer?.text === "Optional") &&
+      first !== undefined
+    ) {
       return typeNameOf(first);
     }
   }

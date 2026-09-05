@@ -443,6 +443,32 @@ describe("the database work a Python body does", () => {
     ]);
   });
 
+  it("reads the session type through a forward reference, Annotated, and Optional", async () => {
+    const effects = await effectsFor(
+      [
+        "from typing import Annotated, Optional",
+        "from sqlalchemy.orm import Session",
+        "",
+        'def create(db: "Session", other: Annotated[Session, 1], third: Optional[Session], fourth: list[Session]):',
+        "    db.add(Orders())",
+        "    other.add(Orders())",
+        "    third.add(Orders())",
+        "    fourth.add(Orders())",
+        "    def inner():",
+        "        db = Store()",
+        "    return inner",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { operation: "add" },
+      { operation: "add" },
+      { operation: "add" },
+    ]);
+  });
+
   it("says nothing about a parameter of a type the library does not export", async () => {
     const effects = await effectsFor(
       [
