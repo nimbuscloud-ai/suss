@@ -3,9 +3,9 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 880,
-    "internal": 2954,
-    "consumers": 1652,
-    "pairs": 1649,
+    "internal": 2956,
+    "consumers": 1654,
+    "pairs": 1651,
     "unfollowedCalls": 485,
     "findingErrors": 0
   },
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 86,
-      "internal": 819,
+      "internal": 820,
       "consumers": 191,
       "unfollowedCalls": 105
     },
@@ -259,7 +259,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 2,
-      "consumers": 19,
+      "consumers": 21,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
