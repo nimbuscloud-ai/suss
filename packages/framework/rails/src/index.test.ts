@@ -399,4 +399,80 @@ describe("railsFramework", () => {
       expect(routeFor(source, "OrdersController", "cancel")).toBeNull();
     });
   });
+
+  describe("a path written as something other than one literal", () => {
+    let dir: string;
+
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    function routeFor(source: string) {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-routes-"));
+      const file = path.join(dir, "routes.rb");
+      fs.writeFileSync(file, source);
+      const pack = railsFramework({ root: dir, routesFile: file });
+      return pattern(pack).routeFor("ReportsController", "index");
+    }
+
+    const drawn = (body: string, before = ""): string =>
+      `${before}Rails.application.routes.draw do\n${body}\nend\n`;
+
+    it("reads a local variable assigned inside the draw block", () => {
+      const source = drawn(
+        '  prefix = "/api"\n  get prefix + "/reports", to: "reports#index"',
+      );
+      expect(routeFor(source)).toEqual({ method: "GET", path: "/api/reports" });
+    });
+
+    it("reads a constant defined above the draw block", () => {
+      const source = drawn(
+        '  get "#{API}/reports", to: "reports#index"',
+        'API = "/api"\n',
+      );
+      expect(routeFor(source)).toEqual({ method: "GET", path: "/api/reports" });
+    });
+
+    it("reads a variable from an enclosing block", () => {
+      const source = drawn(
+        '  version = "v1"\n' +
+          "  namespace :api do\n" +
+          '    get "/#{version}/reports", to: "reports#index"\n' +
+          "  end",
+      );
+      expect(routeFor(source)).toEqual({
+        method: "GET",
+        path: "/api/v1/reports",
+      });
+    });
+
+    it("reads File.join", () => {
+      const source = drawn(
+        '  get File.join("/api", "reports"), to: "reports#index"',
+      );
+      expect(routeFor(source)).toEqual({ method: "GET", path: "/api/reports" });
+    });
+
+    it("reads the default of an ENV.fetch", () => {
+      const source = drawn(
+        '  get ENV.fetch("PREFIX", "/api") + "/reports", to: "reports#index"',
+      );
+      expect(routeFor(source)).toEqual({ method: "GET", path: "/api/reports" });
+    });
+
+    it("reads a computed target and hash-rocket path", () => {
+      const source = drawn(
+        '  prefix = "/api"\n' +
+          '  get prefix + "/reports" => "reports#" + "index"',
+      );
+      expect(routeFor(source)).toEqual({ method: "GET", path: "/api/reports" });
+    });
+
+    it("has nothing to say when the prefix cannot be read", () => {
+      const source = drawn(
+        '  get ENV["PREFIX"] + "/reports", to: "reports#index"',
+      );
+      expect(routeFor(source)).toBeNull();
+    });
+  });
 });

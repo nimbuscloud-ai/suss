@@ -19,7 +19,7 @@ import {
   field,
   hashKeySymbolName,
   parseRubySync,
-  stringLiteralValue,
+  stringValueOf,
   symbolValue,
 } from "@suss/adapter-ruby";
 
@@ -95,7 +95,7 @@ function wordValue(node: RbNode | undefined): string | null {
   if (node === undefined) {
     return null;
   }
-  return symbolValue(node) ?? stringLiteralValue(node);
+  return symbolValue(node) ?? stringValueOf(node);
 }
 
 function splitControllerAction(
@@ -116,14 +116,14 @@ interface ResolvedTarget {
 }
 
 function readRouteTarget(args: SimpleArgs): ResolvedTarget | null {
-  const toText = args.keyword.to ? stringLiteralValue(args.keyword.to) : null;
+  const toText = args.keyword.to ? stringValueOf(args.keyword.to) : null;
   if (toText !== null) {
     const target = splitControllerAction(toText);
     return target === null ? null : { ...target, path: null };
   }
   if (args.hashRocketPair !== null) {
-    const pathText = stringLiteralValue(args.hashRocketPair.key);
-    const actionText = stringLiteralValue(args.hashRocketPair.value);
+    const pathText = stringValueOf(args.hashRocketPair.key);
+    const actionText = stringValueOf(args.hashRocketPair.value);
     const target =
       actionText !== null ? splitControllerAction(actionText) : null;
     return target !== null && pathText !== null
@@ -296,7 +296,7 @@ function handleVerb(
   const target = readRouteTarget(args);
   if (target !== null) {
     const literalPath = args.positional[0]
-      ? stringLiteralValue(args.positional[0])
+      ? stringValueOf(args.positional[0])
       : null;
     const path = target.path ?? literalPath;
     if (path !== null) {
@@ -340,7 +340,7 @@ function handleRoot(
   const target =
     readRouteTarget(args) ??
     (args.positional[0]
-      ? splitControllerAction(stringLiteralValue(args.positional[0]) ?? "")
+      ? splitControllerAction(stringValueOf(args.positional[0]) ?? "")
       : null);
   if (target !== null) {
     out.add(target.controllerKey, target.action, {
