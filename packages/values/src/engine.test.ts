@@ -648,6 +648,31 @@ describe("Evaluator", () => {
       expect(literalOf(force(evaluator.evaluate(second)))).toBe("/b");
       expect(literalOf(force(evaluator.evaluate(first)))).toBe("/a");
     });
+
+    it("resolves a call it cannot inline once, however often its function is inlined", () => {
+      let resolved = 0;
+      const wrapped = call(null, "wrap", [name("a")]);
+      const helper = fn(["a"], wrapped);
+      const target = op(
+        "+",
+        call(null, "helper", [lit("/x")], { calls: helper }),
+        call(null, "helper", [lit("/y")], { calls: helper }),
+      );
+      module([helper, expr(target)]);
+      const counting: Lowering<TestNode> = {
+        ...testLowering,
+        writtenTo: (n) => {
+          if (n === wrapped) {
+            resolved += 1;
+            return lit("/p");
+          }
+          return testLowering.writtenTo(n);
+        },
+      };
+      const evaluator = new Evaluator(counting);
+      expect(literalOf(force(evaluator.evaluate(target)))).toBe("/p/p");
+      expect(resolved).toBe(1);
+    });
   });
 
   describe("limits", () => {

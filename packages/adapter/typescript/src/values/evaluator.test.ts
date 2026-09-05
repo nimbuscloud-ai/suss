@@ -476,4 +476,48 @@ describe("functions", () => {
       `).kind,
     ).toBe("hole");
   });
+
+  it("loses an array a callback handed to an unknown call can reach", () => {
+    expect(
+      piecesOf(
+        subjectOf(`
+          import { register } from "./registry";
+          const parts = ["a"];
+          register((x: string) => {
+            const entry = { key: x };
+            parts.push(entry.key);
+          });
+          export const subject = parts.join("/");
+        `),
+      ),
+    ).toEqual([{ kind: "hole", name: "value", range: "any" }]);
+  });
+
+  it("leaves a call as a hole without a store", () => {
+    expect(
+      subjectOf(
+        `
+          function route() { return "/a"; }
+          export const subject = route();
+        `,
+        { store: false },
+      ).kind,
+    ).toBe("hole");
+  });
+
+  it("leaves an imported function read as a value as a hole", () => {
+    expect(
+      subjectOf(
+        `
+          import { route } from "./routes";
+          export const subject = route;
+        `,
+        {
+          files: {
+            "/routes.ts": `export function route() { return "/a"; }`,
+          },
+        },
+      ).kind,
+    ).toBe("hole");
+  });
 });
