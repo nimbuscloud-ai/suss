@@ -414,6 +414,22 @@ describe("functions", () => {
     ).toBe("/v1/x");
   });
 
+  it("reads an element of an array from another file", () => {
+    expect(
+      literal(
+        `
+          import { ROLES } from "./config";
+          export const subject = "/" + ROLES[1];
+        `,
+        {
+          files: {
+            "/config.ts": `export const ROLES = ["admin", "editor"];`,
+          },
+        },
+      ),
+    ).toBe("/editor");
+  });
+
   it("reads a call to a declared wrapper as the argument it passes through", () => {
     const project = createTestProject();
     project.createSourceFile(

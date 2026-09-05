@@ -79,7 +79,20 @@ const WRITTEN_VALUE_TYPES = new Set([
   "nil",
   "simple_symbol",
   "hash_key_symbol",
+  "bare_string",
+  "bare_symbol",
+  // Composed from other expressions, so a chain ends here and the
+  // evaluator reads the expression back in the scope it is written in.
+  "chained_string",
+  "binary",
+  "unary",
+  "conditional",
+  "element_reference",
+  "parenthesized_statements",
 ]);
+
+/** `%w[a b]` and `%i[a b]` are arrays whose elements are bare words. */
+const ARRAY_TYPES = new Set(["array", "string_array", "symbol_array"]);
 
 /** tree-sitter types a named child as nullable; dropping them once keeps every walk below flat. */
 function children(node: RbNode): RbNode[] {
@@ -270,7 +283,7 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     } else if (child.type === "call") {
       emitCall(emitter, child);
     }
-    if (child.type === "array") {
+    if (ARRAY_TYPES.has(child.type)) {
       emitArray(emitter, child);
     }
     if (child.type === "hash") {

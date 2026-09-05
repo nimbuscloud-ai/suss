@@ -49,6 +49,21 @@ const WRITTEN_VALUE_TYPES = new Set([
   "false",
   "none",
   "concatenated_string",
+  // Composed from other expressions, so a chain ends here and the
+  // evaluator reads the expression back in the scope it is written in.
+  "binary_operator",
+  "boolean_operator",
+  "comparison_operator",
+  "not_operator",
+  "unary_operator",
+  "conditional_expression",
+  "subscript",
+  "parenthesized_expression",
+  "await",
+  "list_comprehension",
+  "dictionary_comprehension",
+  "set_comprehension",
+  "generator_expression",
 ]);
 
 /** A sequence keeps its elements under their positions, the way TypeScript's arrays do, so one property rule covers `items[0]`. */

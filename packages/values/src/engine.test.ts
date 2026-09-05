@@ -571,6 +571,14 @@ describe("Evaluator", () => {
       expect(force(evaluate(a))).toEqual({ kind: "hole", name: "a" });
     });
 
+    it("reads an element of an array a name was written to elsewhere", () => {
+      const elsewhere = array(lit("a"), lit("b"));
+      module([expr(elsewhere)]);
+      const target = element(name("items", elsewhere), lit(1));
+      module([expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("b");
+    });
+
     it("reads a field of a record declared at module level", () => {
       const target = member(name("config"), "prefix");
       module([

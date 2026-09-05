@@ -442,6 +442,30 @@ describe("functions", () => {
     expect(literalOf(subject("app.py"))).toBe("/api/v1/x");
   });
 
+  it("follows an imported name computed from another name", async () => {
+    const { subject } = await projectValues({
+      "settings.py": 'BASE = "/api"\nPREFIX = BASE + "/v1"\n',
+      "app.py": 'from settings import PREFIX\n\nsubject = PREFIX + "/x"\n',
+    });
+    expect(literalOf(subject("app.py"))).toBe("/api/v1/x");
+  });
+
+  it("reads an element of a list from another file", async () => {
+    const { subject } = await projectValues({
+      "settings.py": 'ROLES = ["admin", "editor"]\n',
+      "app.py": 'from settings import ROLES\n\nsubject = "/" + ROLES[1]\n',
+    });
+    expect(literalOf(subject("app.py"))).toBe("/editor");
+  });
+
+  it("follows an imported name written as a conditional", async () => {
+    const { subject } = await projectValues({
+      "settings.py": 'DEBUG = False\nPREFIX = "/dev" if DEBUG else "/api"\n',
+      "app.py": 'from settings import PREFIX\n\nsubject = PREFIX + "/x"\n',
+    });
+    expect(literalOf(subject("app.py"))).toBe("/api/x");
+  });
+
   it("inlines a lambda", async () => {
     const { subject } = await projectValues({
       "app.py": 'prefixed = lambda p: "/v1" + p\n\nsubject = prefixed("/x")\n',
@@ -497,7 +521,7 @@ describe("functions", () => {
     expect(literalOf(subject("app.py"))).toBe("/v2/x/y");
   });
 
-  it("leaves a call with a dictionary splat as a hole", async () => {
+  it("reads the callee's return with its parameters open when a call splats a dictionary", async () => {
     const { subject } = await projectValues({
       "app.py": [
         'def prefixed(p, base="/v1"):',
@@ -508,7 +532,7 @@ describe("functions", () => {
         "",
       ].join("\n"),
     });
-    expect(subject("app.py").kind).toBe("hole");
+    expect(pathOf(subject("app.py"))).toBe("{base}{p}");
   });
 
   it("reads a parameter as a hole named after it", async () => {
