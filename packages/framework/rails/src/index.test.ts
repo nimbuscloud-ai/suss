@@ -324,6 +324,54 @@ describe("railsFramework", () => {
       });
     });
 
+    it("applies a positional scope path to a bare verb route inside it", () => {
+      const source =
+        'API = "/api"\n' +
+        "Rails.application.routes.draw do\n" +
+        '  scope "#{API}/v1" do\n' +
+        '    get "users/:id", to: "users#show"\n' +
+        "  end\nend\n";
+      expect(routeFor(source, "UsersController", "show")).toEqual({
+        method: "GET",
+        path: "/api/v1/users/:id",
+      });
+    });
+
+    it("writes one slash between a scope path and the route under it", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  scope path: "/v1/" do\n' +
+        '    get "/users/:id", to: "users#show"\n' +
+        '    get "/", to: "home#index"\n' +
+        "  end\nend\n";
+      expect(routeFor(source, "UsersController", "show")).toEqual({
+        method: "GET",
+        path: "/v1/users/:id",
+      });
+      expect(routeFor(source, "HomeController", "index")).toEqual({
+        method: "GET",
+        path: "/v1",
+      });
+    });
+
+    it("keys a verb route and root inside a namespace under its module", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  namespace :api do\n" +
+        '    get "users/:id", to: "users#show"\n' +
+        '    root to: "home#index"\n' +
+        "  end\nend\n";
+      expect(routeFor(source, "Api::UsersController", "show")).toEqual({
+        method: "GET",
+        path: "/api/users/:id",
+      });
+      expect(routeFor(source, "Api::HomeController", "index")).toEqual({
+        method: "GET",
+        path: "/api",
+      });
+      expect(routeFor(source, "UsersController", "show")).toBeNull();
+    });
+
     it("binds root to: to a GET on /", () => {
       const source =
         'Rails.application.routes.draw do\n  root to: "welcome#index"\nend\n';
@@ -407,12 +455,12 @@ describe("railsFramework", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     });
 
-    function routeFor(source: string) {
+    function routeFor(source: string, controller = "ReportsController") {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-routes-"));
       const file = path.join(dir, "routes.rb");
       fs.writeFileSync(file, source);
       const pack = railsFramework({ root: dir, routesFile: file });
-      return pattern(pack).routeFor("ReportsController", "index");
+      return pattern(pack).routeFor(controller, "index");
     }
 
     const drawn = (body: string, before = ""): string =>
@@ -440,7 +488,7 @@ describe("railsFramework", () => {
           '    get "/#{version}/reports", to: "reports#index"\n' +
           "  end",
       );
-      expect(routeFor(source)).toEqual({
+      expect(routeFor(source, "Api::ReportsController")).toEqual({
         method: "GET",
         path: "/api/v1/reports",
       });

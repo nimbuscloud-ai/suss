@@ -4,7 +4,7 @@
  *
  * The grammar read here is bounded on purpose: `resources`/`resource`
  * with `only:`/`except:`, `member`/`collection` blocks, one level of
- * resource nesting, `namespace`, `scope module:`/`scope path:`, the
+ * resource nesting, `namespace`, `scope` with a path or `module:`, the
  * bare HTTP-verb methods with `to:` or the `"path" => "controller#action"`
  * spelling, and `root`. Anything else the file declares, `mount`,
  * `draw`, `concern`, `constraints`, `match`, `direct` among them, is
@@ -217,8 +217,14 @@ function joinKey(prefix: string, segment: string): string {
   return prefix === "" ? segment : `${prefix}/${segment}`;
 }
 
+/**
+ * Rails writes every route with one leading slash and none trailing,
+ * whether the file spelled a segment as `v1`, `/v1` or `v1/`.
+ */
 function joinPath(prefix: string, segment: string): string {
-  return `${prefix}/${segment}`;
+  const trimmed = segment.replace(/^\/+/, "").replace(/\/+$/, "");
+  const base = prefix.replace(/\/+$/, "");
+  return trimmed === "" ? base || "/" : `${base}/${trimmed}`;
 }
 
 function handleResourceCall(
@@ -300,9 +306,9 @@ function handleVerb(
       : null;
     const path = target.path ?? literalPath;
     if (path !== null) {
-      out.add(target.controllerKey, target.action, {
+      out.add(joinKey(ctx.modulePrefix, target.controllerKey), target.action, {
         method,
-        path: `${ctx.pathPrefix}${path}`,
+        path: joinPath(ctx.pathPrefix, path),
       });
     }
     return;
@@ -343,7 +349,7 @@ function handleRoot(
       ? splitControllerAction(stringValueOf(args.positional[0]) ?? "")
       : null);
   if (target !== null) {
-    out.add(target.controllerKey, target.action, {
+    out.add(joinKey(ctx.modulePrefix, target.controllerKey), target.action, {
       method: "GET",
       path: ctx.pathPrefix === "" ? "/" : ctx.pathPrefix,
     });
@@ -379,7 +385,10 @@ function handleScope(
 ): void {
   const args = readSimpleArgs(call);
   const moduleName = wordValue(args.keyword.module);
-  const pathSegment = wordValue(args.keyword.path);
+  // `scope "v1"` and `scope path: "v1"` both set the path in Rails.
+  const pathSegment =
+    wordValue(args.keyword.path) ??
+    (args.positional[0] ? wordValue(args.positional[0]) : null);
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
   if (body === null) {

@@ -133,15 +133,37 @@ async function superclassChain(
   lookup: AncestorLookup,
   active: ReadonlySet<string>,
 ): Promise<AncestorEntry[]> {
-  const superclass = superclassOf(self.blocks);
-  if (
-    superclass === null ||
-    lookup.ancestryRootClassNames.includes(superclass) ||
-    active.has(superclass)
-  ) {
-    return [];
+  const candidates = superclassCandidatesOf(self.blocks);
+  for (const candidate of candidates) {
+    if (
+      lookup.ancestryRootClassNames.includes(candidate) ||
+      active.has(candidate)
+    ) {
+      return [];
+    }
+    const blocks = await definitionOf(candidate, lookup);
+    if (blocks !== null) {
+      return chainOf(
+        { type: "bodies", name: candidate, blocks },
+        lookup,
+        new Set([...active, candidate]),
+      );
+    }
   }
-  return chainFor(superclass, lookup, active);
+  // Ruby would raise NameError here. The bare name is the one a configured
+  // base is written as, so an unread base still matches by that name.
+  const bare = candidates.at(-1);
+  return bare === undefined ? [] : [{ type: "unfollowed", name: bare }];
+}
+
+function definitionOf(
+  qualifiedName: string,
+  lookup: AncestorLookup,
+): Promise<ReachedBody[] | null> {
+  const local = lookup.localDefinition?.(qualifiedName);
+  return local !== undefined && local !== null
+    ? Promise.resolve(local)
+    : reachDefinition(qualifiedName, lookup);
 }
 
 /**
@@ -183,9 +205,7 @@ async function chainFor(
   lookup: AncestorLookup,
   active: ReadonlySet<string>,
 ): Promise<AncestorEntry[]> {
-  const blocks =
-    lookup.localDefinition?.(qualifiedName) ??
-    (await reachDefinition(qualifiedName, lookup));
+  const blocks = await definitionOf(qualifiedName, lookup);
   if (blocks === null) {
     return [{ type: "unfollowed", name: qualifiedName }];
   }
@@ -231,13 +251,16 @@ function moduleRefs(
   return refs;
 }
 
-function superclassOf(blocks: readonly ReachedBody[]): string | null {
+/** The first reopening that declares a superclass decides; Ruby rejects a second one that disagrees. */
+function superclassCandidatesOf(
+  blocks: readonly ReachedBody[],
+): readonly string[] {
   for (const block of blocks) {
-    if (block.info.superclassQualifiedName !== null) {
-      return block.info.superclassQualifiedName;
+    if (block.info.superclassCandidates.length > 0) {
+      return block.info.superclassCandidates;
     }
   }
-  return null;
+  return [];
 }
 
 /** What searching an ancestry for one method name came to. */
