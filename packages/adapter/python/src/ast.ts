@@ -81,6 +81,36 @@ export function stringContentValue(content: PyNode): string {
   return text + content.text.slice(cursor);
 }
 
+/** A parameter's name and the annotation written on it, across the four spellings the grammar gives a parameter. `*args` and `**kwargs` return null. */
+export function parameterNameAndType(
+  param: PyNode,
+): { name: string; typeNode: PyNode | null } | null {
+  if (param.type === "identifier") {
+    return { name: param.text, typeNode: null };
+  }
+  if (param.type === "typed_parameter") {
+    const inner = param.namedChildren.find(
+      (child) => child !== null && child.type === "identifier",
+    );
+    return inner !== undefined
+      ? { name: inner.text, typeNode: field(param, "type") }
+      : null;
+  }
+  if (param.type === "default_parameter") {
+    const nameNode = field(param, "name");
+    return nameNode?.type === "identifier"
+      ? { name: nameNode.text, typeNode: null }
+      : null;
+  }
+  if (param.type === "typed_default_parameter") {
+    const nameNode = field(param, "name");
+    return nameNode !== null
+      ? { name: nameNode.text, typeNode: field(param, "type") }
+      : null;
+  }
+  return null;
+}
+
 /** The text inside a plain string node, with the quotes removed. An f-string with an interpolation returns null. */
 export function stringLiteralValue(node: PyNode): string | null {
   if (node.type !== "string") {

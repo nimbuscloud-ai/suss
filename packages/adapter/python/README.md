@@ -236,6 +236,15 @@ call that starts the chain is the one resolved, and the method the chain ends
 with tells a read from a write. A method a base and a subclass both declare
 gives two, and nothing is claimed.
 
+A chain also matches when the name it starts on is declared, where the chain
+is written, as one of the query types: a parameter annotated `db: Session`,
+a local bound by `session = Session()` or `with Session() as session:`, or a
+project function whose return annotation says `Session`. The type has to be
+imported from the pattern's module, so a project class that happens to share
+the name does not match. `recordsNothing` lists the methods on such a type
+that touch no rows of their own: `execute` runs a statement whose own chain is
+the read or write, and `close` manages the session.
+
 A query built from a function the library exports has no project method in
 between for its return to be read off, so a pack lists those by name and a call
 site importing one matches on that:
@@ -244,11 +253,15 @@ site importing one matches on that:
 queryFunctions: ["select", "insert", "update", "delete"]
 ```
 
-`fields` comes from the columns a query names, `User.id` in
-`select(User.id, User.email)`. `selector` comes from the keywords the chain
-picks rows by, `id` in `filter_by(id=user_id)`, gathered from every call in
-the chain rather than only the last. Raw SQL handed to `execute` is not read
-at all.
+For one of these the function itself is the operation, so
+`update(User).where(...).values(...)` is an update however it ends.
+
+`fields` comes from the columns a query spells out, `User.id` in
+`select(User.id, User.email)`, and from the keywords of a call the pack lists
+under `valueMethods`, `name` in `.values(name="x")`. `selector` comes from
+the keywords every other call in the chain picks rows by, `id` in
+`filter_by(id=user_id)`. Raw SQL handed to `text` is read as its own effect,
+with the kind and table taken from the statement.
 
 ## Where a mount is written
 

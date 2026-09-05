@@ -61,6 +61,20 @@ export interface StoragePattern {
   /** Chain-ending methods that change what is stored. Anything else reads. */
   writes: string[];
   /**
+   * Methods on a query type that touch no rows of their own: one that runs
+   * a statement built elsewhere, `session.execute(stmt)`, whose own chain
+   * already records the work, and one that manages the session, `close`.
+   * A call to one of these records nothing.
+   */
+  recordsNothing?: string[];
+  /**
+   * Methods whose keywords supply column values rather than pick rows,
+   * `values` in `update(User).where(id=1).values(name="x")`. Their
+   * keywords are reported as fields; every other call's keywords are the
+   * selector.
+   */
+  valueMethods?: string[];
+  /**
    * Functions the library exports that start a query on their own, for the
    * case where a call site imports one rather than reaching it through a
    * project class. `select(...)` in SQLAlchemy 2.0 is one.

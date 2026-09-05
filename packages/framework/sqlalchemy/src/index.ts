@@ -42,7 +42,32 @@ export function sqlalchemyStorage(
     {
       module: "sqlalchemy.orm",
       queryTypes: ["Query", "Session"],
-      writes: ["update", "delete", "add", "add_all", "merge", "commit"],
+      writes: [
+        "update",
+        "delete",
+        "add",
+        "add_all",
+        "merge",
+        "flush",
+        "commit",
+        "bulk_save_objects",
+        "bulk_insert_mappings",
+        "bulk_update_mappings",
+      ],
+      // A Session runs a statement built by `select`/`update`/... whose
+      // own chain is read, and the rest of these manage the session.
+      recordsNothing: [
+        "execute",
+        "scalars",
+        "scalar",
+        "begin",
+        "rollback",
+        "close",
+        "expire",
+        "expire_all",
+        "expunge",
+        "expunge_all",
+      ],
       storageSystem: options.storageSystem,
     },
     {
@@ -53,6 +78,7 @@ export function sqlalchemyStorage(
       // constructor rather than reaching it through a mapped class, so there
       // is no project method in between whose return says what it is.
       queryFunctions: ["select", "insert", "update", "delete"],
+      valueMethods: ["values"],
       storageSystem: options.storageSystem,
     },
   ];
