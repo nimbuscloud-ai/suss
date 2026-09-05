@@ -8,6 +8,7 @@ import {
   placeholderValues,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
+  writtenValueOf as sharedWrittenValueOf,
   singleAnswers,
 } from "@suss/resolution";
 
@@ -28,15 +29,23 @@ const RESOLUTION_PROGRAM = deriveOnDemand(
  * so a caller names the handful it needs.
  */
 export function resolveCalls(db: Database, callKeys: readonly string[]): void {
-  if (callKeys.length === 0) {
+  const asked = new Set(db.facts("wanted").map((row) => String(row[0])));
+  const fresh = callKeys.filter((key) => !asked.has(key));
+  if (fresh.length === 0) {
     return;
   }
 
-  for (const callKey of callKeys) {
+  for (const callKey of fresh) {
     db.add("wanted", [callKey]);
   }
 
   evaluate(db, RESOLUTION_PROGRAM.rules);
+}
+
+/** The single expression a value was written as, asking the rules about `key` first. */
+export function writtenValueOf(db: Database, key: string): string | null {
+  resolveCalls(db, [key]);
+  return sharedWrittenValueOf(db, key, (keys) => resolveCalls(db, keys));
 }
 
 /** Where a name came from, for one construction: the module and the name that module exports it under. */

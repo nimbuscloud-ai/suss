@@ -2,7 +2,7 @@
 // The relation names and shapes come from that package's own header, so a
 // Python value follows the same rules a TypeScript one does.
 
-import { field } from "../ast.js";
+import { children, field, isFunction } from "../ast.js";
 
 import type { Database } from "@suss/datalog";
 import type { PyNode } from "../parser.js";
@@ -39,8 +39,6 @@ export function readKey(
   return nameId(filePath, node.text);
 }
 
-const FUNCTION_TYPES = new Set(["function_definition", "lambda"]);
-
 /** Written out in the source rather than a name for something written elsewhere. */
 const WRITTEN_VALUE_TYPES = new Set([
   "string",
@@ -74,25 +72,24 @@ function parameterName(param: PyNode): PyNode | null {
   return children(param).find((child) => child.type === "identifier") ?? null;
 }
 
-/** tree-sitter types a named child as nullable; dropping them once keeps every walk below flat. */
-function children(node: PyNode): PyNode[] {
-  return node.namedChildren.filter((child): child is PyNode => child !== null);
-}
-
-/** What a function calls its parameters. What follows a `*` is left out, since it can only be passed by keyword. */
-function parameterNames(fn: PyNode): Set<string> {
+/** What a function calls its parameters, in order. `*args` and `**kwargs` are left out. */
+export function parameterList(fn: PyNode): string[] {
   const params = field(fn, "parameters");
-  const declared = new Set<string>();
+  const declared: string[] = [];
   for (const param of params === null ? [] : children(params)) {
     if (SPLAT_TYPES.has(param.type)) {
       continue;
     }
     const name = parameterName(param);
     if (name !== null) {
-      declared.add(name.text);
+      declared.push(name.text);
     }
   }
   return declared;
+}
+
+function parameterNames(fn: PyNode): Set<string> {
+  return new Set(parameterList(fn));
 }
 
 interface Emitter {
@@ -233,7 +230,7 @@ function walkExpressions(
   visit: (child: PyNode) => void,
 ): void {
   for (const child of children(node)) {
-    if (FUNCTION_TYPES.has(child.type)) {
+    if (isFunction(child)) {
       continue;
     }
     visit(child);
@@ -332,7 +329,7 @@ function emitFunctionFacts(
   // is recorded by its own scan.
   const recordNested = (node: PyNode): void => {
     for (const child of children(node)) {
-      if (FUNCTION_TYPES.has(child.type)) {
+      if (isFunction(child)) {
         add(emitter, "containsFn", funcKey, nodeId(emitter.filePath, child));
         continue;
       }
@@ -450,7 +447,7 @@ function declaredMemberKey(
   if (member.type === "class_definition") {
     return emitClassFacts(emitter, member);
   }
-  if (FUNCTION_TYPES.has(member.type)) {
+  if (isFunction(member)) {
     return emitFunctionFacts(emitter, member, classKey);
   }
   return null;
@@ -526,7 +523,7 @@ export function emitValueFacts(
         // Its methods are its own; descending would make them the module's.
         continue;
       }
-      if (FUNCTION_TYPES.has(child.type)) {
+      if (isFunction(child)) {
         declaresName(child, emitFunctionFacts(emitter, child));
       }
       if (child.type === "assignment") {

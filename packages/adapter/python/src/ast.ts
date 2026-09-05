@@ -41,6 +41,23 @@ export function isType(node: PyNode, ...types: string[]): boolean {
   return types.includes(node.type);
 }
 
+/** A `def` or a `lambda`: the nodes the facts treat as a function of their own. */
+export function isFunction(node: PyNode): boolean {
+  return node.type === "function_definition" || node.type === "lambda";
+}
+
+/** The nearest function a node is written inside, or null at module level. */
+export function enclosingFunction(node: PyNode): PyNode | null {
+  let current = node.parent;
+  while (current !== null) {
+    if (isFunction(current)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
 /** The text inside a plain string node, with the quotes removed. An f-string returns null. */
 export function stringLiteralValue(node: PyNode): string | null {
   if (node.type !== "string") {
@@ -72,8 +89,13 @@ export function booleanLiteralValue(node: PyNode): boolean | null {
   return null;
 }
 
+/** tree-sitter types a named child as nullable; dropping them once keeps every walk below flat. */
+export function children(node: PyNode): PyNode[] {
+  return node.namedChildren.filter((child): child is PyNode => child !== null);
+}
+
 export function bodyStatements(body: PyNode): PyNode[] {
-  return body.namedChildren.filter((child): child is PyNode => child !== null);
+  return children(body);
 }
 
 export function stripDecorators(node: PyNode): {
