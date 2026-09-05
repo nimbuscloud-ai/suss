@@ -182,19 +182,49 @@ export function pathFromUrlNode(
   }
   if (Node.isBinaryExpression(node)) {
     const joined = joinedStringOf(node, resolution);
-    return joined === undefined ? undefined : pathFromLiteralUrl(joined);
+    return joined === undefined ? undefined : pathFromJoinedText(joined);
   }
   return undefined;
 }
 
+// A joined string can have `{name}` holes in it, which `new URL` would
+// percent-encode, so the origin comes off by hand.
+function pathFromJoinedText(text: string): string | undefined {
+  const path = stripQueryAndFragment(stripOriginManually(text));
+  return path === "" ? undefined : path;
+}
+
 /**
- * The string a `+` of strings works out to, or undefined when a side
- * is anything else. `"/users" + "/:id"` states the same path a
- * template does, written the other way, and a name in either side is
- * followed to what it was written as, the same hop every other
- * spelling of a path gets.
+ * The string a `+` of strings works out to, or undefined when it is
+ * not a `+` at all. `"/users/" + id` states the same path as
+ * `` `/users/${id}` ``, written the other way, so each side is read
+ * the way a template's pieces are: a written string as itself, a name
+ * followed to what it was written as, and anything else as a hole.
  */
 function joinedStringOf(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): string | undefined {
+  if (
+    !Node.isBinaryExpression(node) ||
+    node.getOperatorToken().getText() !== "+"
+  ) {
+    return undefined;
+  }
+  return (
+    joinedSideOf(node.getLeft(), resolution) +
+    joinedSideOf(node.getRight(), resolution)
+  );
+}
+
+function joinedSideOf(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): string {
+  return joinedTextOf(node, resolution) ?? patternHole(placeholderName(node));
+}
+
+function joinedTextOf(
   node: Node,
   resolution: ResolutionStore | undefined,
 ): string | undefined {
@@ -204,18 +234,17 @@ function joinedStringOf(
   ) {
     return node.getLiteralValue();
   }
-  if (
-    Node.isBinaryExpression(node) &&
-    node.getOperatorToken().getText() === "+"
-  ) {
-    const left = joinedStringOf(node.getLeft(), resolution);
-    const right = joinedStringOf(node.getRight(), resolution);
-    return left === undefined || right === undefined ? undefined : left + right;
+  if (Node.isTemplateExpression(node)) {
+    return pathFromTemplateUrl(node, resolution) ?? "";
+  }
+  const joined = joinedStringOf(node, resolution);
+  if (joined !== undefined) {
+    return joined;
   }
   const written = resolution?.resolveWrittenValue(node) ?? null;
   return written === null || written === node
     ? undefined
-    : joinedStringOf(written, resolution);
+    : joinedTextOf(written, resolution);
 }
 
 function placeholderName(expr: Node): string {

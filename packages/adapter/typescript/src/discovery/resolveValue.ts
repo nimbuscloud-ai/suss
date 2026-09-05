@@ -201,6 +201,29 @@ export function stringValueOf(
     : null;
 }
 
+/**
+ * The string a named property of an object is set to, with the object
+ * and the value each read through whatever name they were given.
+ * `fetch(url, { method })`, `fetch(url, opts)` and `{ ...base, method }`
+ * all answer here. Null when the property is absent or not a string.
+ */
+export function stringPropertyOf(
+  object: Node,
+  name: string,
+  resolution: ResolutionStore | undefined,
+): string | null {
+  const literal = objectLiteralOf(object, resolution);
+  if (literal === null) {
+    return null;
+  }
+  const property = propertiesOf(literal, resolution).find(
+    (candidate) =>
+      !Node.isSpreadAssignment(candidate) && candidate.getName() === name,
+  );
+  const value = property === undefined ? null : propertyValueOf(property);
+  return value === null ? null : stringValueOf(value, resolution);
+}
+
 function isStringNode(
   node: Node,
 ): node is Node & { getLiteralValue(): string } {

@@ -95,7 +95,7 @@ describe("expressFramework: a path built by joining strings", () => {
     expect(pathsOf(summaries)).toEqual(["/users/:id"]);
   });
 
-  it("claims nothing for a join with a side it cannot read", async () => {
+  it("reads a side it cannot follow as a hole, the same as a template", async () => {
     const summaries = await extract(`
       import express from "express";
       const app = express();
@@ -103,9 +103,12 @@ describe("expressFramework: a path built by joining strings", () => {
         app.get(prefix + "/:id", (req: any, res: any) => {
           res.status(200).json({});
         });
+        app.get(\`\${prefix}/:id/avatar\`, (req: any, res: any) => {
+          res.status(200).json({});
+        });
       }
     `);
-    expect(pathsOf(summaries)).toEqual([]);
+    expect(pathsOf(summaries)).toEqual(["{prefix}/:id", "{prefix}/:id/avatar"]);
   });
 });
 

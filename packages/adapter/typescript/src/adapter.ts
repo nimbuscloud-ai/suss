@@ -119,7 +119,7 @@ import {
   type MountPrefixIndex,
 } from "./discovery/mountPrefix.js";
 import { readRegisteringFiles } from "./discovery/registrationCall.js";
-import { stringValueOf } from "./discovery/resolveValue.js";
+import { stringPropertyOf } from "./discovery/resolveValue.js";
 import {
   buildWrapperIndex,
   type WrapperIndex,
@@ -945,21 +945,10 @@ function extractBindingMethod(
     return resolveContractField(callSite, pack, "method", resolution);
   }
   if (m.type === "fromArgumentProperty") {
-    const args = callSite.callExpression.getArguments();
-    const arg = args[m.position];
-    if (arg !== undefined && Node.isObjectLiteralExpression(arg)) {
-      const prop = arg.getProperty(m.property);
-      if (prop !== undefined && Node.isPropertyAssignment(prop)) {
-        const init = prop.getInitializer();
-        if (init !== undefined) {
-          const value = stringValueOf(init, resolution);
-          if (value !== null) {
-            return value;
-          }
-        }
-      }
-    }
-    return m.default;
+    const arg = callSite.callExpression.getArguments()[m.position];
+    const value =
+      arg === undefined ? null : stringPropertyOf(arg, m.property, resolution);
+    return value ?? m.default;
   }
   if (m.type === "literal") {
     return m.value;

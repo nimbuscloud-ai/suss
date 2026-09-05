@@ -20,7 +20,7 @@ import { importDeclarationsOf } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 import {
   functionValueOf,
-  objectLiteralOf,
+  stringPropertyOf,
   writtenNodeOf,
 } from "./resolveValue.js";
 import { findEnclosingFunction, namesAParameter } from "./shared.js";
@@ -825,24 +825,6 @@ function mountTargetsAmong(
 }
 
 /** The string a property of an object literal holds, or null. */
-function stringProperty(obj: Node, name: string): string | null {
-  if (!Node.isObjectLiteralExpression(obj)) {
-    return null;
-  }
-  const property = obj.getProperty(name);
-  if (property === undefined || !Node.isPropertyAssignment(property)) {
-    return null;
-  }
-  const value = property.getInitializer();
-  if (
-    value !== undefined &&
-    (Node.isStringLiteral(value) || Node.isNoSubstitutionTemplateLiteral(value))
-  ) {
-    return value.getLiteralValue();
-  }
-  return null;
-}
-
 /**
  * Read a (method, path) pair from a registration-style call site
  * using the pack's own `bindingExtraction` config. Only fires when
@@ -881,12 +863,8 @@ function extractRouteInfoFromBinding(
     if (arg === undefined) {
       return null;
     }
-    const routeObject = objectLiteralOf(arg, resolution);
-    if (routeObject === null) {
-      return null;
-    }
-    const method = stringProperty(routeObject, binding.method.property);
-    const path = stringProperty(routeObject, binding.path.property);
+    const method = stringPropertyOf(arg, binding.method.property, resolution);
+    const path = stringPropertyOf(arg, binding.path.property, resolution);
     if (method === null || path === null) {
       return null;
     }
