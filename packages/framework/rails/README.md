@@ -35,7 +35,7 @@ const pack = railsFramework({
 });
 ```
 
-`root` and `routesFile` both default to what `rails new` scaffolds, `app` and `config/routes.rb`, resolved against `configDirectory` when the options came from a `-f rails=config.json` file rather than being passed directly.
+`root` and `routesFile` both default to what `rails new` scaffolds, `app` and `config/routes.rb`. The CLI resolves a relative value against the config file's directory when the options came from `-f rails=config.json`, and against the directory the run reads (`--dir`, or the working directory) for a bare `-f rails`. A pack constructed in code with no `configDirectory` resolves against the working directory.
 
 ## Composing with ActiveRecord
 

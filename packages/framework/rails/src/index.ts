@@ -29,8 +29,10 @@ export const optionsSchema = z
     /** The app directory a bare controller name is looked up under. Every Rails app scaffolds this at `app`. */
     root: z.string().optional(),
     /**
-     * The directory of the config file these options came from. Whatever
-     * read that file supplies this; it is not written in the file itself.
+     * The directory a relative `root` or `routesFile` is read against: the
+     * config file's own directory, or the directory the run reads when the
+     * options came without one. The CLI supplies this; it is not written in
+     * the file itself.
      */
     configDirectory: z.string().optional(),
     /** Base classes beyond `ApplicationController` that also mark a class as a controller. */

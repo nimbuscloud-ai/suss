@@ -47,8 +47,10 @@ export const optionsSchema = z
      */
     root: z.string(),
     /**
-     * The directory of the config file these options came from. Whatever read
-     * that file supplies this; it is not written in the file itself.
+     * The directory a relative `root` is read against: the config file's
+     * own directory, or the directory the run reads when the options came
+     * without one. The CLI supplies this; it is not written in the file
+     * itself.
      */
     configDirectory: z.string().optional(),
     /** Base classes beyond `Types::BaseObject` that also mark a class as declaring GraphQL fields. */
