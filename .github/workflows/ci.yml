@@ -1,8 +1,10 @@
 name: CI
 
+# Pull requests only. A merge used to start a second run on main over
+# the tree the pull request run had already passed, and the regenerate
+# workflow builds and tests main once more on the same push, so the
+# main run was a third pass over the same code.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 # A force-push (or a quick follow-up push) supersedes whatever run is

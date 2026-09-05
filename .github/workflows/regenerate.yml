@@ -10,7 +10,9 @@ name: Regenerate baselines
 # This workflow is what keeps the three files caught up with main once
 # a branch that raised a count lands: it reruns the dogfood pass and the
 # test suite on main itself, and pushes back only if the fresh numbers
-# differ from what is committed.
+# differ from what is committed. It is also the only run on main, since
+# CI runs on pull requests alone, so a build or test failure here is the
+# signal that a merge broke main.
 on:
   push:
     branches: [main]
