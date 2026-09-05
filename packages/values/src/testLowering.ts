@@ -17,7 +17,14 @@ import {
   type Statement,
   statementsOf,
 } from "./language.js";
-import { appended, equals, joined, negated, plus } from "./operations.js";
+import {
+  appended,
+  equals,
+  extended,
+  joined,
+  negated,
+  plus,
+} from "./operations.js";
 import { concat, constant, hole, text } from "./value.js";
 
 export interface TestNode {
@@ -351,6 +358,17 @@ const rows: Row[] = [
     on: "unbounded",
     apply: ({ receiver, args }) => ({
       result: joined(receiver ?? hole("value"), args[0]),
+    }),
+  },
+  {
+    kind: "method",
+    method: "concat",
+    on: "sequence",
+    apply: ({ receiver, args, contentOf }) => ({
+      result: args.reduce(
+        (sequence, other) => extended(sequence, contentOf(other)),
+        receiver ?? hole("value"),
+      ),
     }),
   },
   {

@@ -207,6 +207,18 @@ describe("Evaluator", () => {
       expect(literalOf(evaluate(target))).toBe("a/b");
     });
 
+    it("copies an array a row reads the content of", () => {
+      const target = call(name("copy"), "join", [lit("/")]);
+      module([
+        declare({ parts: array(lit("a")) }),
+        declare({ extra: array(lit("b")) }),
+        declare({ copy: call(name("parts"), "concat", [name("extra")]) }),
+        expr(call(name("extra"), "push", [lit("c")])),
+        expr(target),
+      ]);
+      expect(literalOf(evaluate(target))).toBe("a/b");
+    });
+
     it("copies a spread array instead of aliasing it", () => {
       const target = call(name("copy"), "join", [lit("/")]);
       module([
