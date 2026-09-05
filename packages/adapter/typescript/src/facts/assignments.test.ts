@@ -37,6 +37,36 @@ describe("sameConstructionAcrossWrites", () => {
     );
   });
 
+  it("returns an object literal a guard writes into an uninitialized name", () => {
+    const project = projectOf(`
+      declare const parsed: Record<string, string | undefined>;
+      let db: { instance: string | undefined };
+      if (parsed.DB_INSTANCE) {
+        db = { instance: parsed.DB_INSTANCE };
+      }
+    `);
+    const { values } = writesToBinding(bindingOf(project, "db"));
+
+    expect(sameConstructionAcrossWrites(values)?.getText()).toBe(
+      "{ instance: parsed.DB_INSTANCE }",
+    );
+  });
+
+  it("returns null when two guards write different object literals", () => {
+    const project = projectOf(`
+      declare const flag: boolean;
+      let db: { name: string };
+      if (flag) {
+        db = { name: "a" };
+      } else {
+        db = { name: "b" };
+      }
+    `);
+    const { values } = writesToBinding(bindingOf(project, "db"));
+
+    expect(sameConstructionAcrossWrites(values)).toBe(null);
+  });
+
   it("reads the value of a ??= write as the write's construction", () => {
     const project = projectOf(`
       declare function build(): unknown;
