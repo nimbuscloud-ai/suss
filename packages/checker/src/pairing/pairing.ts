@@ -1,9 +1,16 @@
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
-import { boundaryKey, semanticsAgree } from "@suss/ir-core";
+import {
+  boundaryKey,
+  bucketRank,
+  bucketsMeet,
+  compareRanks,
+  semanticsAgree,
+  spansBuckets,
+} from "@suss/ir-core";
 
 import { groundedKeys } from "./groundedPath.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 
 // boundaryKey / normalizePath are shared comparison primitives owned by
 // @suss/ir-core (the intent checker keys boundaries the same way). Kept
@@ -167,18 +174,49 @@ function servicesOf(summaries: readonly BehavioralSummary[]): string[] {
   return [...new Set(stated)].sort();
 }
 
+/** One side's summaries under one pairing key. */
+interface Bucket {
+  key: string;
+  binding: BoundaryBinding;
+  /** Whether this bucket meets buckets with other keys too. */
+  spans: boolean;
+  /** How narrowly the key states what it serves, from `bucketRank`. */
+  rank: readonly number[];
+  summaries: BehavioralSummary[];
+}
+
+/** The buckets that no other bucket in the list outranks. */
+function highestRanked(buckets: Bucket[]): Bucket[] {
+  let winners: Bucket[] = [];
+  for (const bucket of buckets) {
+    const first = winners[0];
+    const order =
+      first === undefined ? 1 : compareRanks(bucket.rank, first.rank);
+    if (order > 0) {
+      winners = [bucket];
+    } else if (order === 0) {
+      winners.push(bucket);
+    }
+  }
+  return winners;
+}
+
 /**
  * Given a flat list of summaries, match providers to consumers.
  *
  * Summaries bucket on `pairingKey` and settle the rest with
  * `bindingsPair`; each provider pairs with every agreeing consumer in
- * its bucket (N×M within a group). Summaries that cannot take part
- * land in `unmatched.unpairable` with the reason; sides with a key but
- * no agreeing counterpart land in the matching `unmatched` list.
+ * its bucket (N×M within a group). A bucket whose key spans other keys
+ * (a route with a hole that takes some number of segments) is compared
+ * against every bucket on the other side with `bucketsMeet`, and the
+ * most specific key among the providers that agree wins. Summaries that
+ * cannot take part land in `unmatched.unpairable` with the reason;
+ * sides with a key but no agreeing counterpart land in the matching
+ * `unmatched` list.
  */
 export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
-  const providersByKey = new Map<string, BehavioralSummary[]>();
-  const consumersByKey = new Map<string, BehavioralSummary[]>();
+  const providersByKey = new Map<string, Bucket>();
+  const consumersByKey = new Map<string, Bucket>();
   const unpairable: UnpairableSummary[] = [];
   // A consumer whose base URL the deployment fills in buckets on the
   // path it reaches, so it meets the provider that serves it. What the
@@ -192,8 +230,8 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       continue;
     }
 
-    const key = keyOf(summary, binding);
-    if (key === null) {
+    const grounded = keyOf(summary, binding);
+    if (grounded === null) {
       unpairable.push({ summary, reason: "unnamedBoundary" });
       continue;
     }
@@ -207,14 +245,23 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       unpairable.push({ summary, reason: "unknownKind" });
       continue;
     }
-    const bucket = role === "provider" ? providersByKey : consumersByKey;
-    const list = bucket.get(key);
-    if (list !== undefined) {
-      list.push(summary);
+    const buckets = role === "provider" ? providersByKey : consumersByKey;
+    const bucket = buckets.get(grounded.key);
+    if (bucket !== undefined) {
+      bucket.summaries.push(summary);
     } else {
-      bucket.set(key, [summary]);
+      buckets.set(grounded.key, {
+        key: grounded.key,
+        binding: grounded.binding,
+        spans: spansBuckets(grounded.binding),
+        rank: bucketRank(grounded.binding),
+        summaries: [summary],
+      });
     }
   }
+  const spanningProviders = [...providersByKey.values()].filter(
+    (bucket) => bucket.spans,
+  );
 
   const pairs: SummaryPair[] = [];
   /**
@@ -228,22 +275,45 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
 
   const ambiguous: AmbiguousPairing[] = [];
 
-  for (const [key, providers] of providersByKey) {
-    const consumers = consumersByKey.get(key);
-    if (consumers === undefined) {
+  for (const consumers of consumersByKey.values()) {
+    const exact = providersByKey.get(consumers.key);
+    const meeting = (
+      consumers.spans ? [...providersByKey.values()] : spanningProviders
+    ).filter(
+      (providers) =>
+        providers.key !== consumers.key &&
+        bucketsMeet(providers.binding, consumers.binding),
+    );
+    if (exact === undefined && meeting.length === 0) {
       continue;
     }
 
-    for (const consumer of consumers) {
-      const agreeing = providers.filter((provider) =>
-        bindingsPair(provider, consumer),
-      );
-      const chosen = servedBy(consumer, agreeing);
+    for (const consumer of consumers.summaries) {
+      const agreeing = [...(exact === undefined ? [] : [exact]), ...meeting]
+        .map((providers) => ({
+          ...providers,
+          summaries: providers.summaries.filter((provider) =>
+            bindingsPair(provider, consumer),
+          ),
+        }))
+        .filter((providers) => providers.summaries.length > 0);
+      if (agreeing.length === 0) {
+        continue;
+      }
+      // A route with a hole spanning segments serves what a more exact
+      // route serves too, so the highest ranked bucket is the one the
+      // consumer reaches, and an even contest is a question.
+      const winners = highestRanked(agreeing);
+      const chosen =
+        winners.length === 1
+          ? servedBy(consumer, winners[0]?.summaries ?? [])
+          : null;
       if (chosen === null) {
+        const providers = winners.flatMap((providers) => providers.summaries);
         ambiguous.push({
           consumer,
-          providers: agreeing,
-          services: servicesOf(agreeing),
+          providers,
+          services: servicesOf(providers),
         });
         continue;
       }
@@ -252,7 +322,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
         pairs.push({
           provider,
           consumer,
-          key: pairKeyFor(provider, consumer, key),
+          key: pairKeyFor(provider, consumer, consumers.key),
         });
         matchedProviders.add(provider);
         matchedConsumers.add(consumer);
@@ -262,7 +332,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
 
   const unmatchedProviders: BehavioralSummary[] = [];
   for (const providers of providersByKey.values()) {
-    for (const provider of providers) {
+    for (const provider of providers.summaries) {
       if (!matchedProviders.has(provider)) {
         unmatchedProviders.push(provider);
       }
@@ -271,7 +341,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
 
   const unmatchedConsumers: BehavioralSummary[] = [];
   for (const consumers of consumersByKey.values()) {
-    for (const consumer of consumers) {
+    for (const consumer of consumers.summaries) {
       if (!matchedConsumers.has(consumer)) {
         unmatchedConsumers.push(consumer);
       }

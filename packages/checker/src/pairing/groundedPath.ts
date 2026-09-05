@@ -14,18 +14,33 @@
  */
 
 import { deploymentOf } from "@suss/behavioral-ir";
-import { groundedPairingKey } from "@suss/ir-core";
+import { groundBinding, pairingKey } from "@suss/ir-core";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+
+/** A boundary as the deployment fills it in, and the bucket it pairs in. */
+export interface GroundedBucket {
+  readonly key: string;
+  readonly binding: BoundaryBinding;
+}
 
 /**
  * Key every boundary, with deploy-time names filled in. Which protocol
  * has such a name, and what to put in, is the protocol's own business.
+ * The grounded binding comes back with the key, since a bucket that
+ * spans other buckets is compared against them by its binding.
  */
 export function groundedKeys(
   summaries: BehavioralSummary[],
-): (summary: BehavioralSummary, binding: BoundaryBinding) => string | null {
+): (
+  summary: BehavioralSummary,
+  binding: BoundaryBinding,
+) => GroundedBucket | null {
   const deployment = deploymentOf(summaries);
 
-  return (summary, binding) => groundedPairingKey(binding, deployment(summary));
+  return (summary, binding) => {
+    const grounded = groundBinding(binding, deployment(summary));
+    const key = pairingKey(grounded);
+    return key === null ? null : { key, binding: grounded };
+  };
 }

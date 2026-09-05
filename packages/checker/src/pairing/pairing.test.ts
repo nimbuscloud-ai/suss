@@ -669,3 +669,90 @@ describe("what REST pairing takes for granted", () => {
     expect(pairSummaries([p, del]).pairs).toHaveLength(1);
   });
 });
+
+describe("pairSummaries across buckets", () => {
+  it("pairs a route whose optional segment the caller leaves out or fills in", () => {
+    const p = providerWithPath(
+      "getOrder",
+      "GET",
+      "/api/{version}/{tenant?}/orders/:id",
+    );
+    const plain = consumerWithPath("OrderPage", "GET", "/api/v1/orders/{id}");
+    const tenant = consumerWithPath(
+      "TenantOrderPage",
+      "GET",
+      "/api/v1/acme/orders/{id}",
+    );
+    const deeper = consumerWithPath(
+      "RegionOrderPage",
+      "GET",
+      "/api/v1/acme/eu/orders/{id}",
+    );
+
+    const result = pairSummaries([p, plain, tenant, deeper]);
+    expect(result.pairs.map((pair) => pair.consumer)).toEqual([plain, tenant]);
+    expect(result.pairs.map((pair) => pair.key)).toEqual([
+      "GET /api/v1/orders/{id}",
+      "GET /api/v1/acme/orders/{id}",
+    ]);
+    expect(result.unmatched.consumers).toEqual([deeper]);
+  });
+
+  it("pairs a star route with the callers under it", () => {
+    const p = providerWithPath("proxy", "*", "/api/orders/*");
+    const list = consumerWithPath("OrderList", "GET", "/api/orders");
+    const lines = consumerWithPath(
+      "OrderLines",
+      "GET",
+      "/api/orders/{id}/lines",
+    );
+    const users = consumerWithPath("UserPage", "GET", "/api/users/{id}");
+
+    const result = pairSummaries([p, list, lines, users]);
+    expect(result.pairs.map((pair) => pair.consumer)).toEqual([list, lines]);
+    expect(result.unmatched.consumers).toEqual([users]);
+  });
+
+  it("takes the route stating the most over a wider one that also serves the call", () => {
+    const wide = providerWithPath("proxy", "*", "/api/orders/*");
+    const exact = providerWithPath("getOrder", "GET", "/api/orders/:id");
+    const c = consumerWithPath("OrderPage", "GET", "/api/orders/{id}");
+
+    const result = pairSummaries([wide, exact, c]);
+    expect(result.pairs).toHaveLength(1);
+    expect(result.pairs[0]?.provider).toBe(exact);
+    expect(result.unmatched.providers).toEqual([wide]);
+  });
+
+  it("still applies the method inside a wider route", () => {
+    const wide = providerWithPath("proxy", "POST", "/api/orders/*");
+    const exact = providerWithPath("getOrder", "GET", "/api/orders/:id");
+    const c = consumerWithPath("Submit", "POST", "/api/orders/{id}");
+
+    const result = pairSummaries([wide, exact, c]);
+    expect(result.pairs.map((pair) => pair.provider)).toEqual([wide]);
+  });
+
+  it("refuses to choose between two wider routes that state as much as each other", () => {
+    const optional = providerWithPath(
+      "byTenant",
+      "GET",
+      "/api/{t?}/orders/:id",
+    );
+    const star = providerWithPath("proxy", "GET", "/api/*/orders/:id");
+    const c = consumerWithPath("OrderPage", "GET", "/api/orders/{id}");
+
+    const result = pairSummaries([optional, star, c]);
+    expect(result.pairs).toHaveLength(0);
+    expect(result.ambiguous).toHaveLength(1);
+    expect(result.ambiguous[0]?.providers).toEqual([optional, star]);
+  });
+
+  it("compares a caller with a set in its path against every route", () => {
+    const p = providerWithPath("getOrders", "GET", "/api/v2/orders");
+    const c = consumerWithPath("OrderList", "GET", "/api(/v2|)/orders");
+
+    const result = pairSummaries([p, c]);
+    expect(result.pairs).toHaveLength(1);
+  });
+});
