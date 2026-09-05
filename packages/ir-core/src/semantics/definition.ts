@@ -67,6 +67,27 @@ export interface BoundaryBehavior<S extends { name: string }> {
    */
   sidesAgree?(a: S, b: S): boolean;
 
+  /**
+   * Whether this boundary's bucket can meet buckets with other keys. A
+   * REST path with a hole that spans some number of segments has a key
+   * of its own and serves what several other keys serve, so the pairing
+   * pass compares it against every bucket on the other side with
+   * `bucketsMeet`. A variant that does not define it meets only its own
+   * key.
+   */
+  spansBuckets?(semantics: S): boolean;
+
+  /** Whether two buckets describe at least one boundary in common. */
+  bucketsMeet?(a: S, b: S): boolean;
+
+  /**
+   * How narrowly this bucket states what it serves, compared
+   * lexicographically. When a consumer meets more than one bucket, the
+   * one ranking highest is the one it reaches, and an even contest is
+   * reported rather than paired.
+   */
+  bucketRank?(semantics: S): readonly number[];
+
   /** The line a reader sees for this boundary. Defaults to `identityKey`. */
   displayLabel?(semantics: S): string | null;
 

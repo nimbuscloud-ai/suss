@@ -122,12 +122,32 @@ export type { UnitInvocationSemantics } from "./semantics/unitInvocation.js";
 // that neither checker, behavioural or intent, owns them and the two
 // cannot drift apart.
 
+// ---------------------------------------------------------------------------
+// Shared comparison primitives
+// ---------------------------------------------------------------------------
+//
+// These are pure operations over the primitives above that more than one
+// checker needs and that all of them have to agree on. They are here so
+// that neither checker, behavioural or intent, owns them and the two
+// cannot drift apart.
+
+// ---------------------------------------------------------------------------
+// Shared comparison primitives
+// ---------------------------------------------------------------------------
+//
+// These are pure operations over the primitives above that more than one
+// checker needs and that all of them have to agree on. They are here so
+// that neither checker, behavioural or intent, owns them and the two
+// cannot drift apart.
+
 // normalizeRuleBoundary is defined in boundaryKey.ts too, but it is exported
 // below with the suppressions, next to the matcher that uses it.
 export {
   bindingIs,
   boundaryKey,
   boundaryLabel,
+  bucketRank,
+  bucketsMeet,
   canPair,
   displayLabel,
   exchangesHttpResponses,
@@ -138,6 +158,7 @@ export {
   reportsUnpairedItself,
   semanticsAgree,
   servesRequest,
+  spansBuckets,
   withinScope,
   withRewrittenPaths,
 } from "./boundaryKey.js";
@@ -183,10 +204,17 @@ export {
   RelationSchema,
 } from "./relation.js";
 export {
+  compareRanks,
+  type HoleRange,
+  rangedHole,
+  setPiece,
+} from "./semantics/pathPattern.js";
+export {
   methodsAgree,
   normalizePath,
   pathShape,
   routePathAdmits,
+  routePathsMeet,
 } from "./semantics/rest.js";
 export {
   applySuppressionsToFindings,

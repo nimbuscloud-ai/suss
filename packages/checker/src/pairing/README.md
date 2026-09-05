@@ -8,12 +8,13 @@ These are the base pairing primitives every per-domain checker builds on: REST p
 
 ## Key files
 
-- `pairing.ts:normalizePath` turns Express-style `:param` into brace-style `{param}`, lowercases static segments, and strips trailing slashes (except on a bare `/`).
-- `pairing.ts:boundaryKey` is the single function that maps every supported `BoundaryBinding` to a stable string. It returns `null` for bindings that can't be paired (REST without a method or path, function-call without an exportPath, and so on).
-- `pairing.ts:pairSummaries` is the public pairing pass. It returns `SummaryPair[]` and `unmatched.{providers, consumers, noBinding}`.
+- `normalizePath` (in `@suss/ir-core`) turns Express-style `:param` into brace-style `{param}`, keeps a range modifier on the hole (`{tenant?}` for zero or one segment, `{rest+}` for one or more, `{rest*}` for zero or more), lowercases static segments, and strips trailing slashes (except on a bare `/`). A bare `*` segment means zero or more segments, the way Express 4 reads it.
+- `boundaryKey` (in `@suss/ir-core`) is the single function that maps every supported `BoundaryBinding` to a stable string. It returns `null` for bindings that can't be paired (REST without a method or path, function-call without an exportPath, and so on). `spansBuckets`, `bucketsMeet` and `bucketRank` are defined next to it: a binding whose path has a ranged hole or a set piece `(v1|v2)` spans more than one bucket, and the protocol says which other buckets it meets and how specific it is.
+- `groundedPath.ts:groundedKeys` gives back the bucket a summary lands in, which is the key together with the binding the key was made from, so the pass can ask the protocol whether two buckets meet.
+- `pairing.ts:pairSummaries` is the public pairing pass. It returns `SummaryPair[]` and `unmatched.{providers, consumers, noBinding}`. A consumer is matched against its own bucket and against every spanning bucket that meets it, and the highest-ranked bucket with an agreeing provider wins. Two buckets ranked the same are reported as ambiguous rather than paired.
 - `graphqlPairing.ts:pairGraphqlOperations` pairs at the operation level. It parses the SDL lazily, once per schema, and caches the result; validating nested selections walks the AST.
 - `semanticBridging.ts:checkSemanticBridging` flags provider-side literal values, and fields whose presence tells one branch from another, that the consumer never tests on.
-- `mostSpecificName.ts:mostSpecificName` picks between providers declared under names that all cover what one consumer reached. Deploy-time names have holes in them, so more than one can cover a single name; the one that states more fixed text wins, and providers that state the same amount win nothing, so the caller reports the tie rather than pairing with all of them.
+- `mostSpecificName.ts:mostSpecificName` picks between storage providers declared under names that all cover what one consumer reached. Deploy-time names have holes in them, so more than one can cover a single name; the one that states more fixed text wins, and providers that state the same amount win nothing, so the caller reports the tie rather than pairing with all of them. Route paths do not use it: a path with an optional segment states more text than the path without it while admitting a superset of requests, so routes rank by what the protocol counts (`pathSpecificity` in `@suss/ir-core`).
 
 ## Non-obvious things
 

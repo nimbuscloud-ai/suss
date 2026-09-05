@@ -34,7 +34,29 @@ describe("routePathAdmits", () => {
   it("reads a star across segments and as empty, Express 4's rule", () => {
     expect(routePathAdmits("/api/orders/*", "/api/orders/123")).toBe(true);
     expect(routePathAdmits("/api/orders/*", "/api/orders/a/b")).toBe(true);
+    expect(routePathAdmits("/api/orders/*", "/api/orders")).toBe(true);
     expect(routePathAdmits("/api/orders/*", "/api/other/123")).toBe(false);
+  });
+
+  it("reads a range modifier on a param the way Express does", () => {
+    expect(routePathAdmits("/api/:v/:tenant?/orders", "/api/v1/orders")).toBe(
+      true,
+    );
+    expect(
+      routePathAdmits("/api/:v/:tenant?/orders", "/api/v1/acme/orders"),
+    ).toBe(true);
+    expect(
+      routePathAdmits("/api/:v/:tenant?/orders", "/api/v1/acme/eu/orders"),
+    ).toBe(false);
+    expect(routePathAdmits("/files/:rest+", "/files")).toBe(false);
+    expect(routePathAdmits("/files/:rest+", "/files/a/b")).toBe(true);
+    expect(routePathAdmits("/files/:rest*", "/files")).toBe(true);
+  });
+
+  it("reads a set piece as any one of its options", () => {
+    expect(routePathAdmits("/api(/v2|)/orders", "/api/orders")).toBe(true);
+    expect(routePathAdmits("/api(/v2|)/orders", "/api/v2/orders")).toBe(true);
+    expect(routePathAdmits("/api(/v2|)/orders", "/api/v1/orders")).toBe(false);
   });
 
   it("compares on the normalized forms: trailing slash stripped, static segments case-folded", () => {

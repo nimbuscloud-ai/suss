@@ -18,6 +18,12 @@ import { z } from "zod";
 import { patternHole, referenceFromName } from "../boundaryName.js";
 import { pathAfterOrigin } from "../urlPath.js";
 import { defineBoundarySemantics } from "./definition.js";
+import {
+  pathSpansShapes,
+  pathSpecificity,
+  pathsMeet,
+  patternAdmits,
+} from "./pathPattern.js";
 
 import type { Reference } from "../boundaryName.js";
 
@@ -61,13 +67,14 @@ function baseUrlReference(semantics: {
 /**
  * Normalize a route path to a canonical form for matching.
  *
- * - Converts Express-style params (`:id`) to brace-style (`{id}`)
+ * - Converts Express-style params (`:id`) to brace-style (`{id}`), and
+ *   keeps a range modifier (`:id?`, `:rest+`, `:rest*`) inside the braces
  * - Strips trailing slashes (except bare `/`)
  * - Lowercases the static segments (params stay case-sensitive)
  */
 export function normalizePath(path: string): string {
   // :param → {param}
-  let normalized = path.replace(/:([a-zA-Z_]\w*)/g, "{$1}");
+  let normalized = path.replace(/:([a-zA-Z_]\w*)([?+*]?)/g, "{$1$2}");
 
   // Strip trailing slash (keep bare /)
   if (normalized.length > 1 && normalized.endsWith("/")) {
@@ -88,9 +95,11 @@ export function normalizePath(path: string): string {
  * requests each one serves, and what deciding whether two sides
  * describe one endpoint rests on. The name a parameter is written
  * under is worth keeping in a report and worth nothing in a comparison.
+ * A parameter's range stays, since `{tenant?}` serves a different set
+ * of requests from `{tenant}`.
  */
 export function pathShape(path: string): string {
-  return normalizePath(path).replace(/\{[^}]*\}/g, "{}");
+  return normalizePath(path).replace(/\{[^{}]*?([?+*]?)\}/g, "{$1}");
 }
 
 /**
@@ -110,38 +119,21 @@ export function methodsAgree(a: string | null, b: string | null): boolean {
 }
 
 /**
- * Turn a normalized route path into a matcher for concrete request
- * paths. `{param}` stands for exactly one path segment, and `*` crosses
- * segment boundaries and can be empty, which is how Express 4 reads a
- * bare star. Everything else compares literally, on the normalized
- * (static-lowercased, trailing-slash-stripped) forms of both sides.
+ * Whether a declared route path admits a concrete request path. Both
+ * sides compare on their normalized forms, and a hole in the request
+ * is text like any other, so a route inside a mount pattern is admitted
+ * by it and a wider route is not.
  */
-function routePathRegex(pattern: string): RegExp {
-  const source = pattern
-    .split(/(\{[^}]+\}|\*)/g)
-    .map((part) => {
-      if (part === "*") {
-        return ".*";
-      }
-
-      if (part.startsWith("{") && part.endsWith("}")) {
-        return "[^/]+";
-      }
-
-      return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    })
-    .join("");
-  return new RegExp(`^${source}$`);
-}
-
-/** Whether a declared route path admits a concrete request path. */
 export function routePathAdmits(
   declaredPath: string,
   requestPath: string,
 ): boolean {
-  return routePathRegex(normalizePath(declaredPath)).test(
-    normalizePath(requestPath),
-  );
+  return patternAdmits(normalizePath(declaredPath), normalizePath(requestPath));
+}
+
+/** Whether two declared route paths serve at least one request in common. */
+export function routePathsMeet(a: string, b: string): boolean {
+  return pathsMeet(normalizePath(a), normalizePath(b));
 }
 
 export const restSemantics = defineBoundarySemantics({
@@ -186,6 +178,22 @@ export const restSemantics = defineBoundarySemantics({
     },
     sidesAgree(a, b) {
       return methodsAgree(a.method, b.method);
+    },
+    spansBuckets(semantics) {
+      return (
+        semantics.path !== null &&
+        pathSpansShapes(normalizePath(semantics.path))
+      );
+    },
+    bucketsMeet(a, b) {
+      return (
+        a.path !== null && b.path !== null && routePathsMeet(a.path, b.path)
+      );
+    },
+    bucketRank(semantics) {
+      return semantics.path === null
+        ? []
+        : pathSpecificity(normalizePath(semantics.path));
     },
     /**
      * What the identity key says, with a missing half still readable:
