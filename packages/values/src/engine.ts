@@ -750,10 +750,16 @@ export class Evaluator<N extends object> {
     if (inlined !== null) {
       return inlined;
     }
+    // A call the lowering can follow to what it is worth, such as a
+    // declared wrapper that passes one argument through.
+    const written = this.outerValue(node);
+    if (written.kind !== "hole") {
+      return written;
+    }
     for (const value of argValues) {
       this.escape(value, state);
     }
-    return hole(this.lowering.holeNameOf(node));
+    return written;
   }
 
   private argumentsOf(
