@@ -150,6 +150,16 @@ way `concat` does, calls `contentOf(arg)` to read what is behind it.
 `appended`, `extended`, `joined`, `equals`, `negated`, `fallback` and
 `isPresent`.
 
+## Spelling a route path
+
+`pathOf` in `routePath.ts` turns a string value into the path a boundary
+serves, and every adapter reads a route through it so a provider and a
+consumer in different languages pair. A hole is spelled `{name}`, with
+`?`, `+` or `*` after the name when it covers some other number of
+segments, and a piece that is one of a few texts is spelled `(v1|v2)`.
+An absolute URL loses its origin, and a query string or fragment ends
+the path where it starts.
+
 ## Bounds
 
 - `INLINE_DEPTH_CAP` limits how deep calls inline; past it a call is a
