@@ -802,7 +802,21 @@ describe("Evaluator", () => {
         inner,
       ]).mutatedNames = ["config", "prefix"];
       expect(evaluate(field)).toEqual({ kind: "hole", name: "base" });
-      expect(evaluate(prefix)).toEqual({ kind: "hole", name: "value" });
+      expect(evaluate(prefix)).toEqual({ kind: "hole", name: "prefix" });
+    });
+
+    it("widens a name in its own scope once a nested function writes it", () => {
+      const declared = name("prefix");
+      const assigned = name("prefix");
+      module([
+        declare({ prefix: lit("/p") }),
+        expr(declared),
+        assign(name("prefix"), lit("/q")),
+        expr(assigned),
+        fn([], []),
+      ]).mutatedNames = ["prefix"];
+      expect(evaluate(declared)).toEqual({ kind: "hole", name: "prefix" });
+      expect(evaluate(assigned)).toEqual({ kind: "hole", name: "prefix" });
     });
   });
 

@@ -244,17 +244,26 @@ export class Evaluator<N extends object> {
     const completes: Outcome = { returns: [], completes: true };
     if (shape.kind === "declare") {
       for (const binding of shape.bindings) {
-        state.bindings.set(
-          binding.name,
+        const value =
           binding.value === null
             ? hole(binding.name)
-            : named(this.expression(binding.value, state, depth), binding.name),
+            : named(this.expression(binding.value, state, depth), binding.name);
+        state.bindings.set(
+          binding.name,
+          this.unlessNestedWrite(root, binding.name, value, state),
         );
       }
       return completes;
     }
     if (shape.kind === "assign") {
-      this.assign(shape.target, shape.operator, shape.value, state, depth);
+      this.assign(
+        shape.target,
+        shape.operator,
+        shape.value,
+        state,
+        root,
+        depth,
+      );
       return completes;
     }
     if (shape.kind === "expression") {
@@ -284,6 +293,22 @@ export class Evaluator<N extends object> {
       return this.run(shape.body, state, root, depth);
     }
     return completes;
+  }
+
+  /**
+   * A name some nested function writes to is unknown from its
+   * declaration on, since that function can run at any point after.
+   */
+  private unlessNestedWrite(
+    root: N,
+    name: string,
+    value: Value,
+    state: State,
+  ): Value {
+    if (!this.lowering.mutatedInNestedFunction(root, name)) {
+      return value;
+    }
+    return named(widenAway(force(this.materialize(value, state))), name);
   }
 
   private branch(
@@ -327,17 +352,20 @@ export class Evaluator<N extends object> {
     operator: string | null,
     valueNode: N,
     state: State,
+    root: N,
     depth: number,
   ): void {
     const written = this.expression(valueNode, state, depth);
     const shape = this.lowering.expression(target);
     if (shape.kind === "name") {
       const previous = this.expression(target, state, depth);
-      state.bindings.set(
-        shape.text,
+      const value =
         operator === null
           ? named(written, shape.text)
-          : this.operator(operator, [previous, written]),
+          : this.operator(operator, [previous, written]);
+      state.bindings.set(
+        shape.text,
+        this.unlessNestedWrite(root, shape.text, value, state),
       );
       return;
     }
@@ -767,7 +795,11 @@ export class Evaluator<N extends object> {
         (candidate) => candidate.on === content.kind || candidate.on === "any",
       );
       if (row !== undefined) {
-        const output = row.apply({ receiver: content, args });
+        const output = row.apply({
+          receiver: content,
+          args,
+          contentOf: (value) => this.contentOf(value, state),
+        });
         const forced = force(receiver);
         if (output.receiver !== undefined && forced.kind === "ref") {
           state.heap.set(forced.id, output.receiver);
@@ -792,6 +824,7 @@ export class Evaluator<N extends object> {
     const output = row.apply({
       receiver: receiver === null ? null : this.contentOf(receiver, state),
       args,
+      contentOf: (value) => this.contentOf(value, state),
     });
     return output.result === "receiver"
       ? (receiver ?? hole("value"))

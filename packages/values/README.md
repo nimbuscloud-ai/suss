@@ -78,8 +78,10 @@ content is unknown from then on.
 
 A name that is not bound in the current function is read where the
 function is written, by running the enclosing scope up to that point.
-A name a nested function mutates is widened away, since the engine
-does not know when that function runs. A name bound in another file is
+A name a nested function mutates is widened away from the point it is
+declared or assigned, whether the read is in the same scope or from
+inside another function, since the engine does not know when that
+function runs. A name bound in another file is
 read through the lowering's `writtenTo`.
 
 Evaluation is demand driven. An outer name or an unknown call is a
@@ -136,7 +138,10 @@ callee row matches on the import origin the lowering resolves, so a
 local function spelled like a library function does not match. A row
 that changes its receiver in place returns the new content as
 `receiver`, and a row that hands back the receiver itself returns
-`"receiver"` so a chain keeps its identity.
+`"receiver"` so a chain keeps its identity. The receiver arrives as its
+content, but an array or record argument arrives as a `ref`, so `push`
+keeps the identity of what it stores. A row that copies instead, the
+way `concat` does, calls `contentOf(arg)` to read what is behind it.
 
 `operations.ts` has the building blocks a row usually needs: `plus`,
 `appended`, `extended`, `joined`, `equals`, `negated`, `fallback` and
