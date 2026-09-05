@@ -334,7 +334,7 @@ async function scanBody(
     return EMPTY_SCAN;
   }
 
-  const calls = withoutChainLinks(bodyCalls(body));
+  const calls = withoutChainLinks(bodyCalls(source.node));
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
   const site: CallSite = {
     enclosingQualifiedName: source.enclosingQualifiedName,

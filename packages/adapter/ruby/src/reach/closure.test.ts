@@ -28,13 +28,19 @@ function write(relPath: string, lines: string[]): void {
   fs.writeFileSync(full, `${lines.join("\n")}\n`);
 }
 
-/** A graphql-ruby object type declaring one field, its resolver method holding `bodyLines`. */
+/**
+ * A graphql-ruby object type declaring one field, its resolver method
+ * holding `bodyLines`. The resolver takes `current_user` as a parameter
+ * so that the body lines below can pass it around as a plain value; a
+ * bare name a method never binds is a call on self, and would be read
+ * as one.
+ */
 function writeQueryType(fieldName: string, bodyLines: string[]): void {
   write("app/graphql/types/query_type.rb", [
     "class Types::QueryType < Types::BaseObject",
     `  field :${fieldName}, String, null: false`,
     "",
-    `  def ${fieldName}`,
+    `  def ${fieldName}(current_user)`,
     ...bodyLines.map((line) => `    ${line}`),
     "  end",
     "end",
@@ -136,7 +142,7 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
       "class Types::QueryType < Types::BaseObject",
       "  field :orders, String, null: false",
       "",
-      "  def orders",
+      "  def orders(current_user)",
       "    load_orders(current_user)",
       "  end",
       "",
@@ -183,7 +189,7 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
     write("app/graphql/queries/orders_query.rb", [
       "class Queries::OrdersQuery < Queries::BaseQuery",
-      "  def resolve",
+      "  def resolve(current_user)",
       "    OrderService.new.list_orders(current_user)",
       "  end",
       "end",
@@ -273,17 +279,98 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
+  it("follows a call written as a bare name, with no arguments and no parentheses", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders",
+      "    visible_orders",
+      "  end",
+      "",
+      "  private",
+      "",
+      "  def visible_orders",
+      "    OrderService.new.list_orders(1)",
+      "  end",
+      "end",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user.orders",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const helper = unitNamed(summaries, "visible_orders");
+    expect(helper.kind).toBe("library");
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([
+      ["visible_orders", summaryIdentifier(helper)],
+    ]);
+    expect(calls(helper).map(([callee]) => callee)).toEqual([
+      "OrderService.new.list_orders",
+    ]);
+  });
+
+  it("follows a bare name written inside another call's arguments", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders",
+      "    wrap(visible_orders)",
+      "  end",
+      "",
+      "  def visible_orders",
+      "    1",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const helper = unitNamed(summaries, "visible_orders");
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([
+      ["wrap", undefined],
+      ["visible_orders", summaryIdentifier(helper)],
+    ]);
+  });
+
+  it("reads a bare name the method assigns as a local variable, so nothing is followed", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders",
+      "    visible_orders = 1",
+      "    visible_orders",
+      "  end",
+      "",
+      "  def visible_orders",
+      "    2",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([]);
+    expect(
+      summaries.some((summary) => summary.identity.name === "visible_orders"),
+    ).toBe(false);
+  });
+
   it("mints one summary for a helper two fields both reach", async () => {
     write("app/graphql/types/query_type.rb", [
       "class Types::QueryType < Types::BaseObject",
       "  field :orders, String, null: false",
       "  field :recent_orders, String, null: false",
       "",
-      "  def orders",
+      "  def orders(current_user)",
       "    OrderService.new.list_orders(current_user)",
       "  end",
       "",
-      "  def recent_orders",
+      "  def recent_orders(current_user)",
       "    OrderService.new.list_orders(current_user)",
       "  end",
       "end",
@@ -328,7 +415,7 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
     write("app/graphql/queries/orders_query.rb", [
       "class Queries::OrdersQuery < Queries::BaseQuery",
-      "  def resolve",
+      "  def resolve(current_user)",
       "    OrderService.new.list_orders(current_user)",
       "  end",
       "end",

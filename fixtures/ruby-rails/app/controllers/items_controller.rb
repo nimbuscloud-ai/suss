@@ -3,12 +3,15 @@ class ItemsController < ApplicationController
     OrderService.new.list_items(params[:order_id])
   end
 
-  def create
-    render json: OrderService.new.list_items(params[:order_id]), status: :created
+  # Calls a private helper by its bare name, with no arguments and no
+  # parentheses, which is a call on self in Ruby.
+  def show
+    visible_items
   end
 
-  def destroy
-    OrderService.new.find_order(params[:id])
-    head :no_content
+  private
+
+  def visible_items
+    OrderService.new.list_items(params[:order_id])
   end
 end
