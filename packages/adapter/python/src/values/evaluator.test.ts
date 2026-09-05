@@ -111,6 +111,12 @@ describe("literals and names", () => {
     );
   });
 
+  it("halves the doubled braces of an f-string it settles", async () => {
+    expect(
+      await literal('PREFIX = "/v1"\nsubject = f"{PREFIX}/items/{{id}}"'),
+    ).toBe("/v1/items/{id}");
+  });
+
   it("leaves a hole in an f-string over an unknown name", async () => {
     expect(await route('subject = f"/api/{version}/x"')).toBe(
       "/api/{version}/x",

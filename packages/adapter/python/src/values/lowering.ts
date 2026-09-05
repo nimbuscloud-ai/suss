@@ -10,7 +10,12 @@
  * to the resolution facts through `EvaluationContext`.
  */
 
-import { children, field, stringLiteralValue } from "../ast.js";
+import {
+  children,
+  field,
+  stringContentValue,
+  stringLiteralValue,
+} from "../ast.js";
 import { parameterShapes } from "../facts/values.js";
 
 import type {
@@ -243,7 +248,7 @@ function stringExpression(node: PyNode): Expression<PyNode> {
   const parts: ({ text: string } | { expression: PyNode })[] = [];
   for (const child of children(node)) {
     if (child.type === "string_content") {
-      parts.push({ text: child.text });
+      parts.push({ text: stringContentValue(child) });
       continue;
     }
     if (child.type === "interpolation") {

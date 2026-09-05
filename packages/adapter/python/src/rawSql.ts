@@ -14,7 +14,7 @@
 import { storageBinding } from "@suss/ir-core";
 import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
-import { field } from "./ast.js";
+import { field, stringContentValue } from "./ast.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -109,7 +109,7 @@ function statementIn(call: PyNode): string | null {
       continue;
     }
     if (child.type === "string_content") {
-      parts[parts.length - 1] += child.text;
+      parts[parts.length - 1] += stringContentValue(child);
       continue;
     }
     if (child.type === "interpolation") {
