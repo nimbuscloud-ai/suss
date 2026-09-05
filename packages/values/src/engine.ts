@@ -19,6 +19,7 @@ import {
   expressionBodyOf,
   type Field,
   type FunctionBody,
+  type Literal,
   type Lowering,
   type Row,
   type Site,
@@ -75,6 +76,7 @@ export class Evaluator<N extends object> {
   private readonly statementBudget: number;
   private readonly stateAfterStatement = new Map<unknown, State>();
   private readonly outerByNode = new Map<unknown, Value>();
+  private readonly writtenByNode = new Map<unknown, Value>();
   private readonly computing = new Set<unknown>();
   private readonly methodRows: ReadonlyMap<
     string,
@@ -124,6 +126,13 @@ export class Evaluator<N extends object> {
   }
 
   private valueAt(node: N, options: EvaluateOptions = {}): Value {
+    const shape = this.lowering.expression(node);
+    if (shape.kind === "literal") {
+      // A literal is worth the same wherever it is written, so the
+      // statements before it are not run. Most values asked about are
+      // literals.
+      return literalValue(shape.value);
+    }
     const site = this.lowering.siteOf(node);
     const state =
       site === null
@@ -200,16 +209,21 @@ export class Evaluator<N extends object> {
     if (rest.length === 0) {
       return current;
     }
-    return this.descend(target, rest, current, root, depth);
+    return this.descend(target, rest, current, root, depth, memo);
   }
 
-  /** Into the arm, loop body or block of `stmt` that contains the rest of the path. */
+  /**
+   * Into the arm, loop body or block of `stmt` that contains the rest of
+   * the path. The memo goes along: the state before a nested statement
+   * is fixed by the path to it, the same as at the top level.
+   */
   private descend(
     stmt: N,
     rest: readonly N[],
     state: State,
     root: N,
     depth: number,
+    memo: Map<unknown, State> | null,
   ): State {
     const shape = this.lowering.statement(stmt);
     const next = rest[0];
@@ -222,16 +236,16 @@ export class Evaluator<N extends object> {
       );
       return arm === undefined
         ? state
-        : this.runPath(arm, rest, state, root, depth, null);
+        : this.runPath(arm, rest, state, root, depth, memo);
     }
     if (shape.kind === "loop") {
       const after = cloneState(state);
       this.run(shape.body, after, root, depth);
       const entry = widenState(state, after);
-      return this.runPath(shape.body, rest, entry, root, depth, null);
+      return this.runPath(shape.body, rest, entry, root, depth, memo);
     }
     if (shape.kind === "block") {
-      return this.runPath(shape.body, rest, state, root, depth, null);
+      return this.runPath(shape.body, rest, state, root, depth, memo);
     }
     return state;
   }
@@ -455,9 +469,7 @@ export class Evaluator<N extends object> {
   private expression(node: N, state: State, depth: number): Value {
     const shape = this.lowering.expression(node);
     if (shape.kind === "literal") {
-      return typeof shape.value === "string"
-        ? text(shape.value)
-        : constant(shape.value);
+      return literalValue(shape.value);
     }
     if (shape.kind === "template") {
       return concat(
@@ -711,6 +723,16 @@ export class Evaluator<N extends object> {
     if (this.computing.has(id)) {
       return hole(this.lowering.holeNameOf(node));
     }
+    const cached = this.writtenByNode.get(id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const value = this.writtenValue(node, id);
+    this.writtenByNode.set(id, value);
+    return value;
+  }
+
+  private writtenValue(node: N, id: unknown): Value {
     const written = this.lowering.writtenTo(node);
     if (written === null || this.same(written, node)) {
       return hole(this.lowering.holeNameOf(node));
@@ -1018,6 +1040,10 @@ function widenAway(content: Value): Value {
     return hole("value");
   }
   return content;
+}
+
+function literalValue(value: Literal): Value {
+  return typeof value === "string" ? text(value) : constant(value);
 }
 
 /** A hole bound to a name takes that name, since that is what a reader sees. */
