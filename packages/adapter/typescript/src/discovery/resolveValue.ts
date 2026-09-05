@@ -12,7 +12,10 @@
 
 import { Node } from "ts-morph";
 
+import { force, literalOf } from "@suss/values";
+
 import { factKeyOf } from "../facts/extract.js";
+import { evaluatedValue } from "../values/evaluator.js";
 import { toFunctionRoot } from "./shared.js";
 
 import type {
@@ -180,56 +183,35 @@ function writtenThroughCall(
 }
 
 /**
- * The string this value is, written out here or named. Null rather
- * than the empty string when nothing resolves, so a caller can tell
- * "stated as empty" from "could not read" (#123).
+ * The string this value comes to, with every name the evaluator can
+ * follow folded in. Null rather than the empty string when the value
+ * does not settle to one string, so a caller can tell "stated as
+ * empty" from "could not read" (#123).
  */
 export function stringValueOf(
   value: Node,
   resolution: ResolutionStore | undefined,
 ): string | null {
-  const written = factKeyOf(value);
-  if (isStringNode(written)) {
-    return written.getLiteralValue();
-  }
-  if (resolution === undefined || !couldNameAValue(written)) {
-    return null;
-  }
-  const resolved = resolution.resolveWrittenValue(written);
-  return resolved !== null && isStringNode(resolved)
-    ? resolved.getLiteralValue()
-    : null;
+  return literalOf(evaluatedValue(value, resolution));
 }
 
 /**
  * The string a named property of an object is set to, with the object
  * and the value each read through whatever name they were given.
  * `fetch(url, { method })`, `fetch(url, opts)` and `{ ...base, method }`
- * all answer here. Null when the property is absent or not a string.
+ * are all read here. Null when the property is absent or not a string.
  */
 export function stringPropertyOf(
   object: Node,
   name: string,
   resolution: ResolutionStore | undefined,
 ): string | null {
-  const literal = objectLiteralOf(object, resolution);
-  if (literal === null) {
+  const record = evaluatedValue(object, resolution);
+  if (record.kind !== "record") {
     return null;
   }
-  const property = propertiesOf(literal, resolution).find(
-    (candidate) =>
-      !Node.isSpreadAssignment(candidate) && candidate.getName() === name,
-  );
-  const value = property === undefined ? null : propertyValueOf(property);
-  return value === null ? null : stringValueOf(value, resolution);
-}
-
-function isStringNode(
-  node: Node,
-): node is Node & { getLiteralValue(): string } {
-  return (
-    Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)
-  );
+  const field = record.fields.get(name);
+  return field === undefined ? null : literalOf(force(field.value));
 }
 
 /** The array literal this value is, written out here or named. */
