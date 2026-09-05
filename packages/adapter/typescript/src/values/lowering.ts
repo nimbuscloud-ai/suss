@@ -438,7 +438,7 @@ function siteOf(node: Node): Site<Node> | null {
     if (parent === undefined) {
       return null;
     }
-    if (isPathStatement(current) || isRoot(parent)) {
+    if (isPathStatement(current)) {
       path.unshift(current);
     }
     if (isRoot(parent)) {

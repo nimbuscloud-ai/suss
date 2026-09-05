@@ -1,6 +1,7 @@
 // Each test is one way production code writes a value, evaluated
 // through the TypeScript lowering and rows. The fixture assigns the
 // expression under test to `subject`.
+import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -272,6 +273,32 @@ describe("statements", () => {
     expect(piecesOf(value)).toEqual([
       { kind: "text", options: ["/b", "/c"] },
       { kind: "text", options: ["/1", "/d"] },
+    ]);
+  });
+
+  it("reads the statements of a function body before the expression", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/repo.ts",
+      `
+      export function load(names: string[], flag: boolean) {
+        let prefix = "/a";
+        if (flag) { prefix = "/b"; }
+        const parts: string[] = [];
+        for (const name of names) { parts.push(name); }
+        return prefix + "/" + parts.join("/");
+      }
+      `,
+    );
+    const returned = file
+      .getFunctionOrThrow("load")
+      .getFirstDescendantByKindOrThrow(SyntaxKind.ReturnStatement)
+      .getExpressionOrThrow();
+    const value = evaluatedValue(returned, new ResolutionStore());
+    expect(piecesOf(value)).toEqual([
+      { kind: "text", options: ["/a", "/b"] },
+      { kind: "text", options: ["/"] },
+      { kind: "hole", name: "value", range: "any" },
     ]);
   });
 
