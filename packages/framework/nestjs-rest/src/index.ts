@@ -120,10 +120,9 @@ export function nestjsRestFramework(
         extraction: {},
       },
       {
-        // Many controllers fall through (return undefined) when the
-        // operation is fire-and-forget (`@HttpCode(204)` for
-        // delete-style). Keep a default transition so
-        // `transitions: []` isn't the surface shape.
+        // A method that runs off the end returns undefined, and Nest
+        // sends the same 200 with an empty body it sends for a bare
+        // `return;`. Only `@HttpCode(N)` changes that.
         kind: "response",
         match: { type: "functionFallthrough" },
         extraction: {

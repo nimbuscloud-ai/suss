@@ -8,6 +8,17 @@ Ruby language adapter for suss. It parses source with tree-sitter (WASM), resolv
 
 The adapter also discovers a `controllerActions` pattern: a class whose ancestry reaches a pack-configured base is a Rails-shaped controller, and each of its own public instance methods is one of its actions, bound to whatever method and path the pack's `routeFor` gives it. `@suss/framework-rails` is the pack that reads `config/routes.rb` and supplies that callback; the adapter itself contains no Rails string. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since a graphql field does no path-engine work, and confidence is pinned low.
 
+## The status an action writes
+
+A controller action's response status comes from `responseStatusCalls` on the `controllerActions` pattern. Each entry says a receiverless call the library gives an action for writing a status and where that call takes it, either as a keyword or at a positional index; when a call is written with both, the keyword wins. `statusCodeNames` on the same pattern gives the number behind each name the library accepts where a number could go, which for Rails is Rack's symbol table. No call name and no status name appears in this package.
+
+The status argument goes through the shared value evaluator, so a number, a name, and a local variable that settles on either all read the same way. The reading is then handed to `assembleSummary` as `statusCodeReading`, alongside the pattern's `defaultStatusCode` as the library default, which is the same shared collapse the Python adapter uses for a status a Flask route returns in a tuple:
+
+- An action that writes no status at all leaves the reading absent, and the summary claims the pattern's declared default.
+- An action whose calls all settle on one status claims that status.
+- An action whose calls settle on two different statuses claims neither, keeps both as candidates, and gets one gap. A call that writes no status of its own contributes the pattern's default as one of those candidates.
+- A status argument that does not settle on a number, `params[:code]` or a name the pack does not declare, claims nothing and gets one gap saying so.
+
 ## The method behind a field
 
 Most fields in a graphql-ruby schema get their value from a method. A summary should say a field has nothing behind it only when the adapter looked and found no such method.
@@ -201,9 +212,11 @@ The walk starts at the resolver method behind every discovered field (the one th
 
 Ruby has no lexical binder for a local variable, so a callee is only followed when the source spells out where it goes: through the class ancestry `ancestry.ts` already computes, through a method the project writes outside any class, which Ruby mixes into every object as a private method, or through a method passed by name into the parameter that calls it.
 
+A call written as a bare name, with no receiver, no arguments and no parentheses, is one of these. `visible_items` on its own parses as an identifier, the same node a local variable read parses as, so `bareCalls.ts` tells the two apart the way Ruby does: a name the method binds is a local variable, and every other identifier read is a call on self. A name is bound by a parameter, an assignment, a block or lambda parameter, a `for` variable, or a `rescue => err` clause. Binding is over-approximated on purpose: a name assigned anywhere in the method counts as a local even below the read, so the mistake this can make is missing a call rather than inventing one. An identifier written where a name is spelled rather than a value read, a method's own name or an assignment's left side, is left alone. So is one written as another call's receiver, since `orders.first` gives no way to resolve what `first` runs on.
+
 | Written as | Followed to |
 | --- | --- |
-| `helper` or `self.helper`, called bare in a method | that method in the enclosing class's own ancestry |
+| `helper`, `helper(x)` or `self.helper(x)`, called in a method | that method in the enclosing class's own ancestry |
 | `helper`, when nothing in the enclosing ancestry defines it | `def helper` written outside any class, project-wide |
 | `Service.new.method` | `method` in `Service`'s own ancestry |
 | `Service.method` | `def self.method` written in `Service`'s own body |
@@ -220,6 +233,7 @@ Where it stops, and what the gap says:
 | a bare name two files each define at the top level | more than one possible source |
 | `Rails.cache.delete`, a call into a class this run does not define | outside the run (no gap) |
 | `user.orders`, a local variable, or an instance variable | the value could not be settled |
+| `visible_items.first`, where the receiver is itself a bare call | the value could not be settled |
 | `handler.call` or `handler.()`, where `handler` is a parameter that some caller in the run passes a method by name into | followed through the join above (no gap) |
 | `handler.call` or `handler.()`, where `handler` is a parameter that no caller in the run passes a method by name into | the caller supplies it, and nothing named what it passed |
 | `service_class.new.method` where `service_class` is not a constant | the value could not be settled |

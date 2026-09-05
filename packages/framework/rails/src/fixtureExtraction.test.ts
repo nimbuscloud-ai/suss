@@ -67,7 +67,12 @@ describe("extraction over fixtures/ruby-rails", () => {
         "index",
         "index",
         "show",
+        "show",
+        "show",
+        "update",
         "cancel",
+        "create",
+        "destroy",
         "summary",
         "preview",
       ].sort(),
@@ -110,12 +115,30 @@ describe("extraction over fixtures/ruby-rails", () => {
     });
   });
 
-  it("gives every bound action the pattern's default status code", async () => {
+  it("gives an action that writes no status of its own Rails' own default", async () => {
     const { summaries } = await extractFixture();
     const index = action(summaries, "orders_controller", "index");
     expect(index.transitions[0]?.output).toMatchObject({
       type: "response",
       statusCode: { type: "literal", value: 200 },
+    });
+  });
+
+  it("reads the status a render call gives, written as a Rack symbol", async () => {
+    const { summaries } = await extractFixture();
+    const create = action(summaries, "items_controller", "create");
+    expect(create.transitions[0]?.output).toMatchObject({
+      type: "response",
+      statusCode: { type: "literal", value: 201 },
+    });
+  });
+
+  it("reads the status a head call gives", async () => {
+    const { summaries } = await extractFixture();
+    const destroy = action(summaries, "items_controller", "destroy");
+    expect(destroy.transitions[0]?.output).toMatchObject({
+      type: "response",
+      statusCode: { type: "literal", value: 204 },
     });
   });
 
@@ -162,6 +185,29 @@ describe("extraction over fixtures/ruby-rails", () => {
     ).toBe(true);
   });
 
+  it("reaches a private helper an action calls by its bare name", async () => {
+    const { summaries } = await extractFixture();
+    const show = action(summaries, "items_controller", "show");
+    expect(
+      show.transitions[0]?.effects.some(
+        (effect) =>
+          effect.type === "invocation" &&
+          effect.callee.includes("visible_items"),
+      ),
+    ).toBe(true);
+
+    const helper = summaries.find(
+      (s) => s.kind === "library" && s.identity.name === "visible_items",
+    );
+    expect(helper).toBeDefined();
+    expect(
+      helper?.transitions[0]?.effects.some(
+        (effect) =>
+          effect.type === "invocation" && effect.callee.includes("list_items"),
+      ),
+    ).toBe(true);
+  });
+
   it("binds a resource nested one level inside another, with the parent's own id param", async () => {
     const { summaries } = await extractFixture();
     const itemsIndex = action(summaries, "items_controller", "index");
@@ -171,6 +217,21 @@ describe("extraction over fixtures/ruby-rails", () => {
         method: "GET",
         path: "/orders/:order_id/items",
       },
+    });
+  });
+
+  it("binds a singular resource's actions with no :id, on the plural controller", async () => {
+    const { summaries } = await extractFixture();
+    expect(
+      action(summaries, "profiles_controller", "show").identity.boundaryBinding,
+    ).toMatchObject({
+      semantics: { name: "rest", method: "GET", path: "/profile" },
+    });
+    expect(
+      action(summaries, "profiles_controller", "update").identity
+        .boundaryBinding,
+    ).toMatchObject({
+      semantics: { name: "rest", method: "PATCH", path: "/profile" },
     });
   });
 

@@ -43,10 +43,14 @@ interface ResourceScope {
   controllerKey: string;
   collectionBase: string;
   memberBase: string;
-  /** The prefix a resource or route nested one level inside this one is written under, `/orders/:order_id`. */
+  /**
+   * The prefix a resource nested one level inside this one is written
+   * under: `/orders/:order_id` for a plural resource, and the
+   * resource's own path for a singular one, which has no id to key on.
+   */
   nestedBase: string;
-  /** Which base a bare verb call with no `on:` inside this scope uses. Null directly inside a `resources` block, where Rails itself requires `on:` or a `member`/`collection` wrapper. */
-  ambientBase: string | null;
+  /** Which base a bare verb call with no `on:` uses: `nestedBase` directly inside a resource block, and the member or collection base inside a `member` or `collection` block. */
+  ambientBase: string;
 }
 
 interface RouteContext {
@@ -238,11 +242,14 @@ function handleResourceCall(
   if (symbol === null) {
     return;
   }
-  const controllerSegment = plural ? symbol : pluralize(symbol);
+  // Rails routes a singular resource to the plural controller, and
+  // `controller:` or `path:` overrides what the name would have given.
+  const controllerSegment =
+    wordValue(args.keyword.controller) ?? (plural ? symbol : pluralize(symbol));
   const controllerKey = joinKey(ctx.modulePrefix, controllerSegment);
   const prefixBase =
     ctx.resource !== undefined ? ctx.resource.nestedBase : ctx.pathPrefix;
-  const base = joinPath(prefixBase, symbol);
+  const base = joinPath(prefixBase, wordValue(args.keyword.path) ?? symbol);
 
   const only = readSymbolList(args.keyword.only);
   const except = readSymbolList(args.keyword.except);
@@ -262,12 +269,15 @@ function handleResourceCall(
   if (body === null) {
     return;
   }
+  // Rails takes the nesting parameter from the resource's own name,
+  // whatever `path:` said the URL reads.
+  const nestedBase = plural ? `${base}/:${singularize(symbol)}_id` : base;
   const nested: ResourceScope = {
     controllerKey,
     collectionBase: base,
     memberBase: plural ? `${base}/:id` : base,
-    nestedBase: `${base}/:${singularize(symbol)}_id`,
-    ambientBase: null,
+    nestedBase,
+    ambientBase: nestedBase,
   };
   walkBody(body, { ...ctx, resource: nested }, out);
 }
@@ -290,6 +300,17 @@ function handleOnBlock(
     ? ctx.resource.memberBase
     : ctx.resource.collectionBase;
   walkBody(body, { ...ctx, resource: { ...ctx.resource, ambientBase } }, out);
+}
+
+/** Where a bare verb inside a resource scope hangs its path, given what `on:` said. */
+function baseForOn(resource: ResourceScope, on: string | null): string {
+  if (on === "collection") {
+    return resource.collectionBase;
+  }
+  if (on === "member") {
+    return resource.memberBase;
+  }
+  return resource.ambientBase;
 }
 
 function handleVerb(
@@ -321,16 +342,7 @@ function handleVerb(
   if (symbol === null) {
     return;
   }
-  const on = wordValue(args.keyword.on);
-  const base =
-    on === "collection"
-      ? ctx.resource.collectionBase
-      : on === "member"
-        ? ctx.resource.memberBase
-        : ctx.resource.ambientBase;
-  if (base === null) {
-    return;
-  }
+  const base = baseForOn(ctx.resource, wordValue(args.keyword.on));
   out.add(ctx.resource.controllerKey, symbol, {
     method,
     path: `${base}/${symbol}`,

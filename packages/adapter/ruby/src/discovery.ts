@@ -37,6 +37,7 @@ import {
 } from "./ast.js";
 import { envReadEffects } from "./envReads.js";
 import { invocationEffects } from "./paths/effects.js";
+import { responseStatusReading } from "./responseStatus.js";
 import {
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
@@ -417,7 +418,7 @@ function buildControllerActionUnit(
         conditions: [],
         terminal: {
           kind: "response",
-          statusCode: { type: "literal", value: pattern.defaultStatusCode },
+          statusCode: null,
           body: null,
           exceptionType: null,
           message: null,
@@ -426,6 +427,10 @@ function buildControllerActionUnit(
           delegateTarget: null,
           emitEvent: null,
           location: range,
+        },
+        statusCodeReading: {
+          reading: responseStatusReading(method, pattern),
+          libraryDefault: pattern.defaultStatusCode,
         },
         effects: body.effects ?? [],
         ...(body.extraEffects === undefined

@@ -99,6 +99,8 @@ describe("nestjsRestFramework — integration", () => {
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual([
       "HealthController.ping",
+      "ItemsController.archive",
+      "ItemsController.remove",
       "ReportsController.summary",
       "UsersController.create",
       "UsersController.list",
@@ -164,6 +166,27 @@ describe("nestjsRestFramework — integration", () => {
       "UsersController.remove": "DELETE",
       "HealthController.ping": "GET",
     });
+  });
+
+  it("gives a method that runs off the end the same 200 as a bare return", () => {
+    const outputs = ["ItemsController.remove", "ItemsController.archive"].map(
+      (name) => {
+        const found = summaries.find((s) => s.identity.name === name);
+        if (found === undefined) {
+          throw new Error(`${name} missing`);
+        }
+        return found.transitions.map((t) => t.output);
+      },
+    );
+    const response = [
+      {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: null,
+      },
+    ];
+    expect(outputs[0]).toMatchObject(response);
+    expect(outputs[1]).toMatchObject(response);
   });
 
   it("handles bare @Controller() (no prefix) by mounting at root", () => {

@@ -58,6 +58,32 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     expect(units[0].routeInfo).toEqual({ method: "GET", path: "/users/:id" });
   });
 
+  it("finds a subject built as a property of the default import", () => {
+    const sf = sourceFile(`
+      import express from "express";
+      const r = express.Router();
+      r.get("/users/:id", (req, res) => { res.json({}); });
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+    );
+    expect(units[0]?.routeInfo).toEqual({ method: "GET", path: "/users/:id" });
+  });
+
+  it("leaves a property of the default import the pattern does not declare", () => {
+    const sf = sourceFile(`
+      import express from "express";
+      const r = express.static("public");
+      r.get("/users/:id", (req, res) => { res.json({}); });
+    `);
+    expect(
+      discoverRegistrationCalls(sf, expressMatch, "handler", httpBinding),
+    ).toEqual([]);
+  });
+
   it("follows a path passed by name to the string it was written as", () => {
     // A provider whose path is a constant used to come back with no route at
     // all, so a client calling it paired with nothing. The consumer side

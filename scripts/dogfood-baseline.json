@@ -3,9 +3,9 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 880,
-    "internal": 2969,
-    "consumers": 1652,
-    "pairs": 1649,
+    "internal": 2980,
+    "consumers": 1661,
+    "pairs": 1658,
     "unfollowedCalls": 485,
     "findingErrors": 0
   },
@@ -20,14 +20,14 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 69,
-      "internal": 189,
-      "consumers": 116,
+      "internal": 197,
+      "consumers": 123,
       "unfollowedCalls": 72
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 86,
-      "internal": 819,
+      "internal": 821,
       "consumers": 191,
       "unfollowedCalls": 105
     },
@@ -259,7 +259,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 2,
-      "consumers": 19,
+      "consumers": 21,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
@@ -356,7 +356,7 @@
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
       "exports": 4,
-      "internal": 12,
+      "internal": 13,
       "consumers": 28,
       "unfollowedCalls": 6
     },
