@@ -126,7 +126,7 @@ describe("renderPythonProgram", () => {
       ]),
     ).toEqual([
       ["get_todos0", "claim", ["/todos0"]],
-      ["get_reports1", "abstain", ["/c1/reports1"]],
+      ["get_reports1", "claim", ["/c1/reports1"]],
       ["get_users2", "abstain", []],
     ]);
   });
