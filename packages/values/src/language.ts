@@ -142,6 +142,12 @@ export interface Lowering<N> {
   freeNamesOf(fn: N): readonly string[];
   /** The name to give a hole that replaces this expression. */
   holeNameOf(node: N): string;
+  /**
+   * One key per node, for a parser that hands back a fresh object on
+   * every read of the same node. The engine compares and memoizes nodes
+   * by this key. Left out, the node itself is the key.
+   */
+  idOf?(node: N): unknown;
   readonly rows: readonly Row[];
 }
 

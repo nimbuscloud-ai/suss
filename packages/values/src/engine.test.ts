@@ -40,6 +40,8 @@ import {
   type Value,
 } from "./value.js";
 
+import type { Lowering } from "./language.js";
+
 function evaluate(target: TestNode, bindings?: Record<string, Value>): Value {
   const evaluator = new Evaluator(testLowering);
   const options =
@@ -992,6 +994,63 @@ describe("Evaluator", () => {
         holePiece("route"),
         textPiece(["/x"]),
       ]);
+    });
+  });
+
+  describe("a lowering whose nodes are fresh objects on every read", () => {
+    type Copied = TestNode & { id?: number };
+    const ids = new Map<TestNode, number>();
+    const idOf = (n: Copied): number => {
+      if (n.id !== undefined) {
+        return n.id;
+      }
+      const known = ids.get(n);
+      if (known !== undefined) {
+        return known;
+      }
+      ids.set(n, ids.size + 1);
+      return ids.size;
+    };
+    const copy = (n: TestNode): Copied => ({ ...n, id: idOf(n) });
+    const copying: Lowering<TestNode> = {
+      ...testLowering,
+      statement: (n) => {
+        const shape = testLowering.statement(n);
+        return shape.kind === "branch"
+          ? { ...shape, arms: shape.arms.map((arm) => arm.map(copy)) }
+          : shape;
+      },
+      siteOf: (n) => {
+        const site = testLowering.siteOf(n);
+        return site === null
+          ? null
+          : { root: copy(site.root), path: site.path.map(copy) };
+      },
+      functionOf: (n) => {
+        const shape = testLowering.functionOf(n);
+        return shape === null || !Array.isArray(shape.body)
+          ? shape
+          : { ...shape, body: shape.body.map(copy) };
+      },
+      writtenTo: (n) => {
+        const written = testLowering.writtenTo(n);
+        return written === null ? null : copy(written);
+      },
+      idOf,
+    };
+
+    it("finds the statement path, the memo and a write by id", () => {
+      const evaluator = new Evaluator(copying);
+      const inArm = op("+", name("x"), lit("/b"));
+      const written = name("y", lit("/c"));
+      module([
+        declare({ x: lit("/a") }),
+        branch(name("flag"), [expr(inArm)], []),
+        expr(written),
+      ]);
+      expect(literalOf(force(evaluator.evaluate(inArm)))).toBe("/a/b");
+      expect(literalOf(force(evaluator.evaluate(inArm)))).toBe("/a/b");
+      expect(literalOf(force(evaluator.evaluate(written)))).toBe("/c");
     });
   });
 });
