@@ -14,6 +14,7 @@ import {
   NO_BARRIERS,
 } from "../walk/descent.js";
 import { tryMatchParameterCall } from "./continuation.js";
+import { declaredStatusCode } from "./extract.js";
 import { tryMatchJsxReturn } from "./jsx.js";
 import {
   tryMatchFunctionCall,
@@ -220,16 +221,25 @@ export function functionMayFallThrough(func: FunctionRoot): boolean {
  * Build a synthetic fall-through terminal anchored at the closing of
  * the function body. Used by the assembly pass when no other terminal
  * covers the function's default-path exit.
+ *
+ * The pack's own `functionFallthrough` pattern says what running off
+ * the end means, the same way its `returnStatement` pattern says what
+ * `return;` means. Nest sends a 200 with an empty body either way, so
+ * both of its patterns declare a response, and a pack that treats
+ * falling through as a plain return declares one of those instead.
  */
-export function makeFallthroughTerminal(func: FunctionRoot): FoundTerminal {
+export function makeFallthroughTerminal(
+  func: FunctionRoot,
+  pattern: TerminalPattern,
+): FoundTerminal {
   const body = func.getBody();
   const anchor: Node = body ?? func;
   const line = endLineOf(anchor);
   return {
     node: anchor,
     terminal: {
-      kind: "return",
-      statusCode: null,
+      kind: pattern.kind,
+      statusCode: declaredStatusCode(pattern.extraction),
       body: null,
       exceptionType: null,
       message: null,
