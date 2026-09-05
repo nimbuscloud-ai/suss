@@ -1,6 +1,6 @@
 # Releasing
 
-All 30 packages share one version. You raise that number once in the
+All 31 packages share one version. You raise that number once in the
 root `package.json`,
 [`scripts/preparePublish.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/preparePublish.mjs)
 copies it out to every package, and
@@ -32,7 +32,7 @@ can read what the release would say before it says it.
 Start with a dry run. Before it lists anything it asks the registry for
 a publishing credential for every package the run would write, which is
 the only thing that proves a package will publish. A rehearsal that says
-"would publish 30 packages" is one that would in fact have published
+"would publish 31 packages" is one that would in fact have published
 them. A publishing run asks the same question before it writes the
 first package, so a release that cannot finish publishes nothing and says
 which packages need setting up.
@@ -166,7 +166,7 @@ the registry is confirming the version is up.
 
 ## What a release leaves behind
 
-- 30 packages on the registry at the new version.
+- 31 packages on the registry at the new version.
 - An annotated `v<version>` tag on the commit that was published.
 - A GitHub release at that tag, titled `v<version>`, with the notes
   the workflow generated from the commits since the last release.
@@ -183,7 +183,7 @@ how 0.0.2 reached npm and `main` with no tag on it. The release is
 created with `--verify-tag`, so if the tag did not reach the remote the
 release is not written either.
 
-Publishing 30 packages, tagging, and writing the release are three
+Publishing 31 packages, tagging, and writing the release are three
 steps, and a run can stop between them. Re-dispatching is safe: the
 packages already on the registry are skipped, and the tag check stops
 the run before it publishes a version that is already out. If the tag

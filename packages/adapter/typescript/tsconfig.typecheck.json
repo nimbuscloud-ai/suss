@@ -22,6 +22,9 @@
     },
     {
       "path": "../../resolution/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../values/tsconfig.typecheck.json"
     }
   ]
 }

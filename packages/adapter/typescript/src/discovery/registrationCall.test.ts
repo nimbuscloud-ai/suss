@@ -151,12 +151,30 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     expect(units[0].routeInfo).toEqual({ method: "POST", path: "/items" });
   });
 
-  it("omits routeInfo when the path argument isn't a literal", () => {
+  it("reads the path through a local name", () => {
     const sf = sourceFile(`
       import { Router } from "express";
       const r = Router();
       const p = "/dynamic";
       r.get(p, (req, res) => { res.json({}); });
+    `);
+    const units = discoverRegistrationCalls(
+      sf,
+      expressMatch,
+      "handler",
+      httpBinding,
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].routeInfo).toEqual({ method: "GET", path: "/dynamic" });
+  });
+
+  it("omits routeInfo when the path argument is a parameter", () => {
+    const sf = sourceFile(`
+      import { Router } from "express";
+      const r = Router();
+      export function mount(p: string) {
+        r.get(p, (req, res) => { res.json({}); });
+      }
     `);
     const units = discoverRegistrationCalls(
       sf,

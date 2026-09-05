@@ -1,23 +1,20 @@
 {
-  "name": "@suss/adapter-typescript",
+  "name": "@suss/values",
   "version": "0.22.1",
   "type": "module",
-  "description": "TypeScript adapter for suss — walks source files with ts-morph and emits raw extractions for the suss pipeline.",
+  "description": "A bounded evaluator that folds what the source determines about a value and keeps a hole for the rest.",
   "keywords": [
     "suss",
-    "behavioral-summary",
     "static-analysis",
-    "typescript",
-    "ts-morph",
-    "ast"
+    "abstract-interpretation"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
-  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/adapter/typescript#readme",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/values#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nimbuscloud-ai/suss.git",
-    "directory": "packages/adapter/typescript"
+    "directory": "packages/values"
   },
   "bugs": {
     "url": "https://github.com/nimbuscloud-ai/suss/issues"
@@ -45,22 +42,7 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@suss/behavioral-ir": "0.22.1",
-    "@suss/datalog": "0.22.1",
-    "@suss/extractor": "0.22.1",
-    "@suss/resolution": "0.22.1",
-    "@suss/values": "0.22.1",
-    "graphql": "^16.8.0",
-    "picomatch": "^4.0.4",
-    "ts-morph": "^23.0.0",
-    "zod": "^4.0.0"
-  },
   "devDependencies": {
-    "@suss/resolution": "*",
-    "@suss/test-project": "*",
-    "@types/node": "*",
-    "@types/picomatch": "^4.0.3",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
