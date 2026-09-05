@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 2050,
-      "covered": 1980,
+      "total": 2051,
+      "covered": 1981,
       "skipped": 0,
       "pct": 96.58
     },
     "statements": {
-      "total": 2088,
-      "covered": 2018,
+      "total": 2089,
+      "covered": 2019,
       "skipped": 0,
       "pct": 96.64
     },
@@ -553,10 +553,10 @@
   },
   "src/facts/values.ts": {
     "lines": {
-      "total": 193,
-      "covered": 190,
+      "total": 194,
+      "covered": 191,
       "skipped": 0,
-      "pct": 98.44
+      "pct": 98.45
     },
     "functions": {
       "total": 29,
@@ -565,10 +565,10 @@
       "pct": 100
     },
     "statements": {
-      "total": 194,
-      "covered": 191,
+      "total": 195,
+      "covered": 192,
       "skipped": 0,
-      "pct": 98.45
+      "pct": 98.46
     },
     "branches": {
       "total": 145,
