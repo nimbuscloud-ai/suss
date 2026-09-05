@@ -30,6 +30,7 @@ import { statusChoicesOf } from "./statusBranches.js";
 
 import type { RawTerminal, TerminalPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 import type { OriginatesFrom } from "../resolve/invocationEffects.js";
 import type { FoundTerminal } from "./shared.js";
 
@@ -131,7 +132,7 @@ export function tryMatchReturnShape(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   resolveCallee?: ResolveCallee,
 ): FoundTerminal[] {
   if (Node.isObjectLiteralExpression(node)) {
@@ -155,7 +156,7 @@ export function tryMatchReturnShape(
       pattern,
       match,
       undefined,
-      resolveWrittenValue,
+      resolution,
     );
     return terminal === null ? [] : [{ ...terminal, source }];
   }
@@ -176,7 +177,7 @@ export function tryMatchReturnShape(
       pattern,
       match,
       undefined,
-      resolveWrittenValue,
+      resolution,
     );
     return terminal === null ? [] : [terminal];
   }
@@ -210,7 +211,7 @@ export function tryMatchReturnShape(
       pattern,
       match,
       resolved.substitutions,
-      resolveWrittenValue,
+      resolution,
     );
     if (terminal !== null) {
       terminals.push(terminal);
@@ -233,7 +234,7 @@ function terminalFromReturnedObject(
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "returnShape" }>,
   substitutions?: ReadonlyMap<string, Expression>,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
 ): FoundTerminal | null {
   const required = match.requiredProperties;
   if (required !== undefined && required.length > 0) {
@@ -257,7 +258,7 @@ function terminalFromReturnedObject(
     extraction: pattern.extraction,
     returnedObj: obj,
     ...(substitutions !== undefined ? { substitutions } : {}),
-    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
+    ...(resolution !== undefined ? { resolution } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   // For a returnShape terminal, the returned object IS the body. `extractBody`
@@ -301,7 +302,7 @@ export function tryMatchParameterMethodCall(
   func: FunctionRoot,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "parameterMethodCall" }>,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
 ): FoundTerminal[] {
   if (!Node.isCallExpression(node)) {
     return [];
@@ -322,7 +323,7 @@ export function tryMatchParameterMethodCall(
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     calls,
-    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
+    ...(resolution !== undefined ? { resolution } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);
@@ -345,7 +346,8 @@ export function tryMatchParameterMethodCall(
 
   const base = { node, ...(source !== null ? { source } : {}) };
   const argument = statusArgument(calls, pattern.extraction);
-  const choices = argument === null ? null : statusChoicesOf(argument);
+  const choices =
+    argument === null ? null : statusChoicesOf(argument, resolution);
   if (choices === null) {
     return [{ ...base, terminal }];
   }
@@ -587,7 +589,7 @@ export function tryMatchFunctionCall(
   node: Node,
   pattern: TerminalPattern,
   match: Extract<TerminalPattern["match"], { type: "functionCall" }>,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
 ): FoundTerminal | null {
   // `new Response(body, init)` builds a response the same way
@@ -630,7 +632,7 @@ export function tryMatchFunctionCall(
   const ctx: ExtractionContext = {
     extraction: pattern.extraction,
     throwCallArgs: callArgs,
-    ...(resolveWrittenValue !== undefined ? { resolveWrittenValue } : {}),
+    ...(resolution !== undefined ? { resolution } : {}),
   };
   const statusCode = extractStatusCode(ctx);
   const body = extractBody(ctx);

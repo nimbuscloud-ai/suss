@@ -381,7 +381,7 @@ describe("a helper resolved through the store", () => {
       handler,
       [RESPONSE_SHAPE],
       undefined,
-      (value) => store.resolveWrittenValue(value),
+      store,
       undefined,
       (value) => store.resolveCallable(value),
     );

@@ -11,11 +11,15 @@ import {
   type ObjectLiteralExpression,
 } from "ts-morph";
 
+import { constantOf } from "@suss/values";
+
 import { extractShape, extractShapeWithArguments } from "../shapes/shapes.js";
+import { evaluatedValue } from "../values/evaluator.js";
 import { peelSyntax } from "../walk/unwrap.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { RawTerminal, TerminalExtraction } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 
 /** Unwrap `expr as const` / `expr as Type` to the inner expression. */
 export function unwrapAs(node: Expression): Expression {
@@ -78,11 +82,12 @@ export interface ExtractionContext {
    */
   substitutions?: ReadonlyMap<string, Expression>;
   /**
-   * One-hop lookup from a written name to the value it was bound to,
-   * from the fact layer. Status extraction uses it so a named constant
-   * resolves to its number instead of falling out as dynamic (#123).
+   * The store the evaluator reads names through. Status extraction uses
+   * it so a named constant resolves to its number, through however many
+   * bindings and files it was passed along, instead of falling out as
+   * dynamic (#123).
    */
-  resolveWrittenValue?: (value: Node) => Node | null;
+  resolution?: ResolutionStore;
 }
 
 /**
@@ -151,26 +156,20 @@ function matchConstructorCode(
 }
 
 /**
- * The status a written value comes to. A number written out is the
- * status, a named constant resolves one hop through the fact layer,
- * and anything else is reported as source text, so a reader can see
- * where the value comes from.
+ * The status a written value comes to. A value the evaluator settles to
+ * one number is the status, whether it was written out or reached
+ * through a chain of names, and anything else is reported as source
+ * text, so a reader can see where the value comes from.
  */
 function statusOf(
   value: Expression,
   ctx: ExtractionContext,
 ): RawTerminal["statusCode"] {
-  const unwrapped = unwrapAs(value);
-  if (Node.isNumericLiteral(unwrapped)) {
-    return { type: "literal", value: Number(unwrapped.getText()) };
+  const status = constantOf(evaluatedValue(value, ctx.resolution));
+  if (typeof status === "number") {
+    return { type: "literal", value: status };
   }
-
-  const resolved = ctx.resolveWrittenValue?.(unwrapped) ?? null;
-  if (resolved !== null && Node.isNumericLiteral(resolved)) {
-    return { type: "literal", value: Number(resolved.getText()) };
-  }
-
-  return { type: "dynamic", sourceText: unwrapped.getText() };
+  return { type: "dynamic", sourceText: unwrapAs(value).getText() };
 }
 
 /** The status under a named property of an object literal. */

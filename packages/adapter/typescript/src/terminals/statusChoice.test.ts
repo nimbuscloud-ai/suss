@@ -142,6 +142,26 @@ describe("a status behind a named constant", () => {
     });
     expect(outcomes).toEqual(["201 under 0"]);
   });
+
+  it("resolves a constant passed along through several names", async () => {
+    const outcomes = await outcomesOfFiles({
+      "src/http.ts": "export const CREATED = 201;\n",
+      "src/statuses.ts": [
+        'import { CREATED } from "./http.js";',
+        "export const STATUS = { created: CREATED };",
+      ].join("\n"),
+      "src/routes.ts": [
+        'import express from "express";',
+        'import { STATUS } from "./statuses.js";',
+        "const app = express();",
+        'app.post("/things", (req, res) => {',
+        "  const code = STATUS.created;",
+        "  res.status(code).json({ ok: true });",
+        "});",
+      ].join("\n"),
+    });
+    expect(outcomes).toEqual(["201 under 0"]);
+  });
 });
 
 describe("a status written as a choice", () => {
@@ -153,6 +173,23 @@ describe("a status written as a choice", () => {
     expect(await outcomesOf(THROUGH_A_BINDING)).toEqual(
       await outcomesOf(INLINE),
     );
+  });
+
+  it("reads an arm written as a named constant", async () => {
+    const outcomes = await outcomesOfFiles({
+      "src/statuses.ts":
+        "export const ACCEPTED = 202;\nexport const OK = 200;\n",
+      "src/routes.ts": [
+        'import express from "express";',
+        'import { ACCEPTED, OK } from "./statuses.js";',
+        "const app = express();",
+        'app.get("/things", (req, res) => {',
+        "  const created = Boolean(req);",
+        "  res.status(created ? ACCEPTED : OK).json({ ok: true });",
+        "});",
+      ].join("\n"),
+    });
+    expect(outcomes).toEqual(["202 under 1", "200 under 1"]);
   });
 
   it("leaves a status nobody wrote as a choice alone", async () => {

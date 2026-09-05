@@ -589,7 +589,7 @@ export function extractCodeStructure(
   invocationRecognizers: InvocationRecognizer[] = [],
   accessRecognizers: AccessRecognizer[] = [],
   barriers: DescentBarriers = NO_BARRIERS,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
@@ -602,7 +602,7 @@ export function extractCodeStructure(
       invocationRecognizers,
       accessRecognizers,
       barriers,
-      resolveWrittenValue,
+      resolution,
       originatesFrom,
       anchorCallsOf,
       resolveCallee,
@@ -767,7 +767,7 @@ function readCodeStructure(
   invocationRecognizers: InvocationRecognizer[],
   accessRecognizers: AccessRecognizer[],
   barriers: DescentBarriers,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
@@ -789,7 +789,7 @@ function readCodeStructure(
     invocationRecognizers,
     accessRecognizers,
     barriers,
-    resolveWrittenValue,
+    resolution,
     originatesFrom,
     anchorCallsOf,
     resolveCallee,
@@ -1248,9 +1248,7 @@ function extractFromSourceFile(
         allInvocationRecognizers,
         allAccessRecognizers,
         barriers,
-        resolution === undefined
-          ? undefined
-          : (value) => resolution.resolveWrittenValue(value),
+        resolution,
         resolution === undefined
           ? undefined
           : (value, module) =>
@@ -2449,8 +2447,7 @@ export function createTypeScriptAdapter(
                     ...projectHelpers.contributedRecognizers(),
                   ],
                   access: collectAccessRecognizers(config.frameworks, tallies),
-                  resolveWrittenValue: (value) =>
-                    resolution.resolveWrittenValue(value),
+                  resolution,
                   resolveCallableSources: (value, alsoFrom) =>
                     resolution.resolveCallableSources(value, alsoFrom),
                   sourceDeclarationsBehind: (declaration) =>

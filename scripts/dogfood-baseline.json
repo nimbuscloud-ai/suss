@@ -3,10 +3,10 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 865,
-    "internal": 2897,
-    "consumers": 1499,
-    "pairs": 1496,
-    "unfollowedCalls": 445,
+    "internal": 2891,
+    "consumers": 1507,
+    "pairs": 1504,
+    "unfollowedCalls": 441,
     "findingErrors": 0
   },
   "packages": {
@@ -27,9 +27,9 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 86,
-      "internal": 835,
-      "consumers": 173,
-      "unfollowedCalls": 107
+      "internal": 829,
+      "consumers": 181,
+      "unfollowedCalls": 104
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -491,7 +491,7 @@
       "exports": 35,
       "internal": 52,
       "consumers": 0,
-      "unfollowedCalls": 27
+      "unfollowedCalls": 26
     }
   }
 }
