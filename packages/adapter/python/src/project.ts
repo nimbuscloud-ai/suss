@@ -34,7 +34,7 @@ import {
   stampModuleImports,
 } from "@suss/extractor";
 
-import { field, rangeOf } from "./ast.js";
+import { field, isFunction, rangeOf } from "./ast.js";
 import {
   buildPythonExtractionReport,
   createPackTallies,
@@ -48,6 +48,7 @@ import { parsePython } from "./parser.js";
 import { reachedFunctions } from "./reach/closure.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
+import { bindEvaluator } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -206,6 +207,9 @@ export async function extractPythonProject(
         emitValueFacts(db, file, root);
       }
       indexDefinitions(definitions, file, root);
+    }
+    if (needsValues) {
+      bindEvaluator(db, { files: bound, definitions });
     }
   });
 
@@ -438,7 +442,7 @@ function indexDefinitions(
   file: string,
   node: PyNode,
 ): void {
-  if (node.type === "function_definition") {
+  if (isFunction(node)) {
     into.set(nodeId(file, node), node);
   }
   for (const child of node.namedChildren) {
