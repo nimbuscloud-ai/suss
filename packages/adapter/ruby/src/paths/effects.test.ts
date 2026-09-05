@@ -261,6 +261,52 @@ describe("ruby invocation effects", () => {
     expect(shape(effects).map((row) => row[0])).toEqual(["publish", "report"]);
   });
 
+  it("reads a for loop's variable as a local variable", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  for row in rows",
+      "    publish(row)",
+      "  end",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual(["rows", "publish"]);
+  });
+
+  it("reads a parameter with a default, a splat and a block as local variables", async () => {
+    const effects = await effectsFor([
+      "def index(page = 1, *rest, **opts, &blk)",
+      "  page",
+      "  rest",
+      "  opts",
+      "  blk",
+      "end",
+    ]);
+    expect(effects).toEqual([]);
+  });
+
+  it("reads every name a destructuring binds as a local variable", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  first, second = pair",
+      "  rows.each { |(key, value)| publish(key, value, first, second) }",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual(["pair", "publish"]);
+  });
+
+  it("leaves a name out where it is being spelled rather than read", async () => {
+    const effects = await effectsFor([
+      "def index",
+      "  def helper",
+      "  end",
+      "  alias fetch load",
+      "  undef stale",
+      "  refresh_cache",
+      "end",
+    ]);
+    expect(shape(effects).map((row) => row[0])).toEqual(["refresh_cache"]);
+  });
+
   it("leaves a bare raise out, the same as a raise with an argument", async () => {
     const effects = await effectsFor(["def index", "  raise", "end"]);
     expect(effects).toEqual([]);
