@@ -2,7 +2,7 @@
 // preparePublish.mjs: put every workspace package into a publishable
 // state, and keep them there.
 //
-// Four things have to be true before `npm publish` does the right thing:
+// Five things have to be true before `npm publish` does the right thing:
 //
 //   1. No package carries `private: true`, which npm refuses to publish.
 //   2. Every package declares `publishConfig.access: "public"`, because a
@@ -22,8 +22,10 @@
 //      on its own as the version grows. Below 0.1.0 it widens to
 //      nothing: ^0.0.2 is >=0.0.2 <0.0.3, one version, which is the
 //      right reading of a set that has promised no stability yet.
+//   5. Every sibling a package imports at runtime is a dependency or a
+//      peer. tsup copies an undeclared one into dist, frozen at build time.
 //
-// Run with --check to assert all four without writing, which is what
+// Run with --check to assert all five without writing, which is what
 // CI does. Run without arguments to fix them.
 
 import fs from "node:fs";
@@ -71,6 +73,43 @@ const TS_MORPH_RANGE = JSON.parse(
     "utf8",
   ),
 ).dependencies["ts-morph"];
+
+/** Every source file under `dir` that is not a test. */
+function sourceFiles(dir) {
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return sourceFiles(file);
+    }
+    return /\.(ts|tsx|mts)$/.test(entry.name) &&
+      !/\.(test|spec)\./.test(entry.name)
+      ? [file]
+      : [];
+  });
+}
+
+/**
+ * The sibling packages a package's compiled output loads. A type-only
+ * import is erased at build time, so it is left out.
+ */
+function runtimeSiblingImports(packageDir) {
+  const names = new Set();
+  for (const file of sourceFiles(path.join(packageDir, "src"))) {
+    const source = fs.readFileSync(file, "utf8");
+    const statements = source.matchAll(
+      /^(?:import|export)\s+(type\s+)?(?:[^;'"]|"[^"]*"|'[^']*')*?from\s+"(@suss\/[\w-]+)"/gm,
+    );
+    for (const [, typeOnly, name] of statements) {
+      if (!typeOnly) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+}
 
 /** Rewrite one manifest. Returns the list of what it changed. */
 function prepare(manifest, { write }) {
@@ -134,6 +173,33 @@ function prepare(manifest, { write }) {
       if (write) {
         deps[name] = want;
       }
+    }
+  }
+
+  // `@suss/packs` bundles its packs on purpose, so those imports are
+  // the one place an undeclared sibling is meant to be copied in.
+  const declared = new Set([
+    ...Object.keys(pkg.dependencies ?? {}),
+    ...Object.keys(pkg.peerDependencies ?? {}),
+  ]);
+  for (const name of runtimeSiblingImports(path.dirname(manifest))) {
+    if (declared.has(name) || name === pkg.name) {
+      continue;
+    }
+    if (pkg.name === "@suss/packs" && BUNDLED_INTO_PACKS.has(name)) {
+      continue;
+    }
+    changes.push(
+      `imports ${name} at runtime but does not declare it, so tsup bundles a copy into dist`,
+    );
+    if (write) {
+      const deps = { ...pkg.dependencies, [name]: VERSION };
+      pkg.dependencies = Object.fromEntries(
+        Object.keys(deps)
+          .sort()
+          .map((key) => [key, deps[key]]),
+      );
+      delete pkg.devDependencies?.[name];
     }
   }
 
