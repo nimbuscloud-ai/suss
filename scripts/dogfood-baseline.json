@@ -3,10 +3,10 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 880,
-    "internal": 2946,
+    "internal": 2948,
     "consumers": 1643,
     "pairs": 1640,
-    "unfollowedCalls": 475,
+    "unfollowedCalls": 477,
     "findingErrors": 0
   },
   "packages": {
@@ -489,9 +489,9 @@
     "packages/values": {
       "name": "@suss/values",
       "exports": 44,
-      "internal": 65,
+      "internal": 67,
       "consumers": 3,
-      "unfollowedCalls": 27
+      "unfollowedCalls": 29
     }
   }
 }

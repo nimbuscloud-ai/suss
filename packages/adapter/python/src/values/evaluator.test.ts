@@ -234,6 +234,28 @@ describe("branches and choices", () => {
     ).toBe("/b");
   });
 
+  it("keeps the earlier write when no arm of an elif chain is taken", async () => {
+    expect(
+      await literal(
+        'p = "/c"\nn = 3\nif n == 1:\n    p = "/a"\nelif n == 2:\n    p = "/b"\nsubject = p',
+      ),
+    ).toBe("/c");
+  });
+
+  it("runs a try body and its finally", async () => {
+    expect(
+      await literal(
+        'try:\n    p = "/a"\nfinally:\n    p = p + "/b"\nsubject = p',
+      ),
+    ).toBe("/a/b");
+  });
+
+  it("runs the body of a with", async () => {
+    expect(
+      await literal('with open("f") as fh:\n    p = "/a"\nsubject = p + "/b"'),
+    ).toBe("/a/b");
+  });
+
   it("reads a conditional expression", async () => {
     expect(
       await literal('debug = False\nsubject = "/dev" if debug else "/prod"'),

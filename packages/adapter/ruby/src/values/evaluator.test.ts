@@ -488,6 +488,17 @@ describe("functions", () => {
     expect(literalOf(subject("routes.rb"))).toBe("/api/x");
   });
 
+  it("runs the module body a constant is computed in", async () => {
+    const tree = await parseRuby(
+      'module Config\n  BASE = "/api"\n  PREFIX = BASE + "/v1"\nend',
+    );
+    const module = bodyStatements(tree.rootNode)[0] as RbNode;
+    const body = field(module, "body") as RbNode;
+    const prefix = bodyStatements(body)[1] as RbNode;
+    const right = field(prefix, "right") as RbNode;
+    expect(literalOf(evaluatedValue(right))).toBe("/api/v1");
+  });
+
   it("follows a method the facts resolve", async () => {
     const { subject } = await projectValues({
       "a.rb": 'def prefix\n  "/api"\nend\nsubject = prefix() + "/x"',
