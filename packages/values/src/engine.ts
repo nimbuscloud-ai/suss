@@ -53,6 +53,12 @@ interface Outcome {
   readonly completes: boolean;
 }
 
+/** A call's arguments: the positional ones in order and the keyword ones by name. */
+interface Arguments {
+  readonly positional: Value[];
+  readonly named: Map<string, Value>;
+}
+
 export interface EvaluateOptions {
   /** Values for parameters of the enclosing function, from a call site. */
   readonly bindings?: ReadonlyMap<string, Value>;
@@ -133,12 +139,12 @@ export class Evaluator<N extends object> {
   ): State {
     const shape = this.lowering.functionOf(site.root);
     const state = emptyState();
-    for (const parameter of shape?.parameters ?? []) {
-      const supplied = bindings?.get(parameter);
+    for (const { name } of shape?.parameters ?? []) {
+      const supplied = bindings?.get(name);
       if (supplied === undefined) {
-        state.parameters.add(parameter);
+        state.parameters.add(name);
       } else {
-        state.bindings.set(parameter, supplied);
+        state.bindings.set(name, supplied);
       }
     }
     const body = shape === null ? [] : statementsOf(shape.body);
@@ -546,7 +552,7 @@ export class Evaluator<N extends object> {
     let widened: Value | null = null;
     for (const item of items) {
       const value = this.expression(item.node, state, depth);
-      if (item.kind === "value") {
+      if (item.kind !== "spread") {
         known.push({ value, presence: "one" });
         continue;
       }
@@ -739,14 +745,14 @@ export class Evaluator<N extends object> {
       callee,
       constructs,
       receiver,
-      argValues,
+      argValues.positional,
       state,
     );
     if (fromRow !== null) {
       return fromRow;
     }
     const touchesHeap =
-      argValues.some((value) => value.kind === "ref") ||
+      allArguments(argValues).some((value) => value.kind === "ref") ||
       args.some(
         (arg) => this.lowering.expression(arg.node).kind === "function",
       );
@@ -759,7 +765,7 @@ export class Evaluator<N extends object> {
 
   private inlineOrEscape(
     node: N,
-    argValues: readonly Value[],
+    argValues: Arguments,
     state: State,
     depth: number,
   ): Value {
@@ -773,7 +779,7 @@ export class Evaluator<N extends object> {
     if (written.kind !== "hole") {
       return written;
     }
-    for (const value of argValues) {
+    for (const value of allArguments(argValues)) {
       this.escape(value, state);
     }
     return written;
@@ -783,22 +789,27 @@ export class Evaluator<N extends object> {
     args: readonly Element<N>[],
     state: State,
     depth: number,
-  ): Value[] {
-    const values: Value[] = [];
+  ): Arguments {
+    const positional: Value[] = [];
+    const named = new Map<string, Value>();
     for (const arg of args) {
       const value = this.expression(arg.node, state, depth);
+      if (arg.kind === "named") {
+        named.set(arg.name, value);
+        continue;
+      }
       if (arg.kind === "value") {
-        values.push(value);
+        positional.push(value);
         continue;
       }
       const spread = this.contentOf(value, state);
       if (spread.kind === "sequence") {
-        values.push(...spread.items.map((item) => item.value));
+        positional.push(...spread.items.map((item) => item.value));
         continue;
       }
-      values.push(hole("value"));
+      positional.push(hole("value"));
     }
-    return values;
+    return { positional, named };
   }
 
   private applyRow(
@@ -856,7 +867,7 @@ export class Evaluator<N extends object> {
 
   private inline(
     node: N,
-    args: readonly Value[],
+    args: Arguments,
     state: State,
     depth: number,
   ): Value | null {
@@ -873,8 +884,15 @@ export class Evaluator<N extends object> {
       heap: state.heap,
       parameters: new Set(),
     };
+    // Bound in order so a default can read a parameter before it.
     shape.parameters.forEach((parameter, i) => {
-      inner.bindings.set(parameter, args[i] ?? constant(undefined));
+      const passed = args.named.get(parameter.name) ?? args.positional[i];
+      const bound =
+        passed ??
+        (parameter.default === null
+          ? constant(undefined)
+          : this.expression(parameter.default, inner, depth + 1));
+      inner.bindings.set(parameter.name, bound);
     });
     const returned = expressionBodyOf(shape.body);
     if (returned !== null) {
@@ -1034,6 +1052,10 @@ function literalOfValue(value: Value): string | null {
 
 function emptyState(): State {
   return { bindings: new Map(), heap: new Map(), parameters: new Set() };
+}
+
+function allArguments(args: Arguments): Value[] {
+  return [...args.positional, ...args.named.values()];
 }
 
 function cloneState(state: State): State {

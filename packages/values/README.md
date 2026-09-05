@@ -66,7 +66,10 @@ every statement that comes before it at each level of nesting.
   inlined call is worth.
 - A call is looked up in the rows first. Otherwise, when the lowering
   can resolve the callee to a project function without a loop, the body
-  is inlined under a depth cap. Otherwise the lowering is asked what
+  is inlined under a depth cap. A keyword argument binds its parameter
+  by name, and a parameter the call leaves out takes the default the
+  lowering gave it, evaluated after the parameters before it so a
+  default can read one of them. Otherwise the lowering is asked what
   the call is written to through `writtenTo`, which is how a declared
   wrapper that passes one argument through reads as that argument.
   Otherwise the call is a hole and every allocation it was handed
@@ -114,8 +117,9 @@ interface Lowering<N> {
 `siteOf` gives the root and the path of statements from the root's body
 down to the one containing the node. The path includes the node itself
 when its parent is the root, so a function placed in a module body has a
-path of its own. `functionOf` gives a function's parameters and body,
-and a module's body as a function with no parameters. Anything the
+path of its own. `functionOf` gives a function's parameters, each with
+the expression it defaults to or null, and its body, and a module's body
+as a function with no parameters. Anything the
 lowering cannot express is `opaque`, and the engine gives it a hole
 named by `holeNameOf`.
 

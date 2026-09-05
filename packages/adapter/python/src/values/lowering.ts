@@ -11,7 +11,7 @@
  */
 
 import { children, field, stringLiteralValue } from "../ast.js";
-import { parameterList } from "../facts/values.js";
+import { parameterShapes } from "../facts/values.js";
 
 import type {
   Element,
@@ -81,7 +81,7 @@ export function pythonLowering(options: LoweringOptions): Lowering<PyNode> {
     functionOf,
     writtenTo: (node) => (context === null ? null : context.writtenTo(node)),
     callable: (node) => {
-      if (context === null || hasKeywordArguments(node)) {
+      if (context === null || hasDictionarySplat(node)) {
         return null;
       }
       return context.callable(node);
@@ -288,9 +288,7 @@ function callExpression(
     (callee, argumentList) => {
       const peeledCallee = peelValue(callee);
       const args =
-        argumentList.type === "argument_list"
-          ? positionalArguments(argumentList).map(elementOf)
-          : [];
+        argumentList.type === "argument_list" ? argumentsOf(argumentList) : [];
       const isMethod = peeledCallee.type === "attribute";
       return {
         kind: "call",
@@ -316,24 +314,30 @@ function calleeName(callee: PyNode): string | null {
   return null;
 }
 
-/** The arguments at a position. A keyword argument has no position, so it is left out. */
-function positionalArguments(argumentList: PyNode): PyNode[] {
-  return children(argumentList).filter(
-    (argument) =>
-      argument.type !== "keyword_argument" &&
-      argument.type !== "dictionary_splat",
-  );
+/** The arguments of a call. A `**kwargs` splat could fill any parameter, so it is left out. */
+function argumentsOf(argumentList: PyNode): Element<PyNode>[] {
+  return children(argumentList).flatMap((argument) => {
+    if (argument.type === "dictionary_splat") {
+      return [];
+    }
+    if (argument.type === "keyword_argument") {
+      const name = field(argument, "name");
+      const value = field(argument, "value");
+      return name === null || value === null
+        ? []
+        : [{ kind: "named", name: name.text, node: value }];
+    }
+    return [elementOf(argument)];
+  });
 }
 
-function hasKeywordArguments(call: PyNode): boolean {
+function hasDictionarySplat(call: PyNode): boolean {
   const argumentList = field(call, "arguments");
   if (argumentList === null) {
     return false;
   }
   return children(argumentList).some(
-    (argument) =>
-      argument.type === "keyword_argument" ||
-      argument.type === "dictionary_splat",
+    (argument) => argument.type === "dictionary_splat",
   );
 }
 
@@ -524,12 +528,12 @@ function functionOf(node: PyNode): FunctionShape<PyNode> | null {
     if (body === null) {
       return null;
     }
-    return { parameters: parameterList(node), body: { expression: body } };
+    return { parameters: parameterShapes(node), body: { expression: body } };
   }
   if (node.type !== "function_definition") {
     return null;
   }
-  const parameters = parameterList(node);
+  const parameters = parameterShapes(node);
   return {
     parameters: isMethod(node) ? parameters.slice(1) : parameters,
     body: blockStatements(field(node, "body")),

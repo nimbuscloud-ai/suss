@@ -447,13 +447,42 @@ describe("functions", () => {
     expect(pathOf(value)).toBe("{PREFIX}{param}");
   });
 
-  it("leaves a call with keyword arguments as a hole", async () => {
+  it("binds a keyword argument and takes a default for the rest", async () => {
     const { subject } = await projectValues({
       "app.py": [
         'def prefixed(p, base="/v1"):',
         "    return base + p",
         "",
         'subject = prefixed(p="/x")',
+        "",
+      ].join("\n"),
+    });
+    expect(literalOf(subject("app.py"))).toBe("/v1/x");
+  });
+
+  it("reads a default from a module constant and a typed parameter", async () => {
+    const { subject } = await projectValues({
+      "app.py": [
+        'VERSION = "/v2"',
+        "",
+        'def prefixed(p: str, base: str = VERSION, extra: str = ""):',
+        "    return base + p + extra",
+        "",
+        'subject = prefixed("/x", extra="/y")',
+        "",
+      ].join("\n"),
+    });
+    expect(literalOf(subject("app.py"))).toBe("/v2/x/y");
+  });
+
+  it("leaves a call with a dictionary splat as a hole", async () => {
+    const { subject } = await projectValues({
+      "app.py": [
+        'def prefixed(p, base="/v1"):',
+        "    return base + p",
+        "",
+        'options = {"p": "/x"}',
+        "subject = prefixed(**options)",
         "",
       ].join("\n"),
     });

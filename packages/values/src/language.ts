@@ -14,10 +14,11 @@ import type { Value } from "./value.js";
 
 export type Literal = string | number | boolean | null | undefined;
 
-/** An element of an array literal or an argument list. */
+/** An element of an array literal or an argument list; a named one is a keyword argument. */
 export type Element<N> =
   | { readonly kind: "value"; readonly node: N }
-  | { readonly kind: "spread"; readonly node: N };
+  | { readonly kind: "spread"; readonly node: N }
+  | { readonly kind: "named"; readonly name: string; readonly node: N };
 
 export type Field<N> =
   | { readonly kind: "field"; readonly name: string; readonly value: N }
@@ -100,8 +101,21 @@ export type Statement<N> =
 
 /** A function's parameters and body, ready to inline or to walk. */
 export interface FunctionShape<N> {
-  readonly parameters: readonly string[];
+  readonly parameters: readonly Parameter<N>[];
   readonly body: FunctionBody<N>;
+}
+
+/** A parameter and the expression it takes when a call leaves it out, if any. */
+export interface Parameter<N> {
+  readonly name: string;
+  readonly default: N | null;
+}
+
+export function parameter<N>(
+  name: string,
+  fallback: N | null = null,
+): Parameter<N> {
+  return { name, default: fallback };
 }
 
 export type FunctionBody<N> = readonly N[] | { readonly expression: N };
