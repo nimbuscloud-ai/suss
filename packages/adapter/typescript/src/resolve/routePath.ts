@@ -238,11 +238,10 @@ function holeText(expr: Node, resolution: ResolutionStore | undefined): string {
   if (written === null) {
     return patternHole(placeholderName(expr));
   }
-  // A hole written as the empty string contributes nothing to the path,
-  // so `` `${BASE}/users` `` under `BASE = ""` is `/users`. The reader
-  // for a whole path gives back undefined for that, since a path of ""
-  // is invalid in the IR, and here it means something.
-  if (emptyStringLiteral(written)) {
+  // A hole written as "" or as a bare origin adds nothing to the path, so
+  // `` `${BASE}/users` `` is `/users` under either. The whole-path reader
+  // would say "/" for the origin, since that is what `new URL` gives.
+  if (contributesNoPath(written)) {
     return "";
   }
   return (
@@ -250,11 +249,20 @@ function holeText(expr: Node, resolution: ResolutionStore | undefined): string {
   );
 }
 
-function emptyStringLiteral(node: Node): boolean {
+function contributesNoPath(node: Node): boolean {
+  if (
+    !Node.isStringLiteral(node) &&
+    !Node.isNoSubstitutionTemplateLiteral(node)
+  ) {
+    return false;
+  }
+  const text = node.getLiteralValue();
+  if (text === "") {
+    return true;
+  }
   return (
-    (Node.isStringLiteral(node) ||
-      Node.isNoSubstitutionTemplateLiteral(node)) &&
-    node.getLiteralValue() === ""
+    isAbsoluteUrlLiteral(text) &&
+    stripQueryAndFragment(stripOriginManually(text)) === ""
   );
 }
 

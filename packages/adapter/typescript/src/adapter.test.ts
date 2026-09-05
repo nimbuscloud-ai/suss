@@ -3622,6 +3622,69 @@ describe("consumer extraction", () => {
     expect(restPathOf(summaries[0])).toBe("/api/x");
   });
 
+  it("reads a template whose substitution is a constant bound to a bare origin", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      const BASE = "https://api.example.com";
+      export async function getUser(id: string) {
+        const res = await fetch(\`\${BASE}/users/\${id}\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/users/{id}");
+  });
+
+  it("keeps the path a base constant states after its origin", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      const BASE = "https://api.example.com/v1";
+      export async function getUsers() {
+        const res = await fetch(\`\${BASE}/users\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/v1/users");
+  });
+
+  it("reads a template whose base falls back to a local origin", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      const base = process.env.API_URL ?? "http://localhost:3000";
+      export async function getTeams() {
+        const res = await fetch(\`\${base}/teams\`);
+        return res.json();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    expect(restPathOf(summaries[0])).toBe("/teams");
+  });
+
   const originShapes = [
     {
       what: "leaves the scheme to whatever loads the page",
