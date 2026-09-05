@@ -32,16 +32,20 @@ export {
 } from "./lattice.js";
 export {
   appended,
+  environmentRead,
   equals,
   extended,
   fallback,
+  formatArguments,
   isPresent,
   joined,
   joinedPath,
   negated,
   operand,
+  percentFormatted,
   plus,
   readableFallback,
+  stripped,
 } from "./operations.js";
 export { pathOf } from "./routePath.js";
 export {

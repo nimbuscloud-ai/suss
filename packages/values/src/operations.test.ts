@@ -2,16 +2,20 @@ import { describe, expect, it } from "vitest";
 
 import {
   appended,
+  environmentRead,
   equals,
   extended,
   fallback,
+  formatArguments,
   isPresent,
   joined,
   joinedPath,
   negated,
   operand,
+  percentFormatted,
   plus,
   readableFallback,
+  stripped,
   isPresent as takesLeftWhenPresent,
 } from "./operations.js";
 import {
@@ -185,6 +189,25 @@ describe("fallback and isPresent", () => {
     expect(isPresent(constant(undefined))).toBe(false);
     expect(isPresent(hole("x"))).toBeNull();
   });
+
+  it("cannot tell when a constant is sometimes null", () => {
+    expect(isPresent({ kind: "constant", options: [1, null] })).toBeNull();
+    expect(isPresent({ kind: "constant", options: [1, 2] })).toBe(true);
+  });
+});
+
+describe("environmentRead", () => {
+  it("takes the default when one is written", () => {
+    expect(literalOf(environmentRead([text("PREFIX"), text("/api")]))).toBe(
+      "/api",
+    );
+  });
+
+  it("leaves a hole named after the variable otherwise", () => {
+    expect(environmentRead([text("PREFIX")])).toEqual(hole("PREFIX"));
+    expect(environmentRead([hole("name")])).toEqual(hole("value"));
+    expect(environmentRead([])).toEqual(hole("value"));
+  });
 });
 
 describe("row helpers", () => {
@@ -216,5 +239,30 @@ describe("row helpers", () => {
     expect(joinedPath([text("/a"), hole("x")])).toEqual(
       string([textPiece(["/a/"]), holePiece("x")]),
     );
+  });
+
+  it("fills percent placeholders in order and leaves the rest as holes", () => {
+    expect(
+      literalOf(percentFormatted(text("/%s/%d"), [text("a"), constant(2)])),
+    ).toBe("/a/2");
+    expect(percentFormatted(text("/%s/x"), [])).toEqual(
+      string([textPiece(["/"]), holePiece("value"), textPiece(["/x"])]),
+    );
+    expect(percentFormatted(hole("t"), [text("a")])).toEqual(hole("value"));
+  });
+
+  it("takes format arguments off a tuple or as the one operand", () => {
+    expect(formatArguments(sequence([text("a"), text("b")]))).toEqual([
+      text("a"),
+      text("b"),
+    ]);
+    expect(formatArguments(text("a"))).toEqual([text("a")]);
+  });
+
+  it("strips a literal on the side asked for", () => {
+    expect(literalOf(stripped(text("  /x ")))).toBe("/x");
+    expect(literalOf(stripped(text("  /x "), "start"))).toBe("/x ");
+    expect(literalOf(stripped(text("  /x "), "end"))).toBe("  /x");
+    expect(stripped(hole("p"))).toEqual(hole("value"));
   });
 });

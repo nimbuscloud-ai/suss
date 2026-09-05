@@ -60,6 +60,12 @@ export {
 } from "./scope.js";
 export { rubyStubEvidence } from "./stubEvidence.js";
 export { typeShapeFromNode } from "./typeShape.js";
+export {
+  bindEvaluator,
+  evaluatedValue,
+  methodDefinitionsIn,
+  stringValueOf,
+} from "./values/evaluator.js";
 export { ADAPTER_VERSION } from "./version.js";
 
 export type {
@@ -93,3 +99,4 @@ export type {
   RubyStubEvidenceOptions,
 } from "./stubEvidence.js";
 export type { TypeReadContext } from "./typeShape.js";
+export type { EvaluatedFile, ProjectNodes } from "./values/evaluator.js";

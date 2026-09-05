@@ -16,7 +16,7 @@ Framework pack for [Rails](https://rubyonrails.org/) controller actions and the 
 - **Conditional routing.** A route wrapped in `if`/`unless`/`case` inside `routes.rb` is not read; this pack walks each block's direct statements, not everything a Ruby interpreter would eventually run.
 - **Pluralization** for a singular `resource` and for a nested resource's `:parent_id` parameter is a small heuristic (`+s`, `y` -> `ies`, `s`/`x`/`ch`/`sh` -> `+es`), not a full English inflector. It covers the regular names a project actually writes; an irregular one (`resource :person`, pluralizing to `people`) is out of scope.
 - **Visibility read top to bottom, at the top level only.** A bare `private`/`protected`/`public`, a `private def name; end`, and a `private :a, :b` are all read, in the order the class body writes them. A visibility call wrapped in an `if` or written inside a block is not; a method it would have marked is read as public instead.
-- **`routes.rb` is read once, standalone.** Nothing here evaluates Ruby, so a route path or a `to:` target built at load time from anything other than a literal string or symbol is not read.
+- **`routes.rb` is read once, standalone.** A route path or a `to:` target built from what the file itself states, a local variable in the draw block, a constant above it, an interpolation, `File.join`, or the default of an `ENV.fetch`, is read to the string Rails serves. One built from a value the file does not state, `ENV["PREFIX"]` or a method defined elsewhere, is not read, and the action it would have bound stays unbound.
 
 ## Where it fits in suss
 
