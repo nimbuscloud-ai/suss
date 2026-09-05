@@ -83,10 +83,9 @@ export function typescriptLowering(options: LoweringOptions): Lowering<Node> {
     if (first !== undefined) {
       return { module: first.module, name };
     }
-    if (
-      chain.names.length > 1 ||
-      resolution?.resolveCallable(callee) !== null
-    ) {
+    const local =
+      resolution !== undefined && resolution.resolveCallable(callee) !== null;
+    if (chain.names.length > 1 || local) {
       return null;
     }
     return { module: "global", name };
