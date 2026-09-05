@@ -2,27 +2,23 @@
  * routePath.ts: read the path a boundary serves out of the argument that
  * states it.
  *
- * Both sides of an HTTP boundary write the path in the same three forms,
- * as a string literal, as a name bound to one, or as a template with
- * substitutions in it. A provider writes `app.get(USERS, handler)` and a
- * consumer writes `fetch(USERS)`, and the two only pair when both are
- * read the same way. This file is that single reading.
- *
- * A template is read hole by hole. A hole the resolution store can follow
- * to a written string contributes that string, so a route built from a
- * prefix constant comes out with the prefix in it. A hole nobody can
- * follow becomes `{name}`, which the path normalizer treats the same way
- * as `:name`.
- *
- * An absolute URL loses its origin, since the host is the deployable unit
- * rather than the path, and a query string ends the path where it starts.
+ * A provider writes `app.get(USERS, handler)` and a consumer writes
+ * `fetch(USERS)`, and the two only pair when both are read the same way.
+ * This file is that single reading. The argument is evaluated over the
+ * abstract value domain, so a prefix constant, a `path.join`, or a name
+ * written in a branch all fold. Each hole the evaluator could not fill
+ * becomes `{name}`, which the path normalizer treats the same way as
+ * `:name`. An absolute URL loses its origin, since the host is the
+ * deployable unit rather than the path, and a query string ends the
+ * path where it starts.
  */
 
-import { Node } from "ts-morph";
-
 import { patternHole } from "@suss/behavioral-ir";
+import { literalOf, type Piece } from "@suss/values";
 
-import type { TemplateExpression } from "ts-morph";
+import { evaluatedValue } from "../values/evaluator.js";
+
+import type { Node } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 const URL_SCHEME = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//;
@@ -54,16 +50,16 @@ function stripQueryAndFragment(text: string): string {
   return idx === -1 ? text : text.slice(0, idx);
 }
 
-// Each template substitution becomes this Unicode noncharacter in the
-// flattened text. It never appears in an actual URL, and it is not a
-// "/", a colon or a scheme character.
+// Each hole becomes this Unicode noncharacter in the flattened text. It
+// never appears in an actual URL, and it is not a "/", a colon or a
+// scheme character.
 const SUBSTITUTION = "\uFFFF";
 
 // A scheme can be written out, substituted whole, or built from both,
 // and a bare "//" starts an authority with no scheme at all.
 const AUTHORITY_OPENER = /^(?:[-+.\uFFFFa-zA-Z0-9]+:\/\/|\/\/)/;
 
-// Zero when the template is not an absolute URL, so all of it is path.
+// Zero when the string is not an absolute URL, so all of it is path.
 // The whole length when the authority never ends, so none of it is.
 function originEndOf(flattened: string): number {
   const opener = AUTHORITY_OPENER.exec(flattened);
@@ -75,8 +71,8 @@ function originEndOf(flattened: string): number {
   return slash === -1 ? flattened.length : slash;
 }
 
-// A query string can start partway through a template's static text.
-// Nothing after it belongs to the path, including a later substitution.
+// A query string can start partway through a piece of text. Nothing
+// after it belongs to the path, including a later hole.
 function appendPathText(
   path: string,
   text: string,
@@ -124,190 +120,65 @@ function pathFromLiteralUrl(text: string): string | undefined {
   return path === "" ? undefined : path;
 }
 
-// `` `/pet/${id}` `` gives `/pet/{id}`; the path normalizer treats
-// `{id}` and `:id` as the same segment. A substitution before the
-// authority's closing "/" is part of the authority whatever it is.
-function pathFromTemplateUrl(
-  arg: TemplateExpression,
-  resolution: ResolutionStore | undefined,
-): string | undefined {
-  const headText = arg.getHead().getLiteralText();
-  const spans = arg.getTemplateSpans();
-  const tails = spans.map((span) => span.getLiteral().getLiteralText());
-  const originEnd = originEndOf([headText, ...tails].join(SUBSTITUTION));
+/** A piece that is one literal contributes it; anything else is a hole. */
+function flattenedPiece(piece: Piece): string {
+  return piece.kind === "text" && piece.options.length === 1
+    ? (piece.options[0] ?? "")
+    : SUBSTITUTION;
+}
 
-  const head = appendPathText("", headText.slice(originEnd));
-  let path = head.path;
-  let stop = head.stop;
+function holeNameOf(piece: Piece): string {
+  return piece.kind === "hole" ? piece.name : "value";
+}
+
+// A string with holes in it: `/pet/{id}` for `` `/pet/${id}` ``. A hole
+// before the authority's closing "/" is part of the authority whatever
+// it is, and a hole after the path ends is not part of anything.
+function pathFromPieces(pieces: readonly Piece[]): string | undefined {
+  const originEnd = originEndOf(pieces.map(flattenedPiece).join(""));
+  let path = "";
+  let stop = false;
   // Where the piece currently being read starts in the flattened text.
-  let at = headText.length;
+  let at = 0;
 
-  for (let i = 0; i < spans.length && !stop; i++) {
-    const span = spans[i];
-    const tailText = tails[i];
-    if (span === undefined || tailText === undefined) {
-      continue;
+  for (const piece of pieces) {
+    if (stop) {
+      break;
     }
-
-    if (at >= originEnd) {
-      path += holeText(span.getExpression(), resolution);
+    const flattened = flattenedPiece(piece);
+    if (flattened === SUBSTITUTION) {
+      if (at >= originEnd) {
+        path += patternHole(holeNameOf(piece));
+      }
+    } else {
+      const appended = appendPathText(
+        path,
+        flattened.slice(Math.max(0, originEnd - at)),
+      );
+      path = appended.path;
+      stop = appended.stop;
     }
-    at += SUBSTITUTION.length;
-
-    const appended = appendPathText(
-      path,
-      tailText.slice(Math.max(0, originEnd - at)),
-    );
-    path = appended.path;
-    stop = appended.stop;
-    at += tailText.length;
+    at += flattened.length;
   }
 
   return path === "" ? undefined : path;
 }
 
-/** The path a URL-shaped node states, in any of its three written forms. */
-export function pathFromUrlNode(
-  node: Node,
-  resolution?: ResolutionStore,
-): string | undefined {
-  if (Node.isStringLiteral(node)) {
-    return pathFromLiteralUrl(node.getLiteralValue());
-  }
-  if (Node.isNoSubstitutionTemplateLiteral(node)) {
-    return pathFromLiteralUrl(node.getLiteralValue());
-  }
-  if (Node.isTemplateExpression(node)) {
-    return pathFromTemplateUrl(node, resolution);
-  }
-  if (Node.isBinaryExpression(node)) {
-    const joined = joinedStringOf(node, resolution);
-    return joined === undefined ? undefined : pathFromJoinedText(joined);
-  }
-  return undefined;
-}
-
-// A joined string can have `{name}` holes in it, which `new URL` would
-// percent-encode, so the origin comes off by hand.
-function pathFromJoinedText(text: string): string | undefined {
-  const path = stripQueryAndFragment(stripOriginManually(text));
-  return path === "" ? undefined : path;
-}
-
 /**
- * The string a `+` of strings works out to, or undefined when it is
- * not a `+` at all. `"/users/" + id` states the same path as
- * `` `/users/${id}` ``, written the other way, so each side is read
- * the way a template's pieces are: a written string as itself, a name
- * followed to what it was written as, and anything else as a hole.
- */
-function joinedStringOf(
-  node: Node,
-  resolution: ResolutionStore | undefined,
-): string | undefined {
-  if (
-    !Node.isBinaryExpression(node) ||
-    node.getOperatorToken().getText() !== "+"
-  ) {
-    return undefined;
-  }
-  return (
-    joinedSideOf(node.getLeft(), resolution) +
-    joinedSideOf(node.getRight(), resolution)
-  );
-}
-
-function joinedSideOf(
-  node: Node,
-  resolution: ResolutionStore | undefined,
-): string {
-  return joinedTextOf(node, resolution) ?? patternHole(placeholderName(node));
-}
-
-function joinedTextOf(
-  node: Node,
-  resolution: ResolutionStore | undefined,
-): string | undefined {
-  if (
-    Node.isStringLiteral(node) ||
-    Node.isNoSubstitutionTemplateLiteral(node)
-  ) {
-    return node.getLiteralValue();
-  }
-  if (Node.isTemplateExpression(node)) {
-    return pathFromTemplateUrl(node, resolution) ?? "";
-  }
-  const joined = joinedStringOf(node, resolution);
-  if (joined !== undefined) {
-    return joined;
-  }
-  const written = resolution?.resolveWrittenValue(node) ?? null;
-  return written === null || written === node
-    ? undefined
-    : joinedTextOf(written, resolution);
-}
-
-function placeholderName(expr: Node): string {
-  if (Node.isIdentifier(expr)) {
-    return expr.getText();
-  }
-  if (Node.isPropertyAccessExpression(expr)) {
-    return expr.getName();
-  }
-  return "param";
-}
-
-/**
- * What a template's substitution contributes to the path. A name bound to
- * a written string contributes that string, so `` `${BASE}/items/:id` ``
- * keeps the prefix instead of standing in for it.
- */
-function holeText(expr: Node, resolution: ResolutionStore | undefined): string {
-  const written = resolution?.resolveWrittenValue(expr) ?? null;
-  if (written === null) {
-    return patternHole(placeholderName(expr));
-  }
-  // A hole written as "" or as a bare origin adds nothing to the path, so
-  // `` `${BASE}/users` `` is `/users` under either. The whole-path reader
-  // would say "/" for the origin, since that is what `new URL` gives.
-  if (contributesNoPath(written)) {
-    return "";
-  }
-  return (
-    pathFromUrlNode(written, resolution) ?? patternHole(placeholderName(expr))
-  );
-}
-
-function contributesNoPath(node: Node): boolean {
-  if (
-    !Node.isStringLiteral(node) &&
-    !Node.isNoSubstitutionTemplateLiteral(node)
-  ) {
-    return false;
-  }
-  const text = node.getLiteralValue();
-  if (text === "") {
-    return true;
-  }
-  return (
-    isAbsoluteUrlLiteral(text) &&
-    stripQueryAndFragment(stripOriginManually(text)) === ""
-  );
-}
-
-/**
- * The path stated by the argument at a call site, following a name one
- * hop to the string it was written as. Undefined when nothing readable is
+ * The path stated by the argument at a call site, with every name the
+ * evaluator can follow folded in. Undefined when nothing readable is
  * there, which leaves the boundary unbound rather than bound to a guess.
  */
 export function pathFromArgument(
   arg: Node,
   resolution?: ResolutionStore,
 ): string | undefined {
-  const written = pathFromUrlNode(arg, resolution);
-  if (written !== undefined) {
-    return written;
+  const value = evaluatedValue(arg, resolution);
+  if (value.kind !== "string") {
+    return undefined;
   }
-  const resolved = resolution?.resolveWrittenValue(arg) ?? null;
-  return resolved !== null ? pathFromUrlNode(resolved, resolution) : undefined;
+  const literal = literalOf(value);
+  return literal === null
+    ? pathFromPieces(value.pieces)
+    : pathFromLiteralUrl(literal);
 }
