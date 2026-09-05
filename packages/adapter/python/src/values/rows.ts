@@ -9,19 +9,22 @@ import {
   appended,
   concat,
   constant,
+  environmentRead,
   equals,
   extended,
   fallback,
-  force,
+  formatArguments,
   hole,
   joined,
   joinedPath,
   literalOf,
   negated,
   operand,
+  percentFormatted,
   plus,
   type Row,
   readableFallback,
+  stripped,
   text,
   truthOf,
   type Value,
@@ -39,7 +42,7 @@ const operatorRows: Row[] = [
     operator: "%",
     arity: 2,
     apply: ([a, b], contentOf) =>
-      percentFormatted(operand(a), contentOf(operand(b))),
+      percentFormatted(operand(a), formatArguments(contentOf(operand(b)))),
   },
   {
     kind: "operator",
@@ -180,16 +183,6 @@ const calleeRows: Row[] = [
   },
 ];
 
-/** A read of the environment is its default when one is written, else a hole named after the variable. */
-function environmentRead(args: readonly Value[]): Value {
-  const name = literalOf(operand(args[0]));
-  const fallbackValue = args[1];
-  if (fallbackValue !== undefined) {
-    return force(fallbackValue);
-  }
-  return hole(name ?? "value");
-}
-
 const BRACE_PLACEHOLDER = /\{([^{}]*)\}/g;
 
 /** `"/{}/x".format(a)` and `"/{name}".format(name=a)`: each placeholder takes the next positional argument. */
@@ -219,50 +212,6 @@ function braceFormatted(receiver: Value, args: readonly Value[]): Value {
   }
   parts.push(text(template.slice(last)));
   return concat(parts);
-}
-
-const PERCENT_PLACEHOLDER = /%[sdr]/g;
-
-/** `"/api/%s" % v` and `"/%s/%s" % (a, b)`. */
-function percentFormatted(left: Value, right: Value): Value {
-  const template = literalOf(left);
-  if (template === null) {
-    return hole("value");
-  }
-  const operands = force(right);
-  const args =
-    operands.kind === "sequence"
-      ? operands.items.map((item) => item.value)
-      : [operands];
-  const parts: Value[] = [];
-  let last = 0;
-  let position = 0;
-  for (const match of template.matchAll(PERCENT_PLACEHOLDER)) {
-    parts.push(text(template.slice(last, match.index)));
-    const argument = args[position];
-    parts.push(argument === undefined ? hole("value") : concat([argument]));
-    position += 1;
-    last = match.index + match[0].length;
-  }
-  parts.push(text(template.slice(last)));
-  return concat(parts);
-}
-
-function stripped(
-  value: Value,
-  side: "both" | "start" | "end" = "both",
-): Value {
-  const literal = literalOf(value);
-  if (literal === null) {
-    return hole("value");
-  }
-  if (side === "start") {
-    return text(literal.trimStart());
-  }
-  if (side === "end") {
-    return text(literal.trimEnd());
-  }
-  return text(literal.trim());
 }
 
 export const pythonRows: readonly Row[] = [

@@ -233,3 +233,64 @@ export function joinedPath(args: readonly Value[]): Value {
     forced.flatMap((arg, i) => (i === 0 ? [arg] : [text("/"), arg])),
   );
 }
+
+const PERCENT_PLACEHOLDER = /%[sdr]/g;
+
+/** `"/api/%s" % v`, `"/%s/%s" % (a, b)` and `format("/%s", v)`: each placeholder takes the next argument. */
+export function percentFormatted(
+  template: Value,
+  args: readonly Value[],
+): Value {
+  const literal = literalOf(template);
+  if (literal === null) {
+    return hole("value");
+  }
+  const parts: Value[] = [];
+  let last = 0;
+  let position = 0;
+  for (const match of literal.matchAll(PERCENT_PLACEHOLDER)) {
+    parts.push(text(literal.slice(last, match.index)));
+    const argument = args[position];
+    parts.push(argument === undefined ? hole("value") : concat([argument]));
+    position += 1;
+    last = match.index + match[0].length;
+  }
+  parts.push(text(literal.slice(last)));
+  return concat(parts);
+}
+
+/** The single operand of a `%` format, or the items of a tuple or array operand. */
+export function formatArguments(operand: Value): readonly Value[] {
+  const forced = force(operand);
+  return forced.kind === "sequence"
+    ? forced.items.map((item) => item.value)
+    : [forced];
+}
+
+/** A literal with its whitespace trimmed; anything else is a hole. */
+export function stripped(
+  value: Value,
+  side: "both" | "start" | "end" = "both",
+): Value {
+  const literal = literalOf(value);
+  if (literal === null) {
+    return hole("value");
+  }
+  if (side === "start") {
+    return text(literal.trimStart());
+  }
+  if (side === "end") {
+    return text(literal.trimEnd());
+  }
+  return text(literal.trim());
+}
+
+/** A read of the environment is its default when one is written, else a hole named after the variable. */
+export function environmentRead(args: readonly Value[]): Value {
+  const name = literalOf(operand(args[0]));
+  const fallbackValue = args[1];
+  if (fallbackValue !== undefined) {
+    return force(fallbackValue);
+  }
+  return hole(name ?? "value");
+}

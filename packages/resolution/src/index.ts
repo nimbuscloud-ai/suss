@@ -7,6 +7,7 @@ export {
   type MountEdges,
   mountPathsOf,
 } from "./mount.js";
+export { nodeOfKey, type SpannedNode } from "./nodeKey.js";
 export { explainResolvedKey } from "./session.js";
 export { placeholderValues, singleAnswers } from "./singleAnswer.js";
 export { writtenValueOf } from "./writtenValue.js";

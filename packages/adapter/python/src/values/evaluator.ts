@@ -10,6 +10,7 @@
  * follows names within the file through the engine's own scope walk.
  */
 
+import { nodeOfKey } from "@suss/resolution";
 import { Evaluator, force, literalOf } from "@suss/values";
 
 import { enclosingFunction, field } from "../ast.js";
@@ -149,36 +150,4 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
         : (nodes.definitions.get(settled) ?? null);
     },
   };
-}
-
-/**
- * The node a fact key refers to. A key is the file and the span, so
- * the smallest node over the span is found and walked up to the one
- * whose span matches; a key that is not a node, such as a name, has none.
- */
-function nodeOfKey(
-  rootsByFile: ReadonlyMap<string, PyNode>,
-  key: string,
-): PyNode | null {
-  const span = key.match(/^(.*):(\d+)-(\d+)$/);
-  if (span === null) {
-    return null;
-  }
-  const root = rootsByFile.get(span[1] as string);
-  const start = Number(span[2]);
-  const end = Number(span[3]);
-  if (root === undefined || end <= start) {
-    return null;
-  }
-  let current: PyNode | null = root.descendantForIndex(start, end - 1);
-  while (current !== null) {
-    if (current.startIndex === start && current.endIndex === end) {
-      return current;
-    }
-    if (current.startIndex < start || current.endIndex > end) {
-      return null;
-    }
-    current = current.parent;
-  }
-  return null;
 }
