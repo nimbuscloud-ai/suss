@@ -834,6 +834,9 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     files,
     packs,
     projectRoot: runOptions.root,
+    ...(runOptions.options.gaps !== undefined
+      ? { gapHandling: runOptions.options.gaps }
+      : {}),
     ...(runOptions.options.noCache === true ? { cacheDir: null } : {}),
     onTiming: (report) => {
       timingReport = report;

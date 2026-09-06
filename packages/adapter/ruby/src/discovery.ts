@@ -36,6 +36,12 @@ import {
   symbolValue,
 } from "./ast.js";
 import { envReadEffects } from "./envReads.js";
+import {
+  controllerFilters,
+  filterCoversAction,
+  filterReference,
+  filterUnit,
+} from "./filters.js";
 import { invocationEffects } from "./paths/effects.js";
 import { responseBranches } from "./responseStatus.js";
 import {
@@ -51,6 +57,7 @@ import type {
   Effect,
   GraphqlDeclaredContract,
   TypeShape,
+  WrapperReference,
 } from "@suss/behavioral-ir";
 import type {
   BodyContent,
@@ -120,6 +127,8 @@ export interface DiscoveryOptions extends BodyReadOptions {
   filePath: string;
   /** Absolute path of the file being read, for a block's own `ReachedBody.file`. Falls back to `filePath` when nothing was written to disk. */
   absoluteFile?: string;
+  /** What a summary's `location.file` says for a file other than the one being read, which a controller's filters need when an ancestor defines them. */
+  displayPathOf?: (absolute: string) => string;
   cache: FileCache;
   /** Called once per discovered unit whose own body is a method this run can follow calls out of, so the reach walk has a place to start. */
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
@@ -354,7 +363,25 @@ async function controllerActionUnits(
     return [];
   }
 
+  const filters = controllerFilters(pattern, ancestry);
   const units: RawCodeStructure[] = [];
+
+  for (const filter of filters) {
+    const displayPath = options.displayPathOf?.(filter.file) ?? filter.file;
+    const raw = filterUnit(
+      filter,
+      pattern,
+      displayPath,
+      bodyOfMethod(filter.method, options),
+    );
+    units.push(raw);
+    options.onReachSeed?.(raw, {
+      file: filter.file,
+      node: filter.method,
+      enclosingQualifiedName: filter.enclosingQualifiedName,
+    });
+  }
+
   for (const block of ownBlocks) {
     if (block.info.bodyNode === null) {
       continue;
@@ -366,6 +393,14 @@ async function controllerActionUnits(
       if ((visibility.get(actionName) ?? "public") !== "public") {
         continue;
       }
+      const around = filters
+        .filter((filter) => filterCoversAction(filter, actionName))
+        .map((filter) =>
+          filterReference(
+            filter,
+            options.displayPathOf?.(filter.file) ?? filter.file,
+          ),
+        );
       const raw = buildControllerActionUnit(
         pack,
         pattern,
@@ -374,6 +409,7 @@ async function controllerActionUnits(
         method,
         options.filePath,
         options,
+        around,
       );
       units.push(raw);
       options.onReachSeed?.(raw, {
@@ -394,6 +430,7 @@ function buildControllerActionUnit(
   method: RbNode,
   filePath: string,
   bodyRead: BodyReadOptions,
+  wrappers: readonly WrapperReference[] = [],
 ): RawCodeStructure {
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
@@ -455,6 +492,7 @@ function buildControllerActionUnit(
     bodyContent: body.bodyContent ?? "absent",
     dependencyCalls: [],
     declaredContract: null,
+    ...(wrappers.length > 0 ? { wrappers: [...wrappers] } : {}),
   };
 }
 

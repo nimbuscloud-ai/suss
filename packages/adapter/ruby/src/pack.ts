@@ -85,6 +85,31 @@ export interface ControllerActions {
   ) => { method: string; path: string } | null;
   /** One message per routing declaration kind this pattern's reading left uncovered. A pure read: calling it again gives the same list. */
   routingGaps?: () => readonly string[];
+  /** The class-level calls the library gives a controller for running one of its own methods around every action, Rails' `before_action` and `rescue_from`. */
+  filters?: RbControllerFilter[];
+}
+
+/**
+ * A call in a controller's class body naming a method the library runs
+ * around the action, and which actions that reaches. A class inherits
+ * what its ancestors declared, so a filter on `ApplicationController`
+ * reaches every action in the project.
+ */
+export interface RbControllerFilter {
+  /** The call as a controller writes it, `before_action`. */
+  name: string;
+  /**
+   * Where the call names the method: `argument` for the leading symbol
+   * of `before_action :require_login`, `withKeyword` for the `with:` of
+   * `rescue_from ActiveRecord::RecordNotFound, with: :not_found`.
+   */
+  methodFrom: "argument" | "withKeyword";
+  /** Set when the library runs the method only for an action that raised, which is what `rescue_from` does. */
+  onThrow?: boolean;
+  /** The name of the call that takes a filter back off, `skip_before_action` for `before_action`. */
+  skippedBy?: string;
+  /** The keywords that narrow a filter to some of the actions, Rails' `only` and `except`. */
+  actionKeywords?: { include: string; exclude: string };
 }
 
 /**
