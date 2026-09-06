@@ -53,6 +53,7 @@ import type {
   AccessRecognizer,
   InvocationRecognizer,
   PatternPack,
+  TerminalPattern,
 } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { DiscoveredUnit } from "../discovery/index.js";
@@ -63,22 +64,30 @@ import type { ClosureFacts } from "./boundaryEffects.js";
 // The "reachable" pack: terminals and input mapping for library functions
 // ---------------------------------------------------------------------------
 
+/**
+ * The three terminal shapes any function has, whatever pack discovered
+ * it: a `return`, a `throw`, or falling off the end. The call-accounting
+ * check classifies a call against these, since it reads arbitrary
+ * source with no pack in front of it.
+ */
+export const GENERIC_TERMINALS: TerminalPattern[] = [
+  { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+  { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+  {
+    // Implicit fall-through at the end of a function body: covers
+    // void-returning orchestrators that never write `return`.
+    kind: "return",
+    match: { type: "functionFallthrough" },
+    extraction: {},
+  },
+];
+
 const reachablePack: PatternPack = {
   name: "reachable",
   languages: ["typescript"],
   protocol: "in-process",
   discovery: [],
-  terminals: [
-    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
-    { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
-    {
-      // Implicit fall-through at the end of a function body: covers
-      // void-returning orchestrators that never write `return`.
-      kind: "return",
-      match: { type: "functionFallthrough" },
-      extraction: {},
-    },
-  ],
+  terminals: GENERIC_TERMINALS,
   inputMapping: { type: "allPositional" },
 };
 

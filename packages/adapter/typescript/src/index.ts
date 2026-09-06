@@ -53,7 +53,9 @@ export {
   isImportedFrom,
   methodDeclaredIn,
 } from "./resolve/invocationEffects.js";
+export { GENERIC_TERMINALS } from "./resolve/reachableClosure.js";
 export { type ReadNameOptions, readName } from "./resolve/readName.js";
+export { hasBody } from "./resolve/unfollowedCall.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export {
   type ObservedStubCall,
@@ -71,6 +73,11 @@ export {
   computeAdapterPacksDigest,
   computeContentHash,
 } from "./version.js";
+export {
+  type DescentBarriers,
+  NO_BARRIERS,
+  startsItsOwnScope,
+} from "./walk/descent.js";
 
 export type {
   ExplainStats,
@@ -81,6 +88,13 @@ export type {
   TypeScriptAdapter,
   TypeScriptAdapterConfig,
 } from "./adapter.js";
+// Read by the call-accounting check (`@suss/call-accounting`), not by the
+// adapter's own extraction path.
+export type {
+  CallAccountingEntry,
+  CallAccountingOutcome,
+  RawBranchResult,
+} from "./assembly.js";
 export type { FunctionRoot } from "./conditions.js";
 export type {
   ConfiguredCallContext,
