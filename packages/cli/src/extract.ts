@@ -1410,6 +1410,35 @@ export function relativizeSummaryPaths(
     };
   }
   relativizeWrapperPaths(summary, projectRoot);
+  relativizeTypeRefs(summary, projectRoot);
+}
+
+/**
+ * A ref shape records the file its type is declared in, and shapes sit in
+ * a dozen places (inputs, outputs, effect payloads, the definitions table,
+ * metadata), so this walks the whole summary rather than listing them.
+ */
+function relativizeTypeRefs(value: unknown, projectRoot: string): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      relativizeTypeRefs(item, projectRoot);
+    }
+    return;
+  }
+  if (value === null || typeof value !== "object") {
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.type === "ref" &&
+    typeof record.from === "string" &&
+    path.isAbsolute(record.from)
+  ) {
+    record.from = path.relative(projectRoot, record.from);
+  }
+  for (const child of Object.values(record)) {
+    relativizeTypeRefs(child, projectRoot);
+  }
 }
 
 /** The file each wrapper around this unit is declared in, on the unit and on the outcomes it contributed. */

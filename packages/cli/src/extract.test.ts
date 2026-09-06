@@ -897,6 +897,44 @@ describe("relativizeSummaryPaths", () => {
       from: { file: "src/requireCaller.ts", name: "requireCaller" },
     });
   });
+
+  it("rewrites the declaring file on every ref shape, wherever it sits", () => {
+    const ref = (from: string) => ({ type: "ref", name: "User", from });
+    const summary = {
+      location: { file: "/repo/src/app.ts", range: { start: 1, end: 2 } },
+      inputs: [{ name: "user", shape: ref("/repo/src/models.ts") }],
+      transitions: [
+        {
+          output: {
+            type: "return",
+            value: {
+              type: "record",
+              properties: {
+                users: { type: "array", element: ref("/repo/src/models.ts") },
+              },
+            },
+          },
+          effects: [{ kind: "emit", payload: ref("/repo/src/models.ts") }],
+        },
+      ],
+      identity: { name: "get", exportPath: [], boundaryBinding: null },
+      definitions: {
+        "User@1": ref("/repo/src/models.ts"),
+        "Node@2": { type: "ref", name: "Node" },
+      },
+      metadata: { returnType: ref("/repo/src/models.ts") },
+    } as unknown as BehavioralSummary;
+
+    relativizeSummaryPaths(summary, "/repo");
+
+    expect(JSON.stringify(summary)).not.toContain("/repo/");
+    expect(summary.inputs[0].shape).toEqual(ref("src/models.ts"));
+    expect(summary.definitions).toEqual({
+      "User@1": ref("src/models.ts"),
+      "Node@2": { type: "ref", name: "Node" },
+    });
+    expect(summary.metadata?.returnType).toEqual(ref("src/models.ts"));
+  });
 });
 
 describe("relativizeRenderTargets", () => {
