@@ -160,13 +160,13 @@ What compares against what, today:
   `createRoute` under hono-openapi, against the handler behind it.
   `inspect` marks a declared status no path produces with a `!!` line,
   and `check` reports it.
+- An OpenAPI document against the handlers it describes. A status a
+  handler produces that the document leaves out is an error; a status
+  the document declares that no path in the handler produces is a
+  warning, since documents often declare the 401 the middleware sends.
 - An OpenAPI document against the clients that call it. The document
   is the provider; see step 4 and [Pair against
   OpenAPI](/guides/pair-against-openapi).
-
-An OpenAPI document beside the handler it describes, with no client in
-the run, is not compared against that handler yet. That is
-[#910](https://github.com/nimbuscloud-ai/suss/issues/910).
 
 **What you get.** The first findings. A status the handler produces
 that its contract does not declare, a status the contract declares
