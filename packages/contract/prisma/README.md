@@ -16,12 +16,19 @@ The behavior is in `metadata.storageContract`:
 
 - `fieldSet: "exhaustive"`. A Prisma model declares every column its table has, so a column the code touches and this list leaves out is unknown rather than merely unlisted.
 - `fields`, one entry per column, with the Prisma type, whether the field is optional (`nullable`), and `primary` / `unique` from the `@id` and `@unique` field attributes. Scalar fields (`Int`, `BigInt`, `Float`, `Decimal`, `String`, `Boolean`, `DateTime`, `Json`, `Bytes`) and enum fields are columns.
-- Relation fields also appear, marked `derived`, because the Prisma client accepts them in an `include` or a `select` even though no column of that name exists. Leaving them out of a contract that calls itself exhaustive would report working code as reading an undeclared field. When the model stores the foreign key, the columns listed in `@relation(fields: [...])` come along as `relationKey`. Prisma allows that argument on one side of a relation only, so the other side and every implicit many-to-many have no key: connecting a row there changes a join-table entry rather than a column of this model.
+- Relation fields also appear, marked `derived`, because the Prisma client accepts them in an `include` or a `select` even though no column of that name exists. Leaving them out of a contract that calls itself exhaustive would report working code as reading an undeclared field. When the model stores the foreign key, the columns listed in `@relation(fields: [...])` come along as `relationKey`. Prisma allows that argument on one side of a relation only, so the other side and every implicit many-to-many have no key.
+- A many-to-many relation with no explicit join model gets a `joinContainer` entry instead, saying which table Prisma manages for it. See below.
 - A model with any relation also gets a derived `_count` entry, which is what the client exposes for relation counts.
 - `indexes`, from `@@index([...])` (not unique), `@@unique([...])`, and `@@id([...])` (both unique).
 - `physicalTable`, when `@@map("...")` gives the table a SQL name different from the model name. That is the bridge to code speaking SQL names directly, such as Drizzle's `pgTable("users")` or a raw query.
 
 These summaries have no inputs and no transitions. A table is a shape the code agrees with, not a function that returns something. Confidence is `declared` at `high`, since the schema says all of this outright.
+
+### Implicit many-to-many join tables
+
+Two list fields pointing at each other with neither side declaring `@relation(fields: [...])` are Prisma's implicit many-to-many: Prisma creates and manages the join table itself, and the schema never declares a model for it. This reader emits a summary for that table too, with the boundary Prisma would create: container `_Name` when the fields carry `@relation("Name")`, or `_FirstToSecond` with the two model names in alphabetical order otherwise, and two columns, `A` and `B`, keyed to whichever model sorts first and second. Each side of the relation gets `joinContainer` set to that table's own container name, so a `connect`, `disconnect` or `set` through the field counts as a write there instead of going unrecorded.
+
+An explicit join model, the kind written out by hand to carry extra columns, already has a boundary through the ordinary model path above and gets none of this.
 
 ## What it does not read
 
