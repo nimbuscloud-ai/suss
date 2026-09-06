@@ -1609,13 +1609,30 @@ function fieldsThatMoved(before: Transition, after: Transition): string[] {
     .sort();
 }
 
-function renderTransitionShort(t: Transition): string {
+function renderGuard(t: Transition): string {
+  return t.conditions.map((c) => formatCondition(c)).join(" && ");
+}
+
+/**
+ * `spellDefault` writes out a fall-through's own conditions in place of
+ * the `(default)` label. A diff of two fall-throughs that differ only in
+ * their guard would otherwise print the same line twice.
+ */
+function renderTransitionShort(t: Transition, spellDefault = false): string {
   const output = formatOutput(t.output);
-  const conditions = t.conditions.map((c) => formatCondition(c)).join(" && ");
-  if (t.isDefault) {
+  const conditions = renderGuard(t);
+  if (t.isDefault && !spellDefault) {
     return `${output}  (default)`;
   }
   return conditions ? `${output}  when  ${conditions}` : output;
+}
+
+function defaultGuardMoved(before: Transition, after: Transition): boolean {
+  return (
+    before.isDefault &&
+    after.isDefault &&
+    renderGuard(before) !== renderGuard(after)
+  );
 }
 
 function renderDiff(
@@ -1648,13 +1665,13 @@ function renderDiff(
   }
 
   for (const { before: b, after: a } of diff.changedTransitions) {
-    lines.push(`    ~ ${renderTransitionShort(b)}`);
-    lines.push(`      -> ${renderTransitionShort(a)}`);
+    const spellDefault = defaultGuardMoved(b, a);
+    const beforeLine = renderTransitionShort(b, spellDefault);
+    const afterLine = renderTransitionShort(a, spellDefault);
+    lines.push(`    ~ ${beforeLine}`);
+    lines.push(`      -> ${afterLine}`);
     const unshown = fieldsThatMoved(b, a);
-    if (
-      renderTransitionShort(b) === renderTransitionShort(a) &&
-      unshown.length > 0
-    ) {
+    if (beforeLine === afterLine && unshown.length > 0) {
       lines.push(`      (${unshown.join(", ")} changed)`);
     }
   }
