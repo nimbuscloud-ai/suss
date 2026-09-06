@@ -115,7 +115,14 @@ const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
   },
   array: (s) => `[${formatBodyShape(s.items)}]`,
   dictionary: (s) => `{ [key]: ${formatBodyShape(s.values)} }`,
-  union: (s) => s.variants.map(formatBodyShape).join(" | "),
+  // A wide union prints like a wide record: enough variants to say
+  // what it is, and a reader who wants the rest asks for the types.
+  union: (s) => {
+    const variants = s.variants.map(formatBodyShape);
+    return variants.length <= 5
+      ? variants.join(" | ")
+      : `${variants.slice(0, 4).join(" | ")} | ...`;
+  },
   text: () => "string",
   integer: () => "int",
   number: () => "number",
@@ -1347,6 +1354,19 @@ export interface DiffOptions {
    * them, so something reading it has nowhere else to go.
    */
   json?: boolean;
+  /**
+   * The files the change touched, project-relative. A unit in one of
+   * them prints as a line saying how much moved, since the reader has
+   * that file's diff in front of them; a unit in any other file prints
+   * in full. Without the list every file is read as untouched.
+   */
+  changedFiles?: readonly string[];
+  /**
+   * How many characters the report may come to. Whole files are
+   * written until the next one does not fit, and the rest are counted
+   * at the end. Without it the report says everything.
+   */
+  budget?: number;
 }
 
 /**
@@ -1780,6 +1800,28 @@ function fieldsThatMoved(before: Transition, after: Transition): string[] {
     .sort();
 }
 
+const FIELD_VALUE_WIDTH = 90;
+
+function fieldValue(value: unknown): string {
+  const text = JSON.stringify(value) ?? "undefined";
+  return text.length <= FIELD_VALUE_WIDTH
+    ? text
+    : `${text.slice(0, FIELD_VALUE_WIDTH - 3)}...`;
+}
+
+/**
+ * A field the short line does not show, with the value it had and the
+ * value it has. The name of the field on its own left a reader who gates
+ * a review on the diff no better off than before.
+ */
+function fieldChanges(before: Transition, after: Transition): string[] {
+  return fieldsThatMoved(before, after).map((key) => {
+    const was = fieldValue(before[key as keyof Transition]);
+    const now = fieldValue(after[key as keyof Transition]);
+    return `${key}: ${was} -> ${now}`;
+  });
+}
+
 function renderGuard(t: Transition): string {
   return t.conditions.map((c) => formatCondition(c)).join(" && ");
 }
@@ -1806,45 +1848,240 @@ function defaultGuardMoved(before: Transition, after: Transition): boolean {
   );
 }
 
-function renderDiff(
-  key: string,
-  before: BehavioralSummary,
-  diff: SummaryDiff,
-): string {
-  const lines: string[] = [];
+// ---------------------------------------------------------------------------
+// Diff rendering
+// ---------------------------------------------------------------------------
 
-  const total =
+/** One unit that moved, with what the report needs to say about it. */
+interface MovedUnit {
+  readonly change: "added" | "removed" | "changed";
+  readonly file: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly recognition: string | null;
+  readonly boundary: string | null;
+  readonly transitions: number;
+  readonly diff: SummaryDiff | null;
+}
+
+function movedUnit(
+  change: MovedUnit["change"],
+  summary: BehavioralSummary,
+  diff: SummaryDiff | null,
+): MovedUnit {
+  const binding = summary.identity.boundaryBinding;
+  return {
+    change,
+    file: summary.location.file,
+    name: summary.identity.name,
+    kind: summary.kind,
+    recognition: binding === null ? null : binding.recognition,
+    boundary: bindingLabel(summary),
+    transitions: summary.transitions.length,
+    diff,
+  };
+}
+
+function changeCount(diff: SummaryDiff): number {
+  return (
     diff.addedTransitions.length +
     diff.removedTransitions.length +
-    diff.changedTransitions.length;
+    diff.changedTransitions.length
+  );
+}
 
-  lines.push(`${key}`);
+/** Every unit that moved, in no particular order. */
+function unitsThatMoved(pairing: DiffPairing): MovedUnit[] {
+  const moved: MovedUnit[] = [];
 
-  const binding = before.identity.boundaryBinding;
-  if (binding !== null) {
-    lines.push(`  ${binding.recognition} ${before.kind}`);
+  for (const { summary } of pairing.added) {
+    moved.push(movedUnit("added", summary, null));
   }
 
-  lines.push(`  ${total} change${total === 1 ? "" : "s"}`);
+  for (const { summary } of pairing.removed) {
+    moved.push(movedUnit("removed", summary, null));
+  }
+
+  for (const { before, after } of pairing.paired) {
+    const diff = diffSummaries(before, after);
+    if (changeCount(diff) === 0) {
+      continue;
+    }
+    moved.push(movedUnit("changed", after, diff));
+  }
+
+  return moved;
+}
+
+function transitionWord(count: number): string {
+  return `${count} transition${count === 1 ? "" : "s"}`;
+}
+
+/** What the unit is, past its name: the boundary it serves and its kind. */
+function unitSubject(unit: MovedUnit): string {
+  const kind =
+    unit.recognition === null ? unit.kind : `${unit.recognition} ${unit.kind}`;
+  // A package export's boundary label ends in the name already, and
+  // printing both reads as a stutter.
+  return unit.boundary === null || unit.boundary.endsWith(unit.name)
+    ? kind
+    : `${unit.boundary}  ${kind}`;
+}
+
+const HEADLINES: Record<MovedUnit["change"], (unit: MovedUnit) => string> = {
+  added: (unit) =>
+    `+ ${unit.name}  new ${unit.kind} with ${transitionWord(unit.transitions)}`,
+  removed: (unit) =>
+    `- ${unit.name}  removed ${unit.kind} (had ${transitionWord(unit.transitions)})`,
+  changed: (unit) => {
+    const changes = changeCount(unit.diff as SummaryDiff);
+    return `~ ${unit.name}  ${unitSubject(unit)}  ${changes} change${changes === 1 ? "" : "s"}`;
+  },
+};
+
+function transitionLines(diff: SummaryDiff): string[] {
+  const lines: string[] = [];
 
   for (const t of diff.addedTransitions) {
-    lines.push(`    + ${renderTransitionShort(t)}`);
+    lines.push(`+ ${renderTransitionShort(t)}`);
   }
 
   for (const t of diff.removedTransitions) {
-    lines.push(`    - ${renderTransitionShort(t)}`);
+    lines.push(`- ${renderTransitionShort(t)}`);
   }
 
   for (const { before: b, after: a } of diff.changedTransitions) {
     const spellDefault = defaultGuardMoved(b, a);
     const beforeLine = renderTransitionShort(b, spellDefault);
     const afterLine = renderTransitionShort(a, spellDefault);
-    lines.push(`    ~ ${beforeLine}`);
-    lines.push(`      -> ${afterLine}`);
-    const unshown = fieldsThatMoved(b, a);
-    if (beforeLine === afterLine && unshown.length > 0) {
-      lines.push(`      (${unshown.join(", ")} changed)`);
+    lines.push(`~ ${beforeLine}`);
+    lines.push(`  -> ${afterLine}`);
+    if (beforeLine === afterLine) {
+      for (const field of fieldChanges(b, a)) {
+        lines.push(`  ${field}`);
+      }
     }
+  }
+
+  return lines;
+}
+
+/**
+ * A unit's block: its headline, and the transitions under it when the
+ * report is printing those. A unit in a file the change touched says
+ * how much moved and no more, since a reader who wants the detail is
+ * already reading that file's diff.
+ */
+function unitBlock(unit: MovedUnit, detailed: boolean): string[] {
+  const headline = `  ${HEADLINES[unit.change](unit)}`;
+  if (!detailed || unit.diff === null) {
+    return [headline];
+  }
+  return [headline, ...transitionLines(unit.diff).map((line) => `    ${line}`)];
+}
+
+/**
+ * A file the change did not touch comes first, and one where a unit
+ * changed before one where units were only added or removed.
+ */
+interface FileSection {
+  readonly file: string;
+  readonly touched: boolean;
+  readonly units: MovedUnit[];
+}
+
+function sectionsByFile(
+  moved: readonly MovedUnit[],
+  changedFiles: ReadonlySet<string>,
+): FileSection[] {
+  const byFile = new Map<string, MovedUnit[]>();
+  for (const unit of moved) {
+    const units = byFile.get(unit.file);
+    if (units === undefined) {
+      byFile.set(unit.file, [unit]);
+      continue;
+    }
+    units.push(unit);
+  }
+
+  const sections = [...byFile.entries()].map(([file, units]) => ({
+    file,
+    touched: changedFiles.has(file),
+    units: units.sort(byBoundaryThenName),
+  }));
+
+  return sections.sort((a, b) => {
+    if (a.touched !== b.touched) {
+      return a.touched ? 1 : -1;
+    }
+    const movedA = a.units.some((unit) => unit.change === "changed");
+    const movedB = b.units.some((unit) => unit.change === "changed");
+    if (movedA !== movedB) {
+      return movedA ? -1 : 1;
+    }
+    return a.file.localeCompare(b.file);
+  });
+}
+
+function byBoundaryThenName(a: MovedUnit, b: MovedUnit): number {
+  if ((a.boundary === null) !== (b.boundary === null)) {
+    return a.boundary === null ? 1 : -1;
+  }
+  return a.name.localeCompare(b.name);
+}
+
+function fileHeading(section: FileSection): string {
+  return section.touched
+    ? `${section.file}  (changed in this pull request)`
+    : section.file;
+}
+
+/**
+ * What a reader is not seeing, so a cut report never reads as the whole
+ * of the change.
+ */
+function omissionLine(units: number, files: number): string {
+  const filePart = files === 1 ? "1 more file" : `${files} more files`;
+  const unitPart = units === 1 ? "1 more unit" : `${units} more units`;
+  return `... ${unitPart} in ${filePart}. The whole diff is what \`suss inspect --diff\` prints without a budget.`;
+}
+
+/**
+ * The report, grouped by file. `budget` caps how many characters it
+ * comes to: sections are written whole until the next one would not
+ * fit, and what is left out is counted at the end.
+ */
+function renderReport(
+  moved: readonly MovedUnit[],
+  changedFiles: ReadonlySet<string>,
+  budget: number | null,
+): string {
+  const sections = sectionsByFile(moved, changedFiles);
+  const lines: string[] = [];
+  let written = 0;
+  let unitsLeft = 0;
+  let filesLeft = 0;
+
+  for (const section of sections) {
+    const block = [
+      fileHeading(section),
+      ...section.units.flatMap((unit) => unitBlock(unit, !section.touched)),
+      "",
+    ];
+    const length = block.join("\n").length + 1;
+
+    if (budget !== null && written + length > budget && lines.length > 0) {
+      filesLeft += 1;
+      unitsLeft += section.units.length;
+      continue;
+    }
+
+    lines.push(...block);
+    written += length;
+  }
+
+  if (filesLeft > 0) {
+    lines.push(omissionLine(unitsLeft, filesLeft));
   }
 
   return lines.join("\n");
@@ -1943,40 +2180,16 @@ export function inspectDiff(options: DiffOptions): void {
     return;
   }
 
-  let hasChanges = false;
-
-  for (const { key, summary: s } of pairing.added) {
-    hasChanges = true;
-    process.stdout.write(`+ ${key}\n`);
-    process.stdout.write(
-      `  new ${s.kind} with ${s.transitions.length} transition${s.transitions.length === 1 ? "" : "s"}\n\n`,
-    );
-  }
-
-  for (const { key, summary: s } of pairing.removed) {
-    hasChanges = true;
-    process.stdout.write(`- ${key}\n`);
-    process.stdout.write(
-      `  removed ${s.kind} (had ${s.transitions.length} transition${s.transitions.length === 1 ? "" : "s"})\n\n`,
-    );
-  }
-
-  for (const { key, before: beforeS, after: afterS } of pairing.paired) {
-    const diff = diffSummaries(beforeS, afterS);
-    if (
-      diff.addedTransitions.length === 0 &&
-      diff.removedTransitions.length === 0 &&
-      diff.changedTransitions.length === 0
-    ) {
-      continue;
-    }
-    hasChanges = true;
-    process.stdout.write(`${renderDiff(key, beforeS, diff)}\n\n`);
-  }
-
-  if (!hasChanges) {
+  const moved = unitsThatMoved(pairing);
+  if (moved.length === 0) {
     process.stdout.write("No behavioral changes.\n");
+    return;
   }
+
+  const changedFiles = new Set(options.changedFiles ?? []);
+  process.stdout.write(
+    `${renderReport(moved, changedFiles, options.budget ?? null)}\n`,
+  );
 }
 
 // ---------------------------------------------------------------------------

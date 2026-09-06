@@ -7,7 +7,7 @@
 // subprocess overhead, and without the runtime swallowing assertions
 // through process.exit.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
@@ -116,6 +116,11 @@ Options (inspect):
   --dir            Folder of summary files to read, instead of one file
   --diff           Compare two summary files and report what moved
   --json           With --diff, write the diff as JSON for a machine
+  --changed-files  With --diff, a file listing the paths a change touched,
+                   one per line. A unit in one of them prints as a line
+                   saying how much moved; a unit anywhere else prints in full
+  --budget         With --diff, how many characters the report may come to.
+                   Whole files are written until the next one does not fit
   --types          Spell out the types a summary names, rather than naming them
 
 Options (inspect --flow):
@@ -453,6 +458,27 @@ async function runExtract(args: string[]): Promise<number> {
 /** What plain `inspect` takes. `--flow` is handled before this. */
 const INSPECT_FLAGS = new Set(["--dir", "--diff", "--flow", "--json"]);
 
+/** A `--flag value` pair taken out of the arguments, value and all. */
+function takeValued(
+  args: string[],
+  flag: string,
+): { rest: string[]; value: string | undefined } {
+  const at = args.indexOf(flag);
+  if (at === -1) {
+    return { rest: args, value: undefined };
+  }
+  const rest = [...args.slice(0, at), ...args.slice(at + 2)];
+  return { rest, value: args[at + 1] };
+}
+
+/** The files a change touched, one path per line, as git writes them. */
+function readChangedFiles(file: string): string[] {
+  return readFileSync(file, "utf-8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
 /**
  * A flag inspect does not take, said rather than dropped. `--json` is
  * the one people try, so it gets pointed somewhere: the summaries file
@@ -473,7 +499,22 @@ async function runInspect(argv: string[]): Promise<number> {
 
   const types = argv.includes("--types");
   const json = argv.includes("--json");
-  const args = argv.filter((a) => a !== "--types" && a !== "--json");
+  const flagless = argv.filter((a) => a !== "--types" && a !== "--json");
+  const withoutChanged = takeValued(flagless, "--changed-files");
+  const withoutBudget = takeValued(withoutChanged.rest, "--budget");
+  const args = withoutBudget.rest;
+  const changedFilesAt = withoutChanged.value;
+  const budgetText = withoutBudget.value;
+
+  if (
+    (changedFilesAt !== undefined || budgetText !== undefined) &&
+    args[0] !== "--diff"
+  ) {
+    process.stderr.write(
+      "--changed-files and --budget belong to inspect --diff. They say which files a pull request touched and how long the report may be.\n",
+    );
+    return 1;
+  }
   // `--diff` is the one form that takes it. Everything else inspect
   // does reads a file that is already JSON, so the flag is refused
   // here rather than in each branch, where --dir used to drop it.
@@ -495,7 +536,28 @@ async function runInspect(argv: string[]): Promise<number> {
       );
       return 1;
     }
-    inspectDiff({ before, after, ...(json ? { json } : {}) });
+    const budget = budgetText === undefined ? undefined : Number(budgetText);
+    if (budget !== undefined && (!Number.isInteger(budget) || budget <= 0)) {
+      process.stderr.write(
+        `--budget takes a number of characters, such as --budget 60000. It got ${budgetText}.\n`,
+      );
+      return 1;
+    }
+    if (changedFilesAt !== undefined && !existsSync(changedFilesAt)) {
+      process.stderr.write(
+        `No file at ${changedFilesAt}. --changed-files reads one path per line, which is what \`git diff --name-only\` writes.\n`,
+      );
+      return 1;
+    }
+    inspectDiff({
+      before,
+      after,
+      ...(json ? { json } : {}),
+      ...(changedFilesAt === undefined
+        ? {}
+        : { changedFiles: readChangedFiles(changedFilesAt) }),
+      ...(budget === undefined ? {} : { budget }),
+    });
     return 0;
   }
   if (args[0] === "--dir") {

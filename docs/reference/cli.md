@@ -711,7 +711,7 @@ suss inspect SUMMARIES.json
 suss inspect --dir DIR
 
 # Diff two summary files (shows changed transitions)
-suss inspect --diff BEFORE.json AFTER.json [--json]
+suss inspect --diff BEFORE.json AFTER.json [--json] [--changed-files PATH] [--budget N]
 
 # Who serves a request, hop by hop
 suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
@@ -720,7 +720,9 @@ suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
 | Flag | Description |
 |---|---|
 | `--dir PATH` | Report how the summaries in a directory pair up, boundary by boundary, and which ones found nothing to pair with. It does not render the summaries themselves. |
-| `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions. A transition that only moved in the file is not a change, so an edit above a handler leaves the diff quiet. Takes `--json`. |
+| `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions, grouped by the file each unit is in. A transition that only moved in the file is not a change, so an edit above a handler leaves the diff quiet. Takes `--json`, `--changed-files` and `--budget`. |
+| `--changed-files PATH` | With `--diff`, a file listing the paths a change touched, one per line, which is what `git diff --name-only` writes. Those files come last, and a unit in one of them prints as a line saying how much moved, since the reader has that file's diff already. |
+| `--budget N` | With `--diff`, how many characters the report may come to. Whole files are written until the next one does not fit, and the units and files left out are counted on the last line. |
 | `--types` | Spell out the named types a summary references instead of printing their names. It applies to a single file and to `--dir`; a `--diff` run ignores it. |
 | `--flow "METHOD URL"` | Work out who serves one request, hop by hop. See [below](#suss-inspect-flow). |
 

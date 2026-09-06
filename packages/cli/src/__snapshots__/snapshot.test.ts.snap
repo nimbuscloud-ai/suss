@@ -1,18 +1,16 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`inspect --diff output snapshots > shows added transition 1`] = `
-"handler:GET /users/{id}
-  express handler
-  1 change
+"src/handlers/users.ts
+  ~ getUser  GET /users/{id}  express handler  1 change
     + 403 { error }  when  db.findById().restricted
 
 "
 `;
 
 exports[`inspect --diff output snapshots > shows changed transition 1`] = `
-"handler:GET /users/{id}
-  express handler
-  1 change
+"src/handlers/users.ts
+  ~ getUser  GET /users/{id}  express handler  1 change
     ~ 200 { id, name, email }  (default)
       -> 200 { id, name, email, avatar }  (default)
 
@@ -20,11 +18,11 @@ exports[`inspect --diff output snapshots > shows changed transition 1`] = `
 `;
 
 exports[`inspect --diff output snapshots > shows new and removed summaries 1`] = `
-"+ client:GET /users/{id}::loadUser
-  new client with 2 transitions
+"src/handlers/users.ts
+  - getUser  removed handler (had 3 transitions)
 
-- handler:GET /users/{id}
-  removed handler (had 3 transitions)
+src/pages/user.ts
+  + loadUser  new client with 2 transitions
 
 "
 `;
@@ -35,9 +33,8 @@ exports[`inspect --diff output snapshots > shows no changes for identical files 
 `;
 
 exports[`inspect --diff output snapshots > shows removed transition 1`] = `
-"handler:GET /users/{id}
-  express handler
-  1 change
+"src/handlers/users.ts
+  ~ getUser  GET /users/{id}  express handler  1 change
     - 200 { id, name, email }  (default)
 
 "
