@@ -233,27 +233,18 @@ Compared 1 boundary.
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
 4 findings: 1 error, 3 warning, 0 info
-
-1 boundary is claimed by more than one file:
-  GET /users/{id}  in backend.json and contract.json
-
-  suss tells boundaries apart by method and path, so two services that
-  serve the same route look like one. Anything compared against these
-  was compared against both. Check one service at a time to be sure.
 ```
 
 Both bugs are there, and each is reported twice: once from pairing the
 two summaries, once from checking the loader against the declared
-contract.
+contract. The handler was also compared against the document, and the
+two agree on the statuses and the body, so nothing is reported between
+them. `also from:` on the findings above says where each side came
+from.
 
 The `.name` read is the interesting one. suss followed the response
 through two `.then` callbacks to work out which fields the loader
 depends on, then compared that list against the handler's 200 body.
-
-The run ends with a note that two files claim `GET /users/{id}`. That is
-expected here, since the handler and the document describe the same
-endpoint, and `also from:` on the findings above says where each side
-came from.
 
 ## Step 7. Fix the loader
 
@@ -282,13 +273,6 @@ npx suss check --dir summaries --fail-on warning
 Compared 1 boundary.
 
 No findings. Every compared boundary agreed.
-
-1 boundary is claimed by more than one file:
-  GET /users/{id}  in backend.json and contract.json
-
-  suss tells boundaries apart by method and path, so two services that
-  serve the same route look like one. Anything compared against these
-  was compared against both. Check one service at a time to be sure.
 ```
 
 `suss check` exits 0.
