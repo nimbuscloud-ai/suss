@@ -73,6 +73,41 @@ rule that says any constructed subclass of Response is a
 response, or letting a library ship its own summaries the way
 the package-exports work points at.
 
+### Extraction across worker processes {#multi-process-extraction}
+
+Extraction runs on one core. The cheap wins have been taken:
+walks were narrowed and merged in the rule profiler work, and
+the per-file cache lets a warm run skip most files. What is left
+is splitting the first run across processes, one worker per
+group of files with its own ts-morph project, merged at the end.
+Threads will not do, because ts-morph state cannot be shared.
+
+Two costs to measure before starting. Memory multiplies, since
+each worker keeps the ASTs for its group and large repositories
+already want multi-gigabyte heaps. Cross-file resolution still
+has to work, so either a worker's group contains everything its
+files import, or a second pass after the merge resolves what was
+left over.
+
+The trigger is a first run on a repository where the wall time
+matters more than the memory.
+
+### A unit that is both a library unit and a caller {#two-summaries-one-unit}
+
+The dogfood gives one unit one summary. When a function is both
+an internal helper and a caller into another package, only the
+caller half is recorded, so its summary moves from the internal
+column to the consumer column and the count gate fires on the
+drop. Nothing was misread; one true fact was traded for another.
+
+Two questions to decide rather than fall into: whether
+`claimedUnits` should allow a library summary and a caller
+summary for the same function, and what pairing does with the
+duplicate identity if it does; and whether the count gate should
+show a matched internal drop plus consumer rise as a category
+move rather than a regression. Today this costs a baseline
+refresh and a sentence in the PR.
+
 ### `suss emit --format fast-check` (summaries as generated tests)
 
 A summary already contains what a property test needs: the
