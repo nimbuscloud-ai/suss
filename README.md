@@ -1,8 +1,70 @@
 # suss
 
-suss finds the bugs that compile without complaint, type-check, and pass their tests, and still break at runtime. A consumer reads a `200` whose fields the provider changed. A Prisma write touches a column the schema doesn't declare. The types line up on both sides, so nothing in CI flags it.
+Reads your code and checks what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.
 
-suss works out what each function does on every path it can follow, then compares what it found wherever two units of code meet: a caller against a handler, a query against a schema. Where they disagree, you get a finding. It runs on the source you already have, without instrumentation or specs you have to write.
+Code is written faster than anyone can read it. A thousand-line pull request lands several times a day, and a reviewer cannot keep all of it in their head. Reading the diff says what the text changed, not what the service now does, and tests written alongside the change check what its author meant. suss reads the code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches, so a reviewer, a pipeline or an agent can read that instead. It is deterministic and has no model in it.
+
+## Read one service
+
+```bash
+npx @suss/cli extract -f hono -o api.json
+npx @suss/cli inspect api.json
+```
+
+```
+src/api.ts
+├─ GET /users/{id}  (hono handler | line 5)
+│      if  !findUser()
+│        -> 404 { error }
+│      elif  findUser().deletedAt
+│        -> 410 { error }
+│      else
+│        -> 200 { id, name, email }
+│
+└─ POST /users  (hono handler | line 19)
+       if  !c.req.json().name
+         -> 400 "name is required"
+       else
+         -> 201 { id, name }
+```
+
+That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it says so under the handler instead of leaving the path out.
+
+The same summaries are available to a coding agent over MCP, so it can ask what a route reaches or what writes a table before it edits either:
+
+```json
+{
+  "mcpServers": {
+    "suss": { "command": "npx", "args": ["-y", "@suss/mcp", "/path/to/project"] }
+  }
+}
+```
+
+`suss init` writes the `suss.json` the server reads. From the shell, `suss ask 'what writes postgresql:Article'` takes the same questions.
+
+## Read what a change did
+
+`inspect --diff` compares two summary files. Run it on the base and the head of a pull request and it reports what the change did to each unit, whichever lines the diff touched:
+
+```
+handler:GET /users/{id}
+  hono handler
+  3 changes
+    + 200 { id, status }  when  findUser() && findUser().deletedAt
+    - 410 { error }  when  findUser() && findUser().deletedAt
+    ~ 200 { id, name, email }  (default)
+      -> 200 { id, name }  (default)
+```
+
+A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` left the response. Both compile, the types still line up, and every caller that treats a `200` as a usable account is now wrong. This is the output to read first on a large pull request.
+
+## What you use it for
+
+- A service you did not write, or one an agent changed an hour ago. `inspect` prints what each handler, consumer and query does on every path, in a page, without reading the source.
+- A pull request too large to read. `inspect --diff` on the base and the head says which units changed behavior and how.
+- An agent about to edit something. Over MCP it asks what a route reaches, what writes a table, or what calls a function, and gets file and line for each.
+- A spec that drifted. `suss contract` reads an OpenAPI document, a Prisma schema or a CloudFormation template into the same form, and `check` reports where the code and the document disagree.
+- A field you want to remove. `check` pairs every handler with the clients that call it and says which client reads the field, or never handles a status the handler produces.
 
 Here is what a finding looks like, taken from the [runnable example](examples/petstore-axios-openapi/) in this repo:
 
@@ -14,12 +76,32 @@ Here is what a finding looks like, taken from the [runnable example](examples/pe
   boundary: openapi (http) GET /pet/findByStatus
 ```
 
-The spec declares a 400 that this client never branches on. Both sides type-check today, so the first bad request at runtime reaches code that has no plan for it.
+## Adopting it
 
-## Getting started
+Each step costs a little more and asks a little more of the codebase. Stop at whichever one pays for itself. The [adoption guide](docs/guides/adopting-suss.md) walks each step with the command, what it tells you, and what a false positive looks like there.
 
-`suss init` reads your project, works out which packs it needs, and
-offers to set them up:
+1. Read one service with `extract` and `inspect`. Nothing to triage.
+2. Question it with `suss ask` or the MCP server.
+3. Compare it against a document you already keep with `suss contract` and `check`. `suss init` sets this up.
+4. Add the consumer side, so a finding says which caller breaks.
+5. Gate on it: `check --fail-on error` in CI, `inspect --diff` on every pull request.
+6. Reuse the summaries: agent context, endpoint docs, the list of paths a test suite should cover.
+
+## What it reads
+
+TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle and Mongoose for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. Python reads FastAPI and flask-restx routes and SQLAlchemy queries. Ruby reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. A boundary is checked inside one repository; summaries from two repositories can be compared by putting the files in one directory, but nothing does that for you yet.
+
+## Install
+
+suss ships as `@suss/cli`, with every pack inside it, so there is one install:
+
+```bash
+npm install --save-dev @suss/cli
+```
+
+A pack is reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read a Python or Ruby project](docs/guides/python-and-ruby.md).
+
+`suss init` reads your project, works out which packs it needs, and offers to set them up:
 
 ```
 ┌  suss init
@@ -49,65 +131,20 @@ offers to set them up:
 └  Done. Re-run `suss check --dir summaries/` whenever code changes.
 ```
 
-Nothing is written or installed unless you say yes. At a monorepo root
-it finds the workspace and asks which packages you want to set up. When
-its output is piped, or
-when it runs in CI, it prints the commands instead of asking, so you can
-put `suss init --plain` in a script.
+Nothing is written or installed unless you say yes. When its output is piped, or when it runs in CI, it prints the commands instead of asking, so `suss init --plain` works in a script.
 
-Or run the three commands yourself:
-
-```
-suss extract -f hono -o summaries/api.json
-suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
-suss check --dir summaries/
-```
-
-## What a summary looks like
-
-For every function reachable from a recognized entry point, suss emits a `BehavioralSummary`. It has the transitions the function produces, one per execution path, the predicates that guard each of them, the outputs, and the side effects along the way. `suss inspect` renders one:
-
-```
-src/api.ts
-├─ GET /users/:id  (hono handler | line 11)
-│      if  !findUser()
-│        -> 404 { error }
-│      elif  findUser().deletedAt
-│        -> 410 { error }
-│      else
-│        -> 200 { id, name }
-│
-└─ POST /users  (hono handler | line 25)
-       if  !c.req.json().name
-         -> 400 "name is required"
-       else
-         -> 201 { id, name }
-```
-
-That is every path the code can take, with the status and the body fields it produces. Where a declared contract promises something the code never produces, a `!!` line marks the gap. `@suss/checker` and any downstream tool read the same data as JSON, and `inspect` is one renderer over it.
-
-The summary is the product. Checking is the use we have developed furthest. You can also use a summary to see what code does without reading the source, to generate documentation, to list out test cases, and to give AI agents structured context.
-
-## Four CLI surfaces
+## The four commands
 
 All four work on the same `BehavioralSummary[]`:
 
-- `suss extract` derives summaries from TypeScript or JavaScript source. Python and Ruby have adapters of their own, which you call from a script; see [docs/guides/python-and-ruby.md](docs/guides/python-and-ruby.md).
-- `suss contract` derives summaries from declared contracts (OpenAPI, CloudFormation and SAM, Serverless Framework service files, AppSync, GraphQL SDL, committed `.graphql` operation documents, Prisma schema, Storybook).
+- `suss extract` derives summaries from source.
+- `suss contract` derives summaries from a declared artifact: OpenAPI, CloudFormation and SAM, Serverless Framework, Terraform, AppSync, GraphQL SDL and committed `.graphql` operation documents, Prisma schema, Storybook, Wrangler.
 - `suss check` pairs providers with consumers and emits findings where they disagree. It exits nonzero when a finding crosses the `--fail-on error|warning|info|none` threshold.
-- `suss inspect` renders summaries as text. Give it `--diff BEFORE AFTER` to see what a change added, removed, or altered.
+- `suss inspect` renders summaries as text. `--diff BEFORE AFTER` reports what a change added, removed, or altered. `--flow "GET https://..."` says who serves a request, hop by hop.
 
-`extract` and `contract` produce the same format, so you can compare a TypeScript handler directly against an OpenAPI spec for it, a CloudFormation template against the Lambda code it deploys, or a Storybook CSF3 file against the React component it documents.
+`extract` and `contract` produce the same format, so a TypeScript handler compares directly against the OpenAPI document for it, a CloudFormation template against the Lambda code it deploys, or a Storybook file against the React component it documents.
 
-## Install
-
-suss ships as `@suss/cli`, with every pack inside it, so there is one install:
-
-```bash
-npm install --save-dev @suss/cli
-```
-
-A pack is then reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. See [docs/reference/packages.md](docs/reference/packages.md) for every name and the common stack combinations, and the [add-to-project guide](docs/guides/add-to-project.md) for end-to-end integration.
+For every function reachable from a recognized entry point, suss emits a `BehavioralSummary`: the transitions the function produces, one per execution path, the predicates that guard each of them, the outputs, and the side effects along the way. `@suss/checker` and any downstream tool read that JSON, and `inspect` is one renderer over it.
 
 ## A complete example
 
@@ -115,8 +152,11 @@ A pack is then reached by name, `suss extract -f ts-rest -f axios`, and a declar
 
 ## Docs
 
+The documentation site is at [nimbuscloud-ai.github.io/suss](https://nimbuscloud-ai.github.io/suss/).
+
 - [Get started](docs/tutorial/get-started.md): the smallest end-to-end example.
-- [AGENTS.md](AGENTS.md): driving suss from a coding agent, and which docs answer what. [`@suss/mcp`](packages/mcp) puts the same questions in front of a model as MCP tools. `npm install @suss/cli` ships the same file at `node_modules/@suss/cli/AGENTS.md`, so an agent working from an installed copy has it too. Run `suss ask` with no question and it prints the ten it takes.
+- [Adopting suss](docs/guides/adopting-suss.md): the steps above, one at a time.
+- [AGENTS.md](AGENTS.md): driving suss from a coding agent, and which docs answer what. [`@suss/mcp`](packages/mcp) puts the same questions in front of a model as MCP tools. `npm install @suss/cli` ships the same file at `node_modules/@suss/cli/AGENTS.md`. Run `suss ask` with no question and it prints the questions it takes.
 - [Motivation](docs/motivation.md): the problem, why existing tools miss it, prior art, design principles.
 - [Glossary](docs/glossary.md): one canonical definition per term.
 - [FAQ](docs/faq.md): how suss relates to linters, types, OpenAPI, tests, observability.
@@ -126,7 +166,7 @@ A pack is then reached by name, `suss extract -f ts-rest -f axios`, and a declar
 
 Reference and internals: [Summary format](docs/behavioral-summary-format.md), [IR reference](docs/ir-reference.md), [Architecture](docs/architecture.md), [Packs](docs/packs.md), [Contract sources](docs/contract-sources.md).
 
-## Status
+## Packs
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
@@ -149,16 +189,7 @@ Thirty-eight packs read code today, reached by name with `-f`:
 | Runtime surface | `node`, which includes `process.env` |
 | In-process, between workspace packages | `package-exports` |
 
-Eleven contract readers turn a declared artifact into the same format,
-reached with `--from`: `openapi`, `graphql` (SDL and committed `.graphql`
-operation documents), `aws-apigateway`, `cloudformation` (including SAM),
-`serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`.
-Intent docs your team writes are handled separately, by `suss check
---intent`.
-
-The Python and Ruby adapters read their own languages and are called from
-a script rather than the CLI. See
-[docs/guides/python-and-ruby.md](docs/guides/python-and-ruby.md).
+Eleven contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL and committed `.graphql` operation documents), `aws-apigateway`, `cloudformation` (including SAM), `serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`. Intent docs your team writes are handled separately, by `suss check --intent`.
 
 ## License
 

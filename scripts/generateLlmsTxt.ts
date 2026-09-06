@@ -25,7 +25,7 @@ const SITE_ORIGIN = "https://nimbuscloud-ai.github.io/suss/";
 const SITE_NAME = "suss";
 
 const SITE_SUMMARY =
-  "suss reads TypeScript, Python and Ruby, writes down what each endpoint does on every path, and checks that against the clients, specs and infrastructure that depend on it.";
+  "suss reads TypeScript, Python and Ruby, writes down what the code does on every path, from the request or message that comes in to the table or queue it touches, and checks that against the clients, specs and infrastructure on the other side.";
 
 const SKIPPED_DIRECTORIES = new Set([".vitepress", "public", "node_modules"]);
 
