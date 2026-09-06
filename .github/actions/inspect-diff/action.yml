@@ -21,8 +21,8 @@ inputs:
     default: latest
   install:
     description: >
-      A command that installs dependencies in the base checkout, such as
-      `npm ci` or `pnpm install --frozen-lockfile`. When it is empty the
+      A shell command that installs dependencies in the base checkout,
+      such as `npm ci` or `npm ci && npm run build`. When it is empty the
       base checkout shares the head's `node_modules` directories.
     required: false
     default: ""
@@ -89,7 +89,7 @@ runs:
         echo "SUSS_BASE=$base" >> "$GITHUB_ENV"
 
         if [ -n "$INSTALL" ]; then
-          (cd "$base/$WORKING_DIRECTORY" && $INSTALL)
+          (cd "$base/$WORKING_DIRECTORY" && sh -c "$INSTALL")
           exit 0
         fi
 
