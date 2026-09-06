@@ -106,6 +106,35 @@ function raisedResponseOf(
   };
 }
 
+/**
+ * The status a `return` states by building one of the library's own
+ * response objects, `return JSONResponse(status_code=404, ...)`. Null
+ * when the returned expression is no such call, and then the return
+ * says nothing about the status on its own.
+ */
+export function returnedResponseStatus(
+  statement: PyNode,
+  options: RaisedResponseOptions,
+): RawTerminal["statusCode"] | null {
+  const returned = statement.namedChildren[0];
+  if (
+    options.calls.length === 0 ||
+    returned === undefined ||
+    returned === null ||
+    returned.type !== "call"
+  ) {
+    return null;
+  }
+  const callee = field(returned, "function");
+  if (callee === null) {
+    return null;
+  }
+  const declared = declaredCallFor(callee, options);
+  return declared === undefined
+    ? null
+    : statusOf(declared, returned, options.facts);
+}
+
 /** The name being called, which for a class written without parentheses is the class itself. */
 function calleeOf(expression: PyNode, call: PyNode | null): PyNode {
   return call === null ? expression : (field(call, "function") ?? expression);

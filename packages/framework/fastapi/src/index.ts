@@ -18,10 +18,8 @@
 // variable binding, or a router mounted onto another router, keeps the
 // route discovered by name with no path, and the summary says why.
 //
-// This slice covers discovery, prefix composition, and declared-shape
-// reading (`response_model`, `status_code`, parameter and return
-// annotations). It does not read dependencies, middleware, or mounted
-// sub-apps.
+// It does not read mounted sub-apps. The README says which of the
+// dependencies, middleware and exception handlers around a route it reads.
 
 import { z } from "zod";
 
@@ -91,12 +89,53 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
             statusArgument: 0,
           },
         ],
+        // A route may respond by returning one of these built with a status.
+        responseConstructors: [
+          { callee: "fastapi.Response", statusKeyword: "status_code" },
+          {
+            callee: "starlette.responses.Response",
+            statusKeyword: "status_code",
+          },
+          {
+            callee: "fastapi.responses.JSONResponse",
+            statusKeyword: "status_code",
+          },
+          {
+            callee: "starlette.responses.JSONResponse",
+            statusKeyword: "status_code",
+          },
+        ],
         routerComposition: {
           routerConstructorName: "APIRouter",
           includeMethodName: "include_router",
           routerKeyword: "router",
           prefixKeyword: "prefix",
         },
+        wrappers: [
+          {
+            type: "dependency",
+            callees: ["Depends", "Security"],
+            keyword: "dependencies",
+            registrars: [
+              { constructorName: "FastAPI", covers: "everyRoute" },
+              { constructorName: "APIRouter", covers: "ownRoutes" },
+            ],
+          },
+          {
+            type: "decoratedWrapper",
+            attribute: "middleware",
+            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
+            // `async def m(request, call_next)`.
+            continuationParam: 1,
+          },
+          {
+            type: "decoratedWrapper",
+            attribute: "exception_handler",
+            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
+            // `async def h(request, exc)`.
+            throwParam: 1,
+          },
+        ],
       },
     ],
   };

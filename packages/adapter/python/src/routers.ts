@@ -254,12 +254,8 @@ export function buildRouterIndex(
 
   return {
     moduleDef(fromFile, spec, name) {
-      const resolution = resolveModule(fromFile, spec, resolverOptions);
-      if (resolution.status !== "resolved") {
-        return null;
-      }
-      const bound = byFile.get(resolution.file);
-      if (bound === undefined) {
+      const bound = boundModuleAt(fromFile, spec, byFile, resolverOptions);
+      if (bound === null) {
         return null;
       }
       const binding = bound.module.moduleScope.bindings.get(name);
@@ -661,13 +657,27 @@ function buildPatternIndex(
   return index;
 }
 
+/** The file in this run that a module written in `fromFile` refers to, or null when the module is outside the run. */
+export function boundModuleAt(
+  fromFile: string,
+  spec: { module: string; relativeLevel: number },
+  byFile: ReadonlyMap<string, BoundPythonFile>,
+  resolverOptions: ModuleResolverOptions,
+): BoundPythonFile | null {
+  const resolution = resolveModule(fromFile, spec, resolverOptions);
+  if (resolution.status !== "resolved") {
+    return null;
+  }
+  return byFile.get(resolution.file) ?? null;
+}
+
 /**
  * The call a module-level name was assigned from, when the thing being called
  * was imported from one of the accepted modules. This follows a single
  * assignment back to a constructor and never a chain, the same one-hop limit
  * `classifyDecorator` uses when it traces an object.
  */
-function constructionOf(
+export function constructionOf(
   name: string,
   scope: Scope,
   importModule: string[],
@@ -1026,17 +1036,13 @@ function constructionNamed(
           return null;
         }
 
-        const resolution = resolveModule(
+        const target = boundModuleAt(
           scan.bound.file,
           { module: binding.module, relativeLevel: binding.relativeLevel },
+          scan.byFile,
           scan.resolverOptions,
         );
-        if (resolution.status !== "resolved") {
-          return null;
-        }
-
-        const target = scan.byFile.get(resolution.file);
-        if (target === undefined) {
+        if (target === null) {
           return null;
         }
 
@@ -1481,13 +1487,13 @@ function constructionThroughModule(
     return null;
   }
 
-  const resolution = resolveModule(scan.bound.file, spec, scan.resolverOptions);
-  if (resolution.status !== "resolved") {
-    return null;
-  }
-
-  const target = scan.byFile.get(resolution.file);
-  if (target === undefined) {
+  const target = boundModuleAt(
+    scan.bound.file,
+    spec,
+    scan.byFile,
+    scan.resolverOptions,
+  );
+  if (target === null) {
     return null;
   }
 

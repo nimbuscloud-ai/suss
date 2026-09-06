@@ -15,5 +15,12 @@
   "replaces": "suss: MountPrefixEffect value, defined in @suss/adapter-python; says a mount-call prefix swaps out the constructor's rather than going in front of it",
   "trimmed": "suss: PrefixTrailingSlash value, defined in @suss/adapter-python; says the library drops trailing slashes off a namespace path before a route path joins it",
   "unstated": "suss: NoValuePrefix value, defined in @suss/adapter-python; says the library reads a path written as an empty string, None, False or zero the way it reads no path at all",
-  "merged": "suss: PathRepeatedSlashes value, defined in @suss/adapter-python; says the library answers a path carrying repeated slashes at the merged one"
+  "merged": "suss: PathRepeatedSlashes value, defined in @suss/adapter-python; says the library answers a path carrying repeated slashes at the merged one",
+  "Flask": "flask: the app constructor, whose before_request hooks and error handlers reach every route",
+  "Api": "flask-restx: the constructor the namespaces are mounted on; its error handlers reach every route",
+  "before_request": "flask: the app decorator that registers a hook run before every request; a value it returns is the response",
+  "errorhandler": "flask and flask-restx: the decorator on the app, the Api or a Namespace that registers a function run when a view raises",
+  "decoratedWrapper": "suss: PyWrapperForm variant tag, defined in @suss/adapter-python; a function registered through a decorator attribute on the app",
+  "everyRoute": "suss: PyWrapperRegistrar coverage, defined in @suss/adapter-python; a registration on the app or the Api reaches every route of the pack",
+  "ownRoutes": "suss: PyWrapperRegistrar coverage, defined in @suss/adapter-python; a registration on a Namespace reaches the resources routed on it"
 }

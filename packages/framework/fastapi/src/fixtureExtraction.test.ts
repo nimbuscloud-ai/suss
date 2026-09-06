@@ -65,7 +65,7 @@ function bindingOf(summaries: BehavioralSummary[], name: string) {
 }
 
 describe("extraction over fixtures/python-fastapi", () => {
-  it("discovers every route, on the app and on both routers", async () => {
+  it("discovers every route, on the app and on both routers, and the dependency around one of them", async () => {
     const { summaries } = await extractFixture();
     expect(summaries.map((s) => s.identity.name).sort()).toEqual(
       [
@@ -74,6 +74,7 @@ describe("extraction over fixtures/python-fastapi", () => {
         "report",
         "read_item",
         "create_item",
+        "current_user",
         "read_stock",
         "admin_stats",
       ].sort(),
@@ -206,6 +207,10 @@ describe("extraction over fixtures/python-fastapi", () => {
       result.unmatched.unpairable
         .map((u) => `${u.summary.identity.name}:${u.reason}`)
         .sort(),
-    ).toEqual(["admin_stats:unnamedBoundary", "report:unnamedBoundary"]);
+    ).toEqual([
+      "admin_stats:unnamedBoundary",
+      "current_user:noBoundary",
+      "report:unnamedBoundary",
+    ]);
   });
 });

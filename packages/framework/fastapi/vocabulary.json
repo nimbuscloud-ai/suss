@@ -9,5 +9,13 @@
   "Security": "FastAPI: Depends with scopes, declared the same way and injected the same way",
   "decoratedFunctionRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python",
   "braces": "suss: path-template syntax name, defined in @suss/adapter-python; selects the {name} reader for FastAPI's Starlette-style paths",
-  "router": "FastAPI: the include_router parameter that takes the router"
+  "router": "FastAPI: the include_router parameter that takes the router",
+  "FastAPI": "FastAPI: the app constructor, whose dependencies, middleware and exception handlers reach every route",
+  "dependencies": "FastAPI: the keyword on FastAPI(...), APIRouter(...) and a route decorator that lists dependencies run before the handler",
+  "middleware": "FastAPI: the app decorator that registers a function run around every request",
+  "exception_handler": "FastAPI: the app decorator that registers a function run when a handler raises",
+  "dependency": "suss: PyWrapperForm variant tag, defined in @suss/adapter-python; a function written in a Depends-style parameter default or dependency list",
+  "decoratedWrapper": "suss: PyWrapperForm variant tag, defined in @suss/adapter-python; a function registered through a decorator attribute on the app",
+  "everyRoute": "suss: PyWrapperRegistrar coverage, defined in @suss/adapter-python; a registration on the app reaches every route of the pack",
+  "ownRoutes": "suss: PyWrapperRegistrar coverage, defined in @suss/adapter-python; a registration on a router reaches the routes decorated on that router"
 }

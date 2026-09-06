@@ -105,6 +105,39 @@ export function flaskRestxFramework(
           { callee: "flask.abort", statusArgument: 0 },
           { callee: "werkzeug.exceptions.abort", statusArgument: 0 },
         ],
+        wrappers: [
+          {
+            type: "decoratedWrapper",
+            attribute: "before_request",
+            // A blueprint's own hook is not read: a route is decorated on
+            // a namespace, and the blueprint it is served under is a mount.
+            registrars: [
+              {
+                constructorName: "Flask",
+                importModule: ["flask"],
+                covers: "everyRoute",
+              },
+            ],
+            // Flask sends whatever a before_request hook returns, and
+            // goes on to the view only when it returns None.
+            returnedValueResponds: true,
+          },
+          {
+            type: "decoratedWrapper",
+            attribute: "errorhandler",
+            registrars: [
+              {
+                constructorName: "Flask",
+                importModule: ["flask"],
+                covers: "everyRoute",
+              },
+              { constructorName: "Api", covers: "everyRoute" },
+              { constructorName: "Namespace", covers: "ownRoutes" },
+            ],
+            // `def handle(error)`.
+            throwParam: 0,
+          },
+        ],
       },
     ],
   };

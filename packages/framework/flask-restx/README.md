@@ -9,6 +9,7 @@ Framework pack for [flask-restx](https://flask-restx.readthedocs.io/) `Resource`
 - **Discovery**: a `Resource` class decorated with `Namespace.route(path)` (or `Api.route(path)`), directly or through a project's own wrapper module re-exporting the decorator. Each HTTP-verb-named method declared on the class (`get`, `post`, `put`, `delete`, `patch`, `head`, `options`) becomes its own discovered route.
 - **Boundary bindings**: `rest(method, path)`, built from the method's own name and the path the route is served at.
 - **Transitions**: one per place the method ends. A `return body, 201` responds with the status the tuple states, and an `abort(404)` responds with 404, since Flask raises inside that call and never comes back to the method. The pack lists `abort` under flask-restx's module, Flask's and Werkzeug's, so a method matches whichever of the three it imports from.
+- **Wrappers** around the resources: a function decorated with `@app.before_request`, which Flask sends the return value of and goes on to the resource only where it returns `None`; and one decorated with `@app.errorhandler(SomeError)`, `@api.errorhandler(SomeError)` or `@ns.errorhandler(SomeError)`, which runs only for a request that raised. The app's and the API's cover every resource; a namespace's covers the resources decorated on it. Each becomes a summary of its own, and every resource it covers points at it. A blueprint's own `before_request` is not read. The Python adapter's README says how each is read.
 
 ## Namespace paths
 

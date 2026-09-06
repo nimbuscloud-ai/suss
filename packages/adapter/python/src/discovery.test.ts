@@ -380,11 +380,35 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
     expect(get?.parameters).toEqual([]);
   });
 
-  it("leaves transitions empty when nothing declares a response shape", async () => {
+  it("reads a lone literal return as the response when nothing declares a shape", async () => {
     const units = await unitsOf(source, [flaskRestxLike]);
     const get = units.find((u) => u.identity.name === "TodoList.get");
-    expect(get?.branches).toEqual([]);
+    expect(get?.branches).toHaveLength(1);
+    expect(get?.branches[0]?.bodyShapeReading?.reading).toMatchObject({
+      kind: "written",
+      value: { type: "array" },
+    });
+    expect(get?.branches[0]?.statusCodeReading).toEqual({
+      libraryDefault: 200,
+      reading: { kind: "absent" },
+    });
     expect(get?.bodyContent).toBe("statements");
+  });
+
+  it("leaves transitions empty when the body neither returns a value nor declares one", async () => {
+    const bareSource = [
+      "from myapp.wrappers.restx import route",
+      "",
+      "",
+      '@route("/todos")',
+      "class TodoList:",
+      "    def get(self):",
+      "        pass",
+      "",
+    ].join("\n");
+    const units = await unitsOf(bareSource, [flaskRestxLike]);
+    const get = units.find((u) => u.identity.name === "TodoList.get");
+    expect(get?.branches).toEqual([]);
   });
 
   it("classifies a converter-typed path parameter and claims the path in canonical brace form", async () => {

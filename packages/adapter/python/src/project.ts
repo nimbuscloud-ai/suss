@@ -26,6 +26,7 @@ import {
 import { Database } from "@suss/datalog";
 import {
   assembleSummary,
+  composeWrappers,
   createCacheLayer,
   createTimer,
   moduleInitStructure,
@@ -50,6 +51,7 @@ import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 import { bindEvaluator } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
+import { buildWrapperIndex } from "./wrappers.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
@@ -58,6 +60,7 @@ import type {
   CacheLayer,
   ExtractionReport,
   ExtractorOptions,
+  RawCodeStructure,
   TimingReport,
 } from "@suss/extractor";
 import type { PythonPack, StoragePattern } from "./pack.js";
@@ -242,24 +245,46 @@ export async function extractPythonProject(
         }
       : undefined;
 
+  const wrapperIndex = timer.time("discover", () =>
+    buildWrapperIndex(bound, {
+      packs: options.packs,
+      roots: options.roots,
+      facts: needsValues ? db : undefined,
+      storageFor,
+    }),
+  );
+
+  // A route asks the wrapper index about its own parameters as it is
+  // discovered, so the wrapper units of a file are complete only once
+  // every file has been discovered.
+  const discovered = new Map<string, RawCodeStructure[]>();
+  for (const boundFile of bound) {
+    const { file, root, module: moduleBinding } = boundFile;
+    const storage = storageFor(boundFile);
+    const rawUnits = timer.time("discover", () =>
+      discoverUnits(root, moduleBinding, {
+        packs: options.packs,
+        filePath: displayPathOf(file),
+        absoluteFile: file,
+        routerIndex,
+        gapHandling,
+        wrappers: wrapperIndex,
+        ...(needsValues ? { facts: db } : {}),
+        ...(storage === undefined ? {} : { storage }),
+      }),
+    );
+    discovered.set(file, rawUnits);
+  }
+
   const seeds: Seed[] = [];
   const summariesBySeed = new Map<string, BehavioralSummary[]>();
   for (const boundFile of bound) {
     const { file, root, module: moduleBinding } = boundFile;
     const displayPath = displayPathOf(file);
-    const storage = storageFor(boundFile);
-
-    const rawUnits = timer.time("discover", () =>
-      discoverUnits(root, moduleBinding, {
-        packs: options.packs,
-        filePath: displayPath,
-        absoluteFile: file,
-        routerIndex,
-        gapHandling,
-        ...(needsValues ? { facts: db } : {}),
-        ...(storage === undefined ? {} : { storage }),
-      }),
-    );
+    const rawUnits = [
+      ...(discovered.get(file) ?? []),
+      ...wrapperIndex.unitsIn(file),
+    ];
     for (const raw of rawUnits) {
       const summary = timer.time("summarize", () =>
         assembleSummary(raw, { gapHandling }),
@@ -362,16 +387,19 @@ export async function extractPythonProject(
   }
   disambiguateSummaryIds(summaries);
   linkCallsToSummaries(summaries);
+  const composed = timer.time("summarize", () =>
+    composeWrappers(summaries, { gapHandling }),
+  );
 
   await timer.timeAsync("cache.write", async () => {
     // An empty result is never cached. Serving one would skip the
     // stages that fill the funnel, so a misconfigured project would
     // get "0 summaries" with no explanation ever after.
-    if (cacheDir === null || summaries.length === 0) {
+    if (cacheDir === null || composed.length === 0) {
       return;
     }
     try {
-      await cache.write(cacheInput, summaries);
+      await cache.write(cacheInput, composed);
     } catch {
       // A failed cache write must not fail the extract.
     }
@@ -382,12 +410,12 @@ export async function extractPythonProject(
       packs: options.packs,
       tallies,
       filesWalked: options.files.length,
-      summaries,
+      summaries: composed,
     }),
   );
   options.onTiming?.(timer.report());
 
-  return { summaries, facts: db };
+  return { summaries: composed, facts: db };
 }
 
 /** The files each file's imports resolved to, spelled the way a summary's location.file is. */
