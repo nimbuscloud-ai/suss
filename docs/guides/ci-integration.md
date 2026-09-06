@@ -42,28 +42,35 @@ push edits the same comment. `extract` takes whatever you would type
 after `suss extract` on your own machine; for Python that is
 `--dir src -f fastapi`.
 
+suss runs this job on its own pull requests, reading the workspace
+through the `package-exports` pack;
+[behavior-diff.yml](https://github.com/nimbuscloud-ai/suss/blob/main/.github/workflows/behavior-diff.yml)
+is the whole workflow.
+
 A pull request from a fork gets a read-only token, so the comment
 cannot be posted there and the diff stays in the job log. The
 [action's README](https://github.com/nimbuscloud-ai/suss/blob/main/.github/actions/inspect-diff/README.md)
 lists every input, the outputs a later step can read, and how to turn
 the comment off for forks.
 
-## Run it earlier than this, too
+## Run the same commands before you push
 
-A merge gate is the one thing nobody talks their way past, so keep
-it. It is the wrong place to find out, though: by the time it runs,
-every decision has been made and the only thing left to do is
-reject.
+The jobs on this page run after the code is written and pushed. The
+same two commands work on a local checkout, and a finding there costs
+an edit instead of a failed build:
 
-The same commands are worth more in the review step right after the
-code is written, before anything is pushed. The tree is complete
-there, and a finding routes straight back into another round of
-editing rather than into a failed build. That matters most where an
-agent writes the code: it will satisfy every gate it can see, and a
-fact it gets before it decides changes what it writes.
+```bash
+npx suss check --dir summaries/
+npx suss inspect --diff summaries/before.json summaries/after.json
+```
 
-So run `check` and `inspect --diff` in whatever loop produces your
-code, and keep the jobs on this page as the backstop.
+`before.json` is an extract from the commit you branched from, and
+`after.json` is one from the working tree.
+
+If an agent writes the code, put those commands in the instructions
+it reads, or set up the [MCP server](/guides/mcp-server) so it can
+ask before it edits. Keep the CI jobs as well; they are what catches
+the change that skipped the local run.
 
 ## Fail the job on a finding
 

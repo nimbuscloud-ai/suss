@@ -23,9 +23,12 @@ front of you while you work out what your own project needs.
 npx @suss/cli init --plain
 ```
 
-`init` reads your `package.json`, looks for schemas and deploy
-templates on disk, and prints the commands for what it found. Without
-`--plain` it asks before it installs anything.
+`init` reads the dependency manifest (`package.json`, `requirements.txt`,
+`pyproject.toml`, `Pipfile` or `Gemfile.lock`), looks for schemas and
+deploy templates on disk (a Prisma schema, an OpenAPI document, a
+GraphQL schema, a SAM or Serverless template), and prints the commands
+for what it found. Without `--plain` it asks before it installs
+anything.
 
 Here it is on
 [gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app),
