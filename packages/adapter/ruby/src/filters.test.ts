@@ -5,6 +5,7 @@ import { ancestryOf } from "./ancestry.js";
 import {
   controllerFilters,
   filterCoversAction,
+  filterReference,
   filterUnit,
 } from "./filters.js";
 import { parseRuby } from "./parser.js";
@@ -185,6 +186,34 @@ end
     expect(filters[1]?.filter.onThrow).toBe(true);
   });
 
+  it("takes a single symbol where only: usually gives a list", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action :load_order, only: :show
+
+  def load_order
+  end
+end
+`);
+
+    expect(filterCoversAction(filters[0] as never, "show")).toBe(true);
+    expect(filterCoversAction(filters[0] as never, "index")).toBe(false);
+  });
+
+  it("covers every action when only: is a value this reader cannot settle", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action :load_order, only: MEMBER_ACTIONS
+
+  def load_order
+  end
+end
+`);
+
+    expect(filterCoversAction(filters[0] as never, "show")).toBe(true);
+    expect(filterCoversAction(filters[0] as never, "index")).toBe(true);
+  });
+
   it("says nothing about a filter whose method this run cannot see", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController
@@ -247,5 +276,47 @@ end
     expect(unit.branches.map((branch) => branch.terminal.kind)).toEqual([
       "delegate",
     ]);
+  });
+
+  it("hands on when the pack declares no call that responds at all", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action :load_order
+
+  def load_order
+    @order = Order.find(params[:id])
+  end
+end
+`);
+
+    const unit = filterUnit(
+      filters[0] as never,
+      controllerActionsPattern({ filters: RAILS_LIKE.filters }),
+      "app/controllers/orders.rb",
+      { bodyContent: "statements" },
+    );
+
+    expect(unit.branches).toHaveLength(1);
+    expect(unit.branches[0]?.terminal.kind).toBe("delegate");
+    expect(unit.branches[0]?.isDefault).toBe(true);
+  });
+
+  it("points the reference at the file the method is written in, and marks a throw filter", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  rescue_from ActiveRecord::RecordNotFound, with: :not_found
+
+  def not_found(error)
+  end
+end
+`);
+
+    expect(
+      filterReference(filters[0] as never, "app/controllers/orders.rb"),
+    ).toEqual({
+      file: "app/controllers/orders.rb",
+      name: "not_found",
+      onThrow: true,
+    });
   });
 });
