@@ -16,7 +16,10 @@ client handles or a query asks for a field the schema never declared.
 ```yaml
 name: suss
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   behavior-diff:
@@ -41,6 +44,13 @@ posts `suss inspect --diff` between the two as one comment. A later
 push edits the same comment. `extract` takes whatever you would type
 after `suss extract` on your own machine; for Python that is
 `--dir src -f fastapi`.
+
+The `push` trigger is optional. On a push to `main` the action reads
+the commit and keeps its summaries in the actions cache, so a pull
+request branching from that commit compares against them instead of
+reading the base again. The action also keeps suss's per-file cache
+between runs, so the head read only covers the files the pull request
+touched.
 
 suss runs this job on its own pull requests, reading the workspace
 through the `package-exports` pack;

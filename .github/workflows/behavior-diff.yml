@@ -6,8 +6,19 @@ name: behavior diff
 # base, and the comment is the inspect --diff between the two. The
 # paths filter keeps it off a docs-only pull request, where it would
 # say nothing changed. It is not a required check.
+#
+# On a push to main the same job reads the commit and saves its
+# summaries, so a pull request branching from it compares against
+# those instead of reading the base again.
 on:
   pull_request:
+    paths:
+      - packages/**
+      - tools/**
+      - tsconfig.suss.json
+      - package-lock.json
+  push:
+    branches: [main]
     paths:
       - packages/**
       - tools/**
@@ -16,7 +27,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   self:
