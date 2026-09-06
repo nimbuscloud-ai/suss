@@ -220,15 +220,28 @@ runs:
       shell: bash
       run: |
         cd "$RUNNER_TEMP/suss"
+
+        # The two flags below arrived after some releases the `version`
+        # input can ask for, so the installed CLI is asked first and an
+        # older one renders the diff the way it always did.
         changed=()
-        if [ -s changed-files.txt ]; then
-          changed=(--changed-files changed-files.txt)
+        budget=()
+        if suss --help | grep -q -- "--changed-files"; then
+          if [ -s changed-files.txt ]; then
+            changed=(--changed-files changed-files.txt)
+          fi
+          budget=(--budget 58000)
         fi
+
         suss inspect --diff before.json after.json "${changed[@]}" | tee diff.txt
         # A comment stops at 65536 characters. Rendering it to that
         # length says how many units and files were left out, which
         # cutting the text at the end cannot.
-        suss inspect --diff before.json after.json "${changed[@]}" --budget 58000 > comment.txt
+        if [ ${#budget[@]} -gt 0 ]; then
+          suss inspect --diff before.json after.json "${changed[@]}" "${budget[@]}" > comment.txt
+        else
+          cp diff.txt comment.txt
+        fi
         suss inspect --diff before.json after.json --json > diff.json
         changed=$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync("diff.json","utf8")).changed))')
         {
