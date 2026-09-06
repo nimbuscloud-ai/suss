@@ -75,10 +75,16 @@ What it does not read:
 
 - **Anything after the continuation returns.** A middleware that inspects the response on the way back out is read up to the `next()` call and no further.
 - **A wrapper whose continuation the pack does not declare, or whose call the walk cannot see.** Nothing says where control passes on, so the wrapper's outcomes are reported beside the unit's own rather than around them.
-- **A throw the walk never saw.** An error handler composes over the paths that end by throwing, so a route whose 500 comes from a call the walk could not follow still does not report 500.
+- **A throw the walk never saw.** An error handler composes over the paths that end by throwing, so a route whose 500 comes from a call the walk could not follow still does not report 500 as a transition. The contract comparison below is the one place that counts it anyway.
 - **Registration order against route order.** A wrapper registered after a route still composes into it.
 
 Composition multiplies paths, so it is capped by the same `MAX_PATHS` budget path enumeration uses. Past it the two sides are reported side by side and the unit gets a gap saying so.
+
+### The declared contract, compared again
+
+`assembleSummary` compares a route's declared responses against its own body and records a gap for each status declared but never produced, or produced but never declared. That runs before anything around the route is read, so a contract that declares the 401 the auth middleware returns was reported as declaring a status nothing produces, once per route.
+
+`composeWrappers` runs the same comparison over the composed transitions and replaces those gaps. A status a wrapper produces counts as produced, and one the contract leaves out is reported against the wrapper by name: "requireCaller, registered around this handler, produces status 429 which is not declared in the hono contract". An error handler's responses count as produced on every route it covers, whether or not a path through the route was seen to throw, since anything the route calls can throw at runtime. A run with `gapHandling: "silent"` gets no gaps from this step either.
 
 ## Which branch an effect belongs to
 

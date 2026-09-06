@@ -1,9 +1,11 @@
-// A Hono service whose 400, 401 and 500 are produced by code registered
-// around the routes, so none of those statuses is anywhere in a handler.
+// A Hono service whose 400, 401, 429 and 500 are produced by code
+// registered around the routes, so none of those statuses is anywhere in
+// a handler. One route declares its responses and leaves out the 429.
 
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { MiddlewareHandler } from "hono";
 
+import { rateLimit } from "./rateLimit";
 import { requireCaller } from "./requireCaller";
 import { validationHook } from "./validationHook";
 
@@ -45,6 +47,26 @@ app.post("/v1/tenants", async (c) => {
   }
 
   return c.json(await store.create(body.name), 201);
+});
+
+app.use("/v1/tenants/:id/usage", rateLimit);
+
+// This route declares its responses. The 400, 401 and 500 it declares
+// are produced around the handler, and the 429 that is produced around
+// it as well is declared nowhere.
+const usage = createRoute({
+  method: "get",
+  path: "/v1/tenants/{id}/usage",
+  responses: {
+    200: { description: "usage" },
+    400: { description: "invalid request" },
+    401: { description: "unauthorized" },
+    500: { description: "failed" },
+  },
+});
+
+app.openapi(usage, async (c) => {
+  return c.json({ id: c.req.param("id"), calls: 0 }, 200);
 });
 
 // Outside the middleware's pattern, so nothing asks this one for a

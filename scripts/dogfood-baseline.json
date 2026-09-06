@@ -3,9 +3,9 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 881,
-    "internal": 3024,
-    "consumers": 1681,
-    "pairs": 1678,
+    "internal": 3027,
+    "consumers": 1686,
+    "pairs": 1683,
     "unfollowedCalls": 486,
     "findingErrors": 0
   },
@@ -167,8 +167,8 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 68,
-      "internal": 84,
-      "consumers": 14,
+      "internal": 87,
+      "consumers": 19,
       "unfollowedCalls": 15
     },
     "packages/framework/activerecord": {
