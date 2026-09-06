@@ -8,16 +8,21 @@ Ruby language adapter for suss. It parses source with tree-sitter (WASM), resolv
 
 The adapter also discovers a `controllerActions` pattern: a class whose ancestry reaches a pack-configured base is a Rails-shaped controller, and each of its own public instance methods is one of its actions, bound to whatever method and path the pack's `routeFor` gives it. `@suss/framework-rails` is the pack that reads `config/routes.rb` and supplies that callback; the adapter itself contains no Rails string. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since a graphql field does no path-engine work, and confidence is pinned low.
 
-## The status an action writes
+## What an action responds with
 
-A controller action's response status comes from `responseStatusCalls` on the `controllerActions` pattern. Each entry says a receiverless call the library gives an action for writing a status and where that call takes it, either as a keyword or at a positional index; when a call is written with both, the keyword wins. `statusCodeNames` on the same pattern gives the number behind each name the library accepts where a number could go, which for Rails is Rack's symbol table. No call name and no status name appears in this package.
+A controller action gets one branch per path it can respond on, so an action that writes `:created` down one arm and `:unprocessable_entity` down the other reports both, each gated on the test that arm took.
 
-The status argument goes through the shared value evaluator, so a number, a name, and a local variable that settles on either all read the same way. The reading is then handed to `assembleSummary` as `statusCodeReading`, alongside the pattern's `defaultStatusCode` as the library default, which is the same shared collapse the Python adapter uses for a status a Flask route returns in a tuple:
+The calls that send a response come from `responseStatusCalls` on the `controllerActions` pattern. Each entry says a receiverless call the library gives an action for that, and where the call takes its status, either as a keyword or at a positional index; when a call is written with both, the keyword wins. An entry may also give the status that call sends when the action writes none, which is how Rails' `redirect_to` reports 302 while its `render` reports the controller default. `statusCodeNames` on the same pattern gives the number behind each name the library accepts where a number could go, which for Rails is Rack's symbol table. No call name and no status name appears in this package.
 
-- An action that writes no status at all leaves the reading absent, and the summary claims the pattern's declared default.
-- An action whose calls all settle on one status claims that status.
-- An action whose calls settle on two different statuses claims neither, keeps both as candidates, and gets one gap. A call that writes no status of its own contributes the pattern's default as one of those candidates.
-- A status argument that does not settle on a number, `params[:code]` or a name the pack does not declare, claims nothing and gets one gap saying so.
+The walk hands every response call to the shared path engine as a terminal, and the statement each one is written in ends its path, because Rails raises on a second render. Two things follow from that. A response after one that already ran is not reported, and a path that reaches the end of the body, or that ends in a bare `return`, is the implicit render.
+
+Each branch gets its own `statusCodeReading`, alongside the pattern's `defaultStatusCode` as the library default, and `assembleSummary` collapses the two the same way it does for a status a Flask route returns in a tuple:
+
+- A call that writes no status leaves that branch's reading absent, and the summary claims the call's own default, or the pattern's when the call declares none.
+- A status argument goes through the shared value evaluator, so a number, a name, and a local variable that settles on either all read the same way.
+- A status argument that does not settle on a number, `params[:code]` or a name the pack does not declare, claims nothing on that branch and gets one gap saying so. The other branches are unaffected.
+
+A branch also gets the calls that reach it. `guardsHoldOn` from `@suss/extractor` decides that, comparing what gates each call against what gates the branch, which is the same test the Python and TypeScript adapters apply.
 
 ## The method behind a field
 
@@ -56,6 +61,7 @@ shared rather than written again here.
 | Ruby | Lowers to |
 | --- | --- |
 | `if` / `elsif` / `else`, `unless` | one `if` per test, with the elsif chain nested into the else arm |
+| `render :gone if expired?` and the `unless` spelling of it | one `if` with no else arm, over the single statement the modifier gates |
 | `while`, `until`, `for` | `loop` |
 | a call with a `do` block, such as `items.each do \|i\|` | `loop`, because the block runs per iteration |
 | `begin` / `rescue` / `ensure` | `try` |

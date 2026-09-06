@@ -76,15 +76,16 @@ const RESTFUL_ACTIONS: Record<
 };
 
 /**
- * The two calls Rails gives an action for setting the response status.
- * `render` takes it as `status:`, `head` takes it first and also accepts
- * the keyword. `redirect_to` is left out: it defaults to 302 rather than
- * to the 200 every other action gets, and this pattern declares one
- * default for the whole controller.
+ * The four calls Rails gives an action for sending a response. `render`
+ * takes the status as `status:`, `head` takes it first and also accepts
+ * the keyword, and both redirects take the keyword. A redirect that writes
+ * no status of its own sends 302 rather than the 200 the rest default to.
  */
 const RESPONSE_STATUS_CALLS = [
   { name: "render", statusKeyword: "status" },
   { name: "head", statusArgument: 0, statusKeyword: "status" },
+  { name: "redirect_to", statusKeyword: "status", defaultStatusCode: 302 },
+  { name: "redirect_back", statusKeyword: "status", defaultStatusCode: 302 },
 ];
 
 /**

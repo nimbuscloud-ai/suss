@@ -2,7 +2,7 @@
 // The shared path engine is generic over the language's condition handle,
 // so the README's table of what each construct lowers to is the contract.
 
-import { field, NodeMap } from "../ast.js";
+import { field, NodeMap, NodeSet, OWN_BODY_TYPES } from "../ast.js";
 
 import type {
   CaseGroup,
@@ -96,6 +96,18 @@ function handleOf(node: RbNode | null): ConditionHandle<RbNode> {
     : { sourceText: node.text, expression: node };
 }
 
+/**
+ * A reader of a condition wants to see `respond_to`, not the whole block
+ * underneath it, so the header stops where the block starts.
+ */
+function callHeaderOf(call: RbNode, block: RbNode): ConditionHandle<RbNode> {
+  const header = call.text.slice(0, block.startIndex - call.startIndex).trim();
+  return {
+    sourceText: header === "" ? call.text : header,
+    expression: call,
+  };
+}
+
 /** `then`, `else` and a bare body all read as a list of statements. */
 function blockStatements(block: RbNode | null): RbNode[] {
   if (block === null) {
@@ -111,7 +123,25 @@ class Lowerer {
   >();
   readonly terminalHome = new NodeMap<StructuredStatement<RbNode>>();
 
-  constructor(private readonly terminals: ReadonlyMap<number, RbNode>) {}
+  constructor(
+    private readonly terminals: ReadonlyMap<number, RbNode>,
+    private readonly responseCalls: NodeSet,
+  ) {}
+
+  private attachTerminals(
+    statement: StructuredStatement<RbNode>,
+    found: readonly RbNode[],
+  ): StructuredStatement<RbNode> {
+    if (found.length === 0) {
+      return statement;
+    }
+    const already = this.terminalsByStmt.get(statement) ?? [];
+    this.terminalsByStmt.set(statement, [...already, ...found]);
+    for (const node of found) {
+      this.terminalHome.set(node, statement);
+    }
+    return statement;
+  }
 
   private attach(
     statement: StructuredStatement<RbNode>,
@@ -121,13 +151,25 @@ class Lowerer {
       const match = node === null ? undefined : this.terminals.get(node.id);
       return match === undefined ? [] : [match];
     });
-    if (found.length > 0) {
-      this.terminalsByStmt.set(statement, found);
-      for (const node of found) {
-        this.terminalHome.set(node, statement);
+    return this.attachTerminals(statement, found);
+  }
+
+  /** The response calls written inside one statement, which the caller gave as the calls that end a path. */
+  private responsesIn(node: RbNode, found: RbNode[] = []): RbNode[] {
+    if (this.responseCalls.size === 0) {
+      return found;
+    }
+    const own = this.responseCalls.get(node);
+    if (own !== undefined) {
+      found.push(own);
+      return found;
+    }
+    for (const child of node.namedChildren) {
+      if (child !== null && !OWN_BODY_TYPES.has(child.type)) {
+        this.responsesIn(child, found);
       }
     }
-    return statement;
+    return found;
   }
 
   lowerBlock(block: RbNode | null): StatementBlock<RbNode> {
@@ -160,6 +202,18 @@ class Lowerer {
       condition: handleOf(field(node, "condition")),
       thenBody: this.lowerBlock(field(node, "consequence")),
       elseBody: this.lowerAlternative(field(node, "alternative")),
+      exitKind: exitKindOf(node),
+    };
+  }
+
+  /** `render :gone if expired?` gates one statement on one test, so it reads as an if with no else arm. */
+  private lowerIfModifier(node: RbNode): StructuredStatement<RbNode> {
+    const body = field(node, "body");
+    return {
+      kind: "if",
+      condition: handleOf(field(node, "condition")),
+      thenBody: body === null ? [] : [this.lower(body)],
+      elseBody: null,
       exitKind: exitKindOf(node),
     };
   }
@@ -219,13 +273,21 @@ class Lowerer {
   lower(node: RbNode): StructuredStatement<RbNode> {
     const exit = exitOf(node);
     if (exit !== null) {
-      return this.attach({ kind: "exit", exit, exitKind: exitKindOf(node) }, [
-        node,
-      ]);
+      const statement = this.attach(
+        { kind: "exit", exit, exitKind: exitKindOf(node) },
+        [node],
+      );
+      return this.attachTerminals(statement, this.responsesIn(node));
     }
 
     if (node.type === "if" || node.type === "unless") {
       return this.attach(this.lowerIf(node), [field(node, "condition")]);
+    }
+
+    if (node.type === "if_modifier" || node.type === "unless_modifier") {
+      return this.attach(this.lowerIfModifier(node), [
+        field(node, "condition"),
+      ]);
     }
 
     if (node.type === "while" || node.type === "until" || node.type === "for") {
@@ -252,7 +314,7 @@ class Lowerer {
       return this.attach(
         {
           kind: "loop",
-          condition: handleOf(node),
+          condition: callHeaderOf(node, attachedBlock),
           body: this.lowerBlock(field(attachedBlock, "body") ?? attachedBlock),
           exitKind: exitKindOf(node),
         },
@@ -268,6 +330,16 @@ class Lowerer {
       return this.attach(this.lowerCase(node), [field(node, "value")]);
     }
 
+    // Rails raises on a second render, so a statement that responds is the
+    // last thing its path does.
+    const responses = this.responsesIn(node);
+    if (responses.length > 0) {
+      return this.attachTerminals(
+        { kind: "exit", exit: "return", exitKind: "return" },
+        responses,
+      );
+    }
+
     return this.attach({ kind: "opaque", exitKind: exitKindOf(node) }, [node]);
   }
 }
@@ -276,13 +348,19 @@ class Lowerer {
  * Lower one method body, and say where each terminal ended up. The terminals
  * are whatever the caller wants paths to, which for a resolver is its return
  * statements and its raises.
+ *
+ * `responseCalls` is for a caller reading what an action responds with: each
+ * one is a terminal, and the statement it is written in leaves the method
+ * rather than falling through to whatever comes next.
  */
 export function lowerRubyBody(
   body: RbNode | null,
   terminals: readonly RbNode[],
+  responseCalls: readonly RbNode[] = [],
 ): RubyLowering {
   const lowerer = new Lowerer(
     new Map(terminals.map((terminal) => [terminal.id, terminal])),
+    new NodeSet(responseCalls),
   );
   return {
     statements: lowerer.lowerBlock(body),
