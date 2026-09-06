@@ -17,9 +17,7 @@ import {
   absentReading,
   ambiguousReading,
   andThenReading,
-  enumerateOrDegrade,
   firstWrittenReading,
-  guardsHoldOn,
   mapReading,
   unreadableReading,
   valueToReadFurtherFrom,
@@ -37,7 +35,6 @@ import {
 import {
   bodyStatements,
   field,
-  NodeSet,
   parameterNameAndType,
   rangeOf,
   spanOf,
@@ -52,10 +49,16 @@ import {
 import { envReadEffects } from "./envReads.js";
 import { subjectConstructions } from "./facts/resolve.js";
 import { readKey } from "./facts/values.js";
+import {
+  bodyTerminals,
+  enumerateBodyBranches,
+  returnStatements,
+} from "./paths/bodyBranches.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
-import { lowerPythonBody } from "./paths/lowering.js";
-import { predicateOf } from "./paths/predicates.js";
-import { raisedResponses } from "./paths/raisedResponses.js";
+import {
+  raisedResponses,
+  returnedResponseStatus,
+} from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { rawSqlEffects } from "./rawSql.js";
 import {
@@ -65,7 +68,12 @@ import {
 } from "./storage.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
-import type { DispatchTable, Effect, TypeShape } from "@suss/behavioral-ir";
+import type {
+  DispatchTable,
+  Effect,
+  TypeShape,
+  WrapperReference,
+} from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   BodyContent,
@@ -74,10 +82,7 @@ import type {
   ExtractorOptions,
   RawBranch,
   RawCodeStructure,
-  RawCondition,
-  RawEffect,
   RawParameter,
-  RawTerminal,
   Reading,
   SourceRange,
 } from "@suss/extractor";
@@ -92,9 +97,14 @@ import type {
   PythonPack,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
-import type { RaisedResponse } from "./paths/raisedResponses.js";
+import type {
+  BodyTerminal,
+  InvocationEffect,
+  TerminalBranch,
+} from "./paths/bodyBranches.js";
 import type { RoutePrefixResolution, RouterIndex } from "./routers.js";
 import type { ModuleBinding, Scope } from "./scope.js";
+import type { PythonWrapperIndex } from "./wrappers.js";
 
 export interface DiscoveryOptions {
   packs: PythonPack[];
@@ -110,6 +120,8 @@ export interface DiscoveryOptions {
   absoluteFile?: string | undefined;
   /** The project's facts, so the rules can say what an object no scope has a binding for was built by. */
   facts?: Database | undefined;
+  /** What the project registered around its routes. Absent when no pack declares a wrapper form, or when a caller reads one file on its own. */
+  wrappers?: PythonWrapperIndex | undefined;
 }
 
 /** One decorated definition, and what the scope made of each decorator on it. */
@@ -510,7 +522,7 @@ function classRouteUnits(
             ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
             requestBodyFromAnnotatedClass:
               pattern.annotatedClassIsRequestBody === true,
-            readsReturnedStatus: pattern.statusFromReturnedTuple === true,
+            pattern,
             responseStatusCalls: pattern.responseStatusCalls ?? [],
             facts: options.facts,
             injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
@@ -521,10 +533,21 @@ function classRouteUnits(
             skipReceiverParam: true,
             responseShape: absentReading,
             statusCode: defaultedStatus(
-              readReturnedStatus(pattern, maybeMethod),
+              readReturnedStatus(pattern, maybeMethod, {
+                module,
+                facts: options.facts,
+              }),
               pattern,
             ),
             storage: options.storage,
+            wrappers: wrappersAround(
+              pattern,
+              pack,
+              classification,
+              maybeMethod,
+              module,
+              options,
+            ),
           },
           options,
         ),
@@ -725,26 +748,6 @@ function readStatusCode(
   );
 }
 
-/**
- * Every `return` written in this function's own body. A nested function's
- * returns belong to that function, so the walk stops at one.
- */
-function returnStatements(node: PyNode | null, found: PyNode[] = []): PyNode[] {
-  for (const child of node?.namedChildren ?? []) {
-    if (child === null) {
-      continue;
-    }
-    if (child.type === "function_definition" || child.type === "lambda") {
-      continue;
-    }
-    if (child.type === "return_statement") {
-      found.push(child);
-    }
-    returnStatements(child, found);
-  }
-  return found;
-}
-
 /** Flask takes the status off the tuple as an int, or off the front of a string like "201 CREATED". */
 function statusFromReturnedValue(node: PyNode | undefined): number | null {
   if (node === undefined) {
@@ -781,62 +784,45 @@ function statusOfReturn(
     : { kind: "status", value: status };
 }
 
-type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
-
-/** A call belongs to a path when everything gating the call also gates the path. */
-function effectsReaching(
-  effects: readonly InvocationEffect[],
-  conditions: readonly RawCondition[],
-): RawEffect[] {
-  return effects.filter((effect) =>
-    guardsHoldOn(effect.preconditions, conditions),
-  );
-}
-
-/** One place a route body ends, either by returning or by raising. */
-type RouteTerminal =
-  | { type: "return"; statement: PyNode }
-  | { type: "raise"; statement: PyNode; terminal: RawTerminal };
-
 /** What every terminal in one body reads the same way. */
-interface TerminalContext {
-  readsReturnedStatus: boolean;
+export interface TerminalContext {
+  pattern: PythonDiscoveryPattern;
   responseShape: DefaultedReading<TypeShape>;
   declaredStatus: DefaultedReading<number>;
+  module: ModuleBinding;
+  facts: Database | undefined;
 }
 
-/** Everything about a branch except the conditions and the effects on the path that reaches it. */
-type TerminalBranch = Pick<RawBranch, "terminal" | "location"> &
-  Partial<Pick<RawBranch, "statusCodeReading" | "bodyShapeReading">>;
-
 /**
- * Where a library does not read a status off a return, the return says
- * nothing about the status, so every branch keeps whatever the decorator
- * declared.
+ * The status a return states: one a returned response object was built
+ * with, or one off the tuple where the library reads that. A return that
+ * says nothing keeps whatever the decorator declared, unless the library
+ * reads the tuple, in which case a bare return is the library default.
  */
 function returnStatusReading(
   statement: PyNode,
   ctx: TerminalContext,
 ): Reading<number> {
-  if (!ctx.readsReturnedStatus) {
-    return ctx.declaredStatus.reading;
-  }
-
-  const read = statusOfReturn(statement);
+  const read = statusOfReturnIn(statement, ctx.pattern, ctx);
   const range = rangeOf(statement);
   if (read.kind === "status") {
     return writtenReading(read.value, range);
   }
-  if (read.kind === "none") {
-    return absentReading;
+  if (read.kind === "unreadable") {
+    return unreadableReading(
+      "This return gives a status this reading cannot resolve to a number, so this outcome claims none",
+      range,
+    );
   }
-  return unreadableReading(
-    "This return gives a status this reading cannot resolve to a number, so this outcome claims none",
-    range,
-  );
+  return ctx.pattern.statusFromReturnedTuple === true
+    ? absentReading
+    : ctx.declaredStatus.reading;
 }
 
-function returnBranch(statement: PyNode, ctx: TerminalContext): TerminalBranch {
+export function returnBranch(
+  statement: PyNode,
+  ctx: TerminalContext,
+): TerminalBranch {
   const range = rangeOf(statement);
   const writtenBody = returnedBodyShape(statement);
   return {
@@ -875,15 +861,17 @@ function returnBranch(statement: PyNode, ctx: TerminalContext): TerminalBranch {
  * extractor to collapse and the library default has nothing to apply to.
  */
 function terminalBranchOf(
-  found: RouteTerminal,
+  found: BodyTerminal,
   ctx: TerminalContext,
 ): TerminalBranch {
-  const table: DispatchTable<RouteTerminal, TerminalBranch> = {
+  const table: DispatchTable<BodyTerminal, TerminalBranch> = {
     return: (variant) => returnBranch(variant.statement, ctx),
     raise: (variant) => ({
       terminal: variant.terminal,
       location: rangeOf(variant.statement),
     }),
+    // A route has no continuation, so none is ever collected for it.
+    continuation: (variant) => returnBranch(variant.statement, ctx),
   };
   return dispatchByType(table, found);
 }
@@ -891,109 +879,80 @@ function terminalBranchOf(
 interface PerTerminalOptions {
   definitionNode: PyNode;
   effects: readonly InvocationEffect[];
-  module: ModuleBinding;
-  facts: Database | undefined;
   responseStatusCalls: readonly PyStatusCall[];
   ctx: TerminalContext;
 }
 
-/** Every terminal the body writes, in the order they are written. */
-function routeTerminals(
-  body: PyNode | null,
-  raised: readonly RaisedResponse[],
-): RouteTerminal[] {
-  const found: RouteTerminal[] = [
-    ...returnStatements(body).map(
-      (statement): RouteTerminal => ({ type: "return", statement }),
-    ),
-    ...raised.map(
-      (response): RouteTerminal => ({
-        type: "raise",
-        statement: response.statement,
-        terminal: response.terminal,
-      }),
-    ),
-  ];
-  return found.sort((a, b) => a.statement.startIndex - b.statement.startIndex);
-}
-
 /**
  * One branch per terminal the body writes, with the conditions that gate
- * it. The shared path engine does the enumeration; this only lowers
- * Python into the form it takes and turns each result back into a
- * `RawBranch`.
- *
- * Null when the body writes fewer than two terminals, and then the
+ * it. Null when the body writes fewer than two terminals, and then the
  * caller keeps the single declared branch.
  */
 function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
   const body = field(options.definitionNode, "body");
   const raised = raisedResponses(body, {
     calls: options.responseStatusCalls,
-    module: options.module,
-    facts: options.facts,
+    module: options.ctx.module,
+    facts: options.ctx.facts,
   });
-  const terminals = routeTerminals(body, raised);
+  const terminals = bodyTerminals(body, raised);
   if (terminals.length < 2) {
     return null;
   }
 
-  const statements = terminals.map((found) => found.statement);
-  const thrownByCall = new NodeSet(
-    raised
-      .filter((response) => response.thrownByCall)
-      .map((response) => response.statement),
-  );
-  const lowered = lowerPythonBody(body, statements, thrownByCall);
-  const enumerated = enumerateOrDegrade(
-    {
-      statements: lowered.statements,
-      terminalsByStmt: lowered.terminalsByStmt,
-    },
-    statements,
-  );
-
-  const branches: RawBranch[] = [];
-  for (const found of terminals) {
-    const paths = enumerated.byTerminal.get(found.statement);
-    if (paths === undefined) {
-      continue;
-    }
-
-    const branch = terminalBranchOf(found, options.ctx);
-    for (const path of paths) {
-      const conditions: RawCondition[] = path.map((condition) => ({
-        sourceText: condition.sourceText,
-        structured:
-          condition.expression === null
-            ? null
-            : predicateOf(condition.expression),
-        polarity: condition.polarity,
-        source: condition.source,
-      }));
-      branches.push({
-        ...branch,
-        conditions,
-        effects: effectsReaching(options.effects, conditions),
-        isDefault: path.length === 0,
-      });
-    }
-  }
-
+  const branches = enumerateBodyBranches({
+    body,
+    terminals,
+    raised,
+    effects: options.effects,
+    branchOf: (found) => terminalBranchOf(found, options.ctx),
+  });
   return branches.length > 1 ? branches : null;
 }
 
+/** What one return says about the status, through a response the library builds first and the returned tuple second. */
+function statusOfReturnIn(
+  statement: PyNode,
+  pattern: PythonDiscoveryPattern,
+  options: ReturnedStatusOptions,
+): ReturnType<typeof statusOfReturn> {
+  const constructed = returnedResponseStatus(statement, {
+    calls: pattern.responseConstructors ?? [],
+    module: options.module,
+    facts: options.facts,
+  });
+  if (constructed !== null) {
+    return constructed.type === "literal"
+      ? { kind: "status", value: constructed.value }
+      : { kind: "unreadable" };
+  }
+  if (pattern.statusFromReturnedTuple !== true) {
+    return { kind: "none" };
+  }
+  return statusOfReturn(statement);
+}
+
+interface ReturnedStatusOptions {
+  module: ModuleBinding;
+  facts: Database | undefined;
+}
+
 /**
- * The status a handler's own returns write, for a library that reads one
- * off the returned tuple. Anything less definite than a single status
- * every return agrees on claims nothing, so the library default does not
- * take the place of a status the body actually sets.
+ * The status a handler's own returns write: one built into a returned
+ * response object, or one off the returned tuple for a library that reads
+ * that. Anything less definite than a single status every return agrees
+ * on claims nothing, so the library default does not take the place of a
+ * status the body actually sets.
  */
 function readReturnedStatus(
   pattern: PythonDiscoveryPattern,
   definitionNode: PyNode,
+  options: ReturnedStatusOptions,
 ): Reading<number> {
-  if (pattern.statusFromReturnedTuple !== true) {
+  if (
+    pattern.statusFromReturnedTuple !== true &&
+    (pattern.responseConstructors ?? []).length === 0
+  ) {
     return absentReading;
   }
 
@@ -1002,7 +961,7 @@ function readReturnedStatus(
   let plainReturns = 0;
   let unreadable = 0;
   for (const statement of returnStatements(field(definitionNode, "body"))) {
-    const read = statusOfReturn(statement);
+    const read = statusOfReturnIn(statement, pattern, options);
     if (read.kind === "status") {
       statuses.add(read.value);
     } else if (read.kind === "none") {
@@ -1131,7 +1090,7 @@ function functionRouteUnits(
         ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
         requestBodyFromAnnotatedClass:
           pattern.annotatedClassIsRequestBody === true,
-        readsReturnedStatus: pattern.statusFromReturnedTuple === true,
+        pattern,
         responseStatusCalls: pattern.responseStatusCalls ?? [],
         facts: options.facts,
         injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
@@ -1144,16 +1103,49 @@ function functionRouteUnits(
         statusCode: defaultedStatus(
           declaredOrReturnedStatus(
             readStatusCode(pattern, classification),
-            readReturnedStatus(pattern, functionNode),
+            readReturnedStatus(pattern, functionNode, {
+              module,
+              facts: options.facts,
+            }),
           ),
           pattern,
         ),
         definitionsCtx: ctx,
         storage: options.storage,
+        wrappers: wrappersAround(
+          pattern,
+          pack,
+          classification,
+          functionNode,
+          module,
+          options,
+        ),
       },
       options,
     ),
   );
+}
+
+/** The wrappers reaching one route, or none when the run has no wrapper index. */
+function wrappersAround(
+  pattern: PythonDiscoveryPattern,
+  pack: PythonPack,
+  classification: DecoratorClassification,
+  definitionNode: PyNode,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): WrapperReference[] {
+  if (options.wrappers === undefined) {
+    return [];
+  }
+  return options.wrappers.wrappersFor({
+    pack,
+    pattern,
+    file: options.absoluteFile ?? options.filePath,
+    module,
+    classification,
+    definitionNode,
+  });
 }
 
 interface BuildRouteUnitOptions {
@@ -1164,8 +1156,10 @@ interface BuildRouteUnitOptions {
   /** The boundary binding only gets a path when this came back written. */
   routePath: Reading<PathTemplateReading>;
   requestBodyFromAnnotatedClass: boolean;
-  /** Whether the library takes a status off a returned tuple, so a return says what its own branch responds with. */
-  readsReturnedStatus: boolean;
+  /** The pattern the route matched, for what its returns say about the status. */
+  pattern: PythonDiscoveryPattern;
+  /** What the route's own decorator and parameters register around it, or nothing when the pack declares no wrapper forms. */
+  wrappers?: WrapperReference[];
   /** The library's own callables that end the request with a status. Empty when its pack declares none. */
   responseStatusCalls: readonly PyStatusCall[];
   /** The project's facts, so a status written as a name resolves the same way a path does. */
@@ -1269,7 +1263,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     method,
     routePath,
     requestBodyFromAnnotatedClass,
-    readsReturnedStatus,
+    pattern,
     injectedCallees,
     definitionNode,
     enclosingScope,
@@ -1305,10 +1299,14 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   const perTerminal = branchesPerTerminal({
     definitionNode,
     effects,
-    module,
-    facts: options.facts,
     responseStatusCalls: options.responseStatusCalls,
-    ctx: { readsReturnedStatus, responseShape, declaredStatus: statusCode },
+    ctx: {
+      pattern,
+      responseShape,
+      declaredStatus: statusCode,
+      module,
+      facts: options.facts,
+    },
   });
   const branches: RawBranch[] = (perTerminal ?? []).map((branch) =>
     extra.length === 0 ? branch : { ...branch, extraEffects: extra },
@@ -1380,6 +1378,9 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       ? { definitions: collectedDefinitions(ctx) }
       : {}),
     ...(options.mount !== undefined ? { mount: options.mount } : {}),
+    ...(options.wrappers !== undefined && options.wrappers.length > 0
+      ? { wrappers: options.wrappers }
+      : {}),
   };
 }
 

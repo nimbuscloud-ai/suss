@@ -141,8 +141,78 @@ export interface RouteConventions {
    * and one it does cover comes out as the response the library sends.
    */
   responseStatusCalls?: PyStatusCall[];
+  /**
+   * The library's own classes whose instance, when a body returns it, is
+   * the response the library sends, and where each takes the status:
+   * Starlette's `JSONResponse(status_code=...)`. A return of one says its
+   * own status; a return of anything else keeps the declared one.
+   */
+  responseConstructors?: PyStatusCall[];
   /** Unset means the library has no router mounting, and a route's decorator path stands as written. */
   routerComposition?: RouterComposition;
+  /** The ways the library runs a project's own function around a route. The README lists what each one covers. */
+  wrappers?: PyWrapperForm[];
+}
+
+export type PyWrapperForm = PyDependencyForm | PyDecoratedWrapperForm;
+
+/** Where a wrapper is registered, and which routes the registration reaches. */
+export interface PyWrapperRegistrar {
+  /** The constructor of the object the registration is written on, as the library exports it: `FastAPI`, `APIRouter`. */
+  constructorName: string;
+  /** Where the constructor is imported from, when that is not the pattern's own `importModule`: `flask` for the app a flask-restx API is served by. */
+  importModule?: string[];
+  /**
+   * `everyRoute` for the app, whose registration reaches every route of
+   * the pack in the run. `ownRoutes` for a router or a blueprint, whose
+   * registration reaches the routes decorated on that same object.
+   */
+  covers: "everyRoute" | "ownRoutes";
+}
+
+/**
+ * The library calls a project function before the handler, given as an
+ * argument to one of its own callables: FastAPI's `Depends(get_user)`.
+ * One may be written as a parameter default or inside `Annotated[...]`
+ * on the route, or in a list under `keyword` on the route decorator or
+ * on one of the registrars. The function runs before the handler and
+ * ends the request by raising, so it is a wrapper whose every return
+ * hands on.
+ */
+export interface PyDependencyForm {
+  type: "dependency";
+  /** The callables that take the function: `Depends`, `Security`. */
+  callees: string[];
+  /** The keyword a list of them is written under: `dependencies`. */
+  keyword: string;
+  registrars: PyWrapperRegistrar[];
+}
+
+/**
+ * A project function decorated with a method on the app or a router:
+ * `@app.middleware("http")`, `@app.exception_handler(ValueError)`,
+ * `@app.before_request`. What the decorated function's returns mean
+ * depends on which of the three fields below is set; with none set,
+ * every return hands the request on.
+ */
+export interface PyDecoratedWrapperForm {
+  type: "decoratedWrapper";
+  /** The decorator's attribute name on the registrar: `middleware`. */
+  attribute: string;
+  registrars: PyWrapperRegistrar[];
+  /**
+   * The position of the parameter the wrapper calls to run what it
+   * wraps, `call_next` at 1 for Starlette middleware. A return before
+   * that call ends the request with what is returned.
+   */
+  continuationParam?: number;
+  /**
+   * Set when a value returned ends the request and only a bare return
+   * hands on, which is what Flask does with `before_request`.
+   */
+  returnedValueResponds?: boolean;
+  /** The position the library hands the raised exception at. Set on an error handler, which runs only when the handler raised. */
+  throwParam?: number;
 }
 
 /**

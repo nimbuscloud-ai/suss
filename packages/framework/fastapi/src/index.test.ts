@@ -38,12 +38,50 @@ describe("fastapiFramework", () => {
             statusArgument: 0,
           },
         ],
+        responseConstructors: [
+          { callee: "fastapi.Response", statusKeyword: "status_code" },
+          {
+            callee: "starlette.responses.Response",
+            statusKeyword: "status_code",
+          },
+          {
+            callee: "fastapi.responses.JSONResponse",
+            statusKeyword: "status_code",
+          },
+          {
+            callee: "starlette.responses.JSONResponse",
+            statusKeyword: "status_code",
+          },
+        ],
         routerComposition: {
           routerConstructorName: "APIRouter",
           includeMethodName: "include_router",
           routerKeyword: "router",
           prefixKeyword: "prefix",
         },
+        wrappers: [
+          {
+            type: "dependency",
+            callees: ["Depends", "Security"],
+            keyword: "dependencies",
+            registrars: [
+              { constructorName: "FastAPI", covers: "everyRoute" },
+              { constructorName: "APIRouter", covers: "ownRoutes" },
+            ],
+          },
+          {
+            type: "decoratedWrapper",
+            attribute: "middleware",
+            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
+            continuationParam: 1,
+          },
+          {
+            type: "decoratedWrapper",
+            attribute: "exception_handler",
+            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
+            throwParam: 1,
+          },
+        ],
       },
     ]);
   });

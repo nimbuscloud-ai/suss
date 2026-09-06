@@ -9,7 +9,8 @@ Framework pack for [FastAPI](https://fastapi.tiangolo.com/) routes, read by the 
 - **Discovery**: a function decorated with a verb-named method on the app or on a router (`@app.get(path)`, `@router.post(path)`), where the decorator's own attribute name is the HTTP verb (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`). The app and router are recognized by construction: `app = FastAPI()`, `router = APIRouter()`, one assignment back from an import of `fastapi`.
 - **Router prefix composition**: a route on a router composes its path from the router's own `prefix` and the `prefix` at the single `app.include_router(...)` call that mounts it, when both settle on one string and the mount reaches the router through one variable binding (same file, or imported from the file that constructed it). Beyond that, the pack abstains: it still discovers the route by name, with no path, and the summary's gap says why.
 - **Boundary bindings**: `rest(method, path)`, with the declared `response_model` / `status_code` keywords and parameter / return annotations read as the route's contract.
-- **Transitions**: one per place the handler ends, which is each of its returns and each `HTTPException` it raises. FastAPI sends the raised status rather than the one the decorator declares, so a route that raises 404 on one branch and returns on the other comes out as a 404 and a 200, each under the condition that reaches it. The pack lists the class under both the module FastAPI exports it from and the Starlette module FastAPI takes it from, so either import matches.
+- **Transitions**: one per place the handler ends, which is each of its returns and each `HTTPException` it raises. FastAPI sends the raised status rather than the one the decorator declares, so a route that raises 404 on one branch and returns on the other comes out as a 404 and a 200, each under the condition that reaches it. The pack lists the class under both the module FastAPI exports it from and the Starlette module FastAPI takes it from, so either import matches. A `Response` or `JSONResponse` a handler returns with a `status_code` responds with that status.
+- **Wrappers** around the routes: a dependency (`Depends(f)` or `Security(f)`) in the app's or a router's `dependencies=[...]`, in the decorator's `dependencies=[...]`, or as a parameter default; a function decorated with `@app.middleware("http")`, whose `call_next` call is where the request goes on to the route; and one decorated with `@app.exception_handler(SomeError)`, which FastAPI runs only for a request that raised. Each becomes a summary of its own, where its 401 or its 500 lives, and every route it covers points at it. The Python adapter's README says how each is read and what is not read, such as a dependency at `include_router(...)` or a middleware added as a class.
 
 ## Where it fits in suss
 
@@ -28,7 +29,7 @@ The pack never guesses a path. A route keeps its name and has no path when:
 - the router is mounted onto another router (a second hop), or
 - the router's variable name is assigned a second router construction (routes bind at decoration time, so which construction a decorator or mount saw depends on the order things run in, and the pack does not follow that).
 
-Dependencies, middleware, and mounted sub-apps are not read in v0.
+Mounted sub-apps are not read.
 
 ## A module that re-exports FastAPI
 
