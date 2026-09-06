@@ -77,6 +77,20 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         defaultStatusCode: 200,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
+        // FastAPI re-exports Starlette's class, and a project may import
+        // it from either module.
+        responseStatusCalls: [
+          {
+            callee: "fastapi.HTTPException",
+            statusKeyword: "status_code",
+            statusArgument: 0,
+          },
+          {
+            callee: "starlette.exceptions.HTTPException",
+            statusKeyword: "status_code",
+            statusArgument: 0,
+          },
+        ],
         routerComposition: {
           routerConstructorName: "APIRouter",
           includeMethodName: "include_router",

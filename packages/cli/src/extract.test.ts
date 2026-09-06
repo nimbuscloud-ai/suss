@@ -506,6 +506,7 @@ describe("extract over a Python project", () => {
       [
         "TodoList.get",
         "TodoList.post",
+        "TodoItem.get",
         "OrderDetail.get",
         "OrderDetail.delete",
         "UserList.get",

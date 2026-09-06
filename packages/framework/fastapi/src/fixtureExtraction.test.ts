@@ -74,9 +74,26 @@ describe("extraction over fixtures/python-fastapi", () => {
         "report",
         "read_item",
         "create_item",
+        "read_stock",
         "admin_stats",
       ].sort(),
     );
+  });
+
+  it("gives the route that raises one transition per outcome, each with its own condition", async () => {
+    const { summaries } = await extractFixture();
+    const readStock = summaries.find((s) => s.identity.name === "read_stock");
+    expect(
+      readStock?.transitions.map((transition) => [
+        transition.output.type === "response"
+          ? transition.output.statusCode
+          : transition.output.type,
+        transition.conditions.map((condition) => condition.type),
+      ]),
+    ).toEqual([
+      [{ type: "literal", value: 404 }, ["comparison"]],
+      [{ type: "literal", value: 200 }, ["negation"]],
+    ]);
   });
 
   it("composes the mount prefix and the router's own prefix into the route path", async () => {

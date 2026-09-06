@@ -154,7 +154,7 @@ describe("read a flask-restx service through its own wrapper", () => {
     for (const route of [...WRAPPED_ROUTES, ...NAMESPACE_ROUTES]) {
       expect(inspect.stdout).toContain(route);
     }
-    expect(inspect.stdout).toContain("11 summaries.");
+    expect(inspect.stdout).toContain("12 summaries.");
   });
 
   it("names the path for a namespace mounted twice at the one place", () => {

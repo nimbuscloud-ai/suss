@@ -134,6 +134,96 @@ const flaskRestxWithReturnStatus: PythonPack = {
   ],
 };
 
+const fastapiWithRaises: PythonPack = {
+  ...fastapiLike,
+  discovery: [
+    {
+      ...fastapiLike.discovery[0],
+      responseStatusCalls: [
+        {
+          callee: "fastapi.HTTPException",
+          statusKeyword: "status_code",
+          statusArgument: 0,
+        },
+      ],
+    } as PythonPack["discovery"][number],
+  ],
+};
+
+/** A library whose call takes its status only by keyword. */
+const fastapiWithKeywordOnlyStatus: PythonPack = {
+  ...fastapiLike,
+  discovery: [
+    {
+      ...fastapiLike.discovery[0],
+      responseStatusCalls: [
+        { callee: "fastapi.HTTPException", statusKeyword: "status_code" },
+      ],
+    } as PythonPack["discovery"][number],
+  ],
+};
+
+/** A library whose call responds with a status of its own when it is given none. */
+const fastapiWithDefaultRaiseStatus: PythonPack = {
+  ...fastapiLike,
+  discovery: [
+    {
+      ...fastapiLike.discovery[0],
+      responseStatusCalls: [
+        {
+          callee: "fastapi.HTTPException",
+          statusKeyword: "status_code",
+          statusArgument: 0,
+          defaultStatusCode: 400,
+        },
+      ],
+    } as PythonPack["discovery"][number],
+  ],
+};
+
+const flaskRestxWithAbort: PythonPack = {
+  ...flaskRestxLike,
+  discovery: [
+    {
+      ...flaskRestxLike.discovery[0],
+      statusFromReturnedTuple: true,
+      responseStatusCalls: [{ callee: "flask.abort", statusArgument: 0 }],
+    } as PythonPack["discovery"][number],
+  ],
+};
+
+/** The route source for one FastAPI handler body, under a decorator the test pack matches. */
+function routeRaising(body: string[]): string {
+  return [
+    "from fastapi import FastAPI, HTTPException",
+    "",
+    "app = FastAPI()",
+    "",
+    "",
+    '@app.get("/items/{item_id}")',
+    "def show(item_id: int):",
+    ...body.map((line) => `    ${line}`),
+    "",
+  ].join("\n");
+}
+
+/** The same, for a resource whose file imports Flask's `abort`. */
+function resourceAborting(body: string[]): string {
+  return [
+    "from flask import abort",
+    "from myapp.wrappers.restx import Namespace",
+    "",
+    'ns = Namespace("t", path="/t")',
+    "",
+    "",
+    '@ns.route("/thing")',
+    "class Thing(Resource):",
+    "    def get(self) -> dict:",
+    ...body.map((line) => `        ${line}`),
+    "",
+  ].join("\n");
+}
+
 /** The route source for one resource method body, wrapped in the decorator the test pack matches. */
 function resourceReturning(body: string[]): string {
   return [
@@ -148,6 +238,27 @@ function resourceReturning(body: string[]): string {
     ...body.map((line) => `        ${line}`),
     "",
   ].join("\n");
+}
+
+/**
+ * Every transition a unit's summary claims, as the status it responds
+ * with, or "throw" where it raises instead, and the conditions on it.
+ */
+function outcomesOf(unit: RawCodeStructure | undefined) {
+  if (unit === undefined) {
+    return undefined;
+  }
+
+  return assembleSummary(unit).transitions.map((transition) => [
+    transition.output.type === "response"
+      ? String(
+          transition.output.statusCode?.type === "literal"
+            ? transition.output.statusCode.value
+            : null,
+        )
+      : transition.output.type,
+    transition.conditions.map((condition) => conditionText(condition)),
+  ]);
 }
 
 /** An opaque predicate's text, with a leading `!` when the path negated it. */
@@ -671,6 +782,32 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     expect(unreadTextOf(unit)).toContain("cannot resolve to a number");
   });
 
+  it("claims no status for the one branch whose returned status is not a literal", async () => {
+    const units = await unitsOf(
+      resourceReturning([
+        "if x:",
+        '    return {"a": 1}, some_status()',
+        'return {"a": 2}, 200',
+      ]),
+      [flaskRestxWithReturnStatus],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "Thing.get") as RawCodeStructure,
+    );
+    expect(
+      summary.transitions.map((transition) =>
+        transition.output.type === "response"
+          ? transition.output.statusCode
+          : null,
+      ),
+    ).toEqual([null, { type: "literal", value: 200 }]);
+    expect(
+      summary.gaps.some((gap) =>
+        gap.description.includes("cannot resolve to a number"),
+      ),
+    ).toBe(true);
+  });
+
   it("leaves a nested function's return out of the route's own status", async () => {
     const units = await unitsOf(
       resourceReturning([
@@ -918,6 +1055,211 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     ).toEqual([
       ["TodoList.get", "flask-restx"],
       ["list_items", "fastapi-test"],
+    ]);
+  });
+});
+
+describe("discoverUnits: a raise the pack says the library responds with", () => {
+  it("gives the raise its own transition and negates its condition on the return", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        '    raise HTTPException(status_code=404, detail="missing")',
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["404", ["comparison"]],
+      ["200", ["!comparison"]],
+    ]);
+  });
+
+  it("reads the message the raise was given", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        '    raise HTTPException(404, "missing")',
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "show") as RawCodeStructure,
+    );
+    expect(summary.transitions[0]?.output).toEqual({
+      type: "response",
+      statusCode: { type: "literal", value: 404 },
+      body: null,
+      headers: {},
+    });
+  });
+
+  it("takes a bare call written as a statement of its own as an outcome", async () => {
+    const units = await unitsOf(
+      resourceAborting([
+        "if missing:",
+        "    abort(404)",
+        'return {"a": 1}, 200',
+      ]),
+      [flaskRestxWithAbort],
+    );
+    expect(
+      outcomesOf(units.find((u) => u.identity.name === "Thing.get")),
+    ).toEqual([
+      ["404", ["missing"]],
+      ["200", ["!missing"]],
+    ]);
+  });
+
+  it("reports a status it cannot resolve as the text it was written as", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException(status_code=chosen())",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "show") as RawCodeStructure,
+    );
+    const output = summary.transitions[0]?.output;
+    expect(output?.type === "response" && output.statusCode).toEqual({
+      type: "unresolved",
+      sourceText: "chosen()",
+    });
+  });
+
+  it("keeps a raise of a class no pack declares a throw with no status", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        '    raise ValueError("bad")',
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "show") as RawCodeStructure,
+    );
+    expect(summary.transitions[0]?.output).toEqual({
+      type: "throw",
+      exceptionType: "ValueError",
+      message: "bad",
+    });
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["throw", ["comparison"]],
+      ["200", ["!comparison"]],
+    ]);
+  });
+
+  it("leaves an ordinary call written as a statement of its own alone", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    record(item_id)",
+        "    raise HTTPException(status_code=404)",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["404", ["comparison"]],
+      ["200", ["!comparison"]],
+    ]);
+  });
+
+  it("leaves a raise written inside a nested function out of the route's own outcomes", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "def check():",
+        "    raise HTTPException(status_code=404)",
+        "",
+        "if item_id > 10:",
+        "    raise HTTPException(status_code=410)",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["410", ["comparison"]],
+      ["200", ["!comparison"]],
+    ]);
+  });
+
+  it("claims no status for a raise of something no name in the file resolves", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        '    raise errors["missing"]()',
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "show") as RawCodeStructure,
+    );
+    expect(summary.transitions[0]?.output.type).toBe("throw");
+  });
+
+  it("claims no status for a raise of the class written without its parentheses", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "show") as RawCodeStructure,
+    );
+    expect(summary.transitions[0]?.output).toEqual({
+      type: "throw",
+      exceptionType: "HTTPException",
+      message: null,
+    });
+  });
+
+  it("claims no status when the call states one in a position the pack does not describe", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException(404)",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithKeywordOnlyStatus],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "show") as RawCodeStructure,
+    );
+    expect(summary.transitions[0]?.output.type).toBe("throw");
+  });
+
+  it("takes the status the pack declares as the call's own default", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "if item_id > 10:",
+        "    raise HTTPException",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithDefaultRaiseStatus],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["400", ["comparison"]],
+      ["200", ["!comparison"]],
+    ]);
+  });
+
+  it("gives each return its own transition at the declared status where no return states one", async () => {
+    const units = await unitsOf(
+      routeRaising(["if item_id > 10:", '    return {"id": 0}', "return None"]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["200", ["comparison"]],
+      ["200", ["!comparison"]],
     ]);
   });
 });

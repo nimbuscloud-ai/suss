@@ -9,7 +9,7 @@ in, so it is no part of the request even though it is annotated with a
 local class, the same way a request body is.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 
 class ItemResponse:
@@ -36,3 +36,10 @@ def read_item(item_id: int):
 @router.post("", status_code=201, response_model=ItemResponse)
 def create_item(payload: ItemResponse, user: User = Depends(current_user)):
     pass
+
+
+@router.get("/{item_id}/stock")
+def read_stock(item_id: int):
+    if item_id > 10:
+        raise HTTPException(status_code=404, detail="no such item")
+    return {"count": 1}
