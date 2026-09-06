@@ -1,0 +1,194 @@
+name: suss inspect --diff
+description: >
+  Read what every boundary in a pull request does before and after the
+  change, and post the difference as a comment on the pull request.
+
+inputs:
+  extract:
+    description: >
+      The arguments to `suss extract`, after the command. For a
+      TypeScript project that is the tsconfig and the packs, for
+      example `-p tsconfig.json -f hono -f prisma`. For Python or Ruby
+      it is `--dir src -f fastapi`.
+    required: true
+  working-directory:
+    description: The directory to run `suss extract` in, relative to the repository root.
+    required: false
+    default: "."
+  version:
+    description: The version of `@suss/cli` to install.
+    required: false
+    default: latest
+  install:
+    description: >
+      A command that installs dependencies in the base checkout, such as
+      `npm ci` or `pnpm install --frozen-lockfile`. When it is empty the
+      base checkout shares the head's `node_modules` directories.
+    required: false
+    default: ""
+  comment:
+    description: Whether to post the diff as a comment on the pull request.
+    required: false
+    default: "true"
+  artifact-name:
+    description: >
+      The name of the run artifact that keeps both summary files and the
+      diff. Give each use of the action in one workflow its own name.
+    required: false
+    default: suss-diff
+  token:
+    description: "The token used to post the comment. It needs the `pull-requests: write` permission."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  changed:
+    description: How many units changed behavior.
+    value: ${{ steps.diff.outputs.changed }}
+  diff:
+    description: The path of the rendered diff.
+    value: ${{ steps.diff.outputs.diff }}
+  before:
+    description: The path of the summaries read from the base commit.
+    value: ${{ steps.diff.outputs.before }}
+  after:
+    description: The path of the summaries read from the head commit.
+    value: ${{ steps.diff.outputs.after }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install suss
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: npm install --global --no-fund --no-audit "@suss/cli@$VERSION"
+
+    - name: Read the head
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        EXTRACT: ${{ inputs.extract }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/suss"
+        suss extract $EXTRACT -o "$RUNNER_TEMP/suss/after.json"
+
+    - name: Check out the base
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        INSTALL: ${{ inputs.install }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        # The base is checked out under a directory with the same name
+        # as the workspace, so a summary reads the same from both sides.
+        base="$RUNNER_TEMP/suss/base/$(basename "$GITHUB_WORKSPACE")"
+        mkdir -p "$(dirname "$base")"
+        git fetch --no-tags --depth=1 origin "$BASE_SHA"
+        git worktree add --detach "$base" "$BASE_SHA"
+        echo "SUSS_BASE=$base" >> "$GITHUB_ENV"
+
+        if [ -n "$INSTALL" ]; then
+          (cd "$base/$WORKING_DIRECTORY" && $INSTALL)
+          exit 0
+        fi
+
+        # Dependencies rarely change between the two commits, so the
+        # base reads the head's node_modules instead of installing its
+        # own. Pass `install` when they do change.
+        find . \( -type d -o -type l \) -name node_modules -prune -print | while read -r dir; do
+          target="$base/${dir#./}"
+          if [ ! -e "$target" ]; then
+            mkdir -p "$(dirname "$target")"
+            ln -s "$PWD/${dir#./}" "$target"
+          fi
+        done
+
+    - name: Read the base
+      shell: bash
+      env:
+        EXTRACT: ${{ inputs.extract }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        cd "$SUSS_BASE/$WORKING_DIRECTORY"
+        suss extract $EXTRACT -o "$RUNNER_TEMP/suss/before.json"
+
+    - name: Diff
+      id: diff
+      shell: bash
+      run: |
+        cd "$RUNNER_TEMP/suss"
+        suss inspect --diff before.json after.json | tee diff.txt
+        suss inspect --diff before.json after.json --json > diff.json
+        changed=$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync("diff.json","utf8")).changed))')
+        {
+          echo "changed=$changed"
+          echo "diff=$RUNNER_TEMP/suss/diff.txt"
+          echo "before=$RUNNER_TEMP/suss/before.json"
+          echo "after=$RUNNER_TEMP/suss/after.json"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Keep the summaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ runner.temp }}/suss/before.json
+          ${{ runner.temp }}/suss/after.json
+          ${{ runner.temp }}/suss/diff.txt
+          ${{ runner.temp }}/suss/diff.json
+        if-no-files-found: error
+        retention-days: 30
+
+    - name: Comment
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        CHANGED: ${{ steps.diff.outputs.changed }}
+        ARTIFACT: ${{ inputs.artifact-name }}
+      run: |
+        marker="<!-- suss-inspect-diff $ARTIFACT -->"
+        diff="$RUNNER_TEMP/suss/diff.txt"
+        body="$RUNNER_TEMP/suss/comment.md"
+
+        # A comment stops at 65536 characters, so a long diff is cut
+        # here and the whole of it stays in the run's artifact.
+        limit=60000
+        if [ "$(wc -c < "$diff")" -gt "$limit" ]; then
+          head -c "$limit" "$diff" > "$diff.cut"
+          printf '\n... cut here. The whole diff is in the %s artifact of the run.\n' "$ARTIFACT" >> "$diff.cut"
+          diff="$diff.cut"
+        fi
+
+        if [ "$CHANGED" = "0" ]; then
+          heading="No unit changes behavior in this pull request"
+        elif [ "$CHANGED" = "1" ]; then
+          heading="1 unit changes behavior in this pull request"
+        else
+          heading="$CHANGED units change behavior in this pull request"
+        fi
+
+        {
+          echo "$marker"
+          echo "### $heading"
+          echo
+          echo '```'
+          cat "$diff"
+          echo '```'
+          echo
+          echo "<sub>Read by [suss](https://github.com/nimbuscloud-ai/suss) at ${HEAD_SHA:0:7}. The summaries it compared are the \`$ARTIFACT\` artifact of [the run]($RUN_URL); \`suss inspect after.json\` on them says where suss could not follow a call.</sub>"
+        } > "$body"
+
+        existing=$(gh api --paginate "repos/$GH_REPO/issues/$PR/comments" \
+          --jq "[.[] | select(.body | startswith(\"$marker\"))] | first | .id // empty")
+
+        if [ -n "$existing" ]; then
+          gh api --method PATCH "repos/$GH_REPO/issues/comments/$existing" -F body=@"$body" > /dev/null
+        else
+          gh api --method POST "repos/$GH_REPO/issues/$PR/comments" -F body=@"$body" > /dev/null
+        fi
