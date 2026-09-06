@@ -139,7 +139,9 @@ function wrapperNamesOf(summary: BehavioralSummary): string[] {
 
 function unfollowedCalleesOf(summary: BehavioralSummary): string[] {
   return summary.gaps.flatMap((gap) =>
-    gap.type === "unfollowedCall" ? [gap.callee] : [],
+    gap.type === "unfollowedCall" && gap.callee !== undefined
+      ? [gap.callee]
+      : [],
   );
 }
 

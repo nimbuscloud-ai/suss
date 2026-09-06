@@ -160,7 +160,7 @@ function unfollowedOn(
   });
   expect(summary, `no summary for ${path}`).toBeDefined();
   return (summary as BehavioralSummary).gaps.flatMap((gap) =>
-    gap.type === "unfollowedCall"
+    gap.type === "unfollowedCall" && gap.callee !== undefined
       ? [{ callee: gap.callee, description: gap.description }]
       : [],
   );
