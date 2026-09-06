@@ -73,6 +73,41 @@ rule that says any constructed subclass of Response is a
 response, or letting a library ship its own summaries the way
 the package-exports work points at.
 
+### Extraction across worker processes {#multi-process-extraction}
+
+Extraction runs on one core. The cheap wins have been taken:
+walks were narrowed and merged in the rule profiler work, and
+the per-file cache lets a warm run skip most files. What is left
+is splitting the first run across processes, one worker per
+group of files with its own ts-morph project, merged at the end.
+Threads will not do, because ts-morph state cannot be shared.
+
+Two costs to measure before starting. Memory multiplies, since
+each worker keeps the ASTs for its group and large repositories
+already want multi-gigabyte heaps. Cross-file resolution still
+has to work, so either a worker's group contains everything its
+files import, or a second pass after the merge resolves what was
+left over.
+
+The trigger is a first run on a repository where the wall time
+matters more than the memory.
+
+### A unit that is both a library unit and a caller {#two-summaries-one-unit}
+
+The dogfood gives one unit one summary. When a function is both
+an internal helper and a caller into another package, only the
+caller half is recorded, so its summary moves from the internal
+column to the consumer column and the count gate fires on the
+drop. Nothing was misread; one true fact was traded for another.
+
+Two questions to decide rather than fall into: whether
+`claimedUnits` should allow a library summary and a caller
+summary for the same function, and what pairing does with the
+duplicate identity if it does; and whether the count gate should
+show a matched internal drop plus consumer rise as a category
+move rather than a regression. Today this costs a baseline
+refresh and a sentence in the PR.
+
 ### `suss emit --format fast-check` (summaries as generated tests)
 
 A summary already contains what a property test needs: the
@@ -85,25 +120,29 @@ engine's input synthesis is the natural starting point. What we
 emit has to be "tests a human would keep," which is a higher bar
 than sampling.
 
-### Why a fact is in the database {#datalog-provenance}
+### What the witness slot can still buy {#datalog-provenance}
 
-The engine records that evaluation derived a fact, but not what
-derived it. So when a resolution comes out wrong, and some will,
-because `unwraps` over-approximates on purpose, nobody can ask
-why the resolver picked one particular function for an export.
-You can read the rules and you cannot read the fact base, which
-is backwards for a tool whose product is explaining behaviour.
+Every derived fact keeps one witness, the rule that fired and the
+body tuples it consumed, and `proofOf` rebuilds a proof from
+those on demand. That is what `suss ask "why does"` prints, and
+the confidence level rides the same per-key tag slot with min
+across a body and max across derivations. Two things the slot
+was built for are still unbuilt.
 
-Full provenance is the version that also buys us incremental
-view maintenance under negation. Knowing what supports a fact is
-what lets DRed or a counting algorithm retract exactly the right
-facts instead of recomputing everything, which is what
-`evaluate` does today. The cheap version is a derivation trace
-in debug mode, which answers the diagnostic question without
-keeping the support for every tuple.
+Deletion on edit. When a file changes, `evaluate` recomputes
+everything. DRed and counting both retract exactly the facts a
+removed input supported, and both want a support count per fact
+beside the witness. That is the piece the extraction cache needs
+before a re-run after an edit is cheaper than a first run.
 
-The trigger is people running suss on code we have not seen and
-reporting a wrong resolution we cannot explain.
+Counterfactual questions. A proof says why a fact holds. An
+agent wants the smallest change that would make it stop holding,
+which is a minimal cut over the reconstructed proof tree. That
+turns "no" into "no, and here are the edits that make it yes".
+
+Both wait on a caller. The trigger for deletion is the watch
+loop; the trigger for counterfactuals is the first agent
+integration that asks.
 
 ### Goal-directed evaluation {#datalog-magic-sets}
 
