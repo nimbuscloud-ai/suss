@@ -314,6 +314,34 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  it("spells out the guard of a fall-through whose guard is what changed", () => {
+    // A new guard in front of the fall-through gives it a new id. Matched
+    // by id, that printed as the same "(default)" line removed and added.
+    const before = respondsWith("createUser", "/users", { id: "t1" });
+    const after = respondsWith("createUser", "/users", {
+      id: "t2",
+      conditions: [
+        {
+          type: "negation",
+          operand: {
+            type: "comparison",
+            left: { type: "unresolved", sourceText: "name.length" },
+            op: "gt",
+            right: { type: "literal", value: 64 },
+          },
+        },
+      ],
+    });
+
+    withFiles([before], [after], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("1 change\n");
+      expect(output).toContain("~ 200\n");
+      expect(output).toContain("-> 200  when  !(name.length > 64)");
+      expect(output).not.toContain("(default)");
+    });
+  });
+
   it("stays quiet about a transition that only moved in the file", () => {
     const before = respondsWith("getUser", "/users/:id", {});
     const after = respondsWith("getUser", "/users/:id", {

@@ -443,6 +443,54 @@ function behaviourOf(t: Transition): string {
   return JSON.stringify(behaviour);
 }
 
+/**
+ * What a transition produces, with the guard that reaches it left out.
+ *
+ * A transition's id includes a hash of its conditions, so adding a guard
+ * in front of a branch gives that branch a new id. Matched by id alone,
+ * the diff would then say the branch was removed and an identical one
+ * added, which reads as a no-op. Pairing a removed and an added
+ * transition that produce the same thing reports the guard change as
+ * the one change it is.
+ */
+function outcomeOf(t: Transition): string {
+  const {
+    id: _id,
+    location: _location,
+    conditions: _conditions,
+    isDefault: _isDefault,
+    ...outcome
+  } = t;
+  return JSON.stringify(outcome);
+}
+
+function pairGuardChanges(
+  removed: Transition[],
+  added: Transition[],
+): {
+  removed: Transition[];
+  added: Transition[];
+  changed: Array<{ before: Transition; after: Transition }>;
+} {
+  const unmatchedAdded = [...added];
+  const stillRemoved: Transition[] = [];
+  const changed: Array<{ before: Transition; after: Transition }> = [];
+
+  for (const beforeT of removed) {
+    const outcome = outcomeOf(beforeT);
+    const index = unmatchedAdded.findIndex((t) => outcomeOf(t) === outcome);
+    if (index === -1) {
+      stillRemoved.push(beforeT);
+      continue;
+    }
+
+    const [afterT] = unmatchedAdded.splice(index, 1);
+    changed.push({ before: beforeT, after: afterT });
+  }
+
+  return { removed: stillRemoved, added: unmatchedAdded, changed };
+}
+
 export function diffSummaries(
   before: BehavioralSummary,
   after: BehavioralSummary,
@@ -450,27 +498,33 @@ export function diffSummaries(
   const beforeById = new Map(before.transitions.map((t) => [t.id, t]));
   const afterById = new Map(after.transitions.map((t) => [t.id, t]));
 
-  const addedTransitions: Transition[] = [];
-  const removedTransitions: Transition[] = [];
+  const addedById: Transition[] = [];
+  const removedById: Transition[] = [];
   const changedTransitions: Array<{ before: Transition; after: Transition }> =
     [];
 
   for (const [id, afterT] of afterById) {
     if (!beforeById.has(id)) {
-      addedTransitions.push(afterT);
+      addedById.push(afterT);
     }
   }
 
   for (const [id, beforeT] of beforeById) {
     const afterT = afterById.get(id);
     if (!afterT) {
-      removedTransitions.push(beforeT);
+      removedById.push(beforeT);
     } else if (behaviourOf(beforeT) !== behaviourOf(afterT)) {
       changedTransitions.push({ before: beforeT, after: afterT });
     }
   }
 
-  return { addedTransitions, removedTransitions, changedTransitions };
+  const paired = pairGuardChanges(removedById, addedById);
+
+  return {
+    addedTransitions: paired.added,
+    removedTransitions: paired.removed,
+    changedTransitions: [...changedTransitions, ...paired.changed],
+  };
 }
 
 // ---------------------------------------------------------------------------

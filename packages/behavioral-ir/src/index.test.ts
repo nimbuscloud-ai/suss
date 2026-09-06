@@ -250,6 +250,56 @@ describe("diffSummaries", () => {
     expect(diff.removedTransitions).toHaveLength(0);
   });
 
+  it("reports a transition whose guard changed as changed, not as removed and added", () => {
+    const created: Output = {
+      type: "response",
+      statusCode: { type: "literal", value: 201 },
+      body: null,
+      headers: {},
+    };
+    const nameCheck: Predicate = {
+      type: "nullCheck",
+      subject: { type: "unresolved", sourceText: "name" },
+      negated: true,
+    };
+    const t1 = { ...makeTransition("post:201:aaa", created), isDefault: true };
+    const t1guarded = {
+      ...makeTransition("post:201:bbb", created),
+      conditions: [nameCheck],
+      isDefault: true,
+    };
+    const diff = diffSummaries(makeSummary([t1]), makeSummary([t1guarded]));
+    expect(diff.addedTransitions).toHaveLength(0);
+    expect(diff.removedTransitions).toHaveLength(0);
+    expect(diff.changedTransitions).toHaveLength(1);
+    expect(diff.changedTransitions[0].before.id).toBe("post:201:aaa");
+    expect(diff.changedTransitions[0].after.id).toBe("post:201:bbb");
+  });
+
+  it("keeps a new id as added when nothing removed produces the same thing", () => {
+    const ok = makeTransition("get:200:aaa", {
+      type: "response",
+      statusCode: { type: "literal", value: 200 },
+      body: null,
+      headers: {},
+    });
+    const gone = makeTransition("get:410:aaa", {
+      type: "response",
+      statusCode: { type: "literal", value: 410 },
+      body: null,
+      headers: {},
+    });
+    const okGuarded = { ...ok, id: "get:200:bbb" };
+    const diff = diffSummaries(
+      makeSummary([ok, gone]),
+      makeSummary([okGuarded]),
+    );
+    expect(diff.changedTransitions).toHaveLength(1);
+    expect(diff.changedTransitions[0].after.id).toBe("get:200:bbb");
+    expect(diff.removedTransitions.map((t) => t.id)).toEqual(["get:410:aaa"]);
+    expect(diff.addedTransitions).toHaveLength(0);
+  });
+
   it("Predicate discriminated union narrows correctly", () => {
     const pred: Predicate = {
       type: "nullCheck",
