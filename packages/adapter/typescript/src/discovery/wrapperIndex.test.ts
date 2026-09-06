@@ -129,24 +129,60 @@ const honoLikePack: PatternPack = {
       },
       requiresImport: ["hono"],
     },
+    {
+      kind: "middleware",
+      match: {
+        type: "registrationCall",
+        importModule: "hono",
+        importName: "Hono",
+        registrationChain: [],
+      },
+      wraps: {
+        constructorOption: "defaultHook",
+        targetPosition: 0,
+        resultParam: 0,
+      },
+      requiresImport: ["hono"],
+    },
   ],
-  terminals: [],
+  terminals: [
+    {
+      kind: "response",
+      match: {
+        type: "parameterMethodCall",
+        parameterPosition: 0,
+        methodChain: ["json"],
+      },
+      extraction: {
+        statusCode: { from: "argument", position: 1 },
+        body: { from: "argument", position: 0 },
+        defaultStatusCode: 200,
+      },
+    },
+  ],
   inputMapping: {
     type: "positionalParams",
     params: [{ position: 0, role: "context" }],
   },
 };
 
-function wrappersOf(
+function summaryFor(
   summaries: BehavioralSummary[],
   path: string,
-): WrapperMetadata["applied"] {
+): BehavioralSummary {
   const summary = summaries.find((one) => {
     const semantics = one.identity.boundaryBinding?.semantics;
     return semantics?.name === "rest" && semantics.path === path;
   });
   expect(summary, `no summary for ${path}`).toBeDefined();
-  return readWrapperMetadata(summary as BehavioralSummary)?.applied ?? [];
+  return summary as BehavioralSummary;
+}
+
+function wrappersOf(
+  summaries: BehavioralSummary[],
+  path: string,
+): WrapperMetadata["applied"] {
+  return readWrapperMetadata(summaryFor(summaries, path))?.applied ?? [];
 }
 
 /** The calls a route says it was read without, as callee and sentence. */
@@ -154,12 +190,7 @@ function unfollowedOn(
   summaries: BehavioralSummary[],
   path: string,
 ): Array<{ callee: string; description: string }> {
-  const summary = summaries.find((one) => {
-    const semantics = one.identity.boundaryBinding?.semantics;
-    return semantics?.name === "rest" && semantics.path === path;
-  });
-  expect(summary, `no summary for ${path}`).toBeDefined();
-  return (summary as BehavioralSummary).gaps.flatMap((gap) =>
+  return summaryFor(summaries, path).gaps.flatMap((gap) =>
     gap.type === "unfollowedCall" && gap.callee !== undefined
       ? [{ callee: gap.callee, description: gap.description }]
       : [],
@@ -672,6 +703,134 @@ describe("wrapper registrations, end to end", () => {
 
     expect(wrappersOf(summaries, "/ping")).toEqual([]);
     expect(wrappersOf(summaries, "/orders")).toHaveLength(1);
+  });
+
+  it("follows a hook handed to the constructor onto every route on that app", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/validationHook.ts",
+      `
+        export const validationHook = (result, c) => {
+          if (!result.success) {
+            return c.json({ error: "invalid" }, 400);
+          }
+        };
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        import { validationHook } from "./validationHook";
+        const app = new Hono({ defaultHook: validationHook });
+        app.get("/orders", (c) => c.json({}, 200));
+        app.get("/items", (c) => c.json({}, 200));
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    for (const path of ["/orders", "/items"]) {
+      expect(wrappersOf(summaries, path)).toEqual([
+        { file: "/validationHook.ts", name: "validationHook" },
+      ]);
+      expect(statusesOf(summaryFor(summaries, path))).toEqual([400, 200]);
+    }
+    expect(statusesOf(summaryNamed(summaries, "validationHook"))).toEqual([
+      400,
+    ]);
+  });
+
+  it("reads the hook out of an options object the constructor is handed by name", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const shared = { strict: false };
+        const options = {
+          ...shared,
+          defaultHook(result, c) {
+            if (!result.success) {
+              return c.json({ error: "invalid" }, 422);
+            }
+          },
+        };
+        const app = new Hono(options);
+        app.get("/orders", (c) => c.json({}, 200));
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([
+      { file: "/app.ts", name: "defaultHook" },
+    ]);
+    expect(statusesOf(summaryFor(summaries, "/orders"))).toEqual([422, 200]);
+  });
+
+  it("leaves a gap on each route when the hook comes from a factory with no body", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        declare function buildHook(): unknown;
+        const app = new Hono({ defaultHook: buildHook() });
+        app.get("/orders", (c) => c.json({}, 200));
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([]);
+    expect(unfollowedOn(summaries, "/orders")).toEqual([
+      {
+        callee: "buildHook",
+        description: expect.stringContaining("The call to buildHook"),
+      },
+    ]);
+  });
+
+  it("reads a hook once when the app is also passed to a helper in the same file", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const app = new Hono({ defaultHook: (result, c) => c.json({}, 400) });
+        function registerOrders(target: Hono) {
+          target.get("/orders", (c) => c.json({}, 200));
+        }
+        registerOrders(app);
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([
+      { file: "/app.ts", name: "defaultHook" },
+    ]);
   });
 
   it("leaves a mount alone, since the mounted value is a router and not a function", async () => {

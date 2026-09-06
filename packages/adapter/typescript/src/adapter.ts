@@ -665,12 +665,12 @@ const FUNCTION_FALLTHROUGH_TERMINAL: TerminalPattern = {
 };
 
 /**
- * Where the framework puts the thrown value in this unit's parameters,
- * for a wrapper it only calls when something threw. Undefined for
- * everything else, which is every unit that is not an error handler.
+ * Where the framework puts a value of its own in this unit's
+ * parameters: the thrown value for an error handler, the validation
+ * outcome for a hook. Undefined for every other unit.
  */
-function thrownValueAt(unit: DiscoveredUnit): number | undefined {
-  return unit.pattern?.wraps?.throwParam;
+function frameworkValueAt(unit: DiscoveredUnit): number | undefined {
+  return unit.pattern?.wraps?.throwParam ?? unit.pattern?.wraps?.resultParam;
 }
 
 /**
@@ -679,7 +679,7 @@ function thrownValueAt(unit: DiscoveredUnit): number | undefined {
  * `(req, res, next)`, so the response object is one parameter further
  * along than the pack says.
  */
-function pastThrownValue(
+function pastFrameworkValue(
   terminals: TerminalPattern[],
   at: number | undefined,
 ): TerminalPattern[] {
@@ -701,7 +701,7 @@ function pastThrownValue(
 }
 
 /** The same shift, for the role the pack gives each parameter. */
-function rolesPastThrownValue(
+function rolesPastFrameworkValue(
   mapping: InputMappingPattern,
   at: number | undefined,
 ): InputMappingPattern {
@@ -750,7 +750,8 @@ function terminalsFor(
   // A pack whose units follow more than one convention overrides the
   // pack-level terminals per unit.
   const declared = [
-    ...(unit.terminals ?? pastThrownValue(pack.terminals, thrownValueAt(unit))),
+    ...(unit.terminals ??
+      pastFrameworkValue(pack.terminals, frameworkValueAt(unit))),
     ...continuationTerminal(unit),
   ];
   if (unit.callSite === undefined) {
@@ -782,7 +783,7 @@ function readCodeStructure(
   const params = extractParameters(
     func,
     unit.inputMapping ??
-      rolesPastThrownValue(pack.inputMapping, thrownValueAt(unit)),
+      rolesPastFrameworkValue(pack.inputMapping, frameworkValueAt(unit)),
   );
   const extracted = extractRawBranches(
     func,

@@ -140,7 +140,12 @@ describe("wrapperDiscovery", () => {
       "middleware",
     ]);
     expect(patterns[0].wraps).toEqual({ method: "use", targetPosition: 0 });
-    expect(patterns[1].wraps?.arity).toBe(4);
+    expect(patterns[1].wraps).toEqual({
+      method: "use",
+      targetPosition: 0,
+      throwParam: 0,
+      arity: 4,
+    });
     expect(patterns[0].requiresImport).toEqual(["express"]);
   });
 

@@ -110,6 +110,9 @@ export type {
   TerminalMatch,
   TerminalPattern,
   TransparentWrapper,
+  WrapperMethodRegistration,
+  WrapperOptionRegistration,
+  WrapperRegistration,
 } from "./framework.js";
 export type { LanguageAdapter } from "./languageAdapter.js";
 export type {

@@ -3,9 +3,9 @@
     "packages": 69,
     "packagesWithExports": 69,
     "exports": 881,
-    "internal": 3020,
-    "consumers": 1679,
-    "pairs": 1676,
+    "internal": 3024,
+    "consumers": 1681,
+    "pairs": 1678,
     "unfollowedCalls": 486,
     "findingErrors": 0
   },
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 87,
-      "internal": 826,
+      "internal": 830,
       "consumers": 192,
       "unfollowedCalls": 106
     },
@@ -301,7 +301,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 17,
+      "consumers": 19,
       "unfollowedCalls": 0
     },
     "packages/framework/mongoose": {
