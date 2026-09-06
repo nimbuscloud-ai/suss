@@ -246,7 +246,7 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   // Fallback: use the printed type text as a ref name.
-  const text = type.getText(ctx.enclosing);
+  const text = printedTypeName(type, ctx);
   if (text && text.length > 0 && text !== "__type") {
     return { type: "ref", name: text };
   }
@@ -312,8 +312,7 @@ function intersectionToShape(
     return nonRecords[0];
   }
 
-  const text = type.getText(ctx.enclosing);
-  return { type: "ref", name: text };
+  return { type: "ref", name: printedTypeName(type, ctx) };
 }
 
 function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
@@ -407,7 +406,7 @@ function opaqueNamedRef(type: Type, ctx: ConvertContext): TypeShape | null {
   // Include type args for generic containers (Map<K, V>, Promise<T>) so the
   // ref retains the observable type text. Fall back to the bare name if
   // getText() produces noise.
-  const text = type.getText(ctx.enclosing);
+  const text = printedTypeName(type, ctx);
   return { type: "ref", name: text && text.length > 0 ? text : name };
 }
 
@@ -556,6 +555,15 @@ function refFromType(type: Type, ctx: ConvertContext): TypeShape {
   // with the absolute path it came from, which is one machine's
   // result, so that qualifier comes back off.
   return { type: "ref", name: withoutImportQualifiers(type.getText()) };
+}
+
+/**
+ * When the enclosing file has no import for a type, the compiler prints it
+ * qualified by the absolute path of its module. Two checkouts of the same
+ * code would then print different names, so the qualifier is removed.
+ */
+function printedTypeName(type: Type, ctx: ConvertContext): string {
+  return withoutImportQualifiers(type.getText(ctx.enclosing));
 }
 
 const IMPORT_QUALIFIER = /import\("[^"]*"\)\./g;

@@ -93,6 +93,26 @@ describe("a ref to a project type", () => {
   });
 });
 
+describe("a ref whose name the compiler printed", () => {
+  // The enclosing file has no import for User, so the compiler prints it
+  // qualified by the absolute path of its module.
+  it("does not keep the checkout path in an import qualifier", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "src/models.ts",
+      "export interface User { id: string }\nexport const makeUser = (): User => ({ id: '' });\n",
+    );
+    project.createSourceFile(
+      "src/use.ts",
+      "import { makeUser } from './models.js';\nexport const users = { child: new Map([['a', makeUser()]]) };\n",
+    );
+
+    const ref = childRefOf(project, "users");
+
+    expect(ref.name).toBe("Map<string, User>");
+  });
+});
+
 describe("the same type reached from two places", () => {
   it("comes out the same however the walk got there", () => {
     const project = createTestProject();
