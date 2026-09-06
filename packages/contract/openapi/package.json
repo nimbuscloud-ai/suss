@@ -2,13 +2,16 @@
   "name": "@suss/contract-openapi",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries from OpenAPI 3.x specifications.",
+  "description": "Turn an OpenAPI document into a suss contract and check it against the handlers and clients that implement it.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "openapi",
     "swagger",
-    "contract"
+    "api-contract",
+    "contract-testing",
+    "api-drift",
+    "breaking-changes"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

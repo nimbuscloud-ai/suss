@@ -2,11 +2,16 @@
   "name": "@suss/packs",
   "version": "0.22.3",
   "type": "module",
-  "description": "Every pack suss ships, as one package with a subpath per pack.",
+  "description": "Every pack suss ships in one install, so it can read Express, Hono, NestJS, FastAPI, Rails, Prisma, OpenAPI and the rest.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "packs"
+    "static-analysis",
+    "express",
+    "fastapi",
+    "rails",
+    "prisma",
+    "openapi",
+    "api-contract"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

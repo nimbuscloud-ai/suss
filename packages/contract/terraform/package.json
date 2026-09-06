@@ -2,13 +2,15 @@
   "name": "@suss/contract-terraform",
   "version": "0.22.3",
   "type": "module",
-  "description": "Read the storage a Terraform configuration declares, for checking code against it.",
+  "description": "Read the storage a Terraform configuration declares and check it against the code that reads and writes those tables.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "terraform",
     "dynamodb",
-    "storage"
+    "aws",
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

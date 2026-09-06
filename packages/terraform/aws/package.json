@@ -2,12 +2,14 @@
   "name": "@suss/terraform-aws",
   "version": "0.22.3",
   "type": "module",
-  "description": "What AWS's Terraform provider declares, for the Terraform contract reader.",
+  "description": "What the AWS Terraform provider declares, so suss can check your code against the infrastructure you deploy.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "terraform",
-    "aws"
+    "aws",
+    "infrastructure-as-code",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

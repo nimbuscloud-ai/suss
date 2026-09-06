@@ -2,14 +2,16 @@
   "name": "@suss/adapter-python",
   "version": "0.22.3",
   "type": "module",
-  "description": "Python language adapter for suss — parses source with tree-sitter (WASM), resolves names with a lexical binder, and emits raw extractions for the suss pipeline.",
+  "description": "Read a Python codebase with suss and check what each FastAPI or Flask route returns against the clients, specs and infrastructure that depend on it.",
   "keywords": [
     "suss",
-    "behavioral-summary",
     "static-analysis",
     "python",
-    "tree-sitter",
-    "ast"
+    "fastapi",
+    "flask",
+    "api-contract",
+    "api-drift",
+    "code-review"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

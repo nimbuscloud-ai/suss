@@ -2,13 +2,14 @@
   "name": "@suss/behavioral-ir",
   "version": "0.22.3",
   "type": "module",
-  "description": "Type definitions and intermediate representation for suss behavioral summaries.",
+  "description": "The types and JSON schema for a suss behavioral summary, the record of what a piece of code does on every path.",
   "keywords": [
     "suss",
-    "behavioral-summary",
     "static-analysis",
+    "behavioral-summary",
+    "json-schema",
     "typescript",
-    "ir"
+    "api-contract"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

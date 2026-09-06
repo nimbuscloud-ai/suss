@@ -2,14 +2,16 @@
   "name": "@suss/adapter-typescript",
   "version": "0.22.3",
   "type": "module",
-  "description": "TypeScript adapter for suss — walks source files with ts-morph and emits raw extractions for the suss pipeline.",
+  "description": "Read a TypeScript or JavaScript codebase with suss and check what each handler returns against every caller, spec and template it can see.",
   "keywords": [
     "suss",
-    "behavioral-summary",
     "static-analysis",
     "typescript",
+    "javascript",
     "ts-morph",
-    "ast"
+    "api-contract",
+    "api-drift",
+    "code-review"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

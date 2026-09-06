@@ -2,12 +2,15 @@
   "name": "@suss/mcp",
   "version": "0.22.3",
   "type": "module",
-  "description": "An MCP server over suss, so a coding agent can ask what a boundary does while it works.",
+  "description": "An MCP server over suss, so a coding agent can ask what an endpoint does and who calls it while it works.",
   "keywords": [
     "suss",
+    "static-analysis",
     "mcp",
     "model-context-protocol",
-    "agent"
+    "ai-agents",
+    "code-review",
+    "api-contract"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

@@ -2,13 +2,15 @@
   "name": "@suss/contract-aws-apigateway",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries for AWS API Gateway resources (REST + HTTP API), independent of how they were deployed.",
+  "description": "Turn an AWS API Gateway REST or HTTP API into a suss contract and check it against the Lambda handlers and clients that use it.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "aws",
     "api-gateway",
-    "apigateway"
+    "lambda",
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

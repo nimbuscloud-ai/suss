@@ -2,14 +2,16 @@
   "name": "@suss/cli",
   "version": "0.22.3",
   "type": "module",
-  "description": "Command-line interface for suss: extract, inspect, diff, and check TypeScript behavioral summaries.",
+  "description": "Read TypeScript, Python and Ruby, write down what each endpoint does on every path, and check it against the clients, specs and infrastructure that depend on it.",
   "keywords": [
     "suss",
-    "cli",
-    "behavioral-summary",
     "static-analysis",
+    "typescript",
+    "python",
+    "ruby",
+    "api-contract",
     "contract-testing",
-    "typescript"
+    "breaking-changes"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

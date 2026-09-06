@@ -2,13 +2,15 @@
   "name": "@suss/contract-wrangler",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries from a Cloudflare wrangler.toml or wrangler.jsonc.",
+  "description": "Read a Cloudflare wrangler.toml or wrangler.jsonc and check the bindings it declares against the Worker code that uses them.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "cloudflare",
     "workers",
-    "wrangler"
+    "wrangler",
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

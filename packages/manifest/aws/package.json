@@ -2,13 +2,14 @@
   "name": "@suss/manifest-aws",
   "version": "0.22.3",
   "type": "module",
-  "description": "Parse AWS CloudFormation / SAM templates into plain data — the shared facts layer contract readers and manifest-driven framework packs both consume.",
+  "description": "Parse a CloudFormation or SAM template into plain data, the facts every suss reader of an AWS template works from.",
   "keywords": [
     "suss",
+    "static-analysis",
     "cloudformation",
     "sam",
     "aws",
-    "manifest"
+    "infrastructure-as-code"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",
