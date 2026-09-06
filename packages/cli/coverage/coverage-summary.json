@@ -19,10 +19,10 @@
       "pct": 94.81
     },
     "branches": {
-      "total": 3580,
-      "covered": 2963,
+      "total": 3582,
+      "covered": 2965,
       "skipped": 0,
-      "pct": 82.76
+      "pct": 82.77
     },
     "branchesTrue": {
       "total": 0,
@@ -234,9 +234,9 @@
     },
     "branches": {
       "total": 95,
-      "covered": 84,
+      "covered": 85,
       "skipped": 0,
-      "pct": 88.42
+      "pct": 89.47
     }
   },
   "src/check.ts": {
@@ -441,10 +441,10 @@
       "pct": 95.42
     },
     "branches": {
-      "total": 318,
-      "covered": 271,
+      "total": 320,
+      "covered": 272,
       "skipped": 0,
-      "pct": 85.22
+      "pct": 85
     }
   },
   "src/flow.ts": {
