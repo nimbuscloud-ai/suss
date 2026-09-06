@@ -1,0 +1,36 @@
+name: inspect-diff action
+
+# Runs the inspect-diff action over the example project, so a change
+# to the action is tried on a pull request before anyone else uses it.
+# The paths filter keeps it off every other pull request, where it
+# would post a comment saying nothing changed. It is not a required
+# check, so a filtered-out run leaves nothing waiting.
+on:
+  pull_request:
+    paths:
+      - .github/actions/inspect-diff/**
+      - .github/workflows/inspect-diff.yml
+      - examples/petstore-axios-openapi/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  example:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: ./.github/actions/inspect-diff
+        id: suss
+        with:
+          working-directory: examples/petstore-axios-openapi
+          extract: -p tsconfig.json -f axios
+      - name: Report
+        run: echo "${{ steps.suss.outputs.changed }} units changed behavior"

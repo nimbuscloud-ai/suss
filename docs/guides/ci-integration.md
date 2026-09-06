@@ -1,15 +1,52 @@
 ---
-title: Run suss in GitHub Actions and fail a pull request on a finding
-description: Wire suss into a CI job that extracts both sides of your boundaries and exits non-zero when a caller and its provider disagree.
+title: Run suss in GitHub Actions on every pull request
+description: Post what a pull request changes about each boundary as a comment, and fail the job when a caller and its provider disagree.
 ---
 
 # Set up CI checking
 
-Fail the pull request that breaks a caller, while the author is
-still looking at it. One job extracts both sides of your boundaries
-and compares them, and exits non-zero when a provider returns a
-status no client handles or a query asks for a field the schema
-never declared.
+Two jobs. The first posts what the pull request changes about each
+boundary as a comment, so the reviewer reads the behavior instead of
+the diff. The second extracts both sides of your boundaries and
+compares them, and exits non-zero when a provider returns a status no
+client handles or a query asks for a field the schema never declared.
+
+## Post the behavior diff on the pull request
+
+```yaml
+name: suss
+
+on: [pull_request]
+
+jobs:
+  behavior-diff:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+        with:
+          extract: -p tsconfig.json -f hono -f prisma
+```
+
+The action runs `suss extract` at the head of the pull request, checks
+the base commit out beside it and runs the same extract there, then
+posts `suss inspect --diff` between the two as one comment. A later
+push edits the same comment. `extract` takes whatever you would type
+after `suss extract` on your own machine; for Python that is
+`--dir src -f fastapi`.
+
+A pull request from a fork gets a read-only token, so the comment
+cannot be posted there and the diff stays in the job log. The
+[action's README](https://github.com/nimbuscloud-ai/suss/blob/main/.github/actions/inspect-diff/README.md)
+lists every input, the outputs a later step can read, and how to turn
+the comment off for forks.
 
 ## Run it earlier than this, too
 
@@ -26,9 +63,9 @@ agent writes the code: it will satisfy every gate it can see, and a
 fact it gets before it decides changes what it writes.
 
 So run `check` and `inspect --diff` in whatever loop produces your
-code, and keep the job below as the backstop.
+code, and keep the jobs on this page as the backstop.
 
-## GitHub Actions
+## Fail the job on a finding
 
 ```yaml
 name: suss
@@ -85,20 +122,17 @@ pairs with a consumer read out of axios call sites.
 
 ## JSON output for downstream tooling
 
-`--json` emits findings as JSON rather than human text. It's
-useful for PR-comment bots, dashboards, and dedicated reporting
-steps:
+`--json` emits findings as JSON rather than human text, for a
+dashboard or a reporting step of your own:
 
 ```yaml
 - id: check
   run: npx suss check --dir summaries/ --json -o findings.json
   continue-on-error: true
 
-- name: Post to PR
+- name: Count the errors
   if: always()
-  uses: ./.github/actions/post-suss-findings
-  with:
-    findings: findings.json
+  run: node -e 'const r = require("./findings.json"); console.log(r.findings.filter((f) => f.severity === "error").length)'
 ```
 
 `check --json` writes one object, not a bare array. `findings` is the
@@ -147,9 +181,10 @@ syntax and the three effects (`mark` / `downgrade` / `hide`).
   `include` in your tsconfig excludes source files, suss can't see
   them. Use the same tsconfig your build uses (or a superset).
 - **Don't gate on `suss check` alone for breaking-change reviews.**
-  Use `suss inspect --diff before.json after.json` in parallel: it
-  shows which transitions changed, rather than which pair mismatched.
-  Add `--json` when something other than a person reads it.
+  Run the behavior diff beside it: it shows which transitions changed,
+  rather than which pair mismatched. The action at the top of this
+  page posts it; `suss inspect --diff before.json after.json --json`
+  is the same diff for something other than a person to read.
 - **A check that pairs nothing fails.** It has nothing to report,
   which looks the same as both sides agreeing, so `suss check --dir
   summaries/` exits non-zero when that happens. Pass `--allow-empty`
