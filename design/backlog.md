@@ -108,6 +108,36 @@ show a matched internal drop plus consumer rise as a category
 move rather than a regression. Today this costs a baseline
 refresh and a sentence in the PR.
 
+### Which write a read sees {#reaching-definitions}
+
+A name written more than once resolves when the writes run in
+order at module level, or when every write is the same
+construction (a client cached on first use, a config object
+assigned under one guard). Both of those come from the writes
+alone. What does not resolve is a name that different branches
+assign different values:
+
+```ts
+let db: { name: string };
+if (flag) {
+  db = { name: "a" };
+} else {
+  db = { name: "b" };
+}
+```
+
+Saying which write a later read sees is reaching definitions,
+and it needs control-flow facts the adapters do not emit. On
+suss itself the names this leaves unresolved are cursors in
+tree walks (`current`, `root`, `node`), and nothing asks what
+they were assigned. `reassignedNamesUnstated` counts them per
+run.
+
+The trigger is a pack asking about a name of this kind on field
+code. The likely first shape is per-branch facts, so a rule can
+say a name is one of two values and a reader can accept both
+when they agree on what it asks about.
+
 ### `suss emit --format fast-check` (summaries as generated tests)
 
 A summary already contains what a property test needs: the
