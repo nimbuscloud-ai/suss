@@ -20,7 +20,7 @@ exports[`inspect --diff output snapshots > shows changed transition 1`] = `
 `;
 
 exports[`inspect --diff output snapshots > shows new and removed summaries 1`] = `
-"+ client:GET /users/{id}
+"+ client:GET /users/{id}::loadUser
   new client with 2 transitions
 
 - handler:GET /users/{id}
