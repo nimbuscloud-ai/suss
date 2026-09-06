@@ -292,14 +292,10 @@ the decision of what fails the build. Start at `error`. Tighten to
 `warning` when the accepted findings are all in `.sussignore.yml` and
 a new warning means something.
 
-**What a wrong answer looks like.** A diff that reports a transition
-as removed and added again with the same status and fields. The guard
-on that path changed (a new branch before it narrows when it runs)
-and the rendering shows the two as separate entries rather than one
-changed one. Read the `+` and `-` pair as one change. A diff that is
-quiet after a change you know altered behavior means the changed code
-is behind a call suss could not follow, and step 1's `Could not
-follow` line under that route says which.
+**What a wrong answer looks like.** A diff that is quiet after a
+change you know altered behavior. The changed code is behind a call
+suss could not follow, and step 1's `Could not follow` line under
+that route says which.
 
 ## 6. Reuse the summaries
 
