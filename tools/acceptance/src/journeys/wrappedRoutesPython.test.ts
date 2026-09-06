@@ -34,7 +34,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
     const inspect = runSuss(["inspect", summariesFile]);
     expect(inspect.status, inspect.stderr).toBe(0);
     expect(inspect.stdout).toContain(
-      "wrapped by rate_limit (tenants_api/main.py), require_caller (tenants_api/dependencies.py), require_admin (tenants_api/dependencies.py)",
+      "POST /v1/tenants  (fastapi handler | line 33 | wrapped by rate_limit (tenants_api/main.py), require_caller (tenants_api/dependencies.py), require_tenant_header (tenants_api/dependencies.py), +2 more",
     );
     expect(inspect.stdout).toContain(
       "on_error (tenants_api/main.py) on a throw",
@@ -42,7 +42,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
     expect(inspect.stdout).toContain("429  (from rate_limit)");
   });
 
-  it("points the route at the app's dependency, the middleware, its own dependency and the error handler", () => {
+  it("points the route at the app's dependency, the middleware, the router's and its own dependency, and the error handler", () => {
     const summaries = readJson(summariesFile) as BehavioralSummary[];
 
     expect(
@@ -51,6 +51,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
       applied: [
         { file: "tenants_api/main.py", name: "rate_limit" },
         { file: "tenants_api/dependencies.py", name: "require_caller" },
+        { file: "tenants_api/dependencies.py", name: "require_tenant_header" },
         { file: "tenants_api/dependencies.py", name: "require_admin" },
         { file: "tenants_api/main.py", name: "on_error", onThrow: true },
       ],
@@ -62,6 +63,21 @@ describe("read a FastAPI service whose statuses come from around the handler", (
         { file: "tenants_api/main.py", name: "on_error", onThrow: true },
       ],
     });
+  });
+
+  it("gives a route written in another file on an imported router that router's dependency", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+
+    const audit = routeFor(summaries, "GET", "/v1/tenants/{tenant_id}/audit");
+    expect(audit.metadata?.wrappers).toEqual({
+      applied: [
+        { file: "tenants_api/main.py", name: "rate_limit" },
+        { file: "tenants_api/dependencies.py", name: "require_caller" },
+        { file: "tenants_api/dependencies.py", name: "require_tenant_header" },
+        { file: "tenants_api/main.py", name: "on_error", onThrow: true },
+      ],
+    });
+    expect(statusesOf(audit)).toEqual([429, 401, 400, 200]);
   });
 
   it("puts the statuses on the wrappers that produce them", () => {
@@ -82,19 +98,20 @@ describe("read a FastAPI service whose statuses come from around the handler", (
 
     expect(
       statusesOf(routeFor(summaries, "GET", "/v1/tenants/{tenant_id}")),
-    ).toEqual([429, 401, 404, 200]);
+    ).toEqual([429, 401, 400, 404, 200]);
     const create = routeFor(summaries, "POST", "/v1/tenants");
-    expect(statusesOf(create)).toEqual([429, 401, 403, 201, 500]);
+    expect(statusesOf(create)).toEqual([429, 401, 400, 403, 201, 500]);
     expect(fromOf(create)).toEqual([
       "rate_limit",
       "require_caller",
+      "require_tenant_header",
       "require_admin",
       undefined,
       "on_error",
     ]);
     expect(
       statusesOf(routeFor(summaries, "DELETE", "/v1/tenants/{tenant_id}")),
-    ).toEqual([429, 401, 403, 204]);
+    ).toEqual([429, 401, 400, 403, 204]);
   });
 });
 

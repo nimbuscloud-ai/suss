@@ -9,6 +9,11 @@ def require_caller(request: Request):
     return request.headers["authorization"]
 
 
+def require_tenant_header(request: Request):
+    if request.headers.get("x-tenant") is None:
+        raise HTTPException(status_code=400, detail="x-tenant header required")
+
+
 def require_admin(request: Request):
     if request.headers.get("x-role") != "admin":
         raise HTTPException(status_code=403, detail="forbidden")

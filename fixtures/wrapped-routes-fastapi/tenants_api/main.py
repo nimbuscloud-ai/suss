@@ -4,6 +4,8 @@
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
+import tenants_api.audit  # noqa: F401  registers its routes on the tenants router
+from tenants_api.admin import router as admin
 from tenants_api.dependencies import require_caller
 from tenants_api.tenants import router as tenants
 
@@ -23,6 +25,7 @@ async def on_error(request: Request, exc: ValueError):
 
 
 app.include_router(tenants)
+app.include_router(admin)
 
 
 @app.get("/health")

@@ -896,7 +896,14 @@ function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
     facts: options.ctx.facts,
   });
   const terminals = bodyTerminals(body, raised);
-  if (terminals.length < 2) {
+  // A lone `return {"status": "ok"}` says what the response is even though
+  // the decorator says nothing, so it is read the same as a body with
+  // several exits.
+  const soleReturnWritesBody =
+    terminals.length === 1 &&
+    terminals[0]?.type === "return" &&
+    returnedBodyShape(terminals[0].statement) !== null;
+  if (terminals.length < 2 && !soleReturnWritesBody) {
     return null;
   }
 
@@ -907,7 +914,7 @@ function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
     effects: options.effects,
     branchOf: (found) => terminalBranchOf(found, options.ctx),
   });
-  return branches.length > 1 ? branches : null;
+  return branches.length > 1 || soleReturnWritesBody ? branches : null;
 }
 
 /** What one return says about the status, through a response the library builds first and the returned tuple second. */

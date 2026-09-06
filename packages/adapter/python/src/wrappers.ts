@@ -30,7 +30,8 @@ import {
 } from "./paths/effects.js";
 import { raisedResponses } from "./paths/raisedResponses.js";
 import { resolveNamedFunctionArgument } from "./reach/resolveCallee.js";
-import { constructionOf } from "./routers.js";
+import { boundModuleAt, constructionOf } from "./routers.js";
+import { resolveName } from "./scope.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -214,33 +215,59 @@ export class PythonWrapperIndex {
   }
 
   private ownRoutesOf(query: RouteWrapperQuery): Registered[] {
-    const objectName = query.classification.objectName;
-    if (objectName === null) {
-      return [];
-    }
-    const scope =
-      query.classification.objectModule?.moduleScope ??
-      query.module.moduleScope;
-    const objectFile =
-      query.classification.objectModule === undefined
-        ? query.file
-        : this.fileOfModule(query.classification.objectModule);
-    if (objectFile === null) {
+    const site = this.objectSiteOf(query);
+    if (site === null) {
       return [];
     }
     for (const form of query.pattern.wrappers ?? []) {
-      const match = registrarOf(objectName, scope, {
+      const match = registrarOf(site.name, site.scope, {
         pack: query.pack,
         pattern: query.pattern,
         form,
       });
       if (match !== null && match.registrar.covers === "ownRoutes") {
-        return (
-          this.ownRoutes.get(constructionKey(objectFile, match.call)) ?? []
-        );
+        return this.ownRoutes.get(constructionKey(site.file, match.call)) ?? [];
       }
     }
     return [];
+  }
+
+  /**
+   * Where the decorator's object was built: the route's own file, the file
+   * a project wrapper function is written in, or the file an imported
+   * router comes from. The name is the one that file binds it under.
+   */
+  private objectSiteOf(
+    query: RouteWrapperQuery,
+  ): { file: string; scope: Scope; name: string } | null {
+    const name = query.classification.objectName;
+    if (name === null) {
+      return null;
+    }
+    const wrapperModule = query.classification.objectModule;
+    if (wrapperModule !== undefined) {
+      const file = this.fileOfModule(wrapperModule);
+      return file === null
+        ? null
+        : { file, scope: wrapperModule.moduleScope, name };
+    }
+    const binding = resolveName(query.module.moduleScope, name);
+    if (binding?.kind !== "importFrom") {
+      return { file: query.file, scope: query.module.moduleScope, name };
+    }
+    const target = boundModuleAt(
+      query.file,
+      { module: binding.module, relativeLevel: binding.relativeLevel },
+      this.filesByPath,
+      { roots: this.options.roots },
+    );
+    return target === null
+      ? null
+      : {
+          file: target.file,
+          scope: target.module.moduleScope,
+          name: binding.importedName,
+        };
   }
 
   private fileOfModule(module: ModuleBinding): string | null {

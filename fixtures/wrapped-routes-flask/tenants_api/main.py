@@ -13,6 +13,7 @@ ns = Namespace("tenants", path="/v1/tenants")
 def require_caller():
     if request.headers.get("authorization") is None:
         return {"error": "unauthorized"}, 401
+    return None
 
 
 @api.errorhandler(ValueError)

@@ -175,17 +175,22 @@ describe("FastAPI wrappers", () => {
       applied: [
         { file: "tenants_api/main.py", name: "rate_limit" },
         { file: "tenants_api/dependencies.py", name: "require_caller" },
+        { file: "tenants_api/dependencies.py", name: "require_tenant_header" },
         { file: "tenants_api/dependencies.py", name: "require_admin" },
         { file: "tenants_api/main.py", name: "on_error", onThrow: true },
       ],
     });
-    expect(wrappersOf(routeFor(summaries, "GET", "/health"))).toEqual({
+    const appOnly = {
       applied: [
         { file: "tenants_api/main.py", name: "rate_limit" },
         { file: "tenants_api/dependencies.py", name: "require_caller" },
         { file: "tenants_api/main.py", name: "on_error", onThrow: true },
       ],
-    });
+    };
+    expect(wrappersOf(routeFor(summaries, "GET", "/health"))).toEqual(appOnly);
+    expect(wrappersOf(routeFor(summaries, "GET", "/admin/stats"))).toEqual(
+      appOnly,
+    );
   });
 
   it("gives each wrapper a summary of its own with the statuses it produces", async () => {
@@ -195,6 +200,7 @@ describe("FastAPI wrappers", () => {
     );
 
     expect(byName.get("require_caller")).toEqual([401]);
+    expect(byName.get("require_tenant_header")).toEqual([400]);
     expect(byName.get("require_admin")).toEqual([403]);
     expect(byName.get("rate_limit")).toEqual([429]);
     expect(byName.get("on_error")).toEqual([500]);
@@ -204,26 +210,58 @@ describe("FastAPI wrappers", () => {
     const summaries = await extract("wrapped-routes-fastapi", fastapiLike);
 
     const read = routeFor(summaries, "GET", "/v1/tenants/{tenant_id}");
-    expect(statusesOf(read)).toEqual([429, 401, 404, 200]);
+    expect(statusesOf(read)).toEqual([429, 401, 400, 404, 200]);
     expect(fromOf(read)).toEqual([
       "rate_limit",
       "require_caller",
+      "require_tenant_header",
       undefined,
       undefined,
     ]);
 
     const create = routeFor(summaries, "POST", "/v1/tenants");
-    expect(statusesOf(create)).toEqual([429, 401, 403, 201, 500]);
+    expect(statusesOf(create)).toEqual([429, 401, 400, 403, 201, 500]);
     expect(fromOf(create)).toEqual([
       "rate_limit",
       "require_caller",
+      "require_tenant_header",
       "require_admin",
       undefined,
       "on_error",
     ]);
 
     const remove = routeFor(summaries, "DELETE", "/v1/tenants/{tenant_id}");
-    expect(statusesOf(remove)).toEqual([429, 401, 403, 204]);
+    expect(statusesOf(remove)).toEqual([429, 401, 400, 403, 204]);
+  });
+
+  it("gives a route written in another file on an imported router that router's dependency", async () => {
+    const summaries = await extract("wrapped-routes-fastapi", fastapiLike);
+
+    const audit = routeFor(summaries, "GET", "/v1/tenants/{tenant_id}/audit");
+    expect(wrappersOf(audit)).toEqual({
+      applied: [
+        { file: "tenants_api/main.py", name: "rate_limit" },
+        { file: "tenants_api/dependencies.py", name: "require_caller" },
+        { file: "tenants_api/dependencies.py", name: "require_tenant_header" },
+        { file: "tenants_api/main.py", name: "on_error", onThrow: true },
+      ],
+    });
+    expect(statusesOf(audit)).toEqual([429, 401, 400, 200]);
+  });
+
+  it("reads a dependency written inside Annotated[...] the same as one written as a default", async () => {
+    const summaries = await extract("wrapped-routes-fastapi", fastapiLike);
+
+    const remove = routeFor(summaries, "DELETE", "/v1/tenants/{tenant_id}");
+    expect(wrappersOf(remove)).toEqual({
+      applied: [
+        { file: "tenants_api/main.py", name: "rate_limit" },
+        { file: "tenants_api/dependencies.py", name: "require_caller" },
+        { file: "tenants_api/dependencies.py", name: "require_tenant_header" },
+        { file: "tenants_api/dependencies.py", name: "require_admin" },
+        { file: "tenants_api/main.py", name: "on_error", onThrow: true },
+      ],
+    });
   });
 });
 
