@@ -244,7 +244,7 @@ three patterns.
 
 Two things go into CI. `check --fail-on error` fails the build on an
 error-severity finding, and `inspect --diff` on the base and the head
-of a pull request reports what the change did to each endpoint:
+of a pull request reports what the change did to each unit:
 
 ```yaml
 - uses: actions/checkout@v4
@@ -285,7 +285,7 @@ handler:GET /users/{id}
 Three lines say that a deleted account now gets a `200` instead of a
 `410` and that `email` left the response, whichever of the thousand
 lines in the pull request did it. A quiet diff says the change did not
-alter what any endpoint does, which is the answer a refactor wants.
+alter what any unit does, which is the answer a refactor wants.
 
 **What it costs.** Two extracts per pull request instead of one, and
 the decision of what fails the build. Start at `error`. Tighten to

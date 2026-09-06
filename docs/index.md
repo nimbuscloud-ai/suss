@@ -4,7 +4,7 @@ layout: home
 hero:
   name: suss
   text: Code is written faster than anyone can read it. suss tells you what it does.
-  tagline: "It reads your code and writes down what each endpoint does on every path. Read that on a pull request instead of the diff, hand it to your agent before it edits, or check it against the spec you published. Deterministic, no model in it, TypeScript, Python and Ruby."
+  tagline: "It reads your code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches. Read that on a pull request instead of the diff, hand it to your agent before it edits, or check it against the spec you published. Deterministic, no model in it, TypeScript, Python and Ruby."
   actions:
     - theme: brand
       text: Run it on one service
@@ -18,7 +18,7 @@ hero:
 
 features:
   - title: What did this pull request do
-    details: "Run inspect --diff on the base and the head. It reports which endpoints changed behavior and how, whichever lines the diff touched. A field that left one response branch is one line here and one line in a thousand there."
+    details: "Run inspect --diff on the base and the head. It reports which units changed behavior and how, whichever lines the diff touched. A field that left one response branch is one line here and one line in a thousand there."
     link: /guides/ci-integration
     linkText: Put it on pull requests
   - title: Let the agent ask first

@@ -1,8 +1,8 @@
 # suss
 
-Reads your code and checks what each endpoint does against the clients, specs and infrastructure that depend on it. TypeScript, Python and Ruby.
+Reads your code and checks what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.
 
-Code is written faster than anyone can read it. A thousand-line pull request lands several times a day, and a reviewer cannot keep all of it in their head. Reading the diff says what the text changed, not what the service now does, and tests written alongside the change check what its author meant. suss reads the code and writes down what each endpoint does on every path, so a reviewer, a pipeline or an agent can read that instead. It is deterministic and has no model in it.
+Code is written faster than anyone can read it. A thousand-line pull request lands several times a day, and a reviewer cannot keep all of it in their head. Reading the diff says what the text changed, not what the service now does, and tests written alongside the change check what its author meant. suss reads the code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches, so a reviewer, a pipeline or an agent can read that instead. It is deterministic and has no model in it.
 
 ## Read one service
 
@@ -44,7 +44,7 @@ The same summaries are available to a coding agent over MCP, so it can ask what 
 
 ## Read what a change did
 
-`inspect --diff` compares two summary files. Run it on the base and the head of a pull request and it reports what the change did to each endpoint, whichever lines the diff touched:
+`inspect --diff` compares two summary files. Run it on the base and the head of a pull request and it reports what the change did to each unit, whichever lines the diff touched:
 
 ```
 handler:GET /users/{id}
@@ -60,8 +60,8 @@ A deleted account used to get a `410` and now gets a `200` with `status: "delete
 
 ## What you use it for
 
-- A service you did not write, or one an agent changed an hour ago. `inspect` prints what each endpoint does on every path, in a page, without reading the source.
-- A pull request too large to read. `inspect --diff` on the base and the head says which endpoints changed behavior and how.
+- A service you did not write, or one an agent changed an hour ago. `inspect` prints what each handler, consumer and query does on every path, in a page, without reading the source.
+- A pull request too large to read. `inspect --diff` on the base and the head says which units changed behavior and how.
 - An agent about to edit something. Over MCP it asks what a route reaches, what writes a table, or what calls a function, and gets file and line for each.
 - A spec that drifted. `suss contract` reads an OpenAPI document, a Prisma schema or a CloudFormation template into the same form, and `check` reports where the code and the document disagree.
 - A field you want to remove. `check` pairs every handler with the clients that call it and says which client reads the field, or never handles a status the handler produces.

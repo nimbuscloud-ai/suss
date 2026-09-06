@@ -39,7 +39,7 @@ function pageUrl(relativePath: string): string {
 export default defineConfig({
   title: "suss",
   description:
-    "Reads your code and checks what each endpoint does against the clients, specs and infrastructure that depend on it. TypeScript, Python and Ruby.",
+    "Reads your code and checks what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.",
   lang: "en-US",
   sitemap: { hostname: SITE_ORIGIN },
   // GitHub Pages serves from /<repo>/, so assets + links resolve

@@ -36,9 +36,14 @@ fastest.
 The one-sentence description, for the repo, npm and anywhere else a
 description field exists:
 
-> Reads your code and checks what each endpoint does against the
-> clients, specs and infrastructure that depend on it. TypeScript,
-> Python and Ruby.
+> Reads your code and checks what it does at every boundary, a route,
+> a table or a queue, against the clients, specs and infrastructure on
+> the other side. TypeScript, Python and Ruby.
+
+The sentence says "boundary" rather than "endpoint" because a
+summary is per unit, and a boundary is a table, a queue or an event
+bus as often as a route. A reader with a Lambda and SQS service would
+read "endpoint" and move on.
 
 Taglines, for a hero, a post title or a talk slide. Use one at a time.
 
@@ -87,7 +92,7 @@ further. Each rung costs more and asks more of the codebase. The guide
 under `docs/guides/adopting-suss.md` walks these in order.
 
 1. Read one service. `extract` and `inspect` on a single service. The
-   output is a tree of what each endpoint does on every path. There
+   output is a tree of what each unit does on every path. There
    are no findings to triage. The engineer learns whether suss reads
    their stack, and where it says it could not follow something.
 2. Question it. `suss ask` from the shell, or the MCP server from the
