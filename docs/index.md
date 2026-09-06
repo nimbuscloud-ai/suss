@@ -10,7 +10,7 @@ hero:
       text: Run it on one service
       link: /guides/adopting-suss
     - theme: alt
-      text: Walk an example first
+      text: Tutorial
       link: /tutorial/get-started
     - theme: alt
       text: GitHub
@@ -23,7 +23,7 @@ features:
     linkText: Put it on pull requests
   - title: Let the agent ask first
     details: "Over MCP the agent can ask what a route reaches, what writes a table and what calls a function, and get file and line for each, from the working tree as it is now. It asks before it changes something instead of grepping and guessing."
-    link: /guides/adopting-suss#question-it
+    link: /guides/mcp-server
     linkText: Set up the MCP server
   - title: Did I break a caller
     details: "You changed what a handler returns. suss compares it against every caller it can see and reports the ones that read a field you stopped sending, or never handle a status you started returning."
