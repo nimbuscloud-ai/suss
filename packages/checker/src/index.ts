@@ -11,6 +11,7 @@ import { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 import { checkContractAgreement } from "./contract/contractAgreement.js";
 import { checkContractCompleteness } from "./contract/contractCompleteness.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
+import { checkContractImplementation } from "./contract/contractImplementation.js";
 import { checkGraphqlContractAgreement } from "./contract/graphqlContractAgreement.js";
 import { checkProviderCoverage } from "./coverage/providerCoverage.js";
 import { checkResponseMisread } from "./coverage/responseMisread.js";
@@ -66,6 +67,7 @@ export { checkConsumerContract } from "./consumer/consumerContract.js";
 export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 export { checkContractAgreement } from "./contract/contractAgreement.js";
 export { checkContractConsistency } from "./contract/contractConsistency.js";
+export { checkContractImplementation } from "./contract/contractImplementation.js";
 export {
   contractDeclaresStatus,
   type DeclaredContract,
@@ -283,6 +285,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // and never look at consumers, so they run outside pairing.
   findings.push(...checkContractAgreement(summaries));
   findings.push(...checkContractCompleteness(summaries));
+  findings.push(...checkContractImplementation(summaries, pairInfo));
   findings.push(...checkGraphqlContractAgreement(summaries));
   findings.push(...checkComponentStoryAgreement(summaries));
   findings.push(...checkRenderProps(summaries));

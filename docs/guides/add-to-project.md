@@ -208,7 +208,9 @@ npx suss check --dir summaries/
 Where the other side is a schema or a spec rather than code, `contract`
 produces it in the same format. A Prisma schema becomes the provider
 for your query call sites, an OpenAPI document becomes the provider for
-your client:
+your client. An OpenAPI document beside the handlers it describes is
+compared with them too, so a service with its own spec and no client
+in the run still gets checked:
 
 ```bash
 npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json

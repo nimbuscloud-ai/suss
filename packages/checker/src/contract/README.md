@@ -1,21 +1,25 @@
 # contract/
 
-This module runs three contract-level checks: a provider's implementation against its own declared contract, consumer coverage of the declared statuses, and agreement between contracts from several sources.
+This module runs the contract-level checks: a provider's implementation against its own declared contract, consumer coverage of the declared statuses, an extracted handler against a separate document for the same route, and agreement between contracts from several sources.
 
 ## Place in the pipeline
 
 `checkAll()` runs these after pairing. Each check works on a different kind of input:
 
 - **Consistency**: one provider's transitions against its own declared contract (does the implementation match what's documented?).
+- **Implementation**: an extracted handler against the document (`suss contract --from openapi`) that describes the same route. The document is a provider too, so pairing never puts the two together; this pass groups them by boundary key and records each pair it compares, so the run counts as a comparison and neither side is listed as unmatched.
+- **Completeness**: operations a document declares that no extracted handler implements.
 - **Agreement**: N sources describing the same boundary against each other (do the OpenAPI spec and the AppSync schema agree on the response shape?).
 
-Both take summaries, their declared contracts (parsed from `metadata.http.declaredContract`), and provider gaps (mismatches already caught upstream). They emit `providerContractViolation`, `consumerContractViolation`, and `contractDisagreement` findings.
+All take summaries, their declared contracts (parsed from `metadata.http.declaredContract`), and provider gaps (mismatches already caught upstream). They emit `providerContractViolation`, `consumerContractViolation`, `contractOperationUnimplemented` and `contractDisagreement` findings.
 
 ## Key files
 
 - `declaredContract.ts:readDeclaredContract` parses the declared contract out of a summary's metadata.
 - `declaredContract.ts:statusAccessorsFor` / `bodyAccessorsFor` give the property names the consumer uses to read response fields. When the metadata is missing, they fall back to `["status", "statusCode"]` and `["body"]`, which covers hand-written and older summaries.
 - `contractConsistency.ts:checkContractConsistency` compares a provider's transitions against its declared schema.
+- `contractImplementation.ts:checkContractImplementation` compares a handler with no contract of its own against a document at the same boundary. A status the handler produces that the document leaves out is an error. A status the document declares that no path produces is a warning, and a declared 5XX is left alone because the framework usually produces those. Bodies go through the same comparison as consistency.
+- `contractCompleteness.ts:checkContractCompleteness` reports declared operations no handler implements.
 - `contractAgreement.ts:checkContractAgreement` checks that the contracts from N sources agree on status sets and body shapes for the same boundary.
 
 ## Ranges and `default`

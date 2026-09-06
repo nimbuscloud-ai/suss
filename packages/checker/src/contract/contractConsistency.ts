@@ -9,11 +9,16 @@ import {
 import { consumerHandlesStatus } from "../coverage/statusRanges.js";
 import {
   contractDeclaresStatus,
+  type DeclaredContract,
   readDeclaredContract,
   statusAccessorsFor,
 } from "./declaredContract.js";
 
-import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  BoundaryBinding,
+  Finding,
+} from "@suss/behavioral-ir";
 
 export function checkContractConsistency(
   provider: BehavioralSummary,
@@ -142,6 +147,27 @@ export function checkContractConsistency(
     return findings;
   }
 
+  findings.push(
+    ...checkBodiesAgainstDeclared(provider, contract, boundary, consumer),
+  );
+
+  return findings;
+}
+
+/**
+ * Each body the provider returns on a declared status, against the
+ * body the contract declares for it. `other` is the summary on the
+ * finding's consumer side: the caller in a pair, or the document the
+ * contract came from when no caller is in the run.
+ */
+export function checkBodiesAgainstDeclared(
+  provider: BehavioralSummary,
+  contract: DeclaredContract,
+  boundary: BoundaryBinding,
+  other: BehavioralSummary,
+): Finding[] {
+  const findings: Finding[] = [];
+
   for (const declared of contract.responses) {
     if (declared.body === null) {
       continue;
@@ -167,7 +193,7 @@ export function checkContractConsistency(
           kind: "providerContractViolation",
           boundary,
           provider: makeSide(provider, pt.id),
-          consumer: makeSide(consumer),
+          consumer: makeSide(other),
           description: `Handler returns a body on status ${declared.statusCode} that does not match the declared schema`,
           severity: "error",
         });
@@ -177,7 +203,7 @@ export function checkContractConsistency(
         kind: "lowConfidence",
         boundary,
         provider: makeSide(provider, pt.id),
-        consumer: makeSide(consumer),
+        consumer: makeSide(other),
         description: `Handler returns a body on status ${declared.statusCode} that could not be compared with the declared schema`,
         severity: "info",
       });
