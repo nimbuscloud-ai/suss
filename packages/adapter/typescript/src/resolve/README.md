@@ -59,6 +59,7 @@ barrel forwarding a dependency's function would look like project code.
 | `noDeclaration` | Nothing declares the callee, which is what a call on an untyped value comes to. | no |
 | `callerSupplied` | The callee is a parameter of the function being scanned, so the call runs whatever that function's caller passed in: a middleware's `next`, a callback handed to a higher-order helper. | no |
 | `multipleReceivers` | A registration whose receiver comes down to more than one of the pack's own routables, which is what a helper called with two different apps leaves behind. Discovery rather than the closure records this one, since the call it stopped at is the registration itself. | yes |
+| `unresolvedWrapper` | Middleware registered as a call, `app.use(pickMiddleware())`, whose returned function the store could not settle on: the factory has no body, or returns two different functions. The wrapper index records it on every route the registration would have wrapped. A call into a dependency, `app.use(cors())`, is `outsideRun` and leaves nothing. | yes |
 
 The three that leave no gap fail the same test: nothing about any of them
 says the callee is code the project owns. A codebase makes tens of

@@ -65,6 +65,7 @@ export const SOUND_REACH_PATHS = [
   "throughImport",
   "throughBarrel",
   "throughTwoBarrels",
+  "throughCallReturn",
 ] as const;
 
 /**
@@ -79,21 +80,14 @@ export const SOUND_REACH_PATHS = [
 export const REACH_PATHS_FROM_A_CALLER = ["throughParameter"] as const;
 
 /**
- * The two that resolve to nothing at all, each for its own reason rather
- * than for want of a rule. A call's return would need the rule to ask
- * whether the callee unwraps, which is negation over a relation derived
- * from the rule doing the asking, and that does not stratify. A
- * factory's object argument is the `unwrapsProperty` rule that was tried
- * and taken out, because a wrapper reading several callbacks off one
+ * The one that resolves to nothing at all, for its own reason rather
+ * than for want of a rule. A call's return now resolves through a
+ * second question asked after the unwrapping one declines. A factory's
+ * object argument is the `unwrapsProperty` rule that was tried and
+ * taken out, because a wrapper reading several callbacks off one
  * config made each of them a candidate.
  */
 export const REACH_BUGS: ReproducedBug[] = [
-  {
-    dimension: "reach",
-    value: "throughCallReturn",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong: "a handler a call returns loses its boundary",
-  },
   {
     dimension: "reach",
     value: "throughFactoryArg",

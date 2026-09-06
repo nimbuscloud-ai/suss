@@ -15,6 +15,7 @@ describe("unfollowed calls", () => {
       callerSupplied: false,
       multipleReceivers: true,
       unboundParameter: true,
+      unresolvedWrapper: true,
     };
     for (const [reason, expected] of Object.entries(recorded)) {
       expect(worthRecording(reason as UnfollowedReason)).toBe(expected);
@@ -31,6 +32,8 @@ describe("unfollowed calls", () => {
       callerSupplied: "runs the function this unit's caller passed in",
       multipleReceivers: "reads as 3 different values",
       unboundParameter: "no caller in this run passes it a function by name",
+      unresolvedWrapper:
+        "registers middleware this run could not follow to one function",
     };
     for (const [reason, fragment] of Object.entries(sentences)) {
       const gap = unfollowedCallGap({

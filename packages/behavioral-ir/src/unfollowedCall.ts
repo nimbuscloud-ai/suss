@@ -23,7 +23,8 @@ import type { Gap } from "./index.js";
  * never read. `noDeclaration` is a callee nothing declares.
  * `callerSupplied` is a parameter of the function being scanned, so the
  * call runs whatever its caller handed in. `multipleReceivers` is a
- * registration whose receiver comes down to more than one thing.
+ * registration whose receiver comes down to more than one thing, and
+ * `unresolvedWrapper` one whose function the run could not settle on.
  */
 export type UnfollowedReason =
   | "noBody"
@@ -33,7 +34,8 @@ export type UnfollowedReason =
   | "noDeclaration"
   | "callerSupplied"
   | "multipleReceivers"
-  | "unboundParameter";
+  | "unboundParameter"
+  | "unresolvedWrapper";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
@@ -61,6 +63,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   callerSupplied: false,
   multipleReceivers: true,
   unboundParameter: true,
+  unresolvedWrapper: true,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -87,6 +90,8 @@ const STOP_SENTENCE: Record<
     `The call to ${callee} is made on a receiver this run reads as ${candidates ?? "several"} different values, so nothing says which one it registers on and the registration is left out`,
   unboundParameter: ({ callee }) =>
     `The call to ${callee} runs through a parameter, and no caller in this run passes it a function by name, so whatever runs there is missing from this summary`,
+  unresolvedWrapper: ({ callee }) =>
+    `The call to ${callee} registers middleware this run could not follow to one function, so whatever it does around this route is missing from this summary`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {

@@ -79,7 +79,16 @@ export function functionValueOf(
     return null;
   }
   const resolved = resolution.resolveCallable(written);
-  return resolved === null ? null : toFunctionRoot(resolved);
+  if (resolved !== null) {
+    return toFunctionRoot(resolved);
+  }
+  if (!Node.isCallExpression(written)) {
+    return null;
+  }
+  // Asked as a name first so a pack's unwrapping answer wins; only then
+  // as a factory, `requireCaller(config)` being what requireCaller returns.
+  const returned = resolution.resolveReturnedCallable(written);
+  return returned === null ? null : toFunctionRoot(returned);
 }
 
 /** The object literal this value is, written out here or named. */

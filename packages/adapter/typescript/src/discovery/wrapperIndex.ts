@@ -16,7 +16,12 @@ import { Node, type SourceFile } from "ts-morph";
 
 import { joinMountedPath } from "@suss/resolution";
 
-import { nodeId } from "../facts/extract.js";
+import { factKeyOf, nodeId } from "../facts/extract.js";
+import {
+  classifyStop,
+  declarationsBehind,
+  worthRecording,
+} from "../resolve/unfollowedCall.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import {
   registrationSubjectsOf,
@@ -25,7 +30,7 @@ import {
 } from "./registrationCall.js";
 import { functionValueOf, stringValueOf } from "./resolveValue.js";
 
-import type { WrapperReference } from "@suss/behavioral-ir";
+import type { UnfollowedCall, WrapperReference } from "@suss/behavioral-ir";
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
@@ -41,13 +46,22 @@ export interface WrapperIndex {
    */
   wrappersFor(subjectId: string): readonly WrapperReference[];
   /**
+   * The registrations on `subjectId` whose function the store could not
+   * settle on, so a route there is read without a wrapper it has.
+   */
+  unfollowedFor(subjectId: string): readonly UnfollowedCall[];
+  /**
    * The wrappers `pack` registers in `file`, as units to summarize
    * beside whatever else the file declares.
    */
   unitsIn(file: string, pack: string): readonly DiscoveredUnit[];
 }
 
-const NO_WRAPPERS: WrapperIndex = { wrappersFor: () => [], unitsIn: () => [] };
+const NO_WRAPPERS: WrapperIndex = {
+  wrappersFor: () => [],
+  unfollowedFor: () => [],
+  unitsIn: () => [],
+};
 
 /** What `functionNameOrAnon` gives back for a function with no name. */
 const ANONYMOUS = "<anon>";
@@ -85,6 +99,20 @@ export interface WrapperCandidate {
   /** Whether the function had a name of its own to go by. */
   named: boolean;
   reference: WrapperReference;
+}
+
+/** A registration whose function could not be settled on, kept per subject. */
+export interface UnresolvedRegistration {
+  subjectId: string;
+  /** Identity of the registration call, so two patterns reading it record one stop. */
+  callId: string;
+  stop: UnfollowedCall;
+}
+
+/** What one file's scan for a pattern turns up. */
+export interface WrapperScan {
+  candidates: WrapperCandidate[];
+  unresolved: UnresolvedRegistration[];
 }
 
 /**
@@ -125,22 +153,33 @@ export function buildWrapperIndex(
   }
 
   const bySubject = new Map<string, WrapperReference[]>();
+  const unfollowedBySubject = new Map<string, UnfollowedCall[]>();
   const unitsByFile = new Map<string, DiscoveredUnit[]>();
+  const stopsSeen = new Set<string>();
   let found = false;
 
   for (const [packName, work] of workByPack) {
     const candidates: WrapperCandidate[] = [];
     for (const { sourceFile, pattern, match, wraps } of work) {
-      candidates.push(
-        ...discoverWrapperRegistrations(
-          sourceFile,
-          pattern,
-          match,
-          wraps,
-          resolution,
-          mountPrefixes,
-        ),
+      const scan = discoverWrapperRegistrations(
+        sourceFile,
+        pattern,
+        match,
+        wraps,
+        resolution,
+        mountPrefixes,
       );
+      candidates.push(...scan.candidates);
+      for (const { subjectId, callId, stop } of scan.unresolved) {
+        if (stopsSeen.has(callId)) {
+          continue;
+        }
+        stopsSeen.add(callId);
+        found = true;
+        const stops = unfollowedBySubject.get(subjectId) ?? [];
+        stops.push(stop);
+        unfollowedBySubject.set(subjectId, stops);
+      }
     }
 
     for (const candidate of mostSpecific(candidates)) {
@@ -162,6 +201,7 @@ export function buildWrapperIndex(
 
   return {
     wrappersFor: (subjectId) => bySubject.get(subjectId) ?? [],
+    unfollowedFor: (subjectId) => unfollowedBySubject.get(subjectId) ?? [],
     unitsIn: (file, pack) => unitsByFile.get(unitKey(file, pack)) ?? [],
   };
 }
@@ -224,7 +264,7 @@ export function discoverWrapperRegistrations(
   wraps: WrapsPattern,
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
-): WrapperCandidate[] {
+): WrapperScan {
   const subjects = registrationSubjectsOf(
     sourceFile,
     match.importModule,
@@ -235,10 +275,11 @@ export function discoverWrapperRegistrations(
     subjects.size === 0 &&
     !storeCanFindSubjects(sourceFile, match, resolution)
   ) {
-    return [];
+    return { candidates: [], unresolved: [] };
   }
 
   const candidates: WrapperCandidate[] = [];
+  const unresolved: UnresolvedRegistration[] = [];
 
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) {
@@ -268,8 +309,13 @@ export function discoverWrapperRegistrations(
     if (targetArg === undefined) {
       return;
     }
+    const subjectId = nodeId(subjectNode);
     const target = functionValueOf(targetArg, resolution);
     if (target === null) {
+      const stop = factoryStopOf(targetArg);
+      if (stop !== null) {
+        unresolved.push({ subjectId, callId: nodeId(node), stop });
+      }
       return;
     }
     if (
@@ -284,7 +330,6 @@ export function discoverWrapperRegistrations(
       return;
     }
 
-    const subjectId = nodeId(subjectNode);
     const mountedScope =
       scope === undefined
         ? undefined
@@ -302,16 +347,63 @@ export function discoverWrapperRegistrations(
       named,
       reference: {
         file: target.getSourceFile().getFilePath(),
-        // A function written out at the registration call has no name
-        // of its own, so it goes by the method that registered it.
-        name: named ? functionNameOrAnon(target) : wraps.method,
+        name: named ? functionNameOrAnon(target) : labelFor(targetArg, wraps),
         ...(wraps.throwParam === undefined ? {} : { onThrow: true }),
         ...(mountedScope === undefined ? {} : { scope: mountedScope }),
       },
     });
   });
 
-  return candidates;
+  return { candidates, unresolved };
+}
+
+/**
+ * What a wrapper with no name of its own goes by: the factory that
+ * returned it, `requireCaller` for `app.use(requireCaller(config))`,
+ * since that is where a reader asking about a 401 wants to land. A
+ * function written out at the registration goes by the method.
+ */
+function labelFor(targetArg: Node, wraps: WrapsPattern): string {
+  return factoryNameOf(targetArg) ?? wraps.method;
+}
+
+function factoryNameOf(targetArg: Node): string | undefined {
+  const written = factKeyOf(targetArg);
+  if (!Node.isCallExpression(written)) {
+    return undefined;
+  }
+  const callee = written.getExpression();
+  if (Node.isIdentifier(callee)) {
+    return callee.getText();
+  }
+  if (Node.isPropertyAccessExpression(callee)) {
+    return callee.getName();
+  }
+  return undefined;
+}
+
+/**
+ * The stop a registration leaves when the factory it calls could not be
+ * followed to one function. A factory in a dependency leaves none, for
+ * the reason the resolve README gives: `app.use(cors())` on every route
+ * is volume, and the run already describes the dependency.
+ */
+function factoryStopOf(targetArg: Node): UnfollowedCall | null {
+  const written = factKeyOf(targetArg);
+  if (!Node.isCallExpression(written)) {
+    return null;
+  }
+  const callee = factoryNameOf(targetArg);
+  if (callee === undefined) {
+    return null;
+  }
+  const reason = classifyStop(
+    declarationsBehind(written.getExpression().getSymbol()),
+  );
+  if (!worthRecording(reason)) {
+    return null;
+  }
+  return { callee, reason: "unresolvedWrapper" };
 }
 
 /**

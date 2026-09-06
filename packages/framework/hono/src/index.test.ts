@@ -25,7 +25,7 @@ describe("honoFramework", () => {
     // Two spreads of two call patterns each, plus the loop pattern
     // each spread of httpRouteDiscovery emits, the zod-openapi
     // registration, and one wrapper pattern per app per wrapper shape.
-    expect(pack.discovery).toHaveLength(12);
+    expect(pack.discovery).toHaveLength(15);
     expect(pack.discovery[0]?.requiresImport).toEqual(["hono"]);
   });
 
@@ -308,5 +308,44 @@ describe("honoFramework, app.route mount prefix", () => {
       )
       .map((sem) => sem.path);
     expect(paths).toEqual(["/api/orders/_health"]);
+  });
+});
+
+describe("honoFramework, app.use", () => {
+  it("applies middleware registered without a path to every route", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const app = new Hono();
+        const requireCaller = async (c, next) => {
+          if (c.req.header("authorization") === undefined) {
+            return c.json({ error: "unauthorized" }, 401);
+          }
+          await next();
+        };
+        app.use(requireCaller);
+        app.use("/v1/*", async (c, next) => { await next(); });
+        app.get("/health", (c) => c.json({ ok: true }, 200));
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const health = summaries.find(
+      (s) => s.identity.boundaryBinding?.semantics?.name === "rest",
+    );
+    const wrappers = health?.metadata?.wrappers as
+      | { applied: { name: string; scope?: string }[] }
+      | undefined;
+    expect(wrappers?.applied).toEqual([
+      { file: "/app.ts", name: "requireCaller" },
+    ]);
   });
 });

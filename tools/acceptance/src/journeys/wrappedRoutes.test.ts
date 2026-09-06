@@ -118,7 +118,30 @@ describe("read a service whose statuses come from around the handler", () => {
       ],
     });
   });
+
+  it("says on every route that a factory it could not read registered something", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+
+    for (const path of ["/v1/tenants/:id", "/v1/tenants", "/health"]) {
+      const route = routeFor(summaries, path);
+      expect(unfollowedCalleesOf(route)).toContain("pickMiddleware");
+      expect(wrapperNamesOf(route)).not.toContain("pickMiddleware");
+    }
+  });
 });
+
+function wrapperNamesOf(summary: BehavioralSummary): string[] {
+  const wrappers = summary.metadata?.wrappers as
+    | { applied: { name: string }[] }
+    | undefined;
+  return (wrappers?.applied ?? []).map((one) => one.name);
+}
+
+function unfollowedCalleesOf(summary: BehavioralSummary): string[] {
+  return summary.gaps.flatMap((gap) =>
+    gap.type === "unfollowedCall" ? [gap.callee] : [],
+  );
+}
 
 function routeFor(
   summaries: BehavioralSummary[],
