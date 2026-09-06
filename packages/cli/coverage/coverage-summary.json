@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 4967,
-      "covered": 4663,
+      "total": 5048,
+      "covered": 4738,
       "skipped": 0,
-      "pct": 93.87
+      "pct": 93.85
     },
     "statements": {
-      "total": 5101,
-      "covered": 4790,
+      "total": 5186,
+      "covered": 4869,
       "skipped": 0,
-      "pct": 93.9
+      "pct": 93.88
     },
     "functions": {
-      "total": 1130,
-      "covered": 1071,
+      "total": 1157,
+      "covered": 1097,
       "skipped": 0,
-      "pct": 94.77
+      "pct": 94.81
     },
     "branches": {
-      "total": 3518,
-      "covered": 2913,
+      "total": 3580,
+      "covered": 2963,
       "skipped": 0,
-      "pct": 82.8
+      "pct": 82.76
     },
     "branchesTrue": {
       "total": 0,
@@ -579,28 +579,28 @@
   },
   "src/inspect.ts": {
     "lines": {
-      "total": 731,
-      "covered": 662,
+      "total": 789,
+      "covered": 714,
       "skipped": 0,
-      "pct": 90.56
+      "pct": 90.49
     },
     "functions": {
-      "total": 140,
-      "covered": 125,
+      "total": 163,
+      "covered": 147,
       "skipped": 0,
-      "pct": 89.28
+      "pct": 90.18
     },
     "statements": {
-      "total": 747,
-      "covered": 677,
+      "total": 809,
+      "covered": 733,
       "skipped": 0,
-      "pct": 90.62
+      "pct": 90.6
     },
     "branches": {
-      "total": 499,
-      "covered": 407,
+      "total": 539,
+      "covered": 435,
       "skipped": 0,
-      "pct": 81.56
+      "pct": 80.7
     }
   },
   "src/intentDraftCommand.ts": {
@@ -891,28 +891,28 @@
   },
   "src/run.ts": {
     "lines": {
-      "total": 220,
-      "covered": 207,
+      "total": 243,
+      "covered": 230,
       "skipped": 0,
-      "pct": 94.09
+      "pct": 94.65
     },
     "functions": {
-      "total": 23,
-      "covered": 20,
+      "total": 27,
+      "covered": 24,
       "skipped": 0,
-      "pct": 86.95
+      "pct": 88.88
     },
     "statements": {
-      "total": 225,
-      "covered": 211,
+      "total": 248,
+      "covered": 234,
       "skipped": 0,
-      "pct": 93.77
+      "pct": 94.35
     },
     "branches": {
-      "total": 299,
-      "covered": 258,
+      "total": 321,
+      "covered": 280,
       "skipped": 0,
-      "pct": 86.28
+      "pct": 87.22
     }
   },
   "src/stubDraftCommand.ts": {
