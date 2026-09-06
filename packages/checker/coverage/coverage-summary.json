@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 2931,
-      "covered": 2736,
+      "total": 2982,
+      "covered": 2784,
       "skipped": 0,
-      "pct": 93.34
+      "pct": 93.36
     },
     "statements": {
-      "total": 2996,
-      "covered": 2800,
+      "total": 3047,
+      "covered": 2848,
       "skipped": 0,
-      "pct": 93.45
+      "pct": 93.46
     },
     "functions": {
-      "total": 594,
-      "covered": 558,
+      "total": 598,
+      "covered": 562,
       "skipped": 0,
-      "pct": 93.93
+      "pct": 93.97
     },
     "branches": {
-      "total": 1971,
-      "covered": 1687,
+      "total": 1995,
+      "covered": 1707,
       "skipped": 0,
-      "pct": 85.59
+      "pct": 85.56
     },
     "branchesTrue": {
       "total": 0,
@@ -59,10 +59,10 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 55,
-      "covered": 47,
+      "total": 56,
+      "covered": 48,
       "skipped": 0,
-      "pct": 85.45
+      "pct": 85.71
     },
     "functions": {
       "total": 15,
@@ -71,10 +71,10 @@
       "pct": 86.66
     },
     "statements": {
-      "total": 56,
-      "covered": 48,
+      "total": 57,
+      "covered": 49,
       "skipped": 0,
-      "pct": 85.71
+      "pct": 85.96
     },
     "branches": {
       "total": 16,
@@ -345,10 +345,36 @@
   },
   "src/contract/contractConsistency.ts": {
     "lines": {
-      "total": 65,
-      "covered": 63,
+      "total": 68,
+      "covered": 66,
       "skipped": 0,
-      "pct": 96.92
+      "pct": 97.05
+    },
+    "functions": {
+      "total": 4,
+      "covered": 4,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 70,
+      "covered": 68,
+      "skipped": 0,
+      "pct": 97.14
+    },
+    "branches": {
+      "total": 38,
+      "covered": 36,
+      "skipped": 0,
+      "pct": 94.73
+    }
+  },
+  "src/contract/contractImplementation.ts": {
+    "lines": {
+      "total": 47,
+      "covered": 44,
+      "skipped": 0,
+      "pct": 93.61
     },
     "functions": {
       "total": 3,
@@ -357,16 +383,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 67,
-      "covered": 65,
+      "total": 47,
+      "covered": 44,
       "skipped": 0,
-      "pct": 97.01
+      "pct": 93.61
     },
     "branches": {
-      "total": 38,
-      "covered": 36,
+      "total": 24,
+      "covered": 20,
       "skipped": 0,
-      "pct": 94.73
+      "pct": 83.33
     }
   },
   "src/contract/declaredContract.ts": {
