@@ -95,26 +95,30 @@ own conditions, and the composed transition records which hook it came
 from. Joining the schema in is a later step and not needed for the
 count on the motivating service.
 
-## One finding per wrapper
+## The contract compared against the wrappers
 
-`checkContractAgreement` compares the status sets of every source on a
-boundary and reports each status one source declares and another does
-not. A handler's derived contract now includes what its wrappers
-return, so a middleware returning a status no contract declares is
-reported once per route.
+`checkContractAgreement` compares declared contracts across sources
+only and never reads a handler's transitions, so it is not where a
+wrapper's status turns into noise. The noise comes from `detectGaps`,
+which compares a route's declared responses against its own body at
+assembly, before `composeWrappers` runs. Every status a wrapper
+produces is reported as declared but never produced, once per route
+the wrapper covers, and a consumer pairing with the route turns each
+of those gaps into a `providerContractViolation`.
 
-Proposal: keep provenance on the derived contract. `readDeclaredContract`
-takes a handler's statuses from its transitions, and a transition a
-wrapper contributed has `wrappers.from` on it. The derived contract
-keeps that on each response. `compareSources` then splits its disagreements:
-a status every disagreeing route got from the same wrapper reference is
-collected across boundaries and reported once, against the wrapper's
-file and name, with the routes it reaches listed in the description. A
-status a handler produced itself is reported against the route as now.
+Proposal: run the same comparison again over the composed transitions
+and replace the assembly-time gaps. A status a wrapper produces counts
+as produced. A status the contract leaves out is reported against the
+wrapper by name, since the transition that produced it records
+`wrappers.from`. An error handler's responses count as produced on
+every route it covers, whether or not a throw was in view, because
+anything the route calls can throw at runtime.
 
-The finding kind stays `contractDisagreement`. What changes is which
-summary the `provider` side points at and how many findings there are.
-The docs note for the kind says a finding can now point at a wrapper.
+Each route keeps its own gap. Collapsing the gaps a wrapper produces
+across routes into one finding against the wrapper's summary would need
+a wrapper pointer on the gap and a grouping pass in the checker, and
+the per-route gap already says which wrapper produced the status, so
+that is left out.
 
 ## Acceptance
 
@@ -124,8 +128,10 @@ The docs note for the kind says a finding can now point at a wrapper.
 - `POST /v1/tenants` reports 401 from `requireCaller` when the
   middleware is `requireCaller(config)`.
 - Every route on the app reports 400 from `validationHook`.
-- A middleware returning 429, declared by no contract, produces one
-  finding naming the middleware and listing three routes.
+- A route that declares 400, 401 and 500 gets no gap for them once the
+  hook, the middleware and the error handler compose in, and a
+  middleware returning 429 that no contract declares gets a gap on the
+  route that says which middleware produced it.
 - `app.use(pickMiddleware())`, where `pickMiddleware` is a declaration
   with no body, produces an `unfollowedCall` gap on each route and no
   wrapper.
@@ -139,8 +145,8 @@ service, which the before-and-after in the PR states.
 The returned-callable question runs once per registration whose
 argument is a call, over facts the store already has. The constructor
 option is one more pattern in the wrapper index's per-file scan. The
-checker change groups findings it already produces. None of the three
-adds a pass.
+second contract comparison runs once per composed unit over transitions
+composition already built. None of the three adds a pass.
 
 ## Order
 
@@ -150,7 +156,7 @@ adds a pass.
    and the 500 and 503 from `onError` already compose wherever a
    handler throws in view of the walk.
 2. The constructor option.
-3. One finding per wrapper.
+3. The contract comparison run again after composition.
 
 Each step ships with its own before-and-after on the fixture and on the
 motivating service.
