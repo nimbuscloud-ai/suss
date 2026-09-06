@@ -414,9 +414,39 @@ Where it stops, and what the gap says:
 
 One callee spelling that lands on two definitions in one body, `load()` under a class body that imports its own `load` say, is placed on neither.
 
-Not followed yet: a method inherited from a base class, a callable stored in a dict or a list, a decorator's own body, a call written in a parameter default such as `Depends(get_db)`, and an attribute set on `self` in `__init__` and called elsewhere.
+Not followed yet: a method inherited from a base class, a callable stored in a dict or a list, a decorator's own body, and an attribute set on `self` in `__init__` and called elsewhere. A function written in a parameter default such as `Depends(get_db)` is not a call the route makes; it runs around the route, and the next section says how it is read.
 
 A summary's `identity.id` is the file relative to the project root plus the export path (`app/store.py::read_orders`, `app/models.py::Orders.total`), and `summary` on an effect is that id. Two summaries that would share an id are told apart by their boundary, then by their line.
+
+## What runs around a route
+
+A route's wire behavior is not only what its own body does. A FastAPI dependency that raises 401, a middleware that returns 429 and an exception handler that turns a `ValueError` into a 500 all respond for the route without appearing in it. Each of those gets a summary of its own, the route lists them under `metadata.wrappers.applied` in the order they run, and the extractor composes their transitions into the route's, with `wrappers.from` on each transition a wrapper contributed. How that composition works is in the extractor's README; this section says which registrations the adapter reads.
+
+A pack declares each way its library attaches something around a route, in `wrappers` on a discovery pattern. There are two forms:
+
+| Form | Reads | Example |
+| --- | --- | --- |
+| `dependency` | a function passed to one of `callees` inside a `keyword` list, on the app or router construction, on the route decorator, or in a parameter default | `Depends(require_caller)` |
+| `decoratedWrapper` | a function decorated with `attribute` on the app or router object | `@app.middleware("http")`, `@app.exception_handler(ValueError)`, `@app.before_request` |
+
+Each form says which constructions register it, and how far the registration reaches. A registrar with `covers: "everyRoute"` (the app) reaches every route the pack discovers; one with `covers: "ownRoutes"` (a router or namespace) reaches the routes decorated on that same object, told apart by where it was constructed. A registration is read only where the object is recognized the way a route decorator's object is, so `app = FastAPI(...)` in one module and `@app.middleware` in another are joined through the import the same way a route on an imported router is.
+
+How a wrapper's body is read depends on the form:
+
+- A `dependency` runs to completion before the handler, so each `raise` of a response status is a response of its own and every `return` hands on to the route.
+- A `decoratedWrapper` with `continuationParam` (FastAPI middleware) hands on at the statement that calls that parameter, and anything after the call is not read. A `return` that does not call it responds on its own.
+- A `decoratedWrapper` with `returnedValueResponds` (Flask's `before_request`) responds with whatever it returns and hands on only where it returns nothing.
+- A `decoratedWrapper` with `throwParam` (an exception handler) runs only for a request that raised, so its responses replace each of the route's paths that end in a `raise` the pack does not read as a response. A raised `HTTPException` or `abort` already has a status, so no handler applies to it.
+
+Wrappers run in the order the library runs them: middleware first, then dependencies from the app, the router and the route in that order, then exception handlers over what raised. Two registrations of the same function are one wrapper.
+
+Not read yet:
+
+- `include_router(router, dependencies=[...])` and `add_middleware(SomeClass)`. A dependency at the mount and a middleware given as a class are missed.
+- Which exception type a handler is for. Every handler applies to every unread raise, so a route with two handlers reports both statuses on the paths that raise.
+- A dependency's own dependencies. `Depends(f)` where `f` takes `g: str = Depends(g)` reads `f` only.
+- A parameter default that refers to something other than a function at module scope, such as a method or a variable bound inside a function.
+- Flask's `before_request` on a blueprint. A flask-restx route is decorated on a namespace, and the blueprint is where it is mounted, so only the app's hook is read.
 
 ## What a file imports from the project
 

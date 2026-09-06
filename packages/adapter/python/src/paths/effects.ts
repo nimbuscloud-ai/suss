@@ -49,7 +49,7 @@ export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
 }
 
 /** The statement a call is written in, which is the node the lowering keys on. */
-function enclosingStatement(call: PyNode, body: PyNode): PyNode | null {
+export function enclosingStatement(call: PyNode, body: PyNode): PyNode | null {
   let current: PyNode | null = call;
   while (current !== null && current.parent !== null) {
     if (current.parent.type === "block" || current.parent.id === body.id) {

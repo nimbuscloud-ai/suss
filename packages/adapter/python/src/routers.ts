@@ -667,7 +667,7 @@ function buildPatternIndex(
  * assignment back to a constructor and never a chain, the same one-hop limit
  * `classifyDecorator` uses when it traces an object.
  */
-function constructionOf(
+export function constructionOf(
   name: string,
   scope: Scope,
   importModule: string[],

@@ -57,6 +57,34 @@ describe("flaskRestxFramework", () => {
           { callee: "flask.abort", statusArgument: 0 },
           { callee: "werkzeug.exceptions.abort", statusArgument: 0 },
         ],
+        wrappers: [
+          {
+            type: "decoratedWrapper",
+            attribute: "before_request",
+            registrars: [
+              {
+                constructorName: "Flask",
+                importModule: ["flask"],
+                covers: "everyRoute",
+              },
+            ],
+            returnedValueResponds: true,
+          },
+          {
+            type: "decoratedWrapper",
+            attribute: "errorhandler",
+            registrars: [
+              {
+                constructorName: "Flask",
+                importModule: ["flask"],
+                covers: "everyRoute",
+              },
+              { constructorName: "Api", covers: "everyRoute" },
+              { constructorName: "Namespace", covers: "ownRoutes" },
+            ],
+            throwParam: 0,
+          },
+        ],
       },
     ]);
   });
