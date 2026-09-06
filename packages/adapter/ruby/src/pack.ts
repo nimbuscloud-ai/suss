@@ -68,6 +68,14 @@ export interface ControllerActions {
   responseStatusCalls?: RbStatusCall[];
   /** The number behind each name the library accepts where a status number could go, Rack's own symbol table for Rails. */
   statusCodeNames?: Record<string, number>;
+  /**
+   * The methods every controller gets without defining them, which for
+   * Rails is `params`, `render` and the rest of what `ActionController`
+   * mixes in. An action's effect list is there to show what the action
+   * reaches in the project, and nothing in the project defines these,
+   * so a receiverless call to one of them is left off that list.
+   */
+  inheritedMethodNames?: string[];
   /** Absolute path of the file this pattern's own routing came from, for the one gap `routingGaps` may report. */
   routesFile: string;
   /** The method and path a project's own routing gives one controller's action, or null when that action has none. */

@@ -98,37 +98,66 @@ function isRaise(node: RbNode): boolean {
   );
 }
 
-function isCall(node: RbNode, locals: ReadonlySet<string>): boolean {
+/** The methods a pack declared the library defines itself, so a receiverless call to one of them is not work the project does. */
+export type InheritedMethods = ReadonlySet<string>;
+
+const NO_INHERITED_METHODS: InheritedMethods = new Set<string>();
+
+/** Whether this call goes with no receiver to a method the library defines, which is how a body writes one. */
+function isInherited(node: RbNode, inherited: InheritedMethods): boolean {
+  const method = field(node, "method");
+  return (
+    field(node, "receiver") === null &&
+    method !== null &&
+    inherited.has(method.text)
+  );
+}
+
+function isCall(
+  node: RbNode,
+  locals: ReadonlySet<string>,
+  inherited: InheritedMethods,
+): boolean {
   if (node.type === "call") {
-    return !isPropertyRead(node) && !isRaise(node);
+    return (
+      !isPropertyRead(node) && !isRaise(node) && !isInherited(node, inherited)
+    );
   }
-  return isBareMethodCall(node, locals) && !RAISE_NAMES.has(node.text);
+  return (
+    isBareMethodCall(node, locals) &&
+    !RAISE_NAMES.has(node.text) &&
+    !inherited.has(node.text)
+  );
 }
 
 function collectCalls(
   node: RbNode,
   locals: ReadonlySet<string>,
+  inherited: InheritedMethods,
   found: RbNode[],
 ): RbNode[] {
   for (const child of children(node)) {
     if (OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
-    if (isCall(child, locals)) {
+    if (isCall(child, locals, inherited)) {
       found.push(child);
     }
-    collectCalls(child, locals, found);
+    collectCalls(child, locals, inherited, found);
   }
   return found;
 }
 
-/** Every call this method's own body makes, leaving out property reads and raises. */
-export function bodyCalls(definitionNode: RbNode): RbNode[] {
+/** Every call this method's own body makes, leaving out property reads, raises, and the calls a pack said the library defines. */
+export function bodyCalls(
+  definitionNode: RbNode,
+  inherited: InheritedMethods = NO_INHERITED_METHODS,
+): RbNode[] {
   const body = field(definitionNode, "body");
   if (body === null) {
     return [];
   }
-  return collectCalls(body, localNamesIn(definitionNode), []);
+  return collectCalls(body, localNamesIn(definitionNode), inherited, []);
 }
 
 /** The callee as it is written, which is what a reader matches against. */
@@ -182,13 +211,16 @@ function enclosingStatement(call: RbNode, body: RbNode): RbNode {
  * it to run. A call nobody gated says so by recording no preconditions, which
  * the IR reads as always firing.
  */
-export function invocationEffects(definitionNode: RbNode): InvocationEffect[] {
+export function invocationEffects(
+  definitionNode: RbNode,
+  inherited: InheritedMethods = NO_INHERITED_METHODS,
+): InvocationEffect[] {
   const body = field(definitionNode, "body");
   if (body === null) {
     return [];
   }
 
-  const calls = withoutChainLinks(bodyCalls(definitionNode));
+  const calls = withoutChainLinks(bodyCalls(definitionNode, inherited));
   if (calls.length === 0) {
     return [];
   }

@@ -5,9 +5,9 @@ import { invocationEffects } from "./effects.js";
 
 import type { RbNode } from "../parser.js";
 
-async function effectsFor(lines: string[]) {
+async function effectsFor(lines: string[], inherited?: ReadonlySet<string>) {
   const tree = await parseRuby(lines.join("\n"));
-  return invocationEffects(tree.rootNode.namedChildren[0] as RbNode);
+  return invocationEffects(tree.rootNode.namedChildren[0] as RbNode, inherited);
 }
 
 /** The callee of each invocation, with the conditions gating it. */
@@ -310,5 +310,37 @@ describe("ruby invocation effects", () => {
   it("leaves a bare raise out, the same as a raise with an argument", async () => {
     const effects = await effectsFor(["def index", "  raise", "end"]);
     expect(effects).toEqual([]);
+  });
+
+  it("leaves out a call to a method a pack said the library defines", async () => {
+    const effects = await effectsFor(
+      ["def index", "  list_items(params[:id])", "end"],
+      new Set(["params"]),
+    );
+    expect(shape(effects).map((row) => row[0])).toEqual(["list_items"]);
+  });
+
+  it("leaves out a declared method written with arguments of its own", async () => {
+    const effects = await effectsFor(
+      ["def index", "  render json: list_items", "end"],
+      new Set(["render"]),
+    );
+    expect(shape(effects).map((row) => row[0])).toEqual(["list_items"]);
+  });
+
+  it("records a declared name written against a receiver", async () => {
+    const effects = await effectsFor(
+      ["def index", "  ReportPage.render(json: 1)", "end"],
+      new Set(["render"]),
+    );
+    expect(shape(effects).map((row) => row[0])).toEqual(["ReportPage.render"]);
+  });
+
+  it("records a bare name no pack declared", async () => {
+    const effects = await effectsFor(
+      ["def index", "  visible_items", "end"],
+      new Set(["params"]),
+    );
+    expect(shape(effects).map((row) => row[0])).toEqual(["visible_items"]);
   });
 });

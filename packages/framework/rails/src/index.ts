@@ -38,6 +38,12 @@ export const optionsSchema = z
     configDirectory: z.string().optional(),
     /** Base classes beyond `ApplicationController` that also mark a class as a controller. */
     baseClassNames: z.array(z.string()).optional(),
+    /**
+     * Methods beyond Rails' own that every controller in this project
+     * gets without defining them, from a gem such as Devise. They are
+     * left off an action's effects the same way Rails' own are.
+     */
+    inheritedMethodNames: z.array(z.string()).optional(),
     /** Where this project's routes live, relative to `configDirectory` when there is one. Every Rails app scaffolds this at `config/routes.rb`. */
     routesFile: z.string().optional(),
   })
@@ -79,6 +85,36 @@ const RESTFUL_ACTIONS: Record<
 const RESPONSE_STATUS_CALLS = [
   { name: "render", statusKeyword: "status" },
   { name: "head", statusArgument: 0, statusKeyword: "status" },
+];
+
+/**
+ * The methods `ActionController::Base` and `ActionController::API` give
+ * every controller, so a project defines none of them and an action that
+ * writes one is not reaching anything the project owns. Each one is an
+ * instance method on one of those two bases; a controller helper a gem
+ * adds, `current_user` from Devise being the common one, belongs to that
+ * gem instead and comes in through `inheritedMethodNames`.
+ */
+const RAILS_CONTROLLER_METHODS = [
+  "params",
+  "request",
+  "response",
+  "session",
+  "cookies",
+  "flash",
+  "headers",
+  "render",
+  "head",
+  "redirect_to",
+  "redirect_back",
+  "respond_to",
+  "render_to_string",
+  "url_for",
+  "helpers",
+  "logger",
+  "action_name",
+  "controller_name",
+  "controller_path",
 ];
 
 /** The routing key `config/routes.rb` gives a controller, from the class name the adapter reads: `Admin::OrdersController` -> `admin/orders`. */
@@ -145,6 +181,10 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     defaultStatusCode: 200,
     responseStatusCalls: RESPONSE_STATUS_CALLS,
     statusCodeNames: RACK_STATUS_CODE_NAMES,
+    inheritedMethodNames: [
+      ...RAILS_CONTROLLER_METHODS,
+      ...(options.inheritedMethodNames ?? []),
+    ],
     routesFile,
     routeFor: (controllerQualifiedName, actionName) => {
       const key = controllerKeyFromQualified(controllerQualifiedName);

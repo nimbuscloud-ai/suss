@@ -208,6 +208,27 @@ describe("extraction over fixtures/ruby-rails", () => {
     ).toBe(true);
   });
 
+  it("leaves the methods Rails defines off an action's effects", async () => {
+    const { summaries } = await extractFixture();
+    const index = action(summaries, "items_controller", "index");
+    const callees = (index.transitions[0]?.effects ?? [])
+      .filter((effect) => effect.type === "invocation")
+      .map((effect) => effect.callee);
+    expect(callees).toEqual(["OrderService.new.list_items"]);
+  });
+
+  it("leaves render and head off an action's effects while still reading their status", async () => {
+    const { summaries } = await extractFixture();
+    const create = action(summaries, "items_controller", "create");
+    const callees = (create.transitions[0]?.effects ?? [])
+      .filter((effect) => effect.type === "invocation")
+      .map((effect) => effect.callee);
+    expect(callees).toEqual(["OrderService.new.list_items"]);
+    expect(create.transitions[0]?.output).toMatchObject({
+      statusCode: { type: "literal", value: 201 },
+    });
+  });
+
   it("binds a resource nested one level inside another, with the parent's own id param", async () => {
     const { summaries } = await extractFixture();
     const itemsIndex = action(summaries, "items_controller", "index");
