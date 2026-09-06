@@ -1,3 +1,8 @@
+---
+title: Glossary of suss terms
+description: One definition each for boundary, summary, code unit, terminal, pack, and the rest of the vocabulary these docs use.
+---
+
 # Glossary
 
 One canonical definition per term. Other docs link here rather than redefining. The running example throughout is a `getUser` handler for `GET /users/:id`.

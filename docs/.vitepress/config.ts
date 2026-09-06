@@ -13,6 +13,23 @@ const docsRoot = path.resolve(
   "..",
 );
 
+// The sitemap, the canonical link and the Open Graph tags each need an
+// absolute URL, which none of them can work out from `base` alone.
+const SITE_ORIGIN = "https://nimbuscloud-ai.github.io/suss/";
+
+const OG_IMAGE = `${SITE_ORIGIN}og.png`;
+
+function firstWithText(...candidates: (string | undefined)[]): string {
+  return candidates.find((candidate) => (candidate ?? "").trim() !== "") ?? "";
+}
+
+/** The public URL of a page, given the markdown file VitePress read it from. */
+function pageUrl(relativePath: string): string {
+  const withoutExtension = relativePath.replace(/\.md$/, "");
+  const clean = withoutExtension.replace(/(^|\/)index$/, "$1");
+  return `${SITE_ORIGIN}${clean}`;
+}
+
 // VitePress config: the site reads straight from docs/*.md, so
 // every existing markdown file is already a routeable page. The
 // sidebar below is the editorial grouping. It orders what's
@@ -22,7 +39,9 @@ const docsRoot = path.resolve(
 export default defineConfig({
   title: "suss",
   description:
-    "Static behavioral analysis for TypeScript, Python and Ruby. Extract, compare, and publish summaries of what your code does.",
+    "Reads your code and checks what each endpoint does against the clients, specs and infrastructure that depend on it. TypeScript, Python and Ruby.",
+  lang: "en-US",
+  sitemap: { hostname: SITE_ORIGIN },
   // GitHub Pages serves from /<repo>/, so assets + links resolve
   // relative to that prefix. Easiest toggle for local dev is
   // SUSS_DOCS_BASE: unset for root serving, set to "/suss/" for
@@ -41,6 +60,36 @@ export default defineConfig({
       },
     ],
   ],
+
+  transformHead({ pageData, siteData }) {
+    const url = pageUrl(pageData.relativePath);
+    // The home page has an empty `title`, so the fallback tests for
+    // content rather than for the key being there.
+    const title = firstWithText(
+      pageData.frontmatter.title,
+      pageData.title,
+      siteData.title,
+    );
+    const description = firstWithText(
+      pageData.frontmatter.description,
+      pageData.description,
+      siteData.description,
+    );
+
+    return [
+      ["link", { rel: "canonical", href: url }],
+      ["meta", { property: "og:type", content: "website" }],
+      ["meta", { property: "og:site_name", content: siteData.title }],
+      ["meta", { property: "og:title", content: title }],
+      ["meta", { property: "og:description", content: description }],
+      ["meta", { property: "og:url", content: url }],
+      ["meta", { property: "og:image", content: OG_IMAGE }],
+      ["meta", { name: "twitter:card", content: "summary_large_image" }],
+      ["meta", { name: "twitter:title", content: title }],
+      ["meta", { name: "twitter:description", content: description }],
+      ["meta", { name: "twitter:image", content: OG_IMAGE }],
+    ];
+  },
 
   themeConfig: {
     // Top-level nav stays small on purpose, most of the site

@@ -1,3 +1,8 @@
+---
+title: What each suss command does, step by step
+description: Trace extract, contract, check and ask end to end, with a run at each stage to compare your own output against.
+---
+
 # Pipelines
 
 A run gave you something you did not expect: a summary with no branches in it, or a route that paired with nothing. The cause is nearly always one step between your files and the output, and working out which step should not need a trip through the source. Each command below is traced end to end, with a run at each stage to compare yours against.

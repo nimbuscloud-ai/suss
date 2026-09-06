@@ -1,3 +1,8 @@
+---
+title: Find a frontend bug by pairing it against the backend
+description: Build an Express API, an OpenAPI document and a frontend with two bugs in it, then watch suss find both from source alone.
+---
+
 # Pair a frontend with a backend
 
 An Express API, an OpenAPI document, and the frontend code that calls the

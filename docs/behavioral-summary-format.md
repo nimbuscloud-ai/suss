@@ -1,3 +1,8 @@
+---
+title: The behavioral summary JSON format
+description: Field by field, the JSON a suss run writes for each code unit, and the schema that validates it.
+---
+
 # Behavioral Summary Format
 
 Version: **v0** (draft)

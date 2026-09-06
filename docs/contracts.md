@@ -1,3 +1,8 @@
+---
+title: What a contract means in suss, and the three at every boundary
+description: What kind of truth an artifact about code can tell you, the three contracts that meet at every boundary, and how bad a finding is.
+---
+
 # Contracts
 
 Your API document says `GET /invoices/:id` returns 200, 404 or 500. The handler has never produced a 500, and somebody in the web app wrote a retry path for one anyway. The panel that renders the invoice treats every 200 as a live invoice, and since last quarter the handler has been sending voided invoices back as 200 as well.

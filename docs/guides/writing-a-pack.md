@@ -1,3 +1,8 @@
+---
+title: Write a suss pack for a framework suss does not read yet
+description: Build a framework, client or runtime pack step by step, following two packs that ship today and a worked Fastify example.
+---
+
 # Writing a pack
 
 Step-by-step instructions for creating a new framework, client, or runtime pack. For the conceptual overview of what packs are, see [`packs.md`](../packs.md). For the full pattern catalogue and interface contracts, see [`reference/pack-patterns.md`](../reference/pack-patterns.md).

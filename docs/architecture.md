@@ -1,3 +1,8 @@
+---
+title: How suss turns source code into behavioral summaries
+description: Walk the pipeline from a source file to a behavioral summary, and see which package owns each step.
+---
+
 # Architecture
 
 suss extracts **behavioral summaries** from source code: structured descriptions of what each piece of code does, in terms of conditions and observable outputs. The summary is the product. Downstream tools, checkers, query layers, operate on the summaries without caring whether the source was TypeScript, Python, or anything else.

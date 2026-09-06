@@ -1,3 +1,8 @@
+---
+title: Run suss in GitHub Actions and fail a pull request on a finding
+description: Wire suss into a CI job that extracts both sides of your boundaries and exits non-zero when a caller and its provider disagree.
+---
+
 # Set up CI checking
 
 Fail the pull request that breaks a caller, while the author is

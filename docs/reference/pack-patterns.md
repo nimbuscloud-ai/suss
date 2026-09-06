@@ -1,3 +1,8 @@
+---
+title: Reference for the suss PatternPack interface
+description: Every pattern variant a pack can use, and the interface each one has to satisfy for an adapter to run it.
+---
+
 # Pack patterns
 
 Reference for the `PatternPack` interface and every pattern variant a pack can use. For the conceptual overview of what packs are and how they're categorized, see [`packs.md`](../packs.md). For step-by-step instructions on writing a new pack, see [`guides/writing-a-pack.md`](../guides/writing-a-pack.md).

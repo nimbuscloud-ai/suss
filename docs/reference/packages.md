@@ -1,3 +1,8 @@
+---
+title: The suss packages and packs, and which ones your stack needs
+description: Every pack suss ships, what each one reads, and what to install for the frameworks and contract sources you use.
+---
+
 # Packages
 
 suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources a project uses. Install the CLI and only the packs you need; nothing pulls in the whole set.

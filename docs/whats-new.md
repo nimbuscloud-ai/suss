@@ -1,3 +1,8 @@
+---
+title: What is new in suss
+description: The latest round of changes, first what they mean if you use suss and then what they mean if you work on it.
+---
+
 # What's new
 
 The latest round of changes, in two passes: what it means if you use suss, and what it means if you work on it.

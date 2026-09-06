@@ -1,3 +1,8 @@
+---
+title: Reference for the suss behavioral IR types
+description: Every type in the behavioral IR, why it has the form it does, and how the variants compose into a summary.
+---
+
 # IR Reference
 
 A type-by-type walkthrough of `@suss/behavioral-ir`. The authoritative source is `packages/behavioral-ir/src/index.ts`; each type below comes with *why* it has the form it does, when to use which variant, and how they compose.
