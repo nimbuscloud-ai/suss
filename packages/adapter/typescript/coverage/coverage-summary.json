@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 9381,
-      "covered": 8176,
+      "total": 9382,
+      "covered": 8177,
       "skipped": 0,
       "pct": 87.15
     },
     "statements": {
-      "total": 9476,
-      "covered": 8265,
+      "total": 9477,
+      "covered": 8266,
       "skipped": 0,
       "pct": 87.22
     },
@@ -2139,10 +2139,10 @@
   },
   "src/shapes/typeShapes.ts": {
     "lines": {
-      "total": 237,
-      "covered": 174,
+      "total": 238,
+      "covered": 175,
       "skipped": 0,
-      "pct": 73.41
+      "pct": 73.52
     },
     "functions": {
       "total": 26,
@@ -2151,10 +2151,10 @@
       "pct": 84.61
     },
     "statements": {
-      "total": 238,
-      "covered": 175,
+      "total": 239,
+      "covered": 176,
       "skipped": 0,
-      "pct": 73.52
+      "pct": 73.64
     },
     "branches": {
       "total": 198,
