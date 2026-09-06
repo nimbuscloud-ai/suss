@@ -196,24 +196,34 @@ class Lowerer {
     return [nested];
   }
 
+  /**
+   * `unless ok` runs its body when `ok` is false, so it reads as an `if` on
+   * the same test with the two arms the other way around. Without the swap
+   * a summary would say a branch runs on the test that skips it.
+   */
   private lowerIf(node: RbNode): StructuredStatement<RbNode> {
+    const consequence = this.lowerBlock(field(node, "consequence"));
+    const alternative = this.lowerAlternative(field(node, "alternative"));
+    const inverted = node.type === "unless";
     return {
       kind: "if",
       condition: handleOf(field(node, "condition")),
-      thenBody: this.lowerBlock(field(node, "consequence")),
-      elseBody: this.lowerAlternative(field(node, "alternative")),
+      thenBody: inverted ? (alternative ?? []) : consequence,
+      elseBody: inverted ? consequence : alternative,
       exitKind: exitKindOf(node),
     };
   }
 
-  /** `render :gone if expired?` gates one statement on one test, so it reads as an if with no else arm. */
+  /** `render :gone if expired?` gates one statement on one test, so it reads as an if with one arm, on whichever side the test puts it. */
   private lowerIfModifier(node: RbNode): StructuredStatement<RbNode> {
     const body = field(node, "body");
+    const gated = body === null ? [] : [this.lower(body)];
+    const inverted = node.type === "unless_modifier";
     return {
       kind: "if",
       condition: handleOf(field(node, "condition")),
-      thenBody: body === null ? [] : [this.lower(body)],
-      elseBody: null,
+      thenBody: inverted ? [] : gated,
+      elseBody: inverted ? gated : null,
       exitKind: exitKindOf(node),
     };
   }

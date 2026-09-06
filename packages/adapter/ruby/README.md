@@ -60,8 +60,9 @@ shared rather than written again here.
 
 | Ruby | Lowers to |
 | --- | --- |
-| `if` / `elsif` / `else`, `unless` | one `if` per test, with the elsif chain nested into the else arm |
-| `render :gone if expired?` and the `unless` spelling of it | one `if` with no else arm, over the single statement the modifier gates |
+| `if` / `elsif` / `else` | one `if` per test, with the elsif chain nested into the else arm |
+| `unless` | the same `if`, with the two arms the other way around, so a body that runs when the test fails says so |
+| `render :gone if expired?` and the `unless` spelling of it | one `if` with a single arm, on whichever side of the test the modifier puts it |
 | `while`, `until`, `for` | `loop` |
 | a call with a `do` block, such as `items.each do \|i\|` | `loop`, because the block runs per iteration |
 | `begin` / `rescue` / `ensure` | `try` |
