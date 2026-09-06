@@ -213,6 +213,38 @@ describe("inspect --diff --json", () => {
     });
   });
 
+  it("tells two same-named libraries apart by file", () => {
+    // Three repository classes each have a `list` method. Keyed by name
+    // alone, the diff used to keep one of them and drop the rest.
+    const library = (file: string): BehavioralSummary => ({
+      ...routeSummary("list", "/unused"),
+      kind: "library",
+      location: { file, range: { start: 1, end: 20 }, exportName: "list" },
+      identity: { name: "list", exportPath: ["list"], boundaryBinding: null },
+    });
+    const before = [library("src/users.ts"), library("src/teams.ts")];
+    const after = [library("src/users.ts"), library("src/invitations.ts")];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, json: true }),
+      );
+      const parsed = JSON.parse(output) as {
+        summaries: Array<{ key: string; change: string }>;
+      };
+      expect(parsed.summaries).toEqual([
+        expect.objectContaining({
+          key: "library::src/invitations.ts::list",
+          change: "added",
+        }),
+        expect.objectContaining({
+          key: "library::src/teams.ts::list",
+          change: "removed",
+        }),
+      ]);
+    });
+  });
+
   it("pairs a renamed handler by its route and a renamed caller by its name", () => {
     // A handler is usually an anonymous callback, so the route is the
     // only identity it keeps across a rename. A caller has a name of
