@@ -2,7 +2,7 @@
   "name": "@suss/cli",
   "version": "0.22.4",
   "type": "module",
-  "description": "Read TypeScript, Python and Ruby, write down what each endpoint does on every path, and check it against the clients, specs and infrastructure that depend on it.",
+  "description": "Read TypeScript, Python and Ruby, write down what the code does on every path, from the request or message that comes in to the table or queue it touches, and check it against the clients, specs and infrastructure on the other side.",
   "keywords": [
     "suss",
     "static-analysis",
