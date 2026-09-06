@@ -206,8 +206,7 @@ export function countUnmatchedReturns(
  * `return`, not a gap. `unrecorded` is everything else: a call the
  * walk saw, that wrote no terminal, and that fires on no branch
  * despite sitting before one. That last case is a call this pass
- * dropped, which is what `#501` and `#531` each looked like before
- * they were found.
+ * dropped.
  */
 export type CallAccountingOutcome =
   | "invocation"
