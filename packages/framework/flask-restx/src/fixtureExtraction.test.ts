@@ -94,6 +94,7 @@ describe("extraction over fixtures/python-webapp", () => {
       [
         "TodoList.get",
         "TodoList.post",
+        "TodoItem.get",
         "OrderDetail.get",
         "OrderDetail.delete",
         "UserList.get",
@@ -107,6 +108,22 @@ describe("extraction over fixtures/python-webapp", () => {
         "create_item",
       ].sort(),
     );
+  });
+
+  it("gives the route that aborts one transition per outcome, each with its own condition", async () => {
+    const { summaries } = await extractFixture();
+    const todoItem = summaries.find((s) => s.identity.name === "TodoItem.get");
+    expect(
+      todoItem?.transitions.map((transition) => [
+        transition.output.type === "response"
+          ? transition.output.statusCode
+          : transition.output.type,
+        transition.conditions.map((condition) => condition.type),
+      ]),
+    ).toEqual([
+      [{ type: "literal", value: 404 }, ["comparison"]],
+      [{ type: "literal", value: 200 }, ["negation"]],
+    ]);
   });
 
   it("resolves the aliased import the same way as the direct one", async () => {

@@ -2,7 +2,7 @@
 // The shared path engine is generic over the language's condition handle,
 // so the README's table of what each construct lowers to is the contract.
 
-import { field, NodeMap } from "../ast.js";
+import { field, NodeMap, NodeSet } from "../ast.js";
 
 import type {
   CaseGroup,
@@ -31,14 +31,14 @@ export interface PythonLowering {
 }
 
 /** A raise anywhere beats a return anywhere, which is what the engine expects. */
-function exitKindOf(node: PyNode): ExitKind {
+function exitKindOf(node: PyNode, thrown: NodeSet): ExitKind {
   let sawReturn = false;
   const raises = (current: PyNode): boolean => {
     for (const child of current.namedChildren) {
       if (child === null || NESTED_FUNCTION_TYPES.has(child.type)) {
         continue;
       }
-      if (child.type === "raise_statement") {
+      if (child.type === "raise_statement" || thrown.has(child)) {
         return true;
       }
       if (child.type === "return_statement") {
@@ -87,7 +87,10 @@ class Lowerer {
 
   // tree-sitter hands back a fresh wrapper object each time a child is
   // read, so a terminal is matched by its stable node id.
-  constructor(private readonly terminals: ReadonlyMap<number, PyNode>) {}
+  constructor(
+    private readonly terminals: ReadonlyMap<number, PyNode>,
+    private readonly thrown: NodeSet,
+  ) {}
 
   private attach(
     statement: StructuredStatement<PyNode>,
@@ -128,7 +131,7 @@ class Lowerer {
       condition: handleOf(field(clause, "condition")),
       thenBody: this.lowerBlock(field(clause, "consequence")),
       elseBody: this.lowerIfTail(clauses, index + 1),
-      exitKind: exitKindOf(clause),
+      exitKind: exitKindOf(clause, this.thrown),
     };
     this.attach(nested, [field(clause, "condition")]);
     return [nested];
@@ -145,7 +148,7 @@ class Lowerer {
       condition: handleOf(field(node, "condition")),
       thenBody: this.lowerBlock(field(node, "consequence")),
       elseBody: this.lowerIfTail(clauses, 0),
-      exitKind: exitKindOf(node),
+      exitKind: exitKindOf(node, this.thrown),
     };
   }
 
@@ -173,7 +176,7 @@ class Lowerer {
         finallyClause === null
           ? null
           : this.lowerBlock(childBlock(finallyClause)),
-      exitKind: exitKindOf(node),
+      exitKind: exitKindOf(node, this.thrown),
     };
   }
 
@@ -193,15 +196,24 @@ class Lowerer {
         body: this.lowerBlock(field(clause, "consequence")),
       };
     });
-    return { kind: "switch", groups, exitKind: exitKindOf(node) };
+    return { kind: "switch", groups, exitKind: exitKindOf(node, this.thrown) };
   }
 
   lower(node: PyNode): StructuredStatement<PyNode> {
-    const exit = EXIT_KINDS[node.type];
-    if (exit !== undefined) {
-      return this.attach({ kind: "exit", exit, exitKind: exitKindOf(node) }, [
+    // A call that raises inside the library leaves the unit as surely as
+    // a `raise` does, and only the caller knows which calls those are.
+    if (this.thrown.has(node)) {
+      return this.attach({ kind: "exit", exit: "throw", exitKind: "throw" }, [
         node,
       ]);
+    }
+
+    const exit = EXIT_KINDS[node.type];
+    if (exit !== undefined) {
+      return this.attach(
+        { kind: "exit", exit, exitKind: exitKindOf(node, this.thrown) },
+        [node],
+      );
     }
 
     if (node.type === "if_statement") {
@@ -218,7 +230,7 @@ class Lowerer {
           kind: "loop",
           condition: handleOf(header),
           body: this.lowerBlock(field(node, "body")),
-          exitKind: exitKindOf(node),
+          exitKind: exitKindOf(node, this.thrown),
         },
         [header],
       );
@@ -232,21 +244,29 @@ class Lowerer {
       return this.attach(this.lowerMatch(node), [field(node, "subject")]);
     }
 
-    return this.attach({ kind: "opaque", exitKind: exitKindOf(node) }, [node]);
+    return this.attach(
+      { kind: "opaque", exitKind: exitKindOf(node, this.thrown) },
+      [node],
+    );
   }
 }
 
 /**
  * Lower one function body, and say where each terminal ended up. The
  * terminals are whatever the caller wants paths to, which for a route is
- * its return statements.
+ * its return statements and the calls its pack says end the request.
+ *
+ * `thrown` is the set of statements that leave the unit without being
+ * written as a `raise`, which is what a call like Flask's `abort` does.
  */
 export function lowerPythonBody(
   body: PyNode | null,
   terminals: readonly PyNode[],
+  thrown: NodeSet = new NodeSet(),
 ): PythonLowering {
   const lowerer = new Lowerer(
     new Map(terminals.map((terminal) => [terminal.id, terminal])),
+    thrown,
   );
   return {
     statements: lowerer.lowerBlock(body),

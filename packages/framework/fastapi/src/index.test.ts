@@ -26,6 +26,18 @@ describe("fastapiFramework", () => {
         defaultStatusCode: 200,
         responseModelKeyword: "response_model",
         statusCodeKeyword: "status_code",
+        responseStatusCalls: [
+          {
+            callee: "fastapi.HTTPException",
+            statusKeyword: "status_code",
+            statusArgument: 0,
+          },
+          {
+            callee: "starlette.exceptions.HTTPException",
+            statusKeyword: "status_code",
+            statusArgument: 0,
+          },
+        ],
         routerComposition: {
           routerConstructorName: "APIRouter",
           includeMethodName: "include_router",

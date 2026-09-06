@@ -37,6 +37,7 @@ import {
 import {
   bodyStatements,
   field,
+  NodeSet,
   parameterNameAndType,
   rangeOf,
   spanOf,
@@ -54,6 +55,7 @@ import { readKey } from "./facts/values.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
 import { lowerPythonBody } from "./paths/lowering.js";
 import { predicateOf } from "./paths/predicates.js";
+import { raisedResponses } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { rawSqlEffects } from "./rawSql.js";
 import {
@@ -75,6 +77,7 @@ import type {
   RawCondition,
   RawEffect,
   RawParameter,
+  RawTerminal,
   Reading,
   SourceRange,
 } from "@suss/extractor";
@@ -84,10 +87,12 @@ import type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
   PathRepeatedSlashes,
+  PyStatusCall,
   PythonDiscoveryPattern,
   PythonPack,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { RaisedResponse } from "./paths/raisedResponses.js";
 import type { RoutePrefixResolution, RouterIndex } from "./routers.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
@@ -506,6 +511,8 @@ function classRouteUnits(
             requestBodyFromAnnotatedClass:
               pattern.annotatedClassIsRequestBody === true,
             readsReturnedStatus: pattern.statusFromReturnedTuple === true,
+            responseStatusCalls: pattern.responseStatusCalls ?? [],
+            facts: options.facts,
             injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
             definitionNode: maybeMethod,
             enclosingScope: classScope,
@@ -774,21 +781,6 @@ function statusOfReturn(
     : { kind: "status", value: status };
 }
 
-/**
- * The status a handler's own returns write, for a library that reads one
- * off the returned tuple. Anything less definite than a single status
- * every return agrees on claims nothing, so the library default cannot
- * stand in for a status the body actually sets.
- */
-/**
- * One branch per return the body writes, with the conditions that gate it.
- * The shared path engine does the enumeration; this only lowers Python into
- * the form it takes and turns each result back into a `RawBranch`.
- *
- * Null when the pack does not read a returned status, or when the body
- * writes no return worth a branch of its own, and then the caller keeps the
- * single declared branch.
- */
 type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
 
 /** A call belongs to a path when everything gating the call also gates the path. */
@@ -801,52 +793,174 @@ function effectsReaching(
   );
 }
 
-function branchesFromReturns(
-  readsReturnedStatus: boolean,
-  definitionNode: PyNode,
-  effects: readonly InvocationEffect[],
-  responseShape: DefaultedReading<TypeShape>,
-  declaredStatus: DefaultedReading<number>,
-): RawBranch[] | null {
-  if (!readsReturnedStatus) {
+/** One place a route body ends, either by returning or by raising. */
+type RouteTerminal =
+  | { type: "return"; statement: PyNode }
+  | { type: "raise"; statement: PyNode; terminal: RawTerminal };
+
+/** What every terminal in one body reads the same way. */
+interface TerminalContext {
+  readsReturnedStatus: boolean;
+  responseShape: DefaultedReading<TypeShape>;
+  declaredStatus: DefaultedReading<number>;
+}
+
+/** Everything about a branch except the conditions and the effects on the path that reaches it. */
+type TerminalBranch = Pick<RawBranch, "terminal" | "location"> &
+  Partial<Pick<RawBranch, "statusCodeReading" | "bodyShapeReading">>;
+
+/**
+ * Where a library does not read a status off a return, the return says
+ * nothing about the status, so every branch keeps whatever the decorator
+ * declared.
+ */
+function returnStatusReading(
+  statement: PyNode,
+  ctx: TerminalContext,
+): Reading<number> {
+  if (!ctx.readsReturnedStatus) {
+    return ctx.declaredStatus.reading;
+  }
+
+  const read = statusOfReturn(statement);
+  const range = rangeOf(statement);
+  if (read.kind === "status") {
+    return writtenReading(read.value, range);
+  }
+  if (read.kind === "none") {
+    return absentReading;
+  }
+  return unreadableReading(
+    "This return gives a status this reading cannot resolve to a number, so this outcome claims none",
+    range,
+  );
+}
+
+function returnBranch(statement: PyNode, ctx: TerminalContext): TerminalBranch {
+  const range = rangeOf(statement);
+  const writtenBody = returnedBodyShape(statement);
+  return {
+    terminal: {
+      kind: "response",
+      // These stay null here. The extractor fills them in from the two
+      // readings below.
+      statusCode: null,
+      body: { typeText: null, shape: null },
+      exceptionType: null,
+      message: null,
+      component: null,
+      renderTree: null,
+      delegateTarget: null,
+      emitEvent: null,
+      location: range,
+    },
+    statusCodeReading: {
+      reading: returnStatusReading(statement, ctx),
+      ...(ctx.declaredStatus.libraryDefault !== undefined
+        ? { libraryDefault: ctx.declaredStatus.libraryDefault }
+        : {}),
+    },
+    bodyShapeReading: {
+      reading:
+        writtenBody === null
+          ? ctx.responseShape.reading
+          : writtenReading(writtenBody, range),
+    },
+    location: range,
+  };
+}
+
+/**
+ * A raise says its own status, so no reading is handed over for the
+ * extractor to collapse and the library default has nothing to apply to.
+ */
+function terminalBranchOf(
+  found: RouteTerminal,
+  ctx: TerminalContext,
+): TerminalBranch {
+  const table: DispatchTable<RouteTerminal, TerminalBranch> = {
+    return: (variant) => returnBranch(variant.statement, ctx),
+    raise: (variant) => ({
+      terminal: variant.terminal,
+      location: rangeOf(variant.statement),
+    }),
+  };
+  return dispatchByType(table, found);
+}
+
+interface PerTerminalOptions {
+  definitionNode: PyNode;
+  effects: readonly InvocationEffect[];
+  module: ModuleBinding;
+  facts: Database | undefined;
+  responseStatusCalls: readonly PyStatusCall[];
+  ctx: TerminalContext;
+}
+
+/** Every terminal the body writes, in the order they are written. */
+function routeTerminals(
+  body: PyNode | null,
+  raised: readonly RaisedResponse[],
+): RouteTerminal[] {
+  const found: RouteTerminal[] = [
+    ...returnStatements(body).map(
+      (statement): RouteTerminal => ({ type: "return", statement }),
+    ),
+    ...raised.map(
+      (response): RouteTerminal => ({
+        type: "raise",
+        statement: response.statement,
+        terminal: response.terminal,
+      }),
+    ),
+  ];
+  return found.sort((a, b) => a.statement.startIndex - b.statement.startIndex);
+}
+
+/**
+ * One branch per terminal the body writes, with the conditions that gate
+ * it. The shared path engine does the enumeration; this only lowers
+ * Python into the form it takes and turns each result back into a
+ * `RawBranch`.
+ *
+ * Null when the body writes fewer than two terminals, and then the
+ * caller keeps the single declared branch.
+ */
+function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
+  const body = field(options.definitionNode, "body");
+  const raised = raisedResponses(body, {
+    calls: options.responseStatusCalls,
+    module: options.module,
+    facts: options.facts,
+  });
+  const terminals = routeTerminals(body, raised);
+  if (terminals.length < 2) {
     return null;
   }
 
-  const body = field(definitionNode, "body");
-  const returns = returnStatements(body);
-  if (returns.length < 2) {
-    return null;
-  }
-
-  const lowered = lowerPythonBody(body, returns);
+  const statements = terminals.map((found) => found.statement);
+  const thrownByCall = new NodeSet(
+    raised
+      .filter((response) => response.thrownByCall)
+      .map((response) => response.statement),
+  );
+  const lowered = lowerPythonBody(body, statements, thrownByCall);
   const enumerated = enumerateOrDegrade(
     {
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
     },
-    returns,
+    statements,
   );
 
   const branches: RawBranch[] = [];
-  for (const statement of returns) {
-    const paths = enumerated.byTerminal.get(statement);
+  for (const found of terminals) {
+    const paths = enumerated.byTerminal.get(found.statement);
     if (paths === undefined) {
       continue;
     }
 
-    const read = statusOfReturn(statement);
-    const range = rangeOf(statement);
-    const writtenBody = returnedBodyShape(statement);
-    const statusReading: Reading<number> =
-      read.kind === "status"
-        ? writtenReading(read.value, range)
-        : read.kind === "none"
-          ? absentReading
-          : unreadableReading(
-              "This return gives a status this reading cannot resolve to a number, so this outcome claims none",
-              range,
-            );
-
+    const branch = terminalBranchOf(found, options.ctx);
     for (const path of paths) {
       const conditions: RawCondition[] = path.map((condition) => ({
         sourceText: condition.sourceText,
@@ -858,33 +972,9 @@ function branchesFromReturns(
         source: condition.source,
       }));
       branches.push({
+        ...branch,
         conditions,
-        terminal: {
-          kind: "response",
-          statusCode: null,
-          body: { typeText: null, shape: null },
-          exceptionType: null,
-          message: null,
-          component: null,
-          renderTree: null,
-          delegateTarget: null,
-          emitEvent: null,
-          location: range,
-        },
-        statusCodeReading: {
-          reading: statusReading,
-          ...(declaredStatus.libraryDefault !== undefined
-            ? { libraryDefault: declaredStatus.libraryDefault }
-            : {}),
-        },
-        bodyShapeReading: {
-          reading:
-            writtenBody === null
-              ? responseShape.reading
-              : writtenReading(writtenBody, range),
-        },
-        effects: effectsReaching(effects, conditions),
-        location: range,
+        effects: effectsReaching(options.effects, conditions),
         isDefault: path.length === 0,
       });
     }
@@ -893,6 +983,12 @@ function branchesFromReturns(
   return branches.length > 1 ? branches : null;
 }
 
+/**
+ * The status a handler's own returns write, for a library that reads one
+ * off the returned tuple. Anything less definite than a single status
+ * every return agrees on claims nothing, so the library default does not
+ * take the place of a status the body actually sets.
+ */
 function readReturnedStatus(
   pattern: PythonDiscoveryPattern,
   definitionNode: PyNode,
@@ -1036,6 +1132,8 @@ function functionRouteUnits(
         requestBodyFromAnnotatedClass:
           pattern.annotatedClassIsRequestBody === true,
         readsReturnedStatus: pattern.statusFromReturnedTuple === true,
+        responseStatusCalls: pattern.responseStatusCalls ?? [],
+        facts: options.facts,
         injectedCallees: new Set(pattern.injectedParameterCallees ?? []),
         definitionNode: functionNode,
         enclosingScope: module.moduleScope,
@@ -1066,8 +1164,12 @@ interface BuildRouteUnitOptions {
   /** The boundary binding only gets a path when this came back written. */
   routePath: Reading<PathTemplateReading>;
   requestBodyFromAnnotatedClass: boolean;
-  /** Whether the library takes a status off a returned tuple, so each return earns a branch. */
+  /** Whether the library takes a status off a returned tuple, so a return says what its own branch responds with. */
   readsReturnedStatus: boolean;
+  /** The library's own callables that end the request with a status. Empty when its pack declares none. */
+  responseStatusCalls: readonly PyStatusCall[];
+  /** The project's facts, so a status written as a name resolves the same way a path does. */
+  facts?: Database | undefined;
   /** Names the pack says the library injects with, so those parameters claim no role. */
   injectedCallees: ReadonlySet<string>;
   definitionNode: PyNode;
@@ -1200,20 +1302,21 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // nothing to apply to.
   const effects = invocationEffects(definitionNode);
   const extra = recognizedBodyEffects(definitionNode, module, storageLookup);
-  const perReturn = branchesFromReturns(
-    readsReturnedStatus,
+  const perTerminal = branchesPerTerminal({
     definitionNode,
     effects,
-    responseShape,
-    statusCode,
-  );
-  const branches: RawBranch[] = (perReturn ?? []).map((branch) =>
+    module,
+    facts: options.facts,
+    responseStatusCalls: options.responseStatusCalls,
+    ctx: { readsReturnedStatus, responseShape, declaredStatus: statusCode },
+  });
+  const branches: RawBranch[] = (perTerminal ?? []).map((branch) =>
     extra.length === 0 ? branch : { ...branch, extraEffects: extra },
   );
   // Whatever a body does, it did so whether or not the route declares a
   // response, and an effect with no transition to sit on is thrown away.
   if (
-    perReturn === null &&
+    perTerminal === null &&
     (responseShape.reading.kind !== "absent" ||
       statusCode.reading.kind !== "absent" ||
       extra.length > 0 ||

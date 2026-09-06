@@ -52,6 +52,11 @@ describe("flaskRestxFramework", () => {
         },
         defaultStatusCode: 200,
         statusFromReturnedTuple: true,
+        responseStatusCalls: [
+          { callee: "flask_restx.abort", statusArgument: 0 },
+          { callee: "flask.abort", statusArgument: 0 },
+          { callee: "werkzeug.exceptions.abort", statusArgument: 0 },
+        ],
       },
     ]);
   });

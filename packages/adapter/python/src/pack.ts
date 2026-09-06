@@ -133,8 +133,32 @@ export interface RouteConventions {
    * that sets its own status would be reported at the default.
    */
   statusFromReturnedTuple?: boolean;
+  /**
+   * The library's own callables that end the request with a status, such
+   * as FastAPI's `HTTPException` and Flask's `abort`. Declaring them is
+   * also what makes a `raise` in a route body an outcome of its own: a
+   * raise the list does not cover comes out as a throw with no status,
+   * and one it does cover comes out as the response the library sends.
+   */
+  responseStatusCalls?: PyStatusCall[];
   /** Unset means the library has no router mounting, and a route's decorator path stands as written. */
   routerComposition?: RouterComposition;
+}
+
+/**
+ * One callable that ends the request, and where it takes the status.
+ * A call may take it either way, so a pattern may state both, and the
+ * keyword wins where an argument is written both ways.
+ */
+export interface PyStatusCall {
+  /** The callee as the file imports it, module and name together, `fastapi.HTTPException`. */
+  callee: string;
+  /** The keyword whose value gives the status, FastAPI's `status_code`. */
+  statusKeyword?: string;
+  /** The index of the positional argument giving the status, 0 for `abort(404)`. */
+  statusArgument?: number;
+  /** What the library sends when the call states no status of its own. */
+  defaultStatusCode?: number;
 }
 
 /**

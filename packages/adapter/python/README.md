@@ -153,11 +153,12 @@ A prefix written with a trailing slash leaves the composed path with two. Werkze
 
 ## What a body lowers to
 
-A route's own returns are what make it produce more than one transition, so the
-adapter lowers a function body into the statement form the shared path engine
-in `@suss/extractor` walks. That engine is generic over the language's own
-condition handle and never looks inside one, so the enumeration, the negation
-of an earlier arm, and the budget are all shared with TypeScript.
+A route ends where it returns and where it raises, and each of those places is
+what makes it produce more than one transition, so the adapter lowers a function
+body into the statement form the shared path engine in `@suss/extractor` walks.
+That engine is generic over the language's own condition handle and never looks
+inside one, so the enumeration, the negation of an earlier arm, and the budget
+are all shared with TypeScript.
 
 | Python | Lowers to |
 | --- | --- |
@@ -165,7 +166,7 @@ of an earlier arm, and the budget are all shared with TypeScript.
 | `while`, `for` | `loop` |
 | `try` / `except` / `finally` | `try`, with every except arm as the catch body |
 | `match` / `case` | `switch`, one group per case, `case _` as the default group |
-| `return`, `raise` | `exit`, which is what gives each return its own transition |
+| `return`, `raise` | `exit`, which is what gives each of them its own transition |
 | `break`, `continue` | `exit`, which the engine uses for reachability rather than as an outcome |
 | anything else | `opaque` |
 
@@ -185,6 +186,45 @@ def get(self, order_id) -> dict:
 comes out as two transitions, the 404 gated on the opaque condition
 `not found` and the 200 gated on its negation, rather than as one claim with a
 guessed status.
+
+### A branch that ends by raising
+
+Most frameworks let a route end the request by raising rather than by
+returning, and the status the client receives is then whatever the raised
+call was given. A pack says which of its library's callables do that, under
+`responseStatusCalls`, and where each of them takes its status:
+
+```ts
+responseStatusCalls: [
+  {
+    callee: "fastapi.HTTPException",
+    statusKeyword: "status_code",
+    statusArgument: 0,
+  },
+],
+```
+
+`callee` is the name as the file imports it, module and name together, which
+is what tells FastAPI's `HTTPException` apart from a project class of the same
+name. A `raise` of one of these becomes a transition responding with that
+status, and so does a bare call to one written as a statement of its own,
+which is how Flask's `abort(404)` ends a request. So this handler:
+
+```python
+@app.get("/items/{item_id}")
+def show(item_id: int):
+    if item_id > 10:
+        raise HTTPException(status_code=404, detail="missing")
+    return {"id": item_id}
+```
+
+comes out as a 404 under `item_id > 10` and a 200 under its negation.
+
+A status the reading cannot resolve to a number is reported as the text it was
+written as, so the transition says a status was set without claiming which. A
+`raise` of anything the pack does not list is still a transition, with the
+exception type on it and no status, since the framework is the only thing that
+knows what it turns that exception into.
 
 ### Keying anything on a node
 

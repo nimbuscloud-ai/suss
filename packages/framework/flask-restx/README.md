@@ -8,6 +8,7 @@ Framework pack for [flask-restx](https://flask-restx.readthedocs.io/) `Resource`
 
 - **Discovery**: a `Resource` class decorated with `Namespace.route(path)` (or `Api.route(path)`), directly or through a project's own wrapper module re-exporting the decorator. Each HTTP-verb-named method declared on the class (`get`, `post`, `put`, `delete`, `patch`, `head`, `options`) becomes its own discovered route.
 - **Boundary bindings**: `rest(method, path)`, built from the method's own name and the path the route is served at.
+- **Transitions**: one per place the method ends. A `return body, 201` responds with the status the tuple states, and an `abort(404)` responds with 404, since Flask raises inside that call and never comes back to the method. The pack lists `abort` under flask-restx's module, Flask's and Werkzeug's, so a method matches whichever of the three it imports from.
 
 ## Namespace paths
 

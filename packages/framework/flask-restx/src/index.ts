@@ -96,8 +96,15 @@ export function flaskRestxFramework(
         // and sets no status of its own.
         defaultStatusCode: 200,
         // Flask reads a status out of `return body, 201`, so the 200
-        // above only stands when the body writes no status of its own.
+        // above only applies where the body writes no status of its own.
         statusFromReturnedTuple: true,
+        // flask-restx re-exports Flask's function, which re-exports
+        // Werkzeug's, and a project may import it from any of the three.
+        responseStatusCalls: [
+          { callee: "flask_restx.abort", statusArgument: 0 },
+          { callee: "flask.abort", statusArgument: 0 },
+          { callee: "werkzeug.exceptions.abort", statusArgument: 0 },
+        ],
       },
     ],
   };
