@@ -439,6 +439,100 @@ describe("inspect --diff, human output", () => {
     ],
   });
 
+  /** The same unit, moved to a file of its own. */
+  const inFile = (s: BehavioralSummary, file: string): BehavioralSummary => ({
+    ...s,
+    location: { ...s.location, file },
+  });
+
+  const changedTo = (
+    name: string,
+    file: string,
+    status: number,
+  ): BehavioralSummary =>
+    inFile(
+      respondsWith(name, `/${name}`, {
+        output: {
+          type: "response",
+          statusCode: { type: "literal", value: status },
+          body: null,
+          headers: {},
+        },
+      }),
+      file,
+    );
+
+  it("groups the units under the file they are in", () => {
+    const before = [
+      changedTo("getUser", "src/users.ts", 200),
+      changedTo("getTeam", "src/teams.ts", 200),
+    ];
+    const after = [
+      changedTo("getUser", "src/users.ts", 201),
+      changedTo("getTeam", "src/teams.ts", 202),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("src/teams.ts\n  ~ getTeam");
+      expect(output).toContain("src/users.ts\n  ~ getUser");
+      expect(output.indexOf("src/teams.ts")).toBeLessThan(
+        output.indexOf("src/users.ts"),
+      );
+    });
+  });
+
+  it("puts the files the change did not touch first", () => {
+    // A unit that moved without its own file moving is the one a
+    // reviewer has no other way to find.
+    const before = [
+      changedTo("getUser", "src/users.ts", 200),
+      changedTo("getTeam", "src/teams.ts", 200),
+    ];
+    const after = [
+      changedTo("getUser", "src/users.ts", 201),
+      changedTo("getTeam", "src/teams.ts", 202),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, changedFiles: ["src/teams.ts"] }),
+      );
+      expect(output.indexOf("src/users.ts")).toBeLessThan(
+        output.indexOf("src/teams.ts"),
+      );
+      expect(output).toContain("src/teams.ts  (changed in this pull request)");
+    });
+  });
+
+  it("says how much moved and no more for a unit in a file the change touched", () => {
+    const before = [changedTo("getTeam", "src/teams.ts", 200)];
+    const after = [changedTo("getTeam", "src/teams.ts", 202)];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, changedFiles: ["src/teams.ts"] }),
+      );
+      expect(output).toContain("~ getTeam");
+      expect(output).toContain("1 change");
+      expect(output).not.toContain("-> 202");
+    });
+  });
+
+  it("stops at the budget and counts what it left out", () => {
+    const files = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`);
+    const before = files.map((f, i) => changedTo(`unit${i}`, f, 200));
+    const after = files.map((f, i) => changedTo(`unit${i}`, f, 201));
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, budget: 400 }),
+      );
+      expect(output.length).toBeLessThan(700);
+      expect(output).toMatch(/\.\.\. \d+ more units in \d+ more files\./);
+    });
+  });
+
   it("says which field moved when the two lines read the same", () => {
     // The short line says the output and the conditions. A change to
     // anything else printed as one line twice, and a reader gating a
@@ -450,7 +544,9 @@ describe("inspect --diff, human output", () => {
 
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("(effects changed)");
+      expect(output).toContain(
+        'effects: [] -> [{"type":"stateChange","variable":"auditCount"}]',
+      );
     });
   });
 
