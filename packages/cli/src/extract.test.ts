@@ -902,7 +902,15 @@ describe("relativizeSummaryPaths", () => {
     const ref = (from: string) => ({ type: "ref", name: "User", from });
     const summary = {
       location: { file: "/repo/src/app.ts", range: { start: 1, end: 2 } },
-      inputs: [{ name: "user", shape: ref("/repo/src/models.ts") }],
+      inputs: [
+        {
+          type: "parameter",
+          name: "user",
+          position: 0,
+          role: null,
+          shape: ref("/repo/src/models.ts"),
+        },
+      ],
       transitions: [
         {
           output: {
@@ -928,7 +936,10 @@ describe("relativizeSummaryPaths", () => {
     relativizeSummaryPaths(summary, "/repo");
 
     expect(JSON.stringify(summary)).not.toContain("/repo/");
-    expect(summary.inputs[0].shape).toEqual(ref("src/models.ts"));
+    const input = summary.inputs[0];
+    expect(input.type === "parameter" ? input.shape : undefined).toEqual(
+      ref("src/models.ts"),
+    );
     expect(summary.definitions).toEqual({
       "User@1": ref("src/models.ts"),
       "Node@2": { type: "ref", name: "Node" },
