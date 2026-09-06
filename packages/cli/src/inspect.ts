@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  BOUNDARY_ROLE,
   boundaryKey,
   boundaryLabel,
   type DispatchTable,
@@ -1563,21 +1564,24 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
 // Diff command
 // ---------------------------------------------------------------------------
 
-function summaryKey(s: BehavioralSummary): string {
+/**
+ * The boundary a unit serves or calls, spelled the same way on both
+ * sides of a diff, so a route written ":id" before and "{id}" after
+ * still pairs.
+ */
+function boundaryOf(s: BehavioralSummary): string | null {
   const binding = s.identity.boundaryBinding;
-  if (binding !== null) {
-    // The boundary's own key, whatever the protocol, so a diff pairs
-    // the before and after of a route spelled ":id" and "{id}".
-    const key = boundaryKey(binding);
-    if (key !== null) {
-      return `${s.kind}:${key}`;
-    }
-    const label = boundaryLabel(binding);
-    if (label !== null) {
-      return `${s.kind}:${label}`;
-    }
+  if (binding === null) {
+    return null;
   }
-  return `${s.kind}::${s.identity.name}`;
+  return boundaryKey(binding) ?? boundaryLabel(binding);
+}
+
+function summaryKey(s: BehavioralSummary): string {
+  const boundary = boundaryOf(s);
+  return boundary === null
+    ? `${s.kind}::${s.identity.name}`
+    : `${s.kind}:${boundary}`;
 }
 
 interface DiffPairing {
@@ -1606,14 +1610,10 @@ function groupByKey(
   return groups;
 }
 
-/**
- * The label that tells two units at one boundary apart: the unit's name,
- * or its file and name when the name repeats on either side.
- */
-function unitLabels(
+function namesRepeatedOnASide(
   before: readonly BehavioralSummary[],
   after: readonly BehavioralSummary[],
-): (s: BehavioralSummary) => string {
+): Set<string> {
   const repeated = new Set<string>();
   for (const side of [before, after]) {
     const seen = new Set<string>();
@@ -1624,19 +1624,53 @@ function unitLabels(
       seen.add(s.identity.name);
     }
   }
-  return (s) =>
-    repeated.has(s.identity.name)
-      ? `${s.location.file}::${s.identity.name}`
-      : s.identity.name;
+  return repeated;
+}
+
+function unitLabel(s: BehavioralSummary, repeated: Set<string>): string {
+  return repeated.has(s.identity.name)
+    ? `${s.location.file}::${s.identity.name}`
+    : s.identity.name;
 }
 
 /**
- * Which summary on each side is the same unit. Units are grouped by
- * boundary, so a route spelled ":id" before and "{id}" after still
- * pairs. Several callers of one route share a boundary key, and
- * within such a group each unit pairs by its name instead, since
- * keeping one caller per route would drop the rest from the diff.
+ * Whether the units at one boundary pair by their own name rather than
+ * by the boundary alone. A consumer always does, since many callers
+ * share one route and each has a name of its own. A provider pairs by
+ * the boundary, which is the only stable identity most handlers have,
+ * unless several of them serve it.
  */
+function pairsByUnit(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+): boolean {
+  const first = before[0] ?? after[0];
+  if (first === undefined || boundaryOf(first) === null) {
+    return false;
+  }
+  return (
+    BOUNDARY_ROLE[first.kind] === "consumer" ||
+    before.length > 1 ||
+    after.length > 1
+  );
+}
+
+function pairOneUnit(
+  pairing: DiffPairing,
+  key: string,
+  before: BehavioralSummary | undefined,
+  after: BehavioralSummary | undefined,
+): void {
+  if (before !== undefined && after !== undefined) {
+    pairing.paired.push({ key, before, after });
+  } else if (after !== undefined) {
+    pairing.added.push({ key, summary: after });
+  } else if (before !== undefined) {
+    pairing.removed.push({ key, summary: before });
+  }
+}
+
+/** Which summary on each side of a diff is the same unit. */
 function pairForDiff(
   beforeSummaries: readonly BehavioralSummary[],
   afterSummaries: readonly BehavioralSummary[],
@@ -1650,38 +1684,22 @@ function pairForDiff(
     const before = beforeGroups.get(key) ?? [];
     const after = afterGroups.get(key) ?? [];
 
-    if (before.length <= 1 && after.length <= 1) {
-      const beforeOne = before[0];
-      const afterOne = after[0];
-      if (beforeOne !== undefined && afterOne !== undefined) {
-        pairing.paired.push({ key, before: beforeOne, after: afterOne });
-      } else if (afterOne !== undefined) {
-        pairing.added.push({ key, summary: afterOne });
-      } else if (beforeOne !== undefined) {
-        pairing.removed.push({ key, summary: beforeOne });
-      }
+    if (!pairsByUnit(before, after)) {
+      pairOneUnit(pairing, key, before[0], after[0]);
       continue;
     }
 
-    const label = unitLabels(before, after);
-    const beforeByLabel = new Map(before.map((s) => [label(s), s]));
-    const afterByLabel = new Map(after.map((s) => [label(s), s]));
-    for (const [unit, afterOne] of afterByLabel) {
-      const beforeOne = beforeByLabel.get(unit);
-      const unitKey = `${key}::${unit}`;
-      if (beforeOne === undefined) {
-        pairing.added.push({ key: unitKey, summary: afterOne });
-      } else {
-        pairing.paired.push({
-          key: unitKey,
-          before: beforeOne,
-          after: afterOne,
-        });
-      }
+    const repeated = namesRepeatedOnASide(before, after);
+    const beforeByUnit = new Map(
+      before.map((s) => [unitLabel(s, repeated), s]),
+    );
+    const afterByUnit = new Map(after.map((s) => [unitLabel(s, repeated), s]));
+    for (const [unit, afterOne] of afterByUnit) {
+      pairOneUnit(pairing, `${key}::${unit}`, beforeByUnit.get(unit), afterOne);
     }
-    for (const [unit, beforeOne] of beforeByLabel) {
-      if (!afterByLabel.has(unit)) {
-        pairing.removed.push({ key: `${key}::${unit}`, summary: beforeOne });
+    for (const [unit, beforeOne] of beforeByUnit) {
+      if (!afterByUnit.has(unit)) {
+        pairOneUnit(pairing, `${key}::${unit}`, beforeOne, undefined);
       }
     }
   }

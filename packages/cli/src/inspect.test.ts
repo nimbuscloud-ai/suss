@@ -212,6 +212,34 @@ describe("inspect --diff --json", () => {
       ]);
     });
   });
+
+  it("pairs a renamed handler by its route and a renamed caller by its name", () => {
+    // A handler is usually an anonymous callback, so the route is the
+    // only identity it keeps across a rename. A caller has a name of
+    // its own, and the same rename is a unit leaving and one arriving.
+    const caller = (name: string): BehavioralSummary => ({
+      ...routeSummary(name, "/pet/{id}"),
+      kind: "client",
+    });
+    const before = [routeSummary("getUser", "/users/:id"), caller("getPet")];
+    const after = [routeSummary("readUser", "/users/:id"), caller("fetchPet")];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, json: true }),
+      );
+      const parsed = JSON.parse(output) as {
+        summaries: Array<{ key: string; change: string }>;
+      };
+      const byKey = Object.fromEntries(
+        parsed.summaries.map((s) => [s.key, s.change]),
+      );
+      expect(byKey).toEqual({
+        "client:GET /pet/{id}::getPet": "removed",
+        "client:GET /pet/{id}::fetchPet": "added",
+      });
+    });
+  });
 });
 
 describe("inspect, a route the wrappers cover", () => {

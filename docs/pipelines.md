@@ -157,13 +157,15 @@ suss inspect --diff before/api.json after/api.json
 ```
 handler:GET /users/{id}
   express handler
-  3 changes
+  2 changes
     + 200 { id, name, role, admin }  when  db.findById() && db.findById().role === "admin"
-    + 200 { id, name, role }  (default)
-    - 200 { id, name, role }  (default)
+    ~ 200 { id, name, role }  when  db.findById()
+      -> 200 { id, name, role }  when  db.findById() && !(db.findById().role === "admin")
 ```
 
-Three changes from one added `if`. The admin case is new, and the plain 200 counts as removed and added because the condition reaching it changed: it is now the case where the user exists and is not an admin. Transition IDs are minted from the condition, so a rewritten condition is a different transition even when the body is identical.
+Two changes from one added `if`. The admin case is new, and the plain 200 is the same response under a narrower condition: it is now the case where the user exists and is not an admin. A `~` line is a transition that kept its output and changed its guard, printed with the guard from before and the guard from after, so a reader can tell a narrowed branch from a branch that went away.
+
+A handler is paired with the one before it by its route, so a renamed handler on the same route pairs, and a route that moved to another path prints as removed and added. A client is paired by its own name under the route it calls, since several callers share one route, and its key reads `client:GET /pet/{petId}::getPetById`.
 
 All three modes share one failure path. If `safeParseSummaries` reports issues, the CLI prints `Invalid summary file <path>: <issue paths>` and exits non-zero, and nothing renders.
 
