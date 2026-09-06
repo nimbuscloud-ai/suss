@@ -7,6 +7,7 @@ import { Node } from "ts-morph";
 
 import { restBinding } from "@suss/behavioral-ir";
 
+import { objectLiteralOf, propertiesOf } from "./discovery/resolveValue.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
 import { shapeFromNodeType } from "./shapes/typeShapes.js";
 import { peelSyntax } from "./walk/unwrap.js";
@@ -254,7 +255,7 @@ function unwrapContractInit(init: Node | undefined): Node | null {
  *   path: "/users/:id",
  *   responses: {
  *     200: c.type<...>(),
- *     404: c.type<...>(),
+ *     ...commonResponses,
  *   }
  * }
  * ```
@@ -263,6 +264,7 @@ function extractEndpointContract(
   endpointNode: Node,
   pattern: ContractPattern,
   framework: string,
+  resolution: ResolutionStore | undefined,
 ): ContractReadResult | null {
   if (!Node.isObjectLiteralExpression(endpointNode)) {
     return null;
@@ -294,9 +296,11 @@ function extractEndpointContract(
     }
 
     if (propName === pattern.responseExtraction.property) {
-      const val = prop.getInitializer();
-      if (val !== undefined && Node.isObjectLiteralExpression(val)) {
-        for (const respProp of val.getProperties()) {
+      const written = prop.getInitializer();
+      const val =
+        written === undefined ? null : objectLiteralOf(written, resolution);
+      if (val !== null) {
+        for (const respProp of propertiesOf(val, resolution)) {
           if (!Node.isPropertyAssignment(respProp)) {
             continue;
           }
@@ -368,7 +372,12 @@ export function readContract(
     if (endpointNode === null) {
       return null;
     }
-    return extractEndpointContract(endpointNode, pattern, framework);
+    return extractEndpointContract(
+      endpointNode,
+      pattern,
+      framework,
+      resolution,
+    );
   }
 
   // Step 1: Find the .router() call enclosing this handler
@@ -398,7 +407,12 @@ export function readContract(
       continue;
     }
 
-    return extractEndpointContract(endpointInit, pattern, framework);
+    return extractEndpointContract(
+      endpointInit,
+      pattern,
+      framework,
+      resolution,
+    );
   }
 
   return null;
@@ -523,7 +537,12 @@ export function readContractForClientCall(
       continue;
     }
 
-    return extractEndpointContract(endpointInit, pattern, framework);
+    return extractEndpointContract(
+      endpointInit,
+      pattern,
+      framework,
+      resolution,
+    );
   }
 
   return null;
