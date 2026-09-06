@@ -111,6 +111,27 @@ describe("a ref whose name the compiler printed", () => {
 
     expect(ref.name).toBe("Map<string, User>");
   });
+
+  // The default printer expands an alias the enclosing file does not
+  // import into its fields, so the name grew with the alias.
+  it("prints an alias the enclosing file never imports by its name", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "src/models.ts",
+      [
+        "export type Wide = { id: string; name: string; email: string; role: string };",
+        "export const wide = (): Wide[] => [];",
+      ].join("\n"),
+    );
+    project.createSourceFile(
+      "src/use.ts",
+      "import { wide } from './models.js';\nexport const rows = { child: new Map([['a', wide()]]) };\n",
+    );
+
+    const ref = childRefOf(project, "rows");
+
+    expect(ref.name).toBe("Map<string, Wide[]>");
+  });
 });
 
 describe("the same type reached from two places", () => {

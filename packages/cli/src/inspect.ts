@@ -75,6 +75,20 @@ function shortPath(file: string): string {
   return parts.slice(-2).join("/");
 }
 
+const REF_NAME_WIDTH = 120;
+
+/**
+ * A ref over a type the adapter could not name is the compiler's printed
+ * text of the whole type, which for an inferred alias runs to thousands of
+ * characters on one line. The summary keeps all of it; the rendering does not.
+ */
+function shortRefName(name: string): string {
+  if (name.length <= REF_NAME_WIDTH) {
+    return name;
+  }
+  return `${name.slice(0, REF_NAME_WIDTH - 3).trimEnd()}...`;
+}
+
 const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
   record: (s) => {
     const keys = Object.keys(s.properties);
@@ -95,8 +109,10 @@ const SHAPE_FORMATTERS: DispatchTable<TypeShape, string> = {
   // A name, and where the type is written. A reader who wants the
   // fields asks for them; printing every field of every named type is
   // how one summary came to be a megabyte.
-  ref: (s) =>
-    s.from === undefined ? s.name : `${s.name} (${shortPath(s.from)})`,
+  ref: (s) => {
+    const name = shortRefName(s.name);
+    return s.from === undefined ? name : `${name} (${shortPath(s.from)})`;
+  },
   array: (s) => `[${formatBodyShape(s.items)}]`,
   dictionary: (s) => `{ [key]: ${formatBodyShape(s.values)} }`,
   union: (s) => s.variants.map(formatBodyShape).join(" | "),
