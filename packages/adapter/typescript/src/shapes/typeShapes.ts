@@ -24,6 +24,8 @@
 
 import { createHash } from "node:crypto";
 
+import { TypeFormatFlags } from "ts-morph";
+
 import { definitionsInProgress } from "./definitions.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -558,12 +560,25 @@ function refFromType(type: Type, ctx: ConvertContext): TypeShape {
 }
 
 /**
+ * The compiler's default printer expands an alias the enclosing file does
+ * not import into its whole structure, so a ref over `Map<string, User>`
+ * came out as a screenful of fields. These flags keep the alias name.
+ */
+const PRINTED_NAME_FLAGS =
+  TypeFormatFlags.UseAliasDefinedOutsideCurrentScope |
+  TypeFormatFlags.UseTypeOfFunction |
+  TypeFormatFlags.NoTruncation |
+  TypeFormatFlags.WriteTypeArgumentsOfSignature;
+
+/**
  * When the enclosing file has no import for a type, the compiler prints it
  * qualified by the absolute path of its module. Two checkouts of the same
  * code would then print different names, so the qualifier is removed.
  */
 function printedTypeName(type: Type, ctx: ConvertContext): string {
-  return withoutImportQualifiers(type.getText(ctx.enclosing));
+  return withoutImportQualifiers(
+    type.getText(ctx.enclosing, PRINTED_NAME_FLAGS),
+  );
 }
 
 const IMPORT_QUALIFIER = /import\("[^"]*"\)\./g;
