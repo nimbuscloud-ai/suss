@@ -2,14 +2,16 @@
   "name": "@suss/adapter-ruby",
   "version": "0.22.3",
   "type": "module",
-  "description": "Ruby language adapter for suss, parsing source with tree-sitter (WASM), resolving constant nesting with a lexical binder, and emitting raw extractions for the suss pipeline.",
+  "description": "Read a Ruby codebase with suss and check what each Rails action or graphql-ruby resolver returns against the code that calls it.",
   "keywords": [
     "suss",
-    "behavioral-summary",
     "static-analysis",
     "ruby",
-    "tree-sitter",
-    "ast"
+    "rails",
+    "graphql",
+    "api-contract",
+    "api-drift",
+    "code-review"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

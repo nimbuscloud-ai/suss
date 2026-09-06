@@ -1,3 +1,8 @@
+---
+title: How suss compares a provider against the code that calls it
+description: How the checker pairs two summaries across a boundary and decides that a provider and its caller no longer agree.
+---
+
 # Cross-Boundary Checking
 
 You added a branch to a handler last Tuesday. Admins now get an extra field, and a 404 goes out for a user who is not there. The pull request was three lines, the tests passed, and nobody on the web team was on the review.

@@ -1,3 +1,8 @@
+---
+title: What a suss pack is and what the four kinds do
+description: A pack teaches suss to read a framework, a client, a runtime or a contract source, as declarative patterns rather than code.
+---
+
 # Packs
 
 A pack teaches suss how to find and interpret code written for a specific framework, runtime, or library, for example, ts-rest for HTTP handlers, or runtime-node for Node's scheduling primitives. Packs are **declarative data**: a `PatternPack` object describing patterns. The language adapter interprets the patterns against the AST.

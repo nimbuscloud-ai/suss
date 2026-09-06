@@ -2,15 +2,16 @@
   "name": "@suss/contract-cloudformation",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries from AWS CloudFormation / SAM templates with embedded API Gateway OpenAPI definitions.",
+  "description": "Turn a CloudFormation or SAM template into a suss contract and check the API it declares against the handlers and clients behind it.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "aws",
+    "static-analysis",
     "cloudformation",
     "sam",
-    "api-gateway",
-    "openapi"
+    "aws",
+    "openapi",
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

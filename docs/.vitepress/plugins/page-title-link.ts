@@ -205,25 +205,26 @@ function processChildren(
 function readTitle(abs: string): string | null {
   const content = fs.readFileSync(abs, "utf8");
 
+  // The h1 comes first because `title:` in frontmatter is written for a
+  // search result, and that phrasing reads badly mid-sentence.
+  const h1 = content.match(/^#\s+(.+)$/m);
+  if (h1) {
+    return stripInlineMarkdown(h1[1].trim());
+  }
+
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
   if (fmMatch) {
     const fmTitle = fmMatch[1].match(/^title:\s*(.+)$/m);
     if (fmTitle) {
-      return stripInlineMarkdown(fmTitle[1].trim());
+      return stripInlineMarkdown(fmTitle[1].trim().replace(/^["']|["']$/g, ""));
     }
-    // VitePress home layout uses `hero.name` as the visible title; fall
-    // through to the first h1 if that isn't set either.
+    // VitePress home layout uses `hero.name` as the visible title.
     const heroName = fmMatch[1].match(/^\s*name:\s*(.+)$/m);
     if (heroName) {
       return stripInlineMarkdown(
         heroName[1].trim().replace(/^["']|["']$/g, ""),
       );
     }
-  }
-
-  const h1 = content.match(/^#\s+(.+)$/m);
-  if (h1) {
-    return stripInlineMarkdown(h1[1].trim());
   }
 
   return null;

@@ -2,12 +2,15 @@
   "name": "@suss/resolution",
   "version": "0.22.3",
   "type": "module",
-  "description": "Language-neutral rules for following a value to the function it comes down to.",
+  "description": "The rules suss uses to follow a name in TypeScript, Python or Ruby to the function it comes down to.",
   "keywords": [
     "suss",
+    "static-analysis",
     "datalog",
     "resolution",
-    "static-analysis"
+    "typescript",
+    "python",
+    "ruby"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

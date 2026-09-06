@@ -1,3 +1,8 @@
+---
+title: Check a TypeScript handler against its OpenAPI document
+description: Read an OpenAPI 3.x document into summaries and compare it against the code that calls the API, or the handlers that serve it.
+---
+
 # Pair your code against an OpenAPI spec
 
 You call an API somebody else owns and you have its OpenAPI 3.x

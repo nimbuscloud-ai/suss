@@ -1,3 +1,8 @@
+---
+title: How suss describes a boundary between two units of code
+description: The transport, semantics and recognition layers of a boundary binding, and the nine kinds of boundary that ship today.
+---
+
 # Boundary semantics
 
 The IR's `BoundaryBinding` has all three layers of a boundary description as

@@ -1,3 +1,8 @@
+---
+title: Work out why a suss pack found nothing in your code
+description: Read the pack health block, learn what each code means, and fix the pack or the config that left a run with nothing to compare.
+---
+
 # Work out why a pack found nothing
 
 A run can finish, write summaries, exit 0, and still have a pack in it

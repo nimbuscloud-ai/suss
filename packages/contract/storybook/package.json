@@ -2,13 +2,15 @@
   "name": "@suss/contract-storybook",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries from Storybook CSF story files.",
+  "description": "Turn Storybook CSF stories into a suss contract and check the props they pass against the React components that receive them.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "storybook",
     "csf",
-    "react"
+    "react",
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

@@ -1,3 +1,8 @@
+---
+title: Get started with suss on your own project
+description: Run init, extract and check against the repo you already have, then walk a worked example that produces a finding.
+---
+
 # Get started
 
 Point suss at the project you already have. `init` works out which

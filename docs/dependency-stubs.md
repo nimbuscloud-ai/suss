@@ -1,3 +1,8 @@
+---
+title: Tell suss what a package does when it cannot read the source
+description: Write a dependency stub for a package that ships only build output, so extraction sees the routes and queues behind it.
+---
+
 # Dependency stubs
 
 Some packages resist reading. A napi-rs crate compiles to a binary before npm ever sees it. A private wrapper ships only its build output. Extraction follows a call to their exports and stops at a boundary it cannot see across, so the queue the wrapper publishes to, or the routes the helper registers, never reach a summary.

@@ -1,3 +1,8 @@
+---
+title: Turn a spec, template or schema into suss summaries
+description: The readers that turn an OpenAPI document, a CloudFormation template or a Prisma schema into the summaries the extractor writes.
+---
+
 # Contract sources
 
 For what "contract" means and how the shapes relate to derived and observed truth, see [`contracts.md`](contracts.md).

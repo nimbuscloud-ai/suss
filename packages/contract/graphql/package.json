@@ -2,13 +2,15 @@
   "name": "@suss/contract-graphql",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate behavioral summaries from GraphQL sources: a plain SDL file (root fields become resolver-kind summaries) or committed .graphql operation documents (each operation becomes a client-kind summary).",
+  "description": "Turn a GraphQL schema or a committed operation document into a suss contract and check it against the resolvers and clients on either side.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "graphql",
-    "contract",
-    "static-analysis"
+    "sdl",
+    "api-contract",
+    "contract-testing",
+    "breaking-changes"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

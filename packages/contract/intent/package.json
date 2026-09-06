@@ -2,13 +2,14 @@
   "name": "@suss/contract-intent",
   "version": "0.22.3",
   "type": "module",
-  "description": "Read team-authored intent specs (*.intent / *.prd, YAML or JSON) into IntentSummary[] for the intent checker to pair against derived code summaries.",
+  "description": "Read the intent specs your team writes in YAML or JSON, so suss can check the code against what you said it should do.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "intent",
     "prd",
-    "contract"
+    "specification",
+    "api-contract"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

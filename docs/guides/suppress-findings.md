@@ -1,3 +1,8 @@
+---
+title: Suppress a suss finding you have reviewed and accepted
+description: Write a .sussignore rule that silences a finding you have accepted, and put the file where a suss run will find it.
+---
+
 # Suppress a finding
 
 Suppress a finding you have reviewed and accepted: a legacy

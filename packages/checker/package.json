@@ -2,13 +2,15 @@
   "name": "@suss/checker",
   "version": "0.22.3",
   "type": "module",
-  "description": "Cross-boundary compatibility checker for suss behavioral summaries — pairs providers with consumers and reports findings.",
+  "description": "Compare what a suss summary says an endpoint does against the clients that call it, and report every place the two sides disagree.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "contract-testing",
     "static-analysis",
-    "typescript"
+    "contract-testing",
+    "api-contract",
+    "api-drift",
+    "breaking-changes",
+    "code-review"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

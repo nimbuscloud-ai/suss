@@ -1,3 +1,8 @@
+---
+title: What TypeScript, JavaScript, Python and Ruby code suss reads
+description: The languages and project layouts suss reads today, and what it does not read yet.
+---
+
 # Compatibility
 
 `suss extract` reads your project through its tsconfig, so it sees the

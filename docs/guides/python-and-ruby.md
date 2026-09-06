@@ -1,3 +1,8 @@
+---
+title: Read a FastAPI, Flask or Rails project with suss
+description: Point suss at Python or Ruby source and get the same summaries a TypeScript project gives, so both sides compare in one run.
+---
+
 # Read a Python or Ruby project
 
 Point suss at a FastAPI service, a flask-restx service, or a

@@ -2,12 +2,14 @@
   "name": "@suss/sql",
   "version": "0.22.3",
   "type": "module",
-  "description": "Read what a SQL statement touches: the tables, the fields, and what it picks rows by.",
+  "description": "Read which tables and fields a SQL statement touches, so suss can check the query against the schema it runs on.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "sql",
-    "postgres"
+    "postgresql",
+    "database",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

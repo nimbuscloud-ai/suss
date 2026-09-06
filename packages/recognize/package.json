@@ -2,12 +2,14 @@
   "name": "@suss/recognize",
   "version": "0.22.3",
   "type": "module",
-  "description": "Write a pack as data: a chain of named links that any language adapter with the executor ops can run.",
+  "description": "Teach suss to read a library you use, by writing a pack as data rather than code, which any language adapter can run.",
   "keywords": [
     "suss",
-    "pattern-pack",
     "static-analysis",
-    "recognizer"
+    "pattern-pack",
+    "recognizer",
+    "ast",
+    "typescript"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

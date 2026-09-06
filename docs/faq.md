@@ -1,3 +1,8 @@
+---
+title: Frequently asked questions about suss
+description: What suss tells you that your type checker and your tests do not, and where it fits next to the tools you already run.
+---
+
 # FAQ
 
 You have a stack that already type-checks, lints, tests and traces. Most of what people ask about suss comes down to where it fits next to those, and what it tells you that they do not.

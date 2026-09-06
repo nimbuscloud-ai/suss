@@ -2,12 +2,15 @@
   "name": "@suss/terraform-gcp",
   "version": "0.22.3",
   "type": "module",
-  "description": "What Google Cloud's Terraform provider declares, for the Terraform contract reader.",
+  "description": "What the Google Cloud Terraform provider declares, so suss can check your code against the infrastructure you deploy.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "terraform",
-    "gcp"
+    "gcp",
+    "google-cloud",
+    "infrastructure-as-code",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

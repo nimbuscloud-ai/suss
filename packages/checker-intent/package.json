@@ -2,12 +2,14 @@
   "name": "@suss/checker-intent",
   "version": "0.22.3",
   "type": "module",
-  "description": "Pair team-authored intent (IntentSummary) against derived code (BehavioralSummary) and report where they diverge.",
+  "description": "Compare the intent your team wrote down against what suss read out of the code, and report where the two have drifted apart.",
   "keywords": [
     "suss",
+    "static-analysis",
     "intent",
-    "checker",
-    "coverage"
+    "prd",
+    "contract-testing",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

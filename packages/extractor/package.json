@@ -2,13 +2,14 @@
   "name": "@suss/extractor",
   "version": "0.22.3",
   "type": "module",
-  "description": "Framework-agnostic extraction pipeline that turns raw extractions into suss behavioral summaries.",
+  "description": "The suss extraction pipeline, which turns what a language adapter read into the summaries the checker pairs across a boundary.",
   "keywords": [
     "suss",
-    "behavioral-summary",
     "static-analysis",
+    "behavioral-summary",
     "extraction",
-    "typescript"
+    "typescript",
+    "api-contract"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

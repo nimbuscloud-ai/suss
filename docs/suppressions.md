@@ -1,3 +1,8 @@
+---
+title: The .sussignore file format and matching rules
+description: Where suss looks for a .sussignore file, the rule schema it parses, and how a rule matches the finding you want silenced.
+---
+
 # Suppressing findings
 
 Some findings are true but accepted, a consumer that deliberately doesn't handle a rare upstream status, a documented contract-spec divergence kept for migration reasons, a legacy quirk scheduled to be removed next quarter. A `.sussignore` file silences or annotates these without modifying the summaries themselves.

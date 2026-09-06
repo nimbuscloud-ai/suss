@@ -2,12 +2,14 @@
   "name": "@suss/ir-core",
   "version": "0.22.3",
   "type": "module",
-  "description": "Shared IR primitives for suss — type shapes, boundary bindings, source locations, and confidence. Imported by both @suss/behavioral-ir and @suss/intent-ir so neither depends on the other.",
+  "description": "The type primitives every suss summary is built from: type shapes, boundary bindings, source locations and confidence.",
   "keywords": [
     "suss",
-    "ir",
+    "static-analysis",
     "behavioral-summary",
-    "intent"
+    "intent",
+    "ir",
+    "typescript"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

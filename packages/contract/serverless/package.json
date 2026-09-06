@@ -2,14 +2,16 @@
   "name": "@suss/contract-serverless",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries from Serverless Framework serverless.yml service files.",
+  "description": "Turn a Serverless Framework serverless.yml into a suss contract and check it against the Lambda handlers and clients behind it.",
   "keywords": [
     "suss",
-    "behavioral-summary",
-    "aws",
+    "static-analysis",
     "serverless",
     "serverless-framework",
-    "lambda"
+    "lambda",
+    "aws",
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

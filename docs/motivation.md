@@ -1,3 +1,8 @@
+---
+title: Why suss exists
+description: Why a change can pass review, the type checker and the tests, and still break somebody else's code.
+---
+
 # Motivation
 
 ## The change that breaks somebody else

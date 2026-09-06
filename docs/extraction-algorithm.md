@@ -1,3 +1,8 @@
+---
+title: How the TypeScript adapter turns a function into a summary
+description: "The five steps that take one function AST to a raw code structure: terminals, paths, conditions, predicates and assembly."
+---
+
 # Extraction Algorithm
 
 How the TypeScript adapter turns a function AST into a `RawCodeStructure`. Everything downstream assumes this pipeline produces correct output.

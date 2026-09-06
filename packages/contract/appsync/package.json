@@ -2,14 +2,16 @@
   "name": "@suss/contract-appsync",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries from AWS AppSync in CloudFormation (AWS::AppSync::*) and SAM (AWS::Serverless::GraphQLApi) templates, including external .graphql schema files (GraphQL schema-first).",
+  "description": "Turn the AppSync API in a CloudFormation or SAM template into a suss contract and check it against the resolvers and clients on either side of it.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "appsync",
     "graphql",
+    "cloudformation",
     "aws",
-    "cloudformation"
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

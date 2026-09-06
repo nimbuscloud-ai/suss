@@ -2,14 +2,15 @@
   "name": "@suss/contract-prisma",
   "version": "0.22.3",
   "type": "module",
-  "description": "Generate suss behavioral summaries from Prisma schema declarations.",
+  "description": "Turn a Prisma schema into a suss contract and check it against the queries your code runs on those tables.",
   "keywords": [
     "suss",
-    "behavioral-summary",
+    "static-analysis",
     "prisma",
     "orm",
-    "storage",
-    "contract"
+    "database",
+    "api-contract",
+    "api-drift"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

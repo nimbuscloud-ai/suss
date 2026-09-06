@@ -2,12 +2,14 @@
   "name": "@suss/datalog",
   "version": "0.22.3",
   "type": "module",
-  "description": "A small semi-naïve Datalog evaluator with stratified negation — the rules engine behind suss's derived program facts.",
+  "description": "A small semi-naive Datalog evaluator with stratified negation, the rules engine suss runs its whole-program analyses on.",
   "keywords": [
     "suss",
+    "static-analysis",
     "datalog",
     "fixpoint",
-    "static-analysis"
+    "rules-engine",
+    "logic-programming"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

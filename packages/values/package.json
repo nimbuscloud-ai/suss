@@ -2,11 +2,13 @@
   "name": "@suss/values",
   "version": "0.22.3",
   "type": "module",
-  "description": "A bounded evaluator that folds what the source determines about a value and keeps a hole for the rest.",
+  "description": "A bounded evaluator that works out what the source pins down about a value and leaves a hole for the rest.",
   "keywords": [
     "suss",
     "static-analysis",
-    "abstract-interpretation"
+    "abstract-interpretation",
+    "constant-folding",
+    "typescript"
   ],
   "license": "Apache-2.0",
   "author": "Nimbus Cloud AI LLC",

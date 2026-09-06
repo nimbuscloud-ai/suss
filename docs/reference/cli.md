@@ -1,3 +1,8 @@
+---
+title: suss CLI commands and flags
+description: Every suss command and every flag, with the inputs it takes, the output it writes, and when to use it.
+---
+
 # CLI reference
 
 Every command, every flag. For prose-style usage see the
