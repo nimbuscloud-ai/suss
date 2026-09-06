@@ -60,4 +60,28 @@ describe("resolveConstantFile", () => {
       resolveConstantFile(tmpDir, "Mutations::DoesNotExist", "railsUnderscore"),
     ).toBeNull();
   });
+
+  it("finds a constant in a directory Rails autoloads from under the root", () => {
+    // Rails autoloads every directory under `app`, so a controller is at
+    // `app/controllers/x.rb` rather than `app/x.rb`.
+    const file = path.join(tmpDir, "controllers", "application_controller.rb");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "class ApplicationController\nend\n");
+
+    expect(
+      resolveConstantFile(tmpDir, "ApplicationController", "railsUnderscore"),
+    ).toBe(file);
+  });
+
+  it("takes the root's own file over one in a directory under it", () => {
+    const atRoot = path.join(tmpDir, "order.rb");
+    const nested = path.join(tmpDir, "models", "order.rb");
+    fs.mkdirSync(path.dirname(nested), { recursive: true });
+    fs.writeFileSync(atRoot, "class Order\nend\n");
+    fs.writeFileSync(nested, "class Order\nend\n");
+
+    expect(resolveConstantFile(tmpDir, "Order", "railsUnderscore")).toBe(
+      atRoot,
+    );
+  });
 });
