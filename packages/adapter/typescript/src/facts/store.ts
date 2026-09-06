@@ -304,6 +304,19 @@ export class ResolutionStore {
   }
 
   /**
+   * The function a call returns: `app.use(requireCaller(config))`
+   * registers what the factory gives back. A separate question from
+   * `resolveCallable`, which keeps a call unresolved on purpose so an
+   * unwrapping answer wins; this one is asked only after that has
+   * declined. Two returned functions give null, like every other
+   * single-answer question here.
+   */
+  resolveReturnedCallable(call: Node): Node | null {
+    const target = factKeyOf(call);
+    return this.askAbout(target, "wanted", () => this.lookupReturned(target));
+  }
+
+  /**
    * For a value that is neither a function nor an object, such as a
    * GraphQL document kept in a constant in another file.
    */
@@ -862,6 +875,24 @@ export class ResolutionStore {
     for (const target of this.answersFor("wantedComesTo", nodeId(value))) {
       const node = this.table.byId.get(target);
       if (node === undefined || isFunctionRoot(node)) {
+        continue;
+      }
+      candidates.add(node);
+    }
+
+    if (candidates.size !== 1) {
+      return null;
+    }
+    return [...candidates][0] as Node;
+  }
+
+  private lookupReturned(call: Node): Node | null {
+    this.derive();
+
+    const candidates = new Set<Node>();
+    for (const target of this.answersFor("wantedGivesBack", nodeId(call))) {
+      const node = this.table.byId.get(target);
+      if (node === undefined || !isFunctionRoot(node)) {
         continue;
       }
       candidates.add(node);

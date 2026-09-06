@@ -149,6 +149,23 @@ function wrappersOf(
   return readWrapperMetadata(summary as BehavioralSummary)?.applied ?? [];
 }
 
+/** The calls a route says it was read without, as callee and sentence. */
+function unfollowedOn(
+  summaries: BehavioralSummary[],
+  path: string,
+): Array<{ callee: string; description: string }> {
+  const summary = summaries.find((one) => {
+    const semantics = one.identity.boundaryBinding?.semantics;
+    return semantics?.name === "rest" && semantics.path === path;
+  });
+  expect(summary, `no summary for ${path}`).toBeDefined();
+  return (summary as BehavioralSummary).gaps.flatMap((gap) =>
+    gap.type === "unfollowedCall" && gap.callee !== undefined
+      ? [{ callee: gap.callee, description: gap.description }]
+      : [],
+  );
+}
+
 function statusesOf(summary: BehavioralSummary): unknown[] {
   return summary.transitions.flatMap((transition) => {
     const output = transition.output;
@@ -394,7 +411,48 @@ describe("wrapper registrations, end to end", () => {
     expect(statusesOf(wrapper)).toEqual([500]);
   });
 
-  it("records nothing for a registration whose function does not resolve", async () => {
+  it("follows middleware a project factory returns, named after the factory", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/requireCaller.ts",
+      `
+        export function requireCaller(config: { header: string }) {
+          return (req, res, next) => {
+            if (!req.headers[config.header]) {
+              res.status(401).json({ error: "unauthorized" });
+              return;
+            }
+            next();
+          };
+        }
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        import { requireCaller } from "./requireCaller";
+        const app = express();
+        app.use(requireCaller({ header: "authorization" }));
+        app.get("/orders", (req, res) => { res.status(200).json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([
+      { file: "/requireCaller.ts", name: "requireCaller" },
+    ]);
+    expect(statusesOf(summaryNamed(summaries, "requireCaller"))).toEqual([401]);
+    expect(unfollowedOn(summaries, "/orders")).toEqual([]);
+  });
+
+  it("leaves a gap on each route when the factory has no body to follow", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "/app.ts",
@@ -403,6 +461,44 @@ describe("wrapper registrations, end to end", () => {
         declare function pickMiddleware(): unknown;
         const app = express();
         app.use(pickMiddleware());
+        app.get("/orders", (req, res) => { res.json({}); });
+        app.get("/items", (req, res) => { res.json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([]);
+    for (const path of ["/orders", "/items"]) {
+      expect(unfollowedOn(summaries, path)).toEqual([
+        {
+          callee: "pickMiddleware",
+          description: expect.stringContaining(
+            "The call to pickMiddleware registers middleware this run could not follow to one function",
+          ),
+        },
+      ]);
+    }
+  });
+
+  it("leaves nothing for a factory in a dependency", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/node_modules/cors/index.d.ts",
+      "export default function cors(options?: unknown): unknown;",
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        import cors from "cors";
+        const app = express();
+        app.use(cors());
         app.get("/orders", (req, res) => { res.json({}); });
       `,
     );
@@ -415,6 +511,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/orders")).toEqual([]);
+    expect(unfollowedOn(summaries, "/orders")).toEqual([]);
   });
 
   it("marks a four-argument function as running on a throw, and not as middleware too", async () => {

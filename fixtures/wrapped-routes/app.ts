@@ -1,7 +1,7 @@
 // A Hono service whose 401 and 500 are produced by code registered
 // around the routes, so neither status is anywhere in the handler.
 
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 
 import { requireCaller } from "./requireCaller";
 
@@ -10,9 +10,14 @@ declare const store: {
   create(name: string): Promise<{ id: string; status: string }>;
 };
 
+// A factory with no body in this project, so what it returns cannot be
+// read and every route on the app says so.
+declare function pickMiddleware(): MiddlewareHandler;
+
 const app = new Hono();
 
-app.use("/v1/*", requireCaller);
+app.use("/v1/*", requireCaller({ header: "authorization" }));
+app.use(pickMiddleware());
 
 app.onError((err, c) => {
   return c.json({ error: err.message }, 500);

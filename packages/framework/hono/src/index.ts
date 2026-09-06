@@ -25,7 +25,9 @@ import {
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 
 /** What Hono registers around a route, on either app constructor. */
+// `app.use(fn)` applies everywhere and `app.use(path, fn)` under a path.
 const HONO_WRAPPERS: ReadonlyArray<NonNullable<DiscoveryPattern["wraps"]>> = [
+  { method: "use", targetPosition: 0, continuationParam: 1 },
   {
     method: "use",
     scopePosition: 0,

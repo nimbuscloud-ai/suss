@@ -186,6 +186,7 @@ import type {
   CodeUnitKind,
   Effect,
   Predicate,
+  UnfollowedCall,
   ValueRef,
 } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
@@ -1460,8 +1461,10 @@ function extractFromSourceFile(
       }
 
       const summary = assembleSummary(raw, options);
-      if (unit.unfollowed !== undefined && options?.gapHandling !== "silent") {
-        summary.gaps.push(unfollowedCallGap(unit.unfollowed));
+      if (options?.gapHandling !== "silent") {
+        for (const stop of unfollowedStopsOf(unit, wrappers)) {
+          summary.gaps.push(unfollowedCallGap(stop));
+        }
       }
       if (
         unit.metadata !== undefined &&
@@ -1543,6 +1546,22 @@ function stampWrappers(
   for (const wrapper of applied) {
     recordFileDependency(wrapper.file);
   }
+}
+
+/**
+ * The calls this unit is read without: its own registration when the
+ * receiver would not settle, and any wrapper registered on its app
+ * through a factory the store could not follow.
+ */
+function unfollowedStopsOf(
+  unit: DiscoveredUnit,
+  wrappers: WrapperIndex | undefined,
+): UnfollowedCall[] {
+  const stops = unit.unfollowed === undefined ? [] : [unit.unfollowed];
+  if (wrappers === undefined || unit.registrationSubjectId === undefined) {
+    return stops;
+  }
+  return [...stops, ...wrappers.unfollowedFor(unit.registrationSubjectId)];
 }
 
 /**

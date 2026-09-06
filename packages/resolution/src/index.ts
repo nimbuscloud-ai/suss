@@ -640,6 +640,14 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("objectOf", v("x"), v("z"))],
   ),
+  // The same for the function a call returns: `app.use(requireCaller(config))`
+  // registers what the factory gives back, and `resolves` on the call
+  // says nothing unless the factory unwraps an argument.
+  rule(
+    "wantedGivesBack",
+    [v("x"), v("z")],
+    [lit("wanted", v("x")), lit("givesBack", v("x"), v("z"))],
+  ),
   // Keyed by the parameter, since that is what a caller has in hand
   // when it wants the call sites told apart.
   rule(

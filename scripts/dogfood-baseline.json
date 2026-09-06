@@ -2,11 +2,11 @@
   "totals": {
     "packages": 69,
     "packagesWithExports": 69,
-    "exports": 880,
-    "internal": 3015,
-    "consumers": 1676,
-    "pairs": 1673,
-    "unfollowedCalls": 485,
+    "exports": 881,
+    "internal": 3020,
+    "consumers": 1679,
+    "pairs": 1676,
+    "unfollowedCalls": 486,
     "findingErrors": 0
   },
   "packages": {
@@ -26,10 +26,10 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 86,
-      "internal": 821,
-      "consumers": 191,
-      "unfollowedCalls": 105
+      "exports": 87,
+      "internal": 826,
+      "consumers": 192,
+      "unfollowedCalls": 106
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -301,7 +301,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 15,
+      "consumers": 17,
       "unfollowedCalls": 0
     },
     "packages/framework/mongoose": {
