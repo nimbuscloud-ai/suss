@@ -291,7 +291,7 @@ end
 
     const unit = filterUnit(
       filters[0] as never,
-      controllerActionsPattern({ filters: RAILS_LIKE.filters }),
+      controllerActionsPattern({ filters: RAILS_LIKE.filters ?? [] }),
       "app/controllers/orders.rb",
       { bodyContent: "statements" },
     );
