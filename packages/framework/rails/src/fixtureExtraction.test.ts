@@ -70,6 +70,8 @@ describe("extraction over fixtures/ruby-rails", () => {
         "show",
         "show",
         "update",
+        "update",
+        "archive",
         "cancel",
         "create",
         "destroy",
@@ -130,6 +132,59 @@ describe("extraction over fixtures/ruby-rails", () => {
     expect(create.transitions[0]?.output).toMatchObject({
       type: "response",
       statusCode: { type: "literal", value: 201 },
+    });
+  });
+
+  it("reports one transition per branch an action responds on", async () => {
+    const { summaries } = await extractFixture();
+    const update = action(summaries, "items_controller", "update");
+    expect(
+      update.transitions.map((transition) => transition.output),
+    ).toMatchObject([
+      { type: "response", statusCode: { type: "literal", value: 422 } },
+      { type: "response", statusCode: { type: "literal", value: 200 } },
+    ]);
+  });
+
+  it("gates each of those transitions on the test the action branched on", async () => {
+    const { summaries } = await extractFixture();
+    const update = action(summaries, "items_controller", "update");
+    expect(update.transitions[0]?.conditions).toMatchObject([
+      { type: "opaque", sourceText: "params[:name].blank?" },
+    ]);
+    expect(update.transitions[1]?.conditions).toMatchObject([
+      {
+        type: "negation",
+        operand: { type: "opaque", sourceText: "params[:name].blank?" },
+      },
+    ]);
+  });
+
+  it("puts a call written in one arm on that arm's transition alone", async () => {
+    const { summaries } = await extractFixture();
+    const update = action(summaries, "items_controller", "update");
+    expect(update.transitions[0]?.effects).toEqual([]);
+    expect(
+      update.transitions[1]?.effects.map((effect) =>
+        effect.type === "invocation" ? effect.callee : effect.type,
+      ),
+    ).toEqual(["OrderService.new.list_items"]);
+  });
+
+  it("gives an action that only redirects the 302 a redirect sends", async () => {
+    const { summaries } = await extractFixture();
+    const archive = action(summaries, "items_controller", "archive");
+    expect(archive.identity.boundaryBinding).toMatchObject({
+      semantics: {
+        name: "rest",
+        method: "POST",
+        path: "/orders/:order_id/items/:id/archive",
+      },
+    });
+    expect(archive.transitions).toHaveLength(1);
+    expect(archive.transitions[0]?.output).toMatchObject({
+      type: "response",
+      statusCode: { type: "literal", value: 302 },
     });
   });
 

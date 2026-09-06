@@ -99,6 +99,12 @@ export interface RbStatusCall {
   statusKeyword?: string;
   /** The index of the positional argument giving the status, 0 for Rails' `head :no_content`. */
   statusArgument?: number;
+  /**
+   * The status this call sends when the action writes none. Rails'
+   * `redirect_to` sends 302 where its `render` sends the controller's own
+   * default, so a default declared here wins over `defaultStatusCode`.
+   */
+  defaultStatusCode?: number;
 }
 
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */

@@ -4,7 +4,11 @@ Rails.application.routes.draw do
       post :cancel
     end
 
-    resources :items
+    resources :items do
+      member do
+        post :archive
+      end
+    end
   end
 
   get "/orders/:id/summary", to: "orders#summary"

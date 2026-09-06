@@ -198,7 +198,7 @@ describe("ruby lowering feeds the shared path engine", () => {
     ).toEqual([["missing", "negative"]]);
   });
 
-  it("lowers unless the same way as if", async () => {
+  it("lowers unless as an if with the arms the other way around", async () => {
     const { returns, result } = await pathsFor(
       [
         "def get",
@@ -210,6 +210,49 @@ describe("ruby lowering feeds the shared path engine", () => {
       ].join("\n"),
     );
     expect(returns).toHaveLength(2);
-    expect(result.byTerminal.has(returns[0] as RbNode)).toBe(true);
+    expect(
+      result.byTerminal
+        .get(returns[0] as RbNode)?.[0]
+        ?.map((c) => [c.sourceText, c.polarity]),
+    ).toEqual([["ok", "negative"]]);
+    expect(
+      result.byTerminal
+        .get(returns[1] as RbNode)?.[0]
+        ?.map((c) => [c.sourceText, c.polarity]),
+    ).toEqual([["ok", "positive"]]);
+  });
+
+  it("gates a statement an if modifier guards on the test as written", async () => {
+    const { returns, result } = await pathsFor(
+      ["def get", "  return 400 if missing", "  return 200", "end"].join("\n"),
+    );
+    expect(returns).toHaveLength(2);
+    expect(
+      result.byTerminal
+        .get(returns[0] as RbNode)?.[0]
+        ?.map((c) => [c.sourceText, c.polarity]),
+    ).toEqual([["missing", "positive"]]);
+    expect(
+      result.byTerminal
+        .get(returns[1] as RbNode)?.[0]
+        ?.map((c) => [c.sourceText, c.polarity]),
+    ).toEqual([["missing", "negative"]]);
+  });
+
+  it("gates a statement an unless modifier guards on the other side of the test", async () => {
+    const { returns, result } = await pathsFor(
+      ["def get", "  return 400 unless ok", "  return 200", "end"].join("\n"),
+    );
+    expect(returns).toHaveLength(2);
+    expect(
+      result.byTerminal
+        .get(returns[0] as RbNode)?.[0]
+        ?.map((c) => [c.sourceText, c.polarity]),
+    ).toEqual([["ok", "negative"]]);
+    expect(
+      result.byTerminal
+        .get(returns[1] as RbNode)?.[0]
+        ?.map((c) => [c.sourceText, c.polarity]),
+    ).toEqual([["ok", "positive"]]);
   });
 });

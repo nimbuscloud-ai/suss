@@ -15,7 +15,7 @@ import {
   graphqlResolverBinding,
   restBinding,
 } from "@suss/behavioral-ir";
-import { unreadableReading } from "@suss/extractor";
+import { absentReading, unreadableReading } from "@suss/extractor";
 
 import {
   ancestryOf,
@@ -37,7 +37,7 @@ import {
 } from "./ast.js";
 import { envReadEffects } from "./envReads.js";
 import { invocationEffects } from "./paths/effects.js";
-import { responseStatusReading } from "./responseStatus.js";
+import { responseBranches } from "./responseStatus.js";
 import {
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
@@ -398,6 +398,12 @@ function buildControllerActionUnit(
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
   const body = bodyOfMethod(method, bodyRead);
+  const perResponse = responseBranches(
+    method,
+    pattern,
+    body.effects ?? [],
+    body.extraEffects,
+  );
   return {
     identity: {
       name: actionName,
@@ -419,7 +425,7 @@ function buildControllerActionUnit(
             recognition: pack.name,
           }),
     parameters: [],
-    branches: [
+    branches: perResponse ?? [
       {
         conditions: [],
         terminal: {
@@ -435,7 +441,7 @@ function buildControllerActionUnit(
           location: range,
         },
         statusCodeReading: {
-          reading: responseStatusReading(method, pattern),
+          reading: absentReading,
           libraryDefault: pattern.defaultStatusCode,
         },
         effects: body.effects ?? [],

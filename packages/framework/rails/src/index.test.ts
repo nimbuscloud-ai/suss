@@ -48,11 +48,17 @@ describe("railsFramework", () => {
     expect(p.defaultStatusCode).toBe(200);
   });
 
-  it("declares the two calls Rails gives an action for writing a status", () => {
+  it("declares the calls Rails gives an action for sending a response, with the status each redirect defaults to", () => {
     const p = pattern(railsFramework({ configDirectory: "/repo" }));
     expect(p.responseStatusCalls).toEqual([
       { name: "render", statusKeyword: "status" },
       { name: "head", statusArgument: 0, statusKeyword: "status" },
+      { name: "redirect_to", statusKeyword: "status", defaultStatusCode: 302 },
+      {
+        name: "redirect_back",
+        statusKeyword: "status",
+        defaultStatusCode: 302,
+      },
     ]);
   });
 
