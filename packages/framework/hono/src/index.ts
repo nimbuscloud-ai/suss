@@ -38,6 +38,18 @@ const HONO_WRAPPERS: ReadonlyArray<NonNullable<DiscoveryPattern["wraps"]>> = [
 ];
 
 /**
+ * The hook `new OpenAPIHono({ defaultHook })` runs, as `(result, c)`,
+ * when a request fails a route's request schema. It responds in the
+ * handler's place and never continues.
+ */
+const ZOD_OPENAPI_WRAPPERS: ReadonlyArray<
+  NonNullable<DiscoveryPattern["wraps"]>
+> = [
+  ...HONO_WRAPPERS,
+  { constructorOption: "defaultHook", targetPosition: 0, resultParam: 0 },
+];
+
+/**
  * Status codes for Hono's `HTTPException`, thrown rather than returned.
  * The constructor takes the status as its first argument, so the codes
  * map is only consulted for the named subclasses some projects define.
@@ -130,7 +142,7 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
       ...wrapperDiscovery({
         importModule: "@hono/zod-openapi",
         importNames: ["OpenAPIHono"],
-        wraps: HONO_WRAPPERS,
+        wraps: ZOD_OPENAPI_WRAPPERS,
       }),
     ],
 

@@ -13,6 +13,7 @@
   "route": "hono: app method mounting a sub-app under a prefix",
   "use": "hono: app method registering middleware for a path pattern",
   "onError": "hono: app method registering the handler that responds when a route throws",
+  "defaultHook": "@hono/zod-openapi: OpenAPIHono constructor option, the hook that runs after every route's validation",
   "responses": "@hono/zod-openapi: createRoute config key with the declared responses",
   "registrationArgument": "suss: ContractPattern endpoint location, the contract as the handler's sibling argument",
   "context": "suss: input role",
