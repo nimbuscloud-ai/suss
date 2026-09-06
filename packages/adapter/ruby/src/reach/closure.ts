@@ -45,18 +45,17 @@ import type {
 } from "@suss/behavioral-ir";
 import type { RawCodeStructure, RawParameter } from "@suss/extractor";
 import type { AncestorLookup, ReachedBody } from "../ancestry.js";
+import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
-import type { RbStorageOptions } from "../storage.js";
 import type {
   CallSite,
   ReachContext,
   ReachedFunction,
 } from "./resolveCallee.js";
 
-export interface ReachOptions {
+export interface ReachOptions extends BodyReadOptions {
   /** Every file this run parsed, so a call anywhere in the project can be placed against a class defined in any of them. */
   readonly files: readonly { file: string; root: RbNode }[];
-  readonly storage?: RbStorageOptions | undefined;
   /** How a `location.file`/`declaredAt.file` spells an absolute path, the same way `project.ts` spells a discovered unit's. */
   readonly displayPathOf: (file: string) => string;
 }
@@ -145,7 +144,7 @@ export async function reachedFunctions(
       if (source === undefined) {
         continue;
       }
-      const scan = await scanBody(source, ctx, options.displayPathOf);
+      const scan = await scanBody(source, ctx, options);
       if (scan.stops.length > 0) {
         stopsByKey.set(key, scan.stops);
       }
@@ -327,14 +326,17 @@ function methodReferenceSymbol(node: RbNode): RbNode | null {
 async function scanBody(
   source: ReachedFunction,
   ctx: ReachContext,
-  displayPathOf: (file: string) => string,
+  options: ReachOptions,
 ): Promise<Scan> {
+  const displayPathOf = options.displayPathOf;
   const body = field(source.node, "body");
   if (body === null) {
     return EMPTY_SCAN;
   }
 
-  const calls = withoutChainLinks(bodyCalls(source.node));
+  const calls = withoutChainLinks(
+    bodyCalls(source.node, options.inheritedMethods),
+  );
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
   const site: CallSite = {
     enclosingQualifiedName: source.enclosingQualifiedName,
@@ -456,7 +458,7 @@ function libraryUnit(
   options: ReachOptions,
 ): RawCodeStructure {
   const { file, node, name, exportPath } = target;
-  const body = bodyOfMethod(node, options.storage);
+  const body = bodyOfMethod(node, options);
   const range = rangeOf(node);
   return {
     identity: {

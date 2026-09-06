@@ -74,6 +74,7 @@ import type {
   RubyPack,
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
+import type { InheritedMethods } from "./paths/effects.js";
 import type { ClassInfo } from "./scope.js";
 import type { TypeReadContext } from "./typeShape.js";
 
@@ -101,15 +102,25 @@ export function createFileCache(
   };
 }
 
-export interface DiscoveryOptions {
+/**
+ * What the run's packs said that reading a method body needs. An
+ * options object that already declares both fields, `DiscoveryOptions`
+ * among them, is one of these and can be passed straight through.
+ */
+export interface BodyReadOptions {
+  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
+  readonly storage?: RbStorageOptions | undefined;
+  /** The methods every pack in the run said its own library defines, which are left off an effect list. */
+  readonly inheritedMethods?: InheritedMethods | undefined;
+}
+
+export interface DiscoveryOptions extends BodyReadOptions {
   packs: RubyPack[];
   /** Repo-relative or absolute path recorded on each summary's `location.file`. */
   filePath: string;
   /** Absolute path of the file being read, for a block's own `ReachedBody.file`. Falls back to `filePath` when nothing was written to disk. */
   absoluteFile?: string;
   cache: FileCache;
-  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
-  storage?: RbStorageOptions | undefined;
   /** Called once per discovered unit whose own body is a method this run can follow calls out of, so the reach walk has a place to start. */
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
 }
@@ -132,19 +143,19 @@ interface FieldReadContext {
   pattern: GraphqlObjectFields;
   cache: FileCache;
   lookup: AncestorLookup;
-  storage?: RbStorageOptions | undefined;
+  bodyRead: BodyReadOptions;
 }
 
 function fieldReadContext(
   pattern: GraphqlObjectFields,
   cache: FileCache,
   fileBlocks: readonly ReachedBody[],
-  storage?: RbStorageOptions,
+  bodyRead: BodyReadOptions,
 ): FieldReadContext {
   return {
     pattern,
     cache,
-    storage,
+    bodyRead,
     lookup: {
       root: pattern.root,
       pathConvention: pattern.pathConvention,
@@ -270,12 +281,7 @@ async function graphqlObjectFieldUnits(
   ) {
     return [];
   }
-  const ctx = fieldReadContext(
-    pattern,
-    options.cache,
-    fileBlocks,
-    options.storage,
-  );
+  const ctx = fieldReadContext(pattern, options.cache, fileBlocks, options);
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
   if (
     !reachesConfiguredBase(ancestry, info.qualifiedName, pattern.baseClassNames)
@@ -367,7 +373,7 @@ async function controllerActionUnits(
         actionName,
         method,
         options.filePath,
-        options.storage,
+        options,
       );
       units.push(raw);
       options.onReachSeed?.(raw, {
@@ -387,11 +393,11 @@ function buildControllerActionUnit(
   actionName: string,
   method: RbNode,
   filePath: string,
-  storage?: RbStorageOptions,
+  bodyRead: BodyReadOptions,
 ): RawCodeStructure {
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
-  const body = bodyOfMethod(method, storage);
+  const body = bodyOfMethod(method, bodyRead);
   return {
     identity: {
       name: actionName,
@@ -589,9 +595,10 @@ export interface BodyReport {
 
 export function bodyOfMethod(
   method: RbNode,
-  storage?: RbStorageOptions,
+  bodyRead: BodyReadOptions = {},
 ): BodyReport {
-  const effects = invocationEffects(method);
+  const effects = invocationEffects(method, bodyRead.inheritedMethods);
+  const storage = bodyRead.storage;
   const extra = [
     ...envReadEffects(method),
     ...(storage === undefined
@@ -639,11 +646,11 @@ function bodyFromLookup(
   range: Range,
   subject: string,
   nothingThere: BodyReport,
-  storage?: RbStorageOptions,
+  bodyRead: BodyReadOptions,
 ): BodyReport {
   const table: DispatchTable<MethodLookup, BodyReport> = {
     found: (lookup) => ({
-      ...bodyOfMethod(lookup.method, storage),
+      ...bodyOfMethod(lookup.method, bodyRead),
       reachSeed: {
         file: lookup.block.file,
         node: lookup.method,
@@ -762,7 +769,7 @@ async function readFieldShape(
       range,
       "This field",
       NO_METHOD_BEHIND_IT,
-      ctx.storage,
+      ctx.bodyRead,
     ),
   };
 }
@@ -825,7 +832,7 @@ async function readWiredClass(
         `This field is wired to ${targetQualifiedName}, which defines no ${ctx.pattern.resolverMethodName} method anywhere in its ancestry, so nothing about what it does was read here`,
         range,
       ),
-      ctx.storage,
+      ctx.bodyRead,
     ),
   };
 }

@@ -609,6 +609,41 @@ describe("a controllerActions pattern's routing gaps", () => {
     ]);
   });
 
+  it("leaves a pack's declared library methods out of an action's effects and out of what the reach walk reports", async () => {
+    const orders = write(
+      "app/controllers/orders_controller.rb",
+      [
+        "class OrdersController < ApplicationController",
+        "  def index",
+        "    visible_orders(params[:id])",
+        "  end",
+        "",
+        "  private",
+        "",
+        "  def visible_orders(id)",
+        "    render json: id",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const pack = railsTestPack({ inheritedMethodNames: ["params", "render"] });
+
+    const { summaries } = await extractRubyProject({
+      files: [orders],
+      packs: [pack],
+    });
+    const calleesOf = (name: string) =>
+      summaries
+        .filter((s) => s.identity.name === name)
+        .flatMap((s) => s.transitions)
+        .flatMap((t) => t.effects)
+        .filter((effect) => effect.type === "invocation")
+        .map((effect) => effect.callee);
+    expect(calleesOf("index")).toEqual(["visible_orders"]);
+    expect(calleesOf("visible_orders")).toEqual([]);
+  });
+
   it("emits nothing when the pattern has no gap to report", async () => {
     const orders = write(
       "app/controllers/orders_controller.rb",

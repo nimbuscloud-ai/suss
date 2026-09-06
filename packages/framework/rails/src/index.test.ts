@@ -69,6 +69,26 @@ describe("railsFramework", () => {
     });
   });
 
+  it("declares the methods Rails gives every controller", () => {
+    const p = pattern(railsFramework({ configDirectory: "/repo" }));
+    expect(p.inheritedMethodNames).toContain("params");
+    expect(p.inheritedMethodNames).toContain("render");
+    expect(p.inheritedMethodNames).toContain("redirect_to");
+    // Devise defines this one, so Rails' own list leaves it to a project.
+    expect(p.inheritedMethodNames).not.toContain("current_user");
+  });
+
+  it("adds a project's own inherited methods alongside Rails' own", () => {
+    const p = pattern(
+      railsFramework({
+        configDirectory: "/repo",
+        inheritedMethodNames: ["current_user"],
+      }),
+    );
+    expect(p.inheritedMethodNames).toContain("params");
+    expect(p.inheritedMethodNames).toContain("current_user");
+  });
+
   it("adds a project's own base class names alongside the default", () => {
     const pack = railsFramework({
       root: path.join(fixtureRoot, "app"),

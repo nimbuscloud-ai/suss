@@ -89,6 +89,27 @@ export interface ExtractRubyResult {
   facts: Database;
 }
 
+/**
+ * Every method the run's packs said their own libraries define, pooled
+ * across the packs. One pool rather than one per pattern, because the
+ * reach walk reads methods that no pattern discovered and still has to
+ * leave these out of what it reports.
+ */
+function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
+  const found = new Set<string>();
+  for (const pack of packs) {
+    for (const pattern of pack.discovery) {
+      if (pattern.type !== "controllerActions") {
+        continue;
+      }
+      for (const name of pattern.inheritedMethodNames ?? []) {
+        found.add(name);
+      }
+    }
+  }
+  return found;
+}
+
 export async function extractRubyProject(
   options: ExtractRubyOptions,
 ): Promise<ExtractRubyResult> {
@@ -169,6 +190,7 @@ export async function extractRubyProject(
   });
 
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
+  const inheritedMethods = inheritedMethodsIn(options.packs);
   // Facts keep the full filesystem path, because they are joined against
   // internally. Only the summary's `location.file` gets shortened.
   const displayPathOf = (file: string): string =>
@@ -195,6 +217,7 @@ export async function extractRubyProject(
         ...(storagePatterns.length > 0
           ? { storage: { facts: db, patterns: storagePatterns } }
           : {}),
+        inheritedMethods,
         onReachSeed: (raw, seed) => seedByRaw.set(raw, seed),
       }),
     );
@@ -276,6 +299,7 @@ export async function extractRubyProject(
       ...(storagePatterns.length > 0
         ? { storage: { facts: db, patterns: storagePatterns } }
         : {}),
+      inheritedMethods,
     }),
   );
   for (const [key, owners] of summariesBySeed) {
