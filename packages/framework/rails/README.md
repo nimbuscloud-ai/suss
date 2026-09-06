@@ -25,6 +25,21 @@ Framework pack for [Rails](https://rubyonrails.org/) controller actions and the 
   ```
 
   reports two transitions: 201 when `item.save`, and 422 when it does not. A call written in one arm goes on that arm's transition alone. A path that reaches the end of the body, or that ends in a `return` with no response call, is Rails' implicit render and is reported at 200.
+- **Filters**: `before_action :require_login` runs a method before the action, and the request ends there when that method renders, heads or redirects. The pack declares `before_action` and `rescue_from`, and the adapter gives each named method a unit of its own, saying what it responds with on the paths where it responds and handing the request on down the rest. Every action the filter covers records it, and what the action reports is the two composed:
+
+  ```ruby
+  class ApplicationController < ActionController::Base
+    before_action :require_login
+
+    private
+
+    def require_login
+      head :unauthorized if session[:user_id].nil?
+    end
+  end
+  ```
+
+  Every action in the project now reports 401 when there is no session, and its own outcomes under the negation of that test. `only:` and `except:` narrow a filter to some of the actions, `skip_before_action` takes one back off, and a filter written on a base class reaches every controller that inherits it. A `rescue_from ... with: :handler` runs only when the action raised, so what its method responds with is reported on the paths that raise.
 - **The methods Rails gives every controller**: an action that writes `params[:id]`, `render`, `head`, `session` or `redirect_to` is using something `ActionController::Base` or `ActionController::API` defines, not something the project wrote, so the pack declares those methods and the adapter leaves them off the action's effects. What is left is what the action reaches in the project: its services, its models, its own helpers. A gem that defines a controller method of its own is a separate matter, and a project says so with `inheritedMethodNames` below.
 - **The naming-convention fallback**: when the routes file this pack was pointed at does not exist, every action named for one of Rails' seven conventional actions (`index`, `show`, `new`, `create`, `edit`, `update`, `destroy`) is bound at the method and path that convention gives it instead, and the run records one gap saying so. A routes file that does exist is the source of truth: an action it does not route stays unbound, even if its name looks conventional.
 
@@ -38,6 +53,7 @@ Framework pack for [Rails](https://rubyonrails.org/) controller actions and the 
 - **`respond_to` reads as a loop.** Each format block gets its own transition, gated on a condition saying that block ran, and there is a further transition for the path where none of them did. Which format the request asked for is not something a reader of the source can settle.
 - **A helper called by its bare name is followed.** `render json: visible_items` calls `visible_items` on self, so the action gets an invocation effect for it and the helper gets a summary of its own, private or not. The Ruby adapter's README says how a bare name is told apart from a local variable read. A method a gem defines on every controller, `current_user` from Devise being the common one, is a call the same way, and shows up on the summary as an invocation nothing follows until a project lists it under `inheritedMethodNames`.
 - **Visibility read top to bottom, at the top level only.** A bare `private`/`protected`/`public`, a `private def name; end`, and a `private :a, :b` are all read, in the order the class body writes them. A visibility call wrapped in an `if` or written inside a block is not; a method it would have marked is read as public instead.
+- **`around_action` and `after_action` are not read.** Only the two calls that decide what a request comes back with are declared. A filter written as a block rather than a method name is not read either, and neither is one whose method a gem defines rather than the project, since there is no body to say what it does.
 - **`routes.rb` is read once, standalone.** A route path or a `to:` target built from what the file itself states, a local variable in the draw block, a constant above it, an interpolation, `File.join`, or the default of an `ENV.fetch`, is read to the string Rails serves. One built from a value the file does not state, `ENV["PREFIX"]` or a method defined elsewhere, is not read, and the action it would have bound stays unbound.
 
 ## Where it fits in suss

@@ -89,6 +89,27 @@ const RESPONSE_STATUS_CALLS = [
 ];
 
 /**
+ * The two class-level calls that put a controller's own method in front
+ * of its actions. A `before_action` runs before the action and ends the
+ * request when it responds; a `rescue_from` runs only after the action
+ * raised. `only:` and `except:` narrow either to some of the actions,
+ * and `skip_before_action` takes a before_action back off.
+ */
+const CONTROLLER_FILTERS = [
+  {
+    name: "before_action",
+    methodFrom: "argument" as const,
+    skippedBy: "skip_before_action",
+    actionKeywords: { include: "only", exclude: "except" },
+  },
+  {
+    name: "rescue_from",
+    methodFrom: "withKeyword" as const,
+    onThrow: true,
+  },
+];
+
+/**
  * The methods `ActionController::Base` and `ActionController::API` give
  * every controller, so a project defines none of them and an action that
  * writes one is not reaching anything the project owns. Each one is an
@@ -187,6 +208,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
       ...(options.inheritedMethodNames ?? []),
     ],
     routesFile,
+    filters: CONTROLLER_FILTERS,
     routeFor: (controllerQualifiedName, actionName) => {
       const key = controllerKeyFromQualified(controllerQualifiedName);
       const found = routeTable();

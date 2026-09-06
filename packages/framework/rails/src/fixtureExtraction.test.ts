@@ -52,6 +52,15 @@ function action(
   return found as BehavioralSummary;
 }
 
+/** The transitions the action's own body produced, without the ones its filters contributed. */
+function own(summary: BehavioralSummary): BehavioralSummary["transitions"] {
+  return summary.transitions.filter(
+    (transition) =>
+      (transition.metadata?.wrappers as { from?: unknown } | undefined)
+        ?.from === undefined,
+  );
+}
+
 describe("extraction over fixtures/ruby-rails", () => {
   it("discovers every action a controller defines, routed or not", async () => {
     const { summaries } = await extractFixture();
@@ -120,7 +129,7 @@ describe("extraction over fixtures/ruby-rails", () => {
   it("gives an action that writes no status of its own Rails' own default", async () => {
     const { summaries } = await extractFixture();
     const index = action(summaries, "orders_controller", "index");
-    expect(index.transitions[0]?.output).toMatchObject({
+    expect(own(index)[0]?.output).toMatchObject({
       type: "response",
       statusCode: { type: "literal", value: 200 },
     });
@@ -129,7 +138,7 @@ describe("extraction over fixtures/ruby-rails", () => {
   it("reads the status a render call gives, written as a Rack symbol", async () => {
     const { summaries } = await extractFixture();
     const create = action(summaries, "items_controller", "create");
-    expect(create.transitions[0]?.output).toMatchObject({
+    expect(own(create)[0]?.output).toMatchObject({
       type: "response",
       statusCode: { type: "literal", value: 201 },
     });
@@ -138,9 +147,7 @@ describe("extraction over fixtures/ruby-rails", () => {
   it("reports one transition per branch an action responds on", async () => {
     const { summaries } = await extractFixture();
     const update = action(summaries, "items_controller", "update");
-    expect(
-      update.transitions.map((transition) => transition.output),
-    ).toMatchObject([
+    expect(own(update).map((transition) => transition.output)).toMatchObject([
       { type: "response", statusCode: { type: "literal", value: 422 } },
       { type: "response", statusCode: { type: "literal", value: 200 } },
     ]);
@@ -149,23 +156,29 @@ describe("extraction over fixtures/ruby-rails", () => {
   it("gates each of those transitions on the test the action branched on", async () => {
     const { summaries } = await extractFixture();
     const update = action(summaries, "items_controller", "update");
-    expect(update.transitions[0]?.conditions).toMatchObject([
-      { type: "opaque", sourceText: "params[:name].blank?" },
-    ]);
-    expect(update.transitions[1]?.conditions).toMatchObject([
-      {
-        type: "negation",
-        operand: { type: "opaque", sourceText: "params[:name].blank?" },
+    // Every action here runs behind the base controller's login filter,
+    // so its own test comes after that filter's.
+    expect(own(update)[0]?.conditions).toContainEqual({
+      type: "opaque",
+      sourceText: "params[:name].blank?",
+      reason: "complexExpression",
+    });
+    expect(own(update)[1]?.conditions).toContainEqual({
+      type: "negation",
+      operand: {
+        type: "opaque",
+        sourceText: "params[:name].blank?",
+        reason: "complexExpression",
       },
-    ]);
+    });
   });
 
   it("puts a call written in one arm on that arm's transition alone", async () => {
     const { summaries } = await extractFixture();
     const update = action(summaries, "items_controller", "update");
-    expect(update.transitions[0]?.effects).toEqual([]);
+    expect(own(update)[0]?.effects).toEqual([]);
     expect(
-      update.transitions[1]?.effects.map((effect) =>
+      own(update)[1]?.effects.map((effect) =>
         effect.type === "invocation" ? effect.callee : effect.type,
       ),
     ).toEqual(["OrderService.new.list_items"]);
@@ -181,8 +194,8 @@ describe("extraction over fixtures/ruby-rails", () => {
         path: "/orders/:order_id/items/:id/archive",
       },
     });
-    expect(archive.transitions).toHaveLength(1);
-    expect(archive.transitions[0]?.output).toMatchObject({
+    expect(own(archive)).toHaveLength(1);
+    expect(own(archive)[0]?.output).toMatchObject({
       type: "response",
       statusCode: { type: "literal", value: 302 },
     });
@@ -191,7 +204,7 @@ describe("extraction over fixtures/ruby-rails", () => {
   it("reads the status a head call gives", async () => {
     const { summaries } = await extractFixture();
     const destroy = action(summaries, "items_controller", "destroy");
-    expect(destroy.transitions[0]?.output).toMatchObject({
+    expect(own(destroy)[0]?.output).toMatchObject({
       type: "response",
       statusCode: { type: "literal", value: 204 },
     });
@@ -201,7 +214,7 @@ describe("extraction over fixtures/ruby-rails", () => {
     const { summaries } = await extractFixture();
     const preview = action(summaries, "orders_controller", "preview");
     expect(preview.identity.boundaryBinding).toBeNull();
-    expect(preview.transitions[0]?.effects.length).toBeGreaterThan(0);
+    expect(own(preview)[0]?.effects.length).toBeGreaterThan(0);
   });
 
   it("records config/routes.rb's mount declaration as one gap, not repeated per action", async () => {
@@ -219,7 +232,7 @@ describe("extraction over fixtures/ruby-rails", () => {
     const { summaries } = await extractFixture();
     const index = action(summaries, "orders_controller", "index");
     expect(
-      index.transitions[0]?.effects.some(
+      own(index)[0]?.effects.some(
         (effect) =>
           effect.type === "invocation" && effect.callee.includes("list_orders"),
       ),
@@ -244,7 +257,7 @@ describe("extraction over fixtures/ruby-rails", () => {
     const { summaries } = await extractFixture();
     const show = action(summaries, "items_controller", "show");
     expect(
-      show.transitions[0]?.effects.some(
+      own(show)[0]?.effects.some(
         (effect) =>
           effect.type === "invocation" &&
           effect.callee.includes("visible_items"),
@@ -266,7 +279,7 @@ describe("extraction over fixtures/ruby-rails", () => {
   it("leaves the methods Rails defines off an action's effects", async () => {
     const { summaries } = await extractFixture();
     const index = action(summaries, "items_controller", "index");
-    const callees = (index.transitions[0]?.effects ?? [])
+    const callees = (own(index)[0]?.effects ?? [])
       .filter((effect) => effect.type === "invocation")
       .map((effect) => effect.callee);
     expect(callees).toEqual(["OrderService.new.list_items"]);
@@ -275,11 +288,11 @@ describe("extraction over fixtures/ruby-rails", () => {
   it("leaves render and head off an action's effects while still reading their status", async () => {
     const { summaries } = await extractFixture();
     const create = action(summaries, "items_controller", "create");
-    const callees = (create.transitions[0]?.effects ?? [])
+    const callees = (own(create)[0]?.effects ?? [])
       .filter((effect) => effect.type === "invocation")
       .map((effect) => effect.callee);
     expect(callees).toEqual(["OrderService.new.list_items"]);
-    expect(create.transitions[0]?.output).toMatchObject({
+    expect(own(create)[0]?.output).toMatchObject({
       statusCode: { type: "literal", value: 201 },
     });
   });
@@ -332,7 +345,7 @@ describe("extraction over fixtures/ruby-rails", () => {
     const { summaries } = await extractFixture();
     const cancel = action(summaries, "orders_controller", "cancel");
     expect(
-      cancel.transitions[0]?.effects.some(
+      own(cancel)[0]?.effects.some(
         (effect) =>
           effect.type === "invocation" &&
           effect.callee.includes("authorize_order!"),
@@ -349,5 +362,81 @@ describe("extraction over fixtures/ruby-rails", () => {
           effect.type === "invocation" && effect.callee.includes("find_order"),
       ),
     ).toBe(true);
+  });
+
+  it("gives a before_action a unit that responds on one path and hands on down the other", async () => {
+    const { summaries } = await extractFixture();
+    const filter = summaries.find(
+      (s) => s.kind === "middleware" && s.identity.name === "require_login",
+    );
+    expect(filter?.transitions.map((t) => t.output.type)).toEqual([
+      "response",
+      "delegate",
+    ]);
+    expect(filter?.transitions[0]?.output).toMatchObject({
+      statusCode: { type: "literal", value: 401 },
+    });
+  });
+
+  it("reports the status a base controller's filter sends on every action it covers", async () => {
+    const { summaries } = await extractFixture();
+    const show = action(summaries, "profiles_controller", "show");
+    const unauthorized = show.transitions.find(
+      (t) =>
+        t.output.type === "response" &&
+        t.output.statusCode?.type === "literal" &&
+        t.output.statusCode.value === 401,
+    );
+    expect(unauthorized).toBeDefined();
+    expect(
+      (unauthorized?.metadata?.wrappers as { from?: { name: string } })?.from
+        ?.name,
+    ).toBe("require_login");
+  });
+
+  it("leaves the filter off the action a skip_before_action names", async () => {
+    const { summaries } = await extractFixture();
+    const index = action(summaries, "orders_controller", "index");
+    const applied = (
+      index.metadata?.wrappers as { applied?: { name: string }[] }
+    )?.applied;
+    expect(applied?.map((one) => one.name)).not.toContain("require_login");
+    expect(
+      index.transitions.some(
+        (t) =>
+          t.output.type === "response" &&
+          t.output.statusCode?.type === "literal" &&
+          t.output.statusCode.value === 401,
+      ),
+    ).toBe(false);
+  });
+
+  it("runs a filter narrowed by only: on those actions alone", async () => {
+    const { summaries } = await extractFixture();
+    const covered = (name: string): string[] =>
+      (
+        (
+          action(summaries, "orders_controller", name).metadata?.wrappers as {
+            applied?: { name: string }[];
+          }
+        )?.applied ?? []
+      ).map((one) => one.name);
+
+    expect(covered("show")).toContain("load_order");
+    expect(covered("summary")).not.toContain("load_order");
+  });
+
+  it("records a rescue_from handler as a filter that runs after a raise", async () => {
+    const { summaries } = await extractFixture();
+    const applied = (
+      action(summaries, "orders_controller", "show").metadata?.wrappers as {
+        applied?: { name: string; onThrow?: boolean }[];
+      }
+    )?.applied;
+    expect(applied).toContainEqual({
+      file: expect.stringContaining("application_controller.rb"),
+      name: "not_found",
+      onThrow: true,
+    });
   });
 });

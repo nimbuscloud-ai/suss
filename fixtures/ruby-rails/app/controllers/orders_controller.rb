@@ -1,4 +1,7 @@
 class OrdersController < ApplicationController
+  skip_before_action :require_login, only: [:index]
+  before_action :load_order, only: %i[show cancel]
+
   def index
     OrderService.new.list_orders(current_user)
   end
@@ -26,5 +29,10 @@ class OrdersController < ApplicationController
   # Not an action: Rails dispatches to a public method only.
   def authorize_order!(id)
     OrderService.new.find_order(id)
+  end
+
+  def load_order
+    order = OrderService.new.find_order(params[:id])
+    head :not_found if order.nil?
   end
 end
