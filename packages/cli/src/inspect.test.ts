@@ -533,6 +533,35 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  it("counts one left-out file in the singular", () => {
+    const before = [
+      changedTo("first", "src/first.ts", 200),
+      changedTo("second", "src/second.ts", 200),
+    ];
+    const after = [
+      changedTo("first", "src/first.ts", 201),
+      changedTo("second", "src/second.ts", 201),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, budget: 120 }),
+      );
+      expect(output).toContain("1 more unit in 1 more file");
+    });
+  });
+
+  it("says a unit was added or removed under the file it was in", () => {
+    const before = [changedTo("gone", "src/gone.ts", 200)];
+    const after = [changedTo("fresh", "src/fresh.ts", 200)];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("src/fresh.ts\n  + fresh  new handler with");
+      expect(output).toContain("src/gone.ts\n  - gone  removed handler (had");
+    });
+  });
+
   it("says which field moved when the two lines read the same", () => {
     // The short line says the output and the conditions. A change to
     // anything else printed as one line twice, and a reader gating a

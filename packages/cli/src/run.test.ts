@@ -719,6 +719,26 @@ describe("runCli inspect", () => {
     expect(io.stdout.length).toBeGreaterThan(0);
   });
 
+  it("inspect --diff reads the changed files and the budget it was given", async () => {
+    const a = writeJson("read-a.json", [minimalSummary]);
+    const b = writeJson("read-b.json", [minimalSummary]);
+    const list = path.join(tmpDir, "changed.txt");
+    fs.writeFileSync(list, `${minimalSummary.location.file}\n\n`);
+    const { exit } = await capture(() =>
+      runCli([
+        "inspect",
+        "--diff",
+        a,
+        b,
+        "--changed-files",
+        list,
+        "--budget",
+        "5000",
+      ]),
+    );
+    expect(exit).toBe(0);
+  });
+
   it("inspect --budget takes a number of characters", async () => {
     const a = writeJson("budget-a.json", [minimalSummary]);
     const b = writeJson("budget-b.json", [minimalSummary]);
