@@ -639,6 +639,47 @@ describe("readContract", () => {
     expect(result?.declaredContract.provenance).toBe("independent");
   });
 
+  it("counts the statuses a route spreads in from a shared object", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/errors.ts",
+      `
+      export const errorResponses = {
+        401: { description: "unauthorized" },
+        ...{ 503: { description: "unavailable" } },
+      };
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+      import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+      import { errorResponses } from "./errors";
+      const routes = {
+        read: createRoute({
+          method: "get",
+          path: "/v1/tenants/{tenantId}",
+          responses: { 200: { description: "ok" }, ...errorResponses },
+        }),
+      } as const;
+      export function register(app: OpenAPIHono): void {
+        app.openapi(routes.read as any, async (c) => c.json({}, 200));
+      }
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [zodOpenapiPack],
+    });
+
+    const [route] = await adapter.extractAll();
+    expect(
+      readHttpMetadata(route)?.declaredContract?.responses.map(
+        (one) => one.statusCode,
+      ),
+    ).toEqual([200, 401, 503]);
+  });
+
   it("returns null when a registration-argument handler stands alone", () => {
     const project = createTestProject();
     const source = `
