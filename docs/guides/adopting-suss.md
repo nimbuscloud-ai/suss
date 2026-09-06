@@ -242,32 +242,22 @@ three patterns.
 
 ## 5. Gate on it
 
-Two things go into CI. `check --fail-on error` fails the build on an
-error-severity finding, and `inspect --diff` on the base and the head
-of a pull request reports what the change did to each unit:
+Two things go into CI. The `inspect-diff` action reads the base and
+the head of a pull request and posts what the change did to each unit
+as a comment, and `check --fail-on error` fails the build on an
+error-severity finding:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
   with:
-    ref: ${{ github.base_ref }}
-    path: base
-
-- name: Extract the base
-  run: |
-    npm ci --prefix base
-    npx suss extract -p base/tsconfig.json -f express -f prisma -o before.json
-
-- name: Extract the head
-  run: npx suss extract -f express -f prisma -o after.json
-
-- name: What the change did
-  run: npx suss inspect --diff before.json after.json
+    extract: -p tsconfig.json -f express -f prisma
 
 - name: Check the boundaries
   run: npx suss check --dir summaries/ --fail-on error
 ```
 
-[Set up CI checking](/guides/ci-integration) has the whole workflow.
+[Set up CI checking](/guides/ci-integration) has the whole workflow,
+and the action's README lists its inputs.
 
 **What you get.** The diff is the thing a reviewer reads first on a
 pull request too large to read in full:
