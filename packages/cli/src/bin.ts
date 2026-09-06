@@ -4,6 +4,14 @@
 
 import { runCli } from "./run.js";
 
+// `suss inspect | head` closes the pipe once head has what it wants.
+// That is the reader saying enough, so the run ends without a trace.
+process.stdout.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code !== "EPIPE") {
+    throw error;
+  }
+});
+
 runCli(process.argv.slice(2)).then(
   (code) => {
     process.exitCode = code;
