@@ -1,6 +1,6 @@
 {
   "name": "@suss/values",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "type": "module",
   "description": "A bounded evaluator that folds what the source determines about a value and keeps a hole for the rest.",
   "keywords": [
@@ -43,7 +43,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/ir-core": "0.22.2"
+    "@suss/ir-core": "0.22.3"
   },
   "devDependencies": {
     "tsup": "*",
