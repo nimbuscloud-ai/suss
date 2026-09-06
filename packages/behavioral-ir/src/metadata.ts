@@ -906,6 +906,15 @@ const StorageContractMetadataSchema = z.object({
          * write changes no column of this container.
          */
         relationKey: z.array(z.string()).optional(),
+        /**
+         * The container of the implicit join table this relation
+         * writes through, when Prisma manages the many-to-many itself
+         * rather than through a model either side declares. A
+         * `connect`, `disconnect` or `set` through this field changes
+         * a row of that container instead of a column here or on the
+         * model this field points at.
+         */
+        joinContainer: z.string().optional(),
       }),
     )
     .optional(),

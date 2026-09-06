@@ -27,5 +27,7 @@
   "exhaustive": "suss: a storage contract that declares every field",
   "_count": "Prisma client: the relation counts a query can ask for",
   "PrismaCount": "suss: the type this pack gives the _count field",
-  "keyValue": "suss: the parser's node type for a named attribute argument"
+  "keyValue": "suss: the parser's node type for a named attribute argument",
+  "A": "Prisma client: the column of an implicit many-to-many join table referencing the model whose name sorts first",
+  "B": "Prisma client: the column of an implicit many-to-many join table referencing the model whose name sorts second"
 }

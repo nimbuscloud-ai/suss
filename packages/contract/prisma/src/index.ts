@@ -139,10 +139,26 @@ export function prismaSchemaToSummaries(
     return [];
   }
 
-  // Second pass: emit one summary per model / view.
+  // Second pass: emit one summary per model / view, plus one per
+  // implicit many-to-many join table the models declare between them.
   const sourceFile = options.source ?? "schema.prisma";
   const scope = options.scope ?? "default";
   const summaries: BehavioralSummary[] = [];
+  const models = list.filter(
+    (node): node is PrismaModel => (node as { type: string }).type === "model",
+  );
+  const relations = implicitManyToManyRelations(models, modelNames);
+  const joinContainerByField = new Map<string, string>();
+  for (const relation of relations) {
+    joinContainerByField.set(
+      `${relation.leftModel}.${relation.leftField}`,
+      relation.joinTable,
+    );
+    joinContainerByField.set(
+      `${relation.rightModel}.${relation.rightField}`,
+      relation.joinTable,
+    );
+  }
 
   for (const node of list) {
     const n = node as { type: string };
@@ -158,11 +174,207 @@ export function prismaSchemaToSummaries(
         storageSystem,
         scope,
         sourceFile,
+        joinContainerByField,
       }),
     );
   }
 
+  for (const relation of relations) {
+    summaries.push(
+      buildJoinTableSummary({ relation, storageSystem, scope, sourceFile }),
+    );
+  }
+
   return summaries;
+}
+
+/**
+ * One relation table Prisma manages itself, between two list fields
+ * that point at each other with neither side declaring the foreign
+ * key. An explicit join model already has a `@relation(fields: [...])`
+ * on one of its own fields, so it never matches here.
+ */
+interface ImplicitManyToMany {
+  leftModel: string;
+  leftField: string;
+  rightModel: string;
+  rightField: string;
+  relationName: string | null;
+  joinTable: string;
+}
+
+/**
+ * Every implicit many-to-many the schema declares, one entry per
+ * relation regardless of which side it is read from.
+ */
+function implicitManyToManyRelations(
+  models: PrismaModel[],
+  modelNames: Set<string>,
+): ImplicitManyToMany[] {
+  const byName = new Map(models.map((model) => [model.name, model]));
+  const found: ImplicitManyToMany[] = [];
+  const seen = new Set<string>();
+
+  for (const model of models) {
+    for (const property of model.properties) {
+      if ((property as { type: string }).type !== "field") {
+        continue;
+      }
+      const field = property as PrismaField;
+      if (
+        field.array !== true ||
+        !modelNames.has(field.fieldType) ||
+        relationKeyOf(field) !== null
+      ) {
+        continue;
+      }
+      const target = byName.get(field.fieldType);
+      if (target === undefined) {
+        continue;
+      }
+      const relationName = relationNameOf(field);
+      const counterpart = counterpartField(
+        target,
+        model.name,
+        field.name,
+        relationName,
+      );
+      if (counterpart === null) {
+        continue;
+      }
+      const signature = pairSignature(
+        { model: model.name, field: field.name },
+        { model: field.fieldType, field: counterpart.name },
+      );
+      if (seen.has(signature)) {
+        continue;
+      }
+      seen.add(signature);
+      found.push({
+        leftModel: model.name,
+        leftField: field.name,
+        rightModel: field.fieldType,
+        rightField: counterpart.name,
+        relationName,
+        joinTable: joinTableName(model.name, field.fieldType, relationName),
+      });
+    }
+  }
+  return found;
+}
+
+/**
+ * The list relation field on the other side of an implicit
+ * many-to-many: same relation name (both unnamed counts as a match),
+ * pointing back at this model, and never the field itself for a
+ * self-relation.
+ */
+function counterpartField(
+  target: PrismaModel,
+  backTo: string,
+  ownFieldName: string,
+  relationName: string | null,
+): PrismaField | null {
+  for (const property of target.properties) {
+    if ((property as { type: string }).type !== "field") {
+      continue;
+    }
+    const field = property as PrismaField;
+    if (target.name === backTo && field.name === ownFieldName) {
+      continue;
+    }
+    if (
+      field.array === true &&
+      field.fieldType === backTo &&
+      relationKeyOf(field) === null &&
+      relationNameOf(field) === relationName
+    ) {
+      return field;
+    }
+  }
+  return null;
+}
+
+function pairSignature(
+  a: { model: string; field: string },
+  b: { model: string; field: string },
+): string {
+  const label = (side: { model: string; field: string }) =>
+    `${side.model}.${side.field}`;
+  return [label(a), label(b)].sort().join("|");
+}
+
+/**
+ * What Prisma calls the table behind an implicit many-to-many: an
+ * underscore plus the relation's own name when the schema gives one,
+ * or an underscore plus the two model names in alphabetical order
+ * joined by `To` when it does not.
+ */
+function joinTableName(
+  leftModel: string,
+  rightModel: string,
+  relationName: string | null,
+): string {
+  if (relationName !== null) {
+    return `_${relationName}`;
+  }
+  const [first, second] = [leftModel, rightModel].sort();
+  return `_${first}To${second}`;
+}
+
+interface BuildJoinTableOpts {
+  relation: ImplicitManyToMany;
+  storageSystem: "postgresql" | "mysql" | "sqlite";
+  scope: string;
+  sourceFile: string;
+}
+
+/**
+ * The boundary for a join table Prisma creates and manages itself.
+ * Its only columns are `A` and `B`, referencing the model whose name
+ * sorts first and second, which is how the client's `connect`,
+ * `disconnect` and `set` change a row here without naming either.
+ */
+function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
+  const [modelA, modelB] = [
+    opts.relation.leftModel,
+    opts.relation.rightModel,
+  ].sort();
+  return {
+    kind: "library",
+    location: {
+      file: opts.sourceFile,
+      range: { start: 1, end: 1 },
+      exportName: null,
+    },
+    identity: {
+      name: opts.relation.joinTable,
+      exportPath: null,
+      boundaryBinding: storageBinding({
+        recognition: "prisma",
+        storageSystem: opts.storageSystem,
+        scope: opts.scope,
+        container: opts.relation.joinTable,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: {
+      storageContract: {
+        fieldSet: "exhaustive",
+        fields: [
+          { name: "A", type: modelA, nullable: false, primary: true },
+          { name: "B", type: modelB, nullable: false, primary: true },
+        ],
+        indexes: [
+          { fields: ["A", "B"], unique: true },
+          { fields: ["B"], unique: false },
+        ],
+      },
+    },
+  };
 }
 
 /**
@@ -193,6 +405,8 @@ interface BuildModelOpts {
   storageSystem: "postgresql" | "mysql" | "sqlite";
   scope: string;
   sourceFile: string;
+  /** The implicit join table each many-to-many field writes through, keyed `<model>.<field>`. */
+  joinContainerByField: Map<string, string>;
 }
 
 function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
@@ -203,6 +417,7 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
     primary?: boolean;
     unique?: boolean;
     derived?: boolean;
+    joinContainer?: string;
   }> = [];
   const indexes: Array<{ fields: string[]; unique: boolean }> = [];
   const physicalTable = physicalTableOf(opts.model);
@@ -215,7 +430,10 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
       if (column !== null) {
         columns.push(column);
       }
-      const related = relationField(field, opts.modelNames);
+      const joinContainer =
+        opts.joinContainerByField.get(`${opts.model.name}.${field.name}`) ??
+        null;
+      const related = relationField(field, opts.modelNames, joinContainer);
       if (related !== null) {
         hasRelation = true;
         columns.push(related);
@@ -283,12 +501,14 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
 function relationField(
   field: PrismaField,
   modelNames: Set<string>,
+  joinContainer: string | null,
 ): {
   name: string;
   type: string;
   nullable: boolean;
   derived: true;
   relationKey?: string[];
+  joinContainer?: string;
 } | null {
   if (!modelNames.has(field.fieldType)) {
     return null;
@@ -300,7 +520,13 @@ function relationField(
     nullable: field.optional === true,
     derived: true,
     ...(key === null ? {} : { relationKey: key }),
+    ...(joinContainer === null ? {} : { joinContainer }),
   };
+}
+
+/** The field's own `@relation(...)` attribute, or undefined without one. */
+function relationAttributeOf(field: PrismaField): PrismaAttribute | undefined {
+  return (field.attributes ?? []).find((attr) => attr.name === "relation");
 }
 
 /**
@@ -311,10 +537,19 @@ function relationField(
  * join-table entry and no column of this model.
  */
 function relationKeyOf(field: PrismaField): string[] | null {
-  const relation = (field.attributes ?? []).find(
-    (attr) => attr.name === "relation",
-  );
+  const relation = relationAttributeOf(field);
   return relation === undefined ? null : readKeyedArrayArg(relation, "fields");
+}
+
+/**
+ * The relation's own name from `@relation("Name", ...)`, or null when
+ * the schema leaves the relation unnamed. Two list fields pointing at
+ * each other need this to tell one many-to-many from another between
+ * the same two models, and it is what the join table is called after.
+ */
+function relationNameOf(field: PrismaField): string | null {
+  const relation = relationAttributeOf(field);
+  return relation === undefined ? null : readStringArg(relation);
 }
 
 /**

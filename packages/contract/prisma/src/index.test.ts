@@ -37,6 +37,7 @@ function fieldsOf(summary: BehavioralSummary): Array<{
   primary?: boolean;
   unique?: boolean;
   relationKey?: string[];
+  joinContainer?: string;
 }> {
   const meta = summary.metadata as
     | { storageContract?: { fields: unknown[] } }
@@ -48,6 +49,7 @@ function fieldsOf(summary: BehavioralSummary): Array<{
     primary?: boolean;
     unique?: boolean;
     relationKey?: string[];
+    joinContainer?: string;
   }>;
 }
 
@@ -387,6 +389,157 @@ model A {
 }
 `;
     expect(prismaSchemaToSummaries(schema)).toEqual([]);
+  });
+});
+
+describe("implicit many-to-many join tables", () => {
+  it("declares a boundary named after the two models, alphabetized", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Post {
+  id      Int   @id
+  tagList Tag[]
+}
+
+model Tag {
+  id    Int    @id
+  posts Post[]
+}
+`);
+    const join =
+      summaries.find((s) => s.identity.name === "_PostToTag") ??
+      raise("join table summary not found");
+    expect(tableOf(join)).toBe("_PostToTag");
+    expect(storageSystemOf(join)).toBe("postgresql");
+    const fields = fieldsOf(join);
+    expect(fields.find((f) => f.name === "A")).toMatchObject({
+      type: "Post",
+      primary: true,
+    });
+    expect(fields.find((f) => f.name === "B")).toMatchObject({
+      type: "Tag",
+      primary: true,
+    });
+  });
+
+  it("names the table after a @relation given on both sides", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Article {
+  id          Int    @id
+  favoritedBy User[] @relation("UserFavorites")
+}
+
+model User {
+  id        Int       @id
+  favorites Article[] @relation("UserFavorites")
+}
+`);
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual([
+      "Article",
+      "User",
+      "_UserFavorites",
+    ]);
+  });
+
+  it("points each list field at the join table it writes through", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Article {
+  id          Int    @id
+  favoritedBy User[] @relation("UserFavorites")
+}
+
+model User {
+  id        Int       @id
+  favorites Article[] @relation("UserFavorites")
+}
+`);
+    const article =
+      summaries.find((s) => s.identity.name === "Article") ??
+      raise("Article summary not found");
+    const user =
+      summaries.find((s) => s.identity.name === "User") ??
+      raise("User summary not found");
+    expect(
+      fieldsOf(article).find((f) => f.name === "favoritedBy")?.joinContainer,
+    ).toBe("_UserFavorites");
+    expect(
+      fieldsOf(user).find((f) => f.name === "favorites")?.joinContainer,
+    ).toBe("_UserFavorites");
+  });
+
+  it("leaves an explicit join model as an ordinary model, with no extra summary", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Article {
+  id   Int          @id
+  tags ArticleTag[]
+}
+
+model Tag {
+  id       Int          @id
+  articles ArticleTag[]
+}
+
+model ArticleTag {
+  articleId Int
+  tagId     Int
+  article   Article @relation(fields: [articleId], references: [id])
+  tag       Tag     @relation(fields: [tagId], references: [id])
+
+  @@id([articleId, tagId])
+}
+`);
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual([
+      "Article",
+      "ArticleTag",
+      "Tag",
+    ]);
+    const article =
+      summaries.find((s) => s.identity.name === "Article") ??
+      raise("Article summary not found");
+    expect(
+      fieldsOf(article).find((f) => f.name === "tags")?.joinContainer,
+    ).toBeUndefined();
+  });
+
+  it("keeps two distinct relations between the same two models apart", () => {
+    const summaries = prismaSchemaToSummaries(`
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int    @id
+  following  User[] @relation("Follows")
+  followers  User[] @relation("Follows")
+  blocked    User[] @relation("Blocks")
+  blockedBy  User[] @relation("Blocks")
+}
+`);
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual([
+      "User",
+      "_Blocks",
+      "_Follows",
+    ]);
   });
 });
 
