@@ -8,7 +8,7 @@
  * attached to the branch they fire on.
  */
 
-import { Node } from "ts-morph";
+import { type CallExpression, Node } from "ts-morph";
 
 import { guardsHoldOn, runsBefore } from "@suss/extractor";
 
@@ -49,6 +49,7 @@ import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
 import type {
   AnchorCallsOf,
+  InvocationEffectLocation,
   OriginatesFrom,
 } from "./resolve/invocationEffects.js";
 import type { ResolveCallee } from "./terminals/helperResolution.js";
@@ -197,14 +198,43 @@ export function countUnmatchedReturns(
 }
 
 /**
+ * Where one call the invocation walk visited ended up. `terminal` is a
+ * call folded into a terminal's own shape (`res.json(body)`).
+ * `invocation` is a call that fires as an effect on at least one
+ * branch. `unreachable` is a call no branch's terminal runs at or
+ * after, so nothing on any path can reach it: dead code below a
+ * `return`, not a gap. `unrecorded` is everything else: a call the
+ * walk saw, that wrote no terminal, and that fires on no branch
+ * despite sitting before one. That last case is a call this pass
+ * dropped, which is what `#501` and `#531` each looked like before
+ * they were found.
+ */
+export type CallAccountingOutcome =
+  | "invocation"
+  | "terminal"
+  | "unreachable"
+  | "unrecorded";
+
+/** One call the invocation walk visited, and where it ended up. */
+export interface CallAccountingEntry {
+  readonly node: CallExpression;
+  readonly callee: string;
+  readonly line: number;
+  readonly outcome: CallAccountingOutcome;
+}
+
+/**
  * The branches a function produces, alongside the terminals they came
  * from. A caller that wants to know which returns went unclaimed needs
  * the terminals, and searching for them a second time costs about as
- * much as this whole pass.
+ * much as this whole pass. `callAccounting` is present only when a
+ * caller asked for it: a test wanting to assert that every call the
+ * walk visited landed somewhere, rather than a value every run pays for.
  */
 export interface RawBranchResult {
   branches: RawBranch[];
   terminals: FoundTerminal[];
+  callAccounting?: CallAccountingEntry[];
 }
 
 /**
@@ -224,6 +254,7 @@ export function extractRawBranches(
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
+  collectCallAccounting = false,
 ): RawBranchResult {
   const terminals = findTerminals(
     func,
@@ -347,11 +378,12 @@ export function extractRawBranches(
     return true;
   });
 
+  // A call the terminal reader itself matched, `res.json(body)`, is the
+  // terminal and would otherwise count twice. A call whose result a
+  // terminal describes, `return toView(row)`, is a different node.
+  const terminalNodes = new Set(terminals.map(({ node }) => node));
+
   if (invocations.length > 0) {
-    // A call the terminal reader itself matched, `res.json(body)`, is
-    // the terminal and would otherwise count twice. A call whose result
-    // a terminal describes, `return toView(row)`, is a different node.
-    const terminalNodes = new Set(terminals.map(({ node }) => node));
     const sideEffects = invocations.filter(
       (i) => !writesTerminal(i.node, terminalNodes),
     );
@@ -376,5 +408,53 @@ export function extractRawBranches(
     }
   }
 
-  return { branches: distinctBranches, terminals };
+  return {
+    branches: distinctBranches,
+    terminals,
+    ...(collectCallAccounting
+      ? {
+          callAccounting: invocations.map((site) =>
+            accountFor(site, terminalNodes, distinctBranches),
+          ),
+        }
+      : {}),
+  };
+}
+
+/**
+ * Where one call the invocation walk visited ended up, read back from
+ * the same predicates the branch pass above classifies a call with, so
+ * the accounting can never disagree with what the pass actually did.
+ */
+function accountFor(
+  site: InvocationEffectLocation,
+  terminalNodes: ReadonlySet<Node>,
+  branches: readonly RawBranch[],
+): CallAccountingEntry {
+  const { node, line } = site;
+  const callee = node.getExpression().getText();
+  if (writesTerminal(node, terminalNodes)) {
+    return { node, callee, line, outcome: "terminal" };
+  }
+  const call: CallSite = {
+    line,
+    alwaysRuns: site.alwaysRuns,
+    preconditions: preconditionsOf(site.effect),
+  };
+  if (branches.some((branch) => firesOn(call, branch))) {
+    return { node, callee, line, outcome: "invocation" };
+  }
+  // A branch whose terminal runs at or after this call makes the call
+  // reachable; firing on none of them despite that is a dropped call,
+  // not dead code.
+  const reachable = branches.some(
+    (branch) =>
+      site.alwaysRuns || runsBefore(line, branch.terminal.location.end),
+  );
+  return {
+    node,
+    callee,
+    line,
+    outcome: reachable ? "unrecorded" : "unreachable",
+  };
 }

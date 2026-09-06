@@ -209,6 +209,9 @@
       "path": "tools/acceptance/tsconfig.typecheck.json"
     },
     {
+      "path": "tools/call-accounting/tsconfig.typecheck.json"
+    },
+    {
       "path": "tools/differential/tsconfig.typecheck.json"
     },
     {

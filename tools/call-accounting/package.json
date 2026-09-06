@@ -1,0 +1,24 @@
+{
+  "name": "@suss/call-accounting",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Asserts that every call the TypeScript adapter's invocation walk visits inside a unit body is recorded, matched as a terminal, or accounted for as unreachable. Internal; never published.",
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/adapter-typescript": "*"
+  },
+  "devDependencies": {
+    "@suss/test-project": "*",
+    "ts-morph": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
