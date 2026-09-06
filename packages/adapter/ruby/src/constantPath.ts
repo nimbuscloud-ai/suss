@@ -3,8 +3,8 @@
  *
  * A Ruby codebase locates that file by a naming convention rather than through a
  * load graph a static reader could follow, so we build one path from the
- * constant's own name and check it once against the configured root. Nothing
- * here searches several roots or chooses between candidates.
+ * constant's own name and look for it under the configured root and the
+ * directories Rails autoloads from. No other spelling is tried.
  */
 
 import fs from "node:fs";
@@ -30,13 +30,36 @@ const PATH_CONVENTIONS: Record<
   railsUnderscore: underscoreConstantPath,
 };
 
-/** Null when there is no file at that path. We do not fall back to another root or another spelling. */
+/**
+ * Null when there is no file at that path. Rails autoloads from every
+ * directory directly under `app`, so `ApplicationController` is
+ * `app/controllers/application_controller.rb` and not
+ * `app/application_controller.rb`; those directories are tried after
+ * the root itself, in name order, and no other spelling is tried.
+ */
 export function resolveConstantFile(
   root: string,
   qualifiedName: string,
   convention: ConstantPathConvention,
 ): string | null {
-  const relative = PATH_CONVENTIONS[convention](qualifiedName);
-  const file = path.join(root, `${relative}.rb`);
-  return fs.existsSync(file) ? file : null;
+  const relative = `${PATH_CONVENTIONS[convention](qualifiedName)}.rb`;
+  for (const candidate of [root, ...autoloadDirectories(root)]) {
+    const file = path.join(candidate, relative);
+    if (fs.existsSync(file)) {
+      return file;
+    }
+  }
+  return null;
+}
+
+function autoloadDirectories(root: string): string[] {
+  try {
+    return fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(root, entry.name))
+      .sort();
+  } catch {
+    return [];
+  }
 }

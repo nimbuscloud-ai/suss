@@ -186,6 +186,13 @@ interface Outcome {
   conditions: RawCondition[];
   reading: Reading<number>;
   location: Range;
+  /** True for a path that reached no response call of its own. */
+  fellThrough?: boolean;
+}
+
+/** What a path that writes no response of its own does. A filter hands the request on where an action responds with the library's default. */
+export interface BranchOptions {
+  fallthrough?: "respond" | "handOn";
 }
 
 function branchOf(
@@ -193,7 +200,11 @@ function branchOf(
   pattern: ControllerActions,
   effects: readonly RawEffect[],
   extraEffects: RawBranch["extraEffects"],
+  options: BranchOptions,
 ): RawBranch {
+  if (outcome.fellThrough === true && options.fallthrough === "handOn") {
+    return handsOnBranch(outcome, effects, extraEffects);
+  }
   return {
     conditions: outcome.conditions,
     terminal: {
@@ -219,6 +230,33 @@ function branchOf(
   };
 }
 
+/** A path through a filter that wrote no response: the request goes on to whatever the filter wraps. */
+function handsOnBranch(
+  outcome: Outcome,
+  effects: readonly RawEffect[],
+  extraEffects: RawBranch["extraEffects"],
+): RawBranch {
+  return {
+    conditions: outcome.conditions,
+    terminal: {
+      kind: "delegate",
+      statusCode: null,
+      body: null,
+      exceptionType: null,
+      message: null,
+      component: null,
+      renderTree: null,
+      delegateTarget: null,
+      emitEvent: null,
+      location: outcome.location,
+    },
+    effects: effectsReaching(effects, outcome.conditions),
+    ...(extraEffects === undefined ? {} : { extraEffects }),
+    location: outcome.location,
+    isDefault: outcome.conditions.length === 0,
+  };
+}
+
 /**
  * One branch per path a body can respond on. Null when the pack declares no
  * response calls, or when the method has no body, and then the caller keeps
@@ -229,6 +267,7 @@ export function responseBranches(
   pattern: ControllerActions,
   effects: readonly RawEffect[],
   extraEffects: RawBranch["extraEffects"],
+  options: BranchOptions = {},
 ): RawBranch[] | null {
   const declarations = pattern.responseStatusCalls ?? [];
   const body = field(method, "body");
@@ -280,6 +319,7 @@ export function responseBranches(
       conditions: path.map(conditionOf),
       reading: absentReading,
       location: rangeOf(method),
+      fellThrough: true,
     });
   }
 
@@ -287,6 +327,6 @@ export function responseBranches(
     return null;
   }
   return outcomes.map((outcome) =>
-    branchOf(outcome, pattern, effects, extraEffects),
+    branchOf(outcome, pattern, effects, extraEffects, options),
   );
 }

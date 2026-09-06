@@ -24,6 +24,14 @@ Each branch gets its own `statusCodeReading`, alongside the pattern's `defaultSt
 
 A branch also gets the calls that reach it. `guardsHoldOn` from `@suss/extractor` decides that, comparing what gates each call against what gates the branch, which is the same test the Python and TypeScript adapters apply.
 
+## What runs around an action
+
+A pack says which class-level calls put one of a controller's own methods in front of its actions, in `filters` on the `controllerActions` pattern. Each entry gives the call's name, where it names the method (a leading symbol, or a `with:` keyword), whether the library runs it only after the action raised, the call that takes it back off, and the keywords that narrow it to some of the actions. Rails writes those as `before_action`, `rescue_from`, `skip_before_action`, `only:` and `except:`, and none of those words is in this package.
+
+A filter is read from the class body and from every ancestor's, most distant first, which is the order the library runs them in. The method it names is looked up the way Ruby looks up a method, so a filter declared on a base class and defined there reaches every controller that inherits it, once, in the file it is written in.
+
+Each filter method becomes a `middleware` unit with no boundary. A path through it that writes a response ends the request, and every other path hands the request on, which its `delegate` branches say. `composeWrappers` in `@suss/extractor` folds that unit into each action that records it, so an action reports the filter's 401 under the filter's own test and its own outcomes under the negation of it.
+
 ## The method behind a field
 
 Most fields in a graphql-ruby schema get their value from a method. A summary should say a field has nothing behind it only when the adapter looked and found no such method.
@@ -117,6 +125,14 @@ through `const_set` or `Object.const_get`, which nothing here reads.
 
 The definitions are collected per file and matched afterwards, since which
 file defines a constant is only settled once every file has been read.
+
+A class reached by name rather than by a reading site, which is what an
+ancestry walk does, goes through the naming convention instead: the constant
+underscores to a path, and that path is looked for under the configured root
+and then under each directory directly beneath it. Rails autoloads from every
+directory under `app`, so `ApplicationController` is
+`app/controllers/application_controller.rb`. The root's own file wins where
+both exist, and no other spelling is tried.
 
 ## What a class inherits
 

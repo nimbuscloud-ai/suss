@@ -781,6 +781,74 @@ describe("discoverUnits: controller actions", () => {
     expect(units).toEqual([]);
   });
 
+  it("gives a filter its own unit and records it on the actions it covers", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  before_action :require_login\n" +
+        "  before_action :load_order, only: [:show]\n" +
+        "  def index\n" +
+        "  end\n" +
+        "  def show\n" +
+        "  end\n" +
+        "  private\n" +
+        "  def require_login\n" +
+        "    head :unauthorized\n" +
+        "  end\n" +
+        "  def load_order\n" +
+        "  end\n" +
+        "end\n",
+      railsTestPack({
+        filters: [
+          {
+            name: "before_action",
+            methodFrom: "argument",
+            skippedBy: "skip_before_action",
+            actionKeywords: { include: "only", exclude: "except" },
+          },
+        ],
+        responseStatusCalls: [{ name: "head", statusArgument: 0 }],
+        statusCodeNames: { unauthorized: 401 },
+      }),
+    );
+
+    const kinds = units.map((u) => `${u.identity.kind}:${u.identity.name}`);
+    expect(kinds).toEqual([
+      "middleware:require_login",
+      "middleware:load_order",
+      "handler:index",
+      "handler:show",
+    ]);
+    expect(units[2]?.wrappers?.map((one) => one.name)).toEqual([
+      "require_login",
+    ]);
+    expect(units[3]?.wrappers?.map((one) => one.name)).toEqual([
+      "require_login",
+      "load_order",
+    ]);
+  });
+
+  it("writes a filter's reference at the file its method is written in", async () => {
+    const units = await discoverActions(
+      "class OrdersController < ApplicationController\n" +
+        "  before_action :require_login\n" +
+        "  def index\n" +
+        "  end\n" +
+        "  def require_login\n" +
+        "  end\n" +
+        "end\n",
+      railsTestPack({
+        filters: [{ name: "before_action", methodFrom: "argument" }],
+      }),
+    );
+
+    // The method is written in the file being read, which the walk knows
+    // only by the absolute path a block records.
+    expect(units[0]?.identity.file).toBe("controllers/orders_controller.rb");
+    expect(units[1]?.wrappers).toEqual([
+      { file: "controllers/orders_controller.rb", name: "require_login" },
+    ]);
+  });
+
   it("hands the pattern's default status code over as the library default", async () => {
     const units = await discoverActions(
       "class OrdersController < ApplicationController\n" +

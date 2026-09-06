@@ -24,6 +24,7 @@ import {
 import { Database } from "@suss/datalog";
 import {
   assembleSummary,
+  composeWrappers,
   createCacheLayer,
   createTimer,
   moduleInitStructure,
@@ -58,6 +59,7 @@ import type {
   CacheInput,
   CacheLayer,
   ExtractionReport,
+  ExtractorOptions,
   RawCodeStructure,
   TimingReport,
 } from "@suss/extractor";
@@ -82,6 +84,8 @@ export interface ExtractRubyOptions {
   onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
   /** Absolute. `<projectRoot>/.suss/cache` by default; `null` turns it off. */
   cacheDir?: string | null;
+  /** What to do with gaps, which composing a controller's filters can add one of. */
+  gapHandling?: ExtractorOptions["gapHandling"];
 }
 
 export interface ExtractRubyResult {
@@ -108,6 +112,16 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
     }
   }
   return found;
+}
+
+/** Whether this unit is one an earlier file's discovery already reported, by where its body is written. */
+function alreadyDiscovered(seen: Set<string>, raw: RawCodeStructure): boolean {
+  const key = `${raw.identity.file}::${raw.identity.name}::${raw.identity.range.start}`;
+  if (seen.has(key)) {
+    return true;
+  }
+  seen.add(key);
+  return false;
 }
 
 export async function extractRubyProject(
@@ -200,6 +214,7 @@ export async function extractRubyProject(
 
   const seeds: Seed[] = [];
   const summariesBySeed = new Map<string, BehavioralSummary[]>();
+  const discovered = new Set<string>();
 
   for (const { file, root } of parsed) {
     const displayPath = displayPathOf(file);
@@ -218,10 +233,16 @@ export async function extractRubyProject(
           ? { storage: { facts: db, patterns: storagePatterns } }
           : {}),
         inheritedMethods,
+        displayPathOf,
         onReachSeed: (raw, seed) => seedByRaw.set(raw, seed),
       }),
     );
     for (const raw of rawUnits) {
+      // A filter written on a base class is read again for every
+      // controller that inherits it, and there is one method to report.
+      if (alreadyDiscovered(discovered, raw)) {
+        continue;
+      }
       const summary = timer.time("summarize", () =>
         assembleSummary(raw, { gapHandling: "permissive" }),
       );
@@ -343,16 +364,21 @@ export async function extractRubyProject(
   }
   disambiguateSummaryIds(summaries);
   linkCallsToSummaries(summaries);
+  const composed = timer.time("summarize", () =>
+    composeWrappers(summaries, {
+      gapHandling: options.gapHandling ?? "permissive",
+    }),
+  );
 
   await timer.timeAsync("cache.write", async () => {
     // An empty result is never cached. Serving one would skip the
     // stages that fill the funnel, so a misconfigured project would
     // get "0 summaries" with no explanation ever after.
-    if (cacheDir === null || summaries.length === 0) {
+    if (cacheDir === null || composed.length === 0) {
       return;
     }
     try {
-      await extractionCache.write(cacheInput, summaries);
+      await extractionCache.write(cacheInput, composed);
     } catch {
       // A failed cache write must not fail the extract.
     }
@@ -363,12 +389,12 @@ export async function extractRubyProject(
       packs: options.packs,
       tallies,
       filesWalked: options.files.length,
-      summaries,
+      summaries: composed,
     }),
   );
   options.onTiming?.(timer.report());
 
-  return { summaries, facts: db };
+  return { summaries: composed, facts: db };
 }
 
 /**
