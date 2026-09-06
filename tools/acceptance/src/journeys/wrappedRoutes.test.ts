@@ -8,8 +8,8 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 /**
  * A route's wire behaviour is not only its own body. This service
- * returns 401 from middleware and 500 from an error handler, and
- * neither status appears in the handler that serves the route, so a
+ * returns 401 from middleware, 400 from a validation hook and 500 from
+ * an error handler, and none of those appears in the handler, so a
  * reader given the handler alone has nowhere to go looking. Each
  * wrapper gets a summary of its own, the route points at it, and what
  * the wrapper does is reported as part of what the route does.
@@ -38,6 +38,9 @@ describe("read a service whose statuses come from around the handler", () => {
     expect(inspect.stdout).toContain(
       "onError (fixtures/wrapped-routes/app.ts) on a throw",
     );
+    expect(inspect.stdout).toContain(
+      "validationHook (fixtures/wrapped-routes/validationHook.ts)",
+    );
   });
 
   it("points the route at each wrapper's own summary", () => {
@@ -55,6 +58,10 @@ describe("read a service whose statuses come from around the handler", () => {
           file: "fixtures/wrapped-routes/app.ts",
           name: "onError",
           onThrow: true,
+        },
+        {
+          file: "fixtures/wrapped-routes/validationHook.ts",
+          name: "validationHook",
         },
       ],
     });
@@ -74,16 +81,17 @@ describe("read a service whose statuses come from around the handler", () => {
 
     expect(statuses).toContainEqual(["requireCaller", [401]]);
     expect(statuses).toContainEqual(["onError", [500]]);
+    expect(statuses).toContainEqual(["validationHook", [400]]);
   });
 
-  it("reports the middleware's 401 and the error handler's 500 as the route's own behaviour", () => {
+  it("reports the middleware's 401, the hook's 400 and the error handler's 500 as the route's own behaviour", () => {
     const summaries = readJson(summariesFile) as BehavioralSummary[];
 
     expect(statusesOf(routeFor(summaries, "/v1/tenants/:id"))).toEqual([
-      401, 404, 200,
+      401, 400, 404, 200,
     ]);
     expect(statusesOf(routeFor(summaries, "/v1/tenants"))).toEqual([
-      401, 201, 500,
+      401, 400, 201, 500,
     ]);
   });
 
@@ -100,20 +108,24 @@ describe("read a service whose statuses come from around the handler", () => {
               | undefined
           )?.from?.name,
       ),
-    ).toEqual(["requireCaller", undefined, "onError"]);
+    ).toEqual(["requireCaller", "validationHook", undefined, "onError"]);
   });
 
-  it("leaves a route outside the middleware's path pattern alone", () => {
+  it("reports the hook's 400 on a route outside the middleware's path pattern", () => {
     const summaries = readJson(summariesFile) as BehavioralSummary[];
     const health = routeFor(summaries, "/health");
 
-    expect(statusesOf(health)).toEqual([200]);
+    expect(statusesOf(health)).toEqual([400, 200]);
     expect(health.metadata?.wrappers).toEqual({
       applied: [
         {
           file: "fixtures/wrapped-routes/app.ts",
           name: "onError",
           onThrow: true,
+        },
+        {
+          file: "fixtures/wrapped-routes/validationHook.ts",
+          name: "validationHook",
         },
       ],
     });

@@ -15,14 +15,14 @@ import { ResolutionStore } from "../facts/store.js";
 import { callsResolvingTo } from "./importedCalls.js";
 import {
   couldNameAValue,
-  functionValueOf,
   objectLiteralOf,
   propertiesOf,
+  propertyFunctionOf,
+  propertyNameOf,
   propertyValueOf,
 } from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
-import type { FunctionRoot } from "../conditions.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 export function discoverResolverMaps(
@@ -65,7 +65,7 @@ export function discoverResolverMaps(
 
     // Walk type → field → function.
     for (const typeProp of propertiesOf(resolversObj, store)) {
-      const typeName = resolverPropertyName(typeProp);
+      const typeName = propertyNameOf(typeProp);
       if (typeName === null || excludeTypes.has(typeName)) {
         continue;
       }
@@ -74,11 +74,11 @@ export function discoverResolverMaps(
         continue;
       }
       for (const fieldProp of propertiesOf(typeObj, store)) {
-        const fieldName = resolverPropertyName(fieldProp);
+        const fieldName = propertyNameOf(fieldProp);
         if (fieldName === null) {
           continue;
         }
-        const fn = resolverPropertyFunction(fieldProp, store);
+        const fn = propertyFunctionOf(fieldProp, store);
         if (fn === null) {
           continue;
         }
@@ -186,25 +186,4 @@ function writtenSdl(expr: Node): string | null {
     }
   }
   return null;
-}
-
-function resolverPropertyName(prop: Node): string | null {
-  if (Node.isPropertyAssignment(prop) || Node.isMethodDeclaration(prop)) {
-    return prop.getName();
-  }
-  if (Node.isShorthandPropertyAssignment(prop)) {
-    return prop.getName();
-  }
-  return null;
-}
-
-function resolverPropertyFunction(
-  prop: Node,
-  resolution: ResolutionStore | undefined,
-): FunctionRoot | null {
-  if (Node.isMethodDeclaration(prop)) {
-    return prop;
-  }
-  const held = propertyValueOf(prop);
-  return held === null ? null : functionValueOf(held, resolution);
 }

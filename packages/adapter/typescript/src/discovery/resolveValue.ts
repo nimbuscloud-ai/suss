@@ -91,6 +91,37 @@ export function functionValueOf(
   return returned === null ? null : toFunctionRoot(returned);
 }
 
+/**
+ * The name a property of an object literal is written under, or null
+ * for a spread, which has none.
+ */
+export function propertyNameOf(property: Node): string | null {
+  if (
+    Node.isPropertyAssignment(property) ||
+    Node.isShorthandPropertyAssignment(property) ||
+    Node.isMethodDeclaration(property)
+  ) {
+    return property.getName();
+  }
+  return null;
+}
+
+/**
+ * The function a property of an object literal is set to. A method
+ * written into the literal is that function; a property set to a name
+ * or a call is followed the way `functionValueOf` follows any value.
+ */
+export function propertyFunctionOf(
+  property: Node,
+  resolution: ResolutionStore | undefined,
+): FunctionRoot | null {
+  if (Node.isMethodDeclaration(property)) {
+    return property;
+  }
+  const held = propertyValueOf(property);
+  return held === null ? null : functionValueOf(held, resolution);
+}
+
 /** The object literal this value is, written out here or named. */
 export function objectLiteralOf(
   value: Node,

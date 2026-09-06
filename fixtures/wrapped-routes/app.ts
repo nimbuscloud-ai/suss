@@ -1,9 +1,11 @@
-// A Hono service whose 401 and 500 are produced by code registered
-// around the routes, so neither status is anywhere in the handler.
+// A Hono service whose 400, 401 and 500 are produced by code registered
+// around the routes, so none of those statuses is anywhere in a handler.
 
-import { Hono, type MiddlewareHandler } from "hono";
+import { OpenAPIHono } from "@hono/zod-openapi";
+import type { MiddlewareHandler } from "hono";
 
 import { requireCaller } from "./requireCaller";
+import { validationHook } from "./validationHook";
 
 declare const store: {
   read(id: string): Promise<{ id: string; status: string } | null>;
@@ -14,7 +16,9 @@ declare const store: {
 // read and every route on the app says so.
 declare function pickMiddleware(): MiddlewareHandler;
 
-const app = new Hono();
+// The hook is handed to the constructor rather than registered on the
+// app, and it runs for every route.
+const app = new OpenAPIHono({ defaultHook: validationHook });
 
 app.use("/v1/*", requireCaller({ header: "authorization" }));
 app.use(pickMiddleware());

@@ -25,7 +25,7 @@ describe("honoFramework", () => {
     // Two spreads of two call patterns each, plus the loop pattern
     // each spread of httpRouteDiscovery emits, the zod-openapi
     // registration, and one wrapper pattern per app per wrapper shape.
-    expect(pack.discovery).toHaveLength(15);
+    expect(pack.discovery).toHaveLength(16);
     expect(pack.discovery[0]?.requiresImport).toEqual(["hono"]);
   });
 
@@ -347,5 +347,49 @@ describe("honoFramework, app.use", () => {
     expect(wrappers?.applied).toEqual([
       { file: "/app.ts", name: "requireCaller" },
     ]);
+  });
+});
+
+describe("honoFramework, defaultHook", () => {
+  it("reports the hook's 400 on every route of an OpenAPIHono app", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { OpenAPIHono } from "@hono/zod-openapi";
+        const app = new OpenAPIHono({
+          defaultHook: (result, c) => {
+            if (!result.success) {
+              return c.json({ error: "invalid" }, 400);
+            }
+          },
+        });
+        app.get("/health", (c) => c.json({ ok: true }, 200));
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const health = summaries.find(
+      (s) => s.identity.boundaryBinding?.semantics?.name === "rest",
+    );
+    const wrappers = health?.metadata?.wrappers as
+      | { applied: { name: string }[] }
+      | undefined;
+    expect(wrappers?.applied).toEqual([
+      { file: "/app.ts", name: "defaultHook" },
+    ]);
+    expect(
+      health?.transitions.map((t) =>
+        t.output.type === "response" && t.output.statusCode?.type === "literal"
+          ? t.output.statusCode.value
+          : null,
+      ),
+    ).toEqual([400, 200]);
   });
 });

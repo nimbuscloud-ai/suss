@@ -28,10 +28,24 @@ import {
   storeCanFindSubjects,
   subjectNodeFor,
 } from "./registrationCall.js";
-import { functionValueOf, stringValueOf } from "./resolveValue.js";
+import {
+  functionValueOf,
+  objectLiteralOf,
+  propertiesOf,
+  propertyFunctionOf,
+  propertyNameOf,
+  propertyValueOf,
+  stringValueOf,
+} from "./resolveValue.js";
 
 import type { UnfollowedCall, WrapperReference } from "@suss/behavioral-ir";
-import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import type {
+  DiscoveryPattern,
+  PatternPack,
+  WrapperMethodRegistration,
+  WrapperOptionRegistration,
+  WrapperRegistration,
+} from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 import type { MountPrefixIndex } from "./registrationCall.js";
@@ -71,13 +85,11 @@ type RegistrationMatch = Extract<
   { type: "registrationCall" }
 >;
 
-type WrapsPattern = NonNullable<DiscoveryPattern["wraps"]>;
-
 interface PackWrapperWork {
   sourceFile: SourceFile;
   pattern: DiscoveryPattern;
   match: RegistrationMatch;
-  wraps: WrapsPattern;
+  wraps: WrapperRegistration;
 }
 
 /** One registration a file states, before the candidates are folded together. */
@@ -261,7 +273,7 @@ export function discoverWrapperRegistrations(
   sourceFile: SourceFile,
   pattern: DiscoveryPattern,
   match: RegistrationMatch,
-  wraps: WrapsPattern,
+  wraps: WrapperRegistration,
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
 ): WrapperScan {
@@ -271,6 +283,15 @@ export function discoverWrapperRegistrations(
     match.importName,
     resolution,
   );
+  if ("constructorOption" in wraps) {
+    return discoverConstructorOptions(
+      sourceFile,
+      pattern,
+      wraps,
+      subjects,
+      resolution,
+    );
+  }
   if (
     subjects.size === 0 &&
     !storeCanFindSubjects(sourceFile, match, resolution)
@@ -335,26 +356,147 @@ export function discoverWrapperRegistrations(
         ? undefined
         : mountedAt(subjectId, mountPrefixes, scope);
 
-    const named = functionNameOrAnon(target) !== ANONYMOUS;
-    candidates.push({
-      subjectId,
-      callId: nodeId(node),
-      targetId: nodeId(target),
-      byArity: wraps.arity !== undefined,
-      target,
-      pattern,
-      registeredIn: sourceFile.getFilePath(),
-      named,
-      reference: {
-        file: target.getSourceFile().getFilePath(),
-        name: named ? functionNameOrAnon(target) : labelFor(targetArg, wraps),
-        ...(wraps.throwParam === undefined ? {} : { onThrow: true }),
-        ...(mountedScope === undefined ? {} : { scope: mountedScope }),
-      },
-    });
+    candidates.push(
+      candidateOf(
+        {
+          subjectId,
+          callId: nodeId(node),
+          target,
+          label: labelFor(targetArg, wraps),
+          byArity: wraps.arity !== undefined,
+          onThrow: wraps.throwParam !== undefined,
+          scope: mountedScope,
+        },
+        pattern,
+        sourceFile,
+      ),
+    );
   });
 
   return { candidates, unresolved };
+}
+
+/**
+ * The wrapper each construction in `sourceFile` hands its constructor
+ * under the option `wraps` asks for, `new OpenAPIHono({ defaultHook })`.
+ * The construction is the subject, so the hook covers every route on
+ * that app, wherever the route is registered. A construction this file
+ * only received as a parameter is read by the file that wrote it.
+ */
+function discoverConstructorOptions(
+  sourceFile: SourceFile,
+  pattern: DiscoveryPattern,
+  wraps: WrapperOptionRegistration,
+  subjects: ReadonlyMap<string, Node>,
+  resolution: ResolutionStore | undefined,
+): WrapperScan {
+  const candidates: WrapperCandidate[] = [];
+  const unresolved: UnresolvedRegistration[] = [];
+  const seen = new Set<string>();
+
+  for (const construction of subjects.values()) {
+    const subjectId = nodeId(construction);
+    if (seen.has(subjectId) || construction.getSourceFile() !== sourceFile) {
+      continue;
+    }
+    seen.add(subjectId);
+
+    const option = constructorOptionOf(construction, wraps, resolution);
+    if (option === undefined) {
+      continue;
+    }
+    const callId = nodeId(option);
+    const written = propertyValueOf(option);
+    const target = propertyFunctionOf(option, resolution);
+    if (target === null) {
+      const stop = written === null ? null : factoryStopOf(written);
+      if (stop !== null) {
+        unresolved.push({ subjectId, callId, stop });
+      }
+      continue;
+    }
+
+    candidates.push(
+      candidateOf(
+        {
+          subjectId,
+          callId,
+          target,
+          label:
+            (written === null ? undefined : factoryNameOf(written)) ??
+            wraps.constructorOption,
+          byArity: false,
+          onThrow: wraps.throwParam !== undefined,
+          scope: undefined,
+        },
+        pattern,
+        sourceFile,
+      ),
+    );
+  }
+
+  return { candidates, unresolved };
+}
+
+/** The property under `wraps.constructorOption` in the construction's options object. */
+function constructorOptionOf(
+  construction: Node,
+  wraps: WrapperOptionRegistration,
+  resolution: ResolutionStore | undefined,
+): Node | undefined {
+  if (
+    !(Node.isNewExpression(construction) || Node.isCallExpression(construction))
+  ) {
+    return undefined;
+  }
+  const optionsArg = construction.getArguments()[wraps.targetPosition];
+  if (optionsArg === undefined) {
+    return undefined;
+  }
+  const options = objectLiteralOf(optionsArg, resolution);
+  if (options === null) {
+    return undefined;
+  }
+  return propertiesOf(options, resolution).find(
+    (property) => propertyNameOf(property) === wraps.constructorOption,
+  );
+}
+
+/** One registration the scan settled on, before it becomes a candidate. */
+interface SettledRegistration {
+  subjectId: string;
+  callId: string;
+  target: FunctionRoot;
+  /** What the wrapper goes by when the function has no name of its own. */
+  label: string;
+  byArity: boolean;
+  onThrow: boolean;
+  scope: string | undefined;
+}
+
+function candidateOf(
+  registration: SettledRegistration,
+  pattern: DiscoveryPattern,
+  sourceFile: SourceFile,
+): WrapperCandidate {
+  const { target, label, onThrow, scope } = registration;
+  const named = functionNameOrAnon(target) !== ANONYMOUS;
+  return {
+    subjectId: registration.subjectId,
+    callId: registration.callId,
+    targetId: nodeId(target),
+    byArity: registration.byArity,
+    target,
+    pattern,
+    registeredIn: sourceFile.getFilePath(),
+    named,
+    reference: {
+      file: target.getSourceFile().getFilePath(),
+      name: named ? functionNameOrAnon(target) : label,
+      ...(onThrow ? { onThrow: true } : {}),
+      ...(scope === undefined ? {} : { scope }),
+    },
+  };
 }
 
 /**
@@ -363,7 +505,7 @@ export function discoverWrapperRegistrations(
  * since that is where a reader asking about a 401 wants to land. A
  * function written out at the registration goes by the method.
  */
-function labelFor(targetArg: Node, wraps: WrapsPattern): string {
+function labelFor(targetArg: Node, wraps: WrapperMethodRegistration): string {
   return factoryNameOf(targetArg) ?? wraps.method;
 }
 
@@ -430,7 +572,7 @@ function mountedAt(
  */
 function scopeOf(
   args: readonly Node[],
-  wraps: WrapsPattern,
+  wraps: WrapperMethodRegistration,
   resolution: ResolutionStore | undefined,
 ): string | undefined | null {
   if (wraps.scopePosition === undefined) {

@@ -618,6 +618,72 @@ export type DeclaredBinding = {
   channel: ChannelSource;
 };
 
+/**
+ * How a framework takes a function that runs around a handler rather
+ * than as one. Middleware and an error handler are registered through
+ * a method on the routable, `app.use(fn)` or `app.onError(fn)`. A
+ * validation hook is handed to the routable's constructor instead,
+ * `new OpenAPIHono({ defaultHook })`, and runs for every route on it.
+ */
+export type WrapperRegistration =
+  | WrapperMethodRegistration
+  | WrapperOptionRegistration;
+
+/** What every wrapper registration says about the function it registers. */
+export interface WrapperFunctionShape {
+  /**
+   * Parameter position of the continuation inside the wrapper, the one
+   * it calls to hand control on. Absent when the wrapper never
+   * continues, which is how an error handler that always responds is
+   * written.
+   */
+  continuationParam?: number;
+  /**
+   * Parameter position that receives what the wrapped unit threw. A
+   * wrapper that declares one runs only when the wrapped unit's path
+   * ended by throwing, which is a fact about how the framework invokes
+   * it rather than anything its body says. Absent means the wrapper
+   * runs on the ordinary path.
+   */
+  throwParam?: number;
+  /**
+   * Parameter position that receives a value the framework worked out
+   * before calling the wrapper, the outcome of validating the request
+   * for a hook. The pack's terminals read one parameter further along
+   * from there, as they do past `throwParam`, and nothing else changes:
+   * the wrapper still runs on the ordinary path.
+   */
+  resultParam?: number;
+}
+
+/** A wrapper registered through a method on the routable. */
+export interface WrapperMethodRegistration extends WrapperFunctionShape {
+  /** Method name that registers a wrapper, e.g. "use" or "onError". */
+  method: string;
+  /** Argument position of the wrapper function. */
+  targetPosition: number;
+  /**
+   * Argument position of a path pattern narrowing which routes the
+   * wrapper runs for, when the method takes one. Absent means the
+   * wrapper runs for every route on the subject.
+   */
+  scopePosition?: number;
+  /**
+   * Only match a registered function declared with exactly this many
+   * parameters. Express tells its error handlers apart from its
+   * middleware by arity alone, both being `app.use(fn)`.
+   */
+  arity?: number;
+}
+
+/** A wrapper handed to the routable's constructor as an option. */
+export interface WrapperOptionRegistration extends WrapperFunctionShape {
+  /** The option the wrapper is under, e.g. "defaultHook". */
+  constructorOption: string;
+  /** Argument position of the options object in the constructor call. */
+  targetPosition: number;
+}
+
 export interface DiscoveryPattern {
   /** The kind of code unit this discovers: "handler", "loader", "action", "component", etc. */
   kind: string;
@@ -664,39 +730,7 @@ export interface DiscoveryPattern {
    * routable records a reference to it. A registration whose function
    * the resolution store cannot follow contributes nothing.
    */
-  wraps?: {
-    /** Method name that registers a wrapper, e.g. "use" or "onError". */
-    method: string;
-    /** Argument position of the wrapper function. */
-    targetPosition: number;
-    /**
-     * Argument position of a path pattern narrowing which routes the
-     * wrapper runs for, when the method takes one. Absent means the
-     * wrapper runs for every route on the subject.
-     */
-    scopePosition?: number;
-    /**
-     * Parameter position of the continuation inside the wrapper, the one
-     * it calls to hand control on. Absent when the wrapper never
-     * continues, which is how an error handler that always responds is
-     * written.
-     */
-    continuationParam?: number;
-    /**
-     * Parameter position that receives what the wrapped unit threw. A
-     * wrapper that declares one runs only when the wrapped unit's path
-     * ended by throwing, which is a fact about how the framework invokes
-     * it rather than anything its body says. Absent means the wrapper
-     * runs on the ordinary path.
-     */
-    throwParam?: number;
-    /**
-     * Only match a registered function declared with exactly this many
-     * parameters. Express tells its error handlers apart from its
-     * middleware by arity alone, both being `app.use(fn)`.
-     */
-    arity?: number;
-  };
+  wraps?: WrapperRegistration;
   /**
    * This pattern only runs against files that import one of these module
    * specifiers, or a sub-path of one. An empty array means no gate at all
