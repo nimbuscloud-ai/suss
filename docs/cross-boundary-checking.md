@@ -5,15 +5,9 @@ description: How the checker pairs two summaries across a boundary and decides t
 
 # Cross-Boundary Checking
 
-You added a branch to a handler last Tuesday. Admins now get an extra field, and a 404 goes out for a user who is not there. The pull request was three lines, the tests passed, and nobody on the web team was on the review.
+`suss check` reads the handler on one side of a boundary and the call site on the other, and reports where they disagree: a status the handler sends that the caller has no branch for, a field the caller reads that the handler stopped sending, or two outcomes that share a status code and land in one branch of the caller. Each side is read into a behavioral summary, and the checker compares the two. No spec is needed, and when one exists it is compared against both sides as well.
 
-The review needed one question answered, and nobody could get it by reading: does what the handler now does still match what its callers expect? A machine can answer that, given a behavioral summary for each side of the boundary, one for the handler that produces the response and one for the call site that reads it.
-
-For the contract taxonomy these comparisons rest on, the three kinds of truth and the three contracts at every boundary, see [`contracts.md`](contracts.md). For the design of `BehavioralSummary` itself, see [`ir-reference.md`](ir-reference.md). For how a summary gets built in the first place, see [`architecture.md`](architecture.md).
-
-Three kinds of boundary are checked today: HTTP REST, a GraphQL resolver against an operation, and an in-process function call through a package's exports. REST is the case the design leans on hardest. The status code says which outcome happened, the body is the payload, and the two sides pair by `(method, normalizedPath)`. GraphQL resolvers pair by `(typeName, fieldName)`. An in-process `function-call` pairs by `fn:<package>::<exportPath>`, which arrived with the `packageExports` and `packageImport` discovery variants, so a library's provider summaries pair with every caller that imports from it. See [`boundary-semantics.md`](boundary-semantics.md) for the layered model and [`reference/pack-patterns.md`](reference/pack-patterns.md) for the discovery variants.
-
-## What that Tuesday change looks like
+## An example
 
 The handler, an Express route:
 
@@ -169,7 +163,17 @@ Every boundary has three contracts: the declared contract, which is a specificat
 
 ## What is checked today
 
-The checker compares:
+Two summaries pair when they sit on the same boundary. What that means depends on the kind of boundary:
+
+| Boundary | The two sides pair on | Example |
+|---|---|---|
+| HTTP REST | method and normalized path | `GET /users/{id}` on an Express route and on an axios call |
+| GraphQL | type name and field name | `Query.user` on an Apollo resolver and on a `useQuery` in a component |
+| Package export | package name and export path | `fn:@acme/billing::charge` on the exported function and on every file that imports it |
+
+The REST case is the one most of the comparisons below were built for: the status code says which outcome happened, and the body is the payload. [`boundary-semantics.md`](boundary-semantics.md) says how the pairing key is built for each protocol.
+
+For each pair the checker compares:
 
 - **Status-code coverage in both directions.** A status the provider produces with no consumer branch, or a consumer branch for a status the provider never produces.
 - **Collapsed sub-cases.** A consumer that treats two provider outcomes sharing a status code as one, which is the second finding in the run above.

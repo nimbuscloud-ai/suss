@@ -1,0 +1,42 @@
+name: behavior diff
+
+# Posts what a pull request changes about suss's own units, the way
+# the CI guide tells everyone else to. The released CLI reads the
+# workspace through the package-exports pack at the head and at the
+# base, and the comment is the inspect --diff between the two. The
+# paths filter keeps it off a docs-only pull request, where it would
+# say nothing changed. It is not a required check.
+on:
+  pull_request:
+    paths:
+      - packages/**
+      - tools/**
+      - tsconfig.suss.json
+      - package-lock.json
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      # Every @suss/* package resolves through its dist, so both trees
+      # are built before they are read.
+      - run: npm run build
+      - uses: ./.github/actions/inspect-diff
+        id: suss
+        with:
+          extract: -p tsconfig.suss.json -f package-exports
+          install: npm ci && npm run build
+      - name: Report
+        run: echo "${{ steps.suss.outputs.changed }} units changed behavior"

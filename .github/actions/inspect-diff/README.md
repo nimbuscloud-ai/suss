@@ -45,7 +45,7 @@ The comment looks like this:
 | `extract` | required | The arguments to `suss extract`, after the command. `-p tsconfig.json -f express` for a TypeScript project, `--dir src -f fastapi` for Python, `--dir app -f rails` for Ruby. |
 | `working-directory` | `.` | The directory to run `suss extract` in, relative to the repository root. |
 | `version` | `latest` | The version of `@suss/cli` to install. |
-| `install` | empty | A command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile`. When it is empty the base checkout shares the head's `node_modules` directories, which is right when the pull request does not change dependencies. |
+| `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty the base checkout shares the head's `node_modules` directories, which is right when the pull request does not change dependencies. |
 | `comment` | `true` | Whether to post the comment. Set it to `false` to read the outputs and do something else with them. |
 | `artifact-name` | `suss-diff` | The name of the run artifact that keeps both summary files and the diff. Two uses of the action in one workflow need two names. |
 | `token` | `github.token` | The token used to post the comment. It needs `pull-requests: write`. |

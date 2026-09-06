@@ -135,6 +135,7 @@ export default defineConfig({
           { text: "Adopt suss one step at a time", link: "/guides/adopting-suss" },
           { text: "Add suss to a project", link: "/guides/add-to-project" },
           { text: "Set up CI checking", link: "/guides/ci-integration" },
+          { text: "Set up the MCP server", link: "/guides/mcp-server" },
           {
             text: "Pair against OpenAPI",
             link: "/guides/pair-against-openapi",
