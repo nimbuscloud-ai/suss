@@ -28,6 +28,7 @@ function makeProvider(opts: {
     nullable?: boolean;
     derived?: boolean;
     relationKey?: string[];
+    joinContainer?: string;
   }>;
   physicalTable?: string;
   /** A SQL schema declares every field, so that is the default here. */
@@ -1632,6 +1633,78 @@ describe("a write that moves which row a relation joins", () => {
         "Article",
       ),
     ).toEqual([]);
+  });
+
+  describe("an implicit many-to-many, where the schema names the join table", () => {
+    /** An article whose favoritedBy field points at the join table. */
+    function articleWithJoinTable(): BehavioralSummary {
+      return makeProvider({
+        container: "Article",
+        fields: [
+          { name: "id" },
+          { name: "title" },
+          {
+            name: "favoritedBy",
+            type: "User[]",
+            derived: true,
+            joinContainer: "_ArticleToUser",
+          },
+        ],
+      });
+    }
+
+    /** The join table Prisma manages for Article's favoritedBy relation. */
+    function articleToUserJoinTable(): BehavioralSummary {
+      return makeProvider({
+        container: "_ArticleToUser",
+        fields: [
+          { name: "A", type: "Article" },
+          { name: "B", type: "User" },
+        ],
+      });
+    }
+
+    it("writes the join table's own columns instead of dropping the write", () => {
+      const written = writtenOn(
+        [
+          articleWithJoinTable(),
+          articleToUserJoinTable(),
+          connects("Article", ["favoritedBy"]),
+        ],
+        "_ArticleToUser",
+      );
+      expect(written).toHaveLength(1);
+    });
+
+    it("reports the columns as write-only, since nothing here reads the join table", () => {
+      const descriptions = checkStorage([
+        articleWithJoinTable(),
+        articleToUserJoinTable(),
+        connects("Article", ["favoritedBy"]),
+      ])
+        .map((f) => f.description)
+        .join(" ");
+
+      expect(descriptions).toContain('_ArticleToUser declares "A"');
+      expect(descriptions).toContain('_ArticleToUser declares "B"');
+    });
+
+    it("drops the write when nothing in the run declares that join table", () => {
+      const findings = checkStorage([
+        articleWithJoinTable(),
+        connects("Article", ["favoritedBy"]),
+      ]);
+
+      expect(findings.filter((f) => f.kind === "boundaryFieldUnknown")).toEqual(
+        [],
+      );
+      expect(
+        writtenOn(
+          [articleWithJoinTable(), connects("Article", ["favoritedBy"])],
+          "_ArticleToUser",
+        ),
+      ).toEqual([]);
+    });
   });
 });
 

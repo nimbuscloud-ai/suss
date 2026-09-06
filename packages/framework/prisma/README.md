@@ -21,7 +21,7 @@ Fields come from the call's first argument. A read takes the `select` keys, plus
 
 A call says which relation it reaches through and never says which model is on the other end of it, so each relation comes out as its own effect with the `relationPath` it was written under. The checker resolves that path against the model's contract to find the table.
 
-Reads work this way for `select` and `include`. Writes do too: a `create` with an `include` hands a relation back the way a query does, and a nested operation under `data` writes across the relation. The nested operations read are `create`, `createMany`, `connectOrCreate`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany`, `connect`, `disconnect`, and `set`. An operation that moves which row is joined sets a foreign key, so it arrives with `relationKey` and the checker fills the columns in from the contract.
+Reads work this way for `select` and `include`. Writes do too: a `create` with an `include` hands a relation back the way a query does, and a nested operation under `data` writes across the relation. The nested operations read are `create`, `createMany`, `connectOrCreate`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany`, `connect`, `disconnect`, and `set`. An operation that moves which row is joined sets a foreign key, so it arrives with `relationKey` and the checker fills the columns in from the contract. For a many-to-many with no join model, the contract points that relation at the join table Prisma manages, and the checker counts the write there instead of on either model.
 
 ### Raw statements
 

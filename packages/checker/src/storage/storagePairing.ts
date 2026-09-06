@@ -448,43 +448,86 @@ function keyWrites(
       if (owner === null) {
         continue;
       }
-      const columns = keyColumnsOf(containers, owner.container, relation);
-      const key = `${owner.name ?? ""}:${columns.join(",")}`;
-      if (columns.length === 0 || seen.has(key)) {
+      const resolved = keyWriteOn(containers, owner.container, relation);
+      if (resolved === null || resolved.columns.length === 0) {
+        continue;
+      }
+      const key = `${resolved.container ?? owner.name ?? ""}:${resolved.columns.join(",")}`;
+      if (seen.has(key)) {
         continue;
       }
       seen.add(key);
-      written.push(withFields(placedOn(access, owner), columns));
+      const placed =
+        resolved.container === null
+          ? placedOn(access, owner)
+          : movedTo(access, resolved.container);
+      written.push(withFields(placed, resolved.columns));
     }
   }
   return written;
 }
 
+/** Where a key write lands, and the columns it fills there. */
+interface KeyWrite {
+  /** The container name to move the access to, or null to leave it where the relation's hops already placed it. */
+  container: string | null;
+  columns: string[];
+}
+
 /**
- * The columns a write through one field of a container fills. A
- * relation that declares a foreign key fills it, and one whose key
- * lives on the far side or in a join table fills nothing here. A field
- * the contract does not call a relation is taken at its word as a
- * column, so the unknown-field check still reports one nobody declared.
+ * What a write through one field of a container changes. A relation
+ * that declares a foreign key fills it here. An implicit many-to-many
+ * fills both columns of its join table instead, since a `connect`,
+ * `disconnect` or `set` there changes a row of that table rather than
+ * a column of either model. A relation whose key lives on the far
+ * side and declares no join table changes no column anywhere this
+ * pass can see, so the write is dropped. A field the contract does
+ * not call a relation is taken at its word as a column, so the
+ * unknown-field check still reports one nobody declared.
  */
-function keyColumnsOf(
+function keyWriteOn(
   containers: DeclaredContainer[],
   container: DeclaredContainer,
   field: string,
-): string[] {
+): KeyWrite | null {
   const declared = (container.contract.fields ?? []).find(
     (candidate) => candidate.name === field,
   );
   if (declared === undefined) {
-    return [field];
+    return { container: null, columns: [field] };
   }
   if (declared.relationKey !== undefined) {
-    return declared.relationKey;
+    return { container: null, columns: declared.relationKey };
+  }
+  if (declared.joinContainer !== undefined) {
+    return joinTableWrite(containers, declared.joinContainer);
   }
   if (relationTargetOf(containers, container, field) !== undefined) {
-    return [];
+    return null;
   }
-  return [field];
+  return { container: null, columns: [field] };
+}
+
+/**
+ * The write a `connect`, `disconnect` or `set` makes on the join table
+ * behind an implicit many-to-many: every column the table declares,
+ * since those columns are the row the operation adds, removes or
+ * replaces. Null when nothing in the run declares that table.
+ */
+function joinTableWrite(
+  containers: DeclaredContainer[],
+  joinContainer: string,
+): KeyWrite | null {
+  const join = containers.find((candidate) =>
+    candidate.names.includes(joinContainer),
+  );
+  if (join === undefined) {
+    return null;
+  }
+  return {
+    container: joinContainer,
+    columns: (join.contract.fields ?? []).map((field) => field.name),
+  };
 }
 
 /** The access, addressed to the container a walk of the path arrived at. */

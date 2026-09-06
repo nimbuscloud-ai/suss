@@ -24,7 +24,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { checkAll } from "@suss/checker";
+import { checkAll, groundStorageAccesses } from "@suss/checker";
 import { prismaSchemaFileToSummaries } from "@suss/contract-prisma";
 import { prismaFramework } from "@suss/framework-prisma";
 
@@ -81,14 +81,16 @@ describe("prisma integration", () => {
     ensurePrismaClientGenerated();
   });
 
-  it("emits the expected provider summary count (4 models = 4 summaries)", () => {
+  it("emits the expected provider summary count (4 models + 2 implicit join tables)", () => {
     const providers = prismaSchemaFileToSummaries(schemaPath);
-    expect(providers).toHaveLength(4);
+    expect(providers).toHaveLength(6);
     expect(providers.map((p) => p.identity.name).sort()).toEqual([
       "Label",
       "Post",
       "Tag",
       "User",
+      "_LabelToPost",
+      "_PostToTag",
     ]);
   });
 
@@ -153,6 +155,29 @@ describe("prisma integration", () => {
     const code = await extractCode();
     const write = relationWrite(code, "labels");
     expect(write?.interaction.fields).toEqual(["*"]);
+  });
+
+  it("routes a many-to-many connectOrCreate's join write to the implicit join table", async () => {
+    const code = await extractCode();
+    const providers = prismaSchemaFileToSummaries(schemaPath);
+    const { accesses } = groundStorageAccesses([...providers, ...code]);
+    const joinWrites = accesses.filter(
+      (access) => access.kind === "write" && access.container === "_PostToTag",
+    );
+    expect(joinWrites.length).toBeGreaterThan(0);
+  });
+
+  it("reports the join table's columns as write-only, since nothing here reads them", async () => {
+    const findings = await runPipeline();
+    for (const column of ["A", "B"]) {
+      const f = findings.find(
+        (f) =>
+          f.kind === "boundaryFieldUnused" &&
+          f.aspect === "read" &&
+          f.description.includes(`_PostToTag declares "${column}"`),
+      );
+      expect(f).toBeDefined();
+    }
   });
 
   it("leaves Tag.id to the database rather than claiming code writes it", async () => {
