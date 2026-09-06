@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-aws-apigateway",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Turn an AWS API Gateway REST or HTTP API into a suss contract and check it against the Lambda handlers and clients that use it.",
   "keywords": [
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3"
+    "@suss/behavioral-ir": "0.22.4"
   },
   "devDependencies": {
     "tsup": "*",

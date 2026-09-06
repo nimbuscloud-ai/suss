@@ -1,6 +1,6 @@
 {
   "name": "@suss/datalog",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "A small semi-naive Datalog evaluator with stratified negation, the rules engine suss runs its whole-program analyses on.",
   "keywords": [

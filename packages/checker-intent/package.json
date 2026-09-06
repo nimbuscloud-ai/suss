@@ -1,6 +1,6 @@
 {
   "name": "@suss/checker-intent",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Compare the intent your team wrote down against what suss read out of the code, and report where the two have drifted apart.",
   "keywords": [
@@ -49,9 +49,9 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3",
-    "@suss/intent-ir": "0.22.3",
-    "@suss/ir-core": "0.22.3"
+    "@suss/behavioral-ir": "0.22.4",
+    "@suss/intent-ir": "0.22.4",
+    "@suss/ir-core": "0.22.4"
   },
   "devDependencies": {
     "tsup": "*",

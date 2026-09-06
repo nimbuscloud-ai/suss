@@ -1,6 +1,6 @@
 {
   "name": "@suss/manifest-aws",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Parse a CloudFormation or SAM template into plain data, the facts every suss reader of an AWS template works from.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/ir-core": "0.22.3",
+    "@suss/ir-core": "0.22.4",
     "yaml": "^2.4.0"
   },
   "devDependencies": {

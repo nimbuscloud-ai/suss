@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-wrangler",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Read a Cloudflare wrangler.toml or wrangler.jsonc and check the bindings it declares against the Worker code that uses them.",
   "keywords": [
@@ -47,8 +47,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3",
-    "@suss/ir-core": "0.22.3",
+    "@suss/behavioral-ir": "0.22.4",
+    "@suss/ir-core": "0.22.4",
     "jsonc-parser": "^3.3.1",
     "smol-toml": "^1.4.2"
   },

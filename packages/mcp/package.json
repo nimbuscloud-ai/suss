@@ -1,6 +1,6 @@
 {
   "name": "@suss/mcp",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "An MCP server over suss, so a coding agent can ask what an endpoint does and who calls it while it works.",
   "keywords": [
@@ -49,8 +49,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@suss/behavioral-ir": "0.22.3",
-    "@suss/cli": "0.22.3",
+    "@suss/behavioral-ir": "0.22.4",
+    "@suss/cli": "0.22.4",
     "zod": "^4.0.0"
   },
   "devDependencies": {

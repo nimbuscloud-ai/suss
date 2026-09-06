@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-cloudformation",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Turn a CloudFormation or SAM template into a suss contract and check the API it declares against the handlers and clients behind it.",
   "keywords": [
@@ -48,11 +48,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3",
-    "@suss/contract-aws-apigateway": "0.22.3",
-    "@suss/contract-openapi": "0.22.3",
-    "@suss/ir-core": "0.22.3",
-    "@suss/manifest-aws": "0.22.3",
+    "@suss/behavioral-ir": "0.22.4",
+    "@suss/contract-aws-apigateway": "0.22.4",
+    "@suss/contract-openapi": "0.22.4",
+    "@suss/ir-core": "0.22.4",
+    "@suss/manifest-aws": "0.22.4",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
