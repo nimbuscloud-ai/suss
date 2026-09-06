@@ -1580,6 +1580,115 @@ function summaryKey(s: BehavioralSummary): string {
   return `${s.kind}::${s.identity.name}`;
 }
 
+interface DiffPairing {
+  added: Array<{ key: string; summary: BehavioralSummary }>;
+  removed: Array<{ key: string; summary: BehavioralSummary }>;
+  paired: Array<{
+    key: string;
+    before: BehavioralSummary;
+    after: BehavioralSummary;
+  }>;
+}
+
+function groupByKey(
+  summaries: readonly BehavioralSummary[],
+): Map<string, BehavioralSummary[]> {
+  const groups = new Map<string, BehavioralSummary[]>();
+  for (const s of summaries) {
+    const key = summaryKey(s);
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, [s]);
+    } else {
+      group.push(s);
+    }
+  }
+  return groups;
+}
+
+/**
+ * The label that tells two units at one boundary apart: the unit's name,
+ * or its file and name when the name repeats on either side.
+ */
+function unitLabels(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+): (s: BehavioralSummary) => string {
+  const repeated = new Set<string>();
+  for (const side of [before, after]) {
+    const seen = new Set<string>();
+    for (const s of side) {
+      if (seen.has(s.identity.name)) {
+        repeated.add(s.identity.name);
+      }
+      seen.add(s.identity.name);
+    }
+  }
+  return (s) =>
+    repeated.has(s.identity.name)
+      ? `${s.location.file}::${s.identity.name}`
+      : s.identity.name;
+}
+
+/**
+ * Which summary on each side is the same unit. Units are grouped by
+ * boundary, so a route spelled ":id" before and "{id}" after still
+ * pairs. Several callers of one route share a boundary key, and
+ * within such a group each unit pairs by its name instead, since
+ * keeping one caller per route would drop the rest from the diff.
+ */
+function pairForDiff(
+  beforeSummaries: readonly BehavioralSummary[],
+  afterSummaries: readonly BehavioralSummary[],
+): DiffPairing {
+  const beforeGroups = groupByKey(beforeSummaries);
+  const afterGroups = groupByKey(afterSummaries);
+  const pairing: DiffPairing = { added: [], removed: [], paired: [] };
+  const keys = new Set([...beforeGroups.keys(), ...afterGroups.keys()]);
+
+  for (const key of keys) {
+    const before = beforeGroups.get(key) ?? [];
+    const after = afterGroups.get(key) ?? [];
+
+    if (before.length <= 1 && after.length <= 1) {
+      const beforeOne = before[0];
+      const afterOne = after[0];
+      if (beforeOne !== undefined && afterOne !== undefined) {
+        pairing.paired.push({ key, before: beforeOne, after: afterOne });
+      } else if (afterOne !== undefined) {
+        pairing.added.push({ key, summary: afterOne });
+      } else if (beforeOne !== undefined) {
+        pairing.removed.push({ key, summary: beforeOne });
+      }
+      continue;
+    }
+
+    const label = unitLabels(before, after);
+    const beforeByLabel = new Map(before.map((s) => [label(s), s]));
+    const afterByLabel = new Map(after.map((s) => [label(s), s]));
+    for (const [unit, afterOne] of afterByLabel) {
+      const beforeOne = beforeByLabel.get(unit);
+      const unitKey = `${key}::${unit}`;
+      if (beforeOne === undefined) {
+        pairing.added.push({ key: unitKey, summary: afterOne });
+      } else {
+        pairing.paired.push({
+          key: unitKey,
+          before: beforeOne,
+          after: afterOne,
+        });
+      }
+    }
+    for (const [unit, beforeOne] of beforeByLabel) {
+      if (!afterByLabel.has(unit)) {
+        pairing.removed.push({ key: `${key}::${unit}`, summary: beforeOne });
+      }
+    }
+  }
+
+  return pairing;
+}
+
 function bindingLabel(s: BehavioralSummary): string | null {
   const binding = s.identity.boundaryBinding;
   if (binding === null) {
@@ -1697,39 +1806,30 @@ interface DiffedSummary {
  * consumer wants what changed, and printing every unchanged boundary
  * beside it buries that.
  */
-function writeDiffJson(
-  before: readonly BehavioralSummary[],
-  after: readonly BehavioralSummary[],
-): void {
-  const beforeByKey = new Map(before.map((s) => [summaryKey(s), s]));
-  const afterByKey = new Map(after.map((s) => [summaryKey(s), s]));
+function writeDiffJson(pairing: DiffPairing): void {
   const moved: DiffedSummary[] = [];
 
-  for (const [key, summary] of afterByKey) {
-    if (!beforeByKey.has(key)) {
-      moved.push({
-        key,
-        change: "added",
-        kind: summary.kind,
-        file: summary.location.file,
-      });
-    }
+  for (const { key, summary } of pairing.added) {
+    moved.push({
+      key,
+      change: "added",
+      kind: summary.kind,
+      file: summary.location.file,
+    });
   }
-  for (const [key, summary] of beforeByKey) {
-    if (!afterByKey.has(key)) {
-      moved.push({
-        key,
-        change: "removed",
-        kind: summary.kind,
-        file: summary.location.file,
-      });
-    }
+  for (const { key, summary } of pairing.removed) {
+    moved.push({
+      key,
+      change: "removed",
+      kind: summary.kind,
+      file: summary.location.file,
+    });
   }
-  for (const [key, beforeSummary] of beforeByKey) {
-    const afterSummary = afterByKey.get(key);
-    if (afterSummary === undefined) {
-      continue;
-    }
+  for (const {
+    key,
+    before: beforeSummary,
+    after: afterSummary,
+  } of pairing.paired) {
     const diff = diffSummaries(beforeSummary, afterSummary);
     if (
       diff.addedTransitions.length === 0 &&
@@ -1774,51 +1874,32 @@ export function inspectDiff(options: DiffOptions): void {
     fs.readFileSync(afterPath, "utf-8"),
   );
 
-  // Index by key
-  const beforeByKey = new Map<string, BehavioralSummary>();
-  for (const s of beforeSummaries) {
-    beforeByKey.set(summaryKey(s), s);
-  }
-  const afterByKey = new Map<string, BehavioralSummary>();
-  for (const s of afterSummaries) {
-    afterByKey.set(summaryKey(s), s);
-  }
+  const pairing = pairForDiff(beforeSummaries, afterSummaries);
 
   if (options.json === true) {
-    writeDiffJson(beforeSummaries, afterSummaries);
+    writeDiffJson(pairing);
     return;
   }
 
   let hasChanges = false;
 
-  // New summaries (in after but not before)
-  for (const [key, s] of afterByKey) {
-    if (!beforeByKey.has(key)) {
-      hasChanges = true;
-      process.stdout.write(`+ ${key}\n`);
-      process.stdout.write(
-        `  new ${s.kind} with ${s.transitions.length} transition${s.transitions.length === 1 ? "" : "s"}\n\n`,
-      );
-    }
+  for (const { key, summary: s } of pairing.added) {
+    hasChanges = true;
+    process.stdout.write(`+ ${key}\n`);
+    process.stdout.write(
+      `  new ${s.kind} with ${s.transitions.length} transition${s.transitions.length === 1 ? "" : "s"}\n\n`,
+    );
   }
 
-  // Removed summaries (in before but not after)
-  for (const [key, s] of beforeByKey) {
-    if (!afterByKey.has(key)) {
-      hasChanges = true;
-      process.stdout.write(`- ${key}\n`);
-      process.stdout.write(
-        `  removed ${s.kind} (had ${s.transitions.length} transition${s.transitions.length === 1 ? "" : "s"})\n\n`,
-      );
-    }
+  for (const { key, summary: s } of pairing.removed) {
+    hasChanges = true;
+    process.stdout.write(`- ${key}\n`);
+    process.stdout.write(
+      `  removed ${s.kind} (had ${s.transitions.length} transition${s.transitions.length === 1 ? "" : "s"})\n\n`,
+    );
   }
 
-  // Changed summaries
-  for (const [key, beforeS] of beforeByKey) {
-    const afterS = afterByKey.get(key);
-    if (afterS === undefined) {
-      continue;
-    }
+  for (const { key, before: beforeS, after: afterS } of pairing.paired) {
     const diff = diffSummaries(beforeS, afterS);
     if (
       diff.addedTransitions.length === 0 &&

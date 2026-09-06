@@ -132,6 +132,86 @@ describe("inspect --diff --json", () => {
       expect(() => JSON.parse(output)).toThrow();
     });
   });
+
+  it("keeps every caller of one route apart", () => {
+    // Three callers of GET /pet/{id} share a boundary key. Keying the
+    // diff on that alone kept one of them and dropped the other two,
+    // so a change to a dropped caller printed as no change at all.
+    const caller = (name: string, file: string): BehavioralSummary => ({
+      ...routeSummary(name, "/pet/{id}"),
+      kind: "client",
+      location: {
+        file,
+        range: { start: 1, end: 20 },
+        exportName: name,
+      },
+    });
+    const withReturn = (s: BehavioralSummary): BehavioralSummary => ({
+      ...s,
+      transitions: [
+        {
+          id: `${s.identity.name}:return:none:1`,
+          conditions: [],
+          output: { type: "return", value: null },
+          effects: [],
+          location: { start: 1, end: 5 },
+          isDefault: true,
+        },
+      ],
+    });
+    const before = [
+      caller("getPet", "src/a.ts"),
+      caller("safeGetPet", "src/a.ts"),
+      caller("describePet", "src/a.ts"),
+    ];
+    const after = [
+      withReturn(caller("getPet", "src/a.ts")),
+      caller("safeGetPet", "src/a.ts"),
+      caller("listPets", "src/a.ts"),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, json: true }),
+      );
+      const parsed = JSON.parse(output) as {
+        summaries: Array<{ key: string; change: string }>;
+      };
+      const byKey = Object.fromEntries(
+        parsed.summaries.map((s) => [s.key, s.change]),
+      );
+      expect(byKey).toEqual({
+        "client:GET /pet/{id}::getPet": "changed",
+        "client:GET /pet/{id}::describePet": "removed",
+        "client:GET /pet/{id}::listPets": "added",
+      });
+    });
+  });
+
+  it("tells two same-named callers apart by file", () => {
+    const caller = (file: string): BehavioralSummary => ({
+      ...routeSummary("load", "/pet/{id}"),
+      kind: "client",
+      location: { file, range: { start: 1, end: 20 }, exportName: "load" },
+    });
+    const before = [caller("src/a.ts"), caller("src/b.ts")];
+    const after = [caller("src/a.ts")];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, json: true }),
+      );
+      const parsed = JSON.parse(output) as {
+        summaries: Array<{ key: string; change: string }>;
+      };
+      expect(parsed.summaries).toEqual([
+        expect.objectContaining({
+          key: "client:GET /pet/{id}::src/b.ts::load",
+          change: "removed",
+        }),
+      ]);
+    });
+  });
 });
 
 describe("inspect, a route the wrappers cover", () => {
