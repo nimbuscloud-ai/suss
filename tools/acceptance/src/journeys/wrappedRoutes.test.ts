@@ -134,11 +134,30 @@ describe("read a service whose statuses come from around the handler", () => {
   it("says on every route that a factory it could not read registered something", () => {
     const summaries = readJson(summariesFile) as BehavioralSummary[];
 
-    for (const path of ["/v1/tenants/:id", "/v1/tenants", "/health"]) {
+    for (const path of [
+      "/v1/tenants/:id",
+      "/v1/tenants",
+      "/v1/tenants/{id}/usage",
+      "/health",
+    ]) {
       const route = routeFor(summaries, path);
       expect(unfollowedCalleesOf(route)).toContain("pickMiddleware");
       expect(wrapperNamesOf(route)).not.toContain("pickMiddleware");
     }
+  });
+
+  it("compares a route's declared responses against what its wrappers produce", () => {
+    const summaries = readJson(summariesFile) as BehavioralSummary[];
+    const usage = routeFor(summaries, "/v1/tenants/{id}/usage");
+
+    expect(statusesOf(usage)).toEqual([401, 429, 400, 200]);
+    expect(
+      usage.gaps
+        .filter((gap) => gap.type === "unhandledCase")
+        .map((gap) => gap.description),
+    ).toEqual([
+      "rateLimit, registered around this handler, produces status 429 which is not declared in the hono contract",
+    ]);
   });
 });
 

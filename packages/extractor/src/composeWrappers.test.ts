@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { readWrapperMetadata, withWrapperMetadata } from "@suss/behavioral-ir";
+import {
+  readWrapperMetadata,
+  withHttpMetadata,
+  withWrapperMetadata,
+} from "@suss/behavioral-ir";
 
 import { composeWrappers } from "./composeWrappers.js";
+import { contractStatusGaps } from "./contractStatusGaps.js";
 import { MAX_PATHS } from "./paths/enumeratePaths.js";
 
 import type {
   BehavioralSummary,
+  Gap,
   Predicate,
   Transition,
   WrapperReference,
@@ -58,16 +64,41 @@ function continues(id: string, conditions: Predicate[] = []): Transition {
   };
 }
 
+/**
+ * A summary the way assembly leaves it: `contract` declares the route's
+ * statuses, and the gaps are what the comparison against the handler's
+ * own body gave before anything around it was read.
+ */
 function unit(
   name: string,
   file: string,
   transitions: Transition[],
-  options: { path?: string; wrappers?: WrapperReference[] } = {},
+  options: {
+    path?: string;
+    wrappers?: WrapperReference[];
+    contract?: number[];
+  } = {},
 ): BehavioralSummary {
-  const metadata =
+  const declaredContract =
+    options.contract === undefined
+      ? undefined
+      : {
+          framework: "hono",
+          provenance: "derived" as const,
+          responses: options.contract.map((statusCode) => ({ statusCode })),
+        };
+  const withWrappers =
     options.wrappers === undefined
       ? undefined
       : withWrapperMetadata(undefined, { applied: options.wrappers });
+  const metadata =
+    declaredContract === undefined
+      ? withWrappers
+      : withHttpMetadata(withWrappers, { declaredContract });
+  const gaps =
+    declaredContract === undefined
+      ? []
+      : contractStatusGaps(declaredContract, transitions);
   return {
     kind: "handler",
     location: { file, range: { start: 1, end: 9 }, exportName: name },
@@ -85,7 +116,7 @@ function unit(
     },
     inputs: [],
     transitions,
-    gaps: [],
+    gaps,
     confidence: { source: "inferred_static", level: "high" },
     ...(metadata === undefined ? {} : { metadata }),
   };
@@ -352,5 +383,110 @@ describe("composeWrappers", () => {
     const route = unit("route", "src/app.ts", [responds("ok", 200)]);
 
     expect(composeWrappers([route])[0]).toBe(route);
+  });
+});
+
+describe("composeWrappers and the declared contract", () => {
+  const descriptionsOf = (summary: BehavioralSummary): string[] =>
+    summary.gaps.map((gap) => gap.description);
+
+  it("stops reporting a declared status once a middleware is seen to produce it", () => {
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [AUTH],
+      contract: [200, 401],
+    });
+    expect(descriptionsOf(route)).toEqual([
+      "Declared response 401 is never produced by the handler",
+    ]);
+    const auth = unit("requireCaller", "src/requireCaller.ts", [
+      responds("denied", 401, [guard("!token")]),
+      continues("pass", [guard("token")]),
+    ]);
+
+    const [composed] = composeWrappers([route, auth]);
+
+    expect(descriptionsOf(composed)).toEqual([]);
+  });
+
+  it("says which wrapper produced a status the contract does not declare", () => {
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [AUTH],
+      contract: [200],
+    });
+    const auth = unit("requireCaller", "src/requireCaller.ts", [
+      responds("limited", 429, [guard("overLimit")]),
+      continues("pass", [guard("!overLimit")]),
+    ]);
+
+    const [composed] = composeWrappers([route, auth]);
+
+    expect(descriptionsOf(composed)).toEqual([
+      "requireCaller, registered around this handler, produces status 429 which is not declared in the hono contract",
+    ]);
+  });
+
+  it("counts an error handler's response as produced with no visible throw", () => {
+    const onError: WrapperReference = {
+      file: "src/app.ts",
+      name: "onError",
+      onThrow: true,
+    };
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [onError],
+      contract: [200, 500],
+    });
+    expect(descriptionsOf(route)).toEqual([
+      "Declared response 500 is never produced by the handler",
+    ]);
+    const handler = unit("onError", "src/app.ts", [responds("problem", 500)]);
+
+    const [composed] = composeWrappers([route, handler]);
+
+    expect(descriptionsOf(composed)).toEqual([]);
+    expect(composed.transitions).toBe(route.transitions);
+  });
+
+  it("keeps the gaps that are not about the contract", () => {
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [AUTH],
+      contract: [200, 401],
+    });
+    const other: Gap = {
+      type: "unfollowedCall",
+      conditions: [],
+      consequence: "unknown",
+      description: "helper() is not followed",
+    };
+    const withOther = { ...route, gaps: [other, ...route.gaps] };
+    const auth = unit("requireCaller", "src/requireCaller.ts", [
+      responds("denied", 401, [guard("!token")]),
+      continues("pass", [guard("token")]),
+    ]);
+
+    const [composed] = composeWrappers([withOther, auth]);
+
+    expect(composed.gaps).toEqual([other]);
+  });
+
+  it("adds no gaps when the run asked for none", () => {
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [AUTH],
+      contract: [200],
+    });
+    const silent = { ...route, gaps: [] };
+    const auth = unit("requireCaller", "src/requireCaller.ts", [
+      responds("limited", 429, [guard("overLimit")]),
+      continues("pass", [guard("!overLimit")]),
+    ]);
+
+    const [composed] = composeWrappers([silent, auth], {
+      gapHandling: "silent",
+    });
+
+    expect(composed.gaps).toEqual([]);
+    expect(statusesOf(composed)).toEqual([
+      { type: "literal", value: 429 },
+      { type: "literal", value: 200 },
+    ]);
   });
 });

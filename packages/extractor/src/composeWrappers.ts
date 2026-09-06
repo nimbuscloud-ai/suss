@@ -12,11 +12,14 @@
  */
 
 import {
+  exchangesHttpResponses,
+  readHttpMetadata,
   readWrapperMetadata,
   withinScope,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
+import { contractStatusGaps } from "./contractStatusGaps.js";
 import { MAX_PATHS } from "./paths/enumeratePaths.js";
 
 import type {
@@ -25,6 +28,14 @@ import type {
   Transition,
   WrapperReference,
 } from "@suss/behavioral-ir";
+
+/**
+ * Whether to keep gaps at all. A run that asked for none has none on
+ * the summaries coming in, and composition adds none either.
+ */
+export interface ComposeOptions {
+  gapHandling?: "strict" | "permissive" | "silent";
+}
 
 /** A wrapper's reference on the wrapped unit, beside the summary it points at. */
 interface ResolvedWrapper {
@@ -52,6 +63,7 @@ const BUDGET_GAP: Gap = {
  */
 export function composeWrappers(
   summaries: readonly BehavioralSummary[],
+  options: ComposeOptions = {},
 ): BehavioralSummary[] {
   const byKey = new Map<string, BehavioralSummary>();
   for (const summary of summaries) {
@@ -61,7 +73,8 @@ export function composeWrappers(
     }
   }
 
-  return summaries.map((summary) => composeOne(summary, byKey));
+  const keepGaps = options.gapHandling !== "silent";
+  return summaries.map((summary) => composeOne(summary, byKey, keepGaps));
 }
 
 function summaryKey(file: string, name: string): string {
@@ -71,6 +84,7 @@ function summaryKey(file: string, name: string): string {
 function composeOne(
   summary: BehavioralSummary,
   byKey: ReadonlyMap<string, BehavioralSummary>,
+  keepGaps: boolean,
 ): BehavioralSummary {
   const recorded = readWrapperMetadata(summary);
   const applied = recorded?.applied ?? [];
@@ -118,15 +132,73 @@ function composeOne(
     composition = merge(composition, applyThrowWrapper(wrapper, composition));
   }
 
-  if (composition.transitions === summary.transitions) {
+  const transitions =
+    composition.transitions === summary.transitions
+      ? summary.transitions
+      : withDistinctIds(composition.transitions);
+  if (!keepGaps) {
+    return { ...narrowed, transitions };
+  }
+  const gaps = withContractStatusGaps(summary, transitions, wrappers);
+  if (transitions === summary.transitions && gaps === summary.gaps) {
     return narrowed;
   }
-
   return {
     ...narrowed,
-    transitions: withDistinctIds(composition.transitions),
-    gaps: composition.degraded ? [...summary.gaps, BUDGET_GAP] : summary.gaps,
+    transitions,
+    gaps: composition.degraded ? [...gaps, BUDGET_GAP] : gaps,
   };
+}
+
+/**
+ * The unit's gaps with the declared-contract comparison redone over the
+ * composed transitions. The comparison first ran over the handler's own
+ * body, before anything around it was read, so a 401 the contract
+ * declares and the middleware produces was reported as never produced.
+ * The earlier gaps are the ones the same comparison gives for the
+ * uncomposed transitions, so they can be taken out without parsing.
+ *
+ * An error handler's outcomes count as produced whether or not a path
+ * through the handler was seen to throw, since anything the handler
+ * calls can throw at runtime and the error handler responds for it.
+ */
+function withContractStatusGaps(
+  summary: BehavioralSummary,
+  composed: readonly Transition[],
+  wrappers: readonly ResolvedWrapper[],
+): Gap[] {
+  const contract = readHttpMetadata(summary)?.declaredContract;
+  const binding = summary.identity.boundaryBinding;
+  if (
+    contract === undefined ||
+    (binding !== null && !exchangesHttpResponses(binding))
+  ) {
+    return summary.gaps;
+  }
+  const declared = {
+    framework: contract.framework ?? "declared",
+    responses: contract.responses,
+  };
+  const stale = new Set(
+    contractStatusGaps(declared, summary.transitions).map(gapKey),
+  );
+  const onThrow = wrappers
+    .filter((wrapper) => wrapper.reference.onThrow === true)
+    .flatMap((wrapper) =>
+      attribute(wrapper.summary.transitions, wrapper.reference),
+    );
+  const gaps = [
+    ...summary.gaps.filter((gap) => !stale.has(gapKey(gap))),
+    ...contractStatusGaps(declared, [...composed, ...onThrow]),
+  ];
+  const unchanged =
+    gaps.length === summary.gaps.length &&
+    gaps.every((gap, i) => gapKey(gap) === gapKey(summary.gaps[i] as Gap));
+  return unchanged ? summary.gaps : gaps;
+}
+
+function gapKey(gap: Gap): string {
+  return `${gap.type}|${gap.description}`;
 }
 
 /** One step's result, keeping the note that an earlier step degraded. */

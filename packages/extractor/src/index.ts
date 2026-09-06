@@ -21,6 +21,7 @@ import {
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
+import { contractStatusGaps } from "./contractStatusGaps.js";
 import { type InputRead, inputReadsOf, mergeInputReads } from "./inputReads.js";
 
 export type { InputRead } from "./inputReads.js";
@@ -772,43 +773,7 @@ export function detectGaps(
   }
 
   if (raw.declaredContract && answersWithHttpResponses(raw)) {
-    const producedStatuses = new Set(
-      transitions.flatMap((t) => {
-        if (t.output.type !== "response") {
-          return [];
-        }
-        const sc = t.output.statusCode;
-        if (sc?.type === "literal") {
-          return [sc.value as number];
-        }
-        return [];
-      }),
-    );
-    const declaredStatuses = new Set(
-      raw.declaredContract.responses.map((r) => r.statusCode),
-    );
-
-    for (const declared of declaredStatuses) {
-      if (!producedStatuses.has(declared)) {
-        gaps.push({
-          type: "unhandledCase",
-          conditions: [],
-          consequence: "frameworkDefault",
-          description: `Declared response ${declared} is never produced by the handler`,
-        });
-      }
-    }
-
-    for (const produced of producedStatuses) {
-      if (!declaredStatuses.has(produced)) {
-        gaps.push({
-          type: "unhandledCase",
-          conditions: [],
-          consequence: "unknown",
-          description: `Handler produces status ${produced} which is not declared in the ${raw.declaredContract.framework} contract`,
-        });
-      }
-    }
+    gaps.push(...contractStatusGaps(raw.declaredContract, transitions));
   }
 
   return gaps;

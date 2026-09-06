@@ -2589,7 +2589,7 @@ export function createTypeScriptAdapter(
       // function of the whole run and a stored summary of the route
       // alone stays reusable.
       const composed = timer.time("composeWrappers", () =>
-        composeWrappers(enriched),
+        composeWrappers(enriched, config.extractorOptions ?? {}),
       );
 
       if (config.onTiming !== undefined) {
