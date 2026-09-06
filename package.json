@@ -1,6 +1,6 @@
 {
   "name": "suss",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "private": true,
   "type": "module",
   "description": "Static behavioral analysis for TypeScript — extract, compare, and publish summaries of what your code does.",

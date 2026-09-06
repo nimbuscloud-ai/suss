@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-aws-sns",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "type": "module",
   "description": "Recognize AWS SNS publish calls in TypeScript code and emit message-send effects.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/recognize": "0.22.2"
+    "@suss/recognize": "0.22.3"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
