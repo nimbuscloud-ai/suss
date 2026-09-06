@@ -1634,25 +1634,43 @@ function unitLabel(s: BehavioralSummary, repeated: Set<string>): string {
 }
 
 /**
- * Whether the units at one boundary pair by their own name rather than
- * by the boundary alone. A consumer always does, since many callers
- * share one route and each has a name of its own. A provider pairs by
- * the boundary, which is the only stable identity most handlers have,
- * unless several of them serve it.
+ * Whether the units under one key pair by their own name and file
+ * rather than by the key alone. A consumer always does, since many
+ * callers share one route and each has a name of its own. A provider
+ * pairs by the boundary, which is the only stable identity most
+ * handlers have, unless several of them serve it. A unit with no
+ * boundary is keyed by name already, so it splits only when two files
+ * share the name, as three repository classes with a `list` method do.
  */
 function pairsByUnit(
   before: readonly BehavioralSummary[],
   after: readonly BehavioralSummary[],
 ): boolean {
-  const first = before[0] ?? after[0];
-  if (first === undefined || boundaryOf(first) === null) {
-    return false;
+  if (before.length > 1 || after.length > 1) {
+    return true;
   }
+  const first = before[0] ?? after[0];
   return (
-    BOUNDARY_ROLE[first.kind] === "consumer" ||
-    before.length > 1 ||
-    after.length > 1
+    first !== undefined &&
+    boundaryOf(first) !== null &&
+    BOUNDARY_ROLE[first.kind] === "consumer"
   );
+}
+
+/**
+ * The key one unit gets once its group splits. A unit keyed by name
+ * already has the name in the group key, so its file goes in front of
+ * the name instead of the label being appended a second time.
+ */
+function unitKey(
+  groupKey: string,
+  s: BehavioralSummary,
+  repeated: Set<string>,
+): string {
+  if (boundaryOf(s) === null) {
+    return `${s.kind}::${unitLabel(s, repeated)}`;
+  }
+  return `${groupKey}::${unitLabel(s, repeated)}`;
 }
 
 function pairOneUnit(
@@ -1695,11 +1713,21 @@ function pairForDiff(
     );
     const afterByUnit = new Map(after.map((s) => [unitLabel(s, repeated), s]));
     for (const [unit, afterOne] of afterByUnit) {
-      pairOneUnit(pairing, `${key}::${unit}`, beforeByUnit.get(unit), afterOne);
+      pairOneUnit(
+        pairing,
+        unitKey(key, afterOne, repeated),
+        beforeByUnit.get(unit),
+        afterOne,
+      );
     }
     for (const [unit, beforeOne] of beforeByUnit) {
       if (!afterByUnit.has(unit)) {
-        pairOneUnit(pairing, `${key}::${unit}`, beforeOne, undefined);
+        pairOneUnit(
+          pairing,
+          unitKey(key, beforeOne, repeated),
+          beforeOne,
+          undefined,
+        );
       }
     }
   }
