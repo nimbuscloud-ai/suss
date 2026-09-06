@@ -96,7 +96,7 @@ export default defineConfig({
     // lives in the sidebar.
     nav: [
       { text: "Tutorial", link: "/tutorial/get-started" },
-      { text: "Guides", link: "/guides/add-to-project" },
+      { text: "Guides", link: "/guides/adopting-suss" },
       { text: "Reference", link: "/reference/cli" },
       { text: "Explanation", link: "/motivation" },
       {
@@ -132,6 +132,7 @@ export default defineConfig({
         text: "How-to guides",
         collapsed: false,
         items: [
+          { text: "Adopt suss one step at a time", link: "/guides/adopting-suss" },
           { text: "Add suss to a project", link: "/guides/add-to-project" },
           { text: "Set up CI checking", link: "/guides/ci-integration" },
           {
