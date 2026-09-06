@@ -1,11 +1,14 @@
 # suss inspect --diff as a pull request comment
 
-The action reads every boundary in the repository at the base of a pull request and again at its head, then posts what changed as one comment on the pull request. A later push edits the same comment rather than adding another.
+The action reads every boundary in the repository at the base of a pull request and again at its head, then posts what changed as one comment on the pull request. A later push edits the same comment rather than adding another. The `push` trigger is optional; it reads each commit on `main` ahead of the pull requests that branch from it (see [Caching](#caching)).
 
 ```yaml
 name: suss
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   behavior-diff:
@@ -48,6 +51,7 @@ The comment looks like this:
 | `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty the base checkout shares the head's `node_modules` directories, which is right when the pull request does not change dependencies. |
 | `comment` | `true` | Whether to post the comment. Set it to `false` to read the outputs and do something else with them. |
 | `artifact-name` | `suss-diff` | The name of the run artifact that keeps both summary files and the diff. Two uses of the action in one workflow need two names. |
+| `cache` | `true` | Whether to keep suss's per-file cache and each commit's summaries in the repository's actions cache. See [Caching](#caching). |
 | `token` | `github.token` | The token used to post the comment. It needs `pull-requests: write`. |
 
 ## Outputs
@@ -81,6 +85,25 @@ A pull request from a fork gets a read-only token, so the comment step fails the
           extract: -p tsconfig.json -f hono
           comment: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 ```
+
+## Caching
+
+Reading a large project takes a while, and the action reads it twice. Two caches cut that down, both in the repository's actions cache and both on by default.
+
+The first is suss's own per-file cache, the `.suss/cache` directory next to the project. The action restores it before it reads the head and saves it afterwards, so a file the pull request did not touch is not read again. A run that changes one file reads that file and whatever depends on it.
+
+The second is the summaries of each commit. Run the action on a push to the default branch as well as on pull requests:
+
+```yaml
+on:
+  pull_request:
+  push:
+    branches: [main]
+```
+
+On a push the action reads the commit, saves its summaries under the commit, and stops; there is no diff and no comment, and `changed` is empty. A pull request whose base is that commit restores those summaries and skips the base checkout. A pull request whose base was never read this way reads the base itself and saves it for its later pushes.
+
+Both caches are keyed on the installed version of `@suss/cli` and on `extract` and `working-directory`, so a new release or a change to the packs starts them over. Set `cache: false` to read everything on every run.
 
 ## Where the diff comes from
 

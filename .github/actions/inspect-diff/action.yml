@@ -36,6 +36,14 @@ inputs:
       diff. Give each use of the action in one workflow its own name.
     required: false
     default: suss-diff
+  cache:
+    description: >
+      Whether to keep suss's own per-file cache and the summaries of each
+      commit in the repository's actions cache between runs. On a push the
+      action reads the commit and saves its summaries, so a pull request
+      with that commit as its base does not read the base again.
+    required: false
+    default: "true"
   token:
     description: "The token used to post the comment. It needs the `pull-requests: write` permission."
     required: false
@@ -59,10 +67,41 @@ runs:
   using: composite
   steps:
     - name: Install suss
+      id: install
       shell: bash
       env:
         VERSION: ${{ inputs.version }}
-      run: npm install --global --no-fund --no-audit "@suss/cli@$VERSION"
+      run: |
+        npm install --global --no-fund --no-audit "@suss/cli@$VERSION"
+        installed=$(npm ls --global --json @suss/cli | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0,"utf8")).dependencies["@suss/cli"].version)')
+        echo "version=$installed" >> "$GITHUB_OUTPUT"
+
+    # Both caches are keyed on the installed version and on what is
+    # extracted, so a new release or a change to the packs starts over.
+    - name: Name the caches
+      id: keys
+      if: inputs.cache == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.install.outputs.version }}
+        EXTRACT: ${{ inputs.extract }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        subject=$(printf '%s|%s' "$EXTRACT" "$WORKING_DIRECTORY" | sha256sum | cut -c1-12)
+        echo "files=suss-files-$RUNNER_OS-$VERSION-$subject-" >> "$GITHUB_OUTPUT"
+        echo "summaries=suss-summaries-$VERSION-$subject-" >> "$GITHUB_OUTPUT"
+
+    # suss keeps a per-file cache next to the project it reads, so a
+    # file the pull request did not touch is not read again.
+    - name: Restore the per-file cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ${{ inputs.working-directory }}/**/.suss/cache
+          !**/node_modules/**
+        key: ${{ steps.keys.outputs.files }}${{ github.sha }}
+        restore-keys: ${{ steps.keys.outputs.files }}
 
     - name: Read the head
       shell: bash
@@ -73,7 +112,34 @@ runs:
         mkdir -p "$RUNNER_TEMP/suss"
         suss extract $EXTRACT -o "$RUNNER_TEMP/suss/after.json"
 
+    - name: Keep the per-file cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ${{ inputs.working-directory }}/**/.suss/cache
+          !**/node_modules/**
+        key: ${{ steps.keys.outputs.files }}${{ github.sha }}
+
+    # On a push there is nothing to compare against. The summaries are
+    # saved under the commit, for the pull requests that branch from it.
+    - name: Keep the summaries of this commit
+      if: inputs.cache == 'true' && github.event_name != 'pull_request'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/suss/after.json
+        key: ${{ steps.keys.outputs.summaries }}${{ github.sha }}
+
+    - name: Look for the base already read
+      id: base
+      if: inputs.cache == 'true' && github.event_name == 'pull_request'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/suss/before.json
+        key: ${{ steps.keys.outputs.summaries }}${{ github.event.pull_request.base.sha }}
+
     - name: Check out the base
+      if: github.event_name == 'pull_request' && steps.base.outputs.cache-hit != 'true'
       shell: bash
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -105,6 +171,7 @@ runs:
         done
 
     - name: Read the base
+      if: github.event_name == 'pull_request' && steps.base.outputs.cache-hit != 'true'
       shell: bash
       env:
         EXTRACT: ${{ inputs.extract }}
@@ -113,8 +180,17 @@ runs:
         cd "$SUSS_BASE/$WORKING_DIRECTORY"
         suss extract $EXTRACT -o "$RUNNER_TEMP/suss/before.json"
 
+    # A later push to the same pull request finds the base here.
+    - name: Keep the summaries of the base
+      if: inputs.cache == 'true' && github.event_name == 'pull_request' && steps.base.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/suss/before.json
+        key: ${{ steps.keys.outputs.summaries }}${{ github.event.pull_request.base.sha }}
+
     - name: Diff
       id: diff
+      if: github.event_name == 'pull_request'
       shell: bash
       run: |
         cd "$RUNNER_TEMP/suss"
@@ -129,6 +205,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Keep the summaries
+      if: github.event_name == 'pull_request'
       uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}
