@@ -781,6 +781,44 @@ function providerWithRoute(
   };
 }
 
+function openapiDocument(
+  method: string,
+  routePath: string,
+  statuses: number[],
+): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: "openapi:openapi.yaml",
+      range: { start: 0, end: 0 },
+      exportName: null,
+    },
+    identity: {
+      name: `${method} ${routePath}`,
+      exportPath: null,
+      boundaryBinding: restBinding({
+        transport: "http",
+        recognition: "openapi",
+        method,
+        path: routePath,
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "derived", level: "high" },
+    metadata: {
+      http: {
+        declaredContract: {
+          framework: "openapi",
+          provenance: "derived",
+          responses: statuses.map((statusCode) => ({ statusCode })),
+        },
+      },
+    },
+  };
+}
+
 function consumerWithRoute(
   name: string,
   method: string,
@@ -968,6 +1006,38 @@ describe("checkDir", () => {
       checkDir({ dir: tmpDir });
     });
     expect(output).not.toContain("claimed by more than one file");
+  });
+
+  it("compares a handler with the OpenAPI document for its route", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "api.json"),
+      JSON.stringify([
+        providerWithRoute("createUser", "POST", "/users", [
+          transition("t-422", { statusCode: 422 }),
+          transition("t-201", { statusCode: 201, isDefault: true }),
+        ]),
+      ]),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "openapi.json"),
+      JSON.stringify([openapiDocument("POST", "/users", [201, 410])]),
+    );
+
+    const output = captureStdout(() => {
+      const result = checkDir({ dir: tmpDir, all: true });
+      expect(result.result.pairs).toHaveLength(1);
+      expect(result.result.unmatched.providers).toEqual([]);
+      expect(result.hasErrors).toBe(true);
+    });
+    expect(output).toContain("Compared 1 boundary");
+    expect(output).toContain(
+      "Handler produces status 422 which the openapi document does not declare",
+    );
+    expect(output).toContain(
+      "The openapi document declares response 410, and no path in the handler produces it",
+    );
+    expect(output).not.toContain("claimed by more than one file");
+    expect(output).not.toContain("Nothing was compared");
   });
 
   it("checks intent specs against code summaries via --intent", () => {

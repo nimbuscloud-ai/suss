@@ -12,6 +12,7 @@ import {
   checkAll,
   checkPair,
   countsForThreshold,
+  readDeclaredContract,
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
 import {
@@ -462,7 +463,9 @@ interface BoundaryCollision {
  *
  * One file per service is the usual layout, so two files providing one
  * key is a good sign that this happened. Reporting it beats comparing
- * unrelated services and saying nothing.
+ * unrelated services and saying nothing. A document read with
+ * `suss contract` describes a route rather than serving it, so it is
+ * not a second claim on the handler's key.
  */
 function findBoundaryCollisions(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -473,6 +476,9 @@ function findBoundaryCollisions(
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
     if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
+      continue;
+    }
+    if (readDeclaredContract(summary)?.provenance === "derived") {
       continue;
     }
     const key = boundaryKey(binding);

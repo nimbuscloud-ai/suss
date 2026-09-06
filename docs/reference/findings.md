@@ -310,15 +310,31 @@ A status inside a range the provider declares (404 against an OpenAPI `4XX`) is 
 
 ### `providerContractViolation` *(shipped)*
 
-**Severity:** error • **Emitted by:** `checkContractConsistency`
+**Severity:** error, or warning for a declared status the handler never produces • **Emitted by:** `checkContractConsistency`, `checkContractImplementation`
 
 A caller built to the declared contract meets a status or a body the contract never told it about, and takes a path written for something else.
 
-The provider produces a status code (or body shape) its declared contract doesn't include. This is a self-inconsistency: the provider and consumer fields point at the same summary. The checker skips it when the contract source is itself derived from the implementation.
+The provider produces a status code (or body shape) its declared contract doesn't include. When the contract is written in the handler's own code (ts-rest, hono-openapi), the provider and consumer fields point at the same summary. The checker skips that comparison when the contract source is itself derived from the implementation.
 
 Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not; it comes out as `lowConfidence` at info instead, because it means the pack has no form for what the handler returns, rather than meaning the handler is wrong.
 
-**Fix:** add the status to the contract, or remove it from the handler.
+When the contract is a separate document read with `suss contract` (an OpenAPI file beside the code), the document is the consumer side of the finding. A status the handler produces that the document leaves out is an error. A status the document declares that no path in the handler produces is a warning, because documents routinely declare the 401 the middleware sends or the 404 the router sends, and a declared 5XX is not reported at all.
+
+```
+[ERROR] providerContractViolation
+  Handler produces status 422 which the openapi document does not declare
+  provider: src/api.ts::post (src/api.ts:19)
+  consumer: openapi:openapi.yaml::POST /users (openapi:openapi.yaml:0)
+  boundary: hono (http) POST /users
+
+[WARNING] providerContractViolation
+  The openapi document declares response 410, and no path in the handler produces it
+  provider: src/api.ts::get (src/api.ts:5)
+  consumer: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
+  boundary: hono (http) GET /users/:id
+```
+
+**Fix:** add the status to the contract, or remove it from the handler. For a declared status the handler never produces, suppress it when something in front of the handler sends it.
 
 ### `consumerContractViolation` *(shipped)*
 
