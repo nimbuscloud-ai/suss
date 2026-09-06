@@ -13,6 +13,8 @@ dist/
 # VitePress
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+# Written by scripts/generateLlmsTxt.ts before every docs build
+docs/public/llms.txt
 
 # Dogfood output (regenerated on demand via `node scripts/dogfood.mjs`)
 scripts/dogfood-report.json

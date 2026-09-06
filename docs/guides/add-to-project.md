@@ -1,6 +1,6 @@
 ---
 title: Add suss to a project you already have
-description: Run suss against an existing repo and get something to act on from the first run, with nothing to annotate and nothing to start.
+description: Run suss against an existing repo and get something to act on from the first run, without annotating anything first.
 ---
 
 # Add suss to a project

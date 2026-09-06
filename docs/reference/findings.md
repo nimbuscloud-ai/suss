@@ -1,6 +1,6 @@
 ---
 title: Every finding suss can report, and what each one means
-description: "The lookup for a finding that surfaced: what it says, whether it is a bug or noise, and which of the three lists it lands in."
+description: "The lookup for a finding that surfaced: what it says, whether it is a bug or noise, and which of the three lists it belongs to."
 ---
 
 # Findings catalog
