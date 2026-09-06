@@ -1,6 +1,6 @@
 {
   "name": "@suss/extractor",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "The suss extraction pipeline, which turns what a language adapter read into the summaries the checker pairs across a boundary.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3",
+    "@suss/behavioral-ir": "0.22.4",
     "zod": "^4.0.0"
   },
   "devDependencies": {

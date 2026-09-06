@@ -1,6 +1,6 @@
 {
   "name": "@suss/ir-core",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "The type primitives every suss summary is built from: type shapes, boundary bindings, source locations and confidence.",
   "keywords": [

@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-terraform",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Read the storage a Terraform configuration declares and check it against the code that reads and writes those tables.",
   "keywords": [
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3",
+    "@suss/behavioral-ir": "0.22.4",
     "hcl2-parser": "^1.0.3",
     "semver": "^7.6.0"
   },

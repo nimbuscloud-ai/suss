@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-appsync",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Turn the AppSync API in a CloudFormation or SAM template into a suss contract and check it against the resolvers and clients on either side of it.",
   "keywords": [
@@ -48,9 +48,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3",
-    "@suss/contract-graphql": "0.22.3",
-    "@suss/manifest-aws": "0.22.3",
+    "@suss/behavioral-ir": "0.22.4",
+    "@suss/contract-graphql": "0.22.4",
+    "@suss/manifest-aws": "0.22.4",
     "graphql": "^16.8.0"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 {
   "name": "@suss/resolution",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "The rules suss uses to follow a name in TypeScript, Python or Ruby to the function it comes down to.",
   "keywords": [
@@ -56,6 +56,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@suss/datalog": "0.22.3"
+    "@suss/datalog": "0.22.4"
   }
 }

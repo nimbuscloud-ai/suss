@@ -1,6 +1,6 @@
 {
   "name": "@suss/intent-ir",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "The types for the intent your team writes down, product outcomes and system behavior, in a shape suss can check the code against.",
   "keywords": [
@@ -49,7 +49,7 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/ir-core": "0.22.3"
+    "@suss/ir-core": "0.22.4"
   },
   "devDependencies": {
     "tsup": "*",

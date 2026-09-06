@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-prisma",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Turn a Prisma schema into a suss contract and check it against the queries your code runs on those tables.",
   "keywords": [
@@ -48,7 +48,7 @@
   },
   "dependencies": {
     "@mrleebo/prisma-ast": "^0.15.0",
-    "@suss/behavioral-ir": "0.22.3"
+    "@suss/behavioral-ir": "0.22.4"
   },
   "devDependencies": {
     "tsup": "*",

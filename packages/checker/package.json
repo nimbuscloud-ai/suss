@@ -1,6 +1,6 @@
 {
   "name": "@suss/checker",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "type": "module",
   "description": "Compare what a suss summary says an endpoint does against the clients that call it, and report every place the two sides disagree.",
   "keywords": [
@@ -50,9 +50,9 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.22.3",
-    "@suss/datalog": "0.22.3",
-    "@suss/ir-core": "0.22.3",
+    "@suss/behavioral-ir": "0.22.4",
+    "@suss/datalog": "0.22.4",
+    "@suss/ir-core": "0.22.4",
     "graphql": "^16.8.0"
   },
   "devDependencies": {
