@@ -482,6 +482,32 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  it("cuts a ref whose name is the whole printed type", () => {
+    // A type the adapter cannot name comes through as the compiler's
+    // printed text, thousands of characters for an inferred alias, and
+    // the diff put all of it on one line.
+    const wide = `Map<string, { ${Array.from({ length: 60 }, (_, i) => `field${i}: string`).join("; ")} }>`;
+    const before = respondsWith("listUsers", "/users", {});
+    const after = respondsWith("listUsers", "/users", {
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: { type: "ref", name: wide },
+        headers: {},
+      },
+    });
+
+    withFiles([before], [after], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      const line = output
+        .split("\n")
+        .find((l) => l.includes("-> 200 Map<string"));
+      expect(line).toBeDefined();
+      expect(line?.length).toBeLessThan(160);
+      expect(line).toMatch(/\.\.\.\s+\(default\)$/);
+    });
+  });
+
   it("stays quiet about a transition that only moved in the file", () => {
     const before = respondsWith("getUser", "/users/:id", {});
     const after = respondsWith("getUser", "/users/:id", {
