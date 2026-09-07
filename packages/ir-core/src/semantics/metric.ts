@@ -42,6 +42,7 @@ export const metricSemantics = defineBoundarySemantics({
   semconv: {},
   behavior: {
     exchangesHttpResponses: false,
+    leavesTheProcess: true,
     reportsUnpairedItself: false,
     identityKey(semantics) {
       if (semantics.metricType === null) {

@@ -32,6 +32,9 @@ export const graphqlResolverSemantics = defineBoundarySemantics({
   behavior: {
     /** A resolver returns a field value, not a status and a body. */
     exchangesHttpResponses: false,
+    // A query somebody sent from outside runs it, even though the
+    // server calls the function in its own process.
+    leavesTheProcess: true,
     reportsUnpairedItself: false,
     /**
      * `"gql:<TypeName>.<fieldName>"`, or null when the type is null or

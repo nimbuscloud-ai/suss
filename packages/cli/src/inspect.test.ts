@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   restBinding,
+  storageBinding,
   unitInvocationBinding,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
@@ -15,6 +16,7 @@ import { runCli } from "./run.js";
 
 import type {
   BehavioralSummary,
+  Effect,
   Transition,
   ValueRef,
   WrapperMetadata,
@@ -128,7 +130,7 @@ describe("inspect --diff --json", () => {
   it("prints for a person when nobody asked for JSON", () => {
     withFiles([routeSummary("getUser", "/users/:id")], [], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("removed handler");
+      expect(output).toContain("- serves GET /users/{id}");
       expect(() => JSON.parse(output)).toThrow();
     });
   });
@@ -498,14 +500,15 @@ describe("inspect --diff, human output", () => {
       const { output } = captureStdout(() =>
         inspectDiff({ ...paths, changedFiles: ["src/teams.ts"] }),
       );
-      expect(output.indexOf("src/users.ts")).toBeLessThan(
-        output.indexOf("src/teams.ts"),
+      const byFile = output.slice(output.indexOf("Changes by file"));
+      expect(byFile.indexOf("src/users.ts")).toBeLessThan(
+        byFile.indexOf("src/teams.ts"),
       );
       expect(output).toContain("src/teams.ts  (changed in this pull request)");
     });
   });
 
-  it("says how much moved and no more for a unit in a file the change touched", () => {
+  it("names the units in a file and leaves the detail to that file's diff", () => {
     const before = [changedTo("getTeam", "src/teams.ts", 200)];
     const after = [changedTo("getTeam", "src/teams.ts", 202)];
 
@@ -513,9 +516,10 @@ describe("inspect --diff, human output", () => {
       const { output } = captureStdout(() =>
         inspectDiff({ ...paths, changedFiles: ["src/teams.ts"] }),
       );
-      expect(output).toContain("~ getTeam");
-      expect(output).toContain("1 change");
-      expect(output).not.toContain("-> 202");
+      const byFile = output.slice(output.indexOf("Changes by file"));
+      expect(byFile).toContain("src/teams.ts  (changed in this pull request)");
+      expect(byFile).toContain("~ getTeam");
+      expect(byFile).not.toContain("-> 202");
     });
   });
 
@@ -529,7 +533,7 @@ describe("inspect --diff, human output", () => {
         inspectDiff({ ...paths, budget: 400 }),
       );
       expect(output.length).toBeLessThan(700);
-      expect(output).toMatch(/\.\.\. \d+ more units in \d+ more files\./);
+      expect(output).toMatch(/\.\.\. \d+ more boundaries/);
     });
   });
 
@@ -545,20 +549,24 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() =>
-        inspectDiff({ ...paths, budget: 120 }),
+        inspectDiff({ ...paths, budget: 220 }),
       );
-      expect(output).toContain("1 more unit in 1 more file");
+      expect(output).toContain(
+        "1 more boundary, and 1 more unit in 1 more file",
+      );
     });
   });
 
-  it("says a unit was added or removed under the file it was in", () => {
+  it("marks a unit that was added or removed under the file it was in", () => {
     const before = [changedTo("gone", "src/gone.ts", 200)];
     const after = [changedTo("fresh", "src/fresh.ts", 200)];
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("src/fresh.ts\n  + fresh  new handler with");
-      expect(output).toContain("src/gone.ts\n  - gone  removed handler (had");
+      expect(output).toContain("+ serves GET /fresh  src/fresh.ts::fresh");
+      expect(output).toContain("- serves GET /gone  src/gone.ts::gone");
+      expect(output).toContain("src/fresh.ts\n  + fresh");
+      expect(output).toContain("src/gone.ts\n  - gone");
     });
   });
 
@@ -600,11 +608,189 @@ describe("inspect --diff, human output", () => {
 
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("1 change\n");
       expect(output).toContain("~ 200\n");
       expect(output).toContain("-> 200  when  !(name.length > 64)");
       expect(output).not.toContain("(default)");
     });
+  });
+
+  /** A function in the middle of the project, calling the next one along. */
+  const link = (
+    name: string,
+    calls: string | null,
+    effects: Effect[] = [],
+  ): BehavioralSummary => ({
+    kind: "library",
+    location: {
+      file: `src/${name}.ts`,
+      range: { start: 1, end: 10 },
+      exportName: name,
+    },
+    identity: {
+      name,
+      exportPath: [name],
+      boundaryBinding: null,
+      id: `test::src/${name}.ts::${name}`,
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: `${name}:1`,
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          ...(calls === null
+            ? []
+            : [
+                {
+                  type: "invocation" as const,
+                  callee: calls,
+                  args: [],
+                  async: true,
+                  summary: `test::src/${calls}.ts::${calls}`,
+                },
+              ]),
+          ...effects,
+        ],
+        location: { start: 2, end: 8 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  });
+
+  const READS_ORDERS: Effect = {
+    type: "interaction",
+    binding: storageBinding({
+      recognition: "aws-dynamodb-query",
+      storageSystem: "aws.dynamodb",
+      scope: "default",
+      container: "orders",
+    }),
+    callee: "docClient.query",
+    interaction: {
+      class: "storage-access",
+      kind: "read",
+      fields: ["orderId"],
+      selector: ["orderId"],
+      operation: "query",
+    },
+  };
+
+  /** A route that calls `first`, and a chain of that many functions after it. */
+  const chain = (length: number, tail: Effect[]): BehavioralSummary[] => {
+    const names = Array.from({ length }, (_, i) => `hop${i}`);
+    const handler: BehavioralSummary = {
+      ...routeSummary("show", "/orders/:id"),
+      transitions: [
+        {
+          id: "show:200",
+          conditions: [],
+          output: {
+            type: "response",
+            statusCode: { type: "literal", value: 200 },
+            body: null,
+            headers: {},
+          },
+          effects: [
+            {
+              type: "invocation",
+              callee: "hop0",
+              args: [],
+              async: true,
+              summary: "test::src/hop0.ts::hop0",
+            },
+          ],
+          location: { start: 2, end: 8 },
+          isDefault: true,
+        },
+      ],
+      identity: {
+        ...routeSummary("show", "/orders/:id").identity,
+        id: "test::src/handlers/show.ts::show",
+      },
+    };
+    return [
+      handler,
+      ...names.map((name, i) =>
+        link(name, names[i + 1] ?? null, i === length - 1 ? tail : []),
+      ),
+    ];
+  };
+
+  it("reports the table a route now reads, and the calls it takes to reach it", () => {
+    withFiles(chain(1, []), chain(1, [READS_ORDERS]), (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("+ reads aws.dynamodb:orders  through hop0");
+    });
+  });
+
+  it("collapses the middle of a long chain and counts what it skipped", () => {
+    withFiles(chain(4, []), chain(4, [READS_ORDERS]), (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "through hop0 -> (2 intermediate units collapsed) -> hop3",
+      );
+    });
+  });
+
+  it("prints every call when the reader asks for the whole chain", () => {
+    withFiles(chain(4, []), chain(4, [READS_ORDERS]), (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, chain: "full" }),
+      );
+      expect(output).toContain("through hop0 -> hop1 -> hop2 -> hop3");
+    });
+  });
+
+  it("prints no chain at all when the reader asks for none", () => {
+    withFiles(chain(4, []), chain(4, [READS_ORDERS]), (paths) => {
+      const { output } = captureStdout(() =>
+        inspectDiff({ ...paths, chain: 0 }),
+      );
+      expect(output).toContain("+ reads aws.dynamodb:orders\n");
+      expect(output).not.toContain("through");
+    });
+  });
+
+  it("opens with how many boundaries moved and how much moved at them", () => {
+    withFiles(chain(1, []), chain(1, [READS_ORDERS]), (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output.split("\n")[0]).toBe(
+        "1 boundary changed: 1 effect. 1 unit inside the project also changed.",
+      );
+    });
+  });
+
+  it("keeps what a boundary returns apart from what it reaches", () => {
+    const before = [changedTo("getTeam", "src/teams.ts", 200)];
+    const after = [changedTo("getTeam", "src/teams.ts", 202)];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("(1 logic)");
+      expect(output).toContain("  logic\n    ~ 200");
+      expect(output).not.toContain("effects");
+    });
+  });
+
+  it("counts a unit's logic and its effects where the file names it", () => {
+    // A count of transitions says nothing a reader acts on. What they
+    // want to know is whether the change was to what a unit returns or
+    // to what it does on the way.
+    const [route, hop] = chain(1, [READS_ORDERS]);
+    const before = chain(1, []);
+
+    withFiles(
+      before,
+      [route as BehavioralSummary, hop as BehavioralSummary],
+      (paths) => {
+        const { output } = captureStdout(() => inspectDiff(paths));
+        const byFile = output.slice(output.indexOf("Changes by file"));
+        expect(byFile).toContain("~ hop0  1 effect");
+      },
+    );
   });
 
   it("cuts a ref whose name is the whole printed type", () => {

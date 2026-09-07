@@ -55,6 +55,7 @@ export const functionCallSemantics = defineBoundarySemantics({
   behavior: {
     /** A call returns a value, which is not a status and a body. */
     exchangesHttpResponses: false,
+    leavesTheProcess: false,
     reportsUnpairedItself: false,
     /**
      * In-repo units (components, bare handlers) are keyless by design

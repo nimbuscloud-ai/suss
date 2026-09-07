@@ -711,7 +711,7 @@ suss inspect SUMMARIES.json
 suss inspect --dir DIR
 
 # Diff two summary files (shows changed transitions)
-suss inspect --diff BEFORE.json AFTER.json [--json] [--changed-files PATH] [--budget N]
+suss inspect --diff BEFORE.json AFTER.json [--json] [--changed-files PATH] [--budget N] [--chain N|full]
 
 # Who serves a request, hop by hop
 suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
@@ -720,9 +720,10 @@ suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
 | Flag | Description |
 |---|---|
 | `--dir PATH` | Report how the summaries in a directory pair up, boundary by boundary, and which ones found nothing to pair with. It does not render the summaries themselves. |
-| `--diff BEFORE AFTER` | Compare two summary files and render added / removed / changed transitions, grouped by the file each unit is in. A transition that only moved in the file is not a change, so an edit above a handler leaves the diff quiet. Takes `--json`, `--changed-files` and `--budget`. |
-| `--changed-files PATH` | With `--diff`, a file listing the paths a change touched, one per line, which is what `git diff --name-only` writes. Those files come last, and a unit in one of them prints as a line saying how much moved, since the reader has that file's diff already. |
-| `--budget N` | With `--diff`, how many characters the report may come to. Whole files are written until the next one does not fit, and the units and files left out are counted on the last line. |
+| `--diff BEFORE AFTER` | Compare two summary files. The first line counts what moved, then a block per boundary that moved: `logic` for what it returns and under what test, `effects` for what a request now reaches or stopped reaching through the calls it makes. Under that, the files with units that moved, each unit with how much of its logic and how many of its effects moved. A transition that only moved in the file is not a change, so an edit above a handler leaves the diff quiet. Takes `--json`, `--changed-files`, `--budget` and `--chain`. |
+| `--changed-files PATH` | With `--diff`, a file listing the paths a change touched, one per line, which is what `git diff --name-only` writes. Those files come last and are marked, since the reader has their diff already. |
+| `--budget N` | With `--diff`, how many characters the report may come to. Whole blocks are written until the next one does not fit, and what was left out is counted on the last line. |
+| `--chain N` | With `--diff`, how many calls to print between a boundary and something it reaches. A longer chain prints its first and last call and counts the rest, as `through loadOrder -> (2 intermediate units collapsed) -> readRow`. `--chain full` prints every call, `--chain 0` prints none. |
 | `--types` | Spell out the named types a summary references instead of printing their names. It applies to a single file and to `--dir`; a `--diff` run ignores it. |
 | `--flow "METHOD URL"` | Work out who serves one request, hop by hop. See [below](#suss-inspect-flow). |
 

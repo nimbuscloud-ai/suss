@@ -6,7 +6,7 @@
     "internal": 3134,
     "consumers": 1720,
     "pairs": 1717,
-    "unfollowedCalls": 487,
+    "unfollowedCalls": 489,
     "findingErrors": 0
   },
   "packages": {
@@ -57,7 +57,7 @@
       "exports": 24,
       "internal": 471,
       "consumers": 306,
-      "unfollowedCalls": 51
+      "unfollowedCalls": 53
     },
     "packages/client/aiohttp": {
       "name": "@suss/client-aiohttp",

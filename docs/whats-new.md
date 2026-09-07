@@ -9,9 +9,21 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ## If you use suss
 
-**A GitHub Action posts the behavior diff on a pull request.** Point a workflow at `nimbuscloud-ai/suss/.github/actions/inspect-diff@main` and it reads both sides of the pull request, runs `inspect --diff` over them, and posts one comment that it edits again on every push. The comment says which units changed behavior and how they changed, whether or not the pull request edited the lines those units sit on. It keeps both summary files as an artifact of the run. The [action README](https://github.com/nimbuscloud-ai/suss/tree/main/.github/actions/inspect-diff) has a workflow to copy. Runs share suss's per-file cache, so reading the head costs about what the pull request touched. If the workflow also runs when something lands on `main`, it reads each of those commits as it goes, and a later pull request compares against what it already read.
+**A GitHub Action posts the behavior diff on a pull request.** Point a workflow at `nimbuscloud-ai/suss/.github/actions/inspect-diff@main` and it reads both sides of the pull request, runs `inspect --diff` over them, and posts one comment that it edits again on every push. The comment says which units changed behavior and how they changed, whether or not the pull request edited the lines they are on. It keeps both summary files as an artifact of the run. The [action README](https://github.com/nimbuscloud-ai/suss/tree/main/.github/actions/inspect-diff) has a workflow to copy. Runs share suss's per-file cache, so reading the head costs about what the pull request touched. If the workflow also runs when something lands on `main`, it reads each of those commits as it goes, and a later pull request compares against what it already read.
 
-**`inspect --diff` groups what moved by file.** A run that found a thousand changed units printed a block for each one, in whatever order the extract wrote them, so a comment on a pull request showed the first three and ran out of room. Units now sit under the file they are in. Files the change never touched come first, since a unit that moved when nobody edited it is the surprising part. A file the pull request did edit gets one line saying how much moved inside it. Two new flags cap what a report costs: `--changed-files` takes the paths a change touched, one per line, and `--budget` stops the report at a number of characters and says how much it left out. The action passes both.
+**`inspect --diff` reports what changed at each boundary.** The diff used to list the units that moved, a block each. A reviewer reading that learned a file gained a function, which the pull request's own diff shows better. The report now opens with the boundaries: what each route, consumer or Lambda responds with, and what a request reaches or stopped reaching through the calls it makes.
+
+```
+1 boundary changed: 1 logic, 1 effect. 2 units inside the project also changed.
+
+~ serves GET /orders/{id}  src/app.ts::show  (1 logic, 1 effect)
+  logic
+    + 404 { error }  when  order == null
+  effects
+    + reads mongodb:orders  through loadOrder -> readOrder
+```
+
+A unit further down the call chain gets no block of its own, since the boundaries that reach it already show what its change did. Under the boundaries, the files with units that moved, each unit with how much of its logic and how many of its effects moved. A chain longer than three calls prints its first and last with `(2 intermediate units collapsed)` between them; `--chain full` prints every call and `--chain 0` prints none. Two more flags cap what the report costs: `--changed-files` takes the paths a change touched, one per line, so those files come last, and `--budget` stops the report at a number of characters and counts what it left out. The action passes both.
 
 **`inspect --diff` reports every caller of a route, and a narrowed branch as one line.** Several clients of one route used to collapse to one entry, so a change to any of the others printed as no change; each client now pairs by its own name under the route, as `client:GET /pet/{petId}::getPetById`. A transition that kept its output and changed its guard used to print as a removed line and an added one, and now prints as one `~` line with the guard before and the guard after.
 

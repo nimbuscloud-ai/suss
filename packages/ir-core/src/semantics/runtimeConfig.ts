@@ -36,6 +36,9 @@ export const runtimeConfigSemantics = defineBoundarySemantics({
   behavior: {
     /** A process reads its config at startup, and nothing replies. */
     exchangesHttpResponses: false,
+    // Whoever deploys the process puts the value there, so the value
+    // comes from outside the code.
+    leavesTheProcess: true,
     reportsUnpairedItself: false,
     identityKey: () => null,
   },

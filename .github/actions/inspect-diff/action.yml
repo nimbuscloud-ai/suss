@@ -188,8 +188,8 @@ runs:
         path: ${{ runner.temp }}/suss/before.json
         key: ${{ steps.keys.outputs.summaries }}${{ github.event.pull_request.base.sha }}
 
-    # A unit in a file the pull request changed prints as one line, so
-    # the comment spends its room on the units that moved elsewhere.
+    # The files a pull request touched come last in the report and are
+    # marked, since the reviewer already has their diff.
     - name: Name the files the pull request changed
       if: github.event_name == 'pull_request'
       shell: bash
@@ -203,7 +203,7 @@ runs:
         list="$RUNNER_TEMP/suss/changed-files.txt"
         : > "$list"
         if ! gh api --paginate "repos/$GH_REPO/pulls/$PR/files" --jq '.[].filename' > "$list.raw"; then
-          echo "::notice::Could not read the pull request's files. Every unit prints in full."
+          echo "::notice::Could not read the pull request's files. Every file is treated as untouched."
           exit 0
         fi
         # The summaries say where a file is relative to the directory
@@ -235,8 +235,8 @@ runs:
 
         suss inspect --diff before.json after.json "${changed[@]}" | tee diff.txt
         # A comment stops at 65536 characters. Rendering it to that
-        # length says how many units and files were left out, which
-        # cutting the text at the end cannot.
+        # length counts what was left out, which cutting the text at the
+        # end cannot.
         if [ ${#budget[@]} -gt 0 ]; then
           suss inspect --diff before.json after.json "${changed[@]}" "${budget[@]}" > comment.txt
         else

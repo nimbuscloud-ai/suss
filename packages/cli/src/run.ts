@@ -117,10 +117,13 @@ Options (inspect):
   --diff           Compare two summary files and report what moved
   --json           With --diff, write the diff as JSON for a machine
   --changed-files  With --diff, a file listing the paths a change touched,
-                   one per line. A unit in one of them prints as a line
-                   saying how much moved; a unit anywhere else prints in full
+                   one per line. Those files come last in the report and are
+                   marked, since their own diff is in front of the reader
   --budget         With --diff, how many characters the report may come to.
                    Whole files are written until the next one does not fit
+  --chain          With --diff, how many calls to print between a boundary
+                   and something it reaches before the middle collapses
+                   into a count. "full" prints every call, 0 prints none
   --types          Spell out the types a summary names, rather than naming them
 
 Options (inspect --flow):
@@ -471,6 +474,23 @@ function takeValued(
   return { rest, value: args[at + 1] };
 }
 
+/**
+ * How much of a call chain a diff prints: a count, `"full"` for all of
+ * it, or nothing when the flag was left off.
+ */
+function chainHops(
+  text: string | undefined,
+): number | "full" | undefined | "bad" {
+  if (text === undefined) {
+    return undefined;
+  }
+  if (text === "full") {
+    return "full";
+  }
+  const hops = Number(text);
+  return Number.isInteger(hops) && hops >= 0 ? hops : "bad";
+}
+
 /** The files a change touched, one path per line, as git writes them. */
 function readChangedFiles(file: string): string[] {
   return readFileSync(file, "utf-8")
@@ -502,16 +522,20 @@ async function runInspect(argv: string[]): Promise<number> {
   const flagless = argv.filter((a) => a !== "--types" && a !== "--json");
   const withoutChanged = takeValued(flagless, "--changed-files");
   const withoutBudget = takeValued(withoutChanged.rest, "--budget");
-  const args = withoutBudget.rest;
+  const withoutChain = takeValued(withoutBudget.rest, "--chain");
+  const args = withoutChain.rest;
   const changedFilesAt = withoutChanged.value;
   const budgetText = withoutBudget.value;
+  const chainText = withoutChain.value;
 
   if (
-    (changedFilesAt !== undefined || budgetText !== undefined) &&
+    (changedFilesAt !== undefined ||
+      budgetText !== undefined ||
+      chainText !== undefined) &&
     args[0] !== "--diff"
   ) {
     process.stderr.write(
-      "--changed-files and --budget belong to inspect --diff. They say which files a pull request touched and how long the report may be.\n",
+      "--changed-files, --budget and --chain belong to inspect --diff. They set which files a pull request touched, how long the report may be, and how much of a call chain it prints.\n",
     );
     return 1;
   }
@@ -549,6 +573,13 @@ async function runInspect(argv: string[]): Promise<number> {
       );
       return 1;
     }
+    const chain = chainHops(chainText);
+    if (chain === "bad") {
+      process.stderr.write(
+        `--chain takes a number of calls or "full", such as --chain 2. It got ${chainText}.\n`,
+      );
+      return 1;
+    }
     inspectDiff({
       before,
       after,
@@ -557,6 +588,7 @@ async function runInspect(argv: string[]): Promise<number> {
         ? {}
         : { changedFiles: readChangedFiles(changedFilesAt) }),
       ...(budget === undefined ? {} : { budget }),
+      ...(chain === undefined ? {} : { chain }),
     });
     return 0;
   }

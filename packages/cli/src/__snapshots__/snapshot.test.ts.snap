@@ -1,28 +1,57 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`inspect --diff output snapshots > shows added transition 1`] = `
-"src/handlers/users.ts
-  ~ getUser  GET /users/{id}  express handler  1 change
+"1 boundary changed: 1 logic.
+
+~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 logic)
+  logic
     + 403 { error }  when  db.findById().restricted
+
+Changes by file
+
+src/handlers/users.ts
+  ~ getUser  1 logic
 
 "
 `;
 
 exports[`inspect --diff output snapshots > shows changed transition 1`] = `
-"src/handlers/users.ts
-  ~ getUser  GET /users/{id}  express handler  1 change
+"1 boundary changed: 1 logic.
+
+~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 logic)
+  logic
     ~ 200 { id, name, email }  (default)
       -> 200 { id, name, email, avatar }  (default)
+
+Changes by file
+
+src/handlers/users.ts
+  ~ getUser  1 logic
 
 "
 `;
 
 exports[`inspect --diff output snapshots > shows new and removed summaries 1`] = `
-"src/handlers/users.ts
-  - getUser  removed handler (had 3 transitions)
+"2 boundaries changed: 5 logic.
+
+- serves GET /users/{id}  src/handlers/users.ts::getUser  (3 logic)
+  logic
+    400 { error }  when  !req.params.id
+    404 { error }  when  db.findById() == null
+    200 { id, name, email }  (default)
+
++ calls GET /users/{id}  src/pages/user.ts::loadUser  (2 logic)
+  logic
+    throw Error  when  !fetch().ok
+    return  (default)
+
+Changes by file
+
+src/handlers/users.ts
+  - getUser  3 logic
 
 src/pages/user.ts
-  + loadUser  new client with 2 transitions
+  + loadUser  2 logic
 
 "
 `;
@@ -33,9 +62,16 @@ exports[`inspect --diff output snapshots > shows no changes for identical files 
 `;
 
 exports[`inspect --diff output snapshots > shows removed transition 1`] = `
-"src/handlers/users.ts
-  ~ getUser  GET /users/{id}  express handler  1 change
+"1 boundary changed: 1 logic.
+
+~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 logic)
+  logic
     - 200 { id, name, email }  (default)
+
+Changes by file
+
+src/handlers/users.ts
+  ~ getUser  1 logic
 
 "
 `;
