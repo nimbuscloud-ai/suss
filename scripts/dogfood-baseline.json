@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 71,
-    "packagesWithExports": 71,
-    "exports": 890,
+    "packages": 73,
+    "packagesWithExports": 73,
+    "exports": 896,
     "internal": 3115,
-    "consumers": 1707,
-    "pairs": 1704,
+    "consumers": 1713,
+    "pairs": 1710,
     "unfollowedCalls": 487,
     "findingErrors": 0
   },
@@ -59,6 +59,13 @@
       "consumers": 306,
       "unfollowedCalls": 51
     },
+    "packages/client/aiohttp": {
+      "name": "@suss/client-aiohttp",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 3,
+      "unfollowedCalls": 0
+    },
     "packages/client/apollo": {
       "name": "@suss/client-apollo",
       "exports": 2,
@@ -78,6 +85,13 @@
       "exports": 2,
       "internal": 0,
       "consumers": 2,
+      "unfollowedCalls": 0
+    },
+    "packages/client/httpx": {
+      "name": "@suss/client-httpx",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 3,
       "unfollowedCalls": 0
     },
     "packages/client/requests": {
@@ -453,7 +467,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 42,
+      "exports": 44,
       "internal": 136,
       "consumers": 0,
       "unfollowedCalls": 9
