@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 5236,
-      "covered": 4915,
+      "total": 5393,
+      "covered": 5073,
       "skipped": 0,
-      "pct": 93.86
+      "pct": 94.06
     },
     "statements": {
-      "total": 5375,
-      "covered": 5047,
+      "total": 5541,
+      "covered": 5214,
       "skipped": 0,
-      "pct": 93.89
+      "pct": 94.09
     },
     "functions": {
-      "total": 1194,
-      "covered": 1130,
+      "total": 1249,
+      "covered": 1186,
       "skipped": 0,
-      "pct": 94.63
+      "pct": 94.95
     },
     "branches": {
-      "total": 3714,
-      "covered": 3080,
+      "total": 3815,
+      "covered": 3173,
       "skipped": 0,
-      "pct": 82.92
+      "pct": 83.17
     },
     "branchesTrue": {
       "total": 0,
@@ -164,9 +164,9 @@
   "src/askWhy.ts": {
     "lines": {
       "total": 172,
-      "covered": 158,
+      "covered": 160,
       "skipped": 0,
-      "pct": 91.86
+      "pct": 93.02
     },
     "functions": {
       "total": 45,
@@ -176,15 +176,15 @@
     },
     "statements": {
       "total": 177,
-      "covered": 162,
+      "covered": 164,
       "skipped": 0,
-      "pct": 91.52
+      "pct": 92.65
     },
     "branches": {
       "total": 129,
-      "covered": 103,
+      "covered": 104,
       "skipped": 0,
-      "pct": 79.84
+      "pct": 80.62
     }
   },
   "src/boundaryReach.ts": {
@@ -605,28 +605,28 @@
   },
   "src/inspect.ts": {
     "lines": {
-      "total": 879,
-      "covered": 800,
+      "total": 1005,
+      "covered": 926,
       "skipped": 0,
-      "pct": 91.01
+      "pct": 92.13
     },
     "functions": {
-      "total": 186,
-      "covered": 168,
+      "total": 232,
+      "covered": 215,
       "skipped": 0,
-      "pct": 90.32
+      "pct": 92.67
     },
     "statements": {
-      "total": 900,
-      "covered": 820,
+      "total": 1034,
+      "covered": 954,
       "skipped": 0,
-      "pct": 91.11
+      "pct": 92.26
     },
     "branches": {
-      "total": 604,
-      "covered": 493,
+      "total": 683,
+      "covered": 566,
       "skipped": 0,
-      "pct": 81.62
+      "pct": 82.86
     }
   },
   "src/intentDraftCommand.ts": {
@@ -939,6 +939,32 @@
       "covered": 293,
       "skipped": 0,
       "pct": 87.72
+    }
+  },
+  "src/sharedCause.ts": {
+    "lines": {
+      "total": 31,
+      "covered": 30,
+      "skipped": 0,
+      "pct": 96.77
+    },
+    "functions": {
+      "total": 9,
+      "covered": 9,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 32,
+      "covered": 31,
+      "skipped": 0,
+      "pct": 96.87
+    },
+    "branches": {
+      "total": 22,
+      "covered": 19,
+      "skipped": 0,
+      "pct": 86.36
     }
   },
   "src/stubDraftCommand.ts": {

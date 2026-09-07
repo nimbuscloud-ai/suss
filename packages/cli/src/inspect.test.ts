@@ -549,11 +549,9 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() =>
-        inspectDiff({ ...paths, budget: 220 }),
+        inspectDiff({ ...paths, budget: 320 }),
       );
-      expect(output).toContain(
-        "1 more boundary, and 1 more unit in 1 more file",
-      );
+      expect(output).toContain("1 more unit in 1 more file");
     });
   });
 
@@ -570,10 +568,9 @@ describe("inspect --diff, human output", () => {
     });
   });
 
-  it("says which field moved when the two lines read the same", () => {
-    // The short line says the output and the conditions. A change to
-    // anything else printed as one line twice, and a reader gating a
-    // review on the diff could not tell what moved.
+  it("names the effect a transition picked up, where the two lines read the same", () => {
+    // The short line says the output and the conditions, so a new
+    // effect under an unchanged response printed as one line twice.
     const before = respondsWith("getUser", "/users/:id", {});
     const after = respondsWith("getUser", "/users/:id", {
       effects: [{ type: "stateChange", variable: "auditCount" }],
@@ -581,9 +578,7 @@ describe("inspect --diff, human output", () => {
 
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain(
-        'effects: [] -> [{"type":"stateChange","variable":"auditCount"}]',
-      );
+      expect(output).toContain("+ sets auditCount");
     });
   });
 
@@ -608,8 +603,8 @@ describe("inspect --diff, human output", () => {
 
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("~ 200\n");
-      expect(output).toContain("-> 200  when  !(name.length > 64)");
+      expect(output).toContain("~ was  responds 200\n");
+      expect(output).toContain("now  responds 200  when  !(name.length > 64)");
       expect(output).not.toContain("(default)");
     });
   });
@@ -659,6 +654,14 @@ describe("inspect --diff, human output", () => {
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
   });
+
+  const EMITS: Effect = { type: "emission", event: "order.placed" };
+
+  const MUTATES: Effect = {
+    type: "mutation",
+    target: "cart.items",
+    operation: "update",
+  };
 
   const READS_ORDERS: Effect = {
     type: "interaction",
@@ -754,6 +757,216 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  /** A route the filter runs on, with or without the 401 it produces. */
+  const behindFilter = (
+    name: string,
+    routePath: string,
+    guarded: boolean,
+  ): BehavioralSummary => {
+    const filter = {
+      file: "app/controllers/application_controller.rb",
+      name: "require_login",
+    };
+    const route = respondsWith(name, routePath, {});
+    return {
+      ...route,
+      location: { ...route.location, file: "app/controllers/orders.rb" },
+      metadata: withWrapperMetadata(undefined, { applied: [filter] }),
+      transitions: [
+        ...(guarded
+          ? [
+              {
+                id: `${name}:401`,
+                conditions: [],
+                output: {
+                  type: "response" as const,
+                  statusCode: { type: "literal" as const, value: 401 },
+                  body: null,
+                  headers: {},
+                },
+                effects: [],
+                location: { start: 1, end: 2 },
+                isDefault: false,
+                metadata: withWrapperMetadata(undefined, { from: filter }),
+              },
+            ]
+          : []),
+        ...route.transitions,
+      ],
+    };
+  };
+
+  it("says a filter's outcome once, with how far it reaches", () => {
+    // Fourteen routes gaining a 401 is one filter. Said route by route,
+    // a reviewer has to work out for themselves that it was one edit.
+    const before = [
+      behindFilter("show", "/orders/:id", false),
+      behindFilter("create", "/orders", false),
+      behindFilter("health", "/health", false),
+    ];
+    const after = [
+      behindFilter("show", "/orders/:id", true),
+      behindFilter("create", "/orders", true),
+      behindFilter("health", "/health", false),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "From require_login  app/controllers/application_controller.rb",
+      );
+      expect(output).toContain("at GET /orders and GET /orders/{id}");
+      expect(output).toContain("not at GET /health, which it also runs on");
+      // The line said once above is not repeated under either route.
+      expect(output.split("+ responds 401")).toHaveLength(2);
+    });
+  });
+
+  it("counts a unit's lines rather than writing out a long list", () => {
+    const many = (status: number): BehavioralSummary => ({
+      ...changedTo("bulk", "src/bulk.ts", status),
+      kind: "library",
+      identity: { name: "bulk", exportPath: ["bulk"], boundaryBinding: null },
+      transitions: Array.from({ length: 5 }, (_, i) => ({
+        id: `t${i}`,
+        conditions: [],
+        output: {
+          type: "response" as const,
+          statusCode: { type: "literal" as const, value: status + i },
+          body: null,
+          headers: {},
+        },
+        effects: [],
+        location: { start: i, end: i + 1 },
+        isDefault: false,
+      })),
+    });
+
+    withFiles([many(200)], [many(300)], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("~ bulk  5 outcomes");
+      expect(output).not.toContain("-> 300");
+    });
+  });
+
+  it("says what a unit started doing, in the words the effect goes by", () => {
+    const withEffect = (effects: Effect[]): BehavioralSummary => ({
+      ...respondsWith("save", "/orders", { effects }),
+    });
+
+    withFiles([withEffect([])], [withEffect([EMITS, MUTATES])], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("+ emits order.placed");
+      expect(output).toContain("+ updates cart.items");
+    });
+  });
+
+  it("says what a route stopped reaching", () => {
+    withFiles(chain(1, [READS_ORDERS]), chain(1, []), (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("- reads aws.dynamodb:orders  through hop0");
+      expect(output).toContain("- reads aws.dynamodb:orders\n");
+    });
+  });
+
+  it("lists what a new route does, and counts the rest of a long list", () => {
+    const wide = (): BehavioralSummary => ({
+      ...respondsWith("report", "/reports", {}),
+      transitions: Array.from({ length: 8 }, (_, i) => ({
+        id: `t${i}`,
+        conditions: [],
+        output: {
+          type: "response" as const,
+          statusCode: { type: "literal" as const, value: 200 + i },
+          body: null,
+          headers: {},
+        },
+        effects: i === 0 ? [EMITS] : [],
+        location: { start: i, end: i + 1 },
+        isDefault: false,
+      })),
+    });
+
+    withFiles([], [wide()], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("+ serves GET /reports");
+      expect(output).toContain("2 transitions more");
+      expect(output).toContain("+ emits order.placed");
+    });
+  });
+
+  /** A route whose 200 responds with these fields. */
+  const respondsWithFields = (fields: string[]): BehavioralSummary => ({
+    ...respondsWith("show", "/orders/:id", {
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: {
+          type: "record",
+          properties: Object.fromEntries(
+            fields.map((name) => [name, { type: "text" as const }]),
+          ),
+        },
+        headers: {},
+      },
+    }),
+  });
+
+  it("marks the field a body lost, in the line that responds", () => {
+    const before = [respondsWithFields(["id", "name", "email"])];
+    const after = [respondsWithFields(["id", "name"])];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("~ responds 200 { id, name, -email }");
+      expect(output).not.toContain("was  responds");
+    });
+  });
+
+  it("says what a field's type was and what it is now", () => {
+    const before = [respondsWithFields(["id", "total"])];
+    const after = [
+      {
+        ...respondsWithFields(["id"]),
+        transitions: [
+          {
+            ...(respondsWithFields(["id"]).transitions[0] as Transition),
+            output: {
+              type: "response" as const,
+              statusCode: { type: "literal" as const, value: 200 },
+              body: {
+                type: "record" as const,
+                properties: {
+                  id: { type: "text" as const },
+                  total: { type: "number" as const },
+                },
+              },
+              headers: {},
+            },
+          },
+        ],
+      },
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("~total: string -> number");
+    });
+  });
+
+  it("keeps every field that moved when it trims a wide body", () => {
+    const held = ["id", "name", "total", "state", "at", "note", "tag"];
+    const before = [respondsWithFields([...held, "email"])];
+    const after = [respondsWithFields([...held, "currency"])];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "{ id, name, total, state, ..., +currency: string, -email }",
+      );
+    });
+  });
+
   it("opens with how many boundaries moved and how much moved at them", () => {
     withFiles(chain(1, []), chain(1, [READS_ORDERS]), (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
@@ -769,16 +982,15 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("(1 logic)");
-      expect(output).toContain("  logic\n    ~ 200");
+      expect(output).toContain("(1 outcome)");
+      expect(output).toContain("  outcomes\n    ~ was  responds 200");
       expect(output).not.toContain("effects");
     });
   });
 
-  it("counts a unit's logic and its effects where the file names it", () => {
-    // A count of transitions says nothing a reader acts on. What they
-    // want to know is whether the change was to what a unit returns or
-    // to what it does on the way.
+  it("writes out what a unit did where the file names it", () => {
+    // A reader wants to know whether a unit changed what it returns or
+    // what it does on the way, which a count of transitions never says.
     const [route, hop] = chain(1, [READS_ORDERS]);
     const before = chain(1, []);
 
@@ -788,7 +1000,8 @@ describe("inspect --diff, human output", () => {
       (paths) => {
         const { output } = captureStdout(() => inspectDiff(paths));
         const byFile = output.slice(output.indexOf("Changes by file"));
-        expect(byFile).toContain("~ hop0  1 effect");
+        expect(byFile).toContain("+ reads aws.dynamodb:orders");
+        expect(byFile).not.toContain('effects: [] -> [{"type"');
       },
     );
   });
@@ -812,10 +1025,10 @@ describe("inspect --diff, human output", () => {
       const { output } = captureStdout(() => inspectDiff(paths));
       const line = output
         .split("\n")
-        .find((l) => l.includes("-> 200 Map<string"));
+        .find((l) => l.includes("now  responds 200 Map<string"));
       expect(line).toBeDefined();
       expect(line?.length).toBeLessThan(160);
-      expect(line).toMatch(/\.\.\.\s+\(default\)$/);
+      expect(line).toMatch(/\.\.\.$/);
     });
   });
 

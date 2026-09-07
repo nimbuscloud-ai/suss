@@ -32,22 +32,21 @@ The comment looks like this:
 > ### 2 units change behavior in this pull request
 >
 > ```
-> 1 boundary changed: 1 logic, 1 effect. 1 unit inside the project also changed.
+> 1 boundary changed: 1 outcome, 1 effect. 1 unit inside the project also changed.
 >
-> ~ serves POST /users  src/handlers/users.ts::createUser  (1 logic, 1 effect)
->   logic
->     ~ 201 { id, email, name }  (default)
->       -> 201 { id, email }  (default)
+> ~ serves POST /users  src/handlers/users.ts::createUser  (1 outcome, 1 effect)
+>   outcomes
+>     ~ responds 201 { id, email, -name }  otherwise
 >   effects
 >     + writes postgresql:audit_log  through recordChange
 >
 > Changes by file
 >
 > src/handlers/users.ts
->   ~ createUser  1 logic
+>   ~ createUser
 >
 > src/serializers/user.ts  (changed in this pull request)
->   ~ serializeUser  1 logic
+>   ~ serializeUser  1 outcome
 > ```
 >
 > <sub>Read by suss at 3f2a1c9. The summaries it compared are the `suss-diff` artifact of the run.</sub>
@@ -118,11 +117,13 @@ Both caches are keyed on the installed version of `@suss/cli` and on `extract` a
 
 ## How the comment is organized
 
-The first line counts what moved: how many boundaries, how much of that was logic and how much was effects, and how many units further in the project changed as well.
+The first line counts what moved: how many boundaries, how many of their outcomes and effects, and how many units further in the project changed as well.
 
-Under it comes a block per boundary that moved, with `logic` for what it returns and under what test, and `effects` for what a request now reaches or stopped reaching through the calls it makes. A unit deeper in the project gets no block of its own, since the boundaries that reach it already show what its change did. When no boundary moved, the first line says so.
+An outcome that reached several routes from one filter, middleware or error handler is printed once under `From <wrapper>`, with the routes that have it and the routes the wrapper runs on that still do not, so fourteen routes gaining a 401 reads as the one edit it was. A route that already responded the same way is left off both lines, since nothing about it moved.
 
-Last come the files with units that moved, each unit with how much of its logic and how many of its effects moved. What any one of them does is in that file's own diff, which the reviewer has in front of them.
+Then comes a block per boundary that moved, with `outcomes` for what it returns and under what test, and `effects` for what a request now reaches or stopped reaching through the calls it makes. A unit deeper in the project gets no block of its own, since the boundaries that reach it already show what its change did. When no boundary moved, the first line says so.
+
+Last come the files with units that moved. A unit with a couple of lines to its name has them written out, one with more gets a count of the outcomes and the effects that moved, and a unit in a file the pull request edited gets the count either way, since the reviewer has that file's diff in front of them.
 
 The action asks GitHub which files the pull request changed and passes them to `suss inspect --diff --changed-files`. Those files come last and are marked. When the call to GitHub fails, every file is treated as untouched.
 
