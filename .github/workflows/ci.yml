@@ -113,9 +113,12 @@ jobs:
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:self
 
-      # These four read documentation, so they run whatever changed.
+      # These read documentation, so they run whatever changed.
       - name: Coverage list completeness
         run: npm run check:coverage-packages
+
+      - name: Documented pack counts
+        run: npm run check:pack-counts
 
       - name: Diagram geometry
         run: npm run check:diagrams

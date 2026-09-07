@@ -146,9 +146,9 @@ Your pack runs as soon as it is installed beside the project, whatever else you 
 - `BUILTIN_FRAMEWORKS` in `packages/cli/src/extract.ts`, and a dependency on your package in `packages/cli/package.json`. Together these bundle the pack with the CLI, so `-f <name>` resolves for somebody who installed the CLI alone. Every shipped pack is here.
 - The dependency table in `packages/cli/src/init.ts`. This is what makes `suss init` suggest your pack when it sees the library in a project's `package.json`. A pack nobody suggests still runs when it is asked for by name.
 - `scripts/coverage-packages.mjs`, so the coverage gate reads your package.
-- `docs/reference/packages.md`, and the package counts in `CONTRIBUTING.md`, `docs/internal/releasing.md` and `docs/internal/dogfooding.md`.
+- `docs/reference/packages.md`, so somebody choosing packs for their stack finds yours.
 
-The counts are maintained by hand today and go stale on their own.
+`npm run check:packs` reads the first two and `npm run check:pack-counts` reads the last, so a pack you register in some places and not others fails CI with the file and the line to add. The counts in the README and the reference page are checked against the workspace as well: raise them and the message tells you what to write.
 
 ## Anatomy of a framework pack: ts-rest
 

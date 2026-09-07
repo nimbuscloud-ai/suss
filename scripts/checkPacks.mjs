@@ -17,6 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { packDirectories } from "./packInventory.mjs";
 import { findManifests, PACKAGES_DIR } from "./workspacePackages.mjs";
 
 const PACKS_DIR = path.join(PACKAGES_DIR, "packs");
@@ -120,6 +121,34 @@ for (const { name, specifier } of builtins) {
   }
 }
 
+// A pack directory nobody registered builds, tests and ships, and no
+// run can ask for it.
+const bundledPackages = new Set(
+  fs
+    .readdirSync(path.join(PACKS_DIR, "src"))
+    .filter((file) => file.endsWith(".ts"))
+    .flatMap((file) => {
+      const text = fs.readFileSync(path.join(PACKS_DIR, "src", file), "utf8");
+      return [...text.matchAll(/from "(@suss\/[\w-]+)"/g)].map(
+        ([, name]) => name,
+      );
+    }),
+);
+for (const group of ["framework", "client", "runtime"]) {
+  for (const directory of packDirectories(group)) {
+    const manifest = path.join(PACKAGES_DIR, group, directory, "package.json");
+    if (!fs.existsSync(manifest)) {
+      continue;
+    }
+    const { name } = JSON.parse(fs.readFileSync(manifest, "utf8"));
+    if (!bundledPackages.has(name)) {
+      problems.push(
+        `${name} is a pack and no entry under packages/packs/src re-exports it, so no -f name reaches it.`,
+      );
+    }
+  }
+}
+
 const named = new Set(builtins.map((builtin) => builtin.name));
 for (const file of fs.readdirSync(path.join(PACKS_DIR, "src"))) {
   const entry = file.replace(/\.ts$/, "");
@@ -130,9 +159,9 @@ for (const file of fs.readdirSync(path.join(PACKS_DIR, "src"))) {
   }
 }
 
-// The README says what suss reads, and that claim is the first thing a
-// reader sees. A pack that ships without a mention there is a
-// drift-detection tool with drifting docs.
+// The README says what suss reads, and a pack that ships without a
+// mention there makes a drift-detection tool with drifting docs. How
+// many it claims is checked in checkPackCounts.mjs.
 const readme = fs.readFileSync(
   path.join(PACKAGES_DIR, "..", "README.md"),
   "utf8",
@@ -143,20 +172,6 @@ const unmentioned = builtins
 if (unmentioned.length > 0) {
   problems.push(
     `README.md never mentions ${unmentioned.join(", ")}, so somebody reading it does not know suss can read that.`,
-  );
-}
-
-const claimed = /^(\w+) packs read code today/m.exec(readme);
-const WRITTEN_NUMBERS = {
-  Twenty: 20,
-  "Twenty-five": 25,
-  Thirty: 30,
-  "Thirty-five": 35,
-  Forty: 40,
-};
-if (claimed !== null && WRITTEN_NUMBERS[claimed[1]] !== builtins.length) {
-  problems.push(
-    `README.md says "${claimed[1]} packs read code today" and there are ${builtins.length}.`,
   );
 }
 

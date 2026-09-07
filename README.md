@@ -170,7 +170,7 @@ Reference and internals: [Summary format](docs/behavioral-summary-format.md), [I
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
-Thirty-eight packs read code today, reached by name with `-f`:
+Forty-three packs read code today, reached by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -189,7 +189,7 @@ Thirty-eight packs read code today, reached by name with `-f`:
 | Runtime surface | `node`, which includes `process.env` |
 | In-process, between workspace packages | `package-exports` |
 
-Eleven contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL and committed `.graphql` operation documents), `aws-apigateway`, `cloudformation` (including SAM), `serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`. Intent docs your team writes are handled separately, by `suss check --intent`.
+Ten contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL), `graphql-documents` (committed `.graphql` operations), `cloudformation` (including SAM, and the API Gateway resources in it), `serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`. Intent docs your team writes are handled separately, by `suss check --intent`.
 
 ## License
 
