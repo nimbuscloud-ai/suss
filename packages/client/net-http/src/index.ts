@@ -44,10 +44,10 @@ export function netHttpClient(): RubyPack {
       {
         constantName: "Net::HTTP",
         verbMethodNames: VERB_METHODS,
+        // Every one of these takes a URI object rather than a string.
+        // `URI(...)` and `URI.parse(...)` belong to Ruby itself, so the
+        // adapter's value tables read them and the pack says nothing.
         url: { position: 0 },
-        // Every one of these takes a URI object rather than a string,
-        // and these two calls are how a project builds one.
-        urlWrappers: ["URI", "URI.parse"],
         receiverBuilders: ["new"],
         requestObject: {
           attribute: "request",

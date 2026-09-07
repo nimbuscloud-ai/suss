@@ -27,7 +27,7 @@ http = Net::HTTP.new(uri.host, uri.port)
 http.request(Net::HTTP::Post.new(uri))
 ```
 
-That comes back as a client of `POST /orders`. `URI(...)` and `URI.parse(...)` are read through to the string behind them, whether written in the call or held in a local.
+That comes back as a client of `POST /orders`. `URI(...)` and `URI.parse(...)` are Ruby's own, so they became rows in the value tables beside `File.join`, and every reader of a path in a Ruby project sees through them, not only this pack.
 
 **httpx and aiohttp read the same way requests does.** `-f httpx` and `-f aiohttp` cover the other two libraries a Python service calls out with, including a client or a session opened as a context manager:
 
