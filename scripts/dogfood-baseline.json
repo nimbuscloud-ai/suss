@@ -3,9 +3,9 @@
     "packages": 74,
     "packagesWithExports": 74,
     "exports": 901,
-    "internal": 3167,
-    "consumers": 1727,
-    "pairs": 1724,
+    "internal": 3189,
+    "consumers": 1734,
+    "pairs": 1731,
     "unfollowedCalls": 491,
     "findingErrors": 0
   },
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 24,
-      "internal": 504,
-      "consumers": 313,
+      "internal": 526,
+      "consumers": 320,
       "unfollowedCalls": 55
     },
     "packages/client/aiohttp": {

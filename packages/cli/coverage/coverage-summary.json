@@ -2,15 +2,15 @@
   "total": {
     "lines": {
       "total": 5393,
-      "covered": 5073,
+      "covered": 5071,
       "skipped": 0,
-      "pct": 94.06
+      "pct": 94.02
     },
     "statements": {
       "total": 5541,
-      "covered": 5214,
+      "covered": 5212,
       "skipped": 0,
-      "pct": 94.09
+      "pct": 94.06
     },
     "functions": {
       "total": 1249,
@@ -20,9 +20,9 @@
     },
     "branches": {
       "total": 3815,
-      "covered": 3173,
+      "covered": 3172,
       "skipped": 0,
-      "pct": 83.17
+      "pct": 83.14
     },
     "branchesTrue": {
       "total": 0,
@@ -164,9 +164,9 @@
   "src/askWhy.ts": {
     "lines": {
       "total": 172,
-      "covered": 160,
+      "covered": 158,
       "skipped": 0,
-      "pct": 93.02
+      "pct": 91.86
     },
     "functions": {
       "total": 45,
@@ -176,15 +176,15 @@
     },
     "statements": {
       "total": 177,
-      "covered": 164,
+      "covered": 162,
       "skipped": 0,
-      "pct": 92.65
+      "pct": 91.52
     },
     "branches": {
       "total": 129,
-      "covered": 104,
+      "covered": 103,
       "skipped": 0,
-      "pct": 80.62
+      "pct": 79.84
     }
   },
   "src/boundaryReach.ts": {
