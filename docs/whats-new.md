@@ -48,7 +48,7 @@ async with aiohttp.ClientSession() as session:
     async with session.get(f"/orders/{order_id}") as response:
 ```
 
-Getting there meant teaching the Python binder what `with X() as name` binds. Everything in the adapter that resolves a name benefits.
+For that, the Python binder had to bind what `with X() as name` opens, and every name the adapter resolves goes through that binder.
 
 **A Ruby method that calls out through Faraday is a client of the route it calls.** `@suss/client-faraday` reads a request method on the module itself and on a connection `Faraday.new` built, so a service object comes back bound to the route it reaches. A connection built with `url: "https://api.example.com/v1"` serves its calls under `/v1`, and an interpolated path reads as the path parameter it states. Run it as `-f faraday` beside the rails pack.
 
