@@ -19,6 +19,15 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 **Middleware and hooks the project builds itself reach the routes they wrap.** A Hono middleware returned by a project factory such as `requireCaller({ header: "x-caller" })` used to be skipped, and a zod-openapi `defaultHook` given to the app constructor was never read, so every route's 401 or 400 was missing. Both now reach the routes on the app. A route's declared contract is compared against what the handler and its wrappers produce together, so a status a shared error handler produces no longer prints as declared but never produced on every route it covers, and a status spread into a route object's `responses` from a shared object is read as declared.
 
+**httpx and aiohttp read the same way requests does.** `-f httpx` and `-f aiohttp` cover the other two libraries a Python service calls out with, including a client or a session opened as a context manager:
+
+```python
+async with aiohttp.ClientSession() as session:
+    async with session.get(f"/orders/{order_id}") as response:
+```
+
+That took the Python binder learning what `with X() as name` binds, which every reader of a name in the adapter gets the use of, not only the client packs.
+
 **A Ruby method that calls out through Faraday is a client of the route it calls.** `@suss/client-faraday` reads a request method on the module itself and on a connection `Faraday.new` built, so a service object comes back bound to the route it reaches. A connection built with `url: "https://api.example.com/v1"` serves its calls under `/v1`, and an interpolated path reads as the path parameter it states. Run it as `-f faraday` beside the rails pack.
 
 **A Python function that calls out over HTTP is a client of the route it calls.** A FastAPI or Flask project used to report its own routes and its database calls, and nothing it reached, so `suss check` had no consumer side in Python at all. `@suss/client-requests` reads the calls requests gives a project, and a function that makes one comes back bound to the method and path it states:

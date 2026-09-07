@@ -218,6 +218,8 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   activerecord: "@suss/packs/activerecord",
   rails: "@suss/packs/rails",
   requests: "@suss/packs/requests",
+  httpx: "@suss/packs/httpx",
+  aiohttp: "@suss/packs/aiohttp",
   faraday: "@suss/packs/faraday",
 };
 
@@ -230,6 +232,8 @@ const PACK_LANGUAGE: Record<string, Language> = {
   activerecord: "ruby",
   rails: "ruby",
   requests: "python",
+  httpx: "python",
+  aiohttp: "python",
   faraday: "ruby",
 };
 

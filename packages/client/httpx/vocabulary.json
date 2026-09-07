@@ -1,0 +1,9 @@
+{
+  "httpx": "httpx: the package the request functions are imported from",
+  "request": "httpx: httpx.request, which takes the method as its first argument",
+  "method": "httpx: the keyword httpx.request takes the method under",
+  "url": "httpx: the keyword every request function takes the URL under",
+  "Client": "httpx: the constructor for a client, whose instances take the same calls",
+  "AsyncClient": "httpx: the constructor for an async client, whose instances take the same calls",
+  "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python"
+}
