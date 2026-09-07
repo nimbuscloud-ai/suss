@@ -549,11 +549,9 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() =>
-        inspectDiff({ ...paths, budget: 220 }),
+        inspectDiff({ ...paths, budget: 320 }),
       );
-      expect(output).toContain(
-        "1 more boundary, and 1 more unit in 1 more file",
-      );
+      expect(output).toContain("1 more unit in 1 more file");
     });
   });
 
@@ -605,8 +603,8 @@ describe("inspect --diff, human output", () => {
 
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("~ responds 200\n");
-      expect(output).toContain("-> responds 200  when  !(name.length > 64)");
+      expect(output).toContain("~ was  responds 200\n");
+      expect(output).toContain("now  responds 200  when  !(name.length > 64)");
       expect(output).not.toContain("(default)");
     });
   });
@@ -913,7 +911,7 @@ describe("inspect --diff, human output", () => {
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
       expect(output).toContain("(1 outcome)");
-      expect(output).toContain("  outcomes\n    ~ responds 200");
+      expect(output).toContain("  outcomes\n    ~ was  responds 200");
       expect(output).not.toContain("effects");
     });
   });
@@ -955,10 +953,10 @@ describe("inspect --diff, human output", () => {
       const { output } = captureStdout(() => inspectDiff(paths));
       const line = output
         .split("\n")
-        .find((l) => l.includes("-> responds 200 Map<string"));
+        .find((l) => l.includes("now  responds 200 Map<string"));
       expect(line).toBeDefined();
       expect(line?.length).toBeLessThan(160);
-      expect(line).toMatch(/\.\.\.\s+\(default\)$/);
+      expect(line).toMatch(/\.\.\.$/);
     });
   });
 

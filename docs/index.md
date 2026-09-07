@@ -125,13 +125,13 @@ One of the three warnings:
 `inspect --diff` takes the summary file from before a change and the one from after, and reports what moved:
 
 ```
-handler:GET /users/{id}
-  hono handler
-  3 changes
-    + 200 { id, status }  when  findUser() && findUser().deletedAt
-    - 410 { error }  when  findUser() && findUser().deletedAt
-    ~ 200 { id, name, email }  (default)
-      -> 200 { id, name }  (default)
+1 boundary changed: 3 outcomes.
+
+~ serves GET /users/{id}  src/routes/users.ts::getUser  (3 outcomes)
+  outcomes
+    + responds 200 { id, status }  when  findUser() && findUser().deletedAt
+    - responds 410 { error }  when  findUser() && findUser().deletedAt
+    ~ responds 200 { id, name }  otherwise, body drops email
 ```
 
 A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` left the response. The response is still a valid `User`, the OpenAPI document still says `200 | 404 | 410`, TypeScript is happy, and every caller that read a `200` as a usable account is now wrong. Types describe structure, and tests cover the cases somebody thought of. suss works out what each path produces and compares that against what the other side does with it, which is where this kind of bug lives. [Motivation](/motivation) goes through the comparison with the tools you already run.

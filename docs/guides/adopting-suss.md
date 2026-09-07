@@ -263,13 +263,13 @@ and the action's README lists its inputs.
 pull request too large to read in full:
 
 ```
-handler:GET /users/{id}
-  hono handler
-  3 changes
-    + 200 { id, status }  when  findUser() && findUser().deletedAt
-    - 410 { error }  when  findUser() && findUser().deletedAt
-    ~ 200 { id, name, email }  (default)
-      -> 200 { id, name }  (default)
+1 boundary changed: 3 outcomes.
+
+~ serves GET /users/{id}  src/routes/users.ts::getUser  (3 outcomes)
+  outcomes
+    + responds 200 { id, status }  when  findUser() && findUser().deletedAt
+    - responds 410 { error }  when  findUser() && findUser().deletedAt
+    ~ responds 200 { id, name }  otherwise, body drops email
 ```
 
 Three lines say that a deleted account now gets a `200` instead of a

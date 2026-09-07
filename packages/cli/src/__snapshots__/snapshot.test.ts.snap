@@ -20,8 +20,7 @@ exports[`inspect --diff output snapshots > shows changed transition 1`] = `
 
 ~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 outcome)
   outcomes
-    ~ responds 200 { id, name, email }  (default)
-      -> responds 200 { id, name, email, avatar }  (default)
+    ~ responds 200 { id, name, email, avatar }  otherwise, body adds avatar
 
 Changes by file
 
@@ -38,12 +37,12 @@ exports[`inspect --diff output snapshots > shows new and removed summaries 1`] =
   outcomes
     responds 400 { error }  when  !req.params.id
     responds 404 { error }  when  db.findById() == null
-    responds 200 { id, name, email }  (default)
+    responds 200 { id, name, email }  otherwise
 
 + calls GET /users/{id}  src/pages/user.ts::loadUser  (2 outcomes)
   outcomes
     throw Error  when  !fetch().ok
-    return  (default)
+    return  otherwise
 
 Changes by file
 
@@ -66,7 +65,7 @@ exports[`inspect --diff output snapshots > shows removed transition 1`] = `
 
 ~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 outcome)
   outcomes
-    - responds 200 { id, name, email }  (default)
+    - responds 200 { id, name, email }  otherwise
 
 Changes by file
 

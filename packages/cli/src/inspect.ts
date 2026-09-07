@@ -1847,7 +1847,11 @@ function renderGuard(t: Transition): string {
  * the `(default)` label. A diff of two fall-throughs that differ only in
  * their guard would otherwise print the same line twice.
  */
-function renderTransitionShort(t: Transition, spellDefault = false): string {
+function renderTransitionShort(
+  t: Transition,
+  spellDefault = false,
+  alone = false,
+): string {
   // A bare `401` reads as a number to anybody who has not seen a
   // summary before, and a diff is where they usually start.
   const output =
@@ -1856,7 +1860,9 @@ function renderTransitionShort(t: Transition, spellDefault = false): string {
       : formatOutput(t.output);
   const conditions = renderGuard(t);
   if (t.isDefault && !spellDefault) {
-    return `${output}  (default)`;
+    // The path taken when none of the tests above it matched. A unit
+    // with one path has no such tests, so it needs no word for it.
+    return alone ? output : `${output}  otherwise`;
   }
   return conditions ? `${output}  when  ${conditions}` : output;
 }
@@ -1984,7 +1990,13 @@ function movedUnit(
     transitions: summary.transitions.length,
     outputs: summary.transitions
       .slice(0, OUTPUTS_LISTED)
-      .map((transition) => renderTransitionShort(transition)),
+      .map((transition) =>
+        renderTransitionShort(
+          transition,
+          false,
+          summary.transitions.length === 1,
+        ),
+      ),
     effectLines:
       diff === null
         ? [...effectLabels(summary.transitions)]
@@ -2083,6 +2095,35 @@ function effectChangeLines(diff: SummaryDiff): string[] {
   ].sort();
 }
 
+/** The fields of a body, for one written out as a record. */
+function bodyFields(output: Output): string[] | null {
+  if (output.type !== "response" || output.body?.type !== "record") {
+    return null;
+  }
+  return (output.body.spreads ?? []).length > 0
+    ? null
+    : Object.keys(output.body.properties);
+}
+
+/**
+ * `body drops email`, for a body that lost or gained fields. Comparing
+ * two lists of fields is the work a reader came here to avoid.
+ */
+function bodyDelta(before: Transition, after: Transition): string | null {
+  const was = bodyFields(before.output);
+  const now = bodyFields(after.output);
+  if (was === null || now === null) {
+    return null;
+  }
+  const gone = was.filter((field) => !now.includes(field));
+  const gained = now.filter((field) => !was.includes(field));
+  const parts = [
+    ...(gained.length > 0 ? [`adds ${gained.join(", ")}`] : []),
+    ...(gone.length > 0 ? [`drops ${gone.join(", ")}`] : []),
+  ];
+  return parts.length === 0 ? null : `body ${parts.join(" and ")}`;
+}
+
 /** A line of a block, and the wrapper whose body produced it. */
 interface Line {
   readonly text: string;
@@ -2094,31 +2135,39 @@ function wrapperOf(transition: Transition): WrapperReference | undefined {
   return readWrapperMetadata(transition)?.from;
 }
 
-function transitionLines(diff: SummaryDiff): Line[] {
+function transitionLines(diff: SummaryDiff, alone: boolean): Line[] {
   const lines: Line[] = [];
 
   for (const t of diff.addedTransitions) {
     lines.push({
-      text: `+ ${renderTransitionShort(t)}`,
+      text: `+ ${renderTransitionShort(t, false, alone)}`,
       wrapper: wrapperOf(t),
     });
   }
 
   for (const t of diff.removedTransitions) {
     lines.push({
-      text: `- ${renderTransitionShort(t)}`,
+      text: `- ${renderTransitionShort(t, false, alone)}`,
       wrapper: wrapperOf(t),
     });
   }
 
   for (const { before: b, after: a } of diff.changedTransitions) {
     const spellDefault = defaultGuardMoved(b, a);
-    const beforeLine = renderTransitionShort(b, spellDefault);
-    const afterLine = renderTransitionShort(a, spellDefault);
-    // A transition that moved has a before and an after, and it takes
-    // both lines to read either, so the pair never leaves its block.
-    lines.push({ text: `~ ${beforeLine}`, wrapper: undefined });
-    lines.push({ text: `  -> ${afterLine}`, wrapper: undefined });
+    const beforeLine = renderTransitionShort(b, spellDefault, alone);
+    const afterLine = renderTransitionShort(a, spellDefault, alone);
+    const delta = bodyDelta(b, a);
+    // A body that lost a field under the same status and the same guard
+    // is one sentence, and the two shapes side by side are not.
+    if (delta !== null && renderGuard(b) === renderGuard(a)) {
+      const kept = renderTransitionShort(a, spellDefault, alone);
+      lines.push({ text: `~ ${kept}, ${delta}`, wrapper: undefined });
+      continue;
+    }
+    // Otherwise it takes both lines to read either, so the pair never
+    // leaves its block.
+    lines.push({ text: `~ was  ${beforeLine}`, wrapper: undefined });
+    lines.push({ text: `  now  ${afterLine}`, wrapper: undefined });
     if (beforeLine === afterLine) {
       for (const field of fieldChanges(b, a)) {
         lines.push({ text: `  ${field}`, wrapper: undefined });
@@ -2186,7 +2235,9 @@ function wholeUnitLines(unit: MovedUnit): Line[] {
 }
 
 function responseLines(unit: MovedUnit): Line[] {
-  return unit.diff === null ? wholeUnitLines(unit) : transitionLines(unit.diff);
+  return unit.diff === null
+    ? wholeUnitLines(unit)
+    : transitionLines(unit.diff, unit.transitions === 1);
 }
 
 /**
@@ -2325,7 +2376,13 @@ function outcomesAt(
     }
     const lines = at.get(label) ?? new Set<string>();
     for (const transition of summary.transitions) {
-      lines.add(renderTransitionShort(transition));
+      lines.add(
+        renderTransitionShort(
+          transition,
+          false,
+          summary.transitions.length === 1,
+        ),
+      );
     }
     at.set(label, lines);
   }
