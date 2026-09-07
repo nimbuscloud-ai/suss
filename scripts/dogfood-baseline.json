@@ -2,10 +2,10 @@
   "totals": {
     "packages": 74,
     "packagesWithExports": 74,
-    "exports": 899,
-    "internal": 3134,
-    "consumers": 1720,
-    "pairs": 1717,
+    "exports": 901,
+    "internal": 3167,
+    "consumers": 1727,
+    "pairs": 1724,
     "unfollowedCalls": 489,
     "findingErrors": 0
   },
@@ -33,7 +33,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 118,
+      "exports": 119,
       "internal": 41,
       "consumers": 11,
       "unfollowedCalls": 7
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 24,
-      "internal": 471,
-      "consumers": 306,
+      "internal": 504,
+      "consumers": 313,
       "unfollowedCalls": 53
     },
     "packages/client/aiohttp": {
@@ -453,7 +453,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 82,
+      "exports": 83,
       "internal": 27,
       "consumers": 0,
       "unfollowedCalls": 15
