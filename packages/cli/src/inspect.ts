@@ -2116,13 +2116,11 @@ function effectChangeLines(diff: SummaryDiff): string[] {
 }
 
 /** The fields of a body, for one written out as a record. */
-function bodyFields(output: Output): string[] | null {
+function bodyFields(output: Output): Record<string, TypeShape> | null {
   if (output.type !== "response" || output.body?.type !== "record") {
     return null;
   }
-  return (output.body.spreads ?? []).length > 0
-    ? null
-    : Object.keys(output.body.properties);
+  return (output.body.spreads ?? []).length > 0 ? null : output.body.properties;
 }
 
 /**
@@ -2136,16 +2134,33 @@ function markedBody(before: Transition, after: Transition): string | null {
   if (was === null || now === null) {
     return null;
   }
-  const gone = was.filter((field) => !now.includes(field));
-  const gained = now.filter((field) => !was.includes(field));
-  if (gone.length === 0 && gained.length === 0) {
-    return null;
+
+  const marked = Object.entries(now).map(([field, shape]) =>
+    markedField(field, was[field], shape),
+  );
+  for (const field of Object.keys(was)) {
+    if (now[field] === undefined) {
+      marked.push(`-${field}`);
+    }
   }
-  const marked = [
-    ...now.map((field) => (was.includes(field) ? field : `+${field}`)),
-    ...gone.map((field) => `-${field}`),
-  ];
-  return `{ ${trimmed(marked).join(", ")} }`;
+
+  return marked.some((field) => /^[-+~]/.test(field))
+    ? `{ ${trimmed(marked).join(", ")} }`
+    : null;
+}
+
+/** A field of the body, marked when it came, went or changed type. */
+function markedField(
+  field: string,
+  was: TypeShape | undefined,
+  now: TypeShape,
+): string {
+  if (was === undefined) {
+    return `+${field}: ${formatBodyShape(now)}`;
+  }
+  return sameJson(was, now)
+    ? field
+    : `~${field}: ${formatBodyShape(was)} -> ${formatBodyShape(now)}`;
 }
 
 /**
@@ -2153,11 +2168,11 @@ function markedBody(before: Transition, after: Transition): string | null {
  * body this is. A field that moved is always in.
  */
 function trimmed(fields: readonly string[]): string[] {
-  const moved = fields.filter((field) => /^[+-]/.test(field));
+  const moved = fields.filter((field) => /^[-+~]/.test(field));
   if (fields.length <= FIELDS_LISTED + moved.length) {
     return [...fields];
   }
-  const held = fields.filter((field) => !/^[+-]/.test(field));
+  const held = fields.filter((field) => !/^[-+~]/.test(field));
   return [...held.slice(0, FIELDS_LISTED), "...", ...moved];
 }
 

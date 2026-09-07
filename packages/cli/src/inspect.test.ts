@@ -923,18 +923,46 @@ describe("inspect --diff, human output", () => {
     });
   });
 
-  it("keeps every field that moved when it trims a wide body", () => {
-    const before = [
-      respondsWithFields(["id", "name", "email", "total", "state", "at"]),
-    ];
+  it("says what a field's type was and what it is now", () => {
+    const before = [respondsWithFields(["id", "total"])];
     const after = [
-      respondsWithFields(["id", "name", "total", "state", "at", "currency"]),
+      {
+        ...respondsWithFields(["id"]),
+        transitions: [
+          {
+            ...(respondsWithFields(["id"]).transitions[0] as Transition),
+            output: {
+              type: "response" as const,
+              statusCode: { type: "literal" as const, value: 200 },
+              body: {
+                type: "record" as const,
+                properties: {
+                  id: { type: "text" as const },
+                  total: { type: "number" as const },
+                },
+              },
+              headers: {},
+            },
+          },
+        ],
+      },
     ];
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("~total: string -> number");
+    });
+  });
+
+  it("keeps every field that moved when it trims a wide body", () => {
+    const held = ["id", "name", "total", "state", "at", "note", "tag"];
+    const before = [respondsWithFields([...held, "email"])];
+    const after = [respondsWithFields([...held, "currency"])];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
       expect(output).toContain(
-        "{ id, name, total, state, ..., +currency, -email }",
+        "{ id, name, total, state, ..., +currency: string, -email }",
       );
     });
   });

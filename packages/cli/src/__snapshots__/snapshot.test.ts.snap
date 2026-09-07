@@ -20,7 +20,7 @@ exports[`inspect --diff output snapshots > shows changed transition 1`] = `
 
 ~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 outcome)
   outcomes
-    ~ responds 200 { id, name, email, +avatar }  otherwise
+    ~ responds 200 { id, name, email, +avatar: string }  otherwise
 
 Changes by file
 
