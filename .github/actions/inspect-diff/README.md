@@ -120,7 +120,9 @@ Both caches are keyed on the installed version of `@suss/cli` and on `extract` a
 
 The first line counts what moved: how many boundaries, how much of that was logic and how much was effects, and how many units further in the project changed as well.
 
-Under it comes a block per boundary that moved, with `logic` for what it returns and under what test, and `effects` for what a request now reaches or stopped reaching through the calls it makes. A unit deeper in the project gets no block of its own, since the boundaries that reach it already show what its change did. When no boundary moved, the first line says so.
+An outcome that reached several routes from one filter, middleware or error handler is said once under `From <wrapper>`, with how many of the routes it runs on have it and which ones do not, so fourteen routes gaining a 401 reads as the one edit it was.
+
+Then comes a block per boundary that moved, with `logic` for what it returns and under what test, and `effects` for what a request now reaches or stopped reaching through the calls it makes. A unit deeper in the project gets no block of its own, since the boundaries that reach it already show what its change did. When no boundary moved, the first line says so.
 
 Last come the files with units that moved, each unit with how much of its logic and how many of its effects moved. What any one of them does is in that file's own diff, which the reviewer has in front of them.
 

@@ -31,6 +31,7 @@ import {
 } from "@suss/checker";
 
 import { reachChanges } from "./diffReach.js";
+import { scopeLine, sharedCauses } from "./sharedCause.js";
 import { UsageError } from "./usageError.js";
 
 import type {
@@ -49,6 +50,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type { InvokesInRun } from "@suss/checker";
 import type { EntrypointChange, ReachedEffect } from "./diffReach.js";
+import type { CausedLine, SharedCause } from "./sharedCause.js";
 
 // ---------------------------------------------------------------------------
 // Variant dispatch helper
@@ -2007,26 +2009,45 @@ function transitionWord(count: number): string {
   return `${count} transition${count === 1 ? "" : "s"}`;
 }
 
-function transitionLines(diff: SummaryDiff): string[] {
-  const lines: string[] = [];
+/** A line of a block, and the wrapper whose body produced it. */
+interface Line {
+  readonly text: string;
+  readonly wrapper: WrapperReference | undefined;
+}
+
+/** Which wrapper contributed this outcome, for one composition brought in. */
+function wrapperOf(transition: Transition): WrapperReference | undefined {
+  return readWrapperMetadata(transition)?.from;
+}
+
+function transitionLines(diff: SummaryDiff): Line[] {
+  const lines: Line[] = [];
 
   for (const t of diff.addedTransitions) {
-    lines.push(`+ ${renderTransitionShort(t)}`);
+    lines.push({
+      text: `+ ${renderTransitionShort(t)}`,
+      wrapper: wrapperOf(t),
+    });
   }
 
   for (const t of diff.removedTransitions) {
-    lines.push(`- ${renderTransitionShort(t)}`);
+    lines.push({
+      text: `- ${renderTransitionShort(t)}`,
+      wrapper: wrapperOf(t),
+    });
   }
 
   for (const { before: b, after: a } of diff.changedTransitions) {
     const spellDefault = defaultGuardMoved(b, a);
     const beforeLine = renderTransitionShort(b, spellDefault);
     const afterLine = renderTransitionShort(a, spellDefault);
-    lines.push(`~ ${beforeLine}`);
-    lines.push(`  -> ${afterLine}`);
+    // A transition that moved has a before and an after, and it takes
+    // both lines to read either, so the pair never leaves its block.
+    lines.push({ text: `~ ${beforeLine}`, wrapper: undefined });
+    lines.push({ text: `  -> ${afterLine}`, wrapper: undefined });
     if (beforeLine === afterLine) {
       for (const field of fieldChanges(b, a)) {
-        lines.push(`  ${field}`);
+        lines.push({ text: `  ${field}`, wrapper: undefined });
       }
     }
   }
@@ -2045,7 +2066,7 @@ interface BoundaryBlock {
   readonly unit: string;
   readonly file: string;
   /** What it returns, and under what test. */
-  readonly logic: string[];
+  logic: Line[];
   /** What a request touches on its way through, and where. */
   readonly effects: string[];
   /** How much moved, counted as a reader counts it. */
@@ -2081,16 +2102,16 @@ function reachLine(
 }
 
 /** What a unit that came or went whole responds with. */
-function wholeUnitLines(unit: MovedUnit): string[] {
+function wholeUnitLines(unit: MovedUnit): Line[] {
   const rest = unit.transitions - unit.outputs.length;
-  const lines = [...unit.outputs];
+  const lines = unit.outputs.map((text) => ({ text, wrapper: undefined }));
   if (rest > 0) {
-    lines.push(`${transitionWord(rest)} more`);
+    lines.push({ text: `${transitionWord(rest)} more`, wrapper: undefined });
   }
   return lines;
 }
 
-function responseLines(unit: MovedUnit): string[] {
+function responseLines(unit: MovedUnit): Line[] {
   return unit.diff === null ? wholeUnitLines(unit) : transitionLines(unit.diff);
 }
 
@@ -2129,7 +2150,11 @@ function blockLines(block: BoundaryBlock): string[] {
       continue;
     }
     lines.push(`  ${group}`);
-    lines.push(...under.map((line) => `    ${line}`));
+    lines.push(
+      ...under.map((line) =>
+        typeof line === "string" ? `    ${line}` : `    ${line.text}`,
+      ),
+    );
   }
   return lines;
 }
@@ -2194,6 +2219,73 @@ function boundaryBlocks(
       (a, b) =>
         a.boundary.localeCompare(b.boundary) || a.unit.localeCompare(b.unit),
     );
+}
+
+/** The boundaries each wrapper runs on, by the label the report gives them. */
+function wrappersApplied(
+  summaries: readonly BehavioralSummary[],
+): Map<string, string[]> {
+  const runsOn = new Map<string, string[]>();
+  for (const summary of summaries) {
+    const label = bindingLabel(summary);
+    if (label === null) {
+      continue;
+    }
+    for (const wrapper of readWrapperMetadata(summary)?.applied ?? []) {
+      const key = `${wrapper.file}::${wrapper.name}`;
+      runsOn.set(key, [...(runsOn.get(key) ?? []), label]);
+    }
+  }
+  return runsOn;
+}
+
+/**
+ * The same outcome at several boundaries, said once with the wrapper it
+ * came from, and taken out of the blocks it was in.
+ */
+function liftSharedCauses(
+  blocks: readonly BoundaryBlock[],
+  runsOn: ReadonlyMap<string, string[]>,
+): SharedCause[] {
+  const candidates: CausedLine[] = blocks.flatMap((block) =>
+    block.logic.map((line) => ({
+      key: `${block.file}::${block.unit}`,
+      boundary: block.boundary,
+      text: line.text,
+      wrapper: line.wrapper,
+    })),
+  );
+
+  const causes = sharedCauses(
+    candidates,
+    (wrapper) => runsOn.get(`${wrapper.file}::${wrapper.name}`) ?? [],
+  );
+
+  for (const cause of causes) {
+    for (const block of blocks) {
+      if (!cause.keys.has(`${block.file}::${block.unit}`)) {
+        continue;
+      }
+      block.logic = block.logic.filter((line) => line.text !== cause.text);
+    }
+  }
+
+  return causes;
+}
+
+/** One heading per wrapper, with every line it brought under it. */
+function causeBlocks(causes: readonly SharedCause[]): string[][] {
+  const byWrapper = new Map<string, SharedCause[]>();
+  for (const cause of causes) {
+    const key = `${cause.wrapper.name}  ${cause.wrapper.file}`;
+    byWrapper.set(key, [...(byWrapper.get(key) ?? []), cause]);
+  }
+
+  return [...byWrapper.entries()].map(([wrapper, under]) => [
+    `From ${wrapper}`,
+    ...under.flatMap((cause) => [`  ${cause.text}`, `    ${scopeLine(cause)}`]),
+    "",
+  ]);
 }
 
 /**
@@ -2342,9 +2434,21 @@ function renderReport(
   moved: readonly MovedUnit[],
   reach: readonly EntrypointChange[],
   changedFiles: ReadonlySet<string>,
-  options: { budget: number | null; hops: number | "full" },
+  options: {
+    budget: number | null;
+    hops: number | "full";
+    runsOn: ReadonlyMap<string, string[]>;
+  },
 ): string {
   const blocks = boundaryBlocks(moved, reach, options.hops);
+  const causes = liftSharedCauses(blocks, options.runsOn);
+  // A block whose every line went into a statement above has nothing
+  // left to say, and the statement already named it.
+  const printed = blocks.filter(
+    (block) =>
+      block.change !== "changed" ||
+      block.logic.length + block.effects.length > 0,
+  );
   const sections = sectionsByFile(moved, changedFiles);
   const lines: string[] = [];
   const left = { boundaries: 0, units: 0, files: 0 };
@@ -2363,7 +2467,11 @@ function renderReport(
 
   fits([headlineOf(blocks, moved), ""]);
 
-  for (const block of blocks) {
+  for (const block of causeBlocks(causes)) {
+    fits(block);
+  }
+
+  for (const block of printed) {
     if (!fits([blockHeading(block), ...blockLines(block), ""])) {
       left.boundaries += 1;
     }
@@ -2496,6 +2604,7 @@ export function inspectDiff(options: DiffOptions): void {
     `${renderReport(moved, reach, changedFiles, {
       budget: options.budget ?? null,
       hops: options.chain ?? CHAIN_HOPS,
+      runsOn: wrappersApplied(afterSummaries),
     })}\n`,
   );
 }

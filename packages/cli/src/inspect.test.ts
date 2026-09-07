@@ -754,6 +754,72 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  /** A route the filter runs on, with or without the 401 it produces. */
+  const behindFilter = (
+    name: string,
+    routePath: string,
+    guarded: boolean,
+  ): BehavioralSummary => {
+    const filter = {
+      file: "app/controllers/application_controller.rb",
+      name: "require_login",
+    };
+    const route = respondsWith(name, routePath, {});
+    return {
+      ...route,
+      location: { ...route.location, file: "app/controllers/orders.rb" },
+      metadata: withWrapperMetadata(undefined, { applied: [filter] }),
+      transitions: [
+        ...(guarded
+          ? [
+              {
+                id: `${name}:401`,
+                conditions: [],
+                output: {
+                  type: "response" as const,
+                  statusCode: { type: "literal" as const, value: 401 },
+                  body: null,
+                  headers: {},
+                },
+                effects: [],
+                location: { start: 1, end: 2 },
+                isDefault: false,
+                metadata: withWrapperMetadata(undefined, { from: filter }),
+              },
+            ]
+          : []),
+        ...route.transitions,
+      ],
+    };
+  };
+
+  it("says a filter's outcome once, with how far it reaches", () => {
+    // Fourteen routes gaining a 401 is one filter. Said route by route,
+    // a reviewer has to work out for themselves that it was one edit.
+    const before = [
+      behindFilter("show", "/orders/:id", false),
+      behindFilter("create", "/orders", false),
+      behindFilter("health", "/health", false),
+    ];
+    const after = [
+      behindFilter("show", "/orders/:id", true),
+      behindFilter("create", "/orders", true),
+      behindFilter("health", "/health", false),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "From require_login  app/controllers/application_controller.rb",
+      );
+      expect(output).toContain(
+        "at 2 of the 3 boundaries it runs on; GET /health is the exception",
+      );
+      // The line said once above is not repeated under either route.
+      expect(output.split("+ 401")).toHaveLength(2);
+    });
+  });
+
   it("opens with how many boundaries moved and how much moved at them", () => {
     withFiles(chain(1, []), chain(1, [READS_ORDERS]), (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
