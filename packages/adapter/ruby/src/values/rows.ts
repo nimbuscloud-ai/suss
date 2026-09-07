@@ -209,6 +209,18 @@ const calleeRows: Row[] = [
     origin: { module: "Kernel", name: "String" },
     apply: ({ args }) => ({ result: concat([operand(args[0])]) }),
   },
+  // A URI is the string it was parsed from, as far as a reader of paths
+  // is concerned, and both spellings are the standard library's own.
+  {
+    kind: "callee",
+    origin: { module: "Kernel", name: "URI" },
+    apply: ({ args }) => ({ result: concat([operand(args[0])]) }),
+  },
+  {
+    kind: "callee",
+    origin: { module: "URI", name: "parse" },
+    apply: ({ args }) => ({ result: concat([operand(args[0])]) }),
+  },
 ];
 
 export const rubyRows: readonly Row[] = [

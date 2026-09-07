@@ -26,7 +26,7 @@ end
 
 - **The module methods that send on their own**: `get`, `get_response`, `post`, `post_form`, `put`, `patch`, `delete`, `head` and `options`.
 - **The request classes**: `Net::HTTP::Get` and its six siblings say the method, and the URL is the argument the class was built with. The request may be built in the call itself or assigned to a name in the same method first.
-- **The URL**: `URI(...)` and `URI.parse(...)` are read through to the string they were given, whether written in the call or assigned to a name. The string then goes through the same value evaluator a Rails route path does, so an interpolated path reads to the path parameter it states.
+- **The URL**: `URI(...)` and `URI.parse(...)` belong to Ruby rather than to Net::HTTP, so the adapter's own value tables read them, and this pack says nothing about them. A URI written in the call and one held in a local read the same way, and an interpolated path reads to the path parameter it states.
 
 ## Where it stops
 

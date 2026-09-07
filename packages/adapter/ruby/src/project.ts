@@ -234,6 +234,7 @@ export async function extractRubyProject(
           : {}),
         inheritedMethods,
         displayPathOf,
+        facts: db,
         onReachSeed: (raw, seed) => seedByRaw.set(raw, seed),
       }),
     );

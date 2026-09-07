@@ -299,12 +299,11 @@ describe("a method that calls a request method", () => {
   });
 });
 
-/** A library that takes a URL object and sends a request built somewhere else. */
+/** A library that sends a request built somewhere else. */
 const WRAPPED_URLS: RbClientCall = {
   constantName: "HttpClient",
   verbMethodNames: { get: "GET" },
   url: { position: 0 },
-  urlWrappers: ["Wrap", "Wrap.parse"],
   receiverBuilders: ["build"],
   requestObject: {
     attribute: "send_it",
@@ -313,13 +312,13 @@ const WRAPPED_URLS: RbClientCall = {
   },
 };
 
-describe("a library that takes a URL object", () => {
-  it("reads the string the wrapper call was given", async () => {
+describe("a library that sends a request object", () => {
+  it("reads a URL the standard library wrapped in a URI", async () => {
     const units = await unitsIn(
       [
         "class OrderClient",
         "  def load",
-        '    HttpClient.get(Wrap("https://api.example.com/orders"))',
+        '    HttpClient.get(URI("https://api.example.com/orders"))',
         "  end",
         "end",
       ].join("\n"),
@@ -329,30 +328,13 @@ describe("a library that takes a URL object", () => {
     expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 
-  it("reads a wrapped URL held in a local", async () => {
-    const units = await unitsIn(
-      [
-        "class OrderClient",
-        "  def load",
-        '    target = Wrap.parse("https://api.example.com/orders")',
-        "    HttpClient.get(target)",
-        "  end",
-        "end",
-      ].join("\n"),
-      WRAPPED_URLS,
-    );
-
-    expect(boundary(units).path).toBe("/orders");
-  });
-
   it("reads the request object a call was handed", async () => {
     const units = await unitsIn(
       [
         "class OrderClient",
         "  def load(body)",
-        '    target = Wrap("https://api.example.com/orders")',
         "    conn = HttpClient.build",
-        "    request = HttpClient::Post.new(target)",
+        '    request = HttpClient::Post.new(URI("https://api.example.com/orders"))',
         "    conn.send_it(request)",
         "  end",
         "end",
@@ -368,9 +350,8 @@ describe("a library that takes a URL object", () => {
       [
         "class OrderClient",
         "  def load(body)",
-        '    target = Wrap("https://api.example.com/orders")',
         "    conn = HttpClient.build",
-        "    conn.send_it(OurOwn::Post.new(target))",
+        '    conn.send_it(OurOwn::Post.new(URI("https://api.example.com/orders")))',
         "  end",
         "end",
       ].join("\n"),
@@ -396,7 +377,22 @@ describe("a library that takes a URL object", () => {
     expect(units).toEqual([]);
   });
 
-  it("leaves a value that is not one of the wrapper calls as it is", async () => {
+  it("says nothing about a URL handed in whole, which names no route", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load(target)",
+        "    HttpClient.get(URI(target))",
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("reads a plain string where the library also takes one", async () => {
     const units = await unitsIn(
       [
         "class OrderClient",

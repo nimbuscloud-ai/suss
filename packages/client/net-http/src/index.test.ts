@@ -1,26 +1,47 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { discoverUnits, parseRuby } from "@suss/adapter-ruby";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { extractRubyProject } from "@suss/adapter-ruby";
 
 import { netHttpClient } from "./index.js";
 
-import type { RawCodeStructure } from "@suss/extractor";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-async function unitsIn(source: string): Promise<RawCodeStructure[]> {
-  const tree = await parseRuby(source);
-  return discoverUnits(tree.rootNode, {
+let projectDir: string | null = null;
+
+afterEach(() => {
+  if (projectDir !== null) {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    projectDir = null;
+  }
+});
+
+/**
+ * The summaries of one file, read the way a run reads a project, so the
+ * value facts a name resolves through are the ones a project has.
+ */
+async function summariesOf(source: string): Promise<BehavioralSummary[]> {
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-net-http-"));
+  const file = path.join(projectDir, "order_client.rb");
+  fs.writeFileSync(file, source);
+  const { summaries } = await extractRubyProject({
+    files: [file],
     packs: [netHttpClient()],
-    filePath: "app/clients/order_client.rb",
-    cache: { get: async () => null },
+    workspaceRoot: projectDir,
+    cacheDir: null,
   });
+  return summaries.filter((summary) => summary.kind === "client");
 }
 
-/** The method and path of the first unit discovered. */
-function boundary(units: RawCodeStructure[]): {
+/** The method and path of the first client summary. */
+function boundary(summaries: BehavioralSummary[]): {
   method: string | null;
   path: string | null;
 } {
-  const semantics = units[0]?.boundaryBinding?.semantics;
+  const semantics = summaries[0]?.identity.boundaryBinding?.semantics;
   if (semantics?.name !== "rest") {
     throw new Error(
       `expected a REST boundary, got ${JSON.stringify(semantics)}`,
@@ -31,7 +52,7 @@ function boundary(units: RawCodeStructure[]): {
 
 describe("a method that calls Net::HTTP", () => {
   it("reads the URL a call wraps in URI", async () => {
-    const units = await unitsIn(
+    const summaries = await summariesOf(
       [
         "class OrderClient",
         "  def fetch",
@@ -41,13 +62,12 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(units).toHaveLength(1);
-    expect(units[0]?.identity.kind).toBe("client");
-    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+    expect(summaries).toHaveLength(1);
+    expect(boundary(summaries)).toEqual({ method: "GET", path: "/orders" });
   });
 
   it("reads a URI held in a local, written with parse", async () => {
-    const units = await unitsIn(
+    const summaries = await summariesOf(
       [
         "class OrderClient",
         "  def fetch(id)",
@@ -58,11 +78,14 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(boundary(units)).toEqual({ method: "GET", path: "/orders/{id}" });
+    expect(boundary(summaries)).toEqual({
+      method: "GET",
+      path: "/orders/{id}",
+    });
   });
 
   it("reads the method a posted form sends", async () => {
-    const units = await unitsIn(
+    const summaries = await summariesOf(
       [
         "class OrderClient",
         "  def create(params)",
@@ -72,11 +95,11 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
+    expect(boundary(summaries)).toEqual({ method: "POST", path: "/orders" });
   });
 
   it("reads a request object built in several steps", async () => {
-    const units = await unitsIn(
+    const summaries = await summariesOf(
       [
         "class OrderClient",
         "  def create(body)",
@@ -90,11 +113,11 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
+    expect(boundary(summaries)).toEqual({ method: "POST", path: "/orders" });
   });
 
   it("reads a request object built in the call itself", async () => {
-    const units = await unitsIn(
+    const summaries = await summariesOf(
       [
         "class OrderClient",
         "  def drop(id)",
@@ -106,14 +129,14 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(boundary(units)).toEqual({
+    expect(boundary(summaries)).toEqual({
       method: "DELETE",
       path: "/orders/{id}",
     });
   });
 
   it("says nothing about a request class the library does not define", async () => {
-    const units = await unitsIn(
+    const summaries = await summariesOf(
       [
         "class OrderClient",
         "  def send_it",
@@ -125,11 +148,11 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(units).toEqual([]);
+    expect(summaries).toEqual([]);
   });
 
   it("says nothing about a URL that does not settle on a string", async () => {
-    const units = await unitsIn(
+    const summaries = await summariesOf(
       [
         "class OrderClient",
         "  def fetch(target)",
@@ -139,6 +162,6 @@ describe("a method that calls Net::HTTP", () => {
       ].join("\n"),
     );
 
-    expect(units).toEqual([]);
+    expect(summaries).toEqual([]);
   });
 });

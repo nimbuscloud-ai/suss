@@ -321,6 +321,15 @@ describe("branches and choices", () => {
     );
   });
 
+  it("reads a URI as the string it was parsed from", async () => {
+    expect(await literal('subject = URI("https://example.com/api/v1")')).toBe(
+      "https://example.com/api/v1",
+    );
+    expect(await route('subject = URI.parse("/orders/#{id}")')).toBe(
+      "/orders/{id}",
+    );
+  });
+
   it("runs a begin body and its ensure", async () => {
     expect(
       await literal(

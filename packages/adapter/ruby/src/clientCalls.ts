@@ -11,7 +11,7 @@
  * string says nothing.
  */
 
-import { restBinding } from "@suss/behavioral-ir";
+import { namesNothing, restBinding } from "@suss/behavioral-ir";
 import { pathOf } from "@suss/values";
 
 import { field, rangeOf, readCallArgs, runStatements, spanOf } from "./ast.js";
@@ -110,7 +110,7 @@ function requestCall(
 
   const verb = pattern.verbMethodNames[called];
   if (verb !== undefined) {
-    const path = urlIn(args, method, pattern, options);
+    const path = urlIn(args, pattern, options);
     return path === null ? null : { method: verb, path: prefix + path };
   }
 
@@ -122,7 +122,7 @@ function requestCall(
   if (built === null) {
     return null;
   }
-  const path = pathAt(built.url, method, pattern, options);
+  const path = pathAt(built.url, options);
   return path === null ? null : { method: built.method, path: prefix + path };
 }
 
@@ -250,7 +250,6 @@ function assignedValue(name: string, method: RbNode): RbNode | null {
 /** The path the URL argument states, or null when it does not settle on one. */
 function urlIn(
   args: CallArgs,
-  method: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
 ): string | null {
@@ -258,51 +257,25 @@ function urlIn(
   const written =
     (keyword === undefined ? undefined : args.keyword[keyword]) ??
     args.positional[pattern.url.position];
-  return pathAt(written, method, pattern, options);
+  return pathAt(written, options);
 }
 
 /**
- * The path one node states. A library that takes a URL object rather
- * than a string is given the calls that build one, and a local name is
- * followed one assignment back, which is where the URL of a request
- * built in several steps is written.
+ * The path one node states. A URL a library takes as an object rather
+ * than a string, `URI("...")` in Ruby, comes back from the value tables
+ * as the string it was built from, so nothing here unwraps anything.
  */
 function pathAt(
   written: RbNode | undefined,
-  method: RbNode,
-  pattern: RbClientCall,
   options: ClientCallOptions,
 ): string | null {
   if (written === undefined) {
     return null;
   }
-  const stated = unwrapped(written, method, pattern);
-  return pathOf(evaluatedValue(stated, options.facts)) ?? null;
-}
-
-/** The node the URL is actually written in, past a name and past a wrapper call. */
-function unwrapped(
-  written: RbNode,
-  method: RbNode,
-  pattern: RbClientCall,
-): RbNode {
-  const wrappers = pattern.urlWrappers ?? [];
-  if (wrappers.length === 0) {
-    return written;
-  }
-  const call =
-    written.type === "call" ? written : assignedCall(written, method);
-  if (call === null || !wrappers.includes(calleeName(call))) {
-    return written;
-  }
-  return readCallArgs(field(call, "arguments")).positional[0] ?? written;
-}
-
-/** The name a call states, `URI` for `URI(...)` and `URI.parse` for the other spelling. */
-function calleeName(call: RbNode): string {
-  const receiver = field(call, "receiver");
-  const named = field(call, "method")?.text ?? "";
-  return receiver === null ? named : `${receiver.text}.${named}`;
+  // A path that is one hole and nothing else, which is what a URL
+  // handed in whole gives, names no route and pairs with nothing.
+  const path = pathOf(evaluatedValue(written, options.facts));
+  return path === undefined || namesNothing(path) ? null : path;
 }
 
 /** The unit for the method the call is written in. */
