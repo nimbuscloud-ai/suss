@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 73,
-    "packagesWithExports": 73,
-    "exports": 896,
-    "internal": 3115,
-    "consumers": 1713,
-    "pairs": 1710,
+    "packages": 74,
+    "packagesWithExports": 74,
+    "exports": 899,
+    "internal": 3121,
+    "consumers": 1715,
+    "pairs": 1712,
     "unfollowedCalls": 487,
     "findingErrors": 0
   },
@@ -20,7 +20,7 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 69,
-      "internal": 230,
+      "internal": 236,
       "consumers": 128,
       "unfollowedCalls": 72
     },
@@ -92,6 +92,13 @@
       "exports": 2,
       "internal": 0,
       "consumers": 3,
+      "unfollowedCalls": 0
+    },
+    "packages/client/net-http": {
+      "name": "@suss/client-net-http",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 2,
       "unfollowedCalls": 0
     },
     "packages/client/requests": {
@@ -467,7 +474,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 44,
+      "exports": 45,
       "internal": 136,
       "consumers": 0,
       "unfollowedCalls": 9
