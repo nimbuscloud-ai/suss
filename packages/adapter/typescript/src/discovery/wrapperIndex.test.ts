@@ -833,6 +833,61 @@ describe("wrapper registrations, end to end", () => {
     ]);
   });
 
+  it("reads a wrapper onto routes another file registers on the app it was handed", async () => {
+    // The layout #726 was blocked on: the app is built and wrapped in
+    // one file, and every route comes from another file that takes it
+    // as a parameter.
+    const project = createTestProject();
+    project.createSourceFile(
+      "/handlers.ts",
+      `
+        import type { Hono } from "hono";
+        export function registerTenantHandlers(app: Hono) {
+          app.get("/v1/tenants", (c) => c.json({}, 200));
+          app.post("/v1/tenants", (c) => c.json({}, 201));
+        }
+      `,
+    );
+    project.createSourceFile(
+      "/mw.ts",
+      `
+        export function requireCaller(header: string) {
+          return async (c, next) => {
+            if (c.req.header(header) === undefined) {
+              return c.json({ error: "no caller" }, 401);
+            }
+            await next();
+          };
+        }
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        import { registerTenantHandlers } from "./handlers";
+        import { requireCaller } from "./mw";
+        const app = new Hono();
+        app.use("/v1/*", requireCaller("x-caller"));
+        registerTenantHandlers(app);
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    for (const route of ["/v1/tenants"]) {
+      expect(wrappersOf(summaries, route)).toEqual([
+        { file: "/mw.ts", name: "requireCaller", scope: "/v1/*" },
+      ]);
+    }
+    expect(statusesOf(summaryNamed(summaries, "requireCaller"))).toEqual([401]);
+  });
+
   it("leaves a mount alone, since the mounted value is a router and not a function", async () => {
     const project = createTestProject();
     project.createSourceFile(
