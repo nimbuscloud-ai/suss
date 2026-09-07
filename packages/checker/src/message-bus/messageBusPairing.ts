@@ -22,7 +22,7 @@ import {
   summaryRef,
   unitsByFile,
 } from "@suss/behavioral-ir";
-import { bindingIs, busIdentityKey } from "@suss/ir-core";
+import { bindingIs, busIdentityKey, displayLabel } from "@suss/ir-core";
 
 import {
   buildInteractionIndex,
@@ -273,7 +273,137 @@ export function checkMessageBus(
     }),
   );
 
+  findings.push(
+    ...checkRepeatSafety({
+      consumers,
+      queueProviders,
+      allSummaries: summaries,
+      byFile,
+    }),
+  );
+
   return findings;
+}
+
+/** The methods a second delivery would repeat rather than settle again. */
+const REPEATS_HARM = new Set(["POST", "PATCH"]);
+
+/**
+ * A channel a broker can deliver twice, reaching a consumer that calls
+ * another service in a way the second call does not settle the same
+ * way. An SQS queue redelivers unless it is FIFO, and a POST or a PATCH
+ * to another service is a second charge, a second order, a second row
+ * over there.
+ */
+function checkRepeatSafety(opts: {
+  consumers: BehavioralSummary[];
+  queueProviders: BehavioralSummary[];
+  allSummaries: BehavioralSummary[];
+  byFile: UnitsByFile;
+}): Finding[] {
+  const findings: Finding[] = [];
+  for (const consumer of opts.consumers) {
+    const semantics = consumer.identity.boundaryBinding?.semantics;
+    if (semantics?.name !== "message-bus" || semantics.channel === null) {
+      continue;
+    }
+    if (!redelivers(semantics, opts.queueProviders)) {
+      continue;
+    }
+    const codeScope = readCodeScope(consumer);
+    if (codeScope === null) {
+      continue;
+    }
+    const scope = {
+      unit: consumer.identity.deployableUnit,
+      codeScope,
+    };
+    for (const summary of opts.allSummaries) {
+      if (!runsIn(summary, scope, opts.byFile)) {
+        continue;
+      }
+      for (const call of repeatedCalls(summary)) {
+        findings.push(
+          makeRepeatUnsafeFinding(consumer, semantics, summary, call),
+        );
+      }
+    }
+  }
+  return findings;
+}
+
+/**
+ * Whether the broker can deliver one message twice. An SQS queue does
+ * unless the template declares it FIFO, and a channel nothing in the
+ * run declares says nothing either way, so it is left alone.
+ */
+function redelivers(
+  semantics: MessageBusSemantics,
+  queueProviders: BehavioralSummary[],
+): boolean {
+  if (semantics.messageBus !== "aws_sqs") {
+    return false;
+  }
+  const declared = queueProviders.find((provider) => {
+    const own = provider.identity.boundaryBinding?.semantics;
+    return own?.name === "message-bus" && own.channel === semantics.channel;
+  });
+  return (
+    declared !== undefined &&
+    readMessageBusMetadata(declared)?.fifoQueue !== true
+  );
+}
+
+/** One call in this unit that a second delivery would make again. */
+interface RepeatedCall {
+  method: string;
+  callee: string | undefined;
+  label: string;
+}
+
+function repeatedCalls(summary: BehavioralSummary): RepeatedCall[] {
+  const found: RepeatedCall[] = [];
+  const seen = new Set<string>();
+  for (const transition of summary.transitions) {
+    for (const effect of transition.effects) {
+      if (
+        effect.type !== "interaction" ||
+        effect.interaction.class !== "service-call" ||
+        !REPEATS_HARM.has(effect.interaction.method.toUpperCase())
+      ) {
+        continue;
+      }
+      const label = displayLabel(effect.binding) ?? effect.interaction.method;
+      if (seen.has(label)) {
+        continue;
+      }
+      seen.add(label);
+      found.push({
+        method: effect.interaction.method.toUpperCase(),
+        callee: effect.callee,
+        label,
+      });
+    }
+  }
+  return found;
+}
+
+function makeRepeatUnsafeFinding(
+  consumer: BehavioralSummary,
+  semantics: MessageBusSemantics,
+  handler: BehavioralSummary,
+  call: RepeatedCall,
+): Finding {
+  const binding = consumer.identity.boundaryBinding as BoundaryBinding;
+  const through = call.callee === undefined ? "" : ` through ${call.callee}`;
+  return {
+    kind: "repeatUnsafeConsumer",
+    boundary: binding,
+    provider: makeSide(consumer),
+    consumer: makeSide(handler),
+    description: `SQS queue "${semantics.channel}" can deliver one message more than once, and ${handler.identity.name} answers it with ${call.method} ${call.label}${through}. A second delivery makes that call again. Make the call idempotent, key it on something in the message, or record what has been handled.`,
+    severity: "warning",
+  };
 }
 
 /**

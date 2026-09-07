@@ -112,6 +112,8 @@ export const FindingKindSchema = z.enum([
   "messageBusUnused",
   /** A subscription deploys switched off, so its target receives nothing. */
   "messageBusConsumerDisabled",
+  /** A channel that can deliver twice reaches a consumer that acts twice. */
+  "repeatUnsafeConsumer",
   /** Code invokes a deployed unit no deployment in scope declares. */
   "unitInvocationTargetUnknown",
   /** A pack marked a boundary it cannot summarise, so nothing will pair. */

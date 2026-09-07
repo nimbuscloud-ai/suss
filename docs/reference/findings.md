@@ -472,6 +472,14 @@ A queue / topic is declared in infrastructure but neither produced to nor consum
 
 A rule or subscription deploys switched off (`State: DISABLED`), so its target receives nothing until someone enables it. The subscription is not counted as a consumer anywhere in the pass: a producer whose only subscriber is disabled is reported as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused` (switched off on purpose is not left over).
 
+### `repeatUnsafeConsumer` *(shipped)*
+
+**Severity:** warning • **Emitted by:** `checkMessageBus`
+
+An SQS queue that is not FIFO can deliver one message more than once, and the handler draining it makes a `POST` or a `PATCH` to another service. A second delivery makes that call again, which is a second charge or a second order. Run twice on purpose to see whether it matters, then make the call idempotent, key it on something in the message, or record what has been handled.
+
+A FIFO queue is left alone, and so is a `GET`, a `PUT` or a `DELETE`, which a second delivery settles the same way. A storage write is left alone as well: whether a repeat overwrites the same row or appends a new one turns on where the key's value came from, and a summary does not say that today (#516).
+
 ---
 
 ## Unit-invocation findings

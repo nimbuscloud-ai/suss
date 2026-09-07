@@ -1746,7 +1746,125 @@ describe("what message-bus pairing takes for granted", () => {
     ).toEqual([]);
   });
 
-  it("says nothing about a message arriving more than once", () => {
+  /** The consumer's handler, with one outbound call in its body. */
+  function callingCodeSummary(opts: {
+    name: string;
+    filePath: string;
+    method: string;
+    path: string;
+  }): BehavioralSummary {
+    const call: Effect = {
+      type: "interaction",
+      binding: {
+        transport: "http",
+        semantics: {
+          name: "rest",
+          method: opts.method,
+          path: opts.path,
+        },
+        recognition: "@suss/client-axios",
+      },
+      callee: "stripe.charges.create",
+      interaction: { class: "service-call", method: opts.method },
+    };
+    return {
+      ...consumerCodeSummary({
+        name: opts.name,
+        filePath: opts.filePath,
+        bodyFields: ["id"],
+      }),
+      transitions: [emptyTransition("t-0", [call])],
+    };
+  }
+
+  it("reports a POST from a consumer on a queue that redelivers", () => {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+      consumerSummary({
+        name: "OrderConsumer",
+        channel: "OrdersQueue",
+        codeScopePath: "src/order-consumer/",
+      }),
+      callingCodeSummary({
+        name: "handler",
+        filePath: "src/order-consumer/index.ts",
+        method: "POST",
+        path: "/v1/charges",
+      }),
+    ]);
+
+    const repeat = findings.filter((f) => f.kind === "repeatUnsafeConsumer");
+    expect(repeat).toHaveLength(1);
+    expect(repeat[0]?.severity).toBe("warning");
+    expect(repeat[0]?.description).toContain("POST");
+    expect(repeat[0]?.description).toContain("stripe.charges.create");
+  });
+
+  it("says nothing when the queue is FIFO", () => {
+    const fifo = queueProvider("OrdersQueue.fifo");
+    const findings = checkMessageBus([
+      {
+        ...fifo,
+        metadata: { messageBus: { fifoQueue: true } },
+      },
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue.fifo",
+        bodyFields: ["id"],
+      }),
+      consumerSummary({
+        name: "OrderConsumer",
+        channel: "OrdersQueue.fifo",
+        codeScopePath: "src/order-consumer/",
+      }),
+      callingCodeSummary({
+        name: "handler",
+        filePath: "src/order-consumer/index.ts",
+        method: "POST",
+        path: "/v1/charges",
+      }),
+    ]);
+
+    expect(findings.filter((f) => f.kind === "repeatUnsafeConsumer")).toEqual(
+      [],
+    );
+  });
+
+  it("says nothing about a GET, which a second delivery settles the same way", () => {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+      consumerSummary({
+        name: "OrderConsumer",
+        channel: "OrdersQueue",
+        codeScopePath: "src/order-consumer/",
+      }),
+      callingCodeSummary({
+        name: "handler",
+        filePath: "src/order-consumer/index.ts",
+        method: "GET",
+        path: "/v1/charges",
+      }),
+    ]);
+
+    expect(findings.filter((f) => f.kind === "repeatUnsafeConsumer")).toEqual(
+      [],
+    );
+  });
+
+  it("says nothing about a storage write, which needs the key's provenance", () => {
     const findings = checkMessageBus([
       queueProvider("OrdersQueue"),
       producerSummary({
