@@ -81,9 +81,17 @@
       "types": "./dist/drizzle.d.ts",
       "import": "./dist/drizzle.js"
     },
+    "./aiohttp": {
+      "types": "./dist/aiohttp.d.ts",
+      "import": "./dist/aiohttp.js"
+    },
     "./faraday": {
       "types": "./dist/faraday.d.ts",
       "import": "./dist/faraday.js"
+    },
+    "./httpx": {
+      "types": "./dist/httpx.d.ts",
+      "import": "./dist/httpx.js"
     },
     "./express": {
       "types": "./dist/express.d.ts",
@@ -214,9 +222,11 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@suss/client-aiohttp": "*",
     "@suss/client-apollo": "*",
     "@suss/client-axios": "*",
     "@suss/client-faraday": "*",
+    "@suss/client-httpx": "*",
     "@suss/client-requests": "*",
     "@suss/client-web": "*",
     "@suss/framework-activerecord": "*",

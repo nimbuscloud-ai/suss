@@ -1,0 +1,8 @@
+{
+  "aiohttp": "aiohttp: the package a session is built from",
+  "request": "aiohttp: the session method that takes the method as its first argument",
+  "method": "aiohttp: the keyword that request method takes the method under",
+  "url": "aiohttp: the keyword every session request method takes the URL under",
+  "ClientSession": "aiohttp: the constructor for a session, which every request goes through",
+  "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python"
+}
