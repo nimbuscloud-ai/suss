@@ -32,13 +32,18 @@ The comment looks like this:
 > ### 2 units change behavior in this pull request
 >
 > ```
+> ~ serves POST /users  src/handlers/users.ts::createUser
+>   ~ 201 { id, email, name }  (default)
+>     -> 201 { id, email }  (default)
+>   + writes postgresql:audit_log  through recordChange
+>
+> Changes by file
+>
 > src/handlers/users.ts
->   ~ createUser  POST /users  hono handler  1 change
->       ~ 201 { id, email, name }  (default)
->         -> 201 { id, email }  (default)
+>   ~ createUser
 >
 > src/serializers/user.ts  (changed in this pull request)
->   ~ serializeUser  library  1 change
+>   ~ serializeUser
 > ```
 >
 > <sub>Read by suss at 3f2a1c9. The summaries it compared are the `suss-diff` artifact of the run.</sub>
@@ -109,11 +114,13 @@ Both caches are keyed on the installed version of `@suss/cli` and on `extract` a
 
 ## How the comment is organized
 
-The units are grouped by the file they are in. A file the pull request did not touch comes first, since a unit that changed behavior without its own file changing is the one nobody would go looking for. Under a file the pull request did touch, each unit gets one line saying how much moved, and the reviewer reads the rest in that file's own diff.
+The comment leads with the boundaries that moved: one block per route, queue consumer or Lambda, with the responses that changed and what a request now reaches or stopped reaching through the calls it makes. A unit deeper in the project gets no block of its own, since the boundaries that reach it already show what its change did. When no boundary moved, the comment says so in a line.
 
-The action asks GitHub which files the pull request changed and passes them to `suss inspect --diff --changed-files`. When that call fails, every unit prints in full.
+Under that, the files with units that moved, listed by name. What any one of them does is in that file's own diff, which the reviewer has in front of them.
 
-A comment stops at 65,536 characters, so the action renders the comment with `--budget` and the report says how many units and files it left out. The whole diff is in the run's artifact.
+The action asks GitHub which files the pull request changed and passes them to `suss inspect --diff --changed-files`. Those files come last and are marked. When the call to GitHub fails, every file is treated as untouched.
+
+A comment stops at 65,536 characters, so the action renders it with `--budget` and the report counts what it left out. The whole diff is in the run's artifact.
 
 ## Where the diff comes from
 

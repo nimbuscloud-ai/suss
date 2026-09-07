@@ -66,6 +66,12 @@ export function callSpellings(path: CallPath): string[] {
 export interface CallFacts {
   /** Every summary of each function, in the order the run wrote them. */
   units: ReadonlyMap<FunctionKey, BehavioralSummary[]>;
+  /**
+   * Every call from one function to another, for a caller doing its own
+   * walk. A reach question per unit would run a fixpoint per unit,
+   * which a project with a thousand routes cannot afford.
+   */
+  edges(): CallEdge[];
   /** Who calls a function directly, one entry per caller function. */
   callersOf(target: ReachTarget): DirectCall[];
   /** Every function that ends up calling into the target, with the shortest path. */
@@ -82,6 +88,14 @@ export interface ReachTarget {
   keys: ReadonlyArray<string>;
   /** Functions at the target already, when it is a boundary and not a function. */
   at?: ReadonlyArray<FunctionKey>;
+}
+
+/** One call, as a walk over the graph reads it. */
+export interface CallEdge {
+  from: FunctionKey;
+  to: FunctionKey;
+  /** The call as the caller writes it, which is how a chain prints. */
+  callee: string;
 }
 
 export interface DirectCall {
@@ -181,6 +195,7 @@ export function readCallFacts(
 
   return {
     units,
+    edges: () => callEdges(database()),
     callersOf: (target) => directCallers(database(), target),
     reaching: (target) => reachingFunctions(database(), target),
     reachedFrom: (start) => reachedFunctions(database(), start),
@@ -378,6 +393,27 @@ function reachedFunctions(
     paths.delete(fn);
   }
   return paths;
+}
+
+/** Every derived call, once per caller, callee and spelling. */
+function callEdges(db: Database): CallEdge[] {
+  evaluate(db, CALLS);
+  const edges: CallEdge[] = [];
+  const seen = new Set<string>();
+  for (const tuple of db.facts("calls")) {
+    const edge = {
+      from: String(tuple[0]),
+      to: String(tuple[1]),
+      callee: String(tuple[2]),
+    };
+    const key = `${edge.from} ${edge.to} ${edge.callee}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    edges.push(edge);
+  }
+  return edges;
 }
 
 /**

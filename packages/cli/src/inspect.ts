@@ -29,6 +29,7 @@ import {
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
 
+import { reachChanges } from "./diffReach.js";
 import { UsageError } from "./usageError.js";
 
 import type {
@@ -46,6 +47,7 @@ import type {
   WrapperReference,
 } from "@suss/behavioral-ir";
 import type { InvokesInRun } from "@suss/checker";
+import type { EntrypointChange, ReachedEffect } from "./diffReach.js";
 
 // ---------------------------------------------------------------------------
 // Variant dispatch helper
@@ -1367,6 +1369,12 @@ export interface DiffOptions {
    * at the end. Without it the report says everything.
    */
   budget?: number;
+  /**
+   * How many calls to print between a boundary and something it
+   * reaches before the middle of the chain collapses into a count.
+   * `"full"` prints every hop, `0` prints none.
+   */
+  chain?: number | "full";
 }
 
 /**
@@ -1857,12 +1865,19 @@ interface MovedUnit {
   readonly change: "added" | "removed" | "changed";
   readonly file: string;
   readonly name: string;
-  readonly kind: string;
+  readonly kind: BehavioralSummary["kind"];
   readonly recognition: string | null;
   readonly boundary: string | null;
+  /** The protocol of the boundary it serves, for one that serves any. */
+  readonly protocol: string | null;
   readonly transitions: number;
+  /** What the unit responds with, for one that came or went whole. */
+  readonly outputs: readonly string[];
   readonly diff: SummaryDiff | null;
 }
+
+/** How many of a new unit's responses the report prints before counting the rest. */
+const OUTPUTS_LISTED = 6;
 
 function movedUnit(
   change: MovedUnit["change"],
@@ -1877,7 +1892,11 @@ function movedUnit(
     kind: summary.kind,
     recognition: binding === null ? null : binding.recognition,
     boundary: bindingLabel(summary),
+    protocol: binding === null ? null : binding.semantics.name,
     transitions: summary.transitions.length,
+    outputs: summary.transitions
+      .slice(0, OUTPUTS_LISTED)
+      .map((transition) => renderTransitionShort(transition)),
     diff,
   };
 }
@@ -1917,28 +1936,6 @@ function transitionWord(count: number): string {
   return `${count} transition${count === 1 ? "" : "s"}`;
 }
 
-/** What the unit is, past its name: the boundary it serves and its kind. */
-function unitSubject(unit: MovedUnit): string {
-  const kind =
-    unit.recognition === null ? unit.kind : `${unit.recognition} ${unit.kind}`;
-  // A package export's boundary label ends in the name already, and
-  // printing both reads as a stutter.
-  return unit.boundary === null || unit.boundary.endsWith(unit.name)
-    ? kind
-    : `${unit.boundary}  ${kind}`;
-}
-
-const HEADLINES: Record<MovedUnit["change"], (unit: MovedUnit) => string> = {
-  added: (unit) =>
-    `+ ${unit.name}  new ${unit.kind} with ${transitionWord(unit.transitions)}`,
-  removed: (unit) =>
-    `- ${unit.name}  removed ${unit.kind} (had ${transitionWord(unit.transitions)})`,
-  changed: (unit) => {
-    const changes = changeCount(unit.diff as SummaryDiff);
-    return `~ ${unit.name}  ${unitSubject(unit)}  ${changes} change${changes === 1 ? "" : "s"}`;
-  },
-};
-
 function transitionLines(diff: SummaryDiff): string[] {
   const lines: string[] = [];
 
@@ -1967,17 +1964,130 @@ function transitionLines(diff: SummaryDiff): string[] {
 }
 
 /**
- * A unit's block: its headline, and the transitions under it when the
- * report is printing those. A unit in a file the change touched says
- * how much moved and no more, since a reader who wants the detail is
- * already reading that file's diff.
+ * What one boundary now does: the responses that moved, and what the
+ * request reaches on its way through the project.
  */
-function unitBlock(unit: MovedUnit, detailed: boolean): string[] {
-  const headline = `  ${HEADLINES[unit.change](unit)}`;
-  if (!detailed || unit.diff === null) {
-    return [headline];
+interface BoundaryBlock {
+  readonly change: MovedUnit["change"];
+  readonly does: "serves" | "calls";
+  readonly boundary: string;
+  readonly unit: string;
+  readonly file: string;
+  readonly lines: string[];
+}
+
+/** How many calls a chain prints before the middle of it collapses. */
+const CHAIN_HOPS = 3;
+
+/**
+ * The calls between a boundary and something it reaches. A reader is
+ * after the effect rather than the route through the project, so a long
+ * chain says where it starts and where it ends and counts the rest.
+ */
+function chainLine(through: readonly string[], hops: number | "full"): string {
+  if (through.length === 0 || hops === 0) {
+    return "";
   }
-  return [headline, ...transitionLines(unit.diff).map((line) => `    ${line}`)];
+  if (hops === "full" || through.length <= Math.max(hops, 2)) {
+    return `  through ${through.join(" -> ")}`;
+  }
+  const skipped = through.length - 2;
+  const middle = `(${skipped} intermediate unit${skipped === 1 ? "" : "s"} collapsed)`;
+  return `  through ${through[0]} -> ${middle} -> ${through[through.length - 1]}`;
+}
+
+function reachLine(
+  effect: ReachedEffect,
+  marker: string,
+  hops: number | "full",
+): string {
+  return `${marker} ${effect.relation} ${effect.label}${chainLine(effect.through, hops)}`;
+}
+
+/** What a unit that came or went whole responds with. */
+function wholeUnitLines(unit: MovedUnit): string[] {
+  const rest = unit.transitions - unit.outputs.length;
+  const lines = [...unit.outputs];
+  if (rest > 0) {
+    lines.push(`${transitionWord(rest)} more`);
+  }
+  return lines;
+}
+
+function responseLines(unit: MovedUnit): string[] {
+  return unit.diff === null ? wholeUnitLines(unit) : transitionLines(unit.diff);
+}
+
+/**
+ * Whether this unit is on one side of a boundary somebody outside the
+ * process crosses. A call from one function in the project to another
+ * is a boundary too, and the pull request's diff already shows those.
+ */
+function atABoundary(unit: MovedUnit): boolean {
+  return unit.boundary !== null && unit.protocol !== "function-call";
+}
+
+/** Which side of the boundary the unit is on, in a word. */
+function boundaryVerb(unit: MovedUnit): "serves" | "calls" {
+  return BOUNDARY_ROLE[unit.kind] === "provider" ? "serves" : "calls";
+}
+
+function blockHeading(block: BoundaryBlock): string {
+  return `${NAME_MARKERS[block.change]} ${block.does} ${block.boundary}  ${block.file}::${block.unit}`;
+}
+
+/**
+ * One block per boundary that moved: the responses first, then what the
+ * request goes on to reach. A unit deeper in the project gets no block,
+ * since the boundaries reaching it already show what changed.
+ */
+function boundaryBlocks(
+  moved: readonly MovedUnit[],
+  reach: readonly EntrypointChange[],
+  hops: number | "full",
+): BoundaryBlock[] {
+  const blocks = new Map<string, BoundaryBlock>();
+
+  for (const unit of moved) {
+    if (!atABoundary(unit)) {
+      continue;
+    }
+    blocks.set(`${unit.file}::${unit.name}`, {
+      change: unit.change,
+      does: boundaryVerb(unit),
+      boundary: unit.boundary ?? unit.name,
+      unit: unit.name,
+      file: unit.file,
+      lines: responseLines(unit),
+    });
+  }
+
+  for (const change of reach) {
+    const lines = [
+      ...change.gained.map((effect) => reachLine(effect, "+", hops)),
+      ...change.lost.map((effect) => reachLine(effect, "-", hops)),
+    ];
+    const already = blocks.get(change.key);
+    if (already === undefined) {
+      blocks.set(change.key, {
+        change: change.change,
+        does: "serves",
+        boundary: change.boundary,
+        unit: change.unit,
+        file: change.file,
+        lines,
+      });
+      continue;
+    }
+    already.lines.push(...lines);
+  }
+
+  return [...blocks.values()]
+    .filter((block) => block.change !== "changed" || block.lines.length > 0)
+    .sort(
+      (a, b) =>
+        a.boundary.localeCompare(b.boundary) || a.unit.localeCompare(b.unit),
+    );
 }
 
 /**
@@ -2036,52 +2146,122 @@ function fileHeading(section: FileSection): string {
     : section.file;
 }
 
+const NAME_MARKERS: Record<MovedUnit["change"], string> = {
+  added: "+",
+  removed: "-",
+  changed: "~",
+};
+
+/** How wide a run of unit names gets before it wraps. */
+const NAMES_WIDTH = 96;
+
+function wrapped(names: readonly string[], indent: string): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const name of names) {
+    const next = line === "" ? name : `${line}, ${name}`;
+    if (next.length + indent.length > NAMES_WIDTH && line !== "") {
+      lines.push(indent + line);
+      line = name;
+      continue;
+    }
+    line = next;
+  }
+  if (line !== "") {
+    lines.push(indent + line);
+  }
+  return lines;
+}
+
+/**
+ * The units that moved in one file, listed by name. What any of them
+ * does is in the file's own diff, which the reader has in front of them.
+ */
+function fileBlock(section: FileSection): string[] {
+  const names = section.units.map(
+    (unit) => `${NAME_MARKERS[unit.change]} ${unit.name}`,
+  );
+  return [fileHeading(section), ...wrapped(names, "  "), ""];
+}
+
 /**
  * What a reader is not seeing, so a cut report never reads as the whole
  * of the change.
  */
-function omissionLine(units: number, files: number): string {
-  const filePart = files === 1 ? "1 more file" : `${files} more files`;
-  const unitPart = units === 1 ? "1 more unit" : `${units} more units`;
-  return `... ${unitPart} in ${filePart}. The whole diff is what \`suss inspect --diff\` prints without a budget.`;
+function omissionLine(
+  boundaries: number,
+  units: number,
+  files: number,
+): string {
+  const parts: string[] = [];
+  if (boundaries > 0) {
+    parts.push(
+      boundaries === 1 ? "1 more boundary" : `${boundaries} more boundaries`,
+    );
+  }
+  if (files > 0) {
+    const filePart = files === 1 ? "1 more file" : `${files} more files`;
+    const unitPart = units === 1 ? "1 more unit" : `${units} more units`;
+    parts.push(`${unitPart} in ${filePart}`);
+  }
+  return `... ${parts.join(", and ")}. The whole diff is what \`suss inspect --diff\` prints without a budget.`;
 }
 
+/** The line a report opens with when no boundary moved. */
+const NOTHING_AT_A_BOUNDARY =
+  "Nothing a client of this project can see changed.";
+
 /**
- * The report, grouped by file. `budget` caps how many characters it
- * comes to: sections are written whole until the next one would not
- * fit, and what is left out is counted at the end.
+ * The report: what moved at each boundary, then the files the change
+ * touched with the units in them named. `budget` caps how many
+ * characters it comes to, and what does not fit is counted at the end.
  */
 function renderReport(
   moved: readonly MovedUnit[],
+  reach: readonly EntrypointChange[],
   changedFiles: ReadonlySet<string>,
-  budget: number | null,
+  options: { budget: number | null; hops: number | "full" },
 ): string {
+  const blocks = boundaryBlocks(moved, reach, options.hops);
   const sections = sectionsByFile(moved, changedFiles);
   const lines: string[] = [];
+  const left = { boundaries: 0, units: 0, files: 0 };
+  const budget = options.budget;
   let written = 0;
-  let unitsLeft = 0;
-  let filesLeft = 0;
 
-  for (const section of sections) {
-    const block = [
-      fileHeading(section),
-      ...section.units.flatMap((unit) => unitBlock(unit, !section.touched)),
-      "",
-    ];
+  const fits = (block: readonly string[]): boolean => {
     const length = block.join("\n").length + 1;
-
     if (budget !== null && written + length > budget && lines.length > 0) {
-      filesLeft += 1;
-      unitsLeft += section.units.length;
-      continue;
+      return false;
     }
-
-    lines.push(...block);
     written += length;
+    lines.push(...block);
+    return true;
+  };
+
+  for (const block of blocks) {
+    if (!fits([blockHeading(block), ...block.lines.map((l) => `  ${l}`), ""])) {
+      left.boundaries += 1;
+    }
   }
 
-  if (filesLeft > 0) {
-    lines.push(omissionLine(unitsLeft, filesLeft));
+  if (blocks.length === 0) {
+    fits([NOTHING_AT_A_BOUNDARY, ""]);
+  }
+
+  if (sections.length > 0) {
+    fits(["Changes by file", ""]);
+  }
+
+  for (const section of sections) {
+    if (!fits(fileBlock(section))) {
+      left.files += 1;
+      left.units += section.units.length;
+    }
+  }
+
+  if (left.boundaries > 0 || left.files > 0) {
+    lines.push(omissionLine(left.boundaries, left.units, left.files));
   }
 
   return lines.join("\n");
@@ -2181,14 +2361,18 @@ export function inspectDiff(options: DiffOptions): void {
   }
 
   const moved = unitsThatMoved(pairing);
-  if (moved.length === 0) {
+  const reach = reachChanges(beforeSummaries, afterSummaries);
+  if (moved.length === 0 && reach.length === 0) {
     process.stdout.write("No behavioral changes.\n");
     return;
   }
 
   const changedFiles = new Set(options.changedFiles ?? []);
   process.stdout.write(
-    `${renderReport(moved, changedFiles, options.budget ?? null)}\n`,
+    `${renderReport(moved, reach, changedFiles, {
+      budget: options.budget ?? null,
+      hops: options.chain ?? CHAIN_HOPS,
+    })}\n`,
   );
 }
 

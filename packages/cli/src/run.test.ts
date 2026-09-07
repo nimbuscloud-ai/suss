@@ -749,6 +749,27 @@ describe("runCli inspect", () => {
     expect(io.stderr).toContain("--budget takes a number of characters");
   });
 
+  it("inspect --chain takes a count or the whole chain", async () => {
+    const a = writeJson("chain-a.json", [minimalSummary]);
+    const b = writeJson("chain-b.json", [minimalSummary]);
+    for (const hops of ["2", "full", "0"]) {
+      const { exit } = await capture(() =>
+        runCli(["inspect", "--diff", a, b, "--chain", hops]),
+      );
+      expect(exit, hops).toBe(0);
+    }
+  });
+
+  it("inspect --chain refuses anything else", async () => {
+    const a = writeJson("chain-bad-a.json", [minimalSummary]);
+    const b = writeJson("chain-bad-b.json", [minimalSummary]);
+    const { exit, io } = await capture(() =>
+      runCli(["inspect", "--diff", a, b, "--chain", "some"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("--chain takes a number of calls");
+  });
+
   it("inspect --changed-files says so when the list is not there", async () => {
     const a = writeJson("changed-a.json", [minimalSummary]);
     const b = writeJson("changed-b.json", [minimalSummary]);
