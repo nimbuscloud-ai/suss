@@ -19,6 +19,16 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 **Middleware and hooks the project builds itself reach the routes they wrap.** A Hono middleware returned by a project factory such as `requireCaller({ header: "x-caller" })` used to be skipped, and a zod-openapi `defaultHook` given to the app constructor was never read, so every route's 401 or 400 was missing. Both now reach the routes on the app. A route's declared contract is compared against what the handler and its wrappers produce together, so a status a shared error handler produces no longer prints as declared but never produced on every route it covers, and a status spread into a route object's `responses` from a shared object is read as declared.
 
+**Ruby's own HTTP client is read too.** `-f net-http` covers the standard library, in both the ways it is written: a module call such as `Net::HTTP.get(URI(...))`, and the longer form where a project builds a request object and sends it.
+
+```ruby
+uri = URI("https://api.example.com/orders")
+http = Net::HTTP.new(uri.host, uri.port)
+http.request(Net::HTTP::Post.new(uri))
+```
+
+That comes back as a client of `POST /orders`. `URI(...)` and `URI.parse(...)` are read through to the string behind them, whether written in the call or held in a local.
+
 **httpx and aiohttp read the same way requests does.** `-f httpx` and `-f aiohttp` cover the other two libraries a Python service calls out with, including a client or a session opened as a context manager:
 
 ```python

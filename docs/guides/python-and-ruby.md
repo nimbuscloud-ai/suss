@@ -310,7 +310,9 @@ which is what gives `suss check` a consumer side in Python. `-f httpx`
 and `-f aiohttp` read the same thing through those two libraries, an
 `async with aiohttp.ClientSession() as session` included. `-f faraday`
 does the same for a Ruby run, over Faraday's own module and over a
-connection `Faraday.new` built. Neither pack takes options.
+connection `Faraday.new` built, and `-f net-http` reads the standard
+library's own client, request objects included. None of these packs
+takes options.
 
 A `Gemfile`, a `Gemfile.lock`, or a Rails `config/application.rb` is
 enough for suss to read the directory as Ruby, and `--lang ruby` lets

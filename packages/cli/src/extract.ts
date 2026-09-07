@@ -221,6 +221,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   httpx: "@suss/packs/httpx",
   aiohttp: "@suss/packs/aiohttp",
   faraday: "@suss/packs/faraday",
+  "net-http": "@suss/packs/net-http",
 };
 
 /** Packs that read something other than TypeScript. */
@@ -235,6 +236,7 @@ const PACK_LANGUAGE: Record<string, Language> = {
   httpx: "python",
   aiohttp: "python",
   faraday: "ruby",
+  "net-http": "ruby",
 };
 
 /** Which language's adapter reads the code this pack describes. */

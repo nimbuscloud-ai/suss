@@ -129,6 +129,10 @@
       "types": "./dist/mongoose.d.ts",
       "import": "./dist/mongoose.js"
     },
+    "./net-http": {
+      "types": "./dist/net-http.d.ts",
+      "import": "./dist/net-http.js"
+    },
     "./nestjs-graphql": {
       "types": "./dist/nestjs-graphql.d.ts",
       "import": "./dist/nestjs-graphql.js"
@@ -227,6 +231,7 @@
     "@suss/client-axios": "*",
     "@suss/client-faraday": "*",
     "@suss/client-httpx": "*",
+    "@suss/client-net-http": "*",
     "@suss/client-requests": "*",
     "@suss/client-web": "*",
     "@suss/framework-activerecord": "*",
