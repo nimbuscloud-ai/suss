@@ -304,6 +304,11 @@ in the config, since ActiveRecord talks to several databases and only
 `-f sqlalchemy=suss.sqlalchemy.json`, added beside `fastapi` or
 `flask-restx` the same way.
 
+Add `-f requests` to a Python run and every function that calls another
+service through requests comes back as a client of the route it calls,
+which is what gives `suss check` a consumer side in Python. The pack
+takes no options.
+
 A `Gemfile`, a `Gemfile.lock`, or a Rails `config/application.rb` is
 enough for suss to read the directory as Ruby, and `--lang ruby` lets
 you say so outright. The walk reads every `.rb` file, skipping

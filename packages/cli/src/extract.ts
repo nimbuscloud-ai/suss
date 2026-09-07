@@ -217,6 +217,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   sqlalchemy: "@suss/packs/sqlalchemy",
   activerecord: "@suss/packs/activerecord",
   rails: "@suss/packs/rails",
+  requests: "@suss/packs/requests",
 };
 
 /** Packs that read something other than TypeScript. */
@@ -227,6 +228,7 @@ const PACK_LANGUAGE: Record<string, Language> = {
   sqlalchemy: "python",
   activerecord: "ruby",
   rails: "ruby",
+  requests: "python",
 };
 
 /** Which language's adapter reads the code this pack describes. */

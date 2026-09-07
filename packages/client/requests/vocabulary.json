@@ -1,0 +1,8 @@
+{
+  "requests": "requests: the package the request functions are imported from",
+  "request": "requests: requests.request, which takes the method as its first argument",
+  "method": "requests: the keyword requests.request takes the method under",
+  "url": "requests: the keyword every request function takes the URL under",
+  "Session": "requests: the constructor for a session, whose instances take the same calls",
+  "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python"
+}

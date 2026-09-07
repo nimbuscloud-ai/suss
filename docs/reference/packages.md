@@ -120,6 +120,7 @@ the source.
 | [`fetch`](../../packages/client/web) | Global `fetch` call sites. | ![](../../.github/badges/coverage-web.svg) |
 | [`axios`](../../packages/client/axios) | axios call sites + `axios.create` factories. | ![](../../.github/badges/coverage-axios.svg) |
 | [`apollo-client`](../../packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](../../.github/badges/coverage-apollo-client.svg) |
+| [`requests`](../../packages/client/requests) | requests call sites (Python): the seven verb functions, `requests.request`, and a `Session`, each bound to the method and path the call states. | ![](../../.github/badges/coverage-requests.svg) |
 
 ## Runtimes
 
