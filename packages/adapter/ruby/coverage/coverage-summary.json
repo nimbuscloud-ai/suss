@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 2350,
-      "covered": 2274,
+      "total": 2429,
+      "covered": 2349,
+      "skipped": 0,
+      "pct": 96.7
+    },
+    "statements": {
+      "total": 2471,
+      "covered": 2391,
       "skipped": 0,
       "pct": 96.76
     },
-    "statements": {
-      "total": 2392,
-      "covered": 2316,
-      "skipped": 0,
-      "pct": 96.82
-    },
     "functions": {
-      "total": 550,
-      "covered": 542,
+      "total": 561,
+      "covered": 553,
       "skipped": 0,
-      "pct": 98.54
+      "pct": 98.57
     },
     "branches": {
-      "total": 1776,
-      "covered": 1564,
+      "total": 1853,
+      "covered": 1631,
       "skipped": 0,
-      "pct": 88.06
+      "pct": 88.01
     },
     "branchesTrue": {
       "total": 0,
@@ -83,6 +83,32 @@
       "pct": 86.41
     }
   },
+  "src/clientCalls.ts": {
+    "lines": {
+      "total": 76,
+      "covered": 73,
+      "skipped": 0,
+      "pct": 96.05
+    },
+    "functions": {
+      "total": 11,
+      "covered": 11,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 76,
+      "covered": 73,
+      "skipped": 0,
+      "pct": 96.05
+    },
+    "branches": {
+      "total": 73,
+      "covered": 65,
+      "skipped": 0,
+      "pct": 89.04
+    }
+  },
   "src/constantPath.ts": {
     "lines": {
       "total": 13,
@@ -137,10 +163,10 @@
   },
   "src/discovery.ts": {
     "lines": {
-      "total": 212,
-      "covered": 204,
+      "total": 215,
+      "covered": 206,
       "skipped": 0,
-      "pct": 96.22
+      "pct": 95.81
     },
     "functions": {
       "total": 59,
@@ -149,16 +175,16 @@
       "pct": 98.3
     },
     "statements": {
-      "total": 216,
-      "covered": 208,
+      "total": 219,
+      "covered": 210,
       "skipped": 0,
-      "pct": 96.29
+      "pct": 95.89
     },
     "branches": {
-      "total": 165,
-      "covered": 143,
+      "total": 169,
+      "covered": 145,
       "skipped": 0,
-      "pct": 86.66
+      "pct": 85.79
     }
   },
   "src/envReads.ts": {
