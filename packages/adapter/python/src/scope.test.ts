@@ -232,3 +232,51 @@ describe("bindModule: del", () => {
     expect(resolveName(binding.moduleScope, "foo")?.kind).toBe("assignment");
   });
 });
+
+describe("bindModule: with", () => {
+  it("binds the name a with statement opens to the call behind it", async () => {
+    const { binding } = await bind(
+      "import httpx\nwith httpx.Client() as client:\n    pass\n",
+    );
+    const found = resolveName(binding.moduleScope, "client");
+    expect(found?.kind).toBe("assignment");
+    expect(found?.kind === "assignment" ? found.value?.text : null).toBe(
+      "httpx.Client()",
+    );
+  });
+
+  it("binds the name an async with opens the same way", async () => {
+    const { binding } = await bind(
+      "import aiohttp\n\nasync def load():\n    async with aiohttp.ClientSession() as session:\n        pass\n",
+    );
+    const scope = [...binding.scopeFor.values()].find(
+      (candidate) => candidate.kind === "function",
+    );
+    expect(scope).toBeDefined();
+    expect(resolveName(scope as never, "session")?.kind).toBe("assignment");
+  });
+
+  it("binds an assignment written inside the with body", async () => {
+    const { binding } = await bind(
+      'import httpx\nwith httpx.Client() as client:\n    response = client.get("/orders")\n',
+    );
+    expect(resolveName(binding.moduleScope, "response")?.kind).toBe(
+      "assignment",
+    );
+  });
+
+  it("binds every name a with statement opens at once", async () => {
+    const { binding } = await bind(
+      "import httpx\nwith httpx.Client() as one, httpx.Client() as two:\n    pass\n",
+    );
+    expect(resolveName(binding.moduleScope, "one")?.kind).toBe("assignment");
+    expect(resolveName(binding.moduleScope, "two")?.kind).toBe("assignment");
+  });
+
+  it("leaves a with statement that opens no name alone", async () => {
+    const { binding } = await bind(
+      "import httpx\nwith httpx.Client():\n    pass\n",
+    );
+    expect(resolveName(binding.moduleScope, "httpx")?.kind).toBe("import");
+  });
+});

@@ -120,7 +120,61 @@ const STATEMENT_BINDERS: Record<
   global_statement: bindGlobalStatement,
   nonlocal_statement: bindNonlocalStatement,
   delete_statement: bindDeleteStatement,
+  with_statement: bindWithStatement,
 };
+
+/**
+ * `with httpx.Client() as client:` binds the name to what the call
+ * returns. A context manager may hand `__enter__` something other than
+ * itself, and this reads the call, which is what every one a project
+ * opens for its own use does return. Python has no block scope, so the
+ * name goes in the scope the statement is written in, and the body's
+ * own statements bind there too.
+ */
+function bindWithStatement(
+  stmt: PyNode,
+  scope: Scope,
+  ctx: BinderContext,
+): void {
+  for (const pattern of asPatternsIn(stmt)) {
+    const value = pattern.namedChild(0);
+    const target = field(pattern, "alias") ?? pattern.namedChild(1);
+    const name = target === null ? null : identifierIn(target);
+    if (name !== null) {
+      bindName(scope, name, { kind: "assignment", value });
+    }
+  }
+  const body = field(stmt, "body");
+  if (body !== null) {
+    for (const inner of bodyStatements(body)) {
+      bindStatement(inner, scope, ctx);
+    }
+  }
+}
+
+/** Every `<expression> as <name>` the with clause writes. */
+function asPatternsIn(stmt: PyNode, found: PyNode[] = []): PyNode[] {
+  for (const child of stmt.namedChildren) {
+    if (child === null || child.type === "block") {
+      continue;
+    }
+    if (child.type === "as_pattern") {
+      found.push(child);
+      continue;
+    }
+    asPatternsIn(child, found);
+  }
+  return found;
+}
+
+/** The name an as-pattern target writes, which the grammar wraps one level deep. */
+function identifierIn(target: PyNode): string | null {
+  if (target.type === "identifier") {
+    return target.text;
+  }
+  const inner = target.namedChild(0);
+  return inner !== null && inner.type === "identifier" ? inner.text : null;
+}
 
 /** `del foo` unbinds the name, so a later read abstains instead of resolving to what the import bound (#188). */
 function bindDeleteStatement(stmt: PyNode, scope: Scope): void {
