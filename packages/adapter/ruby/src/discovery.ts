@@ -60,6 +60,7 @@ import type {
   TypeShape,
   WrapperReference,
 } from "@suss/behavioral-ir";
+import type { Database } from "@suss/datalog";
 import type {
   BodyContent,
   RawBranch,
@@ -130,6 +131,8 @@ export interface DiscoveryOptions extends BodyReadOptions {
   absoluteFile?: string;
   /** What a summary's `location.file` says for a file other than the one being read, which a controller's filters need when an ancestor defines them. */
   displayPathOf?: (absolute: string) => string;
+  /** The run's own facts, which the value evaluator reads a name through. Absent in a test that builds one file by hand. */
+  facts?: Database;
   cache: FileCache;
   /** Called once per discovered unit whose own body is a method this run can follow calls out of, so the reach walk has a place to start. */
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
@@ -222,9 +225,7 @@ export async function discoverUnits(
       units.push(
         ...clientCallUnits(root, pack, pattern, {
           filePath: options.filePath,
-          ...(options.storage === undefined
-            ? {}
-            : { facts: options.storage.facts }),
+          ...(options.facts === undefined ? {} : { facts: options.facts }),
         }),
       );
     }
