@@ -54,6 +54,8 @@ export interface RbClientCall {
   receiverBuilders?: string[];
   /** The keyword such a builder takes the base URL under, which comes in front of the path of a call on it. */
   builderUrlKeyword?: string;
+  /** What the response object gives a caller, so a test on it reads as a test on a status. */
+  response?: RbClientResponse;
   /** A call that sends a request object built somewhere else, which is how Net::HTTP sends anything with a body. */
   requestObject?: {
     /** The method that takes the request object, `request`. */
@@ -63,6 +65,22 @@ export interface RbClientCall {
     /** Where the request class takes the URL. */
     urlPosition: number;
   };
+}
+
+/**
+ * The members a library's response object gives a caller. A caller that
+ * tests one of them is saying which statuses it handles, and the
+ * checker compares that against what the other side produces.
+ */
+export interface RbClientResponse {
+  /** Members whose value is the status: `status` for Faraday, `code` for Net::HTTP. */
+  statusCode?: string[];
+  /** Members that say the request succeeded, meaning a status in 200 to 299: `success?`. */
+  success?: string[];
+  /** Members that give the body: `body`. */
+  body?: string[];
+  /** Whether a refused request comes back as a response or raises where it was made. */
+  failureDelivery?: "response" | "exception";
 }
 
 /**

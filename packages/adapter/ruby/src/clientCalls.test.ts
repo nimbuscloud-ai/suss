@@ -159,6 +159,56 @@ describe("a method that calls a request method", () => {
     expect(units).toEqual([]);
   });
 
+  it("says which members of the response mean what, when the pack said", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    HttpClient.get("/orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+      {
+        ...REQUEST_CALLS,
+        response: {
+          statusCode: ["status"],
+          success: ["success?"],
+          body: ["body"],
+          failureDelivery: "response",
+        },
+      },
+    );
+
+    expect(units[0]).toMatchObject({
+      statusAccessors: ["status"],
+      successAccessors: ["success?"],
+      bodyAccessors: ["body"],
+      failureDelivery: "response",
+    });
+  });
+
+  it("gives one branch per path the caller takes after the call", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    response = HttpClient.get("/orders")',
+        "    return nil if response.status == 404",
+        "",
+        "    response.body",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units[0]?.branches).toHaveLength(2);
+    expect(units[0]?.branches[0]?.conditions[0]?.structured).toMatchObject({
+      type: "comparison",
+      left: { type: "dependency", name: "response", accessChain: ["status"] },
+      right: { type: "literal", value: 404 },
+    });
+  });
+
   it("says nothing about a receiverless call of the same name", async () => {
     const units = await unitsIn(
       [

@@ -30,7 +30,7 @@ end
 - **A URL nothing can settle**, `Faraday.get(target)` where `target` is a parameter, says nothing rather than guessing, and the call stays an invocation effect like any other.
 - **A connection built somewhere else**, in another method or in an initializer, is not followed: the assignment has to be in the method that makes the call, which is the one-hop limit every other reader here takes.
 - **A block-configured request**, `conn.post("/orders") { |req| ... }`, is read for its path and method; what the block sets on the request is not.
-- **What the response says** is not read yet. `response.status`, `response.success?` and `response.body` tell a reader which statuses the caller expects, and none of that reaches the summary.
+- **What the caller does with the response**: `status`, `success?` and `body` are declared here, and the caller's own tests on them become the paths of its summary. A caller that writes `return nil if response.status == 404` is saying it handles a 404, and `suss check` reports it when the route on the other side never sends one.
 - **Net::HTTP, HTTParty and RestClient** are their own libraries and get their own packs.
 
 ## Usage

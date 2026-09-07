@@ -114,3 +114,27 @@ describe("a method that calls Faraday", () => {
     expect(units).toEqual([]);
   });
 });
+
+describe("what a caller does with the response", () => {
+  it("says which statuses it handles, so a check can compare them", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def fetch(id)",
+        '    response = Faraday.get("/orders/#{id}")',
+        "    return nil if response.status == 404",
+        "",
+        "    response.body",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units[0]?.statusAccessors).toEqual(["status"]);
+    expect(units[0]?.branches[0]?.conditions[0]?.structured).toMatchObject({
+      type: "comparison",
+      left: { type: "dependency", accessChain: ["status"] },
+      right: { value: 404 },
+    });
+  });
+});
