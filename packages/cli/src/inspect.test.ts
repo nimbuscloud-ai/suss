@@ -549,9 +549,11 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() =>
-        inspectDiff({ ...paths, budget: 60 }),
+        inspectDiff({ ...paths, budget: 220 }),
       );
-      expect(output).toContain("1 more boundary");
+      expect(output).toContain(
+        "1 more boundary, and 1 more unit in 1 more file",
+      );
     });
   });
 
@@ -752,22 +754,43 @@ describe("inspect --diff, human output", () => {
     });
   });
 
-  it("wraps a long run of unit names under the file they are in", () => {
-    const names = Array.from({ length: 12 }, (_, i) => `handlerNumber${i}`);
-    const before = names.map((name) => changedTo(name, "src/many.ts", 200));
-    const after = names.map((name) => changedTo(name, "src/many.ts", 201));
+  it("opens with how many boundaries moved and how much moved at them", () => {
+    withFiles(chain(1, []), chain(1, [READS_ORDERS]), (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output.split("\n")[0]).toBe(
+        "1 boundary changed: 1 effect. 1 unit inside the project also changed.",
+      );
+    });
+  });
+
+  it("keeps what a boundary returns apart from what it reaches", () => {
+    const before = [changedTo("getTeam", "src/teams.ts", 200)];
+    const after = [changedTo("getTeam", "src/teams.ts", 202)];
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      const byFile = output.slice(output.indexOf("Changes by file"));
-      const wrapped = byFile
-        .split("\n")
-        .filter((line) => line.startsWith("  ~ handlerNumber"));
-      expect(wrapped.length).toBeGreaterThan(1);
-      for (const line of wrapped) {
-        expect(line.length).toBeLessThanOrEqual(98);
-      }
+      expect(output).toContain("(1 logic)");
+      expect(output).toContain("  logic\n    ~ 200");
+      expect(output).not.toContain("effects");
     });
+  });
+
+  it("counts a unit's logic and its effects where the file names it", () => {
+    // A count of transitions says nothing a reader acts on. What they
+    // want to know is whether the change was to what a unit returns or
+    // to what it does on the way.
+    const [route, hop] = chain(1, [READS_ORDERS]);
+    const before = chain(1, []);
+
+    withFiles(
+      before,
+      [route as BehavioralSummary, hop as BehavioralSummary],
+      (paths) => {
+        const { output } = captureStdout(() => inspectDiff(paths));
+        const byFile = output.slice(output.indexOf("Changes by file"));
+        expect(byFile).toContain("~ hop0  1 effect");
+      },
+    );
   });
 
   it("cuts a ref whose name is the whole printed type", () => {

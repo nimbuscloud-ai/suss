@@ -64,6 +64,7 @@ export {
   groundBinding,
   hasNameHole,
   isGraphqlOperationBinding,
+  leavesTheProcess,
   messageBusBinding,
   metricBinding,
   type NamePart,

@@ -65,6 +65,7 @@ export const messageBusSemantics = defineBoundarySemantics({
   behavior: {
     /** A message goes onto the channel and nothing comes back. */
     exchangesHttpResponses: false,
+    leavesTheProcess: true,
     /**
      * `checkMessageBus` looks at every channel, including the unused
      * ones, so the generic unmatched lists leave them alone.

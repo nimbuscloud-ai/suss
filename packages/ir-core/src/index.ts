@@ -153,6 +153,7 @@ export {
   exchangesHttpResponses,
   groundBinding,
   groundedPairingKey,
+  leavesTheProcess,
   nameReference,
   pairingKey,
   reportsUnpairedItself,

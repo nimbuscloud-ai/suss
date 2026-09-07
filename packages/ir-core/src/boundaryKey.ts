@@ -163,6 +163,11 @@ export function exchangesHttpResponses(binding: BoundaryBinding): boolean {
   return behaviorOf(binding.semantics).exchangesHttpResponses;
 }
 
+/** Whether crossing this boundary leaves the process. */
+export function leavesTheProcess(binding: BoundaryBinding): boolean {
+  return behaviorOf(binding.semantics).leavesTheProcess;
+}
+
 /**
  * Whether anything can pair with this binding: it has a pairing key,
  * or its protocol pairs keyless boundaries in a dedicated pass.

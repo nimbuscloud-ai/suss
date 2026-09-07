@@ -14,6 +14,7 @@ import {
   diffSummaries,
   dispatchByType,
   displayLabel,
+  leavesTheProcess,
   readHttpMetadata,
   readMountMetadata,
   readReactMetadata,
@@ -1868,16 +1869,85 @@ interface MovedUnit {
   readonly kind: BehavioralSummary["kind"];
   readonly recognition: string | null;
   readonly boundary: string | null;
-  /** The protocol of the boundary it serves, for one that serves any. */
-  readonly protocol: string | null;
+  /** Whether crossing the boundary it is on leaves the process. */
+  readonly leavesTheProcess: boolean;
   readonly transitions: number;
   /** What the unit responds with, for one that came or went whole. */
   readonly outputs: readonly string[];
+  readonly counts: ChangeCounts;
   readonly diff: SummaryDiff | null;
+}
+
+/**
+ * The two things a reader wants about a unit: what it returns now, and
+ * what it does on the way there. A count of transitions tells them
+ * neither.
+ */
+interface ChangeCounts {
+  readonly logic: number;
+  readonly effects: number;
 }
 
 /** How many of a new unit's responses the report prints before counting the rest. */
 const OUTPUTS_LISTED = 6;
+
+const NO_CHANGES: ChangeCounts = { logic: 0, effects: 0 };
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Whether a transition changed what it returns or what leads to it. */
+function logicMoved(before: Transition, after: Transition): boolean {
+  return (
+    !sameJson(before.output, after.output) ||
+    !sameJson(before.conditions, after.conditions) ||
+    before.isDefault !== after.isDefault
+  );
+}
+
+/**
+ * A transition that came or went is a change to the logic, and to the
+ * effects as well when it does anything on its way.
+ */
+function countsOf(diff: SummaryDiff): ChangeCounts {
+  let logic = diff.addedTransitions.length + diff.removedTransitions.length;
+  let effects = [...diff.addedTransitions, ...diff.removedTransitions].filter(
+    (transition) => transition.effects.length > 0,
+  ).length;
+
+  for (const { before, after } of diff.changedTransitions) {
+    if (logicMoved(before, after)) {
+      logic += 1;
+    }
+    if (!sameJson(before.effects, after.effects)) {
+      effects += 1;
+    }
+  }
+
+  return { logic, effects };
+}
+
+function countsOfWholeUnit(summary: BehavioralSummary): ChangeCounts {
+  return {
+    logic: summary.transitions.length,
+    effects: summary.transitions.filter(
+      (transition) => transition.effects.length > 0,
+    ).length,
+  };
+}
+
+/** `2 logic, 1 effect`, and nothing at all when neither moved. */
+function countLine(counts: ChangeCounts): string {
+  const parts: string[] = [];
+  if (counts.logic > 0) {
+    parts.push(`${counts.logic} logic`);
+  }
+  if (counts.effects > 0) {
+    parts.push(`${counts.effects} effect${counts.effects === 1 ? "" : "s"}`);
+  }
+  return parts.join(", ");
+}
 
 function movedUnit(
   change: MovedUnit["change"],
@@ -1892,11 +1962,12 @@ function movedUnit(
     kind: summary.kind,
     recognition: binding === null ? null : binding.recognition,
     boundary: bindingLabel(summary),
-    protocol: binding === null ? null : binding.semantics.name,
+    leavesTheProcess: binding !== null && leavesTheProcess(binding),
     transitions: summary.transitions.length,
     outputs: summary.transitions
       .slice(0, OUTPUTS_LISTED)
       .map((transition) => renderTransitionShort(transition)),
+    counts: diff === null ? countsOfWholeUnit(summary) : countsOf(diff),
     diff,
   };
 }
@@ -1973,7 +2044,12 @@ interface BoundaryBlock {
   readonly boundary: string;
   readonly unit: string;
   readonly file: string;
-  readonly lines: string[];
+  /** What it returns, and under what test. */
+  readonly logic: string[];
+  /** What a request touches on its way through, and where. */
+  readonly effects: string[];
+  /** How much moved, counted as a reader counts it. */
+  logicChanges: number;
 }
 
 /** How many calls a chain prints before the middle of it collapses. */
@@ -2024,7 +2100,7 @@ function responseLines(unit: MovedUnit): string[] {
  * is a boundary too, and the pull request's diff already shows those.
  */
 function atABoundary(unit: MovedUnit): boolean {
-  return unit.boundary !== null && unit.protocol !== "function-call";
+  return unit.boundary !== null && unit.leavesTheProcess;
 }
 
 /** Which side of the boundary the unit is on, in a word. */
@@ -2032,12 +2108,34 @@ function boundaryVerb(unit: MovedUnit): "serves" | "calls" {
   return BOUNDARY_ROLE[unit.kind] === "provider" ? "serves" : "calls";
 }
 
+function countsOfBlock(block: BoundaryBlock): ChangeCounts {
+  return { logic: block.logicChanges, effects: block.effects.length };
+}
+
 function blockHeading(block: BoundaryBlock): string {
-  return `${NAME_MARKERS[block.change]} ${block.does} ${block.boundary}  ${block.file}::${block.unit}`;
+  const counts = countLine(countsOfBlock(block));
+  const heading = `${NAME_MARKERS[block.change]} ${block.does} ${block.boundary}  ${block.file}::${block.unit}`;
+  return counts === "" ? heading : `${heading}  (${counts})`;
+}
+
+/** The block as lines: the two groups, each under a word for what it is. */
+function blockLines(block: BoundaryBlock): string[] {
+  const lines: string[] = [];
+  for (const [group, under] of [
+    ["logic", block.logic],
+    ["effects", block.effects],
+  ] as const) {
+    if (under.length === 0) {
+      continue;
+    }
+    lines.push(`  ${group}`);
+    lines.push(...under.map((line) => `    ${line}`));
+  }
+  return lines;
 }
 
 /**
- * One block per boundary that moved: the responses first, then what the
+ * One block per boundary that moved: what it returns, then what the
  * request goes on to reach. A unit deeper in the project gets no block,
  * since the boundaries reaching it already show what changed.
  */
@@ -2058,12 +2156,14 @@ function boundaryBlocks(
       boundary: unit.boundary ?? unit.name,
       unit: unit.name,
       file: unit.file,
-      lines: responseLines(unit),
+      logic: responseLines(unit),
+      effects: [],
+      logicChanges: unit.counts.logic,
     });
   }
 
   for (const change of reach) {
-    const lines = [
+    const effects = [
       ...change.gained.map((effect) => reachLine(effect, "+", hops)),
       ...change.lost.map((effect) => reachLine(effect, "-", hops)),
     ];
@@ -2075,19 +2175,59 @@ function boundaryBlocks(
         boundary: change.boundary,
         unit: change.unit,
         file: change.file,
-        lines,
+        logic: [],
+        effects,
+        logicChanges: 0,
       });
       continue;
     }
-    already.lines.push(...lines);
+    already.effects.push(...effects);
   }
 
   return [...blocks.values()]
-    .filter((block) => block.change !== "changed" || block.lines.length > 0)
+    .filter(
+      (block) =>
+        block.change !== "changed" ||
+        block.logic.length + block.effects.length > 0,
+    )
     .sort(
       (a, b) =>
         a.boundary.localeCompare(b.boundary) || a.unit.localeCompare(b.unit),
     );
+}
+
+/**
+ * The line the whole report opens with, so a reader knows the size of
+ * what follows before reading any of it.
+ */
+function headlineOf(
+  blocks: readonly BoundaryBlock[],
+  moved: readonly MovedUnit[],
+): string {
+  const atOne = new Set(blocks.map((block) => `${block.file}::${block.unit}`));
+  const elsewhere = moved.filter(
+    (unit) => !atOne.has(`${unit.file}::${unit.name}`),
+  ).length;
+  const rest =
+    elsewhere === 0
+      ? ""
+      : ` ${elsewhere} unit${elsewhere === 1 ? "" : "s"} inside the project also changed.`;
+
+  if (blocks.length === 0) {
+    return `${NOTHING_AT_A_BOUNDARY}${rest}`;
+  }
+
+  const counts = countLine(
+    blocks.reduce((total, block) => {
+      const own = countsOfBlock(block);
+      return {
+        logic: total.logic + own.logic,
+        effects: total.effects + own.effects,
+      };
+    }, NO_CHANGES),
+  );
+  const boundaries = `${blocks.length} boundar${blocks.length === 1 ? "y" : "ies"} changed`;
+  return `${boundaries}: ${counts}.${rest}`;
 }
 
 /**
@@ -2152,36 +2292,18 @@ const NAME_MARKERS: Record<MovedUnit["change"], string> = {
   changed: "~",
 };
 
-/** How wide a run of unit names gets before it wraps. */
-const NAMES_WIDTH = 96;
-
-function wrapped(names: readonly string[], indent: string): string[] {
-  const lines: string[] = [];
-  let line = "";
-  for (const name of names) {
-    const next = line === "" ? name : `${line}, ${name}`;
-    if (next.length + indent.length > NAMES_WIDTH && line !== "") {
-      lines.push(indent + line);
-      line = name;
-      continue;
-    }
-    line = next;
-  }
-  if (line !== "") {
-    lines.push(indent + line);
-  }
-  return lines;
-}
-
 /**
- * The units that moved in one file, listed by name. What any of them
- * does is in the file's own diff, which the reader has in front of them.
+ * The units that moved in one file, each with how much of its logic and
+ * how many of its effects moved. What any one of them does is in the
+ * file's own diff, which the reader has in front of them.
  */
 function fileBlock(section: FileSection): string[] {
-  const names = section.units.map(
-    (unit) => `${NAME_MARKERS[unit.change]} ${unit.name}`,
-  );
-  return [fileHeading(section), ...wrapped(names, "  "), ""];
+  const lines = section.units.map((unit) => {
+    const counts = countLine(unit.counts);
+    const name = `  ${NAME_MARKERS[unit.change]} ${unit.name}`;
+    return counts === "" ? name : `${name}  ${counts}`;
+  });
+  return [fileHeading(section), ...lines, ""];
 }
 
 /**
@@ -2239,25 +2361,27 @@ function renderReport(
     return true;
   };
 
+  fits([headlineOf(blocks, moved), ""]);
+
   for (const block of blocks) {
-    if (!fits([blockHeading(block), ...block.lines.map((l) => `  ${l}`), ""])) {
+    if (!fits([blockHeading(block), ...blockLines(block), ""])) {
       left.boundaries += 1;
     }
   }
 
-  if (blocks.length === 0) {
-    fits([NOTHING_AT_A_BOUNDARY, ""]);
-  }
-
-  if (sections.length > 0) {
-    fits(["Changes by file", ""]);
-  }
-
+  // The heading goes in with the first file that fits, so a report cut
+  // short never ends on a heading with nothing under it.
+  let headed = false;
   for (const section of sections) {
-    if (!fits(fileBlock(section))) {
+    const block = headed
+      ? fileBlock(section)
+      : ["Changes by file", "", ...fileBlock(section)];
+    if (!fits(block)) {
       left.files += 1;
       left.units += section.units.length;
+      continue;
     }
+    headed = true;
   }
 
   if (left.boundaries > 0 || left.files > 0) {

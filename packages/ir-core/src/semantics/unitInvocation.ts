@@ -59,6 +59,7 @@ export const unitInvocationSemantics = defineBoundarySemantics({
      * and that route gets a REST binding instead of this one.
      */
     exchangesHttpResponses: false,
+    leavesTheProcess: true,
     /**
      * A unit nothing in the run invokes is the ordinary case, since
      * most services are reached from a stack suss never read. So an

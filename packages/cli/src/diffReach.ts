@@ -13,12 +13,12 @@
  * a thousand fixpoints that way.
  */
 
-import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
+import { BOUNDARY_ROLE, leavesTheProcess } from "@suss/behavioral-ir";
 
 import { boundariesTouchedBy, boundarySpelling } from "./boundaryReach.js";
 import { functionOf, readCallFacts } from "./callFacts.js";
 
-import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Relation } from "@suss/ir-core";
 import type { CallEdge, FunctionKey } from "./callFacts.js";
 
@@ -56,15 +56,6 @@ export interface EntrypointChange {
  * boundary costs more than the answer returns.
  */
 const WALK_LIMIT = 5000;
-
-/**
- * A call from one function to another in the same project is a boundary
- * of its own, and no reader of a pull request wants a block for each
- * function along a chain. The pull request's own diff shows those.
- */
-function crossesAProcess(binding: BoundaryBinding): boolean {
-  return binding.semantics.name !== "function-call";
-}
 
 /** A boundary and the unit serving it, which is how the two sides pair. */
 function entrypointKey(summary: BehavioralSummary, boundary: string): string {
@@ -114,7 +105,7 @@ function reachedFrom(
       for (const summary of units.get(fn) ?? []) {
         for (const touch of boundariesTouchedBy(summary)) {
           if (
-            !crossesAProcess(touch.binding) ||
+            !leavesTheProcess(touch.binding) ||
             (touch.label === own && touch.relation === "provides")
           ) {
             continue;
@@ -157,7 +148,7 @@ function entrypointsOf(
     if (
       binding === null ||
       BOUNDARY_ROLE[summary.kind] !== "provider" ||
-      !crossesAProcess(binding)
+      !leavesTheProcess(binding)
     ) {
       continue;
     }

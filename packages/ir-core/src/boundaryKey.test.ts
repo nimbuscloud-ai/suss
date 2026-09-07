@@ -15,6 +15,7 @@ import {
   graphqlResolverBinding,
   groundBinding,
   groundedPairingKey,
+  leavesTheProcess,
   messageBusBinding,
   methodsAgree,
   metricBinding,
@@ -417,6 +418,16 @@ describe("what a protocol says about its own checking", () => {
   it("says a route exchanges an HTTP response and a channel does not", () => {
     expect(exchangesHttpResponses(route)).toBe(true);
     expect(exchangesHttpResponses(channel)).toBe(false);
+  });
+
+  it("says a request leaves the process and a function call does not", () => {
+    expect(leavesTheProcess(route)).toBe(true);
+    expect(leavesTheProcess(channel)).toBe(true);
+    expect(
+      leavesTheProcess(
+        functionCallBinding({ recognition: "react", module: "./Button" }),
+      ),
+    ).toBe(false);
   });
 
   it("says the message-bus pass reports its own unpaired channels", () => {

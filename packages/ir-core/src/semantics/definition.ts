@@ -165,6 +165,14 @@ export interface BoundaryBehavior<S extends { name: string }> {
   exchangesHttpResponses: boolean;
 
   /**
+   * Whether crossing this boundary leaves the process. A report about
+   * what a change means for somebody outside the code covers the ones
+   * that do; a call from one function in a project to another is a
+   * boundary as well, and a reader has the source diff for that.
+   */
+  leavesTheProcess: boolean;
+
+  /**
    * Whether this protocol's own pass already reports a boundary that
    * paired with nothing, so the generic unmatched list can leave it out.
    */

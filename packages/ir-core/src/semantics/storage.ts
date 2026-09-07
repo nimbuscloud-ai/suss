@@ -76,6 +76,7 @@ export const storageSemantics = defineBoundarySemantics({
   behavior: {
     /** A query returns rows or items, not a status and a body. */
     exchangesHttpResponses: false,
+    leavesTheProcess: true,
     reportsUnpairedItself: false,
     identityKey: () => null,
     displayLabel: storageLabel,

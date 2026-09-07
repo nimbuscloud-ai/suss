@@ -35,6 +35,7 @@ export const graphqlOperationSemantics = defineBoundarySemantics({
      * GraphQL contract checker reads. Status codes say nothing here.
      */
     exchangesHttpResponses: false,
+    leavesTheProcess: true,
     reportsUnpairedItself: false,
     identityKey: () => null,
     /** Keyless by design; the dedicated pass pairs it by its document. */
