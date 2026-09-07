@@ -549,7 +549,7 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() =>
-        inspectDiff({ ...paths, budget: 220 }),
+        inspectDiff({ ...paths, budget: 200 }),
       );
       expect(output).toContain(
         "1 more boundary, and 1 more unit in 1 more file",
@@ -570,10 +570,9 @@ describe("inspect --diff, human output", () => {
     });
   });
 
-  it("says which field moved when the two lines read the same", () => {
-    // The short line says the output and the conditions. A change to
-    // anything else printed as one line twice, and a reader gating a
-    // review on the diff could not tell what moved.
+  it("names the effect a transition picked up, where the two lines read the same", () => {
+    // The short line says the output and the conditions, so a new
+    // effect under an unchanged response printed as one line twice.
     const before = respondsWith("getUser", "/users/:id", {});
     const after = respondsWith("getUser", "/users/:id", {
       effects: [{ type: "stateChange", variable: "auditCount" }],
@@ -581,9 +580,7 @@ describe("inspect --diff, human output", () => {
 
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain(
-        'effects: [] -> [{"type":"stateChange","variable":"auditCount"}]',
-      );
+      expect(output).toContain("+ sets auditCount");
     });
   });
 
@@ -659,6 +656,14 @@ describe("inspect --diff, human output", () => {
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
   });
+
+  const EMITS: Effect = { type: "emission", event: "order.placed" };
+
+  const MUTATES: Effect = {
+    type: "mutation",
+    target: "cart.items",
+    operation: "update",
+  };
 
   const READS_ORDERS: Effect = {
     type: "interaction",
@@ -812,11 +817,83 @@ describe("inspect --diff, human output", () => {
       expect(output).toContain(
         "From require_login  app/controllers/application_controller.rb",
       );
-      expect(output).toContain(
-        "at 2 of the 3 boundaries it runs on; GET /health is the exception",
-      );
+      expect(output).toContain("at GET /orders and GET /orders/{id}");
+      expect(output).toContain("not at GET /health, which it also runs on");
       // The line said once above is not repeated under either route.
       expect(output.split("+ 401")).toHaveLength(2);
+    });
+  });
+
+  it("counts a unit's lines rather than writing out a long list", () => {
+    const many = (status: number): BehavioralSummary => ({
+      ...changedTo("bulk", "src/bulk.ts", status),
+      kind: "library",
+      identity: { name: "bulk", exportPath: ["bulk"], boundaryBinding: null },
+      transitions: Array.from({ length: 5 }, (_, i) => ({
+        id: `t${i}`,
+        conditions: [],
+        output: {
+          type: "response" as const,
+          statusCode: { type: "literal" as const, value: status + i },
+          body: null,
+          headers: {},
+        },
+        effects: [],
+        location: { start: i, end: i + 1 },
+        isDefault: false,
+      })),
+    });
+
+    withFiles([many(200)], [many(300)], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("~ bulk  5 outcomes");
+      expect(output).not.toContain("-> 300");
+    });
+  });
+
+  it("says what a unit started doing, in the words the effect goes by", () => {
+    const withEffect = (effects: Effect[]): BehavioralSummary => ({
+      ...respondsWith("save", "/orders", { effects }),
+    });
+
+    withFiles([withEffect([])], [withEffect([EMITS, MUTATES])], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("+ emits order.placed");
+      expect(output).toContain("+ updates cart.items");
+    });
+  });
+
+  it("says what a route stopped reaching", () => {
+    withFiles(chain(1, [READS_ORDERS]), chain(1, []), (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("- reads aws.dynamodb:orders  through hop0");
+      expect(output).toContain("- reads aws.dynamodb:orders\n");
+    });
+  });
+
+  it("lists what a new route does, and counts the rest of a long list", () => {
+    const wide = (): BehavioralSummary => ({
+      ...respondsWith("report", "/reports", {}),
+      transitions: Array.from({ length: 8 }, (_, i) => ({
+        id: `t${i}`,
+        conditions: [],
+        output: {
+          type: "response" as const,
+          statusCode: { type: "literal" as const, value: 200 + i },
+          body: null,
+          headers: {},
+        },
+        effects: i === 0 ? [EMITS] : [],
+        location: { start: i, end: i + 1 },
+        isDefault: false,
+      })),
+    });
+
+    withFiles([], [wide()], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("+ serves GET /reports");
+      expect(output).toContain("2 transitions more");
+      expect(output).toContain("+ emits order.placed");
     });
   });
 
@@ -835,16 +912,15 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("(1 logic)");
-      expect(output).toContain("  logic\n    ~ 200");
+      expect(output).toContain("(1 outcome)");
+      expect(output).toContain("  outcomes\n    ~ 200");
       expect(output).not.toContain("effects");
     });
   });
 
-  it("counts a unit's logic and its effects where the file names it", () => {
-    // A count of transitions says nothing a reader acts on. What they
-    // want to know is whether the change was to what a unit returns or
-    // to what it does on the way.
+  it("writes out what a unit did where the file names it", () => {
+    // A reader wants to know whether a unit changed what it returns or
+    // what it does on the way, which a count of transitions never says.
     const [route, hop] = chain(1, [READS_ORDERS]);
     const before = chain(1, []);
 
@@ -854,7 +930,8 @@ describe("inspect --diff, human output", () => {
       (paths) => {
         const { output } = captureStdout(() => inspectDiff(paths));
         const byFile = output.slice(output.indexOf("Changes by file"));
-        expect(byFile).toContain("~ hop0  1 effect");
+        expect(byFile).toContain("+ reads aws.dynamodb:orders");
+        expect(byFile).not.toContain('effects: [] -> [{"type"');
       },
     );
   });

@@ -28,14 +28,16 @@ export interface SharedCause {
   readonly text: string;
   /** The blocks this line came out of, so they can drop it. */
   readonly keys: ReadonlySet<string>;
+  /** The boundaries that got this line, by the label the report gives them. */
+  readonly boundaries: readonly string[];
   /** The boundaries the wrapper runs on that did not get this line. */
   readonly exceptions: readonly string[];
   /** How many boundaries the wrapper runs on at all. */
   readonly covered: number;
 }
 
-/** Past this many exceptions, a statement gives the count instead. */
-const EXCEPTIONS_NAMED = 3;
+/** Past this many boundaries, a statement gives the count instead. */
+const NAMED = 3;
 
 function wrapperKey(wrapper: WrapperReference): string {
   return `${wrapper.file}::${wrapper.name}`;
@@ -65,14 +67,15 @@ export function sharedCauses(
     if (first?.wrapper === undefined || group.length < 2) {
       continue;
     }
-    const got = new Set(group.map((line) => line.boundary));
+    const got = [...new Set(group.map((line) => line.boundary))].sort();
     const covered = runsOn(first.wrapper);
     causes.push({
       wrapper: first.wrapper,
       text: first.text,
       keys: new Set(group.map((line) => line.key)),
-      exceptions: covered.filter((boundary) => !got.has(boundary)),
-      covered: Math.max(covered.length, group.length),
+      boundaries: got,
+      exceptions: covered.filter((boundary) => !got.includes(boundary)),
+      covered: Math.max(covered.length, got.length),
     });
   }
 
@@ -83,15 +86,30 @@ export function sharedCauses(
   );
 }
 
-/** How wide the change reaches, and which boundaries it misses. */
-export function scopeLine(cause: SharedCause): string {
-  const at = `at ${cause.keys.size} of the ${cause.covered} boundaries it runs on`;
+/** `GET /a, GET /b and GET /c`, for a list short enough to read. */
+function inWords(items: readonly string[]): string {
+  if (items.length <= 2) {
+    return items.join(" and ");
+  }
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * Which boundaries have this now, and which ones the same wrapper runs
+ * on without it. A reviewer reads the second line to check a route they
+ * thought was covered.
+ */
+export function scopeLines(cause: SharedCause): string[] {
+  const at =
+    cause.boundaries.length <= NAMED
+      ? `at ${inWords(cause.boundaries)}`
+      : `at ${cause.boundaries.length} of the ${cause.covered} boundaries it runs on`;
+
   if (cause.exceptions.length === 0) {
-    return `${at}, all of them`;
+    return [at];
   }
-  if (cause.exceptions.length <= EXCEPTIONS_NAMED) {
-    const named = cause.exceptions.join(", ");
-    return `${at}; ${named} ${cause.exceptions.length === 1 ? "is the exception" : "are the exceptions"}`;
+  if (cause.exceptions.length <= NAMED) {
+    return [at, `not at ${inWords(cause.exceptions)}, which it also runs on`];
   }
-  return `${at}; ${cause.exceptions.length} of them do not have it`;
+  return [at, `not at ${cause.exceptions.length} others it runs on`];
 }

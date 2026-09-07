@@ -155,10 +155,10 @@ suss inspect --diff before/api.json after/api.json
 ```
 
 ```
-1 boundary changed: 2 logic.
+1 boundary changed: 2 outcomes.
 
-~ serves GET /users/{id}  src/routes/users.ts::getUser  (2 logic)
-  logic
+~ serves GET /users/{id}  src/routes/users.ts::getUser  (2 outcomes)
+  outcomes
     + 200 { id, name, role, admin }  when  db.findById() && db.findById().role === "admin"
     ~ 200 { id, name, role }  when  db.findById()
       -> 200 { id, name, role }  when  db.findById() && !(db.findById().role === "admin")
@@ -166,12 +166,12 @@ suss inspect --diff before/api.json after/api.json
 Changes by file
 
 src/routes/users.ts
-  ~ getUser  2 logic
+  ~ getUser
 ```
 
 Two changes from one added `if`. The admin case is new, and the plain 200 is the same response under a narrower condition: it is now the case where the user exists and is not an admin. A `~` line is a transition that kept its output and changed its guard, printed with the guard from before and the guard from after, so a reader can tell a narrowed branch from a branch that went away.
 
-The report is organized by boundary. It opens with how many boundaries moved and how much of that was logic and how much was effects, then gives one block per route, queue consumer or Lambda. Inside a block, `logic` is what it returns and under what test, and `effects` is what a request touches on its way through: a line such as `+ reads postgresql:users  through loadUser` means this route now gets to a table it did not before, whichever function down the chain does the reading. The files with units that moved come last, each unit with how much of its logic and how many of its effects moved.
+The report is organized by boundary. It opens with how many boundaries moved and how many of their outcomes and effects went with them, then gives one block per route, queue consumer or Lambda. Inside a block, `outcomes` is what it returns and under what test, and `effects` is what a request touches on its way through: a line such as `+ reads postgresql:users  through loadUser` means this route now gets to a table it did not before, whichever function down the chain does the reading. The files with units that moved come last, with a unit's own lines written out when there are a few of them and counted when there are more.
 
 A handler is paired with the one before it by its route, so a renamed handler on the same route pairs, and a route that moved to another path prints as removed and added. A client is paired by its own name under the route it calls, since several callers share one route, and its key reads `client:GET /pet/{petId}::getPetById`.
 

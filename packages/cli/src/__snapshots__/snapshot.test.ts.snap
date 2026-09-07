@@ -1,57 +1,57 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`inspect --diff output snapshots > shows added transition 1`] = `
-"1 boundary changed: 1 logic.
+"1 boundary changed: 1 outcome.
 
-~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 logic)
-  logic
+~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 outcome)
+  outcomes
     + 403 { error }  when  db.findById().restricted
 
 Changes by file
 
 src/handlers/users.ts
-  ~ getUser  1 logic
+  ~ getUser
 
 "
 `;
 
 exports[`inspect --diff output snapshots > shows changed transition 1`] = `
-"1 boundary changed: 1 logic.
+"1 boundary changed: 1 outcome.
 
-~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 logic)
-  logic
+~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 outcome)
+  outcomes
     ~ 200 { id, name, email }  (default)
       -> 200 { id, name, email, avatar }  (default)
 
 Changes by file
 
 src/handlers/users.ts
-  ~ getUser  1 logic
+  ~ getUser
 
 "
 `;
 
 exports[`inspect --diff output snapshots > shows new and removed summaries 1`] = `
-"2 boundaries changed: 5 logic.
+"2 boundaries changed: 5 outcomes.
 
-- serves GET /users/{id}  src/handlers/users.ts::getUser  (3 logic)
-  logic
+- serves GET /users/{id}  src/handlers/users.ts::getUser  (3 outcomes)
+  outcomes
     400 { error }  when  !req.params.id
     404 { error }  when  db.findById() == null
     200 { id, name, email }  (default)
 
-+ calls GET /users/{id}  src/pages/user.ts::loadUser  (2 logic)
-  logic
++ calls GET /users/{id}  src/pages/user.ts::loadUser  (2 outcomes)
+  outcomes
     throw Error  when  !fetch().ok
     return  (default)
 
 Changes by file
 
 src/handlers/users.ts
-  - getUser  3 logic
+  - getUser
 
 src/pages/user.ts
-  + loadUser  2 logic
+  + loadUser
 
 "
 `;
@@ -62,16 +62,16 @@ exports[`inspect --diff output snapshots > shows no changes for identical files 
 `;
 
 exports[`inspect --diff output snapshots > shows removed transition 1`] = `
-"1 boundary changed: 1 logic.
+"1 boundary changed: 1 outcome.
 
-~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 logic)
-  logic
+~ serves GET /users/{id}  src/handlers/users.ts::getUser  (1 outcome)
+  outcomes
     - 200 { id, name, email }  (default)
 
 Changes by file
 
 src/handlers/users.ts
-  ~ getUser  1 logic
+  ~ getUser
 
 "
 `;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type CausedLine, scopeLine, sharedCauses } from "./sharedCause.js";
+import { type CausedLine, scopeLines, sharedCauses } from "./sharedCause.js";
 
 const FILTER = {
   file: "app/controllers/application_controller.rb",
@@ -93,9 +93,10 @@ describe("a change that reached many boundaries from one place", () => {
     );
 
     expect(cause?.exceptions).toEqual(["GET /health"]);
-    expect(scopeLine(cause as NonNullable<typeof cause>)).toBe(
-      "at 2 of the 3 boundaries it runs on; GET /health is the exception",
-    );
+    expect(scopeLines(cause as NonNullable<typeof cause>)).toEqual([
+      "at GET /orders and POST /orders",
+      "not at GET /health, which it also runs on",
+    ]);
   });
 
   it("counts the exceptions once there are too many to name", () => {
@@ -111,20 +112,33 @@ describe("a change that reached many boundaries from one place", () => {
       ]),
     );
 
-    expect(scopeLine(cause as NonNullable<typeof cause>)).toBe(
-      "at 2 of the 6 boundaries it runs on; 4 of them do not have it",
-    );
+    expect(scopeLines(cause as NonNullable<typeof cause>)).toEqual([
+      "at GET /orders and POST /orders",
+      "not at 4 others it runs on",
+    ]);
   });
 
-  it("says so when every boundary the wrapper runs on got it", () => {
+  it("leaves the second line off when nothing the wrapper runs on missed it", () => {
     const [cause] = sharedCauses(
       [line("GET /orders", "+ 401"), line("POST /orders", "+ 401")],
       RUNS_ON(["GET /orders", "POST /orders"]),
     );
 
-    expect(scopeLine(cause as NonNullable<typeof cause>)).toBe(
-      "at 2 of the 2 boundaries it runs on, all of them",
+    expect(scopeLines(cause as NonNullable<typeof cause>)).toEqual([
+      "at GET /orders and POST /orders",
+    ]);
+  });
+
+  it("counts the boundaries once there are too many to name", () => {
+    const many = ["GET /a", "GET /b", "GET /c", "GET /d"];
+    const [cause] = sharedCauses(
+      many.map((boundary) => line(boundary, "+ 401")),
+      RUNS_ON(many),
     );
+
+    expect(scopeLines(cause as NonNullable<typeof cause>)).toEqual([
+      "at 4 of the 4 boundaries it runs on",
+    ]);
   });
 
   it("falls back on the boundaries it saw when nothing says what the wrapper covers", () => {

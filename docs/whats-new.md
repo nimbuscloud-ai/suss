@@ -14,10 +14,10 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 **`inspect --diff` reports what changed at each boundary.** The diff used to list the units that moved, a block each. A reviewer reading that learned a file gained a function, which the pull request's own diff shows better. The report now opens with the boundaries: what each route, consumer or Lambda responds with, and what a request reaches or stopped reaching through the calls it makes.
 
 ```
-1 boundary changed: 1 logic, 1 effect. 2 units inside the project also changed.
+1 boundary changed: 1 outcome, 1 effect. 2 units inside the project also changed.
 
-~ serves GET /orders/{id}  src/app.ts::show  (1 logic, 1 effect)
-  logic
+~ serves GET /orders/{id}  src/app.ts::show  (1 outcome, 1 effect)
+  outcomes
     + 404 { error }  when  order == null
   effects
     + reads mongodb:orders  through loadOrder -> readOrder
@@ -28,10 +28,11 @@ An outcome that reached several routes from one filter, middleware or error hand
 ```
 From require_login  app/controllers/application_controller.rb
   + 401  when  session[:user_id].nil?
-    at 14 of the 15 boundaries it runs on; GET /health is the exception
+    at 14 of the 15 boundaries it runs on
+    not at GET /health, which it also runs on
 ```
 
-A unit further down the call chain gets no block of its own, since the boundaries that reach it already show what its change did. Under the boundaries, the files with units that moved, each unit with how much of its logic and how many of its effects moved. A chain longer than three calls prints its first and last with `(2 intermediate units collapsed)` between them; `--chain full` prints every call and `--chain 0` prints none. Two more flags cap what the report costs: `--changed-files` takes the paths a change touched, one per line, so those files come last, and `--budget` stops the report at a number of characters and counts what it left out. The action passes both.
+A unit further down the call chain gets no block of its own, since the boundaries that reach it already show what its change did. Under the boundaries, the files with units that moved. A unit with a couple of lines to its name has them written out, one with more gets a count of the outcomes and the effects that moved, and one with a block of its own above is only named. A chain longer than three calls prints its first and last with `(2 intermediate units collapsed)` between them; `--chain full` prints every call and `--chain 0` prints none. Two more flags cap what the report costs: `--changed-files` takes the paths a change touched, one per line, so those files come last, and `--budget` stops the report at a number of characters and counts what it left out. The action passes both.
 
 **`inspect --diff` reports every caller of a route, and a narrowed branch as one line.** Several clients of one route used to collapse to one entry, so a change to any of the others printed as no change; each client now pairs by its own name under the route, as `client:GET /pet/{petId}::getPetById`. A transition that kept its output and changed its guard used to print as a removed line and an added one, and now prints as one `~` line with the guard before and the guard after.
 
