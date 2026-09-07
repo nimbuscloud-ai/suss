@@ -1,0 +1,5 @@
+{
+  "faraday": "suss: this pack's own name, used as RubyPack.name and as boundaryBinding recognition",
+  "Faraday": "Faraday: the module its request methods hang on, and the constructor for a connection",
+  "url": "Faraday: the keyword Faraday.new takes the base URL under"
+}

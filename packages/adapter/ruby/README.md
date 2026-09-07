@@ -155,6 +155,25 @@ extendsNamed  order.rb:0-31  ApplicationRecord
 A pack matching a library base class reads the second one, and follows the
 first to keep going up.
 
+## What a body calls out to
+
+A pack says which constant its library's request calls hang on, in `clients` on
+the pack: the constant as a project writes it, the method names that state the
+request method, where the URL is written, the methods that build a value taking
+the same calls, and the keyword such a builder takes its base URL under.
+
+Every method in a file is walked for those calls. A call on the constant itself
+reads directly; a call on a local name reads when that name was assigned, in the
+same method body, from one of the library's own builders, which is the one-hop
+limit the other readers here take. The URL argument goes through the value
+evaluator and `pathOf` from `@suss/values`, the same reading a Rails route path
+gets, so an interpolated string comes to the path it states, and a builder's own
+base URL comes in front of it.
+
+The enclosing method becomes a `client` unit bound to that method and path, and
+a method that makes two calls is a client of both. A call written outside any
+method, and one whose URL does not settle on a string, say nothing.
+
 ## What a body does with the database
 
 Ruby writes no return type, so the Python adapter's trick of reading what a

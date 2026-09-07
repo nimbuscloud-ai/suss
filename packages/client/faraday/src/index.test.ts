@@ -1,0 +1,116 @@
+import { describe, expect, it } from "vitest";
+
+import { discoverUnits, parseRuby } from "@suss/adapter-ruby";
+
+import { faradayClient } from "./index.js";
+
+import type { RawCodeStructure } from "@suss/extractor";
+
+async function unitsIn(source: string): Promise<RawCodeStructure[]> {
+  const tree = await parseRuby(source);
+  return discoverUnits(tree.rootNode, {
+    packs: [faradayClient()],
+    filePath: "app/clients/order_client.rb",
+    cache: { get: async () => null },
+  });
+}
+
+/** The method and path of the first unit discovered. */
+function boundary(units: RawCodeStructure[]): {
+  method: string | null;
+  path: string | null;
+} {
+  const semantics = units[0]?.boundaryBinding?.semantics;
+  if (semantics?.name !== "rest") {
+    throw new Error(
+      `expected a REST boundary, got ${JSON.stringify(semantics)}`,
+    );
+  }
+  return { method: semantics.method, path: semantics.path };
+}
+
+describe("a method that calls Faraday", () => {
+  it("is a client of the route the call names", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def fetch(id)",
+        '    Faraday.get("https://api.example.com/orders/#{id}")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units).toHaveLength(1);
+    expect(units[0]?.identity.kind).toBe("client");
+    expect(units[0]?.identity.name).toBe("fetch");
+    expect(boundary(units)).toEqual({
+      method: "GET",
+      path: "/orders/{id}",
+    });
+  });
+
+  it("reads a call on a connection the module built", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def create(body)",
+        '    conn = Faraday.new(url: "https://api.example.com")',
+        '    conn.post("/orders", body)',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
+  });
+
+  it("serves a connection's calls under the path its own URL states", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def create(body)",
+        '    conn = Faraday.new(url: "https://api.example.com/v1")',
+        '    conn.post("/orders", body)',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(boundary(units).path).toBe("/v1/orders");
+  });
+
+  it("says nothing about a call on something else entirely", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def fetch(id)",
+        '    HTTParty.get("/orders/#{id}")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("says nothing about a URL that does not settle on a string", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def fetch(target)",
+        "    Faraday.get(target)",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("leaves a call written outside a method alone", async () => {
+    const units = await unitsIn('Faraday.get("/health")');
+
+    expect(units).toEqual([]);
+  });
+});

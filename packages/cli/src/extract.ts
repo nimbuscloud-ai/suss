@@ -218,6 +218,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   activerecord: "@suss/packs/activerecord",
   rails: "@suss/packs/rails",
   requests: "@suss/packs/requests",
+  faraday: "@suss/packs/faraday",
 };
 
 /** Packs that read something other than TypeScript. */
@@ -229,6 +230,7 @@ const PACK_LANGUAGE: Record<string, Language> = {
   activerecord: "ruby",
   rails: "ruby",
   requests: "python",
+  faraday: "ruby",
 };
 
 /** Which language's adapter reads the code this pack describes. */

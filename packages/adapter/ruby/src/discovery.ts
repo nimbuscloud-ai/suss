@@ -35,6 +35,7 @@ import {
   spanOf,
   symbolValue,
 } from "./ast.js";
+import { clientCallUnits } from "./clientCalls.js";
 import { envReadEffects } from "./envReads.js";
 import {
   controllerFilters,
@@ -216,6 +217,19 @@ export async function discoverUnits(
   }));
 
   const units: RawCodeStructure[] = [];
+  for (const pack of options.packs) {
+    for (const pattern of pack.clients ?? []) {
+      units.push(
+        ...clientCallUnits(root, pack, pattern, {
+          filePath: options.filePath,
+          ...(options.storage === undefined
+            ? {}
+            : { facts: options.storage.facts }),
+        }),
+      );
+    }
+  }
+
   for (const info of classes) {
     // A class reopened in one file is one class, so a method written in
     // a later block redeclares a field declared in an earlier one.

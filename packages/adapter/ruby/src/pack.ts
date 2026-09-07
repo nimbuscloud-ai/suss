@@ -32,8 +32,28 @@ export interface RubyPack {
   /** Wire protocol for the produced boundary bindings, e.g. "http-graphql". */
   protocol: string;
   discovery: RubyDiscoveryPattern[];
+  /** The calls the library gives a project for making a request. */
+  clients?: RbClientCall[];
   /** What the library's own database calls look like. The README says how one is matched. */
   storage?: RbStoragePattern[];
+}
+
+/**
+ * The calls a library gives a project for making a request. A method
+ * that makes one is a client of the boundary that call states, and gets
+ * a unit bound to its method and path.
+ */
+export interface RbClientCall {
+  /** The constant the calls hang on, as a project writes it: `Faraday`, `Net::HTTP`. */
+  constantName: string;
+  /** Method names that state the request method themselves: `get` means GET. */
+  verbMethodNames: Record<string, string>;
+  /** Where a call states the URL. */
+  url: { position: number; keyword?: string };
+  /** Methods on the constant that build a value taking the same calls, `new` for a Faraday connection. */
+  receiverBuilders?: string[];
+  /** The keyword such a builder takes the base URL under, which comes in front of the path of a call on it. */
+  builderUrlKeyword?: string;
 }
 
 /**
