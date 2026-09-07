@@ -298,3 +298,116 @@ describe("a method that calls a request method", () => {
     expect(boundary(units).path).toBe("/orders");
   });
 });
+
+/** A library that takes a URL object and sends a request built somewhere else. */
+const WRAPPED_URLS: RbClientCall = {
+  constantName: "HttpClient",
+  verbMethodNames: { get: "GET" },
+  url: { position: 0 },
+  urlWrappers: ["Wrap", "Wrap.parse"],
+  receiverBuilders: ["build"],
+  requestObject: {
+    attribute: "send_it",
+    constructors: { "HttpClient::Post": "POST" },
+    urlPosition: 0,
+  },
+};
+
+describe("a library that takes a URL object", () => {
+  it("reads the string the wrapper call was given", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    HttpClient.get(Wrap("https://api.example.com/orders"))',
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
+  it("reads a wrapped URL held in a local", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    target = Wrap.parse("https://api.example.com/orders")',
+        "    HttpClient.get(target)",
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(boundary(units).path).toBe("/orders");
+  });
+
+  it("reads the request object a call was handed", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load(body)",
+        '    target = Wrap("https://api.example.com/orders")',
+        "    conn = HttpClient.build",
+        "    request = HttpClient::Post.new(target)",
+        "    conn.send_it(request)",
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
+  });
+
+  it("says nothing about a request object of a class the pack does not declare", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load(body)",
+        '    target = Wrap("https://api.example.com/orders")',
+        "    conn = HttpClient.build",
+        "    conn.send_it(OurOwn::Post.new(target))",
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("says nothing about a request call handed no argument at all", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        "    conn = HttpClient.build",
+        "    conn.send_it",
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("leaves a value that is not one of the wrapper calls as it is", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    HttpClient.get("/orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(boundary(units).path).toBe("/orders");
+  });
+});

@@ -54,6 +54,17 @@ export interface RbClientCall {
   receiverBuilders?: string[];
   /** The keyword such a builder takes the base URL under, which comes in front of the path of a call on it. */
   builderUrlKeyword?: string;
+  /** The calls that turn a string into the URL object a library takes, `URI` and `URI.parse` for Net::HTTP. */
+  urlWrappers?: string[];
+  /** A call that sends a request object built somewhere else, which is how Net::HTTP sends anything with a body. */
+  requestObject?: {
+    /** The method that takes the request object, `request`. */
+    attribute: string;
+    /** Each request class, as a project writes it, and the method it sends: `Net::HTTP::Get` sends GET. */
+    constructors: Record<string, string>;
+    /** Where the request class takes the URL. */
+    urlPosition: number;
+  };
 }
 
 /**

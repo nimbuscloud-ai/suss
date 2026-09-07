@@ -124,6 +124,7 @@ the source.
 | [`httpx`](../../packages/client/httpx) | httpx call sites (Python): the verb functions, `httpx.request`, and a `Client` or `AsyncClient` held in an assignment or opened with `with`. | ![](../../.github/badges/coverage-httpx.svg) |
 | [`aiohttp`](../../packages/client/aiohttp) | aiohttp call sites (Python): the request methods on a `ClientSession`, opened with `async with` or held in an assignment. | ![](../../.github/badges/coverage-aiohttp.svg) |
 | [`faraday`](../../packages/client/faraday) | Faraday call sites (Ruby): a request method on the module itself or on a connection `Faraday.new` built, served under the path that connection's own URL states. | ![](../../.github/badges/coverage-faraday.svg) |
+| [`net-http`](../../packages/client/net-http) | Net::HTTP call sites (Ruby): the module methods that send on their own, and a request object built with `Net::HTTP::Get` and its siblings, with the URL read through `URI`. | ![](../../.github/badges/coverage-net-http.svg) |
 
 ## Runtimes
 

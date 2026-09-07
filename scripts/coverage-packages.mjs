@@ -75,6 +75,7 @@ export const coveragePackages = [
   ["packages/client/httpx", "httpx"],
   ["packages/client/aiohttp", "aiohttp"],
   ["packages/client/faraday", "faraday"],
+  ["packages/client/net-http", "net-http"],
   // Runtimes
   ["packages/runtime/node", "runtime-node"],
   // Contract sources
