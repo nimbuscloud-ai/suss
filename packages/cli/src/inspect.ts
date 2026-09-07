@@ -2308,6 +2308,25 @@ function wrappersApplied(
   return runsOn;
 }
 
+/** What each boundary responds with now, for reading a scope line. */
+function outcomesAt(
+  summaries: readonly BehavioralSummary[],
+): Map<string, Set<string>> {
+  const at = new Map<string, Set<string>>();
+  for (const summary of summaries) {
+    const label = bindingLabel(summary);
+    if (label === null) {
+      continue;
+    }
+    const lines = at.get(label) ?? new Set<string>();
+    for (const transition of summary.transitions) {
+      lines.add(renderTransitionShort(transition));
+    }
+    at.set(label, lines);
+  }
+  return at;
+}
+
 /**
  * The same outcome at several boundaries, said once with the wrapper it
  * came from, and taken out of the blocks it was in.
@@ -2315,6 +2334,7 @@ function wrappersApplied(
 function liftSharedCauses(
   blocks: readonly BoundaryBlock[],
   runsOn: ReadonlyMap<string, string[]>,
+  outcomes: ReadonlyMap<string, Set<string>>,
 ): SharedCause[] {
   const candidates: CausedLine[] = blocks.flatMap((block) =>
     block.outcomes.map((line) => ({
@@ -2328,6 +2348,7 @@ function liftSharedCauses(
   const causes = sharedCauses(
     candidates,
     (wrapper) => runsOn.get(`${wrapper.file}::${wrapper.name}`) ?? [],
+    (boundary, outcome) => outcomes.get(boundary)?.has(outcome) === true,
   );
 
   for (const cause of causes) {
@@ -2558,10 +2579,11 @@ function renderReport(
     budget: number | null;
     hops: number | "full";
     runsOn: ReadonlyMap<string, string[]>;
+    outcomes: ReadonlyMap<string, Set<string>>;
   },
 ): string {
   const blocks = boundaryBlocks(moved, reach, options.hops);
-  const causes = liftSharedCauses(blocks, options.runsOn);
+  const causes = liftSharedCauses(blocks, options.runsOn, options.outcomes);
   // A block whose every line went into a statement above has nothing
   // left to say, and the statement already named it.
   const printed = blocks.filter(
@@ -2731,6 +2753,7 @@ export function inspectDiff(options: DiffOptions): void {
       budget: options.budget ?? null,
       hops: options.chain ?? CHAIN_HOPS,
       runsOn: wrappersApplied(afterSummaries),
+      outcomes: outcomesAt(afterSummaries),
     })}\n`,
   );
 }

@@ -44,6 +44,24 @@ function wrapperKey(wrapper: WrapperReference): string {
 }
 
 /**
+ * Whether a boundary the change missed is already the way the change
+ * left the others: it produced this outcome before, or it never did and
+ * the change was to take the outcome away. Either way nothing about it
+ * moved, and calling it an exception would send a reviewer looking for
+ * something that is not there.
+ */
+function alreadySo(
+  text: string,
+  boundary: string,
+  produces: (boundary: string, outcome: string) => boolean,
+): boolean {
+  const outcome = text.slice(2);
+  return text.startsWith("+ ")
+    ? produces(boundary, outcome)
+    : !produces(boundary, outcome);
+}
+
+/**
  * Every line that turned up at more than one boundary from the same
  * wrapper. `runsOn` gives the boundaries a wrapper covers, which is
  * what the count and the exceptions are measured against.
@@ -51,6 +69,7 @@ function wrapperKey(wrapper: WrapperReference): string {
 export function sharedCauses(
   lines: readonly CausedLine[],
   runsOn: (wrapper: WrapperReference) => readonly string[],
+  produces: (boundary: string, outcome: string) => boolean,
 ): SharedCause[] {
   const groups = new Map<string, CausedLine[]>();
   for (const line of lines) {
@@ -74,7 +93,10 @@ export function sharedCauses(
       text: first.text,
       keys: new Set(group.map((line) => line.key)),
       boundaries: got,
-      exceptions: covered.filter((boundary) => !got.includes(boundary)),
+      exceptions: covered.filter(
+        (boundary) =>
+          !got.includes(boundary) && !alreadySo(first.text, boundary, produces),
+      ),
       covered: Math.max(covered.length, got.length),
     });
   }

@@ -32,6 +32,8 @@ From require_login  app/controllers/application_controller.rb
     not at GET /health, which it also runs on
 ```
 
+A route the filter covers that already responded the same way is not one of the exceptions, since nothing about it moved. A route that is on the second line is one where the filter runs and the outcome is still missing, which is what a reviewer checks.
+
 A unit further down the call chain gets no block of its own, since the boundaries that reach it already show what its change did. Under the boundaries, the files with units that moved. A unit with a couple of lines to its name has them written out, one with more gets a count of the outcomes and the effects that moved, and one with a block of its own above is only named. A chain longer than three calls prints its first and last with `(2 intermediate units collapsed)` between them; `--chain full` prints every call and `--chain 0` prints none. Two more flags cap what the report costs: `--changed-files` takes the paths a change touched, one per line, so those files come last, and `--budget` stops the report at a number of characters and counts what it left out. The action passes both.
 
 **`inspect --diff` reports every caller of a route, and a narrowed branch as one line.** Several clients of one route used to collapse to one entry, so a change to any of the others printed as no change; each client now pairs by its own name under the route, as `client:GET /pet/{petId}::getPetById`. A transition that kept its output and changed its guard used to print as a removed line and an added one, and now prints as one `~` line with the guard before and the guard after.

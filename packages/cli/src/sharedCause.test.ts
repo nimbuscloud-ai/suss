@@ -24,9 +24,15 @@ function line(
 
 const RUNS_ON = (boundaries: string[]) => () => boundaries;
 
+/** The cases below are about the grouping, so no boundary has the line yet. */
+const causesOf = (
+  lines: CausedLine[],
+  runsOn: () => string[],
+): ReturnType<typeof sharedCauses> => sharedCauses(lines, runsOn, () => false);
+
 describe("a change that reached many boundaries from one place", () => {
   it("lifts the line every route got from the same filter", () => {
-    const causes = sharedCauses(
+    const causes = causesOf(
       [
         line("GET /orders", "+ 401  when  session[:user_id].nil?"),
         line("POST /orders", "+ 401  when  session[:user_id].nil?"),
@@ -40,7 +46,7 @@ describe("a change that reached many boundaries from one place", () => {
   });
 
   it("leaves a line only one boundary got where it is", () => {
-    const causes = sharedCauses(
+    const causes = causesOf(
       [line("GET /orders", "+ 401  when  session[:user_id].nil?")],
       RUNS_ON(["GET /orders"]),
     );
@@ -49,7 +55,7 @@ describe("a change that reached many boundaries from one place", () => {
   });
 
   it("leaves a line the unit's own body produced where it is", () => {
-    const causes = sharedCauses(
+    const causes = causesOf(
       [
         {
           ...line("GET /orders", "+ 404  when  order.nil?"),
@@ -67,7 +73,7 @@ describe("a change that reached many boundaries from one place", () => {
   });
 
   it("keeps two wrappers that produced the same line apart", () => {
-    const causes = sharedCauses(
+    const causes = causesOf(
       [
         line("GET /orders", "+ 429  when  over_limit?"),
         line("POST /orders", "+ 429  when  over_limit?"),
@@ -84,7 +90,7 @@ describe("a change that reached many boundaries from one place", () => {
   });
 
   it("names the routes the wrapper runs on that did not get it", () => {
-    const [cause] = sharedCauses(
+    const [cause] = causesOf(
       [
         line("GET /orders", "+ 401  when  session[:user_id].nil?"),
         line("POST /orders", "+ 401  when  session[:user_id].nil?"),
@@ -100,7 +106,7 @@ describe("a change that reached many boundaries from one place", () => {
   });
 
   it("counts the exceptions once there are too many to name", () => {
-    const [cause] = sharedCauses(
+    const [cause] = causesOf(
       [line("GET /orders", "+ 401"), line("POST /orders", "+ 401")],
       RUNS_ON([
         "GET /orders",
@@ -119,7 +125,7 @@ describe("a change that reached many boundaries from one place", () => {
   });
 
   it("leaves the second line off when nothing the wrapper runs on missed it", () => {
-    const [cause] = sharedCauses(
+    const [cause] = causesOf(
       [line("GET /orders", "+ 401"), line("POST /orders", "+ 401")],
       RUNS_ON(["GET /orders", "POST /orders"]),
     );
@@ -129,9 +135,26 @@ describe("a change that reached many boundaries from one place", () => {
     ]);
   });
 
+  it("leaves out a route that had the outcome already", () => {
+    // GET /health responded 401 before this change, so nothing moved
+    // there and a reviewer sent to look would find nothing.
+    const [cause] = sharedCauses(
+      [
+        line("GET /orders", "+ 401  when  session[:user_id].nil?"),
+        line("POST /orders", "+ 401  when  session[:user_id].nil?"),
+      ],
+      RUNS_ON(["GET /orders", "POST /orders", "GET /health"]),
+      (boundary, outcome) =>
+        boundary === "GET /health" &&
+        outcome === "401  when  session[:user_id].nil?",
+    );
+
+    expect(cause?.exceptions).toEqual([]);
+  });
+
   it("counts the boundaries once there are too many to name", () => {
     const many = ["GET /a", "GET /b", "GET /c", "GET /d"];
-    const [cause] = sharedCauses(
+    const [cause] = causesOf(
       many.map((boundary) => line(boundary, "+ 401")),
       RUNS_ON(many),
     );
@@ -142,7 +165,7 @@ describe("a change that reached many boundaries from one place", () => {
   });
 
   it("falls back on the boundaries it saw when nothing says what the wrapper covers", () => {
-    const [cause] = sharedCauses(
+    const [cause] = causesOf(
       [line("GET /orders", "+ 401"), line("POST /orders", "+ 401")],
       RUNS_ON([]),
     );
