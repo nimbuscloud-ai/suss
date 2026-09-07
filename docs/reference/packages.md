@@ -121,6 +121,7 @@ the source.
 | [`axios`](../../packages/client/axios) | axios call sites + `axios.create` factories. | ![](../../.github/badges/coverage-axios.svg) |
 | [`apollo-client`](../../packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](../../.github/badges/coverage-apollo-client.svg) |
 | [`requests`](../../packages/client/requests) | requests call sites (Python): the seven verb functions, `requests.request`, and a `Session`, each bound to the method and path the call states. | ![](../../.github/badges/coverage-requests.svg) |
+| [`faraday`](../../packages/client/faraday) | Faraday call sites (Ruby): a request method on the module itself or on a connection `Faraday.new` built, served under the path that connection's own URL states. | ![](../../.github/badges/coverage-faraday.svg) |
 
 ## Runtimes
 

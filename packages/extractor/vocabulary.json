@@ -84,6 +84,7 @@
   "node_modules": "npm install directory",
   "none": "suss: unresolved marker",
   "nothing": "suss: unsettled reading, give null for what the source does not settle",
+  "new": "Ruby: the constructor method every class answers, which is the language's word rather than any library's",
   "null": "JavaScript literal",
   "number": "TypeScript primitive type name",
   "object": "JavaScript value kind",

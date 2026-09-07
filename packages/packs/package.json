@@ -81,6 +81,10 @@
       "types": "./dist/drizzle.d.ts",
       "import": "./dist/drizzle.js"
     },
+    "./faraday": {
+      "types": "./dist/faraday.d.ts",
+      "import": "./dist/faraday.js"
+    },
     "./express": {
       "types": "./dist/express.d.ts",
       "import": "./dist/express.js"
@@ -212,6 +216,7 @@
   "devDependencies": {
     "@suss/client-apollo": "*",
     "@suss/client-axios": "*",
+    "@suss/client-faraday": "*",
     "@suss/client-requests": "*",
     "@suss/client-web": "*",
     "@suss/framework-activerecord": "*",
