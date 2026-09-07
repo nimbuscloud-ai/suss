@@ -11,7 +11,7 @@
  * string says nothing.
  */
 
-import { restBinding } from "@suss/behavioral-ir";
+import { namesNothing, restBinding } from "@suss/behavioral-ir";
 import { pathOf } from "@suss/values";
 
 import { field, rangeOf, readCallArgs, runStatements, spanOf } from "./ast.js";
@@ -272,17 +272,10 @@ function pathAt(
   if (written === undefined) {
     return null;
   }
+  // A path that is one hole and nothing else, which is what a URL
+  // handed in whole gives, names no route and pairs with nothing.
   const path = pathOf(evaluatedValue(written, options.facts));
   return path === undefined || namesNothing(path) ? null : path;
-}
-
-/**
- * A path with no text of its own, `{target}` for a URL handed in whole,
- * names no route. A route declares `/orders/{id}`, never `{id}`, so
- * this pairs with nothing and is worth less than saying nothing.
- */
-function namesNothing(path: string): boolean {
-  return path.replaceAll(/\{[^}]*\}/g, "").replaceAll("/", "") === "";
 }
 
 /** The unit for the method the call is written in. */
