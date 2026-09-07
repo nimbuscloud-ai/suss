@@ -1848,7 +1848,12 @@ function renderGuard(t: Transition): string {
  * their guard would otherwise print the same line twice.
  */
 function renderTransitionShort(t: Transition, spellDefault = false): string {
-  const output = formatOutput(t.output);
+  // A bare `401` reads as a number to anybody who has not seen a
+  // summary before, and a diff is where they usually start.
+  const output =
+    t.output.type === "response"
+      ? `responds ${formatOutput(t.output)}`
+      : formatOutput(t.output);
   const conditions = renderGuard(t);
   if (t.isDefault && !spellDefault) {
     return `${output}  (default)`;

@@ -159,9 +159,9 @@ suss inspect --diff before/api.json after/api.json
 
 ~ serves GET /users/{id}  src/routes/users.ts::getUser  (2 outcomes)
   outcomes
-    + 200 { id, name, role, admin }  when  db.findById() && db.findById().role === "admin"
-    ~ 200 { id, name, role }  when  db.findById()
-      -> 200 { id, name, role }  when  db.findById() && !(db.findById().role === "admin")
+    + responds 200 { id, name, role, admin }  when  db.findById() && db.findById().role === "admin"
+    ~ responds 200 { id, name, role }  when  db.findById()
+      -> responds 200 { id, name, role }  when  db.findById() && !(db.findById().role === "admin")
 
 Changes by file
 

@@ -36,8 +36,8 @@ The comment looks like this:
 >
 > ~ serves POST /users  src/handlers/users.ts::createUser  (1 outcome, 1 effect)
 >   outcomes
->     ~ 201 { id, email, name }  (default)
->       -> 201 { id, email }  (default)
+>     ~ responds 201 { id, email, name }  (default)
+>       -> responds 201 { id, email }  (default)
 >   effects
 >     + writes postgresql:audit_log  through recordChange
 >

@@ -19,8 +19,8 @@
       "pct": 94.83
     },
     "branches": {
-      "total": 3779,
-      "covered": 3140,
+      "total": 3781,
+      "covered": 3142,
       "skipped": 0,
       "pct": 83.09
     },
@@ -623,10 +623,10 @@
       "pct": 91.88
     },
     "branches": {
-      "total": 647,
-      "covered": 533,
+      "total": 649,
+      "covered": 535,
       "skipped": 0,
-      "pct": 82.38
+      "pct": 82.43
     }
   },
   "src/intentDraftCommand.ts": {

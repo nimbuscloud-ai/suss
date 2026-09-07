@@ -18,7 +18,7 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ~ serves GET /orders/{id}  src/app.ts::show  (1 outcome, 1 effect)
   outcomes
-    + 404 { error }  when  order == null
+    + responds 404 { error }  when  order == null
   effects
     + reads mongodb:orders  through loadOrder -> readOrder
 ```
@@ -27,7 +27,7 @@ An outcome that reached several routes from one filter, middleware or error hand
 
 ```
 From require_login  app/controllers/application_controller.rb
-  + 401  when  session[:user_id].nil?
+  + responds 401  when  session[:user_id].nil?
     at 14 of the 15 boundaries it runs on
     not at GET /health, which it also runs on
 ```

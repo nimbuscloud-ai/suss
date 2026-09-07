@@ -549,7 +549,7 @@ describe("inspect --diff, human output", () => {
 
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() =>
-        inspectDiff({ ...paths, budget: 200 }),
+        inspectDiff({ ...paths, budget: 220 }),
       );
       expect(output).toContain(
         "1 more boundary, and 1 more unit in 1 more file",
@@ -605,8 +605,8 @@ describe("inspect --diff, human output", () => {
 
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain("~ 200\n");
-      expect(output).toContain("-> 200  when  !(name.length > 64)");
+      expect(output).toContain("~ responds 200\n");
+      expect(output).toContain("-> responds 200  when  !(name.length > 64)");
       expect(output).not.toContain("(default)");
     });
   });
@@ -820,7 +820,7 @@ describe("inspect --diff, human output", () => {
       expect(output).toContain("at GET /orders and GET /orders/{id}");
       expect(output).toContain("not at GET /health, which it also runs on");
       // The line said once above is not repeated under either route.
-      expect(output.split("+ 401")).toHaveLength(2);
+      expect(output.split("+ responds 401")).toHaveLength(2);
     });
   });
 
@@ -913,7 +913,7 @@ describe("inspect --diff, human output", () => {
     withFiles(before, after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
       expect(output).toContain("(1 outcome)");
-      expect(output).toContain("  outcomes\n    ~ 200");
+      expect(output).toContain("  outcomes\n    ~ responds 200");
       expect(output).not.toContain("effects");
     });
   });
@@ -955,7 +955,7 @@ describe("inspect --diff, human output", () => {
       const { output } = captureStdout(() => inspectDiff(paths));
       const line = output
         .split("\n")
-        .find((l) => l.includes("-> 200 Map<string"));
+        .find((l) => l.includes("-> responds 200 Map<string"));
       expect(line).toBeDefined();
       expect(line?.length).toBeLessThan(160);
       expect(line).toMatch(/\.\.\.\s+\(default\)$/);
