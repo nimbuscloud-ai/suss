@@ -77,12 +77,8 @@ const EXEMPT = new Map([
     "Marks an SNS subscription that delivers through a queue rather than invoking the function directly. The pairing treats both paths the same way. #464.",
   ],
   [
-    "messageBus.fifoQueue",
-    "Whether a declared queue is FIFO. Nothing checks ordering. #464.",
-  ],
-  [
     "messageBus.fifoTopic",
-    "Whether a declared topic is FIFO. Same as fifoQueue. #464.",
+    "Whether a declared topic is FIFO. Nothing checks ordering, and no finding turns on it the way repeatUnsafeConsumer turns on fifoQueue. #464.",
   ],
   [
     "messageBus.physicalName",

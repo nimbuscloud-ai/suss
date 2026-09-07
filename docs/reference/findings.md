@@ -472,6 +472,16 @@ A queue / topic is declared in infrastructure but neither produced to nor consum
 
 A rule or subscription deploys switched off (`State: DISABLED`), so its target receives nothing until someone enables it. The subscription is not counted as a consumer anywhere in the pass: a producer whose only subscriber is disabled is reported as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused` (switched off on purpose is not left over).
 
+### `repeatUnsafeConsumer` *(shipped)*
+
+**Severity:** warning • **Emitted by:** `checkMessageBus`
+
+An SQS queue that is not FIFO can deliver one message more than once, and the handler draining it makes a `POST` to another service while handling it. A second delivery makes that call again, which is a second charge or a second order.
+
+A call that sends an idempotency key is safe and still reported, because a summary does not record the headers a call sends. Suppress those. A FIFO queue is left alone, and so is a `GET`, a `PUT`, a `PATCH` or a `DELETE`, which land on the same resource twice. A storage write is left alone as well: whether a repeat overwrites the same row or appends a new one turns on where the key's value came from, and a summary does not say that today.
+
+Both gaps come down to a summary being able to state that a call is idempotent, and what it is idempotent on. #516 has the shape.
+
 ---
 
 ## Unit-invocation findings
