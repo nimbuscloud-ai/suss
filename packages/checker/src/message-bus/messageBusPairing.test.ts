@@ -1837,6 +1837,50 @@ describe("what message-bus pairing takes for granted", () => {
     );
   });
 
+  it("reports the same call when a Python or Ruby pack made it a unit", () => {
+    // The client packs for those two languages bind the calling
+    // function to the route it calls rather than recording an effect
+    // inside the body.
+    const pythonClient: BehavioralSummary = {
+      ...consumerCodeSummary({
+        name: "charge_order",
+        filePath: "src/order-consumer/worker.py",
+        bodyFields: ["id"],
+      }),
+      kind: "client",
+      identity: {
+        name: "charge_order",
+        exportPath: ["charge_order"],
+        boundaryBinding: {
+          transport: "http",
+          semantics: { name: "rest", method: "POST", path: "/v1/charges" },
+          recognition: "requests",
+        },
+      },
+      transitions: [emptyTransition("t-0", [])],
+    };
+
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/order-producer/index.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+      consumerSummary({
+        name: "OrderConsumer",
+        channel: "OrdersQueue",
+        codeScopePath: "src/order-consumer/",
+      }),
+      pythonClient,
+    ]);
+
+    const repeat = findings.filter((f) => f.kind === "repeatUnsafeConsumer");
+    expect(repeat).toHaveLength(1);
+    expect(repeat[0]?.description).toContain("POST /v1/charges");
+  });
+
   it("says nothing about a GET, which a second delivery settles the same way", () => {
     const findings = checkMessageBus([
       queueProvider("OrdersQueue"),

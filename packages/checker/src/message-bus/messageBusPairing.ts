@@ -361,7 +361,32 @@ interface RepeatedCall {
   label: string;
 }
 
+/**
+ * A call out of this unit that a second delivery would make again.
+ *
+ * The TypeScript packs record one as a service-call effect inside the
+ * body. The Python and Ruby client packs make the calling function a
+ * unit of its own, bound to the route it calls, so both shapes are
+ * read here and a consumer in any of the three languages reports the
+ * same thing.
+ */
 function repeatedCalls(summary: BehavioralSummary): RepeatedCall[] {
+  const own = summary.identity.boundaryBinding;
+  if (
+    summary.kind === "client" &&
+    own?.semantics.name === "rest" &&
+    own.semantics.method !== null &&
+    REPEATS_HARM.has(own.semantics.method.toUpperCase())
+  ) {
+    return [
+      {
+        method: own.semantics.method.toUpperCase(),
+        callee: undefined,
+        label: displayLabel(own) ?? own.semantics.method,
+      },
+    ];
+  }
+
   const found: RepeatedCall[] = [];
   const seen = new Set<string>();
   for (const transition of summary.transitions) {
