@@ -895,6 +895,50 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  /** A route whose 200 responds with these fields. */
+  const respondsWithFields = (fields: string[]): BehavioralSummary => ({
+    ...respondsWith("show", "/orders/:id", {
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: {
+          type: "record",
+          properties: Object.fromEntries(
+            fields.map((name) => [name, { type: "text" as const }]),
+          ),
+        },
+        headers: {},
+      },
+    }),
+  });
+
+  it("marks the field a body lost, in the line that responds", () => {
+    const before = [respondsWithFields(["id", "name", "email"])];
+    const after = [respondsWithFields(["id", "name"])];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("~ responds 200 { id, name, -email }");
+      expect(output).not.toContain("was  responds");
+    });
+  });
+
+  it("keeps every field that moved when it trims a wide body", () => {
+    const before = [
+      respondsWithFields(["id", "name", "email", "total", "state", "at"]),
+    ];
+    const after = [
+      respondsWithFields(["id", "name", "total", "state", "at", "currency"]),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "{ id, name, total, state, ..., +currency, -email }",
+      );
+    });
+  });
+
   it("opens with how many boundaries moved and how much moved at them", () => {
     withFiles(chain(1, []), chain(1, [READS_ORDERS]), (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));

@@ -1858,6 +1858,16 @@ function renderTransitionShort(
     t.output.type === "response"
       ? `responds ${formatOutput(t.output)}`
       : formatOutput(t.output);
+  return withGuard(t, output, spellDefault, alone);
+}
+
+/** One outcome and the test that leads to it. */
+function withGuard(
+  t: Transition,
+  output: string,
+  spellDefault: boolean,
+  alone: boolean,
+): string {
   const conditions = renderGuard(t);
   if (t.isDefault && !spellDefault) {
     // The path taken when none of the tests above it matched. A unit
@@ -1865,6 +1875,16 @@ function renderTransitionShort(
     return alone ? output : `${output}  otherwise`;
   }
   return conditions ? `${output}  when  ${conditions}` : output;
+}
+
+/** `responds 200`, for a line that renders the body itself. */
+function statusWord(t: Transition): string | null {
+  if (t.output.type !== "response") {
+    return null;
+  }
+  const status =
+    t.output.statusCode !== null ? formatRef(t.output.statusCode) : "???";
+  return `responds ${status}`;
 }
 
 function defaultGuardMoved(before: Transition, after: Transition): boolean {
@@ -2106,10 +2126,11 @@ function bodyFields(output: Output): string[] | null {
 }
 
 /**
- * `body drops email`, for a body that lost or gained fields. Comparing
- * two lists of fields is the work a reader came here to avoid.
+ * The body with a marker on each field that moved: `{ id, name, -email }`.
+ * Null when neither side is a plain record or nothing about the fields
+ * moved, and the two lines have to be printed in full.
  */
-function bodyDelta(before: Transition, after: Transition): string | null {
+function markedBody(before: Transition, after: Transition): string | null {
   const was = bodyFields(before.output);
   const now = bodyFields(after.output);
   if (was === null || now === null) {
@@ -2117,12 +2138,31 @@ function bodyDelta(before: Transition, after: Transition): string | null {
   }
   const gone = was.filter((field) => !now.includes(field));
   const gained = now.filter((field) => !was.includes(field));
-  const parts = [
-    ...(gained.length > 0 ? [`adds ${gained.join(", ")}`] : []),
-    ...(gone.length > 0 ? [`drops ${gone.join(", ")}`] : []),
+  if (gone.length === 0 && gained.length === 0) {
+    return null;
+  }
+  const marked = [
+    ...now.map((field) => (was.includes(field) ? field : `+${field}`)),
+    ...gone.map((field) => `-${field}`),
   ];
-  return parts.length === 0 ? null : `body ${parts.join(" and ")}`;
+  return `{ ${trimmed(marked).join(", ")} }`;
 }
+
+/**
+ * The marked fields, and enough of the rest for the reader to know what
+ * body this is. A field that moved is always in.
+ */
+function trimmed(fields: readonly string[]): string[] {
+  const moved = fields.filter((field) => /^[+-]/.test(field));
+  if (fields.length <= FIELDS_LISTED + moved.length) {
+    return [...fields];
+  }
+  const held = fields.filter((field) => !/^[+-]/.test(field));
+  return [...held.slice(0, FIELDS_LISTED), "...", ...moved];
+}
+
+/** How many unchanged fields print beside the ones that moved. */
+const FIELDS_LISTED = 4;
 
 /** A line of a block, and the wrapper whose body produced it. */
 interface Line {
@@ -2156,12 +2196,18 @@ function transitionLines(diff: SummaryDiff, alone: boolean): Line[] {
     const spellDefault = defaultGuardMoved(b, a);
     const beforeLine = renderTransitionShort(b, spellDefault, alone);
     const afterLine = renderTransitionShort(a, spellDefault, alone);
-    const delta = bodyDelta(b, a);
-    // A body that lost a field under the same status and the same guard
-    // is one sentence, and the two shapes side by side are not.
-    if (delta !== null && renderGuard(b) === renderGuard(a)) {
-      const kept = renderTransitionShort(a, spellDefault, alone);
-      lines.push({ text: `~ ${kept}, ${delta}`, wrapper: undefined });
+    const marked = markedBody(b, a);
+    const status = statusWord(a);
+    // A body that gained or lost a field under the same status and the
+    // same test reads as one line with the fields marked, where two
+    // shapes side by side leave the comparing to the reader.
+    if (
+      marked !== null &&
+      status !== null &&
+      renderGuard(b) === renderGuard(a)
+    ) {
+      const text = withGuard(a, `${status} ${marked}`, spellDefault, alone);
+      lines.push({ text: `~ ${text}`, wrapper: undefined });
       continue;
     }
     // Otherwise it takes both lines to read either, so the pair never

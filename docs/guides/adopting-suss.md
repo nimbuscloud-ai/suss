@@ -269,7 +269,7 @@ pull request too large to read in full:
   outcomes
     + responds 200 { id, status }  when  findUser() && findUser().deletedAt
     - responds 410 { error }  when  findUser() && findUser().deletedAt
-    ~ responds 200 { id, name }  otherwise, body drops email
+    ~ responds 200 { id, name, -email }  otherwise
 ```
 
 Three lines say that a deleted account now gets a `200` instead of a

@@ -169,7 +169,7 @@ src/routes/users.ts
   ~ getUser
 ```
 
-Two changes from one added `if`. The admin case is new, and the plain 200 is the same response under a narrower condition: it is now the case where the user exists and is not an admin. A `~` line is a path that moved. When the status and the test held still and the body gained or lost fields, it prints as one line saying which fields: `~ responds 200 { id, name } otherwise, body drops email`. Anything else prints as a `was` line and a `now` line, so a reader can tell a narrowed branch from a branch that went away.
+Two changes from one added `if`. The admin case is new, and the plain 200 is the same response under a narrower condition: it is now the case where the user exists and is not an admin. A `~` line is a path that moved. When the status and the test held still and the body gained or lost fields, it prints as one line with a marker on each field that moved: `~ responds 200 { id, name, -email }  otherwise`. Anything else prints as a `was` line and a `now` line, so a reader can tell a narrowed branch from a branch that went away.
 
 The report is organized by boundary. It opens with how many boundaries moved and how many of their outcomes and effects went with them, then gives one block per route, queue consumer or Lambda. Inside a block, `outcomes` is what it returns and under what test, and `effects` is what a request touches on its way through: a line such as `+ reads postgresql:users  through loadUser` means this route now gets to a table it did not before, whichever function down the chain does the reading. The files with units that moved come last, with a unit's own lines written out when there are a few of them and counted when there are more.
 
