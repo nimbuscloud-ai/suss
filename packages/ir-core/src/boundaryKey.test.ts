@@ -425,7 +425,11 @@ describe("what a protocol says about its own checking", () => {
     expect(leavesTheProcess(channel)).toBe(true);
     expect(
       leavesTheProcess(
-        functionCallBinding({ recognition: "react", module: "./Button" }),
+        functionCallBinding({
+          transport: "in-process",
+          recognition: "react",
+          module: "./Button",
+        }),
       ),
     ).toBe(false);
   });
