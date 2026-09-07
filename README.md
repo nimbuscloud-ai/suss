@@ -180,7 +180,7 @@ Thirty-eight packs read code today, reached by name with `-f`:
 | GraphQL servers | `apollo` `nestjs-graphql` `graphql-ruby` |
 | Serverless and edge | `aws-lambda` `cloudflare-workers` |
 | UI | `react` `react-router` `react-query` |
-| HTTP and GraphQL clients | `fetch` `axios` `apollo-client` |
+| HTTP and GraphQL clients | `fetch` `axios` `apollo-client` `requests` |
 | Databases and ORMs | `prisma` `drizzle` `mongoose` `sqlalchemy` `activerecord` `redis` |
 | Client state | `zustand` |
 | Object and key-value storage | `aws-s3` `gcs` `aws-dynamodb` |

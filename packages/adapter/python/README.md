@@ -233,6 +233,28 @@ two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
 node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
 `npm run check:style` fails a build that keys either on a node.
 
+## What a body calls out to
+
+A pack says which callables its library gives a project for making a request,
+in `clients` on the pack. Each entry says the module they come from, which
+attribute names state the method themselves, where the URL is written
+positionally and by keyword, the call that takes the method as an argument
+instead, and the constructors whose instances take the same calls.
+
+Every function in a file is walked for those calls. The callee resolves the
+same way any other callee does, so `requests.get`, a bare `get` imported from
+the package, and `session.get` on a value one of the library's own
+constructors built all reach the same entry. The URL argument goes through the
+value evaluator and `pathOf` from `@suss/values`, which is the same reading a
+route's path gets, so an f-string and a name defined elsewhere in the project
+both come to the path they state.
+
+The enclosing function becomes a `client` unit bound to that method and path,
+and a function that makes two calls is a client of both. A call written at
+module level has no function to belong to, and one whose URL does not settle
+on a string says nothing rather than guessing; both stay invocation effects on
+whatever unit they are in.
+
 ## What a body does with the database
 
 A pack says which query types its library defines, and a call chain matches

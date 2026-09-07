@@ -149,6 +149,10 @@
       "types": "./dist/rails.d.ts",
       "import": "./dist/rails.js"
     },
+    "./requests": {
+      "types": "./dist/requests.d.ts",
+      "import": "./dist/requests.js"
+    },
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
@@ -208,6 +212,7 @@
   "devDependencies": {
     "@suss/client-apollo": "*",
     "@suss/client-axios": "*",
+    "@suss/client-requests": "*",
     "@suss/client-web": "*",
     "@suss/framework-activerecord": "*",
     "@suss/framework-apollo": "*",

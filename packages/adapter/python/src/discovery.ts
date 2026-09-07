@@ -41,6 +41,7 @@ import {
   stringLiteralValue,
   stripDecorators,
 } from "./ast.js";
+import { clientCallUnits } from "./clientCalls.js";
 import {
   classifyDecorator,
   decoratorReceiver,
@@ -182,8 +183,27 @@ export function discoverUnits(
 ): RawCodeStructure[] {
   const decorated = decoratedStatements(root, module);
   const subjects = builtSubjects(decorated, options);
-  return decorated.flatMap((decoratedStatement) =>
-    decoratedUnits(decoratedStatement, module, options, subjects),
+  return [
+    ...decorated.flatMap((decoratedStatement) =>
+      decoratedUnits(decoratedStatement, module, options, subjects),
+    ),
+    ...clientUnits(root, module, options),
+  ];
+}
+
+/** Every request call a pack in this run recognizes, one unit each. */
+function clientUnits(
+  root: PyNode,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): RawCodeStructure[] {
+  return options.packs.flatMap((pack) =>
+    (pack.clients ?? []).flatMap((pattern) =>
+      clientCallUnits(root, module, pack, pattern, {
+        filePath: options.filePath,
+        ...(options.facts === undefined ? {} : { facts: options.facts }),
+      }),
+    ),
   );
 }
 

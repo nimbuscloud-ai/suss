@@ -71,6 +71,7 @@ export const coveragePackages = [
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],
   ["packages/client/apollo", "apollo-client"],
+  ["packages/client/requests", "requests"],
   // Runtimes
   ["packages/runtime/node", "runtime-node"],
   // Contract sources
