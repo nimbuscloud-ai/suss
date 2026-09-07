@@ -255,6 +255,14 @@ module level has no function to belong to, and one whose URL does not settle
 on a string says nothing rather than guessing; both stay invocation effects on
 whatever unit they are in.
 
+A pack also says which members of the response object mean the status, the
+success flag and the body. Those names go on the summary, and the caller's own
+body is walked the way a route's is, so a test it writes on one of them becomes
+a path with a condition naming that member. `suss check` reads the status a
+condition names and reports a caller that handles one the other side never
+sends. A condition reads a member as the name it starts from and the members
+read off it, which is what makes the status in it findable at all.
+
 ## What a body does with the database
 
 A pack says which query types its library defines, and a call chain matches

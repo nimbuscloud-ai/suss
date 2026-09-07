@@ -41,7 +41,37 @@ function valueRefOf(node: PyNode): ValueRef {
     return { type: "literal", value: node.type === "true" };
   }
 
+  const chain = attributeChain(node);
+  if (chain !== null) {
+    const [name, ...accessChain] = chain;
+    if (name !== undefined && accessChain.length > 0) {
+      return { type: "dependency", name, accessChain };
+    }
+  }
+
   return { type: "unresolved", sourceText: node.text };
+}
+
+/**
+ * `response.status_code` as the name it starts from and the members
+ * read off it. A reader of one of those members, the checker asking
+ * which status a guard names among them, needs the parts rather than
+ * the text. Null for anything with a call or a subscript in it, where
+ * the value depends on more than the name.
+ */
+function attributeChain(node: PyNode, tail: string[] = []): string[] | null {
+  if (node.type === "identifier") {
+    return [node.text, ...tail];
+  }
+  if (node.type !== "attribute") {
+    return null;
+  }
+  const object = field(node, "object");
+  const attribute = field(node, "attribute");
+  if (object === null || attribute === null) {
+    return null;
+  }
+  return attributeChain(object, [attribute.text, ...tail]);
 }
 
 const opaqueOf = (node: PyNode): Predicate => ({

@@ -42,6 +42,14 @@ export function httpxClient(): PythonPack {
         // Both are written as a context manager as often as they are
         // assigned, and the adapter reads a `with ... as` the same way.
         receiverConstructors: ["Client", "AsyncClient"],
+        // httpx spells the response the way requests does, which is
+        // deliberate on its part.
+        response: {
+          statusCode: ["status_code"],
+          success: ["is_success"],
+          body: ["json", "text", "content"],
+          failureDelivery: "response",
+        },
       },
     ],
   };

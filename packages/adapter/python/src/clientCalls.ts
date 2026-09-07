@@ -22,6 +22,7 @@ import {
   spanOf,
   stringLiteralValue,
 } from "./ast.js";
+import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
 import { constructionOf } from "./routers.js";
 import { scopeAt } from "./scope.js";
@@ -29,9 +30,10 @@ import { evaluatedValue } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
 import type { Database } from "@suss/datalog";
-import type { RawCodeStructure } from "@suss/extractor";
+import type { RawBranch, RawCodeStructure } from "@suss/extractor";
 import type { PyClientCall, PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { TerminalBranch } from "./paths/bodyBranches.js";
 import type { ModuleBinding } from "./scope.js";
 
 /** What one request call states about the boundary it reaches. */
@@ -68,7 +70,7 @@ export function clientCallUnits(
       if (request === null) {
         continue;
       }
-      units.push(clientUnit(definition, name, request, pack, options));
+      units.push(clientUnit(definition, name, request, pattern, pack, options));
     }
   }
   return units;
@@ -209,11 +211,99 @@ function argumentAt(
   return positional[position] ?? null;
 }
 
+/**
+ * One branch per path the caller takes after the call, so a test on the
+ * response says which statuses this caller handles. The conditions come
+ * out of the same walk a route's do, which is where their structure,
+ * and with it the status a guard names, comes from.
+ */
+function callerBranches(
+  definition: PyNode,
+  range: ReturnType<typeof rangeOf>,
+): RawBranch[] {
+  const body = field(definition, "body");
+  const effects = invocationEffects(definition);
+  const terminals = bodyTerminals(body, []);
+  if (body === null || terminals.length === 0) {
+    return [handsBack(range, effects)];
+  }
+  const branches = enumerateBodyBranches({
+    body,
+    terminals,
+    raised: [],
+    effects,
+    branchOf: (found) =>
+      found.type === "raise"
+        ? { terminal: found.terminal, location: rangeOf(found.statement) }
+        : handsBackAt(rangeOf(found.statement)),
+    fallthrough: handsBackAt(range),
+  });
+  return branches.length === 0 ? [handsBack(range, effects)] : branches;
+}
+
+/** What a caller does at the end of a path: it hands back whatever it got. */
+function handsBackAt(range: ReturnType<typeof rangeOf>): TerminalBranch {
+  return {
+    terminal: {
+      kind: "return",
+      statusCode: null,
+      body: null,
+      exceptionType: null,
+      message: null,
+      component: null,
+      renderTree: null,
+      delegateTarget: null,
+      emitEvent: null,
+      location: range,
+    },
+    location: range,
+  };
+}
+
+/** The one branch of a caller whose body writes no exit of its own. */
+function handsBack(
+  range: ReturnType<typeof rangeOf>,
+  effects: ReturnType<typeof invocationEffects>,
+): RawBranch {
+  return {
+    ...handsBackAt(range),
+    conditions: [],
+    effects,
+    isDefault: true,
+  };
+}
+
+/** The members of the response the pack said mean each thing. */
+function responseAccessors(pattern: PyClientCall): {
+  bodyAccessors?: string[];
+  statusAccessors?: string[];
+  successAccessors?: string[];
+  failureDelivery?: "response" | "exception";
+} {
+  const response = pattern.response;
+  if (response === undefined) {
+    return {};
+  }
+  return {
+    ...(response.body === undefined ? {} : { bodyAccessors: response.body }),
+    ...(response.statusCode === undefined
+      ? {}
+      : { statusAccessors: response.statusCode }),
+    ...(response.success === undefined
+      ? {}
+      : { successAccessors: response.success }),
+    ...(response.failureDelivery === undefined
+      ? {}
+      : { failureDelivery: response.failureDelivery }),
+  };
+}
+
 /** The unit for the function the call is written in. */
 function clientUnit(
   definition: PyNode,
   name: string,
   request: RequestCall,
+  pattern: PyClientCall,
   pack: PythonPack,
   options: ClientCallOptions,
 ): RawCodeStructure {
@@ -236,26 +326,8 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: [
-      {
-        conditions: [],
-        terminal: {
-          kind: "return",
-          statusCode: null,
-          body: null,
-          exceptionType: null,
-          message: null,
-          component: null,
-          renderTree: null,
-          delegateTarget: null,
-          emitEvent: null,
-          location: range,
-        },
-        effects: invocationEffects(definition),
-        location: range,
-        isDefault: true,
-      },
-    ],
+    branches: callerBranches(definition, range),
+    ...responseAccessors(pattern),
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,

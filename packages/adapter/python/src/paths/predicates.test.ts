@@ -40,11 +40,33 @@ describe("what a condition says", () => {
   });
 
   it("reads a comparison against a literal, which is what a status test looks like", async () => {
+    // The checker asks which member the test reads, so the parts of the
+    // name are what it gets rather than the text they were written as.
     expect(await read("response.status_code == 404")).toEqual({
       type: "comparison",
-      left: { type: "unresolved", sourceText: "response.status_code" },
+      left: {
+        type: "dependency",
+        name: "response",
+        accessChain: ["status_code"],
+      },
       op: "eq",
       right: { type: "literal", value: 404 },
+    });
+  });
+
+  it("reads a member of a member as the whole chain", async () => {
+    expect(await read("result.response.status_code == 404")).toMatchObject({
+      left: {
+        type: "dependency",
+        name: "result",
+        accessChain: ["response", "status_code"],
+      },
+    });
+  });
+
+  it("leaves a name with a call in it unresolved", async () => {
+    expect(await read("response.json().get('code') == 404")).toMatchObject({
+      left: { type: "unresolved" },
     });
   });
 

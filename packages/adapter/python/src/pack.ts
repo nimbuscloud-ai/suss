@@ -127,6 +127,24 @@ export interface PyClientCall {
   };
   /** Constructors whose instances take the same calls, `Session`. */
   receiverConstructors?: string[];
+  /** What the response object gives a caller, so a guard on it reads as a guard on a status. */
+  response?: PyClientResponse;
+}
+
+/**
+ * The members a library's response object gives a caller. A caller that
+ * tests one of them is saying which statuses it handles, and the
+ * checker compares that against what the other side produces.
+ */
+export interface PyClientResponse {
+  /** Members whose value is the status code: `status_code`. */
+  statusCode?: string[];
+  /** Members that say the request succeeded, meaning a status in 200 to 299: `ok`. */
+  success?: string[];
+  /** Members that give the body: `json`, `text`, `content`. */
+  body?: string[];
+  /** Whether a refused request comes back as a response or raises where it was made. */
+  failureDelivery?: "response" | "exception";
 }
 
 /** Conventions both kinds of route share. Each one describes what the library does, never a project's choice. */

@@ -202,6 +202,87 @@ describe("a function that calls a request function", () => {
     expect(units.map((unit) => unit.identity.name)).toEqual(["inner"]);
   });
 
+  it("says which members of the response mean what, when the pack said", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def load():",
+        '    return httpclient.get("/orders")',
+      ].join("\n"),
+      {
+        ...REQUEST_CALLS,
+        response: {
+          statusCode: ["status_code"],
+          success: ["ok"],
+          body: ["json"],
+          failureDelivery: "response",
+        },
+      },
+    );
+
+    expect(units[0]).toMatchObject({
+      statusAccessors: ["status_code"],
+      successAccessors: ["ok"],
+      bodyAccessors: ["json"],
+      failureDelivery: "response",
+    });
+  });
+
+  it("gives one branch per path the caller takes after the call", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def load():",
+        '    response = httpclient.get("/orders")',
+        "    if response.status_code == 404:",
+        "        return None",
+        "    return response.json()",
+      ].join("\n"),
+    );
+
+    expect(units[0]?.branches).toHaveLength(2);
+    expect(units[0]?.branches[0]?.conditions[0]?.structured).toEqual({
+      type: "comparison",
+      left: {
+        type: "dependency",
+        name: "response",
+        accessChain: ["status_code"],
+      },
+      op: "eq",
+      right: { type: "literal", value: 404 },
+    });
+  });
+
+  it("keeps one branch for a caller that returns nothing at all", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def load():",
+        '    httpclient.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units[0]?.branches).toHaveLength(1);
+    expect(units[0]?.branches[0]?.isDefault).toBe(true);
+  });
+
+  it("keeps one branch for a caller that tests nothing", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def load():",
+        '    return httpclient.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units[0]?.branches).toHaveLength(1);
+    expect(units[0]?.branches[0]?.isDefault).toBe(true);
+  });
+
   it("reads a call inside a method of a class", async () => {
     const units = await unitsIn(
       [
