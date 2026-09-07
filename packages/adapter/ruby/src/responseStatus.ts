@@ -24,9 +24,11 @@ import { constantOf, literalOf } from "@suss/values";
 import { field, OWN_BODY_TYPES, rangeOf, readCallArgs } from "./ast.js";
 import { isBareMethodCall, localNamesIn } from "./paths/bareCalls.js";
 import { lowerRubyBody } from "./paths/lowering.js";
+import { predicateOf } from "./paths/predicates.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type {
+  ConditionInfo,
   RawBranch,
   RawCondition,
   RawEffect,
@@ -173,10 +175,12 @@ function conditionOf(condition: {
   sourceText: string;
   polarity: "positive" | "negative";
   source: RawCondition["source"];
+  expression: RbNode | null;
 }): RawCondition {
   return {
     sourceText: condition.sourceText,
-    structured: null,
+    structured:
+      condition.expression === null ? null : predicateOf(condition.expression),
     polarity: condition.polarity,
     source: condition.source,
   };
@@ -255,6 +259,62 @@ function handsOnBranch(
     location: outcome.location,
     isDefault: outcome.conditions.length === 0,
   };
+}
+
+/**
+ * One branch per path a method returns on, with the conditions that
+ * reach it and no status reading. A client of another service ends
+ * every path by handing back what it got, and the tests it writes on
+ * the way are what say which statuses it handles.
+ */
+export function returnPathBranches(
+  method: RbNode,
+  effects: readonly RawEffect[],
+): RawBranch[] | null {
+  const body = field(method, "body");
+  if (body === null) {
+    return null;
+  }
+  const returns = collectReturns(body, []);
+  const lowered = lowerRubyBody(body, returns, []);
+  const enumerated = enumerateOrDegrade(
+    {
+      statements: lowered.statements,
+      terminalsByStmt: lowered.terminalsByStmt,
+    },
+    returns,
+  );
+
+  const branches: RawBranch[] = [];
+  const push = (paths: readonly ConditionInfo<RbNode>[][], at: Range): void => {
+    for (const path of paths) {
+      const conditions = path.map(conditionOf);
+      branches.push({
+        conditions,
+        terminal: {
+          kind: "return",
+          statusCode: null,
+          body: null,
+          exceptionType: null,
+          message: null,
+          component: null,
+          renderTree: null,
+          delegateTarget: null,
+          emitEvent: null,
+          location: at,
+        },
+        effects: effectsReaching(effects, conditions),
+        location: at,
+        isDefault: conditions.length === 0,
+      });
+    }
+  };
+
+  for (const statement of returns) {
+    push(enumerated.byTerminal.get(statement) ?? [], rangeOf(statement));
+  }
+  push(enumerated.fallthrough, rangeOf(method));
+  return branches.length === 0 ? null : branches;
 }
 
 /**

@@ -185,6 +185,24 @@ The enclosing method becomes a `client` unit bound to that method and path, and
 a method that makes two calls is a client of both. A call written outside any
 method, and one whose URL does not settle on a string, say nothing.
 
+A pack also says which members of the response mean the status, the success
+flag and the body. Those names go on the summary, and the method's own body is
+walked the way an action's is, so a test it writes on one of them becomes a
+path with a condition that says which member it read. `suss check` reports a
+caller that handles a status the other side never sends.
+
+## What a condition tests
+
+A condition says what it tests rather than the text it was written as: a
+comparison with its two sides and its operator, `nil?` as a null check, a
+member read as a truthiness check, `!` as a negation, and `&&` and `||` as the
+compound they are. A member read comes out as the name it starts from and the
+members read off it, so `response.status` is `response` and `["status"]`, which
+is what lets a reader ask which member a test read. Ruby's own conversions are
+read through, so `response.code.to_i` is the same member as `response.code`.
+Anything not modelled here stays opaque with its own text, the way all of them
+were before.
+
 ## What a body does with the database
 
 Ruby writes no return type, so the Python adapter's trick of reading what a
