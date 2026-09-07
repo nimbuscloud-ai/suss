@@ -102,18 +102,63 @@ function requestCall(
   if (receiver === null || called === undefined) {
     return null;
   }
-  const verb = pattern.verbMethodNames[called];
-  if (verb === undefined) {
-    return null;
-  }
-
   const prefix = receiverPrefix(receiver, method, pattern, options);
   if (prefix === null) {
     return null;
   }
   const args = readCallArgs(field(call, "arguments"));
-  const path = urlIn(args, pattern, options);
-  return path === null ? null : { method: verb, path: prefix + path };
+
+  const verb = pattern.verbMethodNames[called];
+  if (verb !== undefined) {
+    const path = urlIn(args, method, pattern, options);
+    return path === null ? null : { method: verb, path: prefix + path };
+  }
+
+  const sent = pattern.requestObject;
+  if (sent === undefined || sent.attribute !== called) {
+    return null;
+  }
+  const built = requestBuilt(args.positional[0], method, sent);
+  if (built === null) {
+    return null;
+  }
+  const path = pathAt(built.url, method, pattern, options);
+  return path === null ? null : { method: built.method, path: prefix + path };
+}
+
+/**
+ * The request object a call was handed: one of the library's request
+ * classes built in the call itself, or a local name assigned from one.
+ */
+function requestBuilt(
+  argument: RbNode | undefined,
+  method: RbNode,
+  sent: NonNullable<RbClientCall["requestObject"]>,
+): { method: string; url: RbNode | undefined } | null {
+  const written =
+    argument === undefined
+      ? null
+      : (assignedCall(argument, method) ?? argument);
+  if (written === null || written.type !== "call") {
+    return null;
+  }
+  const requestClass = field(written, "receiver")?.text;
+  const verb =
+    requestClass === undefined ? undefined : sent.constructors[requestClass];
+  if (verb === undefined) {
+    return null;
+  }
+  const args = readCallArgs(field(written, "arguments"));
+  return { method: verb, url: args.positional[sent.urlPosition] };
+}
+
+/** The call a local name was assigned from in this method, or null for anything else. */
+function assignedCall(node: RbNode, method: RbNode): RbNode | null {
+  if (node.type !== "identifier") {
+    return null;
+  }
+  const value = assignedValue(node.text, method);
+  return value !== null && value.type === "call" ? value : null;
 }
 
 /**
@@ -171,27 +216,32 @@ function builtBy(
   pattern: RbClientCall,
 ): RbNode | null {
   const builders = pattern.receiverBuilders ?? [];
+  const value = builders.length === 0 ? null : assignedValue(name, method);
+  if (
+    value === null ||
+    value.type !== "call" ||
+    !builders.includes(field(value, "method")?.text ?? "")
+  ) {
+    return null;
+  }
+  const receiver = field(value, "receiver");
+  return receiver !== null && namesConstant(receiver, pattern.constantName)
+    ? value
+    : null;
+}
+
+/** What a local name was assigned in this method body, one assignment back and no further. */
+function assignedValue(name: string, method: RbNode): RbNode | null {
   const body = field(method, "body");
-  if (body === null || builders.length === 0) {
+  if (body === null) {
     return null;
   }
   for (const statement of runStatements(body)) {
     if (statement.type !== "assignment") {
       continue;
     }
-    const target = field(statement, "left");
-    const value = field(statement, "right");
-    if (
-      target?.text !== name ||
-      value === null ||
-      value.type !== "call" ||
-      !builders.includes(field(value, "method")?.text ?? "")
-    ) {
-      continue;
-    }
-    const receiver = field(value, "receiver");
-    if (receiver !== null && namesConstant(receiver, pattern.constantName)) {
-      return value;
+    if (field(statement, "left")?.text === name) {
+      return field(statement, "right");
     }
   }
   return null;
@@ -200,6 +250,7 @@ function builtBy(
 /** The path the URL argument states, or null when it does not settle on one. */
 function urlIn(
   args: CallArgs,
+  method: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
 ): string | null {
@@ -207,10 +258,51 @@ function urlIn(
   const written =
     (keyword === undefined ? undefined : args.keyword[keyword]) ??
     args.positional[pattern.url.position];
+  return pathAt(written, method, pattern, options);
+}
+
+/**
+ * The path one node states. A library that takes a URL object rather
+ * than a string is given the calls that build one, and a local name is
+ * followed one assignment back, which is where the URL of a request
+ * built in several steps is written.
+ */
+function pathAt(
+  written: RbNode | undefined,
+  method: RbNode,
+  pattern: RbClientCall,
+  options: ClientCallOptions,
+): string | null {
   if (written === undefined) {
     return null;
   }
-  return pathOf(evaluatedValue(written, options.facts)) ?? null;
+  const stated = unwrapped(written, method, pattern);
+  return pathOf(evaluatedValue(stated, options.facts)) ?? null;
+}
+
+/** The node the URL is actually written in, past a name and past a wrapper call. */
+function unwrapped(
+  written: RbNode,
+  method: RbNode,
+  pattern: RbClientCall,
+): RbNode {
+  const wrappers = pattern.urlWrappers ?? [];
+  if (wrappers.length === 0) {
+    return written;
+  }
+  const call =
+    written.type === "call" ? written : assignedCall(written, method);
+  if (call === null || !wrappers.includes(calleeName(call))) {
+    return written;
+  }
+  return readCallArgs(field(call, "arguments")).positional[0] ?? written;
+}
+
+/** The name a call states, `URI` for `URI(...)` and `URI.parse` for the other spelling. */
+function calleeName(call: RbNode): string {
+  const receiver = field(call, "receiver");
+  const named = field(call, "method")?.text ?? "";
+  return receiver === null ? named : `${receiver.text}.${named}`;
 }
 
 /** The unit for the method the call is written in. */

@@ -170,6 +170,13 @@ evaluator and `pathOf` from `@suss/values`, the same reading a Rails route path
 gets, so an interpolated string comes to the path it states, and a builder's own
 base URL comes in front of it.
 
+A library that takes a URL object rather than a string says which calls build
+one, in `urlWrappers`, and those are read through to the string they were
+given. A library that sends a request built somewhere else says so in
+`requestObject`: the method that takes it, each request class and the method it
+sends, and where the class takes its URL. Both a request built in the call and
+one assigned to a name in the same method are read.
+
 The enclosing method becomes a `client` unit bound to that method and path, and
 a method that makes two calls is a client of both. A call written outside any
 method, and one whose URL does not settle on a string, say nothing.
