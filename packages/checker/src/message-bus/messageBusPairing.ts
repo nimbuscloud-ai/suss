@@ -285,15 +285,18 @@ export function checkMessageBus(
   return findings;
 }
 
-/** The methods a second delivery would repeat rather than settle again. */
-const REPEATS_HARM = new Set(["POST", "PATCH"]);
+/**
+ * The method that creates something on the far side. PUT, PATCH and
+ * DELETE all land on the same resource twice, so a second delivery
+ * leaves them where the first one did.
+ */
+const REPEATS_HARM = new Set(["POST"]);
 
 /**
- * A channel a broker can deliver twice, reaching a consumer that calls
- * another service in a way the second call does not settle the same
- * way. An SQS queue redelivers unless it is FIFO, and a POST or a PATCH
- * to another service is a second charge, a second order, a second row
- * over there.
+ * A channel a broker can deliver twice, reaching a consumer that posts
+ * to another service. An SQS queue redelivers unless it is FIFO, and a
+ * second POST is a second charge or a second order unless the far side
+ * takes an idempotency key, which the summary does not record.
  */
 function checkRepeatSafety(opts: {
   consumers: BehavioralSummary[];
@@ -426,7 +429,7 @@ function makeRepeatUnsafeFinding(
     boundary: binding,
     provider: makeSide(consumer),
     consumer: makeSide(handler),
-    description: `SQS queue "${semantics.channel}" can deliver one message more than once, and ${handler.identity.name} answers it with ${call.method} ${call.label}${through}. A second delivery makes that call again. Make the call idempotent, key it on something in the message, or record what has been handled.`,
+    description: `SQS queue "${semantics.channel}" can deliver one message more than once, and ${handler.identity.name} makes ${call.method} ${call.label}${through} while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.`,
     severity: "warning",
   };
 }

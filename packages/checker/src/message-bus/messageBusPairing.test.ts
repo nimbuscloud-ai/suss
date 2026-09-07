@@ -1881,31 +1881,34 @@ describe("what message-bus pairing takes for granted", () => {
     expect(repeat[0]?.description).toContain("POST /v1/charges");
   });
 
-  it("says nothing about a GET, which a second delivery settles the same way", () => {
-    const findings = checkMessageBus([
-      queueProvider("OrdersQueue"),
-      producerSummary({
-        name: "OrderProducer",
-        filePath: "src/order-producer/index.ts",
-        channel: "OrdersQueue",
-        bodyFields: ["id"],
-      }),
-      consumerSummary({
-        name: "OrderConsumer",
-        channel: "OrdersQueue",
-        codeScopePath: "src/order-consumer/",
-      }),
-      callingCodeSummary({
-        name: "handler",
-        filePath: "src/order-consumer/index.ts",
-        method: "GET",
-        path: "/v1/charges",
-      }),
-    ]);
+  it("says nothing about a method that lands on the same resource twice", () => {
+    for (const method of ["GET", "PUT", "PATCH", "DELETE"]) {
+      const findings = checkMessageBus([
+        queueProvider("OrdersQueue"),
+        producerSummary({
+          name: "OrderProducer",
+          filePath: "src/order-producer/index.ts",
+          channel: "OrdersQueue",
+          bodyFields: ["id"],
+        }),
+        consumerSummary({
+          name: "OrderConsumer",
+          channel: "OrdersQueue",
+          codeScopePath: "src/order-consumer/",
+        }),
+        callingCodeSummary({
+          name: "handler",
+          filePath: "src/order-consumer/index.ts",
+          method,
+          path: "/v1/orders/{id}",
+        }),
+      ]);
 
-    expect(findings.filter((f) => f.kind === "repeatUnsafeConsumer")).toEqual(
-      [],
-    );
+      expect(
+        findings.filter((f) => f.kind === "repeatUnsafeConsumer"),
+        method,
+      ).toEqual([]);
+    }
   });
 
   it("says nothing about a storage write, which needs the key's provenance", () => {
