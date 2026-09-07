@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 69,
-    "packagesWithExports": 69,
-    "exports": 884,
-    "internal": 3101,
-    "consumers": 1697,
-    "pairs": 1694,
+    "packages": 70,
+    "packagesWithExports": 70,
+    "exports": 887,
+    "internal": 3107,
+    "consumers": 1702,
+    "pairs": 1699,
     "unfollowedCalls": 487,
     "findingErrors": 0
   },
@@ -13,8 +13,8 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 58,
-      "internal": 332,
-      "consumers": 193,
+      "internal": 338,
+      "consumers": 195,
       "unfollowedCalls": 63
     },
     "packages/adapter/ruby": {
@@ -71,6 +71,13 @@
       "exports": 2,
       "internal": 2,
       "consumers": 39,
+      "unfollowedCalls": 0
+    },
+    "packages/client/requests": {
+      "name": "@suss/client-requests",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 3,
       "unfollowedCalls": 0
     },
     "packages/client/web": {
@@ -439,7 +446,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 40,
+      "exports": 41,
       "internal": 136,
       "consumers": 0,
       "unfollowedCalls": 9
