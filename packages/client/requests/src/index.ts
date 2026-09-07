@@ -43,6 +43,14 @@ export function requestsClient(): PythonPack {
           urlPosition: 1,
         },
         receiverConstructors: ["Session"],
+        // What a caller reads off the response it got back. A test on
+        // one of these says which statuses the caller handles.
+        response: {
+          statusCode: ["status_code"],
+          success: ["ok"],
+          body: ["json", "text", "content"],
+          failureDelivery: "response",
+        },
       },
     ],
   };

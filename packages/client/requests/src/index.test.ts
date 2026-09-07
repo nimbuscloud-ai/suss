@@ -136,3 +136,26 @@ describe("a function that calls requests", () => {
     expect(units).toEqual([]);
   });
 });
+
+describe("what a caller does with the response", () => {
+  it("says which statuses it handles, so a check can compare them", async () => {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        "def fetch_order(order_id):",
+        '    response = requests.get(f"/orders/{order_id}")',
+        "    if response.status_code == 404:",
+        "        return None",
+        "    return response.json()",
+      ].join("\n"),
+    );
+
+    expect(units[0]?.statusAccessors).toEqual(["status_code"]);
+    expect(units[0]?.branches[0]?.conditions[0]?.structured).toMatchObject({
+      type: "comparison",
+      left: { accessChain: ["status_code"] },
+      right: { value: 404 },
+    });
+  });
+});

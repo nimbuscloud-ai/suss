@@ -5,5 +5,10 @@
   "url": "httpx: the keyword every request function takes the URL under",
   "Client": "httpx: the constructor for a client, whose instances take the same calls",
   "AsyncClient": "httpx: the constructor for an async client, whose instances take the same calls",
-  "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python"
+  "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python",
+  "status_code": "httpx: Response.status_code, the status the server sent",
+  "is_success": "httpx: Response.is_success, true for a status in 200 to 299",
+  "json": "httpx: Response.json, the body parsed as JSON",
+  "text": "httpx: Response.text, the body as a string",
+  "content": "httpx: Response.content, the body as bytes"
 }

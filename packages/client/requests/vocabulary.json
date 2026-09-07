@@ -4,5 +4,10 @@
   "method": "requests: the keyword requests.request takes the method under",
   "url": "requests: the keyword every request function takes the URL under",
   "Session": "requests: the constructor for a session, whose instances take the same calls",
-  "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python"
+  "clientCall": "suss: PyClientCall variant tag, defined in @suss/adapter-python",
+  "status_code": "requests: Response.status_code, the status the server sent",
+  "ok": "requests: Response.ok, true for a status under 400",
+  "json": "requests: Response.json, the body parsed as JSON",
+  "text": "requests: Response.text, the body as a string",
+  "content": "requests: Response.content, the body as bytes"
 }

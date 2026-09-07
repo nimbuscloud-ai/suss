@@ -21,12 +21,13 @@ def fetch_order(order_id: str) -> dict:
 - **`requests.request("PATCH", url)`**: the method is the first argument and the URL is the second, and both may be written as `method=` and `url=`.
 - **A session**: `session = requests.Session()` takes the same calls, and a call on it reads the same way.
 - **The URL**: read through the same value evaluator a route's path goes through, so an f-string, a name defined elsewhere in the project, and a concatenation all read to the path they come to. A URL with a host is reported by its path alone, since the host is no part of what a route declares.
+- **What the caller does with the response**: `status_code`, `ok` and the body members are declared here, and the caller's own tests on them become the paths of its summary. A caller that writes `if response.status_code == 404` is saying it handles a 404, and `suss check` reports it when the route on the other side never sends one.
 
 ## Where it stops
 
 - **A URL nothing can settle**, `requests.get(target)` where `target` is a parameter, says nothing rather than guessing, and the call stays an invocation effect on the function like any other call.
 - **A call at module level** has no function to belong to and is left alone.
-- **What the response says** is not read yet. `raise_for_status()`, `response.status_code == 404` and `response.json()` tell a reader which statuses the caller expects and what it does with the body, and none of that reaches the summary. The pack reports the boundary a function reaches, not what it does with the answer.
+- **`raise_for_status()` is not read.** A caller that writes it handles nothing but a 2xx, and the summary says nothing about that yet. A test the caller writes itself, `if response.status_code == 404`, is read.
 - **`httpx` and `aiohttp`** are their own libraries and get their own packs.
 
 ## Usage

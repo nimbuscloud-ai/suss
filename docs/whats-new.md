@@ -19,6 +19,18 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 **Middleware and hooks the project builds itself reach the routes they wrap.** A Hono middleware returned by a project factory such as `requireCaller({ header: "x-caller" })` used to be skipped, and a zod-openapi `defaultHook` given to the app constructor was never read, so every route's 401 or 400 was missing. Both now reach the routes on the app. A route's declared contract is compared against what the handler and its wrappers produce together, so a status a shared error handler produces no longer prints as declared but never produced on every route it covers, and a status spread into a route object's `responses` from a shared object is read as declared.
 
+**A Python caller says which statuses it handles, and `check` compares them.** A function that calls another service and tests the response used to come back with one path and no conditions, so nothing could be compared against what the other side sends:
+
+```python
+def fetch_order(order_id: str):
+    response = requests.get(f"{ORDERS_BASE}/orders/{order_id}")
+    if response.status_code == 404:
+        return None
+    return response.json()
+```
+
+`suss check` now reports `Consumer expects status 404 but provider never produces it` when the route on the other side does not send one. The requests and httpx packs say which members of the response mean the status, the success flag and the body, and the caller's own body is walked the way a route's is. Reading a member of a name as its parts rather than as text is what makes the status findable, and every Python condition gets that, not only a client's.
+
 **Ruby's own HTTP client is read too.** `-f net-http` covers the standard library, in both the ways it is written: a module call such as `Net::HTTP.get(URI(...))`, and the longer form where a project builds a request object and sends it.
 
 ```ruby
