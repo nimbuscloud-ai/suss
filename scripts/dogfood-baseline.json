@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 70,
-    "packagesWithExports": 70,
-    "exports": 887,
-    "internal": 3107,
-    "consumers": 1702,
-    "pairs": 1699,
+    "packages": 71,
+    "packagesWithExports": 71,
+    "exports": 890,
+    "internal": 3115,
+    "consumers": 1707,
+    "pairs": 1704,
     "unfollowedCalls": 487,
     "findingErrors": 0
   },
@@ -20,8 +20,8 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 69,
-      "internal": 222,
-      "consumers": 125,
+      "internal": 230,
+      "consumers": 128,
       "unfollowedCalls": 72
     },
     "packages/adapter/typescript": {
@@ -71,6 +71,13 @@
       "exports": 2,
       "internal": 2,
       "consumers": 39,
+      "unfollowedCalls": 0
+    },
+    "packages/client/faraday": {
+      "name": "@suss/client-faraday",
+      "exports": 2,
+      "internal": 0,
+      "consumers": 2,
       "unfollowedCalls": 0
     },
     "packages/client/requests": {
@@ -446,7 +453,7 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 41,
+      "exports": 42,
       "internal": 136,
       "consumers": 0,
       "unfollowedCalls": 9
