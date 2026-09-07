@@ -5,12 +5,12 @@
  */
 
 import { field } from "../ast.js";
-import { resolveName } from "../scope.js";
+import { resolveName, scopeAt } from "../scope.js";
 import { peelValue } from "./lowering.js";
 
 import type { Origin } from "@suss/values";
 import type { PyNode } from "../parser.js";
-import type { Binding, ModuleBinding, Scope } from "../scope.js";
+import type { Binding, ModuleBinding } from "../scope.js";
 
 /**
  * A dotted callee on an imported module, `os.path.join`, is the module
@@ -79,16 +79,4 @@ function memberChainOf(node: PyNode): string[] | null {
     return null;
   }
   return [current.text, ...names];
-}
-
-function scopeAt(node: PyNode, module: ModuleBinding): Scope {
-  let current: PyNode | null = node;
-  while (current !== null) {
-    const scope = module.scopeFor.get(current.id);
-    if (scope !== undefined) {
-      return scope;
-    }
-    current = current.parent;
-  }
-  return module.moduleScope;
 }

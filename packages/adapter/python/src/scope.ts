@@ -392,6 +392,19 @@ function moduleScopeOf(scope: Scope): Scope {
   return current;
 }
 
+/** The scope a node is written in, which is the one the nearest enclosing definition opened. */
+export function scopeAt(node: PyNode, module: ModuleBinding): Scope {
+  let current: PyNode | null = node;
+  while (current !== null) {
+    const scope = module.scopeFor.get(current.id);
+    if (scope !== undefined) {
+      return scope;
+    }
+    current = current.parent;
+  }
+  return module.moduleScope;
+}
+
 /**
  * Python does not put a class body's namespace on the lookup chain of a function
  * nested inside it, so a class scope's own bindings only count when the search

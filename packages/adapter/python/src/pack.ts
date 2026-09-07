@@ -41,6 +41,8 @@ export interface PythonPack {
    * and never says why (#188).
    */
   projectModules?: string[];
+  /** The callables the library gives a project for making a request. */
+  clients?: PyClientCall[];
   /** What the library's own database queries look like. The README says how one is matched. */
   storage?: StoragePattern[];
   /** How the library lets a project hand the database SQL it wrote itself. */
@@ -102,6 +104,30 @@ export interface RawSqlPattern {
 export type PythonDiscoveryPattern =
   | DecoratedClassRoute
   | DecoratedFunctionRoute;
+
+/**
+ * The callables a library gives a project for making a request. A
+ * function that calls one of them is a client of the boundary that call
+ * states, and gets a unit bound to its method and path.
+ */
+export interface PyClientCall {
+  type: "clientCall";
+  /** The module the callables come from, `requests`. */
+  importModule: string[];
+  /** Attribute names that state the method themselves: `get` means GET. */
+  verbAttributeNames: Record<string, string>;
+  /** Where a call whose name states the method states its URL. */
+  url: { position: number; keyword: string };
+  /** A call that takes the method as an argument instead, `request("GET", url)`. */
+  methodCall?: {
+    attribute: string;
+    methodPosition: number;
+    methodKeyword?: string;
+    urlPosition: number;
+  };
+  /** Constructors whose instances take the same calls, `Session`. */
+  receiverConstructors?: string[];
+}
 
 /** Conventions both kinds of route share. Each one describes what the library does, never a project's choice. */
 export interface RouteConventions {
