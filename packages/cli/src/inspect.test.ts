@@ -752,6 +752,24 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  it("wraps a long run of unit names under the file they are in", () => {
+    const names = Array.from({ length: 12 }, (_, i) => `handlerNumber${i}`);
+    const before = names.map((name) => changedTo(name, "src/many.ts", 200));
+    const after = names.map((name) => changedTo(name, "src/many.ts", 201));
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      const byFile = output.slice(output.indexOf("Changes by file"));
+      const wrapped = byFile
+        .split("\n")
+        .filter((line) => line.startsWith("  ~ handlerNumber"));
+      expect(wrapped.length).toBeGreaterThan(1);
+      for (const line of wrapped) {
+        expect(line.length).toBeLessThanOrEqual(98);
+      }
+    });
+  });
+
   it("cuts a ref whose name is the whole printed type", () => {
     // A type the adapter cannot name comes through as the compiler's
     // printed text, thousands of characters for an inferred alias, and

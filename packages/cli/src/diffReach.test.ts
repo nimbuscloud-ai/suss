@@ -174,4 +174,46 @@ describe("what a boundary reaches, between two runs", () => {
 
     expect(reachChanges([], after)).toEqual([]);
   });
+
+  it("marks a route that is gone as removed, with what it used to reach", () => {
+    const before = [
+      route([CALLS_STORE]),
+      unit("loadOrder", "src/store.ts", [readsOrders()]),
+    ];
+
+    const [change] = reachChanges(before, []);
+
+    expect(change?.change).toBe("removed");
+    expect(change?.lost.map((effect) => effect.label)).toEqual([
+      "aws.dynamodb:orders",
+    ]);
+  });
+
+  it("takes one route bound to a boundary twice as one route", () => {
+    const twice = [
+      route([CALLS_STORE]),
+      route([CALLS_STORE]),
+      unit("loadOrder", "src/store.ts", [readsOrders()]),
+    ];
+
+    expect(reachChanges([], twice)).toHaveLength(1);
+  });
+
+  it("leaves a call from one function to another out of what a route reaches", () => {
+    const inProcess: BehavioralSummary = {
+      ...unit("loadOrder", "src/store.ts", []),
+      identity: {
+        name: "loadOrder",
+        exportPath: ["loadOrder"],
+        boundaryBinding: {
+          transport: "in-process",
+          semantics: { name: "function-call" },
+          recognition: "reachable",
+        },
+        id: "test::src/store.ts::loadOrder",
+      },
+    };
+
+    expect(reachChanges([], [route([CALLS_STORE]), inProcess])).toEqual([]);
+  });
 });
