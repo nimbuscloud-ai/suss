@@ -54,6 +54,14 @@ export function netHttpClient(): RubyPack {
           constructors: REQUEST_CLASSES,
           urlPosition: 0,
         },
+        // The status comes back as a string, which is why a caller
+        // writes `response.code.to_i == 404`, read the same as any
+        // other member.
+        response: {
+          statusCode: ["code"],
+          body: ["body"],
+          failureDelivery: "response",
+        },
       },
     ],
   };

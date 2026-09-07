@@ -16,10 +16,11 @@ import { pathOf } from "@suss/values";
 
 import { field, rangeOf, readCallArgs, runStatements, spanOf } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
+import { returnPathBranches } from "./responseStatus.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
-import type { RawCodeStructure } from "@suss/extractor";
+import type { RawBranch, RawCodeStructure } from "@suss/extractor";
 import type { CallArgs, Range } from "./ast.js";
 import type { RbClientCall, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -56,7 +57,7 @@ export function clientCallUnits(
       if (request === null) {
         continue;
       }
-      units.push(clientUnit(method, name, request, pack, options));
+      units.push(clientUnit(method, name, request, pattern, pack, options));
     }
   }
   return units;
@@ -283,6 +284,7 @@ function clientUnit(
   method: RbNode,
   name: string,
   request: RequestCall,
+  pattern: RbClientCall,
   pack: RubyPack,
   options: ClientCallOptions,
 ): RawCodeStructure {
@@ -305,10 +307,45 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: [returnBranch(range, invocationEffects(method))],
+    branches: callerBranches(method, range),
+    ...responseAccessors(pattern),
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,
+  };
+}
+
+/**
+ * One branch per path the caller takes after the call, so a test it
+ * writes on the response says which statuses it handles.
+ */
+function callerBranches(method: RbNode, range: Range): RawBranch[] {
+  const effects = invocationEffects(method);
+  return returnPathBranches(method, effects) ?? [returnBranch(range, effects)];
+}
+
+/** The members of the response the pack said mean each thing. */
+function responseAccessors(pattern: RbClientCall): {
+  bodyAccessors?: string[];
+  statusAccessors?: string[];
+  successAccessors?: string[];
+  failureDelivery?: "response" | "exception";
+} {
+  const response = pattern.response;
+  if (response === undefined) {
+    return {};
+  }
+  return {
+    ...(response.body === undefined ? {} : { bodyAccessors: response.body }),
+    ...(response.statusCode === undefined
+      ? {}
+      : { statusAccessors: response.statusCode }),
+    ...(response.success === undefined
+      ? {}
+      : { successAccessors: response.success }),
+    ...(response.failureDelivery === undefined
+      ? {}
+      : { failureDelivery: response.failureDelivery }),
   };
 }
 

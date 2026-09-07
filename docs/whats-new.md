@@ -19,6 +19,15 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 **Middleware and hooks the project builds itself reach the routes they wrap.** A Hono middleware returned by a project factory such as `requireCaller({ header: "x-caller" })` used to be skipped, and a zod-openapi `defaultHook` given to the app constructor was never read, so every route's 401 or 400 was missing. Both now reach the routes on the app. A route's declared contract is compared against what the handler and its wrappers produce together, so a status a shared error handler produces no longer prints as declared but never produced on every route it covers, and a status spread into a route object's `responses` from a shared object is read as declared.
 
+**A Ruby condition says what it tests, and a Ruby caller says which statuses it handles.** Every condition on a Ruby summary used to be the text it was written as, so nothing could read the status a guard names. A comparison, `nil?`, a member read and a negation each come out as themselves now, and a member read says the name it starts from and the members read off it. That is what the Faraday and Net::HTTP packs needed:
+
+```ruby
+response = conn.get("/orders/#{id}")
+return nil if response.status == 404
+```
+
+Against a Rails action that never sends a 404, `suss check` now says `Consumer expects status 404 but provider never produces it`. Net::HTTP hands the status back as a string, and `response.code.to_i == 404` is read as a test on `code`.
+
 **A Python caller says which statuses it handles, and `check` compares them.** A function that calls another service and tests the response used to come back with one path and no conditions, so nothing could be compared against what the other side sends:
 
 ```python

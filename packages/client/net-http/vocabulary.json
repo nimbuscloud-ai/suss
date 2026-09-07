@@ -1,3 +1,5 @@
 {
-  "request": "Net::HTTP: the connection method that sends a request object"
+  "request": "Net::HTTP: the connection method that sends a request object",
+  "code": "Net::HTTP: Response#code, the status the server sent, as a string",
+  "body": "Net::HTTP: Response#body, the body the server sent"
 }

@@ -33,7 +33,7 @@ end
 - **`Net::HTTP.start(host, port) { |http| ... }`** hands the connection to a block parameter, and a call on that parameter is not read. A connection assigned to a name with `Net::HTTP.new` is.
 - **A URI built somewhere else**, in another method or from a value nothing settles, says nothing rather than guessing.
 - **A request whose body or headers matter** is reported by its method and path alone; what `request.body =` sets is not read.
-- **What the response says**, `response.code` and `response.body`, is not read yet.
+- **What the caller does with the response**: `code` and `body` are declared here, and a test the caller writes on one of them becomes a path of its summary. The status comes back as a string, so `response.code.to_i == 404` is read as a test on `code`.
 
 ## Usage
 

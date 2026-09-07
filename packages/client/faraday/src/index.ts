@@ -37,6 +37,14 @@ export function faradayClient(): RubyPack {
         // `Faraday.new(url: "https://api.example.com/v1")` serves every
         // call on that connection under the path of its own URL.
         builderUrlKeyword: "url",
+        // What a caller reads off the response it got back. A test on
+        // one of these says which statuses the caller handles.
+        response: {
+          statusCode: ["status"],
+          success: ["success?"],
+          body: ["body"],
+          failureDelivery: "response",
+        },
       },
     ],
   };

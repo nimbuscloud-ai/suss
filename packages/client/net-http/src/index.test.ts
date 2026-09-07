@@ -165,3 +165,32 @@ describe("a method that calls Net::HTTP", () => {
     expect(summaries).toEqual([]);
   });
 });
+
+describe("what a caller does with the response", () => {
+  it("reads a status the caller converts before it tests it", async () => {
+    const summaries = await summariesOf(
+      [
+        "class OrderClient",
+        "  def fetch(id)",
+        '    response = Net::HTTP.get_response(URI("https://api.example.com/orders/#{id}"))',
+        "    return nil if response.code.to_i == 404",
+        "",
+        "    response.body",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    const http = summaries[0]?.metadata?.http as
+      | { statusAccessors?: string[] }
+      | undefined;
+    expect(http?.statusAccessors).toEqual(["code"]);
+    // A summary carries the condition itself, past the reading a raw
+    // structure holds it in.
+    expect(summaries[0]?.transitions[0]?.conditions[0]).toMatchObject({
+      type: "comparison",
+      left: { type: "dependency", accessChain: ["code"] },
+      right: { value: 404 },
+    });
+  });
+});
