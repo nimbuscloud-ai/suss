@@ -59,6 +59,7 @@
     "check:name-syntax": "node scripts/checkNameSyntax.mjs",
     "check:pack-counts": "node scripts/checkPackCounts.mjs",
     "check:packs": "node scripts/checkPacks.mjs",
+    "check:readmes": "node scripts/checkReadmes.mjs",
     "check:pack-tables": "node scripts/generatePackTables.mjs --check",
     "check:perf": "node scripts/checkPerfBaseline.mjs",
     "check:publish": "node scripts/preparePublish.mjs --check",

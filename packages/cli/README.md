@@ -1,135 +1,78 @@
 # @suss/cli
 
-Command-line interface for suss. It wraps the extraction pipeline, the human-readable inspector, and the cross-boundary checker.
+Read a codebase and check what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.
 
-## What this package is
+This is the command line for [suss](https://github.com/nimbuscloud-ai/suss). It is deterministic and has no model in it.
 
-`@suss/cli` is the user-facing entry point. It imports the language adapter and the pattern packs dynamically, so that starting the CLI doesn't pay the ts-morph cost unless extraction actually runs.
+## Read one service
 
-The package ships its own `AGENTS.md`, at `node_modules/@suss/cli/AGENTS.md`, so a coding agent working from an installed copy has the same guide GitHub shows at the repo root.
-
-### Commands
-
-```sh
-# Extract behavioral summaries from a TypeScript project
-suss extract -p tsconfig.json -f ts-rest [-f express] [-o summaries.json]
-
-# Render a single summaries file as human-readable text
-suss inspect summaries.json
-
-# Show what changed between two summary files
-suss inspect --diff before.json after.json
-
-# Overview of every provider/consumer pair in a directory of summaries
-suss inspect --dir summaries/
-
-# Who serves this request, hop by hop, from the balancer to the handler
-suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir summaries/
-
-# Pairwise check: compare one provider against one consumer
-suss check provider.json consumer.json [--json] [-o findings.json]
-
-# Directory check: auto-pair providers with consumers by (method, path)
-suss check --dir summaries/ [--json] [-o findings.json] [--fail-on warning]
-
-# The part of that report about one file, line, boundary, or summary
-suss check --dir summaries/ --at src/editions/dao.ts:43
-suss check --dir summaries/ --at 'dynamodb:editions#by-publication'
-
-# One question about one boundary, from summaries already on disk
-suss ask 'what can I project from dynamodb:editions#by-publication' --dir summaries/
-suss ask 'what reads dynamodb:editions' --dir summaries/
-suss ask 'why does getOrder reach dynamodb:orders' --dir summaries/
-
-# Generate summaries from a declared contract (no source extraction)
-suss contract --from openapi spec.yaml [-o provider.json]
-suss contract --from openapi https://example.com/openapi.yaml [-o provider.json]
-suss contract --from cloudformation template.yaml [-o provider.json]
-
-# Check the code against intent docs (*.intent / *.prd)
-suss check --dir summaries/ --intent intents/
+```bash
+npx @suss/cli extract -f hono -o api.json
+npx @suss/cli inspect api.json
 ```
 
-### Options
+```
+src/api.ts
+├─ GET /users/{id}  (hono handler | line 5)
+│      if  !findUser()
+│        -> 404 { error }
+│      elif  findUser().deletedAt
+│        -> 410 { error }
+│      else
+│        -> 200 { id, name, email }
+│
+└─ POST /users  (hono handler | line 19)
+       if  !c.req.json().name
+         -> 400 "name is required"
+       else
+         -> 201 { id, name }
+```
 
-**`extract`**
-- `-p, --project`: path to `tsconfig.json` (required)
-- `-f, --framework`: pattern pack name (repeatable)
-- `-o, --output`: write JSON to file instead of stdout
-- `--files`: limit extraction to specific source files
-- `--gaps`: gap handling: `strict` (default), `permissive`, or `silent`
+That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it says so under the handler instead of leaving the path out.
 
-**`check`**
-- `--dir`: directory of summary JSON files; auto-pairs by `(method, normalizedPath)`
-- `--at`: report on one file, `file:line`, boundary, or summary id instead of the whole folder. Needs `--dir`, and exits non-zero when it matches nothing
-- `--all`: write out every finding and every list, instead of the collapsed report
-- `--json`: emit findings as JSON
-- `-o, --output`: write findings to file instead of stdout
-- `--fail-on`: exit-code threshold: `error` (default), `warning`, `info`, or `none`
+## Install
 
-### What `check` prints by default
+```bash
+npm install --save-dev @suss/cli
+```
 
-A run prints the errors in full and counts everything else: the findings below error severity, grouped by kind, and the boundaries that went unpaired. `--all` writes all of it out.
+Every pack ships inside the CLI, so `-f hono` and `-f rails` need nothing else installed. `suss init` reads your dependencies and writes out the commands for your own project.
 
-Two measurements decided this. The unpaired lists are the bulk of a report on any repository of a realistic size. Over five public repositories and suss's own packages they ran between 66% and 99% of the lines, and not one of those lines is a finding. Warnings and infos also outnumber errors by a wide margin on a first run, so printing them in full puts the thing that fails the build off the top of the screen.
+## The four commands
 
-The flag changes what is printed and nothing else. `--json` always includes every finding and every list, so a CI job that parses the JSON sees no difference. The exit code still comes from `--fail-on`, which defaults to `error`. `--at` prints in full whether or not `--all` is passed, because a reader who has narrowed the run to one file or one boundary has already said what they want to see.
+| Command | What it does |
+|---|---|
+| `suss init` | Reads the project and prints the commands to run, or walks you through them |
+| `suss extract` | Reads code into summaries, one pack per framework, client or ORM |
+| `suss contract` | Reads a declared artifact, an OpenAPI document or a SAM template, into the same summaries |
+| `suss check` | Compares every provider against every consumer and reports where they disagree |
 
-**`ask`**
-- Positional argument: the question, one of `what can I project from <boundary>`, `what reads <boundary>`, `what writes <boundary>`, `what invokes <boundary>`, `what calls <unit>`, `what does <unit> reach`, `what reaches <target>`, `what does <package or unit> provide`, `why does <unit> reach <boundary>`, `why does <name> at <file>:<line> resolve to <target>`. Run `suss ask` with no question to print the list back.
-- `--dir`: directory of summary JSON files, or pass one summaries file instead
-- `--project`: where the source is, for a why question (default: the working directory)
-- `--json`: emit the answer as JSON
-- `-o, --output`: write the answer to file instead of stdout
+Two more read what is already on disk: `suss inspect` renders summaries, including `--diff` between two runs and `--flow` for one request hop by hop, and `suss ask` answers one question about one boundary.
 
-**`stub`**
-- `--from`: stub source kind: `openapi` or `cloudformation`
-- `-o, --output`: write JSON to file instead of stdout
-- Positional argument: path to the spec file
+Every command and flag: the [CLI reference](https://nimbuscloud-ai.github.io/suss/reference/cli).
 
-### Built-in framework resolution
+## In a coding agent
 
-Pass `-f <name>` to select a pattern pack. Built-in names: `ts-rest`, `react-router`, `express`, `fastify`, `fetch`, `axios`. A custom pack is resolved by dynamically importing `@suss/framework-<name>`.
+The same summaries reach an agent over MCP, so it can ask what a route reaches or what writes a table before it edits either:
 
-### Exit codes
+```json
+{
+  "mcpServers": {
+    "suss": { "command": "npx", "args": ["-y", "@suss/mcp", "/path/to/project"] }
+  }
+}
+```
 
-`suss check` exits non-zero when the findings meet the `--fail-on` threshold (by default, any finding of error severity). That is what you use to gate CI.
+The package ships its own `AGENTS.md`, at `node_modules/@suss/cli/AGENTS.md`, so an agent working from an installed copy has the same guide the repository shows.
 
-### Reading a project's declared dependencies
+## More
 
-`suss init` suggests packs based on the libraries a project declares. For `package.json` that is a single `JSON.parse`. Python and Ruby are harder, so each reader returns two things: the library names it managed to read, and the files or lines it could not read, along with why. If suss cannot read a manifest it cannot suggest packs for that project, and it needs to say so, because coming back with no suggestions looks exactly the same as finding nothing to suggest.
-
-| Manifest | What it takes to read |
-| --- | --- |
-| `requirements.txt` / `.in` / `-dev` / `-test` | There is a whole grammar here: extras, version specifiers, environment markers, URL installs, `\` line continuations, and `-r` / `-c` includes that point at more files. The parser rejects the entire file if one line falls outside that grammar, so when a file will not parse as a whole we fall back to reading it line by line. A pip setting like `--index-url` does not declare a library and is not hiding one, so we skip it without comment; anything else we cannot parse gets reported. An editable install points at a directory, and that directory's own manifest is what declares the libraries, so there is no name to read off the line itself. |
-| `pyproject.toml` | Three different spellings of the same list, depending on which tool wrote the file: the standard `project.dependencies`, plus Poetry's two tables. Dependencies marked dynamic get computed at build time, so we report them as unread. Poetry puts the Python interpreter itself in the same table as the libraries. |
-| `setup.cfg` | Usually `install_requires` written out as requirement lines. setuptools also lets it point somewhere else, either at a file (`file: requirements.txt`) or at an attribute on the package (`attr: mypkg.__requires__`), and in that case the list is no more available to us than a computed one would be. |
-| `setup.py` | This is a program, not data. If the file spells out a list literally, that is as good as a manifest; anything else only exists once Python has run. A single non-string element in the list means what we can see is not the whole list. |
-| `Pipfile` | TOML. We read both the `packages` and `dev-packages` tables, each keyed by library name. |
-| `Gemfile.lock` | A Gemfile is Ruby, and its gem list can come out of a loop or a call into another file, so we read the lock file that bundler writes instead. Only the `DEPENDENCIES` section counts. The `GEM` section below it lists everything those gems pulled in transitively, and suggesting a pack for a library the project never asked for would be a worse answer than suggesting none. If there is no lock file, we say so. |
-
-We normalize Python names per PEP 503, which is what makes `Flask-RESTX`, `flask_restx`, and `flask.restx` one library instead of three.
-
-### Nested repositories and submodules
-
-When a service keeps its shared framework in a git submodule, it imports code that is on disk but belongs to a different repository. Both halves of a run have to deal with that. Extraction cares because the decorator a pack matches on is usually defined inside the submodule, so if an import into it does not resolve, every route in the service goes unrecognized. Discovery cares because a nested repository otherwise looks like somebody else's project, and walking into it looks like a mistake.
-
-`.gitmodules` is what tells the two apart. The enclosing repository lists each submodule by path, so if a nested `.git` appears in that list it is part of this project and we add it as an extraction root. If it does not appear, it is a separate project that happens to sit inside the tree, and we drop its files from the walk. Extracting them would report another project's boundaries as though they were this one's.
-
-A submodule nobody checked out is an empty directory. Imports into it resolve to nothing, and the summaries that depended on them quietly never get produced, so a run prints a warning on stderr, continues anyway, and records the problem in the incompleteness note it writes next to the summaries.
-
-## Where it fits in suss
-
-This package depends on everything: `@suss/behavioral-ir`, `@suss/extractor`, `@suss/adapter-typescript`, `@suss/checker`, and all the framework and runtime packs. It is the only package that ties the full stack together.
-
-## Coverage
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Add suss to a project](https://nimbuscloud-ai.github.io/suss/guides/add-to-project)
+- [Every pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [What init reads before it suggests anything](./DESIGN.md)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../.github/badges/coverage-cli.svg)
 
-## License
-
-Licensed under Apache 2.0. See [LICENSE](../../LICENSE).
-
----
-
-For the summary format the CLI reads and writes, see [`docs/behavioral-summary-format.md`](../../docs/behavioral-summary-format.md).
+Apache 2.0. See [LICENSE](../../LICENSE).

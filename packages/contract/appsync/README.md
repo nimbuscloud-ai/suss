@@ -1,5 +1,7 @@
 # @suss/contract-appsync
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` from an [AWS AppSync](https://docs.aws.amazon.com/appsync/) API declared in a CloudFormation or [SAM](https://aws.amazon.com/serverless/sam/) template. AppSync is schema-first: the SDL is authored by hand and the template binds each `(TypeName, FieldName)` pair to a data source. This reader turns that wiring into resolver summaries you can check consumers against, without deploying the stack or exporting anything from AWS.
 
 ## What this package reads
@@ -78,6 +80,12 @@ const summaries = appsyncToSummaries(template, { baseDir: "infra" });
 ## Where it fits in suss
 
 Depends on `@suss/behavioral-ir` (for the IR types it produces), `@suss/contract-graphql` (for SDL parsing, the type conversion, and loading an external schema file), `@suss/manifest-aws` (for template loading, including CloudFormation YAML intrinsic shorthand), and `graphql`. It does not extract from source code and is independent of the language adapters.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

@@ -1,334 +1,47 @@
 # @suss/adapter-ruby
 
-Ruby language adapter for suss. It parses source with tree-sitter (WASM), resolves constant nesting with its own lexical binder, and emits behavioral structure through the same shared assembly layer the Python and TypeScript adapters use.
+Read a Ruby codebase with [suss](https://github.com/nimbuscloud-ai/suss).
 
-## What this package is
+suss reads both sides of every call in a repository and says where the two disagree: a client asking for a field the route stopped returning, a status nobody handles, a queue with no consumer. It reads the code itself, with no model and no network. This package is the part that reads Ruby: it parses with tree-sitter, resolves a constant the way Ruby does, and writes down what each Rails action and each graphql-ruby field returns.
 
-`@suss/adapter-ruby` is the Ruby language adapter, per [`docs/internal/facts-and-rules.md`](../../../docs/internal/facts-and-rules.md)'s Layer 1 contract: discover units, emit summaries in the shared IR, emit facts. It parses a file with `web-tree-sitter` and a vendored Ruby grammar (`grammar/tree-sitter-ruby.wasm`, no native build step), tracks class/module nesting to qualify a constant the way Ruby itself would resolve it lexically, and discovers graphql-ruby's class-based `field` DSL on a class extending a pack-configured base class. A `field :x, mutation: Mutations::Y` or `field :x, resolver: Queries::Z` reference is followed one hop: the referenced class's own file is located by Rails' constant-to-path convention and read for its declared return type. Discovered units become `RawCodeStructure` objects handed to `@suss/extractor`'s `assembleSummary`, the same assembly code the other adapters use.
+## Install
 
-The adapter also discovers a `controllerActions` pattern: a class whose ancestry reaches a pack-configured base is a Rails-shaped controller, and each of its own public instance methods is one of its actions, bound to whatever method and path the pack's `routeFor` gives it. `@suss/framework-rails` is the pack that reads `config/routes.rb` and supplies that callback; the adapter itself contains no Rails string. `require` is not resolved; class and module nesting is. A resolver's transitions are always empty (`branches: []`), since a graphql field does no path-engine work, and confidence is pinned low.
-
-## What an action responds with
-
-A controller action gets one branch per path it can respond on, so an action that writes `:created` down one arm and `:unprocessable_entity` down the other reports both, each gated on the test that arm took.
-
-The calls that send a response come from `responseStatusCalls` on the `controllerActions` pattern. Each entry says a receiverless call the library gives an action for that, and where the call takes its status, either as a keyword or at a positional index; when a call is written with both, the keyword wins. An entry may also give the status that call sends when the action writes none, which is how Rails' `redirect_to` reports 302 while its `render` reports the controller default. `statusCodeNames` on the same pattern gives the number behind each name the library accepts where a number could go, which for Rails is Rack's symbol table. No call name and no status name appears in this package.
-
-The walk hands every response call to the shared path engine as a terminal, and the statement each one is written in ends its path, because Rails raises on a second render. Two things follow from that. A response after one that already ran is not reported, and a path that reaches the end of the body, or that ends in a bare `return`, is the implicit render.
-
-Each branch gets its own `statusCodeReading`, alongside the pattern's `defaultStatusCode` as the library default, and `assembleSummary` collapses the two the same way it does for a status a Flask route returns in a tuple:
-
-- A call that writes no status leaves that branch's reading absent, and the summary claims the call's own default, or the pattern's when the call declares none.
-- A status argument goes through the shared value evaluator, so a number, a name, and a local variable that settles on either all read the same way.
-- A status argument that does not settle on a number, `params[:code]` or a name the pack does not declare, claims nothing on that branch and gets one gap saying so. The other branches are unaffected.
-
-A branch also gets the calls that reach it. `guardsHoldOn` from `@suss/extractor` decides that, comparing what gates each call against what gates the branch, which is the same test the Python and TypeScript adapters apply.
-
-## What runs around an action
-
-A pack says which class-level calls put one of a controller's own methods in front of its actions, in `filters` on the `controllerActions` pattern. Each entry gives the call's name, where it names the method (a leading symbol, or a `with:` keyword), whether the library runs it only after the action raised, the call that takes it back off, and the keywords that narrow it to some of the actions. Rails writes those as `before_action`, `rescue_from`, `skip_before_action`, `only:` and `except:`, and none of those words is in this package.
-
-A filter is read from the class body and from every ancestor's, most distant first, which is the order the library runs them in. The method it names is looked up the way Ruby looks up a method, so a filter declared on a base class and defined there reaches every controller that inherits it, once, in the file it is written in.
-
-Each filter method becomes a `middleware` unit with no boundary. A path through it that writes a response ends the request, and every other path hands the request on, which its `delegate` branches say. `composeWrappers` in `@suss/extractor` folds that unit into each action that records it, so an action reports the filter's 401 under the filter's own test and its own outcomes under the negation of it.
-
-## The method behind a field
-
-Most fields in a graphql-ruby schema get their value from a method. A summary should say a field has nothing behind it only when the adapter looked and found no such method.
-
-The library calls a field's method with `public_send`, so that method can be written anywhere in the class's ancestry. `ancestry.ts` walks the chain, finding each ancestor by the same constant-to-path convention that a `mutation:` or `resolver:` reference already uses. A plain field gets its value from a method of the same name somewhere along that chain. A wired field gets its value from the `resolve` method somewhere along the wired class's chain. graphql-ruby decides which method name a wired class uses, so the pack says which one in `resolverMethodName`. It also says where a project's chain ends: `ancestryRootClassNames` lists the library's own root classes, and reaching one means the walk got past everything the project defined.
-
-A bare superclass name is looked up the way Ruby looks it up: each level of the enclosing nesting, innermost first, then the top level. `module Api; class UsersController < ApplicationController` means `Api::ApplicationController` when a file or the same file defines that, and `ApplicationController` otherwise. When nothing defines any of them, the chain keeps the bare name as an unread ancestor, so a configured base that has no file of its own still matches by the name the project wrote.
-
-The walk produces the same order Ruby does. Ruby builds a class's ancestors as each `include` runs. It works out the included module's own chain first, inserts that chain as a unit, skips anything already in the ancestors, and never moves a module that an earlier include or the superclass already placed. Two concerns sharing a base give `[C, B, A, Base]` rather than `[C, B, Base, A]`, and a base that the superclass already mixes in stays after the superclass. So the walk builds the superclass chain first, filters every later step against what is already there, and expands each sibling include on its own rather than descending into it with the set the siblings share. `include A, B` mixes in B before A, while `include A` followed by `include B` puts B first, so the walk reads calls in source order and reads a single call's arguments backwards.
-
-The tests check this behavior, and the linearization itself was compared against `Module#ancestors` in a running Ruby process for a diamond, a three-way diamond, a diamond crossing a superclass boundary, `prepend`, multi-argument `include`, a module included twice, and a nested module chain.
-
-The same walk builds the declared contract, reading the most distant ancestor first, so a mutation that inherits `argument` declarations from a base mutation gets them.
-
-What the summary then says:
-
-- When the walk finds a method, `bodyContent` comes from that method's body. Nothing in the body matches a shape this pack looks for, so the extractor falls back to its own sentence: what the field does is not described here.
-- When the walk reads a field's whole ancestry and finds no such method, `bodyContent` stays `"absent"` and the summary keeps its no-body sentence. That is right for such a field, because the library gets its value by reading the attribute off the object the field was resolved against.
-- When the walk stops early, `bodyContent` stays unset and the summary gets one sentence saying what stopped it: an ancestor whose file the convention cannot locate, a `define_method` call that defines methods a reader of `def` nodes cannot see, or a wiring value that is not a constant path. `bodyContent` stays unset because the extractor writes its own sentence from that field, and any value would be a claim this reader cannot make. The walk does not read `method_missing` either.
-
-An ancestor the reader could not open stops the search, rather than the search continuing to a method further along. Ruby would have called whatever that ancestor defines, so a method found past it is not the one that runs, and reporting it would be a confident wrong claim instead of an abstention.
-
-What a body does still goes unread. Reading it needs the path engine: statements to walk, a return value to turn into a shape, and calls to resolve against something that knows what they return. `RawCodeStructure.dependencyCalls` is no shortcut around that, because nothing in the summary assembly reads it. A field's location also stays where the field is declared rather than moving to a resolver method in another file, so the path and line numbers on a summary keep pointing at the same place.
-
-One thing the walk deliberately leaves out. A `field` declared on a base object type is not discovered on its subclasses. That would change which units exist rather than what each one says about itself, and it is a separate piece of work.
-
-## What a body lowers to
-
-The adapter lowers a method body into the statement form the shared path
-engine in `@suss/extractor` walks, the same engine the Python and TypeScript
-adapters use. It is generic over the language's own condition handle and never
-looks inside one, so the enumeration and the negation of an earlier arm are
-shared rather than written again here.
-
-| Ruby | Lowers to |
-| --- | --- |
-| `if` / `elsif` / `else` | one `if` per test, with the elsif chain nested into the else arm |
-| `unless` | the same `if`, with the two arms the other way around, so a body that runs when the test fails says so |
-| `render :gone if expired?` and the `unless` spelling of it | one `if` with a single arm, on whichever side of the test the modifier puts it |
-| `while`, `until`, `for` | `loop` |
-| a call with a `do` block, such as `items.each do \|i\|` | `loop`, because the block runs per iteration |
-| `begin` / `rescue` / `ensure` | `try` |
-| `case` / `when` / `else` | `switch`, with `else` as the default group |
-| `return`, `raise`, `break`, `next` | `exit` |
-| anything else | `opaque` |
-
-Three things read differently from Python, and each one is why this file
-exists rather than a shared lowering:
-
-- **`raise` is an ordinary method call**, not a keyword, so a throw is
-  recognised by the call's name rather than by a node type.
-- **A `return` inside a `do` block returns from the method**, so the scan
-  descends into one. A lambda captures its own return, so the scan stops
-  there.
-- **A method returns its last expression** with no `return` written, which
-  Python has no equivalent of.
-
-### Keying anything on a node
-
-tree-sitter hands back a fresh wrapper object every time a child is read, so
-two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
-node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
-`npm run check:style` fails a build that keys either on a node.
-
-## Finding the definition behind a constant
-
-Ruby has no imports. A file says `require` to load another file, and after
-that every constant either one defines is reachable by name, so which file a
-name came from is settled by where the constant is defined rather than by
-anything written at the reading site. The other two adapters emit `imports`
-and this one binds a reference straight to its definition.
-
-Lookup follows Ruby's own rule. A name written inside `module Types; class
-Wrapper` is looked for as `Types::Wrapper::Order`, then `Types::Order`, then
-`Order`, and the first one that settles wins:
-
-```ruby
-module Types
-  class Order; end
-  class Wrapper
-    def build
-      Order      # Types::Order, not the top-level one
-    end
-  end
-end
+```bash
+npm install --save-dev @suss/cli
 ```
 
-A name two files define under the same nesting says nothing, because choosing
-between them would be a guess. Neither does a constant built at run time
-through `const_set` or `Object.const_get`, which nothing here reads.
+The adapter ships inside the CLI, so there is nothing else to install.
 
-The definitions are collected per file and matched afterwards, since which
-file defines a constant is only settled once every file has been read.
+## Read a Rails app
 
-A class reached by name rather than by a reading site, which is what an
-ancestry walk does, goes through the naming convention instead: the constant
-underscores to a path, and that path is looked for under the configured root
-and then under each directory directly beneath it. Rails autoloads from every
-directory under `app`, so `ApplicationController` is
-`app/controllers/application_controller.rb`. The root's own file wins where
-both exist, and no other spelling is tried.
-
-## What a class inherits
-
-A class says which class it extends, twice. `extends` points at whatever the
-superclass name binds to, so the shared rules find a method a base class
-declares on a subclass that never overrode it. `extendsNamed` keeps the name
-as written, because a base class the project does not declare, like
-`ActiveRecord::Base`, has no node in the run to point at:
-
-```ruby
-class Order < ApplicationRecord
-end
+```bash
+npx suss extract --lang ruby -f rails -f activerecord -o summaries/ruby.json
+npx suss check --dir summaries/
 ```
 
-```
-extends       order.rb:0-31  order.rb#ApplicationRecord
-extendsNamed  order.rb:0-31  ApplicationRecord
-```
+`suss init` reads your Gemfile and writes those two commands out for your own project.
 
-A pack matching a library base class reads the second one, and follows the
-first to keep going up.
+## What it reads
 
-## What a body calls out to
+- Rails controller actions, bound to the method and path `config/routes.rb` gives each one, with every status an action can respond with and the `before_action` filters that run in front of it.
+- graphql-ruby's class-based field DSL, including `mutation:` and `resolver:` wiring, and the method behind a field wherever it is defined in the class's ancestry.
+- ActiveRecord calls, what a file reads from the environment, and what a body calls out to, as facts the checker's rules run over.
 
-A pack says which constant its library's request calls hang on, in `clients` on
-the pack: the constant as a project writes it, the method names that state the
-request method, where the URL is written, the methods that build a value taking
-the same calls, and the keyword such a builder takes its base URL under.
+How each of those is decided, and where it stops: [how the Ruby adapter reads a project](./DESIGN.md).
 
-Every method in a file is walked for those calls. A call on the constant itself
-reads directly; a call on a local name reads when that name was assigned, in the
-same method body, from one of the library's own builders, which is the one-hop
-limit the other readers here take. The URL argument goes through the value
-evaluator and `pathOf` from `@suss/values`, the same reading a Rails route path
-gets, so an interpolated string comes to the path it states, and a builder's own
-base URL comes in front of it.
+## Where it fits
 
-A library that sends a request built somewhere else says so in
-`requestObject`: the method that takes it, each request class and the method it
-sends, and where the class takes its URL. Both a request built in the call and
-one assigned to a name in the same method are read.
+It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog` and `web-tree-sitter`. The `rails` and `graphql-ruby` packs consume its `RubyPack` contract. Nothing here knows what any particular library's classes or base classes are called; a pack says that.
 
-A library that takes a URL object rather than a string needs nothing from the
-pack. `URI("...")` and `URI.parse("...")` are Ruby's own, so they are rows in
-the value tables like `File.join`, and every reader of a path sees through them.
-A path that comes back with no text of its own, which is what a URL handed in
-whole gives, names no route and is left unbound.
+`grammar/tree-sitter-ruby.wasm` is a checked-in binary, not a build output. [Where it comes from](./grammar/README.md).
 
-The enclosing method becomes a `client` unit bound to that method and path, and
-a method that makes two calls is a client of both. A call written outside any
-method, and one whose URL does not settle on a string, say nothing.
+## More
 
-A pack also says which members of the response mean the status, the success
-flag and the body. Those names go on the summary, and the method's own body is
-walked the way an action's is, so a test it writes on one of them becomes a
-path with a condition that says which member it read. `suss check` reports a
-caller that handles a status the other side never sends.
-
-## What a condition tests
-
-A condition says what it tests rather than the text it was written as: a
-comparison with its two sides and its operator, `nil?` as a null check, a
-member read as a truthiness check, `!` as a negation, and `&&` and `||` as the
-compound they are. A member read comes out as the name it starts from and the
-members read off it, so `response.status` is `response` and `["status"]`, which
-is what lets a reader ask which member a test read. Ruby's own conversions are
-read through, so `response.code.to_i` is the same member as `response.code`.
-Anything not modelled here stays opaque with its own text, the way all of them
-were before.
-
-## What a body does with the database
-
-Ruby writes no return type, so the Python adapter's trick of reading what a
-method says it gives back has no counterpart here. A pack says which base
-class the library gives a model instead:
-
-```ts
-storage: [
-  {
-    baseClasses: ["ActiveRecord::Base"],
-    writes: ["update", "destroy", "save", "create", "delete_all"],
-    storageSystem: "postgresql",
-  },
-]
-```
-
-A call matches when the constant its receivers start at reaches one of those
-base classes. Rails puts its own class in between, and following `extends`
-through the project and matching `extendsNamed` at the library takes care of
-that:
-
-```ruby
-class ApplicationRecord < ActiveRecord::Base; end
-class Order < ApplicationRecord; end
-
-Order.where(id: 1).first   # one read, against Order, picking rows by id
-```
-
-A chain is one thing the code does, so that counts once. The method the chain
-ends with tells a read from a write, and the keywords along it become the
-selector. `fields` comes back empty, and a call on anything that is not a
-constant says nothing, since there is no class to ask about.
-
-## What a file reads from the environment
-
-`ENV` is part of the language core, so the adapter recognizes reads of it
-itself, without a pack. Each read becomes the same `config-read` interaction
-the TypeScript adapter emits for `process.env.X`, on the binding
-`runtime-config`, spelled `ENV["X"]` whichever way the source wrote it. The
-runtime-config checker pairs those against what a template declares for the
-process the file runs in.
-
-| Ruby | Recognized as | Defaulted |
-| --- | --- | --- |
-| `ENV["X"]`, `ENV['X']`, `::ENV["X"]` | a read of `X` | no |
-| `ENV.fetch("X")` | a read of `X` | no |
-| `ENV.fetch("X", "d")`, `ENV.fetch("X", nil)` | a read of `X` | yes |
-| `ENV.fetch("X") { "d" }`, `ENV.fetch("X") do ... end` | a read of `X` | yes |
-| any of these followed by `\|\|` (`ENV["X"] \|\| "d"`) | a read of `X` | yes |
-| `ENV[name]`, `ENV.fetch("#{prefix}_X")`, `ENV[:X]` | nothing: the name is not a string literal | |
-| `ENV["X"] = "1"`, `ENV.key?("X")`, `Settings::ENV["X"]` | nothing: a write, a membership test, or another constant | |
-| `other \|\| ENV["X"]` | `X` not defaulted, since it is the chain's last resort | |
-
-A read inside a method a pack discovers (a resolver method behind a GraphQL
-field) goes on that unit's summary. A read in the file body, in a class or
-module body, or in a block at those levels runs when the file loads, so it goes
-on a `module-init` summary named after the file, one per file that has such a
-read. A read inside a method no pack discovers, or inside a lambda, is reported
-nowhere, because nothing says when it runs.
-
-## What a file depends on in the project
-
-Every summary has `metadata.moduleImports`, the project files this file depends
-on, relative to the workspace root and sorted. Ruby has no import statement, so
-the list comes from two places: a `require_relative` whose target is a file in
-the run, and a constant the file references that another file in the run
-defines (`Settings::REGION` puts the file defining `Settings` in the list). A
-plain `require` is not followed, because where it loads from depends on the
-load path at run time. A file that depends on nothing in the project gets an
-empty list rather than no field, so a Lambda handler that only requires gems
-still tells the checker that its closure is the handler file alone.
-
-## What a field's resolver reaches
-
-A field's resolver method calls project methods, and those call others. Each method the field reaches this way gets a summary of its own, of kind `library`, bound as `function-call` with `transport: "in-process"` and `recognition: "reachable"`, with the calls, environment reads and database work its own body does. Each invocation effect on a field or a reached method says which summary the call lands on, in `summary`, so a reader answering "what does this field reach" follows `summary` from one unit to the next and never has to match a name.
-
-The walk starts at the resolver method behind every discovered field (the one the section above finds), and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A method two actions both reach gets one summary. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call into a gem, a call through a parameter that some caller passes a method by name into, or one with no declaration this reader could find).
-
-Ruby has no lexical binder for a local variable, so a callee is only followed when the source spells out where it goes: through the class ancestry `ancestry.ts` already computes, through a method the project writes outside any class, which Ruby mixes into every object as a private method, or through a method passed by name into the parameter that calls it.
-
-A call written as a bare name, with no receiver, no arguments and no parentheses, is one of these. `visible_items` on its own parses as an identifier, the same node a local variable read parses as, so `bareCalls.ts` tells the two apart the way Ruby does: a name the method binds is a local variable, and every other identifier read is a call on self. A name is bound by a parameter, an assignment, a block or lambda parameter, a `for` variable, or a `rescue => err` clause. Binding is over-approximated on purpose: a name assigned anywhere in the method counts as a local even below the read, so the mistake this can make is missing a call rather than inventing one. An identifier written where a name is spelled rather than a value read, a method's own name or an assignment's left side, is left alone. So is one written as another call's receiver, since `orders.first` gives no way to resolve what `first` runs on.
-
-A pack can also say which receiverless calls its own library defines, in `inheritedMethodNames` on the `controllerActions` pattern. A call by one of those names is left off the effect list and out of the reach walk, because an effect list is there to show what a body reaches in the project and nothing in the project defines those methods. The list applies to every body the run reads, not only to a discovered action, since the reach walk reaches methods that no pattern discovered. A call written against a receiver keeps its effect, so `page.render(json: 1)` is recorded even when a pack declared `render`. No such name appears in this package; `@suss/framework-rails` supplies Rails' own list.
-
-| Written as | Followed to |
-| --- | --- |
-| `helper`, `helper(x)` or `self.helper(x)`, called in a method | that method in the enclosing class's own ancestry |
-| `helper`, when nothing in the enclosing ancestry defines it | `def helper` written outside any class, project-wide |
-| `Service.new.method` | `method` in `Service`'s own ancestry |
-| `Service.method` | `def self.method` written in `Service`'s own body |
-| `register(method(:build_index))`, where `register(handler)` calls `handler.call` or `handler.()` | `build_index`, followed from wherever a caller in the run named it, through the parameter `register`'s own body calls |
-
-A method passed by name into a call is followed one hop further than the call itself. `method(:build_index)`, written bare with no receiver, is Ruby's way of naming a method rather than calling it, and only that bare form is followed; a `self.method(:build_index)` written with an explicit receiver is not. The same reference works as an `&`-prefixed block argument, `register(&method(:build_index))`, and is numbered by its position among the call's arguments, same as any other argument: `&method(...)` occupies whatever slot it is written in, and a receiving method's own `&blk` parameter is counted at its own declared position among that method's parameters, so the two line up without a separate convention for the block slot. `handler.call` (with or without parentheses) and the `handler.()` shorthand both invoke a `Proc` or `Method` a parameter is bound to, and are recognized the same way; a plain block passed with `do...end` or `{ }`, and `yield`, are not, so a resolver that only ever receives its block that way still gets `unboundParameter` on the call, with no join to fill it.
-
-Where it stops, and what the gap says:
-
-| Written as | Reason |
-| --- | --- |
-| `obj.send(:method)`, `public_send`, `__send__` | a dynamic send this run does not follow |
-| a method the project writes with `define_method` | a body this reader cannot see |
-| a bare name two files each define at the top level | more than one possible source |
-| `Rails.cache.delete`, a call into a class this run does not define | outside the run (no gap) |
-| `user.orders`, a local variable, or an instance variable | the value could not be settled |
-| `visible_items.first`, where the receiver is itself a bare call | the value could not be settled |
-| `handler.call` or `handler.()`, where `handler` is a parameter that some caller in the run passes a method by name into | followed through the join above (no gap) |
-| `handler.call` or `handler.()`, where `handler` is a parameter that no caller in the run passes a method by name into | the caller supplies it, and nothing named what it passed |
-| `service_class.new.method` where `service_class` is not a constant | the value could not be settled |
-
-Not followed yet: a method found only on a superclass past an unread ancestor, a callable read out of a variable, the body of a block passed to `define_method`, and `yield`.
-
-## Where it fits in suss
-
-Depends on `@suss/extractor` (for `RawCodeStructure` / `assembleSummary`), `@suss/behavioral-ir`, `@suss/datalog` (for the fact database), and `web-tree-sitter`. Framework packs under `packages/framework/*` (`@suss/framework-graphql-ruby` and `@suss/framework-rails`) consume its `RubyPack` contract; nothing in this package knows what any particular library's classes, DSL calls, or base classes are called beyond graphql-ruby's own `field` / `argument` / `type` verbs, which the discovery logic reads structurally rather than through pack configuration.
-
-## Extraction cache
-
-This adapter uses the extraction cache shared across every language adapter, from `@suss/extractor`. It keeps the cache beside the project root, at `.suss/cache/`, and supplies the walked `.rb` file list as the key's file set; it has no config file of its own to guard the entry the way the TypeScript adapter's tsconfig does. Reuse today is whole-run only: any file changing re-extracts the whole project instead of that one file. See the extractor package's README for the design.
-
-## Grammar asset
-
-`grammar/tree-sitter-ruby.wasm` is a checked-in binary asset, not a build output. See [`grammar/README.md`](./grammar/README.md) for its provenance and how to bump it.
-
-## Coverage
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Python and Ruby](https://nimbuscloud-ai.github.io/suss/guides/python-and-ruby)
+- [Every pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../../.github/badges/coverage-ruby.svg)
 
-## License
-
-Licensed under Apache 2.0. See [LICENSE](../../../LICENSE).
+Apache 2.0. See [LICENSE](../../../LICENSE).

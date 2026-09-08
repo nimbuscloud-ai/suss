@@ -1,5 +1,7 @@
 # @suss/contract-storybook
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` from [Storybook](https://storybook.js.org/) CSF3 story files. A story is a specification somebody wrote by hand: this component supports this prop configuration. Reading stories as contracts lets you ask whether a component accepts the args every story supplies, and whether every branch inferred from the component has a story that reaches it.
 
 ## What this package reads
@@ -67,6 +69,12 @@ const summaries = generateSummariesFromStories(
 ## Where it fits in suss
 
 Depends on `@suss/behavioral-ir` (for the IR types it produces) and `@suss/adapter-typescript` (for export resolution), with `ts-morph` as a peer dependency. This is the one contract reader that parses TypeScript, because CSF is TypeScript. It still reads a declared artifact rather than inferring behavior from a component's implementation.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

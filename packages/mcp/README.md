@@ -1,5 +1,7 @@
 # @suss/mcp
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 An MCP server over suss. A coding agent can ask what a route serves,
 what reads a table, and where two sides of a boundary disagree, at the
 moment it decides the question is worth asking.

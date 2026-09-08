@@ -1,5 +1,7 @@
 # @suss/checker-intent
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Pairs team-authored intent against derived code and reports where the
 code fails to satisfy what the team declared.
 
@@ -95,6 +97,12 @@ This package depends on `@suss/intent-ir` (the intent shapes and
 It does **not** depend on
 `@suss/checker`. The full design is in
 [`design/proposals/intent-specs.md`](../../design/proposals/intent-specs.md).
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

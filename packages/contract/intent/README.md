@@ -1,5 +1,7 @@
 # @suss/contract-intent
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Read team-authored intent specs (`*.intent` / `*.prd`, YAML or JSON) into
 `IntentSummary[]` for the intent checker to pair against derived code.
 
@@ -71,6 +73,12 @@ can `link` to a system-intent outcome by `<name>.<id>`.
 
 Body properties accept the primitive type names `string`, `integer`,
 `number`, `boolean`, `null`, and `unknown`.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

@@ -1,5 +1,7 @@
 # @suss/contract-openapi
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` from an [OpenAPI 3.x](https://swagger.io/specification/) specification. Lets you check TypeScript consumers against a published API contract, or your own provider against a contract you publish, without having extracted summaries from the provider's source code.
 
 ## What this package is
@@ -66,6 +68,12 @@ A document may declare a response as `"4XX"` rather than as one code. That entry
 ## Where it fits in suss
 
 Depends only on `@suss/behavioral-ir` (for the IR types it produces) and `yaml` (for spec parsing). It is independent of the language adapter and pattern packs; it doesn't extract from source.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

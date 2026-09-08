@@ -123,6 +123,9 @@ jobs:
       - name: Pack tables
         run: npm run check:pack-tables
 
+      - name: Package READMEs
+        run: npm run check:readmes
+
       - name: Diagram geometry
         run: npm run check:diagrams
 

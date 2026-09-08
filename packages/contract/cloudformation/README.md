@@ -1,5 +1,7 @@
 # @suss/contract-cloudformation
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` from an AWS [CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/) or [SAM](https://aws.amazon.com/serverless/sam/) template that embeds an OpenAPI definition under an API Gateway resource. Lets you check TypeScript consumers against an AWS-deployed API without round-tripping through an OpenAPI export.
 
 ## What this package is
@@ -71,6 +73,12 @@ const summaries = cloudFormationToSummaries({
 ## Where it fits in suss
 
 Depends on `@suss/behavioral-ir` (for the IR types it produces), `@suss/contract-openapi` (for the actual schema to type conversion), and `yaml` (for template parsing). The CloudFormation surface is a thin walker.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

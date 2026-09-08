@@ -1,5 +1,7 @@
 # @suss/contract-graphql
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` from GraphQL files a repository already commits. Two readers ship in this package, one for each side of a GraphQL boundary:
 
 | Reader | Input | Summaries |
@@ -78,6 +80,12 @@ const consumer = graphqlDocumentsPathToSummaries("src/queries");
 ## Where it fits in suss
 
 Depends only on `@suss/behavioral-ir` (for the IR types it produces) and `graphql` (for parsing and printing). It does not extract from source code and is independent of the language adapters. `@suss/contract-appsync` reuses this package's SDL loader and type conversion for AppSync schemas declared in CloudFormation.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 
