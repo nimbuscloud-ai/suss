@@ -9,6 +9,8 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ## If you use suss
 
+**`suss init` suggests every pack, including the ones that shipped last week.** The Python and Ruby client packs arrived in 0.23.0 and `init` never mentioned them, because the list it suggested from was a table somebody edited by hand. Each pack now says which libraries it reads, and `init` matches your dependencies against that, so a FastAPI service is told about `requests`, `httpx` and `aiohttp`, and a Rails app about `faraday`, `net-http` and `activerecord`. A project written in a language gets the packs for what that language itself ships, `fetch` and Node's own surface for TypeScript, Net::HTTP for Ruby. Those ride along and never count on their own, so a project with an ORM and no framework still gets told that an effects pack alone comes back empty.
+
 **`check` warns when a queue that redelivers reaches a consumer that posts.** An SQS queue that is not FIFO can deliver one message more than once, and a handler draining it that calls another service to create something makes that call again on the second delivery. That is the charge-twice bug:
 
 ```
@@ -128,6 +130,10 @@ That pairs with whatever serves the route in the same run: a route in the same p
 **A handler with a run of guards reports one transition where it reported many.** Two paths that differ only over a branch they both pass through become one, in the engine, for every language. The two handlers that used to lose everything to the path budget no longer come near it.
 
 ## If you contribute to suss
+
+**A pack says what it is, beside its own patterns.** `declares` on a pack gives its kind, the package it ships in, the libraries a project depends on for it to read anything, the sentence about what it reads, and any per-project config it needs. `suss init` reads that instead of a table in the CLI, and the pack tables on the [packages page](/reference/packages) are generated from it by `npm run docs:packs`. Adding a pack used to mean three edits in three places, two of which failed quietly; `check:packs` now requires the declaration and `check:pack-tables` fails when the page has drifted from it.
+
+**A package page reads like a package page.** What npm and jsdelivr render is the README, and several of ours had grown into design documents with no link back to the project. A README now says what the package does, how to install it, and what it produces, and the reference prose lives in `DESIGN.md` beside it, in the repository and out of the published tarball. `check:readmes` keeps every published package to that.
 
 **A pack declares the calls that respond, and the adapter walks them.** `responseStatusCalls` on a Ruby `controllerActions` pattern or a Python route pattern says which calls end the request and where each takes its status. The adapter hands every one to the shared path engine as a terminal and builds one branch per path, the same walk the TypeScript adapter has always done, so a status reading and the effects that reach a branch come out per branch. `ambiguousReading` is gone from the Ruby adapter with nothing left to produce it.
 
