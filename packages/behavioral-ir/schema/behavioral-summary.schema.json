@@ -25,7 +25,8 @@
           "worker",
           "library",
           "caller",
-          "module-init"
+          "module-init",
+          "scheduled-callback"
         ]
       },
       "location": {

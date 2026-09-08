@@ -1,6 +1,6 @@
 {
   "name": "@suss/values",
-  "version": "0.24.1",
+  "version": "0.24.2",
   "type": "module",
   "description": "A bounded evaluator that works out what the source pins down about a value and leaves a hole for the rest.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/ir-core": "0.24.1"
+    "@suss/ir-core": "0.24.2"
   },
   "devDependencies": {
     "tsup": "*",
