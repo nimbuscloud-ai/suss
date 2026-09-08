@@ -1,14 +1,14 @@
 {
   "total": {
     "lines": {
-      "total": 9432,
-      "covered": 8227,
+      "total": 9430,
+      "covered": 8226,
       "skipped": 0,
-      "pct": 87.22
+      "pct": 87.23
     },
     "statements": {
-      "total": 9528,
-      "covered": 8317,
+      "total": 9526,
+      "covered": 8316,
       "skipped": 0,
       "pct": 87.29
     },
@@ -19,10 +19,10 @@
       "pct": 92.78
     },
     "branches": {
-      "total": 7409,
-      "covered": 5915,
+      "total": 7404,
+      "covered": 5913,
       "skipped": 0,
-      "pct": 79.83
+      "pct": 79.86
     },
     "branchesTrue": {
       "total": 0,
@@ -33,10 +33,10 @@
   },
   "src/adapter.ts": {
     "lines": {
-      "total": 913,
-      "covered": 657,
+      "total": 911,
+      "covered": 656,
       "skipped": 0,
-      "pct": 71.96
+      "pct": 72
     },
     "functions": {
       "total": 142,
@@ -45,16 +45,16 @@
       "pct": 79.57
     },
     "statements": {
-      "total": 927,
-      "covered": 669,
+      "total": 925,
+      "covered": 668,
       "skipped": 0,
-      "pct": 72.16
+      "pct": 72.21
     },
     "branches": {
-      "total": 727,
-      "covered": 470,
+      "total": 722,
+      "covered": 468,
       "skipped": 0,
-      "pct": 64.64
+      "pct": 64.81
     }
   },
   "src/assembly.ts": {
