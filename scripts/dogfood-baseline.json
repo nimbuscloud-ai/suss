@@ -3,9 +3,9 @@
     "packages": 74,
     "packagesWithExports": 74,
     "exports": 901,
-    "internal": 3196,
-    "consumers": 1740,
-    "pairs": 1737,
+    "internal": 3197,
+    "consumers": 1741,
+    "pairs": 1738,
     "unfollowedCalls": 492,
     "findingErrors": 0
   },
@@ -27,8 +27,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 89,
-      "internal": 833,
-      "consumers": 195,
+      "internal": 834,
+      "consumers": 196,
       "unfollowedCalls": 107
     },
     "packages/behavioral-ir": {
