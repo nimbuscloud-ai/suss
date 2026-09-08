@@ -1,6 +1,6 @@
 {
   "name": "@suss/behavioral-ir",
-  "version": "0.24.4",
+  "version": "0.25.0",
   "type": "module",
   "description": "The types and JSON schema for a suss behavioral summary, the record of what a piece of code does on every path.",
   "keywords": [
@@ -58,7 +58,7 @@
     "zod": "^4.0.0"
   },
   "dependencies": {
-    "@suss/ir-core": "0.24.4"
+    "@suss/ir-core": "0.25.0"
   },
   "devDependencies": {
     "tsup": "*",

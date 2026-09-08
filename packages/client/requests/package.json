@@ -1,6 +1,6 @@
 {
   "name": "@suss/client-requests",
-  "version": "0.24.4",
+  "version": "0.25.0",
   "type": "module",
   "description": "Client pack for extracting suss client behavioral summaries from Python requests call sites.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.24.4"
+    "@suss/adapter-python": "0.25.0"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
