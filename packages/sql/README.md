@@ -1,5 +1,7 @@
 # @suss/sql
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Reads what a SQL statement touches: which tables, which fields, and what it picks rows by.
 
 ## What this package is

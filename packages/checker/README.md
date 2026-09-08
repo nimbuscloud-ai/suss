@@ -1,5 +1,7 @@
 # @suss/checker
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Pairwise cross-boundary checker. Given two `BehavioralSummary` objects (one provider, one consumer), it produces a list of `Finding`s describing mismatches.
 
 ## What this package is
@@ -44,6 +46,12 @@ behaviour.
 ## Status
 
 The checker runs six checks: provider coverage (with sub-case analysis), consumer satisfaction, contract consistency (status and body shapes), body compatibility (field presence), and semantic condition bridging (Level 5). It pairs boundaries automatically through `checkAll` / `pairSummaries`, normalizing paths as it goes (`:id` ↔ `{id}`). See [`design/status.md`](../../design/status.md).
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

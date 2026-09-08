@@ -1,5 +1,7 @@
 # @suss/contract-aws-apigateway
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` for AWS API Gateway resources (REST + HTTP API), independent of how they were deployed.
 
 ## What this package is
@@ -24,6 +26,12 @@ packages/contract/
 A handler that only returns `200` produces a *much* larger behavioral envelope once it's deployed behind API Gateway: an authorizer adds `401`/`403`, request validation adds `400`, throttling adds `429`, integration timeouts add `504`, CORS adds an `OPTIONS` preflight endpoint. Without modeling these, a consumer that handles `429` looks like it has a dead branch, when in reality the platform produces `429` even though the handler doesn't.
 
 These transitions are emitted with `confidence.source: "derived"` and an opaque `Predicate` of the form `platform:apiGateway:<contract>`. Each transition's `metadata` records where the transition came from (which configuration field introduced it) for `inspect`/`diff` output, so consumers do not have to work out the platform cause themselves.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

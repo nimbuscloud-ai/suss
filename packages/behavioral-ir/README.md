@@ -1,5 +1,7 @@
 # @suss/behavioral-ir
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Core type definitions and utilities for the suss behavioral intermediate representation.
 
 ## What this package is
@@ -25,6 +27,12 @@ function firstTransition(summary: BehavioralSummary): Transition | undefined {
   return summary.transitions[0];
 }
 ```
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

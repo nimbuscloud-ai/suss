@@ -1,5 +1,7 @@
 # @suss/contract-serverless
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` from a [Serverless Framework](https://www.serverless.com/framework/docs) service file. A `serverless.yml` deploys working Lambdas, and before this reader existed suss saw none of them: no deployable unit, no environment contract, no event wiring.
 
 ## What this package is
@@ -67,6 +69,12 @@ Each of these writes a line to stderr giving the function, the block, and what s
 ## Where it fits in suss
 
 Depends on `@suss/contract-cloudformation` (which owns every summary builder this reader reaches), `@suss/manifest-aws` (for the CloudFormation intrinsic tags the `resources:` block uses), `@suss/behavioral-ir`, and `yaml`.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

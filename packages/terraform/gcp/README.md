@@ -1,5 +1,7 @@
 # @suss/terraform-gcp
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Says what Google Cloud's Terraform provider declares, for `@suss/contract-terraform` to read.
 
 ## What this package is

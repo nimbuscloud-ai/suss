@@ -1,5 +1,7 @@
 # @suss/ir-core
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Primitives shared across suss's intermediate representations: the pieces every IR references, in one place that each of them can reach without depending on the others.
 
 ## What this package is
@@ -103,6 +105,12 @@ Both `@suss/behavioral-ir` (what code does) and `@suss/intent-ir` (what the team
 ## Status
 
 v0: type shapes, boundary bindings + constructors, source locations, confidence. Stable surface; new boundary semantics are added as variants.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

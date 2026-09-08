@@ -1,5 +1,7 @@
 # @suss/contract-wrangler
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Reads a Cloudflare `wrangler.toml` (or `wrangler.jsonc`) and says what the Worker it deploys is given.
 
 ## What this package is

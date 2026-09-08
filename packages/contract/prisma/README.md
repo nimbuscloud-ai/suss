@@ -1,5 +1,7 @@
 # @suss/contract-prisma
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Generate suss `BehavioralSummary[]` from a [Prisma](https://www.prisma.io/) schema. A `schema.prisma` file declares every table an application has and every column on it, which is the contract the code reads and writes against. This reader turns that declaration into storage boundaries, so a query touching a column nobody declared becomes a finding.
 
 ## What this package reads
@@ -77,6 +79,12 @@ const summaries = prismaSchemaFileToSummaries("prisma/schema.prisma", {
 ## Where it fits in suss
 
 Depends only on `@suss/behavioral-ir` (for the IR types it produces) and `@mrleebo/prisma-ast` (for parsing). It does not extract from source code and is independent of the language adapters. The Prisma pattern pack is what finds the query call sites this contract pairs against.
+
+## More
+
+- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
 

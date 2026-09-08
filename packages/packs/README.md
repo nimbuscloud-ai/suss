@@ -1,5 +1,7 @@
 # @suss/packs
 
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+
 Every pack suss ships, as one package with a subpath per pack.
 
 ```bash
