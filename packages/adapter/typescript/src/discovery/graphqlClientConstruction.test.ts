@@ -470,3 +470,49 @@ describe("stampGraphqlClientRefs", () => {
     expect(readGraphqlMetadata(summary)?.client).toBeUndefined();
   });
 });
+
+describe("a fragment the codegen client preset registers", () => {
+  it("resolves a spread whose definition is a document of its own", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/pet.tsx",
+      `
+      import { gql } from "../gql";
+      gql(\`
+        fragment PetFields on Pet {
+          id
+          name
+        }
+      \`);
+      export const GET_PET = gql(\`
+        query GetPet { pet { ...PetFields } }
+      \`);
+    `,
+    );
+
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+
+    const metadata = readGraphqlMetadata(summary);
+    expect(metadata?.unresolvedFragments).toBeUndefined();
+    expect(metadata?.fragmentRegistry).toBeUndefined();
+  });
+
+  it("keeps a spread nothing in the project defines", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "src/other.tsx",
+      `
+      import { gql } from "../gql";
+      gql(\`fragment OwnerFields on Owner { id }\`);
+    `,
+    );
+
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+
+    expect(readGraphqlMetadata(summary)?.unresolvedFragments).toEqual([
+      "PetFields",
+    ]);
+  });
+});
