@@ -1,6 +1,10 @@
 // graphqlClientConstruction.ts: find the GraphQL client constructions
 // a pack describes and read the endpoint each one is built with.
 
+import {
+  type DocumentNode as GraphqlDocumentNode,
+  parse as graphqlParse,
+} from "graphql";
 import picomatch from "picomatch";
 import {
   type CallExpression,
@@ -67,7 +71,7 @@ export function stampGraphqlClientRefs(
 
     const found = readGraphqlMetadata(summary) ?? {};
     const existing = withoutFragmentsDefinedElsewhere(found, () => {
-      defined ??= fragmentsDefinedIn(sourceFiles);
+      defined ??= fragmentsRegisteredIn(sourceFiles);
       return defined;
     });
     const scoped = scopedWorkspaceFor(summary.location.file, scopes);
@@ -95,26 +99,58 @@ export function stampGraphqlClientRefs(
 }
 
 /**
- * Fragment definitions written anywhere in the project, by name.
+ * Fragments graphql-codegen's client preset registers, by name.
  *
- * graphql-codegen's client preset registers a fragment by writing it in
- * a document of its own, `gql(\`fragment Place_Filter on Place { ... }\`)`,
- * and inlines it into every document that spreads it. Nothing
- * interpolates it, so a reader of one document alone sees a spread with
- * no definition and calls it dangling.
+ * The preset spells a document as a call, `gql(`...`)`, and inlines a
+ * fragment written on its own into every document that spreads it. A
+ * tagged template is the run-time spelling, where a spread resolves
+ * only through interpolation or a registry, so those are left alone.
  */
-function fragmentsDefinedIn(
+function fragmentsRegisteredIn(
   sourceFiles: ReadonlyArray<SourceFile>,
 ): ReadonlySet<string> {
-  const defined = new Set<string>();
+  const registered = new Set<string>();
   for (const sourceFile of sourceFiles) {
-    for (const match of sourceFile
-      .getFullText()
-      .matchAll(/\bfragment\s+([A-Za-z_][\w]*)\s+on\s+[A-Za-z_]/g)) {
-      defined.add(match[1] as string);
-    }
+    sourceFile.forEachDescendant((node) => {
+      if (!Node.isCallExpression(node)) {
+        return;
+      }
+      const argument = node.getArguments()[0];
+      if (
+        argument === undefined ||
+        !Node.isNoSubstitutionTemplateLiteral(argument)
+      ) {
+        return;
+      }
+      for (const name of fragmentOnlyDocumentNames(argument.getLiteralText())) {
+        registered.add(name);
+      }
+    });
   }
-  return defined;
+  return registered;
+}
+
+/** The fragments a document defines, when it defines nothing else. */
+function fragmentOnlyDocumentNames(text: string): string[] {
+  if (!text.includes("fragment")) {
+    return [];
+  }
+
+  let parsed: GraphqlDocumentNode;
+  try {
+    parsed = graphqlParse(text);
+  } catch {
+    return [];
+  }
+
+  const names: string[] = [];
+  for (const definition of parsed.definitions) {
+    if (definition.kind !== "FragmentDefinition") {
+      return [];
+    }
+    names.push(definition.name.value);
+  }
+  return names;
 }
 
 /**
