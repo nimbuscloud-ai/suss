@@ -138,7 +138,8 @@ const BY_FILE: Array<{
   {
     // Operations are written one file per screen, so the reader takes
     // the directory and the suggestion names it once.
-    matches: (f, file) => isGraphqlFile(f) && !declaresTypes(file),
+    matches: (f, file) =>
+      isGraphqlFile(f) && !declaresTypes(file) && declaresOperations(file),
     name: "graphql-documents",
     packageName: "@suss/contract-graphql",
     perDirectory: true,
@@ -165,21 +166,28 @@ const isGraphqlFile = (filename: string): boolean =>
   (filename.endsWith(".graphql") || filename.endsWith(".gql")) &&
   !filename.includes(".test.");
 
-/**
- * Whether a GraphQL file is a schema rather than a set of operations.
- * A schema declares types; a document written by a project's own code
- * has queries, mutations and fragments and nothing else.
- */
+/** A schema declares types; a document written by a project does not. */
 function declaresTypes(file: string): boolean {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, "utf8");
-  } catch {
-    return false;
-  }
   return /^\s*(extend\s+)?(type|input|interface|enum|union|scalar|schema)\s/m.test(
-    text,
+    textOf(file),
   );
+}
+
+/**
+ * Whether a document has an operation to read. A file with nothing but
+ * fragments in it is what codegen inlines into the documents that
+ * spread them, and reading it on its own comes back with no boundary.
+ */
+function declaresOperations(file: string): boolean {
+  return /^\s*(query|mutation|subscription)\s|^\s*\{/m.test(textOf(file));
+}
+
+function textOf(file: string): string {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 const LANGUAGE_OF: Record<Ecosystem, Language> = {
