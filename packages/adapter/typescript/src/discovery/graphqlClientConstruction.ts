@@ -1,6 +1,10 @@
 // graphqlClientConstruction.ts: find the GraphQL client constructions
 // a pack describes and read the endpoint each one is built with.
 
+import {
+  type DocumentNode as GraphqlDocumentNode,
+  parse as graphqlParse,
+} from "graphql";
 import picomatch from "picomatch";
 import {
   type CallExpression,
@@ -57,21 +61,28 @@ export function stampGraphqlClientRefs(
   const workspace = sole !== null ? boundWorkspaceFor(sole, packs) : null;
   const soleClient =
     sole !== null ? (workspace !== null ? { ...sole, workspace } : sole) : null;
-  // Walked once, and only when an operation ships a dangling spread.
+  // Both walked once, and only when an operation ships a dangling spread.
   let registry: FragmentRegistryStatus | null = null;
+  let defined: ReadonlySet<string> | null = null;
   for (const summary of summaries) {
     if (!isGraphqlOperationBinding(summary.identity.boundaryBinding)) {
       continue;
     }
 
-    const existing = readGraphqlMetadata(summary) ?? {};
+    const found = readGraphqlMetadata(summary) ?? {};
+    const existing = withoutFragmentsDefinedElsewhere(found, () => {
+      defined ??= fragmentsRegisteredIn(sourceFiles);
+      return defined;
+    });
     const scoped = scopedWorkspaceFor(summary.location.file, scopes);
     const client =
       scoped !== null
         ? { uri: null, uriRef: null, workspace: scoped }
         : soleClient;
     const dangling = (existing.unresolvedFragments?.length ?? 0) > 0;
-    if (client === null && !dangling) {
+    // A spread this run resolved has to come off the summary even when
+    // there is no client to record beside it.
+    if (client === null && !dangling && existing === found) {
       continue;
     }
 
@@ -85,6 +96,85 @@ export function stampGraphqlClientRefs(
       ...(dangling && registry !== null ? { fragmentRegistry: registry } : {}),
     });
   }
+}
+
+/**
+ * Fragments graphql-codegen's client preset registers, by name.
+ *
+ * The preset spells a document as a call, `gql(`...`)`, and inlines a
+ * fragment written on its own into every document that spreads it. A
+ * tagged template is the run-time spelling, where a spread resolves
+ * only through interpolation or a registry, so those are left alone.
+ */
+function fragmentsRegisteredIn(
+  sourceFiles: ReadonlyArray<SourceFile>,
+): ReadonlySet<string> {
+  const registered = new Set<string>();
+  for (const sourceFile of sourceFiles) {
+    sourceFile.forEachDescendant((node) => {
+      if (!Node.isCallExpression(node)) {
+        return;
+      }
+      const argument = node.getArguments()[0];
+      if (
+        argument === undefined ||
+        !Node.isNoSubstitutionTemplateLiteral(argument)
+      ) {
+        return;
+      }
+      for (const name of fragmentOnlyDocumentNames(argument.getLiteralText())) {
+        registered.add(name);
+      }
+    });
+  }
+  return registered;
+}
+
+/** The fragments a document defines, when it defines nothing else. */
+function fragmentOnlyDocumentNames(text: string): string[] {
+  if (!text.includes("fragment")) {
+    return [];
+  }
+
+  let parsed: GraphqlDocumentNode;
+  try {
+    parsed = graphqlParse(text);
+  } catch {
+    return [];
+  }
+
+  const names: string[] = [];
+  for (const definition of parsed.definitions) {
+    if (definition.kind !== "FragmentDefinition") {
+      return [];
+    }
+    names.push(definition.name.value);
+  }
+  return names;
+}
+
+/**
+ * The same metadata with the spreads something else in the project
+ * defines taken off. The project is walked only when a document has a
+ * spread to ask about.
+ */
+function withoutFragmentsDefinedElsewhere(
+  metadata: ReturnType<typeof readGraphqlMetadata> & object,
+  definedInProject: () => ReadonlySet<string>,
+): typeof metadata {
+  const unresolved = metadata.unresolvedFragments ?? [];
+  if (unresolved.length === 0) {
+    return metadata;
+  }
+
+  const defined = definedInProject();
+  const left = unresolved.filter((name) => !defined.has(name));
+  if (left.length === unresolved.length) {
+    return metadata;
+  }
+
+  const { unresolvedFragments: _dropped, ...rest } = metadata;
+  return left.length === 0 ? rest : { ...rest, unresolvedFragments: left };
 }
 
 interface CompiledScope {
