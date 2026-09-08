@@ -143,6 +143,12 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-sqlalchemy",
   dependencies: [{ ecosystem: "pypi", name: "sqlalchemy" }],
   reads: `SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns.`,
+  configuration: {
+    file: "suss.sqlalchemy.json",
+    example: { storageSystem: "postgresql" },
+    required: true,
+    why: "which database is behind the engine: postgresql, mysql, or sqlite. SQLAlchemy talks to all of them and the connection URL settles which, so the pack cannot.",
+  },
 };
 
 export default sqlalchemyFramework;

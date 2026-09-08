@@ -104,6 +104,12 @@ export const declares: PackDeclaration = {
   ],
   reads:
     "ActiveRecord calls (Ruby): a call matches when the constant its receivers start at reaches \`ActiveRecord::Base\`, following what each class extends through the project.",
+  configuration: {
+    file: "suss.activerecord.json",
+    example: { storageSystem: "postgresql" },
+    required: true,
+    why: "which database is behind the connection: postgresql, mysql, or sqlite. ActiveRecord talks to all of them and database.yml settles which, so the pack cannot.",
+  },
 };
 
 export default activeRecordFramework;

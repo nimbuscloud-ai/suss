@@ -9,6 +9,7 @@ import { computeContentHash } from "@suss/adapter-typescript";
 
 import {
   BUILTIN_FRAMEWORKS,
+  builtinDeclarations,
   extract,
   formatCacheDiagnostic,
   formatEmptyLanguageRun,
@@ -44,13 +45,23 @@ function writeConfig(contents: string): string {
   return file;
 }
 
-// These packs refuse to run without per-project config, since only the
-// project can say what its layout is or which database it talks to.
-const CONFIG_FOR: Record<string, unknown> = {
-  "graphql-ruby": { root: "app/graphql" },
-  sqlalchemy: { storageSystem: "postgresql" },
-  activerecord: { storageSystem: "postgresql" },
-};
+/**
+ * The config a pack refuses to run without, taken from what the pack
+ * declares. `suss init` prints that same example, so a pack whose
+ * declaration is missing it hands somebody a command that fails on the
+ * first line, which is what the test below is about.
+ */
+async function configuredExamples(): Promise<Record<string, unknown>> {
+  const examples: Record<string, unknown> = {};
+  for (const { name, declares } of await builtinDeclarations()) {
+    if (declares.configuration !== undefined) {
+      examples[name] = declares.configuration.example;
+    }
+  }
+  return examples;
+}
+
+const CONFIG_FOR: Record<string, unknown> = await configuredExamples();
 
 async function loadAnyPack(name: string): Promise<{ name: string }> {
   const config = CONFIG_FOR[name];
@@ -214,6 +225,33 @@ describe("resolveFramework", () => {
     expect(packs.map((pack) => pack.name).filter(Boolean)).toHaveLength(
       Object.keys(BUILTIN_FRAMEWORKS).length,
     );
+  });
+});
+
+describe("a pack that needs something from the project", () => {
+  it("declares it, so init does not print a command that fails", async () => {
+    // activerecord and sqlalchemy shipped in 0.24.0 refusing to run and
+    // declaring nothing, so init sent people to a failing command.
+    const refuses: string[] = [];
+    const declared: string[] = [];
+
+    for (const { name, declares } of await builtinDeclarations()) {
+      const specifier = BUILTIN_FRAMEWORKS[name];
+      const module = (await import(specifier)) as {
+        default: (options?: unknown) => unknown;
+      };
+      try {
+        module.default();
+      } catch {
+        refuses.push(name);
+      }
+
+      if (declares.configuration?.required === true) {
+        declared.push(name);
+      }
+    }
+
+    expect(refuses.sort()).toEqual(declared.sort());
   });
 });
 
