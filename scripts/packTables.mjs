@@ -93,13 +93,21 @@ const row = (pack) =>
 
 const HEADER = ["| Name | What it reads | Coverage |", "|---|---|---|"];
 
-/** One table per kind, keyed by the marker it goes between. */
+/**
+ * One table per kind, keyed by the marker it goes between. A reader
+ * comes to this page with a library in mind, so the rows are in
+ * alphabetical order rather than the order the CLI happens to list them
+ * in.
+ */
 export function packTables() {
   const packs = builtinPacks();
   const tableFor = (kind) =>
     [
       ...HEADER,
-      ...packs.filter((pack) => pack.declares.kind === kind).map(row),
+      ...packs
+        .filter((pack) => pack.declares.kind === kind)
+        .sort((one, other) => one.name.localeCompare(other.name))
+        .map(row),
     ].join("\n");
 
   return {

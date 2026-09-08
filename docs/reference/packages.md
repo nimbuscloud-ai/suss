@@ -75,25 +75,25 @@ the source.
 
 | Name | What it reads | Coverage |
 |---|---|---|
-| [`ts-rest`](../../packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](../../.github/badges/coverage-ts-rest.svg) |
-| [`react-router`](../../packages/framework/react-router) | React Router loaders / actions / routes. | ![](../../.github/badges/coverage-react-router.svg) |
-| [`express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |
-| [`fastify`](../../packages/framework/fastify) | Fastify handlers. | ![](../../.github/badges/coverage-fastify.svg) |
-| [`hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | ![](../../.github/badges/coverage-hono.svg) |
-| [`nextjs`](../../packages/framework/nextjs) | Next.js route handlers, pages, and server actions; the route comes from where the file is on disk, and a `"use server"` function becomes an action unit. | ![](../../.github/badges/coverage-nextjs.svg) |
-| [`react`](../../packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
-| [`react-query`](../../packages/framework/react-query) | TanStack Query hooks: ties a component to the query function its `useQuery` / `useMutation` call runs. | ![](../../.github/badges/coverage-react-query.svg) |
 | [`apollo`](../../packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](../../.github/badges/coverage-apollo.svg) |
+| [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`cloudflare-workers`](../../packages/framework/cloudflare-workers) | A Cloudflare Workers entrypoint: one unit per trigger the default export defines, and the bindings its code reads off the argument they arrive in. | ![](../../.github/badges/coverage-cloudflare-workers.svg) |
+| [`express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |
+| [`fastapi`](../../packages/framework/fastapi) | FastAPI routes (Python): the verb comes from the decorator's own attribute name, `APIRouter` prefixes are composed one `include_router` hop deep, and `response_model` / `status_code` are taken as the declared contract. | ![](../../.github/badges/coverage-fastapi.svg) |
+| [`fastify`](../../packages/framework/fastify) | Fastify handlers. | ![](../../.github/badges/coverage-fastify.svg) |
+| [`flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module that re-exports the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
+| [`graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby), including `mutation:` / `resolver:` wiring one hop out to what the referenced class itself declares. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
+| [`hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | ![](../../.github/badges/coverage-hono.svg) |
 | [`nestjs-graphql`](../../packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](../../.github/badges/coverage-nestjs-graphql.svg) |
 | [`nestjs-microservices`](../../packages/framework/nestjs-microservices) | NestJS microservice handlers: `@EventPattern` and `@MessagePattern` consumers on the channel the decorator states. | ![](../../.github/badges/coverage-nestjs-microservices.svg) |
 | [`nestjs-rest`](../../packages/framework/nestjs-rest) | NestJS REST controllers. | ![](../../.github/badges/coverage-nestjs-rest.svg) |
-| [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
-| [`cloudflare-workers`](../../packages/framework/cloudflare-workers) | A Cloudflare Workers entrypoint: one unit per trigger the default export defines, and the bindings its code reads off the argument they arrive in. | ![](../../.github/badges/coverage-cloudflare-workers.svg) |
+| [`nextjs`](../../packages/framework/nextjs) | Next.js route handlers, pages, and server actions; the route comes from where the file is on disk, and a `"use server"` function becomes an action unit. | ![](../../.github/badges/coverage-nextjs.svg) |
 | [`package-exports`](../../packages/framework/package-exports) | The boundary between packages in one workspace: public exports on the provider side, imports of them on the consumer side. Reads the workspace manifest, so it needs no per-project package list. | ![](../../.github/badges/coverage-package-exports.svg) |
-| [`fastapi`](../../packages/framework/fastapi) | FastAPI routes (Python): the verb comes from the decorator's own attribute name, `APIRouter` prefixes are composed one `include_router` hop deep, and `response_model` / `status_code` are taken as the declared contract. | ![](../../.github/badges/coverage-fastapi.svg) |
-| [`flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module that re-exports the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
-| [`graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby), including `mutation:` / `resolver:` wiring one hop out to what the referenced class itself declares. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
 | [`rails`](../../packages/framework/rails) | Rails controller actions (Ruby), bound to the method and path `config/routes.rb` gives each one; an action the routes file does not reach is discovered with no boundary. | ![](../../.github/badges/coverage-rails.svg) |
+| [`react`](../../packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
+| [`react-query`](../../packages/framework/react-query) | TanStack Query hooks: ties a component to the query function its `useQuery` / `useMutation` call runs. | ![](../../.github/badges/coverage-react-query.svg) |
+| [`react-router`](../../packages/framework/react-router) | React Router loaders / actions / routes. | ![](../../.github/badges/coverage-react-router.svg) |
+| [`ts-rest`](../../packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](../../.github/badges/coverage-ts-rest.svg) |
 
 <!-- end framework -->
 
@@ -107,14 +107,14 @@ the source.
 
 | Name | What it reads | Coverage |
 |---|---|---|
-| [`fetch`](../../packages/client/web) | Global `fetch` call sites. | ![](../../.github/badges/coverage-web.svg) |
-| [`axios`](../../packages/client/axios) | axios call sites + `axios.create` factories. | ![](../../.github/badges/coverage-axios.svg) |
-| [`apollo-client`](../../packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](../../.github/badges/coverage-apollo-client.svg) |
-| [`requests`](../../packages/client/requests) | requests call sites (Python): the seven verb functions, `requests.request`, and a `Session`, each bound to the method and path the call states. | ![](../../.github/badges/coverage-requests.svg) |
-| [`httpx`](../../packages/client/httpx) | httpx call sites (Python): the verb functions, `httpx.request`, and a `Client` or `AsyncClient` held in an assignment or opened with `with`. | ![](../../.github/badges/coverage-httpx.svg) |
 | [`aiohttp`](../../packages/client/aiohttp) | aiohttp call sites (Python): the request methods on a `ClientSession`, opened with `async with` or held in an assignment. | ![](../../.github/badges/coverage-aiohttp.svg) |
+| [`apollo-client`](../../packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](../../.github/badges/coverage-apollo-client.svg) |
+| [`axios`](../../packages/client/axios) | axios call sites + `axios.create` factories. | ![](../../.github/badges/coverage-axios.svg) |
 | [`faraday`](../../packages/client/faraday) | Faraday call sites (Ruby): a request method on the module itself or on a connection `Faraday.new` built, served under the path that connection's own URL states. | ![](../../.github/badges/coverage-faraday.svg) |
+| [`fetch`](../../packages/client/web) | Global `fetch` call sites. | ![](../../.github/badges/coverage-web.svg) |
+| [`httpx`](../../packages/client/httpx) | httpx call sites (Python): the verb functions, `httpx.request`, and a `Client` or `AsyncClient` held in an assignment or opened with `with`. | ![](../../.github/badges/coverage-httpx.svg) |
 | [`net-http`](../../packages/client/net-http) | Net::HTTP call sites (Ruby): the module methods that send on their own, and a request object built with `Net::HTTP::Get` and its siblings, with the URL read through `URI`. | ![](../../.github/badges/coverage-net-http.svg) |
+| [`requests`](../../packages/client/requests) | requests call sites (Python): the seven verb functions, `requests.request`, and a `Session`, each bound to the method and path the call states. | ![](../../.github/badges/coverage-requests.svg) |
 
 <!-- end client -->
 
@@ -128,22 +128,22 @@ back empty, so it is run alongside the pack that finds the units.
 
 | Name | What it reads | Coverage |
 |---|---|---|
-| [`prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
-| [`drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |
-| [`mongoose`](../../packages/framework/mongoose) | Mongoose model calls, emits storage-access interactions against the collection a model's `.model(...)` call declares. | ![](../../.github/badges/coverage-mongoose.svg) |
-| [`aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
-| [`aws-sns`](../../packages/framework/aws-sns) | AWS SDK v3 SNS `Publish` and `PublishBatch` calls, emits message-send interactions on the topic. | ![](../../.github/badges/coverage-aws-sns.svg) |
-| [`aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
+| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when the constant its receivers start at reaches `ActiveRecord::Base`, following what each class extends through the project. | ![](../../.github/badges/coverage-activerecord.svg) |
 | [`aws-dynamodb`](../../packages/framework/aws-dynamodb) | AWS SDK v3 DynamoDB calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-dynamodb.svg) |
+| [`aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
 | [`aws-s3`](../../packages/framework/aws-s3) | AWS SDK v3 S3 object calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-s3.svg) |
 | [`aws-secrets-manager`](../../packages/framework/aws-secrets-manager) | AWS Secrets Manager calls, emits storage-access interactions against the secret. | ![](../../.github/badges/coverage-aws-secrets-manager.svg) |
+| [`aws-sns`](../../packages/framework/aws-sns) | AWS SDK v3 SNS `Publish` and `PublishBatch` calls, emits message-send interactions on the topic. | ![](../../.github/badges/coverage-aws-sns.svg) |
+| [`aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
 | [`aws-ssm`](../../packages/framework/aws-ssm) | AWS SSM Parameter Store calls, emits storage-access interactions against the parameter. | ![](../../.github/badges/coverage-aws-ssm.svg) |
+| [`drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |
 | [`gcs`](../../packages/framework/gcs) | Google Cloud Storage calls, emits storage-access interactions. | ![](../../.github/badges/coverage-gcs.svg) |
-| [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands, emits storage-access interactions. | ![](../../.github/badges/coverage-redis.svg) |
-| [`zustand`](../../packages/framework/zustand) | zustand stores: `setState` writes and `getState` reads against the store as a client-side container. | ![](../../.github/badges/coverage-zustand.svg) |
+| [`mongoose`](../../packages/framework/mongoose) | Mongoose model calls, emits storage-access interactions against the collection a model's `.model(...)` call declares. | ![](../../.github/badges/coverage-mongoose.svg) |
 | [`node`](../../packages/runtime/node) | Node.js runtime primitives, scheduling, the `process` surface (incl. `process.env.X` config-read interactions), module-loading globals, emitted as interaction effects. | ![](../../.github/badges/coverage-runtime-node.svg) |
+| [`prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
+| [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands, emits storage-access interactions. | ![](../../.github/badges/coverage-redis.svg) |
 | [`sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
-| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when the constant its receivers start at reaches `ActiveRecord::Base`, following what each class extends through the project. | ![](../../.github/badges/coverage-activerecord.svg) |
+| [`zustand`](../../packages/framework/zustand) | zustand stores: `setState` writes and `getState` reads against the store as a client-side container. | ![](../../.github/badges/coverage-zustand.svg) |
 
 <!-- end effects -->
 
