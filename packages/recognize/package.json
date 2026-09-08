@@ -1,6 +1,6 @@
 {
   "name": "@suss/recognize",
-  "version": "0.24.2",
+  "version": "0.24.3",
   "type": "module",
   "description": "Teach suss to read a library you use, by writing a pack as data rather than code, which any language adapter can run.",
   "keywords": [
@@ -51,9 +51,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.24.2",
-    "@suss/extractor": "0.24.2",
-    "@suss/sql": "0.24.2"
+    "@suss/behavioral-ir": "0.24.3",
+    "@suss/extractor": "0.24.3",
+    "@suss/sql": "0.24.3"
   },
   "devDependencies": {
     "tsup": "*",
