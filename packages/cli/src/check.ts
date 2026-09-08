@@ -236,7 +236,7 @@ export function checkDirectory(options: {
       // A folder of summaries picks up files that are not summaries,
       // most often a report written back where they were read from.
       // Say which one and check the rest.
-      skipped.push(`${file}: ${firstLineOf(error)}`);
+      skipped.push(`${file}: ${reasonOf(error)}`);
       continue;
     }
     for (const summary of read) {
@@ -665,10 +665,14 @@ function listOfSkipped(skipped: readonly string[]): string {
   return skipped.map((line) => `  - ${line}`).join("\n");
 }
 
-function firstLineOf(error: unknown): string {
-  return error instanceof Error
-    ? (error.message.split("\n")[0] as string)
-    : String(error);
+/**
+ * Why one file was skipped, kept whole. The first line of the message
+ * ends where the reason starts, and printing that alone told somebody
+ * their file did not fit and never what did not fit.
+ */
+function reasonOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.split("\n").join("\n    ");
 }
 
 function readSummaries(file: string): BehavioralSummary[] {
@@ -681,7 +685,7 @@ function readSummaries(file: string): BehavioralSummary[] {
     parsed = JSON.parse(fs.readFileSync(resolved, "utf-8")) as unknown;
   } catch (error) {
     throw new UsageError(
-      `${resolved} is not JSON suss can read: ${firstLineOf(error)}`,
+      `${resolved} is not JSON suss can read: ${reasonOf(error)}`,
     );
   }
   const result = safeParseSummaries(parsed);

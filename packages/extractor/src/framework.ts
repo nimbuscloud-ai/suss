@@ -14,6 +14,7 @@
  */
 
 import type {
+  CodeUnitKind,
   DeployableUnit,
   Effect,
   MessageBusSemantics,
@@ -1544,7 +1545,7 @@ export interface DiscoveredSubUnit {
   /** Function body handle, opaque here. */
   func: unknown;
   /** IR code-unit kind (e.g. "handler"). */
-  kind: string;
+  kind: CodeUnitKind;
   /** Qualified name (e.g. "Counter.button.onClick"). */
   name: string;
   /**

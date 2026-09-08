@@ -380,6 +380,7 @@ export const BOUNDARY_ROLE: Record<CodeUnitKind, BoundaryRole> = {
   consumer: "consumer",
   caller: "consumer",
   "module-init": "consumer",
+  "scheduled-callback": "consumer",
 };
 
 // ---------------------------------------------------------------------------

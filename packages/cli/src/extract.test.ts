@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { computeContentHash } from "@suss/adapter-typescript";
+import { safeParseSummaries } from "@suss/behavioral-ir";
 
 import {
   BUILTIN_FRAMEWORKS,
@@ -1025,5 +1026,35 @@ describe("relativizeRenderTargets", () => {
         ? conditional.whenTrue.target?.file
         : undefined,
     ).toBe("src/badge.tsx");
+  });
+});
+
+describe("what a run writes", () => {
+  it("reads back as summaries, so check and inspect take it", async () => {
+    // 0.24.0 wrote `scheduled-callback` units the schema did not allow,
+    // and check refused the whole file a suss run had produced.
+    const project = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "suss-readback-")),
+      "project",
+    );
+    fs.cpSync(path.join(repoRoot, "fixtures", "react"), project, {
+      recursive: true,
+    });
+    const out = path.join(project, "summaries.json");
+
+    await extract({
+      dir: project,
+      frameworks: ["react", "fetch", "node"],
+      output: out,
+    });
+
+    const written = JSON.parse(fs.readFileSync(out, "utf8")) as unknown;
+    const result = safeParseSummaries(written);
+    const kinds = new Set(
+      (result.success ? result.data : []).map((summary) => summary.kind),
+    );
+
+    expect(result.success ? [] : result.error.issues.slice(0, 3)).toEqual([]);
+    expect(kinds.has("scheduled-callback")).toBe(true);
   });
 });
