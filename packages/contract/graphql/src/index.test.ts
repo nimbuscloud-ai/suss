@@ -175,3 +175,27 @@ describe("loadSdlFile", () => {
     expect(loadSdlFile("/no/such/schema.graphql")).toBeNull();
   });
 });
+
+describe("the types a field's contract names", () => {
+  it("states what each one stands for, so a comparison has structure", () => {
+    const summaries = graphqlSdlToSummaries(
+      `
+      type Query { order(id: ID!): Order }
+      type Order { id: ID!, total: Int!, buyer: User }
+      type User { id: ID!, email: String }
+    `,
+      { source: "schema.graphql" },
+    );
+
+    const order = resolvers(summaries)[0];
+    expect(order?.definitions?.Order).toEqual({
+      type: "record",
+      properties: {
+        id: { type: "text" },
+        total: { type: "number" },
+        buyer: { type: "ref", name: "User" },
+      },
+    });
+    expect(Object.keys(order?.definitions ?? {})).toContain("User");
+  });
+});

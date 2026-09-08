@@ -122,7 +122,6 @@ function report(
       failures: [],
       helpersMatched: new Set<string>(),
       unitsClaimed: c.unitsDiscovered,
-      selfCollisions: 0,
     });
     for (let i = 0; i < c.summariesProduced; i += 1) {
       summaries.push(summaryFrom(name));

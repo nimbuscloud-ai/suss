@@ -240,7 +240,6 @@ export function buildExtractionReport(args: {
       unitsInGatedFiles: tally.unitsInGatedFiles,
       effectsRecognized: tally.effectsRecognized,
       unitsClaimed: tally.unitsClaimed,
-      selfCollisions: tally.selfCollisions,
       summariesProduced: tally.summariesProduced,
       failures: tally.failures,
       helpersUnmatched: helpersWithNoCall(

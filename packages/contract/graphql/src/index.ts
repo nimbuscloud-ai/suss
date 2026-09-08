@@ -29,9 +29,14 @@ import {
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 
-import { typeNodeToShape } from "./typeShape.js";
+import { typeDefinitionsIn, typeNodeToShape } from "./typeShape.js";
 
-import type { BehavioralSummary, Input, Transition } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  Input,
+  Transition,
+  TypeShape,
+} from "@suss/behavioral-ir";
 
 export {
   type GraphqlDocumentsOptions,
@@ -93,9 +98,10 @@ export function graphqlSdlToSummaries(
     return [];
   }
 
+  const definitions = typeDefinitionsIn(doc);
   const out: BehavioralSummary[] = [buildSchemaDocumentSummary(settings)];
   for (const { rootType, field } of rootFields) {
-    out.push(buildResolverSummary(rootType, field, settings));
+    out.push(buildResolverSummary(rootType, field, settings, definitions));
   }
 
   return out;
@@ -195,6 +201,7 @@ function buildResolverSummary(
   rootType: RootType,
   field: FieldDefinitionNode,
   settings: ReaderSettings,
+  definitions: Record<string, TypeShape>,
 ): BehavioralSummary {
   const { source, recognition, transport } = settings;
   const fieldName = field.name.value;
@@ -219,6 +226,10 @@ function buildResolverSummary(
     },
     inputs: buildInputs(field),
     transitions: buildTransitions(ownerKey, field),
+    // What each named type this field mentions stands for, so a reader
+    // comparing the field against an implementation has structure on
+    // both sides rather than a name on one.
+    ...(Object.keys(definitions).length > 0 ? { definitions } : {}),
     gaps: [],
     confidence: { source: "derived", level: "high" },
     // Declared contract: checker pairs against any other source

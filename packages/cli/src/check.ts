@@ -13,6 +13,7 @@ import {
   checkPair,
   countsForThreshold,
   readDeclaredContract,
+  readGraphqlDeclaredContract,
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
 import {
@@ -478,7 +479,12 @@ function findBoundaryCollisions(
     if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
       continue;
     }
-    if (readDeclaredContract(summary)?.provenance === "derived") {
+    // A document read with `suss contract` describes the boundary
+    // rather than serving it, whichever protocol it describes.
+    if (
+      readDeclaredContract(summary)?.provenance === "derived" ||
+      readGraphqlDeclaredContract(summary)?.provenance === "derived"
+    ) {
       continue;
     }
     const key = boundaryKey(binding);

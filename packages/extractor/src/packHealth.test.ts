@@ -21,7 +21,6 @@ const funnel = (over: Partial<PackFunnel> = {}): PackFunnel => ({
   unitsInGatedFiles: 0,
   effectsRecognized: 0,
   unitsClaimed: 3,
-  selfCollisions: 0,
   failures: [],
   helpersUnmatched: [],
   summariesProduced: 3,
@@ -199,7 +198,6 @@ describe("who a check is addressed to", () => {
     expect(audienceOf("no pack finds something and records nothing")).toBe(
       "run",
     );
-    expect(audienceOf("no pack collides with itself")).toBe("run");
     expect(audienceOf("every pack declares a version")).toBe("pack");
   });
 });
@@ -210,12 +208,6 @@ describe("the remaining checks", () => {
       firedBy("every pack declares a version", [funnel({ version: null })]),
     ).toHaveLength(1);
     expect(firedBy("every pack declares a version", [funnel()])).toEqual([]);
-  });
-
-  it("names a pack whose own patterns claimed one unit twice", () => {
-    expect(
-      firedBy("no pack collides with itself", [funnel({ selfCollisions: 2 })]),
-    ).toHaveLength(1);
   });
 
   it("names a pack that threw, with the file and message from its first failure", () => {

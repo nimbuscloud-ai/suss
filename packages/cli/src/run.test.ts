@@ -950,10 +950,17 @@ describe("runCli check --at", () => {
 });
 
 describe("runCli ask", () => {
-  it("prints the ten questions when asked none", async () => {
+  it("prints the ten questions when asked none, which is not a failure", async () => {
     const { exit, io } = await capture(() => runCli(["ask"]));
-    expect(exit).toBe(1);
+    expect(exit).toBe(0);
     expect(io.stdout).toContain("one of ten questions");
+  });
+
+  it("fails on a question it does not answer", async () => {
+    const { exit } = await capture(() =>
+      runCli(["ask", "what is the airspeed velocity"]),
+    );
+    expect(exit).toBe(1);
   });
 
   it("says which boundaries a file reaches", async () => {

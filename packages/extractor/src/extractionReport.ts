@@ -75,13 +75,6 @@ export interface PackFunnel {
    * comes after a pack that recognises the same code.
    */
   unitsClaimed: number;
-  /**
-   * Units this pack discovered twice over. Cross-pack dedup is the
-   * point of the claim set, but a pack colliding with itself means its
-   * own discovery patterns overlap and one of the two is being thrown
-   * away without anybody deciding which.
-   */
-  selfCollisions: number;
   /** Summaries built from those units. */
   summariesProduced: number;
   /** Summaries in the finished run that credit this pack for finding them. */
@@ -186,7 +179,6 @@ export interface PackTally {
   unitsInGatedFiles: number;
   effectsRecognized: number;
   unitsClaimed: number;
-  selfCollisions: number;
   summariesProduced: number;
   failures: PackFailure[];
   /** Registration helpers from this pack's config that produced a unit. */
@@ -199,7 +191,6 @@ export const emptyTally = (): PackTally => ({
   unitsInGatedFiles: 0,
   effectsRecognized: 0,
   unitsClaimed: 0,
-  selfCollisions: 0,
   summariesProduced: 0,
   failures: [],
   helpersMatched: new Set(),
@@ -328,7 +319,6 @@ export function buildUngatedExtractionReport(args: {
       unitsInGatedFiles: 0,
       effectsRecognized: 0,
       unitsClaimed: tally.unitsDiscovered,
-      selfCollisions: 0,
       summariesProduced: tally.summariesProduced,
       failures: tally.failures,
       helpersUnmatched: [],

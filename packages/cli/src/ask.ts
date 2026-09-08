@@ -170,6 +170,9 @@ export function answerQuestion(options: AskOptions): {
   answer: AnswerJson | null;
 } {
   const question = parseQuestion(options.question);
+  // Asking with no question is how somebody reads the list back, which
+  // the help says to do, so it is not a failed run.
+  const asked = options.question !== undefined && options.question !== "";
   if (question === null) {
     const report =
       options.json === true
@@ -185,7 +188,7 @@ export function answerQuestion(options: AskOptions): {
           )}\n`
         : `${HOW_TO_ASK}\n`;
     writeReport(report, options.output);
-    return { exitCode: 1, answer: null };
+    return { exitCode: asked ? 1 : 0, answer: null };
   }
 
   const answer =

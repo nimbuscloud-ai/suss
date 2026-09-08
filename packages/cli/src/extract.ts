@@ -319,10 +319,42 @@ function optionsForFactory(
   ) {
     return options;
   }
-  return {
-    ...(options as Record<string, unknown> | undefined),
-    configDirectory: directory,
-  };
+  const given = options as Record<string, unknown> | undefined;
+  if (configFile !== undefined && given !== undefined) {
+    warnAboutMissingPaths(given, configFile, directory);
+  }
+  return { ...given, configDirectory: directory };
+}
+
+/**
+ * A relative path in a pack config is read against the config file. A
+ * config kept somewhere else resolves to a directory that is not there,
+ * every class lookup through it comes back empty, and the run reports
+ * gaps naming classes that sit in the project. Saying it once here
+ * costs a stat per path-shaped value.
+ */
+function warnAboutMissingPaths(
+  options: Record<string, unknown>,
+  configFile: string,
+  directory: string,
+): void {
+  for (const [key, value] of Object.entries(options)) {
+    if (
+      typeof value !== "string" ||
+      !/(^|[a-z])(root|file|dir|path)/i.test(key)
+    ) {
+      continue;
+    }
+
+    const resolved = path.isAbsolute(value)
+      ? value
+      : path.resolve(directory, value);
+    if (!fs.existsSync(resolved)) {
+      process.stderr.write(
+        `${configFile} says ${key} is ${value}, and there is nothing at ${resolved}. A relative path is read against the config file, so a config kept outside the project points at nothing.\n`,
+      );
+    }
+  }
 }
 
 /**
