@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 const HTTP_METHODS = [
   "get",
@@ -165,5 +166,13 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
     failureDelivery: "exception",
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-axios",
+  dependencies: [{ ecosystem: "npm", name: "axios" }],
+  reads: "axios call sites + \`axios.create\` factories.",
+};
 
 export default axiosPack;

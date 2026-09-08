@@ -1,2 +1,2 @@
 // The pack factory, which is what `-f net-http` loads.
-export { default } from "@suss/client-net-http";
+export { declares, default } from "@suss/client-net-http";

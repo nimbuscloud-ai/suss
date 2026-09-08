@@ -53,6 +53,7 @@
   "devDependencies": {
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
+    "@suss/ir-core": "*",
     "@suss/pack-harness": "*",
     "@suss/test-project": "*",
     "mongoose": "*",

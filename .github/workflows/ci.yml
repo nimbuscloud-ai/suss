@@ -120,6 +120,9 @@ jobs:
       - name: Documented pack counts
         run: npm run check:pack-counts
 
+      - name: Pack tables
+        run: npm run check:pack-tables
+
       - name: Diagram geometry
         run: npm run check:diagrams
 

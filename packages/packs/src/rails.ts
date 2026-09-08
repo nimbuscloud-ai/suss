@@ -2,6 +2,7 @@
 // schema, and the root class list `suss infer stub` reads to skip a
 // class that extends the library directly.
 export {
+  declares,
   default,
   optionsSchema,
   RAILS_ROOT_CLASS_NAMES,

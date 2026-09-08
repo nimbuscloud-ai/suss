@@ -19,6 +19,7 @@ import { envBindingRecognizer } from "./envBindings.js";
 import { storeBindingRecognizer } from "./storeBindings.js";
 
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export { cloudflareWorkersDiscovery, METADATA_NAMESPACE } from "./discovery.js";
 export { envBindingRecognizer } from "./envBindings.js";
@@ -122,5 +123,17 @@ export function cloudflareWorkersFramework(
     invocationRecognizers: [storeBindingRecognizer as InvocationRecognizer],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-cloudflare-workers",
+  dependencies: [
+    { ecosystem: "npm", name: "wrangler" },
+    { ecosystem: "npm", name: "@cloudflare/workers-types" },
+  ],
+  reads:
+    "A Cloudflare Workers entrypoint: one unit per trigger the default export defines, and the bindings its code reads off the argument they arrive in.",
+};
 
 export default cloudflareWorkersFramework;

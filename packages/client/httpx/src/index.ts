@@ -10,6 +10,7 @@
  */
 
 import type { PythonPack } from "@suss/adapter-python";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** The functions httpx exports at the top level, and the method each one sends. */
 const VERB_FUNCTIONS: Record<string, string> = {
@@ -54,5 +55,14 @@ export function httpxClient(): PythonPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-httpx",
+  dependencies: [{ ecosystem: "pypi", name: "httpx" }],
+  reads:
+    "httpx call sites (Python): the verb functions, \`httpx.request\`, and a \`Client\` or \`AsyncClient\` held in an assignment or opened with \`with\`.",
+};
 
 export default httpxClient;

@@ -71,7 +71,7 @@ for (const { name, specifier } of builtins) {
   // The formatter breaks a long export list across lines, so the match
   // allows any whitespace between the names.
   const reexported = entryText.match(
-    /export \{\s*default(?:,[\w,\s]+)?\s*\} from "(@suss\/[\w-]+)"/,
+    /export \{[\w,\s]*\bdefault\b[\w,\s]*\} from "(@suss\/[\w-]+)"/,
   );
   if (reexported === null) {
     problems.push(
@@ -110,6 +110,33 @@ for (const { name, specifier } of builtins) {
     problems.push(
       `${bundled} exports optionsSchema and packages/packs/src/${name}.ts does not re-export it, so the CLI validates nothing for -f ${name}.`,
     );
+  }
+
+  // `suss init` and the packages page are built from what the packs
+  // declare, so a pack that declares nothing is one nobody is offered
+  // and one the docs leave out.
+  const packText = fs.existsSync(packSource)
+    ? fs.readFileSync(packSource, "utf8")
+    : "";
+  const declaration = packText.match(
+    /export const declares: PackDeclaration = \{[\s\S]*?\n\};/,
+  );
+  if (declaration === null) {
+    problems.push(
+      `${bundled} exports no \`declares\`, so init cannot suggest it and the packages page cannot list it.`,
+    );
+  } else {
+    if (!declaration[0].includes(`package: "${bundled}"`)) {
+      problems.push(
+        `${bundled} declares a different package name than its own manifest, so init would tell somebody to install the wrong one.`,
+      );
+    }
+
+    if (!entryText.includes("declares")) {
+      problems.push(
+        `${bundled} declares itself and packages/packs/src/${name}.ts does not re-export \`declares\`, so the CLI never reads it.`,
+      );
+    }
   }
 
   // Somebody deciding whether -f <name> reads their code has the pack's

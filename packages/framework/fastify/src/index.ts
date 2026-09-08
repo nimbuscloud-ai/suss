@@ -5,6 +5,7 @@ import { z } from "zod";
 import { httpRouteDiscovery, routeHelperIndex } from "@suss/extractor";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 const METHODS = [
   ".get",
@@ -138,5 +139,13 @@ export function fastifyFramework(
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-fastify",
+  dependencies: [{ ecosystem: "npm", name: "fastify" }],
+  reads: "Fastify handlers.",
+};
 
 export default fastifyFramework;

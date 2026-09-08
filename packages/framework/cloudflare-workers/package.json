@@ -55,6 +55,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@suss/ir-core": "*",
     "@suss/test-project": "*",
     "ts-morph": "*",
     "tsup": "*",

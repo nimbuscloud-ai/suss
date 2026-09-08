@@ -36,6 +36,7 @@
 import { z } from "zod";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * The Apollo hooks this pack reads a document off. Each takes the
@@ -226,5 +227,13 @@ export function apolloClientPack(
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-apollo",
+  dependencies: [{ ecosystem: "npm", name: "@apollo/client" }],
+  reads: "\`@apollo/client\` hooks + imperative \`client.query\`.",
+};
 
 export default apolloClientPack;

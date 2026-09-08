@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { compile, constructedFrom, pack, storageCalls } from "@suss/recognize";
 
+import type { PackDeclaration } from "@suss/ir-core";
 import type {
   ArgumentPick,
   CallStep,
@@ -603,5 +604,16 @@ export function dynamoFramework(options: DynamoPackOptions = {}): PatternPack {
       : { requiresImport: options.requiresImport }),
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-aws-dynamodb",
+  dependencies: [
+    { ecosystem: "npm", name: "@aws-sdk/lib-dynamodb" },
+    { ecosystem: "npm", name: "@aws-sdk/client-dynamodb" },
+  ],
+  reads: "AWS SDK v3 DynamoDB calls, emits storage-access interactions.",
+};
 
 export default dynamoFramework;

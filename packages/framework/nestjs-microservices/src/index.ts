@@ -28,6 +28,7 @@
 import { z } from "zod";
 
 import type { DeclaredBinding, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** The wires NestJS ships transports for that suss can spell. */
 export type NestjsTransport = Extract<
@@ -121,5 +122,14 @@ export function nestjsMicroservicesFramework(
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-nestjs-microservices",
+  dependencies: [{ ecosystem: "npm", name: "@nestjs/microservices" }],
+  reads:
+    "NestJS microservice handlers: \`@EventPattern\` and \`@MessagePattern\` consumers on the channel the decorator states.",
+};
 
 export default nestjsMicroservicesFramework;

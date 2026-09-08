@@ -57,6 +57,7 @@ import type {
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 import type { Match } from "@suss/recognize";
 
 const SQS = "@aws-sdk/client-sqs";
@@ -379,5 +380,13 @@ export function sqsFramework(options: SqsPackOptions = {}): PatternPack {
     ],
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-aws-sqs",
+  dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-sqs" }],
+  reads: "AWS SDK v3 SQS producer calls, emits message-send interactions.",
+};
 
 export default sqsFramework;

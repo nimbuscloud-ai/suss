@@ -10,6 +10,7 @@
  */
 
 import type { RubyPack } from "@suss/adapter-ruby";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** The module methods that send a request on their own, and the method each one sends. */
 const VERB_METHODS: Record<string, string> = {
@@ -66,5 +67,15 @@ export function netHttpClient(): RubyPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-net-http",
+  dependencies: [],
+  shippedWith: "ruby",
+  reads:
+    "Net::HTTP call sites (Ruby): the module methods that send on their own, and a request object built with \`Net::HTTP::Get\` and its siblings, with the URL read through \`URI\`.",
+};
 
 export default netHttpClient;

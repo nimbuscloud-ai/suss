@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
+    "@suss/ir-core": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

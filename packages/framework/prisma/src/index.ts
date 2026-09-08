@@ -68,6 +68,7 @@ import type {
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 import type { SqlMethod, SqlStatements } from "@suss/recognize";
 
 const PRISMA_READ_METHODS = new Set([
@@ -713,5 +714,14 @@ export function prismaFramework(
     declarations: declarationsIn([raw]),
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-prisma",
+  dependencies: [{ ecosystem: "npm", name: "@prisma/client" }],
+  reads:
+    "Prisma client calls, emits storage-access interactions per read / write.",
+};
 
 export default prismaFramework;

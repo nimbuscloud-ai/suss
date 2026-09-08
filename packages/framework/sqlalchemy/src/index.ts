@@ -11,6 +11,7 @@ import type {
   RawSqlPattern,
   StoragePattern,
 } from "@suss/adapter-python";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * What `-f sqlalchemy=config.json` may say. The CLI parses the file against it
@@ -135,5 +136,13 @@ export function sqlalchemyFramework(
     rawSql: sqlalchemyRawSql(options),
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-sqlalchemy",
+  dependencies: [{ ecosystem: "pypi", name: "sqlalchemy" }],
+  reads: `SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns.`,
+};
 
 export default sqlalchemyFramework;

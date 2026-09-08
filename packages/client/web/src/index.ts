@@ -1,4 +1,5 @@
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export function webFetchPack(): PatternPack {
   return {
@@ -63,5 +64,14 @@ export function webFetchPack(): PatternPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-web",
+  dependencies: [],
+  shippedWith: "typescript",
+  reads: "Global \`fetch\` call sites.",
+};
 
 export default webFetchPack;

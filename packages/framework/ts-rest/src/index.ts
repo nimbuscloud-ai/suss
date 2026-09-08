@@ -1,6 +1,7 @@
 // @suss/framework-ts-rest: PatternPack for ts-rest
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export function tsRestFramework(): PatternPack {
   return {
@@ -91,5 +92,13 @@ export function tsRestFramework(): PatternPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-ts-rest",
+  dependencies: [{ ecosystem: "npm", name: "@ts-rest/core" }],
+  reads: "ts-rest providers + clients (contract-backed).",
+};
 
 export default tsRestFramework;

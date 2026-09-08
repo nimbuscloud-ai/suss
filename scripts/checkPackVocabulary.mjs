@@ -213,6 +213,12 @@ function namesInFile(file, { identifierMapKeys = true } = {}) {
     if (ts.isLiteralTypeNode(node)) {
       return;
     }
+    // What a pack declares about itself is its kind, the package it
+    // ships in and the libraries a project depends on for it to read
+    // anything. None of those is a symbol it matches in code.
+    if (isPackDeclaration(node)) {
+      return;
+    }
     if (
       (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
       !isModuleSpecifier(node)
@@ -228,6 +234,18 @@ function namesInFile(file, { identifierMapKeys = true } = {}) {
   };
   visit(source);
   return found;
+}
+
+/** The `export const declares: PackDeclaration = { ... }` statement. */
+function isPackDeclaration(node) {
+  return (
+    ts.isVariableStatement(node) &&
+    node.declarationList.declarations.some(
+      (declaration) =>
+        ts.isIdentifier(declaration.name) &&
+        declaration.name.text === "declares",
+    )
+  );
 }
 
 function packDirectories() {

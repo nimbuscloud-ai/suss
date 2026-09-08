@@ -24,6 +24,7 @@
 import { z } from "zod";
 
 import type { PythonPack } from "@suss/adapter-python";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * What this pack's options may say. The CLI parses a
@@ -140,5 +141,13 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-fastapi",
+  dependencies: [{ ecosystem: "pypi", name: "fastapi" }],
+  reads: `FastAPI routes (Python): the verb comes from the decorator's own attribute name, \`APIRouter\` prefixes are composed one \`include_router\` hop deep, and \`response_model\` / \`status_code\` are taken as the declared contract.`,
+};
 
 export default fastapiFramework;

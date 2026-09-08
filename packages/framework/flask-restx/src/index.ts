@@ -23,6 +23,7 @@
 import { z } from "zod";
 
 import type { PythonPack } from "@suss/adapter-python";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * What this pack's options may say. The CLI parses a
@@ -142,5 +143,13 @@ export function flaskRestxFramework(
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-flask-restx",
+  dependencies: [{ ecosystem: "pypi", name: "flask-restx" }],
+  reads: `flask-restx \`Resource\` routes (Python), including a project's own wrapper module that re-exports the route decorator.`,
+};
 
 export default flaskRestxFramework;

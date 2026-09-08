@@ -4,6 +4,7 @@
 // what `suss infer stub` reads to skip a class that extends the library
 // directly.
 export {
+  declares,
   default,
   GRAPHQL_RUBY_ROOT_CLASS_NAMES,
   optionsSchema,

@@ -60,6 +60,7 @@ import type {
   PatternPack,
   TimingReport,
 } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 import type { z } from "zod";
 import type { Diagnosis } from "./diagnosis.js";
 import type { Submodule } from "./gitSubmodules.js";
@@ -178,6 +179,24 @@ function canonicalize(value: unknown): string {
  * never appears in the list the error message prints, so a test asserts
  * every `@suss/framework-*` the CLI depends on is here.
  */
+/**
+ * What every bundled pack says about itself: which libraries it reads
+ * and the line the packages page shows. `suss init` matches a project's
+ * manifest against these rather than against a table of its own.
+ */
+export async function builtinDeclarations(): Promise<
+  Array<{ name: string; declares: PackDeclaration }>
+> {
+  const found: Array<{ name: string; declares: PackDeclaration }> = [];
+  for (const [name, specifier] of Object.entries(BUILTIN_FRAMEWORKS)) {
+    const mod = (await import(specifier)) as { declares?: PackDeclaration };
+    if (mod.declares !== undefined) {
+      found.push({ name, declares: mod.declares });
+    }
+  }
+  return found;
+}
+
 export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "ts-rest": "@suss/packs/ts-rest",
   "react-router": "@suss/packs/react-router",

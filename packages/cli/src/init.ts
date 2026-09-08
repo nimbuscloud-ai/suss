@@ -22,6 +22,7 @@ import {
   readPythonDependencies,
   readRubyDependencies,
 } from "./dependencyManifests.js";
+import { builtinDeclarations } from "./extract.js";
 import { readSubmodules } from "./gitSubmodules.js";
 import {
   detectLanguages,
@@ -31,23 +32,11 @@ import {
 } from "./language.js";
 import { bold, cyan, dim, green, yellow } from "./style.js";
 
+import type { PackConfiguration } from "@suss/ir-core";
 import type { UnreadDependencies } from "./dependencyManifests.js";
 import type { Language } from "./language.js";
 
-/**
- * Per-project values a pack needs before it can read anything: which
- * module re-exports a decorator, which directory the classes are in.
- */
-export interface PackConfiguration {
-  /** Where to write it, relative to the project. */
-  file: string;
-  /** A starting point, with this project's own values to fill in. */
-  example: Record<string, unknown>;
-  /** Whether the pack refuses to run without it. */
-  required: boolean;
-  /** What the value is, in a sentence. */
-  why: string;
-}
+export type { PackConfiguration };
 
 export interface PackSuggestion {
   /** The `-f` name, or the `--from` name for a contract source. */
@@ -65,6 +54,11 @@ export interface PackSuggestion {
   file?: string;
   /** Which language's code this pack reads. Contract sources have none. */
   language?: Language;
+  /**
+   * True when the pack reads a library the language ships, which every
+   * project in that language can use and none of them declares.
+   */
+  shippedWithLanguage?: boolean;
   configuration?: PackConfiguration;
 }
 
@@ -83,286 +77,6 @@ export interface InitReport {
 }
 
 type Ecosystem = "npm" | "pypi" | "rubygems";
-
-/** A dependency a project declares, and the pack that reads code using it. */
-const BY_DEPENDENCY: Array<{
-  ecosystem: Ecosystem;
-  dependency: string;
-  name: string;
-  packageName: string;
-  kind: PackSuggestion["kind"];
-  language: Language;
-  configuration?: PackConfiguration;
-}> = [
-  {
-    ecosystem: "npm",
-    dependency: "hono",
-    name: "hono",
-    packageName: "@suss/framework-hono",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "next",
-    name: "nextjs",
-    packageName: "@suss/framework-nextjs",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "express",
-    name: "express",
-    packageName: "@suss/framework-express",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "fastify",
-    name: "fastify",
-    packageName: "@suss/framework-fastify",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@ts-rest/core",
-    name: "ts-rest",
-    packageName: "@suss/framework-ts-rest",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@nestjs/common",
-    name: "nestjs-rest",
-    packageName: "@suss/framework-nestjs-rest",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@nestjs/graphql",
-    name: "nestjs-graphql",
-    packageName: "@suss/framework-nestjs-graphql",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@apollo/server",
-    name: "apollo",
-    packageName: "@suss/framework-apollo",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "react-router",
-    name: "react-router",
-    packageName: "@suss/framework-react-router",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "react-router-dom",
-    name: "react-router",
-    packageName: "@suss/framework-react-router",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "react",
-    name: "react",
-    packageName: "@suss/framework-react",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "wrangler",
-    name: "cloudflare-workers",
-    packageName: "@suss/framework-cloudflare-workers",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@cloudflare/workers-types",
-    name: "cloudflare-workers",
-    packageName: "@suss/framework-cloudflare-workers",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@types/aws-lambda",
-    name: "aws-lambda",
-    packageName: "@suss/framework-aws-lambda",
-    kind: "framework",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@prisma/client",
-    name: "prisma",
-    packageName: "@suss/framework-prisma",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "drizzle-orm",
-    name: "drizzle",
-    packageName: "@suss/framework-drizzle",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@aws-sdk/client-sqs",
-    name: "aws-sqs",
-    packageName: "@suss/framework-aws-sqs",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@aws-sdk/client-secrets-manager",
-    name: "aws-secrets-manager",
-    packageName: "@suss/framework-aws-secrets-manager",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@aws-sdk/client-ssm",
-    name: "aws-ssm",
-    packageName: "@suss/framework-aws-ssm",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@aws-sdk/client-sns",
-    name: "aws-sns",
-    packageName: "@suss/framework-aws-sns",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@aws-sdk/client-eventbridge",
-    name: "aws-eventbridge",
-    packageName: "@suss/framework-aws-eventbridge",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@aws-sdk/lib-dynamodb",
-    name: "aws-dynamodb",
-    packageName: "@suss/framework-aws-dynamodb",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@aws-sdk/client-s3",
-    name: "aws-s3",
-    packageName: "@suss/framework-aws-s3",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@google-cloud/storage",
-    name: "gcs",
-    packageName: "@suss/framework-gcs",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "ioredis",
-    name: "redis",
-    packageName: "@suss/framework-redis",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "mongoose",
-    name: "mongoose",
-    packageName: "@suss/framework-mongoose",
-    kind: "effects",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "@apollo/client",
-    name: "apollo-client",
-    packageName: "@suss/client-apollo",
-    kind: "client",
-    language: "typescript",
-  },
-  {
-    ecosystem: "npm",
-    dependency: "axios",
-    name: "axios",
-    packageName: "@suss/client-axios",
-    kind: "client",
-    language: "typescript",
-  },
-  {
-    ecosystem: "pypi",
-    dependency: "fastapi",
-    name: "fastapi",
-    packageName: "@suss/framework-fastapi",
-    kind: "framework",
-    language: "python",
-  },
-  {
-    ecosystem: "pypi",
-    dependency: "flask-restx",
-    name: "flask-restx",
-    packageName: "@suss/framework-flask-restx",
-    kind: "framework",
-    language: "python",
-  },
-  {
-    ecosystem: "rubygems",
-    dependency: "graphql",
-    name: "graphql-ruby",
-    packageName: "@suss/framework-graphql-ruby",
-    kind: "framework",
-    language: "ruby",
-    configuration: {
-      file: "suss.graphql-ruby.json",
-      example: { root: "app/graphql" },
-      required: true,
-      why: "the directory a field's wired class is looked up under, read relative to this file. A Rails app generated by the library keeps its types and mutations under app/graphql.",
-    },
-  },
-  {
-    ecosystem: "rubygems",
-    dependency: "rails",
-    name: "rails",
-    packageName: "@suss/framework-rails",
-    kind: "framework",
-    language: "ruby",
-    configuration: {
-      file: "suss.rails.json",
-      example: { root: "app", routesFile: "config/routes.rb" },
-      required: false,
-      why: "the app directory a controller is defined under and the routes file suss reads each action's method and path from. rails new scaffolds both at these paths.",
-    },
-  },
-];
 
 /**
  * Web frameworks a project can depend on that no pack reads yet. When
@@ -436,8 +150,15 @@ const BY_FILE: Array<{
   },
 ];
 
-export function inspectProject(root: string): InitReport {
+const LANGUAGE_OF: Record<Ecosystem, Language> = {
+  npm: "typescript",
+  pypi: "python",
+  rubygems: "ruby",
+};
+
+export async function inspectProject(root: string): Promise<InitReport> {
   const resolved = path.resolve(root);
+  const packs = await builtinDeclarations();
   const suggestions: PackSuggestion[] = [];
   const seen = new Set<string>();
 
@@ -452,18 +173,24 @@ export function inspectProject(root: string): InitReport {
 
   const declared = declaredLibraries(resolved);
   for (const library of declared.named) {
-    const match = BY_DEPENDENCY.find(
-      (d) => d.ecosystem === library.ecosystem && d.dependency === library.name,
-    );
-    if (match !== undefined) {
+    for (const pack of packs) {
+      const dependency = pack.declares.dependencies.find(
+        (candidate) =>
+          candidate.ecosystem === library.ecosystem &&
+          candidate.name === library.name,
+      );
+      if (dependency === undefined) {
+        continue;
+      }
+
       add({
-        name: match.name,
-        packageName: match.packageName,
+        name: pack.name,
+        packageName: pack.declares.package,
         because: `${library.name} in ${library.where}`,
-        kind: match.kind,
-        language: match.language,
-        ...(match.configuration !== undefined
-          ? { configuration: match.configuration }
+        kind: pack.declares.kind,
+        language: LANGUAGE_OF[dependency.ecosystem],
+        ...(pack.declares.configuration !== undefined
+          ? { configuration: pack.declares.configuration }
           : {}),
       });
     }
@@ -488,6 +215,26 @@ export function inspectProject(root: string): InitReport {
     }
   }
 
+  // Net::HTTP is Ruby's own and fetch is the browser's, so no manifest
+  // lists either and no dependency rule can reach them. Source in that
+  // language is the trigger instead.
+  const languages = detectLanguages(resolved);
+  for (const pack of packs) {
+    const language = pack.declares.shippedWith;
+    if (language === undefined || !languages.includes(language)) {
+      continue;
+    }
+
+    add({
+      name: pack.name,
+      packageName: pack.declares.package,
+      because: `${LANGUAGE_LABEL[language]} sources, and ${pack.name} reads what the language itself ships`,
+      kind: pack.declares.kind,
+      language,
+      shippedWithLanguage: true,
+    });
+  }
+
   const tsconfig = ["tsconfig.json", "jsconfig.json"]
     .map((name) => path.join(resolved, name))
     .find((candidate) => fs.existsSync(candidate));
@@ -510,7 +257,7 @@ export function inspectProject(root: string): InitReport {
     root: resolved,
     tsconfig: tsconfig ?? null,
     suggestions,
-    languages: detectLanguages(resolved),
+    languages,
     unread: declared.unread,
     recognizedWithoutPack,
   };
@@ -694,11 +441,22 @@ function* filesUnder(
   }
 }
 
+/**
+ * The packs this project itself pointed at. A pack for a library the
+ * language ships fits every project written in it, so on its own it is
+ * no reason to set suss up here.
+ */
+export function declaredPacks(report: InitReport): PackSuggestion[] {
+  return report.suggestions.filter(
+    (suggestion) => suggestion.shippedWithLanguage !== true,
+  );
+}
+
 export function formatInitReport(report: InitReport): string {
   const lines: string[] = [];
   const { suggestions } = report;
 
-  if (suggestions.length === 0) {
+  if (declaredPacks(report).length === 0) {
     lines.push(`${yellow("!")} Nothing in ${report.root} matched a pack.`);
     lines.push("");
     lines.push(
@@ -721,6 +479,11 @@ export function formatInitReport(report: InitReport): string {
 
   const frameworks = suggestions.filter((s) => s.kind === "framework");
   const clients = suggestions.filter((s) => s.kind === "client");
+  // A pack for what the language itself ships fits any project written
+  // in it, so it says nothing about what serves this one.
+  const declaredCode = [...frameworks, ...clients].filter(
+    (suggestion) => suggestion.shippedWithLanguage !== true,
+  );
   const contracts = suggestions.filter((s) => s.kind === "contract");
   const effects = suggestions.filter((s) => s.kind === "effects");
 
@@ -754,7 +517,7 @@ export function formatInitReport(report: InitReport): string {
   lines.push(bold("2. Read each side into one folder"));
   lines.push("");
   const code = [...frameworks, ...clients];
-  if (code.length > 0) {
+  if (declaredCode.length > 0) {
     lines.push(...configurationLines([...code, ...effects]));
     // One command per language: a pack is written against one
     // language's adapter.
@@ -762,7 +525,7 @@ export function formatInitReport(report: InitReport): string {
   } else if (effects.length > 0) {
     // Asking for an effects pack alone gives an empty file.
     lines.push(
-      `   ${dim(`suss extract ${effects.map((e) => `-f ${e.name}`).join(" ")} ...`)}`,
+      `   ${dim(`suss extract ${[...code, ...effects].map((e) => `-f ${e.name}`).join(" ")} ...`)}`,
     );
     lines.push("");
     lines.push(

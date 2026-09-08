@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * Modules that export `json`, `data`, and `redirect`. The response
@@ -260,5 +261,16 @@ export function reactRouterFramework(
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-react-router",
+  dependencies: [
+    { ecosystem: "npm", name: "react-router" },
+    { ecosystem: "npm", name: "react-router-dom" },
+  ],
+  reads: "React Router loaders / actions / routes.",
+};
 
 export default reactRouterFramework;

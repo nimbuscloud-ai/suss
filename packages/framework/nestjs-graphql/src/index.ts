@@ -15,6 +15,7 @@
 import { z } from "zod";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * What this pack's options may say. The CLI parses a
@@ -116,5 +117,13 @@ export function nestjsGraphqlFramework(
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-nestjs-graphql",
+  dependencies: [{ ecosystem: "npm", name: "@nestjs/graphql" }],
+  reads: "NestJS GraphQL resolvers.",
+};
 
 export default nestjsGraphqlFramework;

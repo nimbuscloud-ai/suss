@@ -14,6 +14,7 @@
  */
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export function packageExportsFramework(): PatternPack {
   return {
@@ -48,5 +49,14 @@ export function packageExportsFramework(): PatternPack {
     inputMapping: { type: "allPositional" },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-package-exports",
+  dependencies: [],
+  reads:
+    "The boundary between packages in one workspace: public exports on the provider side, imports of them on the consumer side. Reads the workspace manifest, so it needs no per-project package list.",
+};
 
 export default packageExportsFramework;

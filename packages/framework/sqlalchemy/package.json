@@ -51,8 +51,9 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@suss/checker": "*",
     "@suss/behavioral-ir": "*",
+    "@suss/checker": "*",
+    "@suss/ir-core": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

@@ -29,6 +29,7 @@
 import { nextjsServerActions } from "./serverActions.js";
 
 import type { BindingExtraction, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** The methods a route file can export, one function per method. */
 const ROUTE_METHODS = [
@@ -205,5 +206,13 @@ export function nextjsFramework(): PatternPack {
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-nextjs",
+  dependencies: [{ ecosystem: "npm", name: "next" }],
+  reads: `Next.js route handlers, pages, and server actions; the route comes from where the file is on disk, and a \`"use server"\` function becomes an action unit.`,
+};
 
 export default nextjsFramework;

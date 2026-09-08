@@ -25,6 +25,7 @@ import type {
   InvocationRecognizer,
   PatternPack,
 } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 import type { CallExpression, SourceFile } from "ts-morph";
 
 const QUERY_MODULES = ["@tanstack/react-query", "react-query"];
@@ -203,5 +204,14 @@ export function reactQueryFramework(): PatternPack {
     subUnits: reactQuerySubUnits,
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-react-query",
+  dependencies: [{ ecosystem: "npm", name: "@tanstack/react-query" }],
+  reads:
+    "TanStack Query hooks: ties a component to the query function its \`useQuery\` / \`useMutation\` call runs.",
+};
 
 export default reactQueryFramework;

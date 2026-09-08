@@ -1,2 +1,2 @@
 // The pack factory, which is what `-f aiohttp` loads.
-export { default } from "@suss/client-aiohttp";
+export { declares, default } from "@suss/client-aiohttp";
