@@ -457,3 +457,62 @@ describe("a library that sends a request object", () => {
     expect(boundary(units).path).toBe("/orders");
   });
 });
+
+describe("a connection the class builds in a method of its own", () => {
+  it("serves the calls that go through it", async () => {
+    const units = await unitsIn(`
+      class OrderClient
+        def self.conn
+          HttpClient.build(base: "https://api.example.com/v1")
+        end
+
+        def self.show(id)
+          conn.get("/orders/#{id}")
+        end
+      end
+    `);
+
+    expect(boundary(units)).toEqual({
+      method: "GET",
+      path: "/v1/orders/{id}",
+    });
+  });
+
+  it("follows a connection the class keeps after the first call", async () => {
+    const units = await unitsIn(`
+      class OrderClient
+        def self.conn
+          @conn ||= HttpClient.build(base: "https://api.example.com/v1")
+        end
+
+        def self.show(id)
+          conn.get("/orders/#{id}")
+        end
+      end
+    `);
+
+    expect(boundary(units)).toEqual({
+      method: "GET",
+      path: "/v1/orders/{id}",
+    });
+  });
+
+  it("reads a base URL written as the first argument", async () => {
+    const units = await unitsIn(`
+      class OrderClient
+        def self.conn
+          HttpClient.build("https://api.example.com/v1")
+        end
+
+        def self.show(id)
+          conn.get("/orders/#{id}")
+        end
+      end
+    `);
+
+    expect(boundary(units)).toEqual({
+      method: "GET",
+      path: "/v1/orders/{id}",
+    });
+  });
+});

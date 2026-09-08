@@ -53,7 +53,7 @@ export function clientCallUnits(
       continue;
     }
     for (const call of callsUnder(method)) {
-      const request = requestCall(call, method, pattern, options);
+      const request = requestCall(call, method, root, pattern, options);
       if (request === null) {
         continue;
       }
@@ -95,6 +95,7 @@ function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
 function requestCall(
   call: RbNode,
   method: RbNode,
+  root: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
 ): RequestCall | null {
@@ -103,7 +104,7 @@ function requestCall(
   if (receiver === null || called === undefined) {
     return null;
   }
-  const prefix = receiverPrefix(receiver, method, pattern, options);
+  const prefix = receiverPrefix(receiver, method, root, pattern, options);
   if (prefix === null) {
     return null;
   }
@@ -170,6 +171,7 @@ function assignedCall(node: RbNode, method: RbNode): RbNode | null {
 function receiverPrefix(
   receiver: RbNode,
   method: RbNode,
+  root: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
 ): string | null {
@@ -179,15 +181,16 @@ function receiverPrefix(
   if (receiver.type !== "identifier") {
     return null;
   }
-  const built = builtBy(receiver.text, method, pattern);
+  const built = builtBy(receiver.text, method, root, pattern);
   if (built === null) {
     return null;
   }
+  const args = readCallArgs(field(built, "arguments"));
   const keyword = pattern.builderUrlKeyword;
-  if (keyword === undefined) {
-    return "";
-  }
-  const base = readCallArgs(field(built, "arguments")).keyword[keyword];
+  // `Faraday.new(url: "...")` and `Faraday.new("...")` say the same thing.
+  const base =
+    (keyword === undefined ? undefined : args.keyword[keyword]) ??
+    args.positional[0];
   const path =
     base === undefined ? null : pathOf(evaluatedValue(base, options.facts));
   return path === undefined || path === null ? "" : trimmed(path);
@@ -207,17 +210,24 @@ function namesConstant(receiver: RbNode, constantName: string): boolean {
 }
 
 /**
- * The call a local name was assigned from, when the library's own
- * builder made it. One assignment back and no further, the same one-hop
- * limit the other readers take.
+ * The call the library's own builder made, behind the name a request
+ * was called on. A local assignment in the same method, or a method of
+ * that name in the same file, which is where a service object keeps the
+ * one connection its request methods share.
  */
 function builtBy(
   name: string,
   method: RbNode,
+  root: RbNode,
   pattern: RbClientCall,
 ): RbNode | null {
   const builders = pattern.receiverBuilders ?? [];
-  const value = builders.length === 0 ? null : assignedValue(name, method);
+  if (builders.length === 0) {
+    return null;
+  }
+
+  const value =
+    assignedValue(name, method) ?? valueMethodNamedReturns(name, root);
   if (
     value === null ||
     value.type !== "call" ||
@@ -229,6 +239,31 @@ function builtBy(
   return receiver !== null && namesConstant(receiver, pattern.constantName)
     ? value
     : null;
+}
+
+/**
+ * What a method of this name in the same file comes back with. Ruby
+ * returns the last statement, and a method that keeps one connection
+ * writes `@conn ||= ...`, so the value is on the right of that.
+ */
+function valueMethodNamedReturns(name: string, root: RbNode): RbNode | null {
+  const defined = methodDefinitions(root).find(
+    (candidate) => field(candidate, "name")?.text === name,
+  );
+  if (defined === undefined) {
+    return null;
+  }
+
+  const body = field(defined, "body");
+  const statements = body === null ? [] : body.namedChildren;
+  const last = statements[statements.length - 1];
+  if (last === undefined) {
+    return null;
+  }
+  if (last.type === "operator_assignment" || last.type === "assignment") {
+    return field(last, "right");
+  }
+  return last.type === "return" ? (last.namedChildren[0] ?? null) : last;
 }
 
 /** What a local name was assigned in this method body, one assignment back and no further. */
