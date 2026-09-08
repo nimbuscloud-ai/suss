@@ -1,6 +1,6 @@
 {
   "name": "@suss/client-httpx",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "type": "module",
   "description": "Client pack for extracting suss client behavioral summaries from Python httpx call sites.",
   "keywords": [
@@ -46,7 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.24.0"
+    "@suss/adapter-python": "0.24.1"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
