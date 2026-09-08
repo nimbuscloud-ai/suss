@@ -1,6 +1,9 @@
 // graphqlClientConstruction.ts: find the GraphQL client constructions
 // a pack describes and read the endpoint each one is built with.
 
+import fs from "node:fs";
+import path from "node:path";
+
 import {
   type DocumentNode as GraphqlDocumentNode,
   parse as graphqlParse,
@@ -127,7 +130,46 @@ function fragmentsRegisteredIn(
       }
     });
   }
+
+  for (const text of graphqlFileTextsNear(sourceFiles)) {
+    for (const name of fragmentOnlyDocumentNames(text)) {
+      registered.add(name);
+    }
+  }
   return registered;
+}
+
+/**
+ * What the `.graphql` and `.gql` files beside the source say. Codegen
+ * scans them for documents the same way it scans the TypeScript, so a
+ * fragment written in one is registered for every operation.
+ */
+function graphqlFileTextsNear(
+  sourceFiles: ReadonlyArray<SourceFile>,
+): string[] {
+  const roots = new Set(
+    sourceFiles.map((sourceFile) => path.dirname(sourceFile.getFilePath())),
+  );
+  const texts: string[] = [];
+  for (const root of roots) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (entry.isFile() && /\.(graphql|gql)$/.test(entry.name)) {
+        try {
+          texts.push(fs.readFileSync(path.join(root, entry.name), "utf8"));
+        } catch {
+          // A file the run cannot read says nothing either way.
+        }
+      }
+    }
+  }
+  return texts;
 }
 
 /** The fragments a document defines, when it defines nothing else. */
