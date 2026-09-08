@@ -175,3 +175,77 @@ describe("loadSdlFile", () => {
     expect(loadSdlFile("/no/such/schema.graphql")).toBeNull();
   });
 });
+
+describe("the types a field's contract names", () => {
+  it("states what each one stands for, so a comparison has structure", () => {
+    const summaries = graphqlSdlToSummaries(
+      `
+      type Query { order(id: ID!): Order }
+      type Order { id: ID!, total: Int!, buyer: User }
+      type User { id: ID!, email: String }
+    `,
+      { source: "schema.graphql" },
+    );
+
+    const order = resolvers(summaries)[0];
+    expect(order?.definitions?.Order).toEqual({
+      type: "record",
+      properties: {
+        id: { type: "text" },
+        total: { type: "number" },
+        buyer: { type: "ref", name: "User" },
+      },
+    });
+    expect(Object.keys(order?.definitions ?? {})).toContain("User");
+  });
+});
+
+describe("the types a schema splits or takes as input", () => {
+  it("merges what an extension adds to a type it already defined", () => {
+    const summaries = graphqlSdlToSummaries(
+      `
+      type Query { order(id: ID!): Order }
+      type Order { id: ID! }
+      extend type Order { total: Int! }
+    `,
+      { source: "schema.graphql" },
+    );
+
+    expect(resolvers(summaries)[0]?.definitions?.Order).toEqual({
+      type: "record",
+      properties: { id: { type: "text" }, total: { type: "number" } },
+    });
+  });
+
+  it("states an input type the same way as an output one", () => {
+    const summaries = graphqlSdlToSummaries(
+      `
+      type Mutation { placeOrder(input: PlaceOrderInput!): Order }
+      type Order { id: ID! }
+      input PlaceOrderInput { sku: String!, quantity: Int }
+      interface Node { id: ID! }
+    `,
+      { source: "schema.graphql" },
+    );
+
+    const definitions = resolvers(summaries)[0]?.definitions;
+    expect(definitions?.PlaceOrderInput).toEqual({
+      type: "record",
+      properties: { sku: { type: "text" }, quantity: { type: "number" } },
+    });
+    expect(definitions?.Node).toEqual({
+      type: "record",
+      properties: { id: { type: "text" } },
+    });
+  });
+
+  it("leaves a schema with no named types alone", () => {
+    const summaries = graphqlSdlToSummaries("type Query { ok: Boolean }", {
+      source: "schema.graphql",
+    });
+
+    expect(resolvers(summaries)[0]?.definitions).toEqual({
+      Query: { properties: { ok: { type: "boolean" } }, type: "record" },
+    });
+  });
+});

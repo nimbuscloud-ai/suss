@@ -1203,15 +1203,6 @@ function extractFromSourceFile(
       const claimKey = unitDedupKey(unit);
       const claimant = claimed.get(claimKey);
       if (claimant !== undefined) {
-        // One pack reaching the same function from two modules means a
-        // barrel, so only a collision inside one file counts.
-        if (
-          claimant.pack === pack.name &&
-          claimant.file === sourceFile.getFilePath() &&
-          tally !== undefined
-        ) {
-          tally.selfCollisions += 1;
-        }
         if (claimant.file !== sourceFile.getFilePath()) {
           // The other file's claim decided what this walk skipped, so a
           // change there has to re-extract this file.

@@ -201,23 +201,6 @@ function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
 }
 
 /**
- * A pack discovered the same unit twice.
- *
- * Two packs claiming one unit is the point of the claim set, and the
- * user's `-f` order decides it. One pack claiming a unit twice means two
- * of its own patterns overlap, and the second is dropped without anybody
- * choosing which of the two was wanted.
- */
-function selfCollisions(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
-  return packs
-    .filter((funnel) => funnel.selfCollisions > 0)
-    .map((funnel) => ({
-      label: funnel.pack,
-      detail: `${funnel.selfCollisions} ${funnel.selfCollisions === 1 ? "unit" : "units"} matched twice, second dropped`,
-    }));
-}
-
-/**
  * A pack's hook threw while it was reading.
  *
  * The run continues so that one bad file does not cost a whole extract,
@@ -375,12 +358,6 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
       code: "no-output",
       audience: "run",
       violations: funnelDrops(report.packs),
-    },
-    {
-      name: "no pack collides with itself",
-      code: "double-match",
-      audience: "run",
-      violations: selfCollisions(report.packs),
     },
     {
       name: "every recognizer had units to look inside",

@@ -56,7 +56,6 @@ describe("emptyTally", () => {
       unitsInGatedFiles: 0,
       effectsRecognized: 0,
       unitsClaimed: 0,
-      selfCollisions: 0,
       summariesProduced: 0,
       failures: [],
       helpersMatched: new Set(),
