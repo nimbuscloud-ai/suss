@@ -342,3 +342,62 @@ describe("formatInitReport", () => {
     expect(output).toContain("suss --help");
   });
 });
+
+describe("a project with more than one contract file", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-contracts-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("names each SAM template, since two are two services", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.mkdirSync(path.join(dir, "orders"));
+    fs.mkdirSync(path.join(dir, "billing"));
+    fs.writeFileSync(
+      path.join(dir, "orders", "template.yaml"),
+      "Resources: {}\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "billing", "template.yaml"),
+      "Resources: {}\n",
+    );
+
+    const report = await inspectProject(dir);
+    const files = report.suggestions
+      .filter((suggestion) => suggestion.name === "cloudformation")
+      .map((suggestion) => suggestion.file)
+      .sort();
+
+    expect(files).toEqual(["billing/template.yaml", "orders/template.yaml"]);
+  });
+
+  it("tells a GraphQL schema apart from the operations beside it", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.writeFileSync(
+      path.join(dir, "schema.graphql"),
+      "type Query { viewer: User }\ntype User { id: ID! }\n",
+    );
+    fs.mkdirSync(path.join(dir, "app"));
+    fs.writeFileSync(
+      path.join(dir, "app", "viewer-fragment.graphql"),
+      "fragment CachedViewer on User { id }\n",
+    );
+
+    const report = await inspectProject(dir);
+    const read = Object.fromEntries(
+      report.suggestions
+        .filter((suggestion) => suggestion.kind === "contract")
+        .map((suggestion) => [suggestion.name, suggestion.file]),
+    );
+
+    expect(read).toEqual({
+      graphql: "schema.graphql",
+      "graphql-documents": "app",
+    });
+  });
+});
