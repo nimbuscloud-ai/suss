@@ -9,6 +9,17 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ## If you use suss
 
+**`check` warns when a queue that redelivers reaches a consumer that posts.** An SQS queue that is not FIFO can deliver one message more than once, and a handler draining it that calls another service to create something makes that call again on the second delivery. That is the charge-twice bug:
+
+```
+[WARNING] repeatUnsafeConsumer
+  SQS queue "OrdersQueue" can deliver one message more than once, and handler
+  makes POST /v1/charges through stripe.charges.create while handling it. A
+  second delivery makes that call again.
+```
+
+PUT, PATCH and DELETE land on the same resource twice, so they are left alone, and so is a FIFO queue. A call that sends an idempotency key is safe and still reported: a summary does not record the headers a call sends, so the finding says so rather than pretending to know. The consumer's call is found whether the pack recorded it as an effect, which is what the TypeScript clients do, or as a unit bound to the route it calls, which is what the Python and Ruby clients do.
+
 **A GitHub Action posts the behavior diff on a pull request.** Point a workflow at `nimbuscloud-ai/suss/.github/actions/inspect-diff@main` and it reads both sides of the pull request, runs `inspect --diff` over them, and posts one comment that it edits again on every push. The comment says which units changed behavior and how they changed, whether or not the pull request edited the lines they are on. It keeps both summary files as an artifact of the run. The [action README](https://github.com/nimbuscloud-ai/suss/tree/main/.github/actions/inspect-diff) has a workflow to copy. Runs share suss's per-file cache, so reading the head costs about what the pull request touched. If the workflow also runs when something lands on `main`, it reads each of those commits as it goes, and a later pull request compares against what it already read.
 
 **`inspect --diff` reports what changed at each boundary.** The diff used to list the units that moved, a block each. A reviewer reading that learned a file gained a function, which the pull request's own diff shows better. The report now opens with the boundaries: what each route, consumer or Lambda responds with, and what a request reaches or stopped reaching through the calls it makes.
