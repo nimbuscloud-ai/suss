@@ -9,6 +9,20 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ## If you use suss
 
+**A GraphQL schema and the resolvers behind it are compared, not counted as rivals.** A schema read with `suss contract` and the code that implements it both provide `gql:Mutation.articleApprove`, and `check` used to report those as "claimed by more than one file": 210 of them on one repository, with nothing compared. A document describes a boundary rather than serving it, which the REST reader already knew. The schema reader also states what each named type stands for now, so the two sides have structure to compare: a field's return type used to be the name `ArticleApprovePayload`, and a name has nothing to compare against the record a resolver declares.
+
+**A pack config kept outside the project says so.** A relative path in a pack config is read against the config file, so a config written somewhere else resolves to a directory that is not there. Every class lookup through it came back empty and the run reported hundreds of gaps naming a base class that sits in the project. The run now says which value points where, before it starts:
+
+```
+suss.graphql-ruby.json says root is app/graphql, and there is nothing at
+/elsewhere/app/graphql. A relative path is read against the config file, so a
+config kept outside the project points at nothing.
+```
+
+**`export const Thing` beside `export default Thing` is not a pack fault.** Every run of a React codebase printed `double-match react 1 unit matched twice, second dropped`. The dedup key is the function's own file and span, so a collision inside one file only ever means one function reached twice, which ordinary code does. Nothing was lost when the second claim dropped, and the check is gone.
+
+**`suss ask` with no question exits 0.** Printing the questions is what `suss --help` says to do, and it exited 1 for it. A question suss cannot answer still does.
+
 **`suss init` names every contract file it found.** It kept one suggestion per reader, so the first `.graphql` file the walk reached won and the rest were dropped. On one project that meant a fragment file was named as the schema and `schema.graphql` at the root was never mentioned; two SAM templates in one repository lost the same way. Each file gets a command now. A GraphQL file that declares types is read as a schema, and one with only operations goes to `--from graphql-documents`, which takes the directory, so a project with fifty of them still gets one command.
 
 **A fragment written in a `.graphql` file counts as registered.** graphql-codegen scans `.ts`, `.tsx` and `.graphql` alike for documents, and the reader looked in the TypeScript alone, so a project keeping a fragment in a file of its own got an error saying its query throws.

@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-serverless",
-  "version": "0.24.4",
+  "version": "0.25.0",
   "type": "module",
   "description": "Turn a Serverless Framework serverless.yml into a suss contract and check it against the Lambda handlers and clients behind it.",
   "keywords": [
@@ -48,11 +48,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.24.4",
-    "@suss/contract-aws-apigateway": "0.24.4",
-    "@suss/contract-cloudformation": "0.24.4",
-    "@suss/ir-core": "0.24.4",
-    "@suss/manifest-aws": "0.24.4",
+    "@suss/behavioral-ir": "0.25.0",
+    "@suss/contract-aws-apigateway": "0.25.0",
+    "@suss/contract-cloudformation": "0.25.0",
+    "@suss/ir-core": "0.25.0",
+    "@suss/manifest-aws": "0.25.0",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
