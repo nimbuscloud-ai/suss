@@ -3,9 +3,9 @@
     "packages": 74,
     "packagesWithExports": 74,
     "exports": 901,
-    "internal": 3197,
-    "consumers": 1741,
-    "pairs": 1738,
+    "internal": 3198,
+    "consumers": 1742,
+    "pairs": 1739,
     "unfollowedCalls": 492,
     "findingErrors": 0
   },
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 24,
-      "internal": 528,
-      "consumers": 321,
+      "internal": 529,
+      "consumers": 322,
       "unfollowedCalls": 55
     },
     "packages/client/aiohttp": {
@@ -139,7 +139,7 @@
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
       "exports": 6,
-      "internal": 25,
+      "internal": 26,
       "consumers": 12,
       "unfollowedCalls": 0
     },
@@ -202,7 +202,7 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 68,
-      "internal": 87,
+      "internal": 86,
       "consumers": 19,
       "unfollowedCalls": 15
     },
