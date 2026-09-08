@@ -98,9 +98,11 @@ const RECOGNIZED_WITHOUT_A_PACK: Array<{
 ];
 
 const BY_FILE: Array<{
-  matches: (filename: string) => boolean;
+  matches: (filename: string, file: string) => boolean;
   name: string;
   packageName: string;
+  /** Read the directory rather than each file under it. */
+  perDirectory?: boolean;
   describe: (relativePath: string) => string;
 }> = [
   {
@@ -128,10 +130,19 @@ const BY_FILE: Array<{
     describe: (p) => `a Prisma schema at ${p}`,
   },
   {
-    matches: (f) => f.endsWith(".graphql") && !f.includes(".test."),
+    matches: (f, file) => isGraphqlFile(f) && declaresTypes(file),
     name: "graphql",
     packageName: "@suss/contract-graphql",
     describe: (p) => `a GraphQL schema at ${p}`,
+  },
+  {
+    // Operations are written one file per screen, so the reader takes
+    // the directory and the suggestion names it once.
+    matches: (f, file) => isGraphqlFile(f) && !declaresTypes(file),
+    name: "graphql-documents",
+    packageName: "@suss/contract-graphql",
+    perDirectory: true,
+    describe: (p) => `GraphQL operations under ${p}`,
   },
   {
     // The same reader takes a Swagger 2.0 document, and a project on 2.0
@@ -150,6 +161,27 @@ const BY_FILE: Array<{
   },
 ];
 
+const isGraphqlFile = (filename: string): boolean =>
+  (filename.endsWith(".graphql") || filename.endsWith(".gql")) &&
+  !filename.includes(".test.");
+
+/**
+ * Whether a GraphQL file is a schema rather than a set of operations.
+ * A schema declares types; a document written by a project's own code
+ * has queries, mutations and fragments and nothing else.
+ */
+function declaresTypes(file: string): boolean {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return false;
+  }
+  return /^\s*(extend\s+)?(type|input|interface|enum|union|scalar|schema)\s/m.test(
+    text,
+  );
+}
+
 const LANGUAGE_OF: Record<Ecosystem, Language> = {
   npm: "typescript",
   pypi: "python",
@@ -163,7 +195,7 @@ export async function inspectProject(root: string): Promise<InitReport> {
   const seen = new Set<string>();
 
   const add = (suggestion: PackSuggestion): void => {
-    const key = `${suggestion.kind}:${suggestion.name}`;
+    const key = `${suggestion.kind}:${suggestion.name}:${suggestion.file ?? ""}`;
     if (seen.has(key)) {
       return;
     }
@@ -203,15 +235,22 @@ export async function inspectProject(root: string): Promise<InitReport> {
     const relative = path.relative(resolved, file);
     const filename = path.basename(file);
     for (const rule of BY_FILE) {
-      if (rule.matches(filename)) {
-        add({
-          name: rule.name,
-          packageName: rule.packageName,
-          because: rule.describe(relative),
-          kind: "contract",
-          file: relative,
-        });
+      if (!rule.matches(filename, file)) {
+        continue;
       }
+
+      // A reader that walks a directory is named once for it; every
+      // other one gets a command per file, since two SAM templates in
+      // one repository are two services.
+      const read =
+        rule.perDirectory === true ? path.dirname(relative) || "." : relative;
+      add({
+        name: rule.name,
+        packageName: rule.packageName,
+        because: rule.describe(read),
+        kind: "contract",
+        file: read,
+      });
     }
   }
 
