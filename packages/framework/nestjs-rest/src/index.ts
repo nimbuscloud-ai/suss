@@ -40,6 +40,7 @@
 import { z } from "zod";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * What this pack's options may say. The CLI parses a
@@ -152,5 +153,13 @@ export function nestjsRestFramework(
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-nestjs-rest",
+  dependencies: [{ ecosystem: "npm", name: "@nestjs/common" }],
+  reads: "NestJS REST controllers.",
+};
 
 export default nestjsRestFramework;

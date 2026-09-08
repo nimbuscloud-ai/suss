@@ -9,6 +9,7 @@ import {
 } from "@suss/extractor";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 const METHODS = [".get", ".post", ".put", ".delete", ".patch", ".all"];
 
@@ -186,5 +187,13 @@ export function expressFramework(
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-express",
+  dependencies: [{ ecosystem: "npm", name: "express" }],
+  reads: "Express handlers.",
+};
 
 export default expressFramework;

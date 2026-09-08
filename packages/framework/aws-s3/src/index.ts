@@ -15,6 +15,7 @@
 
 import { constructedFrom, pack, storageCalls } from "@suss/recognize";
 
+import type { PackDeclaration } from "@suss/ir-core";
 import type {
   ArgumentPick,
   CallStep,
@@ -83,5 +84,13 @@ export function s3Framework(): PatternPack {
     protocol: "s3",
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-aws-s3",
+  dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-s3" }],
+  reads: "AWS SDK v3 S3 object calls, emits storage-access interactions.",
+};
 
 export default s3Framework;

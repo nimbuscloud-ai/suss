@@ -19,6 +19,7 @@ import { readRoutesFile } from "./routes.js";
 import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
 import type { ControllerActions, RubyPack } from "@suss/adapter-ruby";
+import type { PackDeclaration } from "@suss/ir-core";
 import type { Route } from "./routes.js";
 
 /**
@@ -230,5 +231,20 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     discoveryInputs: () => [routesFile],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-rails",
+  dependencies: [{ ecosystem: "rubygems", name: "rails" }],
+  reads:
+    "Rails controller actions (Ruby), bound to the method and path \`config/routes.rb\` gives each one; an action the routes file does not reach is discovered with no boundary.",
+  configuration: {
+    file: "suss.rails.json",
+    example: { root: "app", routesFile: "config/routes.rb" },
+    required: false,
+    why: "the app directory a controller is defined under and the routes file suss reads each action's method and path from. rails new scaffolds both at these paths.",
+  },
+};
 
 export default railsFramework;

@@ -10,6 +10,7 @@
  */
 
 import type { RubyPack } from "@suss/adapter-ruby";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** The methods Faraday gives both the module and a connection, and the method each one sends. */
 const VERB_METHODS: Record<string, string> = {
@@ -49,5 +50,13 @@ export function faradayClient(): RubyPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-faraday",
+  dependencies: [{ ecosystem: "rubygems", name: "faraday" }],
+  reads: `Faraday call sites (Ruby): a request method on the module itself or on a connection \`Faraday.new\` built, served under the path that connection's own URL states.`,
+};
 
 export default faradayClient;

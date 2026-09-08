@@ -55,6 +55,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@suss/ir-core": "*",
     "@suss/pack-harness": "*",
     "@suss/test-project": "*",
     "ts-morph": "*",

@@ -24,67 +24,85 @@ describe("inspectProject", () => {
     );
   }
 
-  function names(root: string): string[] {
-    return inspectProject(root)
-      .suggestions.map((s) => s.name)
+  /**
+   * The packs this project's own manifests pointed at. A TypeScript
+   * project also gets the packs for what the runtime itself ships,
+   * fetch and Node's own surface, which every project in the language
+   * gets and which would crowd out what each test here is about.
+   */
+  async function names(root: string): Promise<string[]> {
+    return (await inspectProject(root)).suggestions
+      .filter((suggestion) => suggestion.shippedWithLanguage !== true)
+      .map((s) => s.name)
       .sort();
   }
 
-  it("picks a framework pack out of dependencies", () => {
+  it("picks a framework pack out of dependencies", async () => {
     writeManifest({ dependencies: { hono: "^4.0.0" } });
-    expect(names(dir)).toEqual(["hono"]);
+    expect(await names(dir)).toEqual(["hono"]);
   });
 
-  it("offers a Swagger 2.0 document, which a project names swagger.json", () => {
+  it("offers a Swagger 2.0 document, which a project names swagger.json", async () => {
     writeManifest({});
     fs.writeFileSync(
       path.join(dir, "swagger.json"),
       JSON.stringify({ swagger: "2.0", paths: {} }),
     );
-    expect(names(dir)).toContain("openapi");
+    expect(await names(dir)).toContain("openapi");
   });
 
-  it("suggests the Next.js pack for a Next.js project", () => {
+  it("suggests the Next.js pack for a Next.js project", async () => {
     writeManifest({ dependencies: { next: "^15.0.0" } });
-    expect(names(dir)).toEqual(["nextjs"]);
+    expect(await names(dir)).toEqual(["nextjs"]);
   });
 
-  it("reads devDependencies too, which is where the Lambda types live", () => {
+  it("reads devDependencies too, which is where the Lambda types live", async () => {
     writeManifest({ devDependencies: { "@types/aws-lambda": "^8.10.0" } });
-    expect(names(dir)).toEqual(["aws-lambda"]);
+    expect(await names(dir)).toEqual(["aws-lambda"]);
   });
 
-  it("picks a client pack as well as a framework", () => {
+  it("picks a client pack as well as a framework", async () => {
     writeManifest({
       dependencies: { express: "^4.0.0", axios: "^1.0.0" },
     });
-    expect(names(dir)).toEqual(["axios", "express"]);
+    expect(await names(dir)).toEqual(["axios", "express"]);
   });
 
-  it("finds a contract source on disk", () => {
+  it("finds a contract source on disk", async () => {
     writeManifest({ dependencies: {} });
     fs.writeFileSync(path.join(dir, "template.yaml"), "Resources: {}\n");
-    const report = inspectProject(dir);
-    expect(report.suggestions.map((s) => s.name)).toEqual(["cloudformation"]);
-    expect(report.suggestions[0]?.file).toBe("template.yaml");
+    const report = await inspectProject(dir);
+    expect(await names(dir)).toEqual(["cloudformation"]);
+    const contract = report.suggestions.find((s) => s.kind === "contract");
+    expect(contract?.file).toBe("template.yaml");
   });
 
-  it("names one pack once, however many things point at it", () => {
+  it("offers the packs for what the runtime itself ships", async () => {
+    writeManifest({ dependencies: { hono: "^4.0.0" } });
+    const report = await inspectProject(dir);
+    const shipped = report.suggestions
+      .filter((suggestion) => suggestion.shippedWithLanguage === true)
+      .map((s) => s.name)
+      .sort();
+    expect(shipped).toEqual(["fetch", "node"]);
+  });
+
+  it("names one pack once, however many things point at it", async () => {
     writeManifest({
       dependencies: { "react-router": "^7.0.0", "react-router-dom": "^7.0.0" },
     });
-    expect(names(dir)).toEqual(["react-router"]);
+    expect(await names(dir)).toEqual(["react-router"]);
   });
 
-  it("ignores node_modules, which would otherwise match everything", () => {
+  it("ignores node_modules, which would otherwise match everything", async () => {
     writeManifest({ dependencies: {} });
     const nested = path.join(dir, "node_modules", "some-package");
     fs.mkdirSync(nested, { recursive: true });
     fs.writeFileSync(path.join(nested, "schema.prisma"), "");
-    expect(names(dir)).toEqual([]);
+    expect(await names(dir)).toEqual([]);
   });
 
-  it("leaves a nested project's schemas to that project", () => {
+  it("leaves a nested project's schemas to that project", async () => {
     // A directory with its own package.json is its own project, so claiming
     // its schema here would report a sibling service's contract as this one's.
     writeManifest({ dependencies: {} });
@@ -93,76 +111,77 @@ describe("inspectProject", () => {
     fs.writeFileSync(path.join(nested, "package.json"), "{}");
     fs.writeFileSync(path.join(nested, "template.yaml"), "Resources: {}\n");
 
-    expect(names(dir)).toEqual([]);
+    expect(await names(dir)).toEqual([]);
   });
 
-  it("still reads a subdirectory that is part of this project", () => {
+  it("still reads a subdirectory that is part of this project", async () => {
     writeManifest({ dependencies: {} });
     const nested = path.join(dir, "infra");
     fs.mkdirSync(nested, { recursive: true });
     fs.writeFileSync(path.join(nested, "template.yaml"), "Resources: {}\n");
 
-    expect(names(dir)).toEqual(["cloudformation"]);
+    expect(await names(dir)).toEqual(["cloudformation"]);
   });
 
-  it("notices whether the project has a tsconfig", () => {
+  it("notices whether the project has a tsconfig", async () => {
     writeManifest({ dependencies: { hono: "^4.0.0" } });
-    expect(inspectProject(dir).tsconfig).toBeNull();
+    expect((await inspectProject(dir)).tsconfig).toBeNull();
     fs.writeFileSync(path.join(dir, "tsconfig.json"), "{}");
-    expect(inspectProject(dir).tsconfig).not.toBeNull();
+    expect((await inspectProject(dir)).tsconfig).not.toBeNull();
   });
 
-  it("survives a package.json that will not parse", () => {
+  it("survives a package.json that will not parse", async () => {
     fs.writeFileSync(path.join(dir, "package.json"), "{ not json");
-    expect(() => inspectProject(dir)).not.toThrow();
+    await expect(inspectProject(dir)).resolves.toBeDefined();
   });
 
-  it("suggests the Python packs for the libraries a requirements file names", () => {
+  it("suggests the Python packs for the libraries a requirements file names", async () => {
     fs.writeFileSync(
       path.join(dir, "requirements.txt"),
       "fastapi>=0.110\nFlask-RESTX~=1.3\n",
     );
-    expect(names(dir)).toEqual(["fastapi", "flask-restx"]);
+    expect(await names(dir)).toEqual(["fastapi", "flask-restx"]);
   });
 
-  it("reads a Python project's libraries out of pyproject too", () => {
+  it("reads a Python project's libraries out of pyproject too", async () => {
     fs.writeFileSync(
       path.join(dir, "pyproject.toml"),
       '[project]\nname = "svc"\ndependencies = ["fastapi"]\n',
     );
-    expect(names(dir)).toEqual(["fastapi"]);
+    expect(await names(dir)).toEqual(["fastapi"]);
   });
 
-  it("suggests the Ruby pack for the gem a lock file names", () => {
+  it("suggests the Ruby pack for the gem a lock file names", async () => {
     fs.writeFileSync(
       path.join(dir, "Gemfile.lock"),
       "DEPENDENCIES\n  graphql (~> 2.0)\n",
     );
-    expect(names(dir)).toEqual(["graphql-ruby"]);
+    expect(await names(dir)).toEqual(["graphql-ruby"]);
   });
 
-  it("suggests the rails pack for a project depending on the rails gem", () => {
+  it("suggests the rails pack for a project depending on the rails gem", async () => {
     fs.writeFileSync(
       path.join(dir, "Gemfile.lock"),
       "DEPENDENCIES\n  rails (~> 7.1)\n",
     );
-    expect(names(dir)).toEqual(["rails"]);
+    // ActiveRecord comes with Rails, so the same gem points at both.
+    expect(await names(dir)).toEqual(["activerecord", "rails"]);
   });
 
-  it("says which per-project config a suggested pack needs", () => {
+  it("says which per-project config a suggested pack needs", async () => {
     fs.writeFileSync(
       path.join(dir, "Gemfile.lock"),
       "DEPENDENCIES\n  graphql (~> 2.0)\n",
     );
-    const suggestion = inspectProject(dir).suggestions[0];
+    const suggestion = (await inspectProject(dir)).suggestions[0];
     expect(suggestion?.language).toBe("ruby");
     expect(suggestion?.configuration?.required).toBe(true);
     expect(suggestion?.configuration?.example).toEqual({ root: "app/graphql" });
   });
 
-  it("says which framework it knows and cannot read, rather than a bare no-match", () => {
+  it("says which framework it knows and cannot read, rather than a bare no-match", async () => {
     fs.writeFileSync(path.join(dir, "requirements.txt"), "flask==3.0.0\n");
-    const report = inspectProject(dir);
+    const report = await inspectProject(dir);
     expect(report.suggestions).toEqual([]);
     expect(report.recognizedWithoutPack).toEqual(["flask"]);
 
@@ -171,40 +190,40 @@ describe("inspectProject", () => {
     expect(output).toContain("no pack for");
   });
 
-  it("reports a manifest it could not read rather than saying nothing", () => {
+  it("reports a manifest it could not read rather than saying nothing", async () => {
     fs.writeFileSync(
       path.join(dir, "setup.py"),
       "setup(install_requires=read_requirements())\n",
     );
-    const report = inspectProject(dir);
+    const report = await inspectProject(dir);
     expect(report.suggestions).toEqual([]);
     expect(report.unread?.[0]?.where).toBe("setup.py");
   });
 
-  it("reports a setup.cfg that points its dependency list somewhere else", () => {
+  it("reports a setup.cfg that points its dependency list somewhere else", async () => {
     fs.writeFileSync(
       path.join(dir, "setup.cfg"),
       "[options]\ninstall_requires = file: requirements.txt\n",
     );
-    const report = inspectProject(dir);
+    const report = await inspectProject(dir);
     expect(report.suggestions).toEqual([]);
     expect(report.unread?.[0]?.where).toBe("setup.cfg");
   });
 
-  it("reports a submodule nobody checked out, whose code it cannot read", () => {
+  it("reports a submodule nobody checked out, whose code it cannot read", async () => {
     fs.writeFileSync(
       path.join(dir, ".gitmodules"),
       '[submodule "libs/framework"]\n\tpath = libs/framework\n',
     );
     fs.mkdirSync(path.join(dir, "libs", "framework"), { recursive: true });
-    expect(inspectProject(dir).unread?.[0]?.reason).toContain(
+    expect((await inspectProject(dir)).unread?.[0]?.reason).toContain(
       "not checked out",
     );
   });
 
-  it("names the languages it found source for", () => {
+  it("names the languages it found source for", async () => {
     fs.writeFileSync(path.join(dir, "requirements.txt"), "fastapi\n");
-    expect(inspectProject(dir).languages).toEqual(["python"]);
+    expect((await inspectProject(dir)).languages).toEqual(["python"]);
   });
 });
 

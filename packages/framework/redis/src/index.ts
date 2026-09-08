@@ -15,6 +15,7 @@
 
 import { declaredBy, pack, storageCalls } from "@suss/recognize";
 
+import type { PackDeclaration } from "@suss/ir-core";
 import type { PatternPack, StorageMethod } from "@suss/recognize";
 
 /**
@@ -140,5 +141,18 @@ export function redisFramework(): PatternPack {
     recognizedAs: "@suss/framework-redis",
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-redis",
+  dependencies: [
+    { ecosystem: "npm", name: "ioredis" },
+    { ecosystem: "npm", name: "iovalkey" },
+    { ecosystem: "npm", name: "redis" },
+  ],
+  reads:
+    "Redis, Valkey and node-redis commands, emits storage-access interactions.",
+};
 
 export default redisFramework;

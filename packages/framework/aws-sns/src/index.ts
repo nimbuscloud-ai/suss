@@ -14,6 +14,7 @@
 
 import { constructedFrom, messageSends, pack } from "@suss/recognize";
 
+import type { PackDeclaration } from "@suss/ir-core";
 import type { Match, MessageSendMethod, PatternPack } from "@suss/recognize";
 
 /** The module a command class comes from. */
@@ -90,5 +91,14 @@ export function snsFramework(): PatternPack {
     protocol: "sns",
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-aws-sns",
+  dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-sns" }],
+  reads:
+    "AWS SDK v3 SNS \`Publish\` and \`PublishBatch\` calls, emits message-send interactions on the topic.",
+};
 
 export default snsFramework;

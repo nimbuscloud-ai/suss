@@ -21,6 +21,7 @@
 //     side pairing lands.
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export function apolloFramework(): PatternPack {
   return {
@@ -110,5 +111,13 @@ export function apolloFramework(): PatternPack {
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-apollo",
+  dependencies: [{ ecosystem: "npm", name: "@apollo/server" }],
+  reads: "Apollo Server resolvers (code-first).",
+};
 
 export default apolloFramework;

@@ -15,6 +15,7 @@
 
 import { declaredBy, pack, storageCalls } from "@suss/recognize";
 
+import type { PackDeclaration } from "@suss/ir-core";
 import type {
   ArgumentPick,
   CallStep,
@@ -94,5 +95,13 @@ export function gcsFramework(): PatternPack {
     recognizedAs: "@suss/framework-gcs",
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-gcs",
+  dependencies: [{ ecosystem: "npm", name: "@google-cloud/storage" }],
+  reads: "Google Cloud Storage calls, emits storage-access interactions.",
+};
 
 export default gcsFramework;

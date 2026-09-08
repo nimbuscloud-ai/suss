@@ -72,6 +72,7 @@ import type {
 } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 import type { CallExpression } from "ts-morph";
 
 const EVENTBRIDGE = "@aws-sdk/client-eventbridge";
@@ -189,5 +190,14 @@ export function eventBridgeFramework(
     },
   );
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-aws-eventbridge",
+  dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-eventbridge" }],
+  reads:
+    "AWS EventBridge \`PutEvents\` producer calls, emits message-bus interactions.",
+};
 
 export default eventBridgeFramework;

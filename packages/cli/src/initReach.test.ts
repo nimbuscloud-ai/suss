@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("what a service reaches", () => {
-  it("finds a library its own package brings in", () => {
+  it("finds a library its own package brings in", async () => {
     // The service depends on a package of its own, and that package is
     // what depends on the SDK.
     const root = makeRepo({
@@ -45,11 +45,11 @@ describe("what a service reaches", () => {
       path.join(root, "node_modules/@acme/messaging"),
     );
 
-    const names = inspectProject(root).suggestions.map((s) => s.name);
+    const names = (await inspectProject(root)).suggestions.map((s) => s.name);
     expect(names).toContain("aws-sqs");
   });
 
-  it("stops at a published library", () => {
+  it("stops at a published library", async () => {
     // Something we depend on depending on express does not make this an
     // express service.
     const root = makeRepo({
@@ -60,14 +60,14 @@ describe("what a service reaches", () => {
       },
     });
 
-    expect(inspectProject(root).suggestions.map((s) => s.name)).not.toContain(
-      "express",
-    );
+    expect(
+      (await inspectProject(root)).suggestions.map((s) => s.name),
+    ).not.toContain("express");
   });
 });
 
 describe("a pack that only reads calls", () => {
-  it("rides along with the pack that finds the units", () => {
+  it("rides along with the pack that finds the units", async () => {
     const root = makeRepo({
       "package.json": {
         name: "svc",
@@ -75,16 +75,16 @@ describe("a pack that only reads calls", () => {
       },
     });
 
-    const printed = formatInitReport(inspectProject(root));
+    const printed = formatInitReport(await inspectProject(root));
     expect(printed).toMatch(/suss extract .*-f express.*-f drizzle/);
   });
 
-  it("says so rather than printing a command that comes back empty", () => {
+  it("says so rather than printing a command that comes back empty", async () => {
     const root = makeRepo({
       "package.json": { name: "svc", dependencies: { "drizzle-orm": "*" } },
     });
 
-    const printed = formatInitReport(inspectProject(root));
+    const printed = formatInitReport(await inspectProject(root));
     expect(printed).toContain("comes");
     expect(printed).toContain("back empty");
     expect(printed).not.toMatch(/^ {3}suss extract -f drizzle -o/m);

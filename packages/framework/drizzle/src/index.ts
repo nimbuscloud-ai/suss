@@ -54,6 +54,7 @@ import {
 } from "@suss/recognize";
 
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 import type { SqlStatements } from "@suss/recognize";
 
 const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
@@ -551,5 +552,14 @@ export function drizzleFramework(
     declarations: declarationsIn([raw]),
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-drizzle",
+  dependencies: [{ ecosystem: "npm", name: "drizzle-orm" }],
+  reads:
+    "Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names.",
+};
 
 export default drizzleFramework;

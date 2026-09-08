@@ -19,6 +19,7 @@ import path from "node:path";
 import * as p from "@clack/prompts";
 
 import {
+  declaredPacks,
   formatInitReport,
   inspectProject,
   recognizedWithoutPackSentence,
@@ -54,7 +55,7 @@ export async function initInteractive(
   options: InteractiveInitOptions = {},
 ): Promise<number> {
   const root = path.resolve(options.dir ?? process.cwd());
-  const targets = findTargets(root);
+  const targets = await findTargets(root);
 
   // No terminal means no prompts.
   if (options.plain === true || !p.isTTY(process.stdout) || p.isCI()) {
@@ -67,7 +68,7 @@ export async function initInteractive(
   // A project whose manifest suss could not read has nothing to install
   // and something to say.
   const withPacks = targets.filter(
-    (target) => target.report.suggestions.length > 0,
+    (target) => declaredPacks(target.report).length > 0,
   );
   if (withPacks.length === 0) {
     p.log.warn(`Nothing in ${root} matched a pack.`);
@@ -108,23 +109,26 @@ export async function initInteractive(
   return 0;
 }
 
-function findTargets(root: string): Target[] {
+async function findTargets(root: string): Promise<Target[]> {
   const workspace = readWorkspace(root);
 
   if (workspace.packages.length === 0) {
-    const report = inspectProject(root);
+    const report = await inspectProject(root);
     return worthReporting(report)
       ? [{ directory: ".", label: path.basename(root), report }]
       : [];
   }
 
-  return workspace.packages
-    .map((pkg: Workspace) => ({
+  const targets: Target[] = [];
+  for (const pkg of workspace.packages as Workspace[]) {
+    targets.push({
       directory: pkg.directory,
       label: pkg.name ?? pkg.directory,
-      report: inspectProject(path.join(root, pkg.directory)),
-    }))
-    .filter((target) => worthReporting(target.report));
+      report: await inspectProject(path.join(root, pkg.directory)),
+    });
+  }
+
+  return targets.filter((target) => worthReporting(target.report));
 }
 
 /**
@@ -133,7 +137,7 @@ function findTargets(root: string): Target[] {
  * reader about.
  */
 const worthReporting = (report: InitReport): boolean =>
-  report.suggestions.length > 0 ||
+  declaredPacks(report).length > 0 ||
   (report.unread ?? []).length > 0 ||
   (report.recognizedWithoutPack ?? []).length > 0 ||
   unnamedLanguages(report).length > 0;

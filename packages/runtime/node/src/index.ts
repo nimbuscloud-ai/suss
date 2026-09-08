@@ -24,6 +24,7 @@ import { processSurfaceRecognizer } from "./processSurface.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export {
   type EnvVarRecognizerOptions,
@@ -110,5 +111,15 @@ export function nodeRuntimePack(
     subUnits: nodeSchedulingSubUnits,
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/runtime-node",
+  dependencies: [],
+  shippedWith: "typescript",
+  reads:
+    "Node.js runtime primitives, scheduling, the \`process\` surface (incl. \`process.env.X\` config-read interactions), module-loading globals, emitted as interaction effects.",
+};
 
 export default nodeRuntimePack;

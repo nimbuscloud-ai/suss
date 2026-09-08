@@ -23,6 +23,7 @@ import {
 } from "@suss/extractor";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** What Hono registers around a route, on either app constructor. */
 // `app.use(fn)` applies everywhere and `app.use(path, fn)` under a path.
@@ -258,5 +259,14 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
     },
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-hono",
+  dependencies: [{ ecosystem: "npm", name: "hono" }],
+  reads:
+    "Hono handlers, including the \`c.json(body, status)\` argument order.",
+};
 
 export default honoFramework;

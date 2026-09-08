@@ -7,6 +7,7 @@ import { z } from "zod";
 import { storageSystemOption } from "@suss/extractor";
 
 import type { RbStoragePattern, RubyPack } from "@suss/adapter-ruby";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /**
  * What `-f activerecord=config.json` may say. The CLI parses the file against it
@@ -92,5 +93,17 @@ export function activeRecordFramework(
     storage: activeRecordStorage(options),
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-activerecord",
+  dependencies: [
+    { ecosystem: "rubygems", name: "activerecord" },
+    { ecosystem: "rubygems", name: "rails" },
+  ],
+  reads:
+    "ActiveRecord calls (Ruby): a call matches when the constant its receivers start at reaches \`ActiveRecord::Base\`, following what each class extends through the project.",
+};
 
 export default activeRecordFramework;

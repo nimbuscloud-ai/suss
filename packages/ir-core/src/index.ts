@@ -64,6 +64,11 @@ export { UnitInvocationSemanticsSchema } from "./semantics/unitInvocation.js";
 export { semconvAttributes } from "./semconv.js";
 
 export type {
+  Ecosystem,
+  PackConfiguration,
+  PackDeclaration,
+} from "./packDeclaration.js";
+export type {
   BoundaryBehavior,
   BoundarySemanticsDefinition,
   SemconvAttribute,

@@ -23,6 +23,7 @@ import {
   storageCalls,
 } from "@suss/recognize";
 
+import type { PackDeclaration } from "@suss/ir-core";
 import type {
   CallOps,
   InputRule,
@@ -297,5 +298,13 @@ export function mongooseFramework(
     protocol: "in-process",
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-mongoose",
+  dependencies: [{ ecosystem: "npm", name: "mongoose" }],
+  reads: `Mongoose model calls, emits storage-access interactions against the collection a model's \`.model(...)\` call declares.`,
+};
 
 export default mongooseFramework;

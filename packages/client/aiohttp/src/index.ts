@@ -9,6 +9,7 @@
  */
 
 import type { PythonPack } from "@suss/adapter-python";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** The methods a session gives a project, and the method each one sends. */
 const VERB_METHODS: Record<string, string> = {
@@ -43,5 +44,14 @@ export function aiohttpClient(): PythonPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-aiohttp",
+  dependencies: [{ ecosystem: "pypi", name: "aiohttp" }],
+  reads:
+    "aiohttp call sites (Python): the request methods on a \`ClientSession\`, opened with \`async with\` or held in an assignment.",
+};
 
 export default aiohttpClient;

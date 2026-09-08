@@ -13,6 +13,7 @@
 
 import { constructedFrom, pack, storageCalls } from "@suss/recognize";
 
+import type { PackDeclaration } from "@suss/ir-core";
 import type {
   ArgumentPick,
   CallStep,
@@ -66,5 +67,14 @@ export function ssmFramework(): PatternPack {
     protocol: "aws.ssm",
   });
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "effects",
+  package: "@suss/framework-aws-ssm",
+  dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-ssm" }],
+  reads:
+    "AWS SSM Parameter Store calls, emits storage-access interactions against the parameter.",
+};
 
 export default ssmFramework;

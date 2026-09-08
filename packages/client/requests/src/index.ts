@@ -10,6 +10,7 @@
  */
 
 import type { PythonPack } from "@suss/adapter-python";
+import type { PackDeclaration } from "@suss/ir-core";
 
 /** The seven functions `requests` exports, and the method each one sends. */
 const VERB_FUNCTIONS: Record<string, string> = {
@@ -55,5 +56,14 @@ export function requestsClient(): PythonPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "client",
+  package: "@suss/client-requests",
+  dependencies: [{ ecosystem: "pypi", name: "requests" }],
+  reads:
+    "requests call sites (Python): the seven verb functions, \`requests.request\`, and a \`Session\`, each bound to the method and path the call states.",
+};
 
 export default requestsClient;

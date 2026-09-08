@@ -1,2 +1,2 @@
 // The pack factory, which is what `-f zustand` loads.
-export { default } from "@suss/framework-zustand";
+export { declares, default } from "@suss/framework-zustand";

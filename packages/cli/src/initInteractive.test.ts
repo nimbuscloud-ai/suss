@@ -160,7 +160,9 @@ describe("suss init, guided", () => {
     await initInteractive({ dir });
 
     expect(output()).toContain("Once the packs are installed");
-    expect(output()).toContain("suss extract -f hono -o summaries/code.json");
+    expect(output()).toContain(
+      "suss extract -f hono -f fetch -f node -o summaries/code.json",
+    );
   });
 
   it("writes .sussignore only when asked for it", async () => {
@@ -325,7 +327,7 @@ describe("suss init, guided", () => {
       expect(ran[0]).toContain("npm install --save-dev");
       expect(ran[0]).toContain("@suss/cli");
       expect(ran[0]).toContain("@suss/framework-hono");
-      expect(output()).toContain("Installed 2 packages");
+      expect(output()).toContain("Installed 4 packages");
     });
 
     it("stops at a failed install and leaves the command to retry", async () => {
@@ -345,7 +347,9 @@ describe("suss init, guided", () => {
 
       await initInteractive({ dir });
 
-      expect(ran[1]).toBe("npx suss extract -f hono -o summaries/code.json");
+      expect(ran[1]).toBe(
+        "npx suss extract -f hono -f fetch -f node -o summaries/code.json",
+      );
     });
 
     it("holds the commands back when the first run is declined", async () => {

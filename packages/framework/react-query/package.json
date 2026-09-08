@@ -51,12 +51,13 @@
     "@suss/adapter-typescript": "0.23.0"
   },
   "devDependencies": {
+    "@suss/framework-react": "*",
+    "@suss/ir-core": "*",
     "@suss/test-project": "*",
     "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",
-    "vitest": "*",
-    "@suss/framework-react": "*"
+    "vitest": "*"
   },
   "private": true,
   "peerDependencies": {

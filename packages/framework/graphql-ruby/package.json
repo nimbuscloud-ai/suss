@@ -54,6 +54,7 @@
   "devDependencies": {
     "@suss/behavioral-ir": "*",
     "@suss/checker": "*",
+    "@suss/ir-core": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"

@@ -37,6 +37,7 @@ import { templatesForFiles } from "./templateIndex.js";
 import { HTTP_TERMINALS } from "./terminals.js";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export { awsLambdaDiscovery, METADATA_NAMESPACE } from "./discovery.js";
 export { clearTemplateCache } from "./templateIndex.js";
@@ -126,5 +127,14 @@ export function awsLambdaFramework(
     declarations: declarationsIn(invokes),
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-aws-lambda",
+  dependencies: [{ ecosystem: "npm", name: "@types/aws-lambda" }],
+  reads:
+    "AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes.",
+};
 
 export default awsLambdaFramework;

@@ -25,6 +25,7 @@ import { reactRootComponents } from "./rootDiscovery.js";
 import { reactSubUnits } from "./subUnits.js";
 
 import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
 
 export function reactFramework(): PatternPack {
   return {
@@ -98,5 +99,13 @@ export function reactFramework(): PatternPack {
     ],
   };
 }
+
+/** What this pack reads, and what a project has to be using for it to. */
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-react",
+  dependencies: [{ ecosystem: "npm", name: "react" }],
+  reads: "React function components, event handlers, \`useEffect\` bodies.",
+};
 
 export default reactFramework;
