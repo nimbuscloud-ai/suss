@@ -9,6 +9,10 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ## If you use suss
 
+**`suss init` names every contract file it found.** It kept one suggestion per reader, so the first `.graphql` file the walk reached won and the rest were dropped. On one project that meant a fragment file was named as the schema and `schema.graphql` at the root was never mentioned; two SAM templates in one repository lost the same way. Each file gets a command now. A GraphQL file that declares types is read as a schema, and one with only operations goes to `--from graphql-documents`, which takes the directory, so a project with fifty of them still gets one command.
+
+**A fragment written in a `.graphql` file counts as registered.** graphql-codegen scans `.ts`, `.tsx` and `.graphql` alike for documents, and the reader looked in the TypeScript alone, so a project keeping a fragment in a file of its own got an error saying its query throws.
+
 **A GraphQL query that spreads a fragment the codegen preset registers is left alone.** graphql-codegen's client preset registers a fragment by writing it in a document of its own and inlines it by name, so nothing interpolates it. `check` read the query on its own, saw a spread with no definition, and reported that the query throws when it runs. On one React codebase that was 20 errors, every one of them wrong. A fragment written on its own in a `gql(...)` call now counts as registered; a fragment written beside an operation still belongs to that document alone, so a query that genuinely ships an undefined spread is still an error.
 
 **A Ruby service object's calls come back, however it keeps its connection.** A class that builds its connection once in `def self.conn` and calls it from every request method used to report nothing: the reader followed a name assigned in the same method and no further. It now reads what a method of that name in the same file comes back with, `@conn ||= Faraday.new(...)` included, and takes a base URL written as the first argument as well as under `url:`. On one Rails application with four vendor services, the calls it finds went from 4 to 12.
