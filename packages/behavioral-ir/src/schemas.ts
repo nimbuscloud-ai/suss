@@ -50,6 +50,12 @@ export const CodeUnitKindSchema = z.enum([
    * Always a consumer: it reads channels other units declare.
    */
   "module-init",
+  /**
+   * The function handed to `setTimeout`, `setInterval` or a library that
+   * runs work later. The runtime calls it rather than a request, so what
+   * it reaches is on it rather than on the unit that scheduled it.
+   */
+  "scheduled-callback",
 ]);
 
 export const ComparisonOpSchema = z.enum([
