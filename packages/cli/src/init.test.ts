@@ -395,9 +395,26 @@ describe("a project with more than one contract file", () => {
         .map((suggestion) => [suggestion.name, suggestion.file]),
     );
 
-    expect(read).toEqual({
-      graphql: "schema.graphql",
-      "graphql-documents": "app",
-    });
+    expect(read).toEqual({ graphql: "schema.graphql" });
+  });
+
+  it("reads a directory of operations, and leaves a fragment alone", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.mkdirSync(path.join(dir, "operations"));
+    fs.writeFileSync(
+      path.join(dir, "operations", "viewer.graphql"),
+      "query Viewer { viewer { id ...Cached } }\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "operations", "cached.graphql"),
+      "fragment Cached on User { id }\n",
+    );
+
+    const report = await inspectProject(dir);
+    const read = report.suggestions
+      .filter((suggestion) => suggestion.kind === "contract")
+      .map((suggestion) => `${suggestion.name} ${suggestion.file}`);
+
+    expect(read).toEqual(["graphql-documents operations"]);
   });
 });
