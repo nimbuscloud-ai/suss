@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { CORPUS_REPOS, CORPUS_TARGETS } from "./corpusTargets.mjs";
+import { initPlan } from "./initPlan.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -54,50 +55,79 @@ function readBaseline() {
   return JSON.parse(fs.readFileSync(baselinePath, "utf8"));
 }
 
-/** Total summaries and how many have a boundary, from one extraction run. */
+/**
+ * What one target comes to, by running what `suss init` printed for it.
+ *
+ * The commands, the pack names in them and the config files they read
+ * all come out of init, so this measures the path somebody takes rather
+ * than a pack list written here. A command that fails is the finding:
+ * init sent somebody to it.
+ */
 function measure(targetName, targetsDir) {
   const target = CORPUS_TARGETS[targetName];
   const bin = path.join(repoRoot, "packages", "cli", "dist", "bin.js");
   if (!fs.existsSync(bin)) {
     fail("This checkout has no built CLI. Run `npm run build` first.");
   }
-  const tsconfig = path.join(targetsDir, target.tsconfig);
-  if (!fs.existsSync(tsconfig)) {
+  const project = path.join(targetsDir, target.directory);
+  if (!fs.existsSync(project)) {
     return null;
   }
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-corpus-"));
-  const out = path.join(dir, "summaries.json");
-  const res = spawnSync(
-    process.execPath,
-    [
-      bin,
-      "extract",
-      "-p",
-      tsconfig,
-      ...target.packs.flatMap((p) => ["-f", p]),
-      "--no-cache",
-      "-o",
-      out,
-    ],
-    { cwd: repoRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
-  );
-  if (res.status !== 0) {
+  const plan = initPlan(bin, project);
+  for (const [name, contents] of Object.entries(plan.configs)) {
+    fs.writeFileSync(path.join(project, name), `${contents}\n`);
+  }
+
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "suss-corpus-"));
+  let summaries = [];
+  for (const command of plan.commands) {
+    const written = runPlanned(command, targetName, project, bin, out);
+    summaries = [...summaries, ...written];
+  }
+
+  fs.rmSync(out, { recursive: true, force: true });
+  return {
+    pin: CORPUS_REPOS[target.repo].pin,
+    commands: plan.commands.length,
+    summaries: summaries.length,
+    boundaries: summaries.filter((s) => s.identity?.boundaryBinding != null)
+      .length,
+  };
+}
+
+/** One command from the plan, run where a person would run it. */
+function runPlanned(command, targetName, project, bin, out) {
+  // `check` reads what the others wrote and reports rather than
+  // producing summaries, and its exit code says how the corpus checks
+  // out rather than whether the command worked.
+  const isCheck = command.startsWith("suss check");
+  const args = command
+    .split(" ")
+    .slice(1)
+    .map((argument) =>
+      argument.startsWith("summaries/") ? path.join(out, argument) : argument,
+    );
+
+  // Only extract reads a cache, and a corpus run measures a cold read.
+  const cold = command.startsWith("suss extract") ? ["--no-cache"] : [];
+  const run = spawnSync(process.execPath, [bin, ...args, ...cold], {
+    cwd: project,
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  if (!isCheck && run.status !== 0) {
     fail(
-      `extract failed on ${targetName}:\n${(res.stderr ?? "").slice(-2000)}`,
+      `${targetName}: \`${command}\`, which suss init printed, failed:\n${(run.stderr ?? "").slice(-2000)}`,
     );
   }
 
-  const summaries = JSON.parse(fs.readFileSync(out, "utf8"));
-  fs.rmSync(dir, { recursive: true, force: true });
-  const list = Array.isArray(summaries)
-    ? summaries
-    : (summaries.summaries ?? []);
-  return {
-    pin: CORPUS_REPOS[target.repo].pin,
-    summaries: list.length,
-    boundaries: list.filter((s) => s.identity?.boundaryBinding != null).length,
-  };
+  const written = args[args.indexOf("-o") + 1];
+  if (written === undefined || !fs.existsSync(written)) {
+    return [];
+  }
+  const parsed = JSON.parse(fs.readFileSync(written, "utf8"));
+  return Array.isArray(parsed) ? parsed : (parsed.summaries ?? []);
 }
 
 const targetsDir = resolveTargetsDir();

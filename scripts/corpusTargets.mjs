@@ -22,31 +22,33 @@ export const CORPUS_REPOS = {
   },
 };
 
-/** One extraction run per target: a tsconfig under its repo, and the packs to load. */
+/**
+ * One run per target: the directory `suss init` is pointed at.
+ *
+ * Which packs to load, which config files to write and which commands
+ * to run all come out of init, so a target says where the project is
+ * and nothing else. A pack list written here would be a third copy of
+ * what a project needs, and never the path anybody takes.
+ */
 export const CORPUS_TARGETS = {
   "twenty-server": {
     repo: "twenty",
-    tsconfig: "twenty/packages/twenty-server/tsconfig.json",
-    packs: ["nestjs-rest", "nestjs-graphql", "node"],
+    directory: "twenty/packages/twenty-server",
   },
   "twenty-front": {
     repo: "twenty",
-    tsconfig: "twenty/packages/twenty-front/tsconfig.json",
-    packs: ["react", "apollo-client", "fetch"],
+    directory: "twenty/packages/twenty-front",
   },
   "saleor-dashboard": {
     repo: "saleor-dashboard",
-    tsconfig: "saleor-dashboard/tsconfig.json",
-    packs: ["react", "apollo-client", "fetch"],
+    directory: "saleor-dashboard",
   },
   "saleor-storefront": {
     repo: "saleor-storefront",
-    tsconfig: "saleor-storefront/tsconfig.json",
-    packs: ["react", "nextjs", "fetch"],
+    directory: "saleor-storefront",
   },
   "directus-api": {
     repo: "directus",
-    tsconfig: "directus/api/tsconfig.json",
-    packs: ["express", "fetch"],
+    directory: "directus/api",
   },
 };

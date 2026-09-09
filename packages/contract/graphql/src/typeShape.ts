@@ -4,6 +4,7 @@
 
 import {
   type DocumentNode,
+  parse as graphqlParse,
   Kind,
   type NamedTypeNode,
   type TypeNode,
@@ -80,4 +81,40 @@ export function typeDefinitionsIn(
     definitions[node.name.value] = { type: "record", properties };
   }
   return definitions;
+}
+
+/** The definitions a schema is made of, as graphql-js names them. */
+const SCHEMA_KINDS: ReadonlySet<string> = new Set([
+  Kind.SCHEMA_DEFINITION,
+  Kind.SCHEMA_EXTENSION,
+  Kind.OBJECT_TYPE_DEFINITION,
+  Kind.OBJECT_TYPE_EXTENSION,
+  Kind.INTERFACE_TYPE_DEFINITION,
+  Kind.INTERFACE_TYPE_EXTENSION,
+  Kind.INPUT_OBJECT_TYPE_DEFINITION,
+  Kind.INPUT_OBJECT_TYPE_EXTENSION,
+  Kind.ENUM_TYPE_DEFINITION,
+  Kind.ENUM_TYPE_EXTENSION,
+  Kind.UNION_TYPE_DEFINITION,
+  Kind.UNION_TYPE_EXTENSION,
+  Kind.SCALAR_TYPE_DEFINITION,
+  Kind.SCALAR_TYPE_EXTENSION,
+]);
+
+/** Whether a document declares types, which is what makes it a schema. */
+export function describesTypes(text: string): boolean {
+  return definitionKinds(text).some((kind) => SCHEMA_KINDS.has(kind));
+}
+
+/** Whether a document has an operation to read, rather than fragments alone. */
+export function describesOperations(text: string): boolean {
+  return definitionKinds(text).includes(Kind.OPERATION_DEFINITION);
+}
+
+function definitionKinds(text: string): string[] {
+  try {
+    return graphqlParse(text).definitions.map((definition) => definition.kind);
+  } catch {
+    return [];
+  }
 }

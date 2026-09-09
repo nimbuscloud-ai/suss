@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { describesOperations, describesTypes } from "@suss/contract-graphql";
 import { isConfigurationFile } from "@suss/contract-wrangler";
 
 import {
@@ -155,10 +156,13 @@ const BY_FILE: Array<{
     describe: (p) => `an OpenAPI document at ${p}`,
   },
   {
+    // Stories are written one file per component, so the reader takes
+    // the directory and the suggestion names it once.
     matches: (f) => f.endsWith(".stories.tsx") || f.endsWith(".stories.ts"),
     name: "storybook",
     packageName: "@suss/contract-storybook",
-    describe: (p) => `Storybook stories, the first at ${p}`,
+    perDirectory: true,
+    describe: (p) => `Storybook stories under ${p}`,
   },
 ];
 
@@ -168,9 +172,7 @@ const isGraphqlFile = (filename: string): boolean =>
 
 /** A schema declares types; a document written by a project does not. */
 function declaresTypes(file: string): boolean {
-  return /^\s*(extend\s+)?(type|input|interface|enum|union|scalar|schema)\s/m.test(
-    textOf(file),
-  );
+  return describesTypes(textOf(file));
 }
 
 /**
@@ -179,7 +181,7 @@ function declaresTypes(file: string): boolean {
  * spread them, and reading it on its own comes back with no boundary.
  */
 function declaresOperations(file: string): boolean {
-  return /^\s*(query|mutation|subscription)\s|^\s*\{/m.test(textOf(file));
+  return describesOperations(textOf(file));
 }
 
 function textOf(file: string): string {
@@ -188,6 +190,25 @@ function textOf(file: string): string {
   } catch {
     return "";
   }
+}
+
+/** The directory that contains all of these, which is what a recursive reader is pointed at. */
+function commonDirectoryOf(files: readonly string[]): string {
+  const parts = files.map((file) => path.dirname(file).split(path.sep));
+  const first = parts[0] ?? [];
+  let shared = first.length;
+  for (const other of parts) {
+    let index = 0;
+    while (
+      index < shared &&
+      index < other.length &&
+      other[index] === first[index]
+    ) {
+      index += 1;
+    }
+    shared = index;
+  }
+  return first.slice(0, shared).join(path.sep) || ".";
 }
 
 const LANGUAGE_OF: Record<Ecosystem, Language> = {
@@ -239,6 +260,8 @@ export async function inspectProject(root: string): Promise<InitReport> {
   const submodules = new Set(
     readSubmodules(resolved).map((submodule) => submodule.directory),
   );
+  /** Files matched by a reader that walks a directory, by reader. */
+  const walked = new Map<string, string[]>();
   for (const file of filesUnder(resolved, submodules)) {
     const relative = path.relative(resolved, file);
     const filename = path.basename(file);
@@ -247,19 +270,38 @@ export async function inspectProject(root: string): Promise<InitReport> {
         continue;
       }
 
-      // A reader that walks a directory is named once for it; every
-      // other one gets a command per file, since two SAM templates in
-      // one repository are two services.
-      const read =
-        rule.perDirectory === true ? path.dirname(relative) || "." : relative;
+      // A reader that walks a directory is named once for the whole
+      // set; every other one gets a command per file, since two SAM
+      // templates in one repository are two services.
+      if (rule.perDirectory === true) {
+        walked.set(rule.name, [...(walked.get(rule.name) ?? []), relative]);
+        continue;
+      }
+
       add({
         name: rule.name,
         packageName: rule.packageName,
-        because: rule.describe(read),
+        because: rule.describe(relative),
         kind: "contract",
-        file: read,
+        file: relative,
       });
     }
+  }
+
+  for (const [name, files] of walked) {
+    const rule = BY_FILE.find((candidate) => candidate.name === name);
+    const directory = commonDirectoryOf(files);
+    if (rule === undefined) {
+      continue;
+    }
+
+    add({
+      name,
+      packageName: rule.packageName,
+      because: rule.describe(directory),
+      kind: "contract",
+      file: directory,
+    });
   }
 
   // Net::HTTP is Ruby's own and fetch is the browser's, so no manifest
@@ -493,6 +535,29 @@ function* filesUnder(
  * language ships fits every project written in it, so on its own it is
  * no reason to set suss up here.
  */
+/**
+ * What one contract command writes to. Two files read by the same
+ * reader would write to one name and the second would overwrite the
+ * first, so a reader with more than one file says which file each
+ * summary came from.
+ */
+function contractOutput(
+  item: PackSuggestion,
+  contracts: ReadonlyArray<PackSuggestion>,
+): string {
+  const sameReader = contracts.filter(
+    (other) => other.name === item.name,
+  ).length;
+  if (sameReader < 2 || item.file === undefined) {
+    return item.name;
+  }
+  const slug = item.file
+    .replace(/\.[^./]+$/, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `${item.name}-${slug}`;
+}
+
 export function declaredPacks(report: InitReport): PackSuggestion[] {
   return report.suggestions.filter(
     (suggestion) => suggestion.shippedWithLanguage !== true,
@@ -588,7 +653,7 @@ export function formatInitReport(report: InitReport): string {
   }
   for (const item of contracts) {
     lines.push(
-      `   suss contract --from ${item.name} ${item.file ?? "<path>"} -o summaries/${item.name}.json`,
+      `   suss contract --from ${item.name} ${item.file ?? "<path>"} -o summaries/${contractOutput(item, contracts)}.json`,
     );
   }
   lines.push("");
