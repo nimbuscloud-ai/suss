@@ -2,10 +2,10 @@
  * initPlan.mjs: what `suss init` told a project to do, as something a
  * script can run.
  *
- * The corpus used to call `extract` with a pack list written here,
- * which is a third copy of what a project needs and is not the path
- * anybody takes. Every defect the September sweep found sat between
- * what init printed and what running it did.
+ * The corpus runs the commands init prints rather than a pack list of
+ * its own, so a pack init forgets to suggest, or a command it prints
+ * that fails, shows up as a corpus failure instead of only on a user's
+ * machine.
  */
 
 import { spawnSync } from "node:child_process";

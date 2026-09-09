@@ -18,6 +18,7 @@ import path from "node:path";
 
 import { describesOperations, describesTypes } from "@suss/contract-graphql";
 import { isConfigurationFile } from "@suss/contract-wrangler";
+import { commonDirectoryOf } from "@suss/extractor";
 
 import {
   readPythonDependencies,
@@ -192,25 +193,6 @@ function textOf(file: string): string {
   }
 }
 
-/** The directory that contains all of these, which is what a recursive reader is pointed at. */
-function commonDirectoryOf(files: readonly string[]): string {
-  const parts = files.map((file) => path.dirname(file).split(path.sep));
-  const first = parts[0] ?? [];
-  let shared = first.length;
-  for (const other of parts) {
-    let index = 0;
-    while (
-      index < shared &&
-      index < other.length &&
-      other[index] === first[index]
-    ) {
-      index += 1;
-    }
-    shared = index;
-  }
-  return first.slice(0, shared).join(path.sep) || ".";
-}
-
 const LANGUAGE_OF: Record<Ecosystem, Language> = {
   npm: "typescript",
   pypi: "python",
@@ -274,7 +256,7 @@ export async function inspectProject(root: string): Promise<InitReport> {
       // set; every other one gets a command per file, since two SAM
       // templates in one repository are two services.
       if (rule.perDirectory === true) {
-        walked.set(rule.name, [...(walked.get(rule.name) ?? []), relative]);
+        walked.set(rule.name, [...(walked.get(rule.name) ?? []), file]);
         continue;
       }
 
@@ -290,10 +272,11 @@ export async function inspectProject(root: string): Promise<InitReport> {
 
   for (const [name, files] of walked) {
     const rule = BY_FILE.find((candidate) => candidate.name === name);
-    const directory = commonDirectoryOf(files);
     if (rule === undefined) {
       continue;
     }
+    const directory =
+      path.relative(resolved, commonDirectoryOf(files) ?? resolved) || ".";
 
     add({
       name,

@@ -77,6 +77,7 @@ export {
 export { sharedGatingConditions } from "./paths/gatingConditions.js";
 export { IdMap, IdSet } from "./paths/nodeIdentity.js";
 export { SKIP_CHILDREN, walkDescendants } from "./paths/nodeWalk.js";
+export { commonDirectoryOf } from "./projectRoot.js";
 export {
   absentReading,
   ambiguousReading,

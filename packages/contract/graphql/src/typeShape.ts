@@ -101,7 +101,7 @@ const SCHEMA_KINDS: ReadonlySet<string> = new Set([
   Kind.SCALAR_TYPE_EXTENSION,
 ]);
 
-/** Whether a document declares types, which is what makes it a schema. */
+/** Whether a document declares types. A document that does is a schema. */
 export function describesTypes(text: string): boolean {
   return definitionKinds(text).some((kind) => SCHEMA_KINDS.has(kind));
 }

@@ -8,7 +8,6 @@ import { restBinding } from "@suss/behavioral-ir";
 
 import {
   buildExtractionReport,
-  commonDirectoryOf,
   createPackTallies,
   unresolvedGatesFor,
 } from "./diagnostics.js";
@@ -275,21 +274,5 @@ describe("unresolvedGatesFor", () => {
 
   it("checks nothing with neither a tsconfig nor a root", () => {
     expect(from(undefined, undefined)).toEqual([]);
-  });
-});
-
-describe("commonDirectoryOf", () => {
-  it("gives the deepest directory holding every file", () => {
-    expect(
-      commonDirectoryOf(["/a/b/src/x.ts", "/a/b/src/nested/y.ts", "/a/b/z.ts"]),
-    ).toBe("/a/b");
-  });
-
-  it("gives nothing when the paths share only the filesystem root", () => {
-    expect(commonDirectoryOf(["/a/x.ts", "/b/y.ts"])).toBeUndefined();
-  });
-
-  it("ignores the in-memory paths a virtual project uses", () => {
-    expect(commonDirectoryOf(["x.ts", "y.ts"])).toBeUndefined();
   });
 });
