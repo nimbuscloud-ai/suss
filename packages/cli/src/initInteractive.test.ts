@@ -262,7 +262,7 @@ describe("suss init, guided", () => {
 
       await initInteractive({ dir });
 
-      expect(output()).toContain("2 of its packages");
+      expect(output()).toContain("2 of the projects here");
       expect(output()).toContain("packages/api");
       expect(output()).toContain("packages/web");
       expect(output()).not.toContain("packages/docs");
@@ -440,6 +440,72 @@ describe("suss init, guided", () => {
       const text = written.join("");
       expect(text).toContain("packages/api");
       expect(text).toContain("packages/web");
+    });
+
+    it("reads a Python service beside the npm workspace", async () => {
+      write(
+        "package.json",
+        JSON.stringify({ name: "root", workspaces: ["frontend"] }),
+      );
+      write("pyproject.toml", '[tool.uv.workspace]\nmembers = ["backend"]\n');
+      project("frontend", "frontend", ["axios"]);
+      write(
+        "backend/pyproject.toml",
+        '[project]\nname = "app"\ndependencies = ["fastapi[standard]>=0.100", "sqlmodel"]\n',
+      );
+      write("backend/app/main.py", "from fastapi import FastAPI\n");
+
+      const written: string[] = [];
+      const spy = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation((chunk) => {
+          written.push(String(chunk));
+          return true;
+        });
+
+      await initInteractive({ dir, plain: true });
+      spy.mockRestore();
+
+      const text = written.join("");
+      expect(text).toContain("═ frontend ═");
+      expect(text).toContain("═ backend ═");
+      expect(text).toContain("fastapi in pyproject.toml");
+      expect(text).not.toContain("could not tell which packs");
+    });
+
+    it("reads a Python service and a Ruby service under a root with no manifest", async () => {
+      write(
+        "api/pyproject.toml",
+        '[project]\nname = "api"\ndependencies = ["flask-restx"]\n',
+      );
+      write("api/app.py", "from flask_restx import Api\n");
+      write("web/Gemfile", 'source "https://rubygems.org"\ngem "rails"\n');
+      write(
+        "web/Gemfile.lock",
+        "GEM\n  specs:\n    rails (7.1.0)\n\nDEPENDENCIES\n  rails\n",
+      );
+      write(
+        "web/app/controllers/application_controller.rb",
+        "class ApplicationController < ActionController::Base\nend\n",
+      );
+
+      const written: string[] = [];
+      const spy = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation((chunk) => {
+          written.push(String(chunk));
+          return true;
+        });
+
+      await initInteractive({ dir, plain: true });
+      spy.mockRestore();
+
+      const text = written.join("");
+      expect(text).toContain("═ api ═");
+      expect(text).toContain("═ web ═");
+      expect(text).toContain("flask-restx in pyproject.toml");
+      expect(text).toContain("rails in Gemfile");
+      expect(text).not.toContain("could not tell which packs");
     });
 
     it("prints the empty report when nothing matched", async () => {
