@@ -134,14 +134,11 @@ const EXPRESSION_RESOLVERS: Record<
     }
     return memberOf(resolveExpression(object, site, ctx), attribute.text, ctx);
   },
-  // `Service().run()` runs a method on whatever the constructor built.
   call: (node, site, ctx) => {
     const callee = field(node, "function");
-    if (callee === null) {
-      return stop("noDeclaration");
-    }
-    const built = resolveExpression(callee, site, ctx);
-    return built.kind === "class" ? built : stop("noDeclaration");
+    return callee === null
+      ? stop("noDeclaration")
+      : instanceBuiltBy(resolveExpression(callee, site, ctx), "noDeclaration");
   },
   parenthesized_expression: (node, site, ctx) => {
     const inner = node.namedChildren[0];
@@ -160,6 +157,25 @@ function resolveExpression(
   return resolver === undefined
     ? stop("noDeclaration")
     : resolver(node, site, ctx);
+}
+
+/**
+ * What `Service()` puts in a name, or what `.run()` is called on when it
+ * is written inline: an instance of a project class, whose methods are the
+ * class's own. A constructor in a dependency builds something this run
+ * never read, which is the same stop a direct call on it gets, and a
+ * callee that already stopped keeps its reason, so `session.get(...)` on a
+ * parameter stays caller-supplied. Anything else, a project function's
+ * return say, is a value the walk cannot see through.
+ */
+function instanceBuiltBy(
+  built: Resolved,
+  otherwise: UnfollowedReason,
+): Resolved {
+  if (built.kind === "class" || built.kind === "stop") {
+    return built;
+  }
+  return built.kind === "package" ? stop("outsideRun") : stop(otherwise);
 }
 
 function resolveIdentifier(
@@ -273,14 +289,13 @@ function aliasedValue(
     return resolveBinding(binding, file, scope, ctx, visited);
   }
   if (value.type === "call") {
-    // `svc = Service()` puts an instance in the name, and a method
-    // called on it is the class's own.
     const callee = field(value, "function");
-    const built =
-      callee === null
-        ? stop("unsettledValue")
-        : aliasedValue(callee, file, scope, ctx, visited);
-    return built.kind === "class" ? built : stop("unsettledValue");
+    return callee === null
+      ? stop("unsettledValue")
+      : instanceBuiltBy(
+          aliasedValue(callee, file, scope, ctx, visited),
+          "unsettledValue",
+        );
   }
   if (value.type === "attribute") {
     const object = field(value, "object");
