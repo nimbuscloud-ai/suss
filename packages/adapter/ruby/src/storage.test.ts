@@ -8,15 +8,22 @@ import {
 } from "./facts/constants.js";
 import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
-import { storageEffects } from "./storage.js";
+import { storageClaims, storageEffects } from "./storage.js";
 
-import type { RbStoragePattern } from "./pack.js";
+import type { RbLoaderPattern, RbStoragePattern } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
 const ACTIVE_RECORD: RbStoragePattern = {
   baseClasses: ["ActiveRecord::Base"],
   writes: ["update", "destroy", "save", "create", "delete_all"],
   storageSystem: "postgresql",
+};
+
+const DATALOADER: RbLoaderPattern = {
+  loader: "dataloader",
+  pick: "with",
+  reads: ["load", "load_all"],
+  shortcuts: ["dataload", "dataload_record"],
 };
 
 /** Rails puts its own base class between the library and every model. */
@@ -42,14 +49,12 @@ function callsIn(node: RbNode, found: RbNode[] = []): RbNode[] {
   return found;
 }
 
-async function effectsFor(source: string, models = MODELS) {
+/** The facts a run would have for these files, and the parsed body of `use.rb`. */
+async function factsFor(files: Record<string, string>) {
   const db = new Database();
   const constants = [];
   let root: RbNode | null = null;
-  for (const [file, text] of Object.entries({
-    "models.rb": models,
-    "use.rb": source,
-  })) {
+  for (const [file, text] of Object.entries(files)) {
     const tree = await parseRuby(text);
     emitValueFacts(db, file, tree.rootNode);
     constants.push(collectFileConstants(file, tree.rootNode));
@@ -58,10 +63,18 @@ async function effectsFor(source: string, models = MODELS) {
     }
   }
   emitConstantBindings(db, constants);
+  return { db, root: root as RbNode };
+}
 
-  return storageEffects(callsIn(root as RbNode), {
+async function effectsFor(source: string, models = MODELS) {
+  const { db, root } = await factsFor({
+    "models.rb": models,
+    "use.rb": source,
+  });
+  return storageEffects(callsIn(root), "use.rb", {
     facts: db,
     patterns: [ACTIVE_RECORD],
+    loaders: [DATALOADER],
   });
 }
 
@@ -72,6 +85,18 @@ const accessOf = (effect: unknown) =>
     "storage-access"
     ? (effect as { interaction: Record<string, unknown> }).interaction
     : null;
+
+const containerOf = (effect: unknown) => {
+  const semantics =
+    (effect as { type: string } | undefined)?.type === "interaction"
+      ? (
+          effect as {
+            binding: { semantics: { name: string; container?: string } };
+          }
+        ).binding.semantics
+      : null;
+  return semantics?.name === "storage" ? semantics.container : null;
+};
 
 describe("the database work a Ruby body does", () => {
   it("reads a call on a model two classes below the library's own base", async () => {
@@ -87,12 +112,30 @@ describe("the database work a Ruby body does", () => {
 
   it("says which model the call was against", async () => {
     const effects = await effectsFor("found = Order.where(id: 1).first\n");
-    const [effect] = effects;
-    const semantics =
-      effect?.type === "interaction" ? effect.binding.semantics : null;
-    expect(semantics?.name === "storage" ? semantics.container : null).toBe(
-      "Order",
+    expect(containerOf(effects[0])).toBe("Order");
+  });
+
+  it("reads a model written from the top level, `::Order`", async () => {
+    const effects = await effectsFor("found = ::Order.find(1)\n");
+    expect(effects).toHaveLength(1);
+    expect(containerOf(effects[0])).toBe("Order");
+  });
+
+  it("reads a model written by its compound path, `Shop::Order`", async () => {
+    const effects = await effectsFor(
+      "found = Shop::Order.find(1)\n",
+      [
+        "class ApplicationRecord < ActiveRecord::Base",
+        "end",
+        "module Shop",
+        "  class Order < ApplicationRecord",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
     );
+    expect(effects).toHaveLength(1);
+    expect(containerOf(effects[0])).toBe("Shop::Order");
   });
 
   it("counts a chain once rather than once per call in it", async () => {
@@ -123,7 +166,7 @@ describe("the database work a Ruby body does", () => {
   it("says nothing when no pack declares a pattern", async () => {
     const tree = await parseRuby("Order.where(id: 1).first\n");
     expect(
-      storageEffects(callsIn(tree.rootNode), {
+      storageEffects(callsIn(tree.rootNode), "use.rb", {
         facts: new Database(),
         patterns: [],
       }),
@@ -141,29 +184,71 @@ describe("the database work a Ruby body does", () => {
   });
 
   it("says nothing about a name two files declare", async () => {
-    const db = new Database();
-    const constants = [];
-    let root: RbNode | null = null;
-    for (const [file, text] of Object.entries({
+    const { db, root } = await factsFor({
       "one.rb": "class Order < ApplicationRecord\nend\n",
       "two.rb": "class Order\nend\n",
       "models.rb": MODELS,
       "use.rb": "found = Order.where(id: 1).first\n",
-    })) {
-      const tree = await parseRuby(text);
-      emitValueFacts(db, file, tree.rootNode);
-      constants.push(collectFileConstants(file, tree.rootNode));
-      if (file === "use.rb") {
-        root = tree.rootNode;
-      }
-    }
-    emitConstantBindings(db, constants);
+    });
 
     expect(
-      storageEffects(callsIn(root as RbNode), {
+      storageEffects(callsIn(root), "use.rb", {
         facts: db,
         patterns: [ACTIVE_RECORD],
       }),
     ).toEqual([]);
+  });
+
+  describe("read through a loader", () => {
+    it("records the model a picked source is given", async () => {
+      const effects = await effectsFor(
+        "dataloader.with(Sources::Record, ::Order).load(id)\n",
+      );
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Order");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "load",
+      });
+    });
+
+    it("records the model a shortcut is given", async () => {
+      const effects = await effectsFor("dataload_record(Order, object.id)\n");
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Order");
+      expect(accessOf(effects[0])).toMatchObject({
+        operation: "dataload_record",
+      });
+    });
+
+    it("says nothing about a source given no model", async () => {
+      const effects = await effectsFor(
+        "dataloader.with(Sources::Record, :users).load(id)\n",
+      );
+      expect(effects).toEqual([]);
+    });
+
+    it("says nothing about a read on something other than the loader", async () => {
+      const effects = await effectsFor("cache.with(Order).load(id)\n");
+      expect(effects).toEqual([]);
+    });
+
+    it("claims the loader call so a walk does not report it as a gap", async () => {
+      const { db, root } = await factsFor({
+        "models.rb": MODELS,
+        "use.rb":
+          "dataloader.with(Sources::Record, ::Order).load(id)\nother.load(id)\n",
+      });
+      const options = {
+        facts: db,
+        patterns: [ACTIVE_RECORD],
+        loaders: [DATALOADER],
+      };
+      const [loaded, other] = callsIn(root).filter((call) =>
+        call.text.endsWith(".load(id)"),
+      );
+      expect(storageClaims(loaded as RbNode, "use.rb", options)).toBe(true);
+      expect(storageClaims(other as RbNode, "use.rb", options)).toBe(false);
+    });
   });
 });

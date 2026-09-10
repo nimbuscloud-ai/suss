@@ -387,7 +387,7 @@ async function controllerActionUnits(
       filter,
       pattern,
       displayPath,
-      bodyOfMethod(filter.method, options),
+      bodyOfMethod(filter.method, filter.file, options),
     );
     units.push(raw);
     options.onReachSeed?.(raw, {
@@ -422,7 +422,7 @@ async function controllerActionUnits(
         info.qualifiedName,
         actionName,
         method,
-        options.filePath,
+        { display: options.filePath, absolute: block.file },
         options,
         around,
       );
@@ -443,13 +443,13 @@ function buildControllerActionUnit(
   controllerQualifiedName: string,
   actionName: string,
   method: RbNode,
-  filePath: string,
+  file: { display: string; absolute: string },
   bodyRead: BodyReadOptions,
   wrappers: readonly WrapperReference[] = [],
 ): RawCodeStructure {
   const range = rangeOf(method);
   const route = pattern.routeFor(controllerQualifiedName, actionName);
-  const body = bodyOfMethod(method, bodyRead);
+  const body = bodyOfMethod(method, file.absolute, bodyRead);
   const perResponse = responseBranches(
     method,
     pattern,
@@ -461,7 +461,7 @@ function buildControllerActionUnit(
       name: actionName,
       nameKind: "binding",
       kind: "handler",
-      file: filePath,
+      file: file.display,
       range,
       span: spanOf(method),
       exportName: actionName,
@@ -652,8 +652,10 @@ export interface BodyReport {
   reachSeed?: ReachSeed;
 }
 
+/** `file` is the absolute path the method was read from, which the storage recognizer keys constant bindings on. */
 export function bodyOfMethod(
   method: RbNode,
+  file: string,
   bodyRead: BodyReadOptions = {},
 ): BodyReport {
   const effects = invocationEffects(method, bodyRead.inheritedMethods);
@@ -662,7 +664,7 @@ export function bodyOfMethod(
     ...envReadEffects(method),
     ...(storage === undefined
       ? []
-      : storageEffects(callsUnder(method), storage)),
+      : storageEffects(callsUnder(method), file, storage)),
   ];
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",
@@ -709,7 +711,7 @@ function bodyFromLookup(
 ): BodyReport {
   const table: DispatchTable<MethodLookup, BodyReport> = {
     found: (lookup) => ({
-      ...bodyOfMethod(lookup.method, bodyRead),
+      ...bodyOfMethod(lookup.method, lookup.block.file, bodyRead),
       reachSeed: {
         file: lookup.block.file,
         node: lookup.method,

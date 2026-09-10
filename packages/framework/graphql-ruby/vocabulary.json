@@ -11,5 +11,15 @@
   "required": "graphql-ruby: argument keyword opting out of the required-by-default registration",
   "camelize": "graphql-ruby: field/argument keyword overriding the schema-wide camelize default for that one name",
   "Integer": "graphql-ruby: native Ruby class accepted as a convenience synonym for the Int scalar",
-  "input": "graphql-ruby: the one wire argument RelayClassicMutation wraps a mutation's declared arguments into"
+  "input": "graphql-ruby: the one wire argument RelayClassicMutation wraps a mutation's declared arguments into",
+  "dataloader": "graphql-ruby: the receiverless call HasDataloader gives a resolver for the request's GraphQL::Dataloader",
+  "with": "graphql-ruby: the Dataloader method that picks a Source class and its batch arguments",
+  "load": "graphql-ruby: the Source method that fetches one key through the batch",
+  "load_all": "graphql-ruby: the Source method that fetches several keys through the batch",
+  "request": "graphql-ruby: the Source method that queues one key without waiting for it",
+  "request_all": "graphql-ruby: the Source method that queues several keys without waiting for them",
+  "dataload": "graphql-ruby: the HasDataloader shortcut for `dataloader.with(source, *args).load(key)`",
+  "dataload_all": "graphql-ruby: the HasDataloader shortcut for `dataloader.with(source, *args).load_all(keys)`",
+  "dataload_record": "graphql-ruby: the HasDataloader shortcut that loads one ActiveRecord row of the given model by a column",
+  "dataload_all_records": "graphql-ruby: the HasDataloader shortcut that loads several ActiveRecord rows of the given model by a column"
 }

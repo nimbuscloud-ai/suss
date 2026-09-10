@@ -10,6 +10,7 @@ Framework pack for [graphql-ruby](https://graphql-ruby.org/)'s class-based field
 - **`mutation:` / `resolver:` wiring**: `field :x, mutation: Mutations::Y` and `field :x, resolver: Queries::Z` read their declared return type and arguments from the referenced class's own file, located by Rails' constant-to-path convention under `root`.
 - **Boundary bindings**: `graphql-resolver(typeName, fieldName)`, pairing against a client operation the same way any other graphql-resolver summary does.
 - **camelCase naming**: a `field`/`argument` symbol's snake_case name is exposed camelCased on the schema, graphql-ruby's own default. The pack's `camelize` option sets the schema-wide default (`true`, matching the library); a `field`/`argument` call's own `camelize: false` keyword overrides that default for that one name, the same as it does at runtime.
+- **Reads through the dataloader**: `dataloader.with(Sources::Record, ::User).load(id)` and the `dataload`, `dataload_all`, `dataload_record` and `dataload_all_records` shortcuts are reads of the model they are given, when a storage pack in the same run (`@suss/framework-activerecord`) recognizes that constant as a model. On its own this pack records nothing for them. `dataload_association` is not read, since the model behind an association is declared elsewhere.
 
 ## Where it fits in suss
 
