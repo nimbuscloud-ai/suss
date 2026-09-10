@@ -968,6 +968,17 @@ export const RESOLUTION_QUESTIONS = [
     [v("c"), v("n")],
     [lit("ancestryChain", v("c"), v("b")), lit("extendsNamed", v("b"), v("n"))],
   ),
+  // Each method the same chain declares, so a caller that settled a
+  // receiver on a class can tell a method the project writes itself
+  // from one only the library provides.
+  rule(
+    "wantedDeclaredName",
+    [v("c"), v("n")],
+    [
+      lit("ancestryChain", v("c"), v("b")),
+      lit("holdsProperty", v("b"), v("n"), v("held")),
+    ],
+  ),
 
   rule("anchorChain", [v("x"), v("x")], [lit("wantedAnchor", v("x"))]),
   rule(
