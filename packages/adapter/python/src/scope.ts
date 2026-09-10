@@ -438,7 +438,7 @@ function bindNonlocalStatement(stmt: PyNode, scope: Scope): void {
   }
 }
 
-function moduleScopeOf(scope: Scope): Scope {
+export function moduleScopeOf(scope: Scope): Scope {
   let current = scope;
   while (current.parent !== null) {
     current = current.parent;

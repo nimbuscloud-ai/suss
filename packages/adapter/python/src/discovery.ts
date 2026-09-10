@@ -27,6 +27,7 @@ import {
 import { literalOf, pathOf } from "@suss/values";
 
 import {
+  aliasValueOf,
   annotationToShape,
   collectedDefinitions,
   createAnnotationContext,
@@ -89,6 +90,7 @@ import type {
 } from "@suss/extractor";
 import type { DecoratorClassification } from "./decorators.js";
 import type { SubjectConstruction } from "./facts/resolve.js";
+import type { ImportedDefinitionLookup } from "./importedDefinitions.js";
 import type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
@@ -123,6 +125,8 @@ export interface DiscoveryOptions {
   facts?: Database | undefined;
   /** What the project registered around its routes. Absent when no pack declares a wrapper form, or when a caller reads one file on its own. */
   wrappers?: PythonWrapperIndex | undefined;
+  /** Where a name another file defines is written, so an imported model or alias reads as the class or value behind it. Absent when a caller reads one file on its own. */
+  importedDefinition?: ImportedDefinitionLookup | undefined;
 }
 
 /** One decorated definition, and what the scope made of each decorator on it. */
@@ -560,6 +564,7 @@ function classRouteUnits(
               pattern,
             ),
             storage: options.storage,
+            importedDefinition: options.importedDefinition,
             wrappers: wrappersAround(
               pattern,
               pack,
@@ -1099,7 +1104,10 @@ function functionRouteUnits(
     return [];
   }
 
-  const ctx = createAnnotationContext(module.scopeFor);
+  const ctx = createAnnotationContext(
+    module.scopeFor,
+    options.importedDefinition ?? null,
+  );
   return readRoutePaths(
     pattern,
     readPathArgument(classification, options),
@@ -1139,6 +1147,7 @@ function functionRouteUnits(
         ),
         definitionsCtx: ctx,
         storage: options.storage,
+        importedDefinition: options.importedDefinition,
         wrappers: wrappersAround(
           pattern,
           pack,
@@ -1204,6 +1213,7 @@ interface BuildRouteUnitOptions {
   statusCode: DefaultedReading<number>;
   /** What a pack needs to say a call talks to the database. Absent when no pack does. */
   storage?: StorageLookup | undefined;
+  importedDefinition?: ImportedDefinitionLookup | undefined;
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
   /** Set when several mounts serve the router and this unit is one of them. */
   mount?: { siblings: number; prefix: string };
@@ -1303,7 +1313,12 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   } = options;
 
   const template = valueToReadFurtherFrom(routePath);
-  const ctx = definitionsCtx ?? createAnnotationContext(module.scopeFor);
+  const ctx =
+    definitionsCtx ??
+    createAnnotationContext(
+      module.scopeFor,
+      options.importedDefinition ?? null,
+    );
   const parameters = readParameters(
     definitionNode,
     enclosingScope,
@@ -1398,7 +1413,9 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     declaredContract: null,
     readings: [
       routePath,
-      ...unreadRoleReadings(parameters, rangeOf(definitionNode)),
+      ...(template === null
+        ? unreadRoleReadings(parameters, rangeOf(definitionNode))
+        : []),
       ...responseShape.passedOver,
     ],
     ...(collectedDefinitions(ctx) !== null
@@ -1411,7 +1428,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   };
 }
 
-/** One sentence covers every parameter, because an unread path is the same reason for all of them. */
+/** One sentence covers every parameter, because an unread path is the same reason for all of them. An injected parameter has no role either, and is not what this is about. */
 function unreadRoleReadings(
   parameters: RawParameter[],
   range: SourceRange,
@@ -1546,7 +1563,7 @@ function readParameter(
   const { name, typeNode } = info;
   const shape =
     typeNode !== null ? annotationToShape(typeNode, scope, ctx) : null;
-  const role = isInjectedParameter(param, injectedCallees)
+  const role = isInjectedParameter(param, injectedCallees, scope, ctx)
     ? null
     : roleOf(name, shape, pathParamNames, requestBodyFromAnnotatedClass);
   return {
@@ -1608,11 +1625,16 @@ function calleeName(call: PyNode): string | null {
  * Whether the library supplies this parameter itself. The value is written
  * either as the default (`user: User = Depends(get_user)`) or inside an
  * `Annotated[...]` annotation, which is the spelling FastAPI's own docs
- * moved to, and both mean the client sends nothing.
+ * moved to, and both mean the client sends nothing. The annotation may
+ * also be a name for one of those, `db: SessionDep` with
+ * `SessionDep = Annotated[Session, Depends(get_db)]` assigned in this
+ * file or another, and that is read the same way.
  */
 function isInjectedParameter(
   param: PyNode,
   injectedCallees: ReadonlySet<string>,
+  scope: Scope,
+  ctx: ReturnType<typeof createAnnotationContext>,
 ): boolean {
   if (injectedCallees.size === 0) {
     return false;
@@ -1633,8 +1655,10 @@ function isInjectedParameter(
   // `Annotated[User, Depends(get_user)]` wraps the call in a generic type
   // and a type parameter, so the search has to go down rather than read
   // the annotation's own children.
+  const followed = new Set<number>();
   const containsInjectorCall = (
     node: PyNode | null,
+    nodeScope: Scope,
     depth: number,
   ): boolean => {
     if (node === null || depth > MAX_ANNOTATION_DEPTH) {
@@ -1643,10 +1667,17 @@ function isInjectedParameter(
     if (callsAnInjector(node)) {
       return true;
     }
+    if (node.type === "identifier" && !followed.has(node.id)) {
+      followed.add(node.id);
+      const alias = aliasValueOf(node.text, nodeScope, ctx);
+      if (alias !== null && containsInjectorCall(alias.node, alias.scope, 0)) {
+        return true;
+      }
+    }
     return node.namedChildren.some((child) =>
-      containsInjectorCall(child, depth + 1),
+      containsInjectorCall(child, nodeScope, depth + 1),
     );
   };
 
-  return containsInjectorCall(field(param, "type"), 0);
+  return containsInjectorCall(field(param, "type"), scope, 0);
 }

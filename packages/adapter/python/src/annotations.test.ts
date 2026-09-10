@@ -232,3 +232,57 @@ describe("shapeFromName", () => {
     expect(shape.type === "ref" && shape.def).toBeDefined();
   });
 });
+
+describe("an annotation written as a name assigned a type", () => {
+  it("reads `Annotated[T, ...]` behind the name as T", async () => {
+    const { typeNode, scope, ctx } = await firstParamType(
+      [
+        "class User:",
+        "    id: int",
+        "",
+        "",
+        "CurrentUser = Annotated[User, Depends(get_user)]",
+        "",
+        "",
+        "def f(x: CurrentUser):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const shape = annotationToShape(typeNode, scope, ctx);
+    expect(shape.type).toBe("ref");
+    expect(shape.type === "ref" && shape.name).toBe("User");
+    expect(shape.type === "ref" && shape.def).toBeDefined();
+  });
+
+  it("reads a container written as a value the way it reads one in annotation position", async () => {
+    const { typeNode, scope, ctx } = await firstParamType(
+      "Names = list[str]\nCounts = dict[str, int]\n\n\ndef f(x: Names, y: Counts):\n    pass\n",
+    );
+    expect(annotationToShape(typeNode, scope, ctx)).toEqual({
+      type: "array",
+      items: { type: "text" },
+    });
+    expect(shapeFromName("Counts", scope, ctx)).toEqual({
+      type: "dictionary",
+      values: { type: "integer" },
+    });
+  });
+
+  it("ends at two names assigned each other", async () => {
+    const { scope, ctx } = await firstParamType(
+      "A = B\nB = A\n\n\ndef f(x: A):\n    pass\n",
+    );
+    expect(shapeFromName("A", scope, ctx)).toEqual({ type: "ref", name: "A" });
+  });
+
+  it("leaves an imported name a ref when nothing can say where it is defined", async () => {
+    const { scope, ctx } = await firstParamType(
+      "from app.models import Item\n\n\ndef f(x: Item):\n    pass\n",
+    );
+    expect(shapeFromName("Item", scope, ctx)).toEqual({
+      type: "ref",
+      name: "Item",
+    });
+  });
+});

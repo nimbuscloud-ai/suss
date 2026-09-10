@@ -8,27 +8,82 @@
 
 import { createHash } from "node:crypto";
 
-import { field } from "./ast.js";
+import { field, fields } from "./ast.js";
 import { resolveName } from "./scope.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { ImportedDefinitionLookup } from "./importedDefinitions.js";
 import type { PyNode } from "./parser.js";
 import type { Scope } from "./scope.js";
 
 /**
  * `definitions` stores each converted class shape once, however many annotations
- * mention it. `scopeFor` is here so a name written inside a referenced class's
- * body resolves too, not only one written at the annotation's use site.
+ * mention it. `scopeMaps` is here so a name written inside a referenced class's
+ * body resolves too, not only one written at the annotation's use site; a class
+ * read from another file brings that file's scopes along. `importedDefinition`
+ * is absent when a caller reads one file on its own, and an imported name is
+ * then a ref by name and nothing more.
  */
 export interface AnnotationContext {
-  scopeFor: Map<number, Scope>;
+  scopeMaps: Map<number, Scope>[];
   definitions: Map<string, TypeShape | null>;
+  importedDefinition: ImportedDefinitionLookup | null;
+  /** The alias values being expanded, so `A = B` and `B = A` end rather than recurse. */
+  expanding: Set<number>;
 }
 
 export function createAnnotationContext(
   scopeFor: Map<number, Scope>,
+  importedDefinition: ImportedDefinitionLookup | null = null,
 ): AnnotationContext {
-  return { scopeFor, definitions: new Map() };
+  return {
+    scopeMaps: [scopeFor],
+    definitions: new Map(),
+    importedDefinition,
+    expanding: new Set(),
+  };
+}
+
+function scopeOfNode(ctx: AnnotationContext, node: PyNode): Scope | undefined {
+  for (const scopeFor of ctx.scopeMaps) {
+    const scope = scopeFor.get(node.id);
+    if (scope !== undefined) {
+      return scope;
+    }
+  }
+  return undefined;
+}
+
+/** The value assigned to a name, in this file or an imported one. */
+export interface AliasValue {
+  node: PyNode;
+  /** Where the value is written, which is where the identifiers inside it resolve. */
+  scope: Scope;
+}
+
+/**
+ * The value behind an annotation written as a bare name that is neither a
+ * builtin nor a class: `db: SessionDep` with `SessionDep = Annotated[...]`
+ * assigned in this file or imported from another. Null for a class, for a
+ * name outside the project, and for one the binder could not resolve.
+ */
+export function aliasValueOf(
+  name: string,
+  scope: Scope,
+  ctx: AnnotationContext,
+): AliasValue | null {
+  const binding = resolveName(scope, name);
+  if (binding?.kind === "assignment") {
+    return binding.value === null ? null : { node: binding.value, scope };
+  }
+  if (binding?.kind !== "import" && binding?.kind !== "importFrom") {
+    return null;
+  }
+  const imported = ctx.importedDefinition?.(scope, name) ?? null;
+  if (imported === null || imported.node.type === "class_definition") {
+    return null;
+  }
+  return { node: imported.node, scope: imported.moduleScope };
 }
 
 export function collectedDefinitions(
@@ -89,6 +144,7 @@ const EXPRESSION_SHAPERS: Record<string, ExpressionShaper> = {
   identifier: (node, scope, ctx) => shapeFromName(node.text, scope, ctx),
   none: () => ({ type: "null" }),
   generic_type: shapeFromGenericType,
+  subscript: shapeFromSubscript,
   binary_operator: shapeFromBinaryOperator,
 };
 
@@ -123,7 +179,59 @@ export function shapeFromName(
   if (binding?.kind === "classDef") {
     return recordShapeRef(name, binding.node, ctx);
   }
+  if (binding?.kind === "import" || binding?.kind === "importFrom") {
+    const imported = ctx.importedDefinition?.(scope, name) ?? null;
+    if (imported?.node.type === "class_definition") {
+      if (!ctx.scopeMaps.includes(imported.scopeFor)) {
+        ctx.scopeMaps.push(imported.scopeFor);
+      }
+      return recordShapeRef(name, imported.node, ctx);
+    }
+  }
+  const alias = aliasValueOf(name, scope, ctx);
+  if (alias !== null) {
+    return shapeFromAliasValue(name, alias, ctx);
+  }
   return { type: "ref", name };
+}
+
+/** `SessionDep = Annotated[Session, ...]` gives a parameter the shape `Session` has; any other value is read as an expression. */
+function shapeFromAliasValue(
+  name: string,
+  alias: AliasValue,
+  ctx: AnnotationContext,
+): TypeShape {
+  if (ctx.expanding.has(alias.node.id)) {
+    return { type: "ref", name };
+  }
+  ctx.expanding.add(alias.node.id);
+  try {
+    return shapeFromExpression(alias.node, alias.scope, ctx);
+  } finally {
+    ctx.expanding.delete(alias.node.id);
+  }
+}
+
+/** `list[Item]` written as a value rather than in annotation position, where the grammar calls it a subscript. */
+function shapeFromSubscript(
+  node: PyNode,
+  scope: Scope,
+  ctx: AnnotationContext,
+): TypeShape {
+  const base = field(node, "value");
+  const args = fields(node, "subscript");
+  const baseName = base?.type === "identifier" ? base.text : null;
+  if (baseName === "Annotated") {
+    const first = args[0];
+    return first === undefined
+      ? { type: "unknown" }
+      : shapeFromExpression(first, scope, ctx);
+  }
+  return shapeFromGeneric(
+    baseName,
+    node.text,
+    args.map((arg) => shapeFromExpression(arg, scope, ctx)),
+  );
 }
 
 /** The `type` nodes inside the brackets of `Outer[A, B]`. */
@@ -144,18 +252,28 @@ function shapeFromGenericType(
   ctx: AnnotationContext,
 ): TypeShape {
   const base = node.namedChild(0);
-  const args = genericTypeArgs(node);
-  const shapeOf = (arg: PyNode | undefined): TypeShape =>
-    arg !== undefined
-      ? annotationToShape(arg, scope, ctx)
-      : { type: "unknown" };
-
   const baseName = base?.type === "identifier" ? base.text : null;
+  return shapeFromGeneric(
+    baseName,
+    node.text,
+    genericTypeArgs(node).map((arg) => annotationToShape(arg, scope, ctx)),
+  );
+}
+
+/** `Outer[A, B]` with its arguments already read, however the brackets were parsed. */
+function shapeFromGeneric(
+  baseName: string | null,
+  text: string,
+  args: TypeShape[],
+): TypeShape {
+  const shapeOf = (arg: TypeShape | undefined): TypeShape =>
+    arg ?? { type: "unknown" };
+
   if (baseName === "Optional") {
     return { type: "union", variants: [shapeOf(args[0]), { type: "null" }] };
   }
   if (baseName === "Union") {
-    return { type: "union", variants: args.map((arg) => shapeOf(arg)) };
+    return { type: "union", variants: args };
   }
   if (baseName !== null && LIST_NAMES.has(baseName)) {
     return { type: "array", items: shapeOf(args[0]) };
@@ -169,7 +287,7 @@ function shapeFromGenericType(
   if (baseName !== null && TUPLE_SET_NAMES.has(baseName)) {
     return { type: "array", items: shapeOf(args[0]) };
   }
-  return { type: "ref", name: baseName ?? node.text };
+  return { type: "ref", name: baseName ?? text };
 }
 
 /** PEP 604 `X | Y` written directly in an annotation, e.g. `int | None`. */
@@ -209,7 +327,7 @@ function recordShapeRef(
   // forever.
   ctx.definitions.set(key, null);
   const bodyNode = field(classNode, "body");
-  const classScope = ctx.scopeFor.get(classNode.id);
+  const classScope = scopeOfNode(ctx, classNode);
   ctx.definitions.set(
     key,
     bodyNode !== null && classScope !== undefined
