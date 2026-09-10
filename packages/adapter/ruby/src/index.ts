@@ -27,6 +27,7 @@ export {
   booleanLiteralValue,
   field,
   hashKeySymbolName,
+  nestedStatements,
   readCallArgs,
   runStatements,
   stringLiteralValue,

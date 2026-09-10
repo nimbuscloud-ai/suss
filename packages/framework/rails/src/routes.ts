@@ -20,6 +20,7 @@ import {
   bodyStatements,
   field,
   hashKeySymbolName,
+  nestedStatements,
   parseRubySync,
   stringValueOf,
   symbolValue,
@@ -789,8 +790,19 @@ function walkBody(
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  for (const statement of bodyStatements(body)) {
+  walkStatements(bodyStatements(body), ctx, out);
+}
+
+function walkStatements(
+  statements: RbNode[],
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  for (const statement of statements) {
     if (statement.type !== "call") {
+      // A route under `if Rails.env.development?` is declared in the
+      // same scope as one written outside it.
+      walkStatements(nestedStatements(statement), ctx, out);
       continue;
     }
     if (field(statement, "receiver") !== null) {

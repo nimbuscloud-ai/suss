@@ -151,6 +151,34 @@ export function bodyStatements(body: PyNode): PyNode[] {
   return children(body);
 }
 
+/**
+ * Every statement written directly inside a compound statement's blocks,
+ * including the ones under its `elif`, `else`, `except`, `finally` and
+ * `case` clauses. A statement inside a nested compound statement is not
+ * included; the caller descends into that one itself.
+ */
+export function nestedStatements(stmt: PyNode): PyNode[] {
+  const found: PyNode[] = [];
+  for (const child of children(stmt)) {
+    if (child.type === "block") {
+      for (const inner of children(child)) {
+        if (inner.type.endsWith("_clause")) {
+          found.push(...nestedStatements(inner));
+          continue;
+        }
+
+        found.push(inner);
+      }
+      continue;
+    }
+
+    if (child.type.endsWith("_clause")) {
+      found.push(...nestedStatements(child));
+    }
+  }
+  return found;
+}
+
 export function stripDecorators(node: PyNode): {
   definition: PyNode;
   decorators: PyNode[];

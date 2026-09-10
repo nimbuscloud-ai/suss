@@ -9,6 +9,7 @@ import {
   instanceMethodVisibility,
   isType,
   methodHasStatements,
+  nestedStatements,
   rangeOf,
   readCallArgs,
   runStatements,
@@ -65,6 +66,55 @@ describe("bodyStatements", () => {
       "call",
       "call",
     ]);
+  });
+});
+
+describe("nestedStatements", () => {
+  /** The text of each statement one level inside the first statement of `source`. */
+  async function insideFirst(source: string): Promise<string[]> {
+    const tree = await parseRuby(source);
+    const stmt = must(bodyStatements(tree.rootNode)[0]);
+    return nestedStatements(stmt).map((node) => node.text);
+  }
+
+  it("reads every branch of an if, elsif, else and leaves the conditions out", async () => {
+    const found = await insideFirst(
+      "if a?\n  one\nelsif b?\n  two\nelse\n  three\nend\n",
+    );
+    expect(found).toEqual(["one", "two", "three"]);
+  });
+
+  it("reads the body of an unless and of a while", async () => {
+    expect(await insideFirst("unless a?\n  one\nend\n")).toEqual(["one"]);
+    expect(await insideFirst("while a?\n  one\nend\n")).toEqual(["one"]);
+  });
+
+  it("reads the one statement a trailing modifier guards", async () => {
+    expect(await insideFirst("one if a?\n")).toEqual(["one"]);
+    expect(await insideFirst("one unless a?\n")).toEqual(["one"]);
+  });
+
+  it("reads each when branch and the else of a case", async () => {
+    const found = await insideFirst(
+      "case x\nwhen 1\n  one\nwhen 2\n  two\nelse\n  three\nend\n",
+    );
+    expect(found).toEqual(["one", "two", "three"]);
+  });
+
+  it("reads the body, rescue, else and ensure of a begin", async () => {
+    const found = await insideFirst(
+      "begin\n  one\nrescue StandardError => e\n  two\nelse\n  three\nensure\n  four\nend\n",
+    );
+    expect(found).toEqual(["one", "two", "three", "four"]);
+  });
+
+  it("stops at a nested branching statement, which the caller descends itself", async () => {
+    const found = await insideFirst("if a?\n  if b?\n    one\n  end\nend\n");
+    expect(found).toEqual(["if b?\n    one\n  end"]);
+  });
+
+  it("has nothing inside a plain call", async () => {
+    expect(await insideFirst("one\n")).toEqual([]);
   });
 });
 
