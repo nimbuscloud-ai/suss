@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { preloadRubyGrammar } from "@suss/adapter-ruby";
 
 import { railsFramework } from "./index.js";
+import { readRoutes } from "./routes.js";
 
 import type { ControllerActions } from "@suss/adapter-ruby";
 
@@ -359,6 +360,32 @@ describe("railsFramework", () => {
       expect(routeFor(source, "OrdersController", "search")).toEqual({
         method: "GET",
         path: "/orders/search",
+      });
+    });
+
+    it("serves the action given by a bare verb's action: keyword at the path its first argument spells", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :rooms, only: [] do\n" +
+        "    member do\n" +
+        "      post :recording, action: :start_recording\n" +
+        "      delete :recording, action: :stop_recording\n" +
+        "    end\n" +
+        "  end\n" +
+        '  get "status", controller: "health", action: "show"\n' +
+        "end\n";
+      expect(routeFor(source, "RoomsController", "start_recording")).toEqual({
+        method: "POST",
+        path: "/rooms/:id/recording",
+      });
+      expect(routeFor(source, "RoomsController", "stop_recording")).toEqual({
+        method: "DELETE",
+        path: "/rooms/:id/recording",
+      });
+      expect(routeFor(source, "RoomsController", "recording")).toBeNull();
+      expect(routeFor(source, "HealthController", "show")).toEqual({
+        method: "GET",
+        path: "/status",
       });
     });
 
@@ -934,6 +961,271 @@ describe("railsFramework", () => {
         '  get ENV["PREFIX"] + "/reports", to: "reports#index"',
       );
       expect(routeFor(source)).toBeNull();
+    });
+  });
+
+  describe("engines the project keeps in its own tree", () => {
+    let dir: string;
+
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    const ENGINE_CLASS =
+      "module Billing\n  class Engine < ::Rails::Engine\n    isolate_namespace Billing\n  end\nend\n";
+    const ENGINE_ROUTES =
+      "Billing::Engine.routes.draw do\n  resources :invoices, only: [:index]\nend\n";
+
+    function write(relative: string, source: string): string {
+      const file = path.join(dir, relative);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, source);
+      return file;
+    }
+
+    function projectWith(
+      routes: string,
+      files: Record<string, string> = {
+        "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
+        "engines/billing/config/routes.rb": ENGINE_ROUTES,
+      },
+      options: { routesFiles?: string[]; engineRoots?: string[] } = {},
+    ) {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-engines-"));
+      write("config/routes.rb", routes);
+      for (const [relative, source] of Object.entries(files)) {
+        write(relative, source);
+      }
+      return railsFramework({
+        configDirectory: dir,
+        engineRoots: options.engineRoots ?? ["engines/*"],
+        ...(options.routesFiles === undefined
+          ? {}
+          : { routesFiles: options.routesFiles }),
+      });
+    }
+
+    const app = (body: string) =>
+      `Rails.application.routes.draw do\n${body}\nend\n`;
+
+    it("serves a mounted engine's routes under the mount path, keyed by its isolated namespace", () => {
+      const pack = projectWith(app('  mount Billing::Engine, at: "/billing"'));
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/billing/invoices" });
+      expect(pattern(pack).routingGaps?.()).toEqual([]);
+    });
+
+    it("reads an engine whose module is written with a leading ::, mounted at the root", () => {
+      const pack = projectWith(
+        'Discourse::Application.routes.draw { mount ::Billing::Engine, at: "/" }\n',
+        {
+          "engines/billing/lib/billing/engine.rb":
+            "module ::Billing\n  class Engine < ::Rails::Engine\n    engine_name :billing\n    isolate_namespace Billing\n  end\nend\n",
+          "engines/billing/config/routes.rb":
+            'Billing::Engine.routes.draw do\n  get "/invoices" => "invoices#index"\nend\n',
+        },
+      );
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/invoices" });
+    });
+
+    it("reads the hash-rocket spelling of a mount", () => {
+      const pack = projectWith(app('  mount Billing::Engine => "/billing"'));
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/billing/invoices" });
+    });
+
+    it("mounts under the scope the mount was written in, with the engine's own module prefix", () => {
+      const pack = projectWith(
+        app(
+          '  scope "/api", module: "api" do\n    mount ::Billing::Engine, at: "billing"\n  end',
+        ),
+      );
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/api/billing/invoices" });
+      expect(
+        pattern(pack).routeFor("Api::Billing::InvoicesController", "index"),
+      ).toBeNull();
+    });
+
+    it("reads an engine that isolates no namespace at the top-level controller key", () => {
+      const pack = projectWith(app('  mount Billing::Engine, at: "/billing"'), {
+        "engines/billing/lib/billing/engine.rb":
+          "module Billing\n  class Engine < Rails::Engine\n    engine_name :billing\n  end\nend\n",
+        "engines/billing/config/routes.rb": ENGINE_ROUTES,
+      });
+      expect(pattern(pack).routeFor("InvoicesController", "index")).toEqual({
+        method: "GET",
+        path: "/billing/invoices",
+      });
+    });
+
+    it("adds an application draw block in an engine's routes file to the app's routes", () => {
+      const pack = projectWith(app('  get "ping" => "status#show"'), {
+        "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
+        "engines/billing/config/routes.rb":
+          `${ENGINE_ROUTES}\n` +
+          'Rails.application.routes.draw do\n  get "health" => "billing/status#show"\nend\n',
+      });
+      expect(
+        pattern(pack).routeFor("Billing::StatusController", "show"),
+      ).toEqual({ method: "GET", path: "/health" });
+    });
+
+    it("reads a mount from a routes.append block nested inside another block in an extra file", () => {
+      const pack = projectWith(
+        app('  get "ping" => "status#show"'),
+        {
+          "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
+          "engines/billing/config/routes.rb": ENGINE_ROUTES,
+          "engines/billing/plugin.rb":
+            "after_initialize do\n" +
+            "  Rails.application.routes.append do\n" +
+            '    mount ::Billing::Engine, at: "/billing"\n' +
+            "  end\nend\n",
+        },
+        { routesFiles: ["engines/*/plugin.rb"] },
+      );
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/billing/invoices" });
+    });
+
+    it("runs prepend blocks before the draw block and append blocks after, so the first route written wins", () => {
+      const pack = projectWith(
+        app('  get "first" => "status#show"'),
+        {
+          "extra/routes.rb":
+            "Rails.application.routes.append do\n" +
+            '  get "appended" => "status#show"\nend\n' +
+            "Rails.application.routes.prepend do\n" +
+            '  get "prepended" => "status#show"\nend\n',
+        },
+        { routesFiles: ["extra/routes.rb"], engineRoots: [] },
+      );
+      expect(pattern(pack).routeFor("StatusController", "show")).toEqual({
+        method: "GET",
+        path: "/prepended",
+      });
+    });
+
+    it("reads a draw block owned by the app's own Application class", () => {
+      const pack = projectWith(
+        'Shop::Application.routes.draw do\n  mount Billing::Engine, at: "/billing"\nend\n',
+      );
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/billing/invoices" });
+    });
+
+    it("reports a mount of something it knows no engine for as unread", () => {
+      const pack = projectWith(app('  mount Sidekiq::Web => "/sidekiq"'));
+      expect(pattern(pack).routingGaps?.()).toEqual([
+        expect.stringContaining("also declares mount"),
+      ]);
+    });
+
+    it("reports a mount with no path as unread", () => {
+      const pack = projectWith(app("  mount Billing::Engine"));
+      expect(pattern(pack).routingGaps?.()).toEqual([
+        expect.stringContaining("also declares mount"),
+      ]);
+    });
+
+    it("leaves an engine with no routes file mounted and empty", () => {
+      const pack = projectWith(app('  mount Billing::Engine, at: "/billing"'), {
+        "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
+      });
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toBeNull();
+      expect(pattern(pack).routingGaps?.()).toEqual([]);
+    });
+
+    it("stops an engine that mounts itself", () => {
+      const pack = projectWith(app('  mount Billing::Engine, at: "/billing"'), {
+        "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
+        "engines/billing/config/routes.rb":
+          "Billing::Engine.routes.draw do\n" +
+          "  resources :invoices, only: [:index]\n" +
+          '  mount Billing::Engine, at: "/again"\nend\n',
+      });
+      expect(
+        pattern(pack).routeFor("Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/billing/invoices" });
+    });
+
+    it("lists every engine class file, engine routes file and extra file as a discovery input", () => {
+      const pack = projectWith(
+        app('  mount Billing::Engine, at: "/billing"'),
+        {
+          "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
+          "engines/billing/config/routes.rb": ENGINE_ROUTES,
+          "engines/billing/plugin.rb": "",
+        },
+        { routesFiles: ["engines/*/plugin.rb"] },
+      );
+      expect(pack.discoveryInputs?.([])).toEqual([
+        path.join(dir, "config", "routes.rb"),
+        path.join(dir, "engines", "billing", "lib", "billing", "engine.rb"),
+        path.join(dir, "engines", "billing", "config", "routes.rb"),
+        path.join(dir, "engines", "billing", "plugin.rb"),
+      ]);
+    });
+
+    it("skips an engine root pattern that matches nothing, and a root with no lib/", () => {
+      const pack = projectWith(
+        app('  get "ping" => "status#show"'),
+        {},
+        {
+          engineRoots: ["nowhere/*", "also/missing", "config"],
+        },
+      );
+      expect(pattern(pack).routeFor("StatusController", "show")).toEqual({
+        method: "GET",
+        path: "/ping",
+      });
+      expect(pack.discoveryInputs?.([])).toEqual([
+        path.join(dir, "config", "routes.rb"),
+      ]);
+    });
+
+    it("skips a routes.draw block with no owner in front of routes, and lists a gem's routing call as unread", () => {
+      const pack = projectWith(
+        'routes.draw do\n  get "orphan" => "status#show"\nend\n' +
+          app('  devise_for :users\n  get "ping" => "status#show"'),
+      );
+      const p = pattern(pack);
+      expect(p.routeFor("StatusController", "show")).toEqual({
+        method: "GET",
+        path: "/ping",
+      });
+      expect(p.routingGaps?.()).toEqual([
+        expect.stringContaining("also declares devise_for"),
+      ]);
+    });
+
+    it("reads nothing from an extra routes file that does not exist", () => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-engines-"));
+      const table = readRoutes({
+        routesFile: {
+          file: write("config/routes.rb", app('  get "ping" => "status#show"')),
+          displayPath: "config/routes.rb",
+        },
+        engines: [],
+        routesFiles: [
+          { file: path.join(dir, "missing.rb"), displayPath: "missing.rb" },
+        ],
+      });
+      expect(table.routeFor("status", "show")).toEqual({
+        method: "GET",
+        path: "/ping",
+      });
+      expect(table.gaps).toEqual([]);
     });
   });
 });

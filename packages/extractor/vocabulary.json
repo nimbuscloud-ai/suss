@@ -109,6 +109,7 @@
   "resolverMap": "suss: DiscoveryMatch variant tag",
   "response": "suss: terminal kind",
   "return": "suss: terminal kind",
+  "routes": "suss: the code-unit name the Ruby adapter files a routing gap under; the rails pack reads Rails' own routes method under the same spelling",
   "returnShape": "suss: TerminalMatch variant tag",
   "returnStatement": "suss: TerminalMatch variant tag",
   "status": "WHATWG Fetch: Response member, the adapter's fallback and canonical status accessor",

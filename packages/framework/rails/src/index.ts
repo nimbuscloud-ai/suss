@@ -16,12 +16,17 @@ import { z } from "zod";
 
 import { underscoreConstantPath } from "@suss/adapter-ruby";
 
-import { drawDirectoryOf, readRoutesFile } from "./routes.js";
+import {
+  engineSourceFiles,
+  expandPathPattern,
+  readEngines,
+} from "./engines.js";
+import { drawDirectoryOf, readRoutes } from "./routes.js";
 import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
 import type { ControllerActions, RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { Route } from "./routes.js";
+import type { Route, RoutesInput } from "./routes.js";
 
 /**
  * What `-f rails=config.json` may say. The CLI parses the file against
@@ -48,6 +53,20 @@ export const optionsSchema = z
     inheritedMethodNames: z.array(z.string()).optional(),
     /** Where this project's routes live, relative to `configDirectory` when there is one. Every Rails app scaffolds this at `config/routes.rb`. */
     routesFile: z.string().optional(),
+    /**
+     * Directories the project keeps its own engines under, each one the
+     * root a `Rails::Engine` subclass has its `lib/` and `config/routes.rb`
+     * in. A `*` in a segment matches any one directory, so `plugins/*`
+     * covers every plugin. Relative to `configDirectory`.
+     */
+    engineRoots: z.array(z.string()).optional(),
+    /**
+     * Files beyond the routes file that add routes through a
+     * `Rails.application.routes.draw`, `.append` or `.prepend` block,
+     * a plugin's `plugin.rb` being the usual one. Same `*` rule as
+     * `engineRoots`. Relative to `configDirectory`.
+     */
+    routesFiles: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -182,14 +201,38 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     options.routesFile ?? "config/routes.rb",
   );
 
+  const displayPathOf = (file: string) =>
+    options.configDirectory === undefined
+      ? file
+      : path.relative(options.configDirectory, file);
+  const engineRoots = () =>
+    expandPatterns(options.configDirectory, options.engineRoots);
+  const extraRoutesFiles = () =>
+    expandPatterns(options.configDirectory, options.routesFiles);
+
+  const routesInput = (): RoutesInput => ({
+    routesFile: {
+      file: routesFile,
+      displayPath: options.routesFile ?? "config/routes.rb",
+    },
+    engines: readEngines(engineRoots()).map((engine) => ({
+      ...engine,
+      displayPath:
+        engine.routesFile === null
+          ? engine.qualifiedName
+          : displayPathOf(engine.routesFile),
+    })),
+    routesFiles: extraRoutesFiles().map((file) => ({
+      file,
+      displayPath: displayPathOf(file),
+    })),
+  });
+
   // Lazy: the WASM grammar this reads with loads once the adapter's own
   // file loop has started, and this pack is constructed before that.
-  let table: ReturnType<typeof readRoutesFile> | undefined;
+  let table: ReturnType<typeof readRoutes> | undefined;
   const routeTable = () => {
-    table ??= readRoutesFile(
-      routesFile,
-      options.routesFile ?? "config/routes.rb",
-    );
+    table ??= readRoutes(routesInput());
     return table;
   };
 
@@ -227,11 +270,26 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     name: "rails",
     protocol: "http",
     discovery: [pattern],
-    // The routes file decides every action's method and path but is
-    // never walked, so the cache key has to read it here, along with
-    // the files a `draw(:name)` in it can pull in.
-    discoveryInputs: () => [routesFile, ...drawableRoutesFiles(routesFile)],
+    // Every file routing is read from decides an action's method and
+    // path without being walked, so the cache key has to read them here.
+    // This runs before the grammar loads, so nothing here parses Ruby.
+    discoveryInputs: () => [
+      routesFile,
+      ...drawableRoutesFiles(routesFile),
+      ...engineRoots().flatMap(engineSourceFiles),
+      ...extraRoutesFiles(),
+    ],
   };
+}
+
+/** Every existing path the patterns match, resolved against the config directory. */
+function expandPatterns(
+  configDirectory: string | undefined,
+  patterns: readonly string[] | undefined,
+): string[] {
+  return (patterns ?? []).flatMap((pattern) =>
+    expandPathPattern(resolveAgainst(configDirectory, pattern)),
+  );
 }
 
 /** Every `.rb` file in the directory `draw(:name)` reads from. */
@@ -261,9 +319,14 @@ export const declares: PackDeclaration = {
     "Rails controller actions (Ruby), bound to the method and path \`config/routes.rb\` gives each one; an action the routes file does not reach is discovered with no boundary.",
   configuration: {
     file: "suss.rails.json",
-    example: { root: "app", routesFile: "config/routes.rb" },
+    example: {
+      root: "app",
+      routesFile: "config/routes.rb",
+      engineRoots: ["engines/*"],
+      routesFiles: ["plugins/*/plugin.rb"],
+    },
     required: false,
-    why: "the app directory a controller is defined under and the routes file suss reads each action's method and path from. rails new scaffolds both at these paths.",
+    why: "the app directory a controller is defined under and the routes file suss reads each action's method and path from; rails new scaffolds both at these paths. engineRoots lists where the project keeps engines it mounts, and routesFiles any other file that adds routes, when it has either.",
   },
 };
 
