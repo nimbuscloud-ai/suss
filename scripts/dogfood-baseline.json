@@ -6,7 +6,7 @@
     "internal": 3242,
     "consumers": 1762,
     "pairs": 1759,
-    "unfollowedCalls": 499,
+    "unfollowedCalls": 501,
     "findingErrors": 0
   },
   "packages": {
@@ -393,7 +393,7 @@
       "exports": 4,
       "internal": 17,
       "consumers": 33,
-      "unfollowedCalls": 6
+      "unfollowedCalls": 7
     },
     "packages/framework/react": {
       "name": "@suss/framework-react",
@@ -484,7 +484,7 @@
       "exports": 46,
       "internal": 145,
       "consumers": 0,
-      "unfollowedCalls": 9
+      "unfollowedCalls": 10
     },
     "packages/recognize": {
       "name": "@suss/recognize",
