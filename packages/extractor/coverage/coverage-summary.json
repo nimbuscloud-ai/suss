@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 1039,
-      "covered": 1006,
+      "total": 1052,
+      "covered": 1019,
       "skipped": 0,
-      "pct": 96.82
+      "pct": 96.86
     },
     "statements": {
-      "total": 1077,
-      "covered": 1043,
+      "total": 1091,
+      "covered": 1057,
       "skipped": 0,
-      "pct": 96.84
+      "pct": 96.88
     },
     "functions": {
-      "total": 305,
-      "covered": 300,
+      "total": 307,
+      "covered": 302,
       "skipped": 0,
-      "pct": 98.36
+      "pct": 98.37
     },
     "branches": {
-      "total": 723,
-      "covered": 657,
+      "total": 730,
+      "covered": 664,
       "skipped": 0,
-      "pct": 90.87
+      "pct": 90.95
     },
     "branchesTrue": {
       "total": 0,
@@ -443,6 +443,32 @@
     "branches": {
       "total": 0,
       "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "src/projectRoot.ts": {
+    "lines": {
+      "total": 13,
+      "covered": 13,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 2,
+      "covered": 2,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 7,
+      "covered": 7,
       "skipped": 0,
       "pct": 100
     }
