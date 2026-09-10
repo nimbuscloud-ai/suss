@@ -679,6 +679,27 @@ describe("the spellings a callee can have", () => {
     ]);
   });
 
+  it("stops at a module member nothing declares and at a call on a call's result", async () => {
+    write("app/store/__init__.py", [""]);
+    write("app/store/orders.py", ["def read():", "    return 1"]);
+    write("app/main.py", [
+      ...APP_HEADER,
+      "import app.store.orders as orders",
+      "",
+      "def build():",
+      "    return read",
+      "",
+      '@app.get("/orders")',
+      "def list_orders():",
+      "    return orders.missing(), build()()",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      calls(unitNamed(summaries, "list_orders")).map(([callee]) => callee),
+    ).toEqual(["orders.missing", "build", "build()"]);
+  });
+
   it("gives up on a name two modules hand back and forth through wildcard imports", async () => {
     write("app/a.py", ["from app.b import *", "from os import *"]);
     write("app/b.py", ["from app.a import *"]);

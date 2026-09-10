@@ -269,9 +269,12 @@ interface BodyCalls {
 function bodyOf(source: ReachedFunction): BodyCalls {
   const { file, node } = source;
   const body = field(node, "body");
+  // The grammar writes a body on every def.
+  /* v8 ignore start */
   if (body === null) {
     return { body, written: [] };
   }
+  /* v8 ignore stop */
   return {
     body,
     written: callsWritten(file, body, scopeAt(file, node), keyOf(source)),
@@ -294,9 +297,11 @@ function scanBody(
   const { file, node } = source;
   const { written, spellings } = read;
 
+  /* v8 ignore start */
   if (read.body === null) {
     return EMPTY_SCAN;
   }
+  /* v8 ignore stop */
 
   const ownParameters = callParameterNames(node, source.exportPath.length > 1);
 

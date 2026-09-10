@@ -161,9 +161,12 @@ function spellingFor(
   ctx: ResolveContext,
 ): CalleeSpelling {
   const callee = readThrough(field(call, "function"));
+  // The grammar writes a callee on every call.
+  /* v8 ignore start */
   if (callee === null) {
     return { kind: "stopped", reason: "noDeclaration" };
   }
+  /* v8 ignore stop */
   return (
     throughModules(callee, site, ctx) ?? {
       kind: "key",
@@ -223,9 +226,12 @@ function constructorOf(
 function functionAt(key: string, ctx: ResolveContext): ReachedFunction | null {
   const node = ctx.definitions.get(key);
   const file = ctx.filesByPath.get(key.slice(0, key.lastIndexOf(":")));
+  // The key came from a fact this run emitted for a file it read.
+  /* v8 ignore start */
   if (node === undefined || file === undefined) {
     return null;
   }
+  /* v8 ignore stop */
   const name = field(node, "name")?.text ?? "<anon>";
   const owner = ownerClassOf(node);
   const ownerName = owner === null ? undefined : field(owner, "name")?.text;
@@ -281,9 +287,12 @@ function throughModules(
   }
   const object = field(callee, "object");
   const attribute = field(callee, "attribute");
+  // The grammar writes both fields on every attribute read.
+  /* v8 ignore start */
   if (object === null || attribute === null) {
     return null;
   }
+  /* v8 ignore stop */
   const base = moduleAt(object, site, ctx);
   return base === null ? null : memberKey(base, attribute.text, ctx);
 }
@@ -339,9 +348,11 @@ function moduleAt(
   }
   const object = field(node, "object");
   const attribute = field(node, "attribute");
+  /* v8 ignore start */
   if (object === null || attribute === null) {
     return null;
   }
+  /* v8 ignore stop */
   const base = moduleAt(object, site, ctx);
   return base === null ? null : submoduleOf(base, attribute.text, ctx);
 }
