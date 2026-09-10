@@ -7,9 +7,10 @@ import {
   runStatements,
 } from "./ast.js";
 import { resolveConstantFile } from "./constantPath.js";
-import { defineMethodNames } from "./defineMethod.js";
+import { couldBeDefined, defineMethodNames } from "./defineMethod.js";
 import { qualifyConstantRef, walkDefinitions } from "./scope.js";
 
+import type { Database } from "@suss/datalog";
 import type { BlockConfigures } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { RbNode } from "./parser.js";
@@ -297,6 +298,7 @@ export type MethodLookup =
 export function methodInAncestry(
   ancestry: Ancestry,
   name: string,
+  facts?: Database,
 ): MethodLookup {
   for (const entry of ancestry) {
     if (entry.type === "root") {
@@ -310,7 +312,7 @@ export function methodInAncestry(
       };
     }
 
-    const found = definitionIn(entry.blocks, name);
+    const found = definitionIn(entry.blocks, name, facts);
     if (found.method !== null && found.block !== null) {
       return { type: "found", method: found.method, block: found.block };
     }
@@ -329,6 +331,7 @@ export function methodInAncestry(
 function definitionIn(
   blocks: readonly ReachedBody[],
   name: string,
+  facts: Database | undefined,
 ): {
   method: RbNode | null;
   block: ReachedBody | null;
@@ -351,9 +354,9 @@ function definitionIn(
       method = found;
       block = candidate;
     }
-    const defined = defineMethodNames(body);
+    const defined = defineMethodNames(body, facts);
     definedDynamically ||= defined.names.has(name);
-    unreadableDefine ||= defined.unreadable;
+    unreadableDefine ||= couldBeDefined(defined, name);
   }
   return { method, block, definedDynamically, unreadableDefine };
 }

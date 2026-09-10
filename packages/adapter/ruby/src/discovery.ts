@@ -157,6 +157,7 @@ interface FieldReadContext {
   cache: FileCache;
   lookup: AncestorLookup;
   bodyRead: BodyReadOptions;
+  facts: Database | undefined;
 }
 
 function fieldReadContext(
@@ -164,11 +165,13 @@ function fieldReadContext(
   cache: FileCache,
   fileBlocks: readonly ReachedBody[],
   bodyRead: BodyReadOptions,
+  facts?: Database,
 ): FieldReadContext {
   return {
     pattern,
     cache,
     bodyRead,
+    facts,
     lookup: {
       root: pattern.root,
       pathConvention: pattern.pathConvention,
@@ -306,7 +309,13 @@ async function graphqlObjectFieldUnits(
   ) {
     return [];
   }
-  const ctx = fieldReadContext(pattern, options.cache, fileBlocks, options);
+  const ctx = fieldReadContext(
+    pattern,
+    options.cache,
+    fileBlocks,
+    options,
+    options.facts,
+  );
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
   if (
     !reachesConfiguredBase(ancestry, info.qualifiedName, pattern.baseClassNames)
@@ -385,7 +394,7 @@ async function controllerActionUnits(
     return [];
   }
 
-  const filters = controllerFilters(pattern, ancestry);
+  const filters = controllerFilters(pattern, ancestry, options.facts);
   const units: RawCodeStructure[] = [];
 
   for (const filter of filters) {
@@ -884,7 +893,7 @@ async function readFieldShape(
   return {
     contract: literalContract(callArgs, scope, ctx),
     body: bodyFromLookup(
-      methodInAncestry(ancestry, symbol),
+      methodInAncestry(ancestry, symbol, ctx.facts),
       range,
       "This field",
       NO_METHOD_BEHIND_IT,
@@ -944,7 +953,7 @@ async function readWiredClass(
   return {
     contract: readClassContract(ancestry, ctx.pattern),
     body: bodyFromLookup(
-      methodInAncestry(ancestry, ctx.pattern.resolverMethodName),
+      methodInAncestry(ancestry, ctx.pattern.resolverMethodName, ctx.facts),
       range,
       `This field's ${targetQualifiedName}`,
       methodNotSettled(
