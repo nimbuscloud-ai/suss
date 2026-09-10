@@ -353,7 +353,7 @@ describe("the functions a route reaches", () => {
     ).toBeUndefined();
   });
 
-  it("drops an argument position resolved to two different declarations", async () => {
+  it("drops an argument position whose name is imported from two modules", async () => {
     write("app/first.py", ["def build_index():", "    return 1"]);
     write("app/second.py", ["def build_index():", "    return 2"]);
     write("app/main.py", [
@@ -375,7 +375,7 @@ describe("the functions a route reaches", () => {
     const route = unitNamed(summaries, "both");
     expect(
       summaries.filter((summary) => summary.identity.name === "build_index"),
-    ).toHaveLength(2);
+    ).toEqual([]);
     const passing = route.transitions
       .flatMap((t) => t.effects)
       .find((e) => e.type === "invocation" && e.callee === "register");
@@ -438,7 +438,7 @@ describe("the functions a route reaches", () => {
     ).toEqual(["helper", "run"]);
   });
 
-  it("links nothing when one callee spelling lands on two definitions", async () => {
+  it("stops when one name in a file is imported from two modules", async () => {
     write("app/first.py", ["def load():", "    return 1"]);
     write("app/other.py", ["def load():", "    return 2"]);
     write("app/main.py", [
@@ -457,11 +457,18 @@ describe("the functions a route reaches", () => {
     const route = unitNamed(summaries, "both");
     expect(
       summaries.filter((summary) => summary.identity.name === "load"),
-    ).toHaveLength(2);
+    ).toEqual([]);
     expect(calls(route)).toEqual([
       ["load", undefined],
       ["load", undefined],
     ]);
+    expect(route.gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "load",
+        description: expect.stringContaining("more than one possible source"),
+      }),
+    );
   });
 
   it("lists a reached function's parameters by position, whatever their spelling", async () => {
@@ -618,7 +625,7 @@ describe("the spellings a callee can have", () => {
       ["counter", undefined],
       ["kept", summaryIdentifier(load)],
       ["named", summaryIdentifier(load)],
-      ["later", undefined],
+      ["later", summaryIdentifier(load)],
       ["typed.on_get", undefined],
       ["again", undefined],
       ["load.cache_clear", undefined],
@@ -752,6 +759,110 @@ describe("the spellings a callee can have", () => {
       expect.objectContaining({
         callee: "thing.start",
         description: expect.stringContaining("could not settle"),
+      }),
+    ]);
+  });
+
+  it("reads a name through parentheses, a reassignment that narrows it, and a chain of aliases", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class Entity:",
+      "    def run(self):",
+      "        return 1",
+      "",
+      '@app.get("/q")',
+      "def q(db, flag: bool):",
+      "    query = (",
+      "        db.query(Entity)",
+      "        .filter(Entity.id == 1)",
+      "    )",
+      "    query = query.filter(Entity.id == 2)",
+      "    if flag:",
+      "        query = query.limit(1)",
+      "    a = None",
+      "    if flag:",
+      "        a = Entity()",
+      "    b = a",
+      "    c = b",
+      "    items = []",
+      "    for i in range(3):",
+      "        items.append(i)",
+      "    holder.items = items",
+      "    parts = [str(i) for i in items]",
+      "    return query.all(), c.run(), ','.join(parts)",
+    ]);
+
+    const summaries = await extract();
+    const route = unitNamed(summaries, "q");
+    const run = unitNamed(summaries, "run");
+    expect(calls(route)).toContainEqual(["c.run", summaryIdentifier(run)]);
+    expect(route.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
+  });
+
+  it("keeps a reassigned parameter caller-supplied, and stops when a fresh value replaces it", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class Entity:",
+      "    def run(self):",
+      "        return 1",
+      "",
+      "def narrow(query, flag: bool):",
+      "    query = query.filter(1)",
+      "    if flag:",
+      "        tmp = query.limit(1)",
+      "        query = tmp",
+      "    return query.all()",
+      "",
+      "def replace(thing):",
+      "    thing = Entity()",
+      "    return thing.run()",
+      "",
+      '@app.get("/p")',
+      "def p(db, flag: bool):",
+      "    return narrow(db.query(Entity), flag), replace(1)",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      unitNamed(summaries, "narrow").gaps.filter(
+        (gap) => gap.type === "unfollowedCall",
+      ),
+    ).toEqual([]);
+    expect(
+      unitNamed(summaries, "replace").gaps.filter(
+        (gap) => gap.type === "unfollowedCall",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        callee: "thing.run",
+        description: expect.stringContaining("more than one possible source"),
+      }),
+    ]);
+  });
+
+  it("stops with more than one source when a name's assignments disagree", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class Entity:",
+      "    def run(self):",
+      "        return 1",
+      "",
+      '@app.get("/either")',
+      "def either(flag: bool):",
+      "    thing = Entity()",
+      "    if flag:",
+      "        thing = 'text'",
+      "    return thing.run()",
+    ]);
+
+    const summaries = await extract();
+    const route = unitNamed(summaries, "either");
+    expect(route.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual([
+      expect.objectContaining({
+        callee: "thing.run",
+        description: expect.stringContaining("more than one possible source"),
       }),
     ]);
   });

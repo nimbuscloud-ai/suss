@@ -251,6 +251,7 @@ export async function extractPythonProject(
       packs: options.packs,
       roots: options.roots,
       facts: needsValues ? db : undefined,
+      definitions,
       storageFor,
     }),
   );
@@ -344,6 +345,8 @@ export async function extractPythonProject(
       roots: options.roots,
       gapHandling,
       storageFor,
+      facts: db,
+      definitions,
     }),
   );
   for (const [key, owners] of summariesBySeed) {

@@ -22,6 +22,7 @@ import {
   recognizedBodyEffects,
   returnBranch,
 } from "./discovery.js";
+import { nameKeyIn } from "./facts/values.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import {
   bodyCalls,
@@ -29,7 +30,7 @@ import {
   invocationEffects,
 } from "./paths/effects.js";
 import { raisedResponses } from "./paths/raisedResponses.js";
-import { resolveNamedFunctionArgument } from "./reach/resolveCallee.js";
+import { functionNamed } from "./reach/resolveCallee.js";
 import { boundModuleAt, constructionOf } from "./routers.js";
 import { resolveName } from "./scope.js";
 
@@ -56,6 +57,8 @@ export interface WrapperIndexOptions {
   packs: readonly PythonPack[];
   roots: string[];
   facts: Database | undefined;
+  /** The function each function key was read from. */
+  definitions: ReadonlyMap<string, PyNode>;
   storageFor: (file: BoundPythonFile) => StorageLookup | undefined;
 }
 
@@ -121,6 +124,19 @@ export class PythonWrapperIndex {
     readonly filesByPath: ReadonlyMap<string, BoundPythonFile>,
   ) {}
 
+  /** The project function a module-level name in this file refers to, or null for anything else. */
+  functionCalled(file: string, name: string): ReachedFunction | null {
+    if (this.options.facts === undefined) {
+      return null;
+    }
+    return functionNamed(nameKeyIn(file, null, name), {
+      filesByPath: this.filesByPath,
+      roots: this.options.roots,
+      facts: this.options.facts,
+      definitions: this.options.definitions,
+    });
+  }
+
   register(
     covers:
       | { kind: "everyRoute"; pack: string }
@@ -177,20 +193,12 @@ export class PythonWrapperIndex {
       if (declared.form.type !== "dependency") {
         continue;
       }
-      const site = {
-        file,
-        scope: query.module.moduleScope,
-        rebound: new Set<string>(),
-      };
       const targets = [
         ...decoratorDependencies(query.classification, declared.form),
         ...parameterDependencies(query.definitionNode, declared.form),
       ];
       for (const name of targets) {
-        const target = resolveNamedFunctionArgument(name, site, {
-          filesByPath: this.filesByPath,
-          roots: this.options.roots,
-        });
+        const target = this.functionCalled(file.file, name);
         if (target !== null) {
           found.push(this.registered(target, declared));
         }
@@ -396,12 +404,8 @@ function registerConstructorDependencies(
     if (listed === undefined) {
       continue;
     }
-    const site = { file, scope, rebound: new Set<string>() };
     for (const name of dependencyNamesIn(listed.node, form)) {
-      const target = resolveNamedFunctionArgument(name, site, {
-        filesByPath: index.filesByPath,
-        roots: index.options.roots,
-      });
+      const target = index.functionCalled(file.file, name);
       if (target !== null) {
         index.register(
           coverageOf(match, file, declared.pack),
