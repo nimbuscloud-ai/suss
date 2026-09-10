@@ -3,7 +3,7 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 916,
-    "internal": 3303,
+    "internal": 3304,
     "consumers": 1777,
     "pairs": 1774,
     "unfollowedCalls": 497,
@@ -28,7 +28,7 @@
       "name": "@suss/adapter-typescript",
       "exports": 89,
       "internal": 833,
-      "consumers": 201,
+      "consumers": 202,
       "unfollowedCalls": 113
     },
     "packages/behavioral-ir": {
@@ -55,7 +55,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 30,
-      "internal": 535,
+      "internal": 536,
       "consumers": 325,
       "unfollowedCalls": 55
     },
@@ -294,7 +294,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 2,
-      "consumers": 23,
+      "consumers": 22,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
