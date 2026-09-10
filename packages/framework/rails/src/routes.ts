@@ -420,17 +420,24 @@ function handleVerb(
     return;
   }
 
-  if (ctx.resource === undefined) {
+  const segment = args.positional[0]
+    ? wordValue(args.positional[0], ctx)
+    : null;
+  if (segment === null) {
     return;
   }
-  const action = args.positional[0] ? wordValue(args.positional[0], ctx) : null;
-  if (action === null) {
+  // `post :recording, action: :start_recording` serves the action named
+  // by the keyword at the path the first argument spells.
+  const action = wordValue(args.keyword.action, ctx) ?? segment;
+  const controller = wordValue(args.keyword.controller, ctx);
+  const controllerKey =
+    controller !== null
+      ? joinKey(ctx.modulePrefix, controller)
+      : ctx.resource?.controllerKey;
+  if (controllerKey === undefined) {
     return;
   }
-  out.add(ctx.resource.controllerKey, action, {
-    method,
-    path: `${base}/${action}`,
-  });
+  out.add(controllerKey, action, { method, path: joinPath(base, segment) });
 }
 
 function handleRoot(

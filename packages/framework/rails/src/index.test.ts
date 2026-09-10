@@ -362,6 +362,32 @@ describe("railsFramework", () => {
       });
     });
 
+    it("serves the action given by a bare verb's action: keyword at the path its first argument spells", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :rooms, only: [] do\n" +
+        "    member do\n" +
+        "      post :recording, action: :start_recording\n" +
+        "      delete :recording, action: :stop_recording\n" +
+        "    end\n" +
+        "  end\n" +
+        '  get "status", controller: "health", action: "show"\n' +
+        "end\n";
+      expect(routeFor(source, "RoomsController", "start_recording")).toEqual({
+        method: "POST",
+        path: "/rooms/:id/recording",
+      });
+      expect(routeFor(source, "RoomsController", "stop_recording")).toEqual({
+        method: "DELETE",
+        path: "/rooms/:id/recording",
+      });
+      expect(routeFor(source, "RoomsController", "recording")).toBeNull();
+      expect(routeFor(source, "HealthController", "show")).toEqual({
+        method: "GET",
+        path: "/status",
+      });
+    });
+
     it("replays a block looped over a word list once per element", () => {
       const source =
         "Rails.application.routes.draw do\n" +
