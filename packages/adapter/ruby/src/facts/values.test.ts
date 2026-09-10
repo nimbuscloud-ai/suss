@@ -361,4 +361,63 @@ describe("ruby value facts", () => {
     const db = await factsFor("a, b = pair\n");
     expect(db.size("binds")).toBe(0);
   });
+
+  it("records nothing for an operator assignment whose left side is not a plain name", async () => {
+    const db = await factsFor("obj.count += 1\n");
+    expect(db.size("binds")).toBe(0);
+    expect(db.size("endsHolding")).toBe(0);
+  });
+
+  it("writes a for loop's variable with no value, and keeps it usable after the loop", async () => {
+    const source = [
+      "def act",
+      "  for i in list",
+      "  end",
+      "  return i",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")).toContainEqual([funcKey, `${funcKey}#i`]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#i`,
+    );
+  });
+
+  it("does not resolve a block parameter's name to the block when read outside the block, in the method body", async () => {
+    const source = [
+      "def act",
+      "  list.each do |item|",
+      "  end",
+      "  return item",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#item");
+  });
+
+  it("does not resolve a block parameter's name to the block when read outside any block, at the top of a file", async () => {
+    const db = await factsFor(
+      ["list.each do |item|", "end", "other = item", ""].join("\n"),
+    );
+    expect(rows(db, "binds")).toContainEqual(["#other", "#item"]);
+  });
+
+  it("does not mistake a method call for a read of a same-named local", async () => {
+    const source = [
+      "def act",
+      "  where = Foo.new",
+      "  query.where(x)",
+      "  where = Bar.new",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${funcKey}#where`, keyOf(source, "Bar.new")],
+    ]);
+  });
 });
