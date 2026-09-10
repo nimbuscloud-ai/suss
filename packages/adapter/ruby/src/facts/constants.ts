@@ -167,6 +167,9 @@ export function emitConstantBindings(
       found.push(definition);
       byName.set(definition.qualifiedName, found);
       fileOfDefinition.set(definition.key, file.filePath);
+      // A caller that settled a value on a class through the rules has
+      // the key and no reference to read a name off.
+      db.add("rbConstantName", [definition.key, definition.qualifiedName]);
     }
   }
 

@@ -5,6 +5,10 @@
  * class that reaches that base is a database call. The README says why
  * ancestry. A loader pattern from another pack adds calls that are given
  * the model as an argument instead, and those go through the same test.
+ *
+ * A write is also recorded when the receiver is not written as a
+ * constant and the rules settle it on such a class, which is how
+ * `@account.save` after a `before_action` finder counts.
  */
 
 import { storageBinding } from "@suss/ir-core";
@@ -12,7 +16,7 @@ import { askResolution } from "@suss/resolution";
 
 import { field } from "./ast.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
-import { nodeId } from "./facts/values.js";
+import { nodeId, readKey } from "./facts/values.js";
 import { compoundName } from "./scope.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -139,7 +143,7 @@ function selectorOf(node: RbNode): string[] {
 
 function storageEffect(
   call: RbNode,
-  model: RbNode,
+  container: string,
   pattern: RbStoragePattern,
   kind: "read" | "write",
   selector: string[],
@@ -151,7 +155,7 @@ function storageEffect(
       recognition: "ruby-storage",
       storageSystem: pattern.storageSystem,
       scope: "default",
-      container: constantName(model),
+      container,
     }),
     callee: call.text,
     interaction: {
@@ -179,7 +183,104 @@ function modelCallEffects(
     return [];
   }
   const kind = pattern.writes.includes(methodOf(call)) ? "write" : "read";
-  return [storageEffect(call, constant, pattern, kind, selectorOf(call))];
+  return [
+    storageEffect(
+      call,
+      constantName(constant),
+      pattern,
+      kind,
+      selectorOf(call),
+    ),
+  ];
+}
+
+/** Every method a pattern in this run counts as changing what is stored. */
+function writeMethods(patterns: readonly RbStoragePattern[]): Set<string> {
+  return new Set(patterns.flatMap((pattern) => pattern.writes));
+}
+
+/**
+ * The class the rules settle a receiver on, when they settle on exactly
+ * one. Two would make picking one a guess, the same caution the constant
+ * bindings apply.
+ */
+function classSettledOn(facts: Database, key: string): string | undefined {
+  askResolution(facts, [key], "wanted", RUBY_PROGRAM);
+  const objects = new Set(
+    facts.lookup("wantedObjectOf", 0, key).map((row) => String(row[1])),
+  );
+  return objects.size === 1 ? [...objects][0] : undefined;
+}
+
+/**
+ * The name a class is declared under, which is what a constant receiver
+ * would have been written as. A class reopened in several files binds to
+ * one of them, so one name comes back.
+ */
+function declaredName(facts: Database, classKey: string): string | undefined {
+  const names = new Set(
+    facts.lookup("rbConstantName", 0, classKey).map((row) => String(row[1])),
+  );
+  return names.size === 1 ? [...names][0] : undefined;
+}
+
+/**
+ * Whether the project writes this method itself somewhere in the class's
+ * ancestry. The reach walk steps into that body, and the body reports
+ * whatever database work it does, so recording a write here as well
+ * would count the same work twice. `reachesBase` has already asked
+ * `wantedAncestry` about the class, which is what derives this.
+ */
+function projectDeclares(
+  facts: Database,
+  classKey: string,
+  method: string,
+): boolean {
+  return facts
+    .lookup("wantedDeclaredName", 0, classKey)
+    .some((row) => String(row[1]) === method);
+}
+
+/**
+ * The write a call makes on a receiver written as something other than a
+ * constant. Only a write, because a read on an instance is as likely an
+ * attribute read or a project method the walk follows. No selector: the
+ * record is already in hand, so the keywords are the data being written
+ * rather than a `where`.
+ */
+function instanceWriteEffects(
+  call: RbNode,
+  file: string,
+  options: RbStorageOptions,
+  enclosing: RbNode | null,
+): Effect[] {
+  const receiver = receiverOf(call);
+  const method = methodOf(call);
+  if (receiver === null || !writeMethods(options.patterns).has(method)) {
+    return [];
+  }
+  const classKey = classSettledOn(
+    options.facts,
+    readKey(file, receiver, enclosing),
+  );
+  if (classKey === undefined) {
+    return [];
+  }
+  const pattern = options.patterns.find(
+    (candidate) =>
+      candidate.writes.includes(method) &&
+      reachesBase(options.facts, classKey, candidate.baseClasses),
+  );
+  if (
+    pattern === undefined ||
+    projectDeclares(options.facts, classKey, method)
+  ) {
+    return [];
+  }
+  const container = declaredName(options.facts, classKey);
+  return container === undefined
+    ? []
+    : [storageEffect(call, container, pattern, "write", [])];
 }
 
 /** Whether a node is the loader itself, the receiverless `dataloader`. */
@@ -236,7 +337,9 @@ function loaderCallEffects(
       }
       const pattern = modelPattern(argument, file, options);
       if (pattern !== undefined) {
-        effects.push(storageEffect(call, argument, pattern, "read", []));
+        effects.push(
+          storageEffect(call, constantName(argument), pattern, "read", []),
+        );
       }
     }
   }
@@ -247,31 +350,73 @@ function effectsOfCall(
   call: RbNode,
   file: string,
   options: RbStorageOptions,
+  enclosing: RbNode | null,
 ): Effect[] {
   const onModel = modelCallEffects(call, file, options);
-  return onModel.length > 0 ? onModel : loaderCallEffects(call, file, options);
+  if (onModel.length > 0) {
+    return onModel;
+  }
+  // A chain starting at a constant has already been settled by name, so
+  // asking the rules about its receiver would settle nothing new.
+  const onInstance =
+    rootConstant(call) === null
+      ? instanceWriteEffects(call, file, options, enclosing)
+      : [];
+  return onInstance.length > 0
+    ? onInstance
+    : loaderCallEffects(call, file, options);
 }
 
-/** Whether the recognizer records this call as database work, so a walk need not report it as a gap. */
+/**
+ * Whether the recognizer records this call as database work, so a walk
+ * need not report it as a gap. `enclosing` is the method the call is
+ * written in, which is what tells one body's locals from the next.
+ */
 export function storageClaims(
   call: RbNode,
   file: string,
   options: RbStorageOptions,
+  enclosing: RbNode | null = null,
 ): boolean {
   return (
-    options.patterns.length > 0 && effectsOfCall(call, file, options).length > 0
+    options.patterns.length > 0 &&
+    effectsOfCall(call, file, options, enclosing).length > 0
   );
+}
+
+/** The receivers this body asks the rules about, so one evaluation settles them all. */
+function receiverKeysToAsk(
+  chains: readonly RbNode[],
+  file: string,
+  options: RbStorageOptions,
+  enclosing: RbNode | null,
+): string[] {
+  const writes = writeMethods(options.patterns);
+  const keys: string[] = [];
+  for (const call of chains) {
+    const receiver = receiverOf(call);
+    if (
+      receiver !== null &&
+      writes.has(methodOf(call)) &&
+      rootConstant(call) === null
+    ) {
+      keys.push(readKey(file, receiver, enclosing));
+    }
+  }
+  return keys;
 }
 
 /**
  * The database work a body does, one effect per chain. A chain is one thing
  * the code does, so `Order.where(id: 1).first` counts once. `file` is the
  * absolute path the calls were read from, which the constant bindings key on.
+ * `enclosing` is the method the calls were read from, or null outside one.
  */
 export function storageEffects(
   calls: readonly RbNode[],
   file: string,
   options: RbStorageOptions,
+  enclosing: RbNode | null = null,
 ): Effect[] {
   if (options.patterns.length === 0) {
     return [];
@@ -285,12 +430,17 @@ export function storageEffects(
     }
   }
 
+  const chains = calls.filter((call) => !partOfOne.has(call.id));
+  askResolution(
+    options.facts,
+    receiverKeysToAsk(chains, file, options, enclosing),
+    "wanted",
+    RUBY_PROGRAM,
+  );
+
   const effects: Effect[] = [];
-  for (const call of calls) {
-    if (partOfOne.has(call.id)) {
-      continue;
-    }
-    effects.push(...effectsOfCall(call, file, options));
+  for (const call of chains) {
+    effects.push(...effectsOfCall(call, file, options, enclosing));
   }
   return effects;
 }

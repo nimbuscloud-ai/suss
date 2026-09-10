@@ -261,11 +261,40 @@ Order.where(id: 1).first   # one read, against Order, picking rows by id
 
 A chain is one thing the code does, so that counts once. The method the chain
 ends with tells a read from a write, and the keywords along it become the
-selector. `fields` comes back empty, and a call on anything that is not a
-constant says nothing, since there is no class to ask about. The constant can
-be written any way Ruby allows: `Order`, `Shop::Order`, or `::Order` for the
-top-level class from inside a module that has its own `Order`. The binding
-facts settle which class each spelling means.
+selector. `fields` comes back empty. The constant can be written any way Ruby
+allows: `Order`, `Shop::Order`, or `::Order` for the top-level class from
+inside a module that has its own `Order`. The binding facts settle which class
+each spelling means.
+
+A receiver written as something else goes to the rules instead:
+
+```ruby
+def set_order
+  @order = Order.find(params[:id])
+end
+
+def suspend
+  @order.update!(suspended_at: Time.now)   # one write, against Order
+end
+```
+
+Only a write is recorded that way. A read on an instance is as likely an
+attribute read or a project method the reach walk follows, and calling it
+database work would be wrong more often than right. The receiver's key is the
+one `calleeSpellings` derives for the walk, and `wantedObjectOf` is the answer;
+exactly one class counts, and two make picking one a guess. The class still has
+to reach a base the pack lists. `container` is the name the class is declared
+under, which `rbConstantName` puts in the facts alongside the bindings. There
+is no selector, because the record is already in hand and the keywords are the
+data being written rather than a `where`.
+
+A call whose method the project writes itself is skipped: `wantedDeclaredName`
+says which methods the class's ancestry declares, the reach walk steps into
+that body, and the body reports whatever database work it does. Modules mixed
+in with `include` are not in that ancestry, since the facts follow `extends`
+alone, so a `def save` in a concern is still recorded here as a write. A block
+parameter is not bound in the facts either, so `orders.each { |o| o.save }`
+says nothing.
 
 A library that batches reads on the caller's behalf puts the model in an
 argument instead of on the receiver. graphql-ruby's dataloader is one: a
@@ -305,9 +334,9 @@ instance variable does. A chain composes one method at a time, so
 no arguments as a property read rather than a call, which is why the adapter
 states the same step a second time in `RUBY_RULES` for that spelling.
 
-The storage recognizer still finds the model by the constant a chain starts
-at, so `@account.update(attrs)` is followed as a call and is not recorded as
-a write. Asking the facts for a receiver's class there is a separate change.
+The storage recognizer asks the same rules about a receiver that is not
+written as a constant, which is how `@account.update(attrs)` after that
+`before_action` is recorded as a write against `Account`.
 
 ## What a file reads from the environment
 

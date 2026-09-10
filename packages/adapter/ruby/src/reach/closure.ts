@@ -462,7 +462,7 @@ function scanBody(
       // database work, so it is not a gap in what this walk reached.
       const claimed =
         options.storage !== undefined &&
-        storageClaims(call, source.file, options.storage);
+        storageClaims(call, source.file, options.storage, site.method);
       if (!seen.has(stopKey) && !claimed && worthRecording(outcome.reason)) {
         seen.add(stopKey);
         stops.push({ callee, reason: outcome.reason });
