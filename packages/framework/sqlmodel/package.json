@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-sqlmodel",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "type": "module",
   "description": "Pattern pack that says which SQLModel calls a Python body makes against the database.",
   "keywords": [
@@ -48,9 +48,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.26.0",
-    "@suss/extractor": "0.26.0",
-    "@suss/framework-sqlalchemy": "0.26.0",
+    "@suss/adapter-python": "0.27.0",
+    "@suss/extractor": "0.27.0",
+    "@suss/framework-sqlalchemy": "0.27.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
