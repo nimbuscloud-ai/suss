@@ -40,6 +40,14 @@ describe("walkClasses: qualified names", () => {
     expect(info?.superclassQualifiedName).toBe("Types::BaseObject");
   });
 
+  it("drops the leading `::` from a superclass written from the top level", async () => {
+    const [info] = await classesIn(
+      "module Types\n  class Order < ::ApplicationRecord\n  end\nend\n",
+    );
+    expect(info?.superclassQualifiedName).toBe("ApplicationRecord");
+    expect(info?.superclassCandidates).toEqual(["ApplicationRecord"]);
+  });
+
   it("qualifies a bare class name against its enclosing module", async () => {
     const [info] = await classesIn(
       "module Types\n  class QueryType < Types::BaseObject\n  end\nend\n",

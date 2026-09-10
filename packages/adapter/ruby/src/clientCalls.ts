@@ -17,6 +17,7 @@ import { pathOf } from "@suss/values";
 import { field, rangeOf, readCallArgs, runStatements, spanOf } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
 import { returnPathBranches } from "./responseStatus.js";
+import { compoundName } from "./scope.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
@@ -203,9 +204,12 @@ function trimmed(path: string): string {
 
 /** Whether this receiver is the constant the pack named, `Faraday` or `Net::HTTP`. */
 function namesConstant(receiver: RbNode, constantName: string): boolean {
+  if (receiver.type === "constant") {
+    return receiver.text === constantName;
+  }
   return (
-    (receiver.type === "constant" || receiver.type === "scope_resolution") &&
-    receiver.text === constantName
+    receiver.type === "scope_resolution" &&
+    compoundName(receiver) === constantName
   );
 }
 
