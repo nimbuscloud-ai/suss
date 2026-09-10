@@ -1209,6 +1209,34 @@ describe("railsFramework", () => {
       ]);
     });
 
+    it("walks a gem's block written in the routes grammar under the enclosing scope, and says so", () => {
+      const pack = projectWith(
+        app(
+          "  namespace :auth do\n" +
+            "    devise_scope :user do\n" +
+            "      resource :setup, only: [:show, :update], controller: :setup\n" +
+            '      post "challenge", to: "challenges#create"\n' +
+            "    end\n" +
+            "  end\n" +
+            '  direct :homepage do\n    "https://example.com"\n  end\n' +
+            "  direct :commentable do |model|\n    route_for(model)\n  end",
+        ),
+      );
+      const p = pattern(pack);
+      expect(p.routeFor("Auth::SetupController", "update")).toEqual({
+        method: "PATCH",
+        path: "/auth/setup",
+      });
+      expect(p.routeFor("Auth::ChallengesController", "create")).toEqual({
+        method: "POST",
+        path: "/auth/challenge",
+      });
+      expect(p.routingGaps?.()).toEqual([
+        expect.stringContaining("also declares direct"),
+        "config/routes.rb wraps routes in devise_scope, which this pack does not know; it read the routes inside as though the wrapper changed nothing about their path or controller",
+      ]);
+    });
+
     it("reads nothing from an extra routes file that does not exist", () => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-engines-"));
       const table = readRoutes({
