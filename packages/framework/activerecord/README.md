@@ -26,6 +26,14 @@ and no discovery.
 `storageSystem` is yours to say. ActiveRecord talks to Postgres, MySQL and
 SQLite alike and database.yml settles which, so the pack cannot.
 
+From the CLI, the option comes from a config file, and a bare
+`-f activerecord` stops with a message asking for one:
+
+```sh
+echo '{ "storageSystem": "postgresql" }' > suss.activerecord.json
+suss extract -f rails -f activerecord=suss.activerecord.json
+```
+
 ## Why it matches on ancestry
 
 Ruby writes no return type, so the SQLAlchemy pack's trick of reading what a
