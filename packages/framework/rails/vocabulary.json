@@ -42,5 +42,11 @@
   "body": "suss: tree-sitter-ruby field name for a block's own body",
   "receiver": "suss: tree-sitter-ruby field name for a call's receiver expression",
   "method": "suss: tree-sitter-ruby field name for a call's method name",
+  "parameters": "suss: tree-sitter-ruby field name for a block's |x, y| parameter list",
+  "string_array": "suss: tree-sitter-ruby node type for a %w[] word list",
+  "symbol_array": "suss: tree-sitter-ruby node type for a %i[] symbol list",
+  "bare_symbol": "suss: tree-sitter-ruby node type for one element of a %i[] list",
+  "each": "Ruby core: Array#each, looping a routes block once per element",
+  "each_with_index": "Ruby core: Array#each_with_index, looping a routes block once per element with its position",
   "all": "Rails routing DSL: the via: value on match that routes every HTTP method"
 }

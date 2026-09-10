@@ -362,6 +362,61 @@ describe("railsFramework", () => {
       });
     });
 
+    it("replays a block looped over a word list once per element", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  %w[users u].each_with_index do |root_path, index|\n" +
+        '    get "#{root_path}" => "users#index", :constraints => { format: "html" }\n' +
+        "    resources :users, only: %i[create], path: root_path do\n" +
+        '      collection { get "check_username" }\n' +
+        "    end\n" +
+        '    get "#{root_path}/random-username" => "users#generate_random_username"\n' +
+        '    get "#{root_path}/echo/#{index}" => "users#echo"\n' +
+        "  end\n" +
+        "  %w[guidelines rules conduct].each do |guidelines_alias|\n" +
+        '    get guidelines_alias => "static#show", :id => "guidelines"\n' +
+        "  end\n" +
+        '  [:a, :b].each { |name| get name => "letters#show" }\n' +
+        "end\n";
+      expect(routeFor(source, "UsersController", "index")).toEqual({
+        method: "GET",
+        path: "/users",
+      });
+      expect(routeFor(source, "UsersController", "create")).toEqual({
+        method: "POST",
+        path: "/users",
+      });
+      expect(routeFor(source, "UsersController", "check_username")).toEqual({
+        method: "GET",
+        path: "/users/check_username",
+      });
+      expect(
+        routeFor(source, "UsersController", "generate_random_username"),
+      ).toEqual({ method: "GET", path: "/users/random-username" });
+      expect(routeFor(source, "UsersController", "echo")).toEqual({
+        method: "GET",
+        path: "/users/echo/0",
+      });
+      expect(routeFor(source, "StaticController", "show")).toEqual({
+        method: "GET",
+        path: "/guidelines",
+      });
+      expect(routeFor(source, "LettersController", "show")).toEqual({
+        method: "GET",
+        path: "/a",
+      });
+    });
+
+    it("leaves a loop over anything but a literal list unread", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  Discourse.filters.each do |filter|\n" +
+        '    get "#{filter}" => "list##{filter}"\n' +
+        "  end\n" +
+        "end\n";
+      expect(routeFor(source, "ListController", "latest")).toBeNull();
+    });
+
     it("continues a hash-rocket route inside member or collection from the resource", () => {
       const source =
         "Rails.application.routes.draw do\n" +

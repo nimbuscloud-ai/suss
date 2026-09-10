@@ -6,8 +6,9 @@
  * with `only:`/`except:`, `member`/`collection` blocks, nested
  * resources, `namespace`, `scope`, the bare HTTP-verb methods and
  * `match ... via:`, `root`, `draw(:name)` for a file under
- * `config/routes/`, `constraints` and `with_options` blocks, and
- * `concern`/`concerns`. Anything else the file declares, `mount` and
+ * `config/routes/`, `constraints` and `with_options` blocks,
+ * `concern`/`concerns`, and `.each` over a literal list, replayed once
+ * per element. Anything else the file declares, `mount` and
  * `direct` among them, is left unread and reported once as a gap
  * rather than guessed at. The package README says why each stops here.
  */
@@ -24,7 +25,7 @@ import {
   symbolValue,
 } from "@suss/adapter-ruby";
 
-import type { RbNode } from "@suss/adapter-ruby";
+import type { ParameterBindings, RbNode } from "@suss/adapter-ruby";
 
 export interface Route {
   method: string;
@@ -60,6 +61,8 @@ interface RouteContext {
   resource?: ResourceScope;
   /** Keywords an enclosing `with_options` gives every call inside it; a call's own keyword wins. */
   defaults: Record<string, RbNode>;
+  /** The element an enclosing `%w[a b].each do |name|` is replaying its block for, so a string that reads `name` comes out spelled. */
+  bindings?: ParameterBindings;
 }
 
 interface SimpleArgs {
@@ -101,12 +104,17 @@ function readSimpleArgs(
   return { positional, keyword, hashRocketPair };
 }
 
+/** The one string `node` spells, with the loop element an enclosing `.each` bound. */
+function textValue(node: RbNode, ctx: RouteContext): string | null {
+  return stringValueOf(node, undefined, ctx.bindings);
+}
+
 /** A keyword's value read as a plain word, written either as a symbol or as a string. */
-function wordValue(node: RbNode | undefined): string | null {
+function wordValue(node: RbNode | undefined, ctx: RouteContext): string | null {
   if (node === undefined) {
     return null;
   }
-  return symbolValue(node) ?? stringValueOf(node);
+  return symbolValue(node) ?? textValue(node, ctx);
 }
 
 function splitControllerAction(
@@ -126,15 +134,18 @@ interface ResolvedTarget {
   path: string | null;
 }
 
-function readRouteTarget(args: SimpleArgs): ResolvedTarget | null {
-  const toText = args.keyword.to ? stringValueOf(args.keyword.to) : null;
+function readRouteTarget(
+  args: SimpleArgs,
+  ctx: RouteContext,
+): ResolvedTarget | null {
+  const toText = args.keyword.to ? textValue(args.keyword.to, ctx) : null;
   if (toText !== null) {
     const target = splitControllerAction(toText);
     return target === null ? null : { ...target, path: null };
   }
   if (args.hashRocketPair !== null) {
-    const pathText = stringValueOf(args.hashRocketPair.key);
-    const actionText = stringValueOf(args.hashRocketPair.value);
+    const pathText = textValue(args.hashRocketPair.key, ctx);
+    const actionText = textValue(args.hashRocketPair.value, ctx);
     const target =
       actionText !== null ? splitControllerAction(actionText) : null;
     return target !== null && pathText !== null
@@ -277,8 +288,9 @@ function handleResourceCall(
   // `controller:` or `path:` overrides what the name would have given.
   // `module:` puts the controller under one more directory.
   const controllerSegment =
-    wordValue(args.keyword.controller) ?? (plural ? symbol : pluralize(symbol));
-  const moduleName = wordValue(args.keyword.module);
+    wordValue(args.keyword.controller, ctx) ??
+    (plural ? symbol : pluralize(symbol));
+  const moduleName = wordValue(args.keyword.module, ctx);
   const modulePrefix =
     moduleName === null
       ? ctx.modulePrefix
@@ -286,7 +298,10 @@ function handleResourceCall(
   const controllerKey = joinKey(modulePrefix, controllerSegment);
   const prefixBase =
     ctx.resource !== undefined ? ctx.resource.nestedBase : ctx.pathPrefix;
-  const base = joinPath(prefixBase, wordValue(args.keyword.path) ?? symbol);
+  const base = joinPath(
+    prefixBase,
+    wordValue(args.keyword.path, ctx) ?? symbol,
+  );
 
   const only = readSymbolList(args.keyword.only);
   const except = readSymbolList(args.keyword.except);
@@ -359,15 +374,15 @@ function handleVerb(
   method: string,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const on = wordValue(args.keyword.on);
+  const on = wordValue(args.keyword.on, ctx);
   // Inside a resource block the path continues from the resource, the
   // same place a bare verb hangs its own.
   const base =
     ctx.resource === undefined ? ctx.pathPrefix : baseForOn(ctx.resource, on);
-  const target = readRouteTarget(args);
+  const target = readRouteTarget(args, ctx);
   if (target !== null) {
     const literalPath = args.positional[0]
-      ? stringValueOf(args.positional[0])
+      ? textValue(args.positional[0], ctx)
       : null;
     const path = target.path ?? literalPath;
     if (path !== null) {
@@ -382,7 +397,7 @@ function handleVerb(
   if (ctx.resource === undefined) {
     return;
   }
-  const action = args.positional[0] ? wordValue(args.positional[0]) : null;
+  const action = args.positional[0] ? wordValue(args.positional[0], ctx) : null;
   if (action === null) {
     return;
   }
@@ -399,9 +414,9 @@ function handleRoot(
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
   const target =
-    readRouteTarget(args) ??
+    readRouteTarget(args, ctx) ??
     (args.positional[0]
-      ? splitControllerAction(stringValueOf(args.positional[0]) ?? "")
+      ? splitControllerAction(textValue(args.positional[0], ctx) ?? "")
       : null);
   if (target !== null) {
     out.add(joinKey(ctx.modulePrefix, target.controllerKey), target.action, {
@@ -445,6 +460,7 @@ function enterScope(
         ? joinKey(ctx.modulePrefix, moduleName)
         : ctx.modulePrefix,
     defaults: ctx.defaults,
+    bindings: ctx.bindings,
   };
 }
 
@@ -454,17 +470,69 @@ function handleScope(
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const moduleName = wordValue(args.keyword.module);
+  const moduleName = wordValue(args.keyword.module, ctx);
   // `scope "v1"` and `scope path: "v1"` both set the path in Rails.
   const pathSegment =
-    wordValue(args.keyword.path) ??
-    (args.positional[0] ? wordValue(args.positional[0]) : null);
+    wordValue(args.keyword.path, ctx) ??
+    (args.positional[0] ? wordValue(args.positional[0], ctx) : null);
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
   if (body === null) {
     return;
   }
   walkBody(body, enterScope(ctx, pathSegment, moduleName), out);
+}
+
+const LITERAL_LIST_TYPES = new Set(["array", "string_array", "symbol_array"]);
+const LOOP_METHODS = new Set(["each", "each_with_index"]);
+
+/** `%w[users u].each do |root_path| ... end` declares its block once per element, so it is walked once per element with the parameter bound. A loop over anything else is left alone, since nothing here can say what it iterates. */
+function replayLiteralLoop(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const receiver = field(call, "receiver");
+  const method = field(call, "method")?.text;
+  const block = field(call, "block");
+  const body = block !== null ? field(block, "body") : null;
+  const parameters = block !== null ? field(block, "parameters") : null;
+  if (
+    receiver === null ||
+    !LITERAL_LIST_TYPES.has(receiver.type) ||
+    method === undefined ||
+    !LOOP_METHODS.has(method) ||
+    body === null ||
+    parameters === null
+  ) {
+    return;
+  }
+  const [element, index] = bodyStatements(parameters).map((p) => p.text);
+  if (element === undefined) {
+    return;
+  }
+  const elements = bodyStatements(receiver).map((node) =>
+    listElementWord(node, ctx),
+  );
+  elements.forEach((word, position) => {
+    if (word === null) {
+      return;
+    }
+    const bindings = new Map(ctx.bindings ?? []);
+    bindings.set(element, word);
+    if (index !== undefined) {
+      bindings.set(index, String(position));
+    }
+    walkBody(body, { ...ctx, bindings }, out);
+  });
+}
+
+/** One element of a literal list as a word: `%i[a]` spells a bare symbol, `[:a]` a symbol, `%w[a]` and `["a"]` a string. */
+function listElementWord(node: RbNode, ctx: RouteContext): string | null {
+  if (node.type === "bare_symbol") {
+    return node.text;
+  }
+  return wordValue(node, ctx);
 }
 
 /** A block whose calls route under the enclosing scope unchanged: `constraints` only narrows which requests match. */
@@ -573,7 +641,7 @@ function handleDraw(
   out: RouteAccumulator,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
-  const name = args.positional[0] ? wordValue(args.positional[0]) : null;
+  const name = args.positional[0] ? wordValue(args.positional[0], ctx) : null;
   if (name === null) {
     return;
   }
@@ -623,7 +691,11 @@ function walkBody(
   out: RouteAccumulator,
 ): void {
   for (const statement of bodyStatements(body)) {
-    if (statement.type !== "call" || field(statement, "receiver") !== null) {
+    if (statement.type !== "call") {
+      continue;
+    }
+    if (field(statement, "receiver") !== null) {
+      replayLiteralLoop(statement, ctx, out);
       continue;
     }
     const name = field(statement, "method")?.text;
