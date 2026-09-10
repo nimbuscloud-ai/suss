@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 74,
-    "packagesWithExports": 74,
-    "exports": 904,
-    "internal": 3222,
-    "consumers": 1754,
-    "pairs": 1751,
+    "packages": 75,
+    "packagesWithExports": 75,
+    "exports": 910,
+    "internal": 3228,
+    "consumers": 1759,
+    "pairs": 1756,
     "unfollowedCalls": 498,
     "findingErrors": 0
   },
@@ -13,8 +13,8 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 58,
-      "internal": 343,
-      "consumers": 195,
+      "internal": 345,
+      "consumers": 196,
       "unfollowedCalls": 63
     },
     "packages/adapter/ruby": {
@@ -430,6 +430,13 @@
       "consumers": 0,
       "unfollowedCalls": 0
     },
+    "packages/framework/sqlmodel": {
+      "name": "@suss/framework-sqlmodel",
+      "exports": 5,
+      "internal": 2,
+      "consumers": 4,
+      "unfollowedCalls": 0
+    },
     "packages/framework/ts-rest": {
       "name": "@suss/framework-ts-rest",
       "exports": 2,
@@ -474,8 +481,8 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 45,
-      "internal": 138,
+      "exports": 46,
+      "internal": 140,
       "consumers": 0,
       "unfollowedCalls": 9
     },
