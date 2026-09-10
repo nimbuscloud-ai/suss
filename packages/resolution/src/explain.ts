@@ -155,7 +155,7 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
   },
   "declared finder": ({ tuple, premises, describe }) => {
     const method = String(premises[1].tuple[2]);
-    const base = String(premises[5].tuple[0]);
+    const base = String(premises[4].tuple[0]);
     return {
       reason: `${describe(tuple[0])} calls ${method} on ${describe(tuple[1])}, which gives back one of it`,
       assumptions: [
@@ -166,7 +166,7 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
   "declared argument finder": ({ tuple, premises, describe }) => {
     const method = String(premises[1].tuple[2]);
     const position = String(premises[2].tuple[1]);
-    const base = String(premises[6].tuple[0]);
+    const base = String(premises[3].tuple[0]);
     return {
       reason: `${describe(tuple[0])} calls ${method} with ${describe(tuple[1])} at argument ${position}, which gives back one of it`,
       assumptions: [

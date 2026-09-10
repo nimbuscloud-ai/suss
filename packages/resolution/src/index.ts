@@ -235,8 +235,10 @@ export const RESOLUTION_RULES = [
       lit("readsProperty", v("c"), v("o"), v("m")),
       lit("objectOf", v("o"), v("cls")),
       lit("objectValue", v("cls")),
-      lit("libraryBase", v("cls"), v("n")),
+      // Before `libraryBase`, so the demand rewrite asks it with the base
+      // bound and walks an ancestry only for a method a pack declared.
       lit("givesBackOne", v("n"), v("m")),
+      lit("libraryBase", v("cls"), v("n")),
     ],
     "declared finder",
   ),
@@ -251,10 +253,11 @@ export const RESOLUTION_RULES = [
       lit("call", v("r"), v("c")),
       lit("readsProperty", v("c"), v("o"), v("m")),
       lit("callArg", v("r"), v("k"), v("a")),
-      lit("objectOf", v("a"), v("cls")),
-      lit("objectValue", v("cls")),
-      lit("libraryBase", v("cls"), v("n")),
+      // Before `libraryBase`, so the demand rewrite asks it with the base
+      // bound and walks an ancestry only for a method a pack declared.
       lit("givesBackOneOfArgument", v("n"), v("m"), v("k")),
+      lit("objectOf", v("a"), v("cls")),
+      lit("libraryBase", v("cls"), v("n")),
     ],
     "declared argument finder",
   ),
@@ -271,7 +274,6 @@ export const RESOLUTION_RULES = [
       lit("givesBackOneOfImport", v("mod"), v("n"), v("k")),
       lit("callArg", v("r"), v("k"), v("a")),
       lit("objectOf", v("a"), v("cls")),
-      lit("objectValue", v("cls")),
     ],
     "declared import finder",
   ),
