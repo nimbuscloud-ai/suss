@@ -948,7 +948,7 @@ function readFirst(node: PyNode): PyNode | null {
 
 /** What the shared name walks need to know about Python's grammar. */
 const NAME_READS: NameReads<PyNode> & ChainReads<PyNode> = {
-  nameType: "identifier",
+  nameTypes: new Set(["identifier"]),
   laterBodies: LATER_BODY_TYPES,
   childrenOf: children,
   isRead: isNameRead,

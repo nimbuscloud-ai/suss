@@ -10,6 +10,8 @@ import {
   ownerOfName,
   parametersOf,
   paramNameOf,
+  RUBY_NAME_TYPES,
+  WHOLE_VALUE_OPERATORS,
 } from "./locals.js";
 
 import type { Database } from "@suss/datalog";
@@ -129,6 +131,13 @@ interface Emitter {
   enclosing: RbNode | null;
   /** The class or module `self` means here, or null outside one. */
   selfKey: string | null;
+  /**
+   * Every value the class being walked writes to each of its instance
+   * variables. They are collected across the whole class because the
+   * method that writes one and the method that reads it are two
+   * different bodies, and nothing here orders them.
+   */
+  instanceWrites: Map<string, NameWrite[]> | null;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -318,7 +327,99 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     if (child.type === "self" && emitter.selfKey !== null) {
       add(emitter, "binds", nodeId(emitter.filePath, child), emitter.selfKey);
     }
+    if (child.type === "instance_variable") {
+      emitInstanceRead(emitter, child);
+    }
+    if (ASSIGNMENT_TYPES.has(child.type)) {
+      collectInstanceWrite(emitter, child);
+    }
   });
+}
+
+const ASSIGNMENT_TYPES = new Set(["assignment", "operator_assignment"]);
+
+/** Whether this is the name an assignment writes to rather than a value being read. */
+function isWriteTarget(node: RbNode): boolean {
+  const parent = node.parent;
+  return (
+    parent !== null &&
+    ASSIGNMENT_TYPES.has(parent.type) &&
+    field(parent, "left")?.id === node.id
+  );
+}
+
+/**
+ * An instance variable is a name on the object, so reading one is
+ * reading a property of the class. That is what lets a write in a base
+ * class reach a read in a subclass: `contains` already walks `extends`,
+ * so the ancestry is joined without a step of its own.
+ */
+function emitInstanceRead(emitter: Emitter, node: RbNode): void {
+  if (emitter.selfKey === null || isWriteTarget(node)) {
+    return;
+  }
+  add(
+    emitter,
+    "readsProperty",
+    nodeId(emitter.filePath, node),
+    emitter.selfKey,
+    node.text,
+  );
+}
+
+function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
+  const left = field(node, "left");
+  const right = field(node, "right");
+  const collector = emitter.instanceWrites;
+  if (left === null || right === null || collector === null) {
+    return;
+  }
+  if (left.type !== "instance_variable") {
+    return;
+  }
+  // `count += 1` combines the right side with what is already there, and
+  // that result is written nowhere this can name.
+  const operator = field(node, "operator")?.text;
+  const value =
+    node.type === "assignment" || WHOLE_VALUE_OPERATORS.has(operator ?? "")
+      ? right
+      : null;
+  const written = collector.get(left.text) ?? [];
+  written.push(
+    describeWrite(emitter, {
+      name: left.text,
+      target: left,
+      value,
+      at: node,
+      fromParameter: false,
+    }),
+  );
+  collector.set(left.text, written);
+}
+
+/**
+ * The value each instance variable the class writes ends up with.
+ * Nothing orders two methods, so the writes settle on a value only when
+ * they agree; otherwise each write is a value the name may end up with,
+ * and a reader that needs one answer sees more than one source.
+ */
+function emitInstanceWrites(
+  emitter: Emitter,
+  classKey: string,
+  collected: ReadonlyMap<string, NameWrite[]>,
+): void {
+  for (const [name, writes] of collected) {
+    const settled = valueLeftByWrites(writes, false);
+    if (settled !== null) {
+      add(emitter, "holdsProperty", classKey, name, settled);
+      continue;
+    }
+    for (const write of writes) {
+      if (write.value !== null && !write.narrowsName) {
+        add(emitter, "holdsProperty", classKey, name, write.value);
+      }
+    }
+  }
 }
 
 /** A method returns its last expression when it writes no return, which Python has no equivalent of. */
@@ -422,9 +523,9 @@ function readFirst(node: RbNode): RbNode | null {
   return node.type === "call" ? field(node, "receiver") : null;
 }
 
-/** What the shared chain walk needs to know about Ruby. */
+/** What the shared chain walk needs to know about Ruby, which spells a name two ways. */
 const CHAIN_READS: ChainReads<RbNode> = {
-  nameType: "identifier",
+  nameTypes: RUBY_NAME_TYPES,
   readFirst,
 };
 
@@ -541,7 +642,12 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   }
 
   const body = field(cls, "body");
-  const within: Emitter = { ...emitter, selfKey: classKey };
+  const collected = new Map<string, NameWrite[]>();
+  const within: Emitter = {
+    ...emitter,
+    selfKey: classKey,
+    instanceWrites: collected,
+  };
   for (const statement of body === null ? [] : children(body)) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
@@ -573,6 +679,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       add(emitter, "holdsProperty", classKey, name.text, funcKey);
     }
   }
+  emitInstanceWrites(within, classKey, collected);
 
   return classKey;
 }
@@ -586,7 +693,13 @@ export function emitValueFacts(
   filePath: string,
   root: RbNode,
 ): void {
-  const emitter: Emitter = { db, filePath, enclosing: null, selfKey: null };
+  const emitter: Emitter = {
+    db,
+    filePath,
+    enclosing: null,
+    selfKey: null,
+    instanceWrites: null,
+  };
 
   const declaresName = (child: RbNode, key: string): void => {
     const name = field(child, "name");

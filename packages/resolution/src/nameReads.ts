@@ -7,8 +7,8 @@
  * them may read the name. The walk is the same in every language, so it
  * lives here and each adapter passes a description of its grammar.
  *
- * A description says four things: what a bare name is spelled as, which
- * node types open a body that runs later, how to enumerate a node's
+ * A description says four things: which node types spell a name, which
+ * of them open a body that runs later, how to enumerate a node's
  * children, and which spellings of a name are reads rather than writes or
  * declarations. Nothing here touches a parser.
  */
@@ -22,8 +22,8 @@ export interface ReadNode {
 
 /** What one language says about finding reads of a name in its trees. */
 export interface NameReads<N extends ReadNode> {
-  /** The node type a bare name is spelled with. */
-  nameType: string;
+  /** The node types a name is spelled with. Ruby has two, one of them `@name`. */
+  nameTypes: ReadonlySet<string>;
   /**
    * The types that open a body running later than the statements around
    * it, so a function, a class, or a Ruby block. A read in there happens
@@ -41,8 +41,8 @@ export interface NameReads<N extends ReadNode> {
 
 /** What one language says about which part of a chained expression is read first. */
 export interface ChainReads<N extends ReadNode> {
-  /** The node type a bare name is spelled with. */
-  nameType: string;
+  /** The node types a name is spelled with. Ruby has two, one of them `@name`. */
+  nameTypes: ReadonlySet<string>;
   /**
    * The part of an expression read before the rest of it, so a call's
    * callee or a member read's object, or null when nothing is read before
@@ -103,7 +103,7 @@ function isReadBefore<N extends ReadNode>(
     if (rules.laterBodies.has(node.type)) {
       return;
     }
-    if (node.type === rules.nameType && node.text === name) {
+    if (rules.nameTypes.has(node.type) && node.text === name) {
       found = rules.isRead(node);
       return;
     }
@@ -128,7 +128,7 @@ export function startsAtName<N extends ReadNode>(
   name: string,
   rules: ChainReads<N>,
 ): boolean {
-  if (node.type === rules.nameType) {
+  if (rules.nameTypes.has(node.type)) {
     return node.text === name;
   }
   const inner = rules.readFirst(node);

@@ -26,6 +26,12 @@ const BLOCK_TYPES = new Set(["block", "do_block"]);
 /** A block and a definition both open a body that runs later than the statements around it. */
 const LATER_BODY_TYPES = new Set([...OWN_BODY_TYPES, ...BLOCK_TYPES]);
 
+/** Ruby spells a name two ways: bare for a local, `@name` for one on the object. */
+export const RUBY_NAME_TYPES: ReadonlySet<string> = new Set([
+  "identifier",
+  "instance_variable",
+]);
+
 /** The left sides of a multiple assignment that hold further targets. */
 const TARGET_LIST_TYPES = new Set([
   "left_assignment_list",
@@ -39,7 +45,10 @@ const TARGET_LIST_TYPES = new Set([
  * `x += 1` combines the right side with what is already there, and that
  * result is written nowhere.
  */
-const WHOLE_VALUE_OPERATORS = new Set(["||=", "&&="]);
+export const WHOLE_VALUE_OPERATORS: ReadonlySet<string> = new Set([
+  "||=",
+  "&&=",
+]);
 
 /** One write to a name, at the node it happens. */
 export interface LocalWrite {
@@ -356,7 +365,7 @@ function orderedWrite(write: LocalWrite, scope: RbNode): OrderedWrite<RbNode> {
  */
 function nameReads(targetIds: ReadonlySet<number>): NameReads<RbNode> {
   return {
-    nameType: "identifier",
+    nameTypes: RUBY_NAME_TYPES,
     laterBodies: LATER_BODY_TYPES,
     childrenOf: bodyStatements,
     isRead: (node) => isNameRead(node, targetIds),

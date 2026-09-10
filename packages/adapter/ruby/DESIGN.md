@@ -327,6 +327,8 @@ The walk starts at the resolver method behind every discovered field (the one th
 
 A call with a receiver is resolved in two steps. The rules in `@suss/resolution` say what the receiver is, over the value facts `facts/values.ts` emits: a local reassigned, a name aliased through two more, `Klass.new`, a method that returns `self`, and parentheses are all steps they state, and asking `objectOf` about the receiver gives back the class the value is one of. Which method of that class runs is Ruby's own question, and `ancestry.ts` settles it, because `include` and `prepend` put modules in the lookup order at load time, a subclass overrides what its base declares, and `def self.` is looked up somewhere else again. A receiver written as a constant names the class object itself, so `Klass.build` looks for `def self.build` and `Klass.new` runs the class's own `initialize`.
 
+An instance variable is a name on the object rather than on any one method, so it is read as a property of the class: `@scope` written anywhere in the class body puts its value on the class under `@scope`, and every read of `@scope` is a property read off that class. A Rails controller sets one in a `before_action` and reads it in the action, and the two are different bodies, which is why a method-local key would never join them. `contains` already walks `extends`, so a write in a base controller reaches a read in a subclass with no step of its own; a module the class `include`s is not on that path. Nothing orders two methods, so several writes that disagree leave several values and a reader that needs one answer sees more than one source. A write that narrows the name, `@scope = @scope.where(a: 1)`, is set aside the way it is for a local.
+
 A call with no receiver, or one on `self`, never reaches the rules: Ruby looks that name up on the enclosing class's ancestry, then among the methods the project writes outside any class, which Ruby mixes into every object as a private method.
 
 A call written as a bare name, with no receiver, no arguments and no parentheses, is one of these. `visible_items` on its own parses as an identifier, the same node a local variable read parses as, so `bareCalls.ts` tells the two apart the way Ruby does: a name the method binds is a local variable, and every other identifier read is a call on self. A name is bound by a parameter, an assignment, a block or lambda parameter, a `for` variable, or a `rescue => err` clause. Binding is over-approximated on purpose: a name assigned anywhere in the method counts as a local even below the read, so the mistake this can make is missing a call rather than inventing one. An identifier written where a name is spelled rather than a value read, a method's own name or an assignment's left side, is left alone. So is one written as another call's receiver, since `orders.first` gives no way to resolve what `first` runs on.
@@ -340,6 +342,8 @@ A pack can also say which receiverless calls its own library defines, in `inheri
 | `Service.new.method` | `method` in `Service`'s own ancestry |
 | `s = Service.new` then `s.method`, however many names apart | `method` in `Service`'s own ancestry |
 | `s = Service.new` then `s = s.only(1)`, where `only` returns `self` | `only`, then `method` on the next call in the chain |
+| `@scope = Service.new` in one method, `@scope.method` in another | `method` in `Service`'s own ancestry |
+| `@scope = Service.new` in a base class, `@scope.method` in a subclass | `method` in `Service`'s own ancestry |
 | `Service.method` | `def self.method` written in `Service`'s own body |
 | `Service.new(x)` | `initialize` in `Service`'s own ancestry |
 | `register(method(:build_index))`, where `register(handler)` calls `handler.call` or `handler.()` | `build_index`, followed from wherever a caller in the run named it, through the parameter `register`'s own body calls |
@@ -354,6 +358,7 @@ Where it stops, and what the gap says:
 | a method the project writes with `define_method`, called on `self` or on a name the rules settled on the class | a body this reader cannot see |
 | a bare name two files each define at the top level | more than one possible source |
 | a local two branches write differently | more than one possible source |
+| an instance variable two methods build from different classes | more than one possible source |
 | `Rails.cache.delete`, a call into a class this run does not define | outside the run (no gap) |
 | `user.orders`, where nothing in the run says what `user` is | no declaration this run could find (no gap) |
 | a call on what another call gave back, where no fact says what that was | the value could not be settled |
