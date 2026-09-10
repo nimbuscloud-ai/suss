@@ -33,7 +33,6 @@ export function fastifyFramework(
 
     // Fastify exposes the routable via either default `Fastify` or
     // named `fastify()`. Both drive handler registration the same way.
-    // Unlike Express, Fastify's router supports `.head` and `.options`.
     discovery: [
       ...httpRouteDiscovery({
         importModule: "fastify",

@@ -11,7 +11,19 @@ import {
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
-const METHODS = [".get", ".post", ".put", ".delete", ".patch", ".all"];
+// Express routes every verb in the `methods` package. These are the
+// ones projects write; `router.search` is common in batch-read APIs.
+const METHODS = [
+  ".get",
+  ".post",
+  ".put",
+  ".delete",
+  ".patch",
+  ".head",
+  ".options",
+  ".search",
+  ".all",
+];
 
 // The response methods that return `res` itself, so a header set inside
 // the chain leaves what it sends unchanged.

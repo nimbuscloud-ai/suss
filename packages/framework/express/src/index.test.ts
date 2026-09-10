@@ -112,6 +112,37 @@ describe("expressFramework: a path built by joining strings", () => {
   });
 });
 
+describe("expressFramework: the less common verbs", () => {
+  it("reads a route registered with search, head or options", async () => {
+    // A batch-read API registers `router.search('/', ...)` beside its
+    // GET, and a project that skipped those lost one route per
+    // collection.
+    const project = createTestProject();
+    project.createSourceFile(
+      "app.ts",
+      `
+      import express from "express";
+      const app = express();
+      app.search("/items", (req: any, res: any) => { res.status(200).json([]); });
+      app.head("/items", (req: any, res: any) => { res.status(200).end(); });
+      app.options("/items", (req: any, res: any) => { res.status(204).end(); });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+    const methods = summaries
+      .map((one) => {
+        const semantics = one.identity.boundaryBinding?.semantics;
+        return semantics?.name === "rest" ? semantics.method : null;
+      })
+      .sort();
+    expect(methods).toEqual(["HEAD", "OPTIONS", "SEARCH"]);
+  });
+});
+
 describe("expressFramework: response chains", () => {
   const extract = async (source: string): Promise<BehavioralSummary[]> => {
     const project = createTestProject();
