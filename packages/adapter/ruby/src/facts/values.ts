@@ -2,10 +2,20 @@
 // The relation names and shapes come from that package's own header, and the
 // README says which Ruby constructs differ from the other adapters.
 
+import { valueLeftByWrites } from "@suss/resolution";
+
 import { field, NESTING_TYPES, OWN_BODY_TYPES } from "../ast.js";
+import {
+  collectWrites,
+  ownerOfName,
+  parametersOf,
+  paramNameOf,
+} from "./locals.js";
 
 import type { Database } from "@suss/datalog";
+import type { NameWrite } from "@suss/resolution";
 import type { RbNode } from "../parser.js";
+import type { LocalWrite, NameWrites } from "./locals.js";
 
 /**
  * A node's identity across the whole run. The end is part of it because a
@@ -20,22 +30,20 @@ function nameId(filePath: string, name: string): string {
   return `${filePath}#${name}`;
 }
 
-/** The identifier a parameter is declared with, `loader:` in `loader: ApplicationLoader` included. */
-function paramNameOf(param: RbNode): RbNode | null {
-  return param.type === "identifier" ? param : (field(param, "name") ?? null);
-}
-
-/** The parameters a method declares, by name, for a caller asking whether a read is one of them. */
-function declaredParamNames(method: RbNode): Set<string> {
-  const params = field(method, "parameters");
-  const declared = new Set<string>();
-  for (const param of params === null ? [] : children(params)) {
-    const name = paramNameOf(param);
-    if (name !== null) {
-      declared.add(name.text);
-    }
-  }
-  return declared;
+/**
+ * The key a bare name joins on: its own scope's, so `query` in one method is
+ * apart from `query` in the next. `enclosing` is the method the name is
+ * written in, or null outside one.
+ */
+function nameKey(
+  filePath: string,
+  node: RbNode,
+  enclosing: RbNode | null,
+): string {
+  const owner = ownerOfName(node, node.text, enclosing);
+  return owner === null
+    ? nameId(filePath, node.text)
+    : `${nodeId(filePath, owner)}#${node.text}`;
 }
 
 /**
@@ -64,10 +72,7 @@ export function readKey(
       ? nodeId(filePath, parent)
       : nodeId(filePath, node);
   }
-  if (enclosing !== null && declaredParamNames(enclosing).has(node.text)) {
-    return `${nodeId(filePath, enclosing)}#${node.text}`;
-  }
-  return nameId(filePath, node.text);
+  return nameKey(filePath, node, enclosing);
 }
 
 const WRITTEN_VALUE_TYPES = new Set([
@@ -103,11 +108,11 @@ interface Emitter {
   db: Database;
   filePath: string;
   /**
-   * The method whose body is being walked, and the parameters it declares.
-   * A parameter is keyed under its own method, because two methods in one
-   * file can both declare a `loader` and they are not the same value.
+   * The method whose body is being walked. Its parameters and locals are
+   * keyed under it, because two methods in one file can both write a
+   * `loader` and they are not the same value.
    */
-  enclosing: { funcKey: string; params: ReadonlySet<string> } | null;
+  enclosing: RbNode | null;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -122,11 +127,7 @@ function valueKey(emitter: Emitter, value: RbNode): string {
   if (value.type !== "identifier" && value.type !== "constant") {
     return nodeId(emitter.filePath, value);
   }
-  const enclosing = emitter.enclosing;
-  if (enclosing !== null && enclosing.params.has(value.text)) {
-    return `${enclosing.funcKey}#${value.text}`;
-  }
-  return nameId(emitter.filePath, value.text);
+  return nameKey(emitter.filePath, value, emitter.enclosing);
 }
 
 /** A pair's key when it is written as a symbol or a string, which is what a property joins on. */
@@ -315,13 +316,10 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const funcKey = nodeId(emitter.filePath, method);
   add(emitter, "func", funcKey);
 
-  const params = field(method, "parameters");
-  const declared = new Set<string>();
   let position = 0;
-  for (const param of params === null ? [] : children(params)) {
+  for (const param of parametersOf(method)) {
     const paramName = paramNameOf(param);
     if (paramName !== null) {
-      declared.add(paramName.text);
       const paramKey = `${funcKey}#${paramName.text}`;
       add(emitter, "paramOf", funcKey, String(position), paramKey);
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
@@ -329,10 +327,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
     position += 1;
   }
 
-  const inside: Emitter = {
-    ...emitter,
-    enclosing: { funcKey, params: declared },
-  };
+  const inside: Emitter = { ...emitter, enclosing: method };
 
   const body = field(method, "body");
   if (body === null) {
@@ -372,32 +367,83 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   }
 
   emitExpressionFacts(inside, body);
+  emitScopeWrites(inside, method, body);
 
   return funcKey;
 }
 
-function emitAssignment(emitter: Emitter, assignment: RbNode): void {
-  const left = field(assignment, "left");
-  const right = field(assignment, "right");
-  if (right === null) {
-    return;
-  }
-  if (left?.type !== "identifier" && left?.type !== "constant") {
-    return;
-  }
-  add(
-    emitter,
-    "binds",
-    nameId(emitter.filePath, left.text),
-    valueKey(emitter, right),
+/** A call, or an array or a hash literal: a value built where it is written. */
+function isConstruction(value: RbNode): boolean {
+  return (
+    value.type === "call" ||
+    ARRAY_TYPES.has(value.type) ||
+    value.type === "hash"
   );
-  add(
-    emitter,
-    "exportsAs",
-    emitter.filePath,
-    left.text,
-    valueKey(emitter, right),
+}
+
+/** Source text with whitespace runs collapsed, so formatting alone never tells two constructions apart. */
+function sourceOf(node: RbNode): string {
+  return node.text.replace(/\s+/g, " ").trim();
+}
+
+function describeWrite(emitter: Emitter, write: LocalWrite): NameWrite {
+  const value = write.value;
+  return {
+    value: value === null ? null : valueKey(emitter, value),
+    placeholder: value?.type === "nil",
+    construction:
+      value !== null && isConstruction(value) ? sourceOf(value) : null,
+  };
+}
+
+/**
+ * The value a name comes down to, or null when the writes settle on none.
+ * A name written once is that write, the way every `const` is in a language
+ * that has one; a parameter written once is already covered by `paramNamed`.
+ */
+function settledValue(emitter: Emitter, group: NameWrites): string | null {
+  const only = group.writes.length === 1 ? group.writes[0] : undefined;
+  if (only !== undefined) {
+    return only.fromParameter || only.value === null
+      ? null
+      : valueKey(emitter, only.value);
+  }
+  return valueLeftByWrites(
+    group.writes.map((write) => describeWrite(emitter, write)),
+    group.ordered,
   );
+}
+
+/**
+ * What each name a scope writes comes down to. A name written once is bound
+ * to that value; a reassigned name comes down to whatever the writes leave
+ * behind, and to nothing when control flow decides which write a reader sees.
+ */
+function emitScopeWrites(
+  emitter: Emitter,
+  method: RbNode | null,
+  body: RbNode,
+): void {
+  for (const group of collectWrites(method, body)) {
+    const settled = settledValue(emitter, group);
+    if (settled === null) {
+      continue;
+    }
+    const key =
+      group.owner === null
+        ? nameId(emitter.filePath, group.name)
+        : `${nodeId(emitter.filePath, group.owner)}#${group.name}`;
+    add(
+      emitter,
+      group.writes.length === 1 ? "binds" : "endsHolding",
+      key,
+      settled,
+    );
+    // Only a name written at the top of a file is something another file can read.
+    if (group.owner === null) {
+      add(emitter, "exportsAs", emitter.filePath, group.name, settled);
+    }
+  }
 }
 
 const METHOD_TYPES = new Set(["method", "singleton_method"]);
@@ -488,13 +534,11 @@ export function emitValueFacts(
       if (METHOD_TYPES.has(child.type)) {
         declaresName(child, emitMethodFacts(emitter, child));
       }
-      if (child.type === "assignment") {
-        emitAssignment(emitter, child);
-      }
       walk(child);
     }
   };
 
   walk(root);
   emitExpressionFacts(emitter, root);
+  emitScopeWrites(emitter, null, root);
 }

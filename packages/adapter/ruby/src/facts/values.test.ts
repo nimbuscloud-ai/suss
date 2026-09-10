@@ -19,6 +19,12 @@ function rows(db: Database, relation: string): string[][] {
     .map((row) => row.map((value) => String(value).replace("f.rb", "")));
 }
 
+/** The key the facts give a node, worked out from where its text starts in the source. */
+function keyOf(source: string, text: string): string {
+  const start = source.indexOf(text);
+  return `:${start}-${start + text.length}`;
+}
+
 describe("ruby value facts", () => {
   it("says a def is a function and binds its name to it", async () => {
     const db = await factsFor("def handler\nend\n");
@@ -236,5 +242,182 @@ describe("ruby value facts", () => {
   it("says nothing about a class written with no superclass", async () => {
     const db = await factsFor("class Order\nend\n");
     expect(db.size("extendsNamed")).toBe(0);
+  });
+
+  it("keys a local under the method that writes it, so two methods keep two names", async () => {
+    const db = await factsFor(
+      [
+        "class C",
+        "  def one",
+        "    query = A.new",
+        "  end",
+        "",
+        "  def two",
+        "    query = B.new",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [first, second] = rows(db, "func").map((row) => row[0]);
+    expect(
+      rows(db, "binds")
+        .map((row) => row[0])
+        .filter((key) => key?.endsWith("#query")),
+    ).toEqual([`${first}#query`, `${second}#query`]);
+  });
+
+  it("binds a local written once to what that write says", async () => {
+    const db = await factsFor("def act\n  query = build\nend\n");
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "binds")).toContainEqual([`${funcKey}#query`, "#build"]);
+  });
+
+  it("keeps a method's local out of what the file exports", async () => {
+    const db = await factsFor("def act\n  query = build\nend\n");
+    expect(rows(db, "exportsAs").map((row) => row[1])).toEqual(["act"]);
+  });
+
+  it("settles a name written as nil and then built under an if on the thing it builds", async () => {
+    const source = [
+      "def act",
+      "  x = nil",
+      "  x = Foo.new if flag",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${funcKey}#x`, keyOf(source, "Foo.new")],
+    ]);
+  });
+
+  it("settles two writes that are both statements of the body on the last one", async () => {
+    const source = [
+      "def act",
+      "  q = Entity.all",
+      "  q = q.where(a: 1)",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${funcKey}#q`, keyOf(source, "q.where(a: 1)")],
+    ]);
+  });
+
+  it("settles nothing when the second of two writes is under an if", async () => {
+    const db = await factsFor(
+      [
+        "def act",
+        "  q = Entity.all",
+        "  q = q.where(a: 1) if flag",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(db.size("endsHolding")).toBe(0);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#q`,
+    );
+  });
+
+  it("settles nothing when a statement reads the name before the last write", async () => {
+    const db = await factsFor(
+      ["q = Entity.all", "log(q)", "q = q.where(a: 1)", ""].join("\n"),
+    );
+    expect(db.size("endsHolding")).toBe(0);
+  });
+
+  it("settles nothing for a parameter the body writes again", async () => {
+    const db = await factsFor("def act(scope)\n  scope = Entity.all\nend\n");
+    expect(db.size("endsHolding")).toBe(0);
+    expect(rows(db, "binds").map((row) => row[0])).toEqual(["#act"]);
+  });
+
+  it("keys a block parameter under the block rather than the file", async () => {
+    const source = "rows.each do |row|\n  found = row\nend\n";
+    const db = await factsFor(source);
+    const block = keyOf(source, "do |row|\n  found = row\nend");
+    expect(rows(db, "binds")).toContainEqual(["#found", `${block}#row`]);
+  });
+
+  it("reads the whole right side of an ||= as the value it writes", async () => {
+    const source = "x ||= Foo.new\n";
+    const db = await factsFor(source);
+    expect(rows(db, "binds")).toEqual([["#x", keyOf(source, "Foo.new")]]);
+  });
+
+  it("settles nothing for a name only a += writes again", async () => {
+    const db = await factsFor("count = 0\ncount += 1\n");
+    expect(db.size("endsHolding")).toBe(0);
+    expect(db.size("binds")).toBe(0);
+  });
+
+  it("binds nothing for a name a multiple assignment writes", async () => {
+    const db = await factsFor("a, b = pair\n");
+    expect(db.size("binds")).toBe(0);
+  });
+
+  it("records nothing for an operator assignment whose left side is not a plain name", async () => {
+    const db = await factsFor("obj.count += 1\n");
+    expect(db.size("binds")).toBe(0);
+    expect(db.size("endsHolding")).toBe(0);
+  });
+
+  it("writes a for loop's variable with no value, and keeps it usable after the loop", async () => {
+    const source = [
+      "def act",
+      "  for i in list",
+      "  end",
+      "  return i",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")).toContainEqual([funcKey, `${funcKey}#i`]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#i`,
+    );
+  });
+
+  it("does not resolve a block parameter's name to the block when read outside the block, in the method body", async () => {
+    const source = [
+      "def act",
+      "  list.each do |item|",
+      "  end",
+      "  return item",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#item");
+  });
+
+  it("does not resolve a block parameter's name to the block when read outside any block, at the top of a file", async () => {
+    const db = await factsFor(
+      ["list.each do |item|", "end", "other = item", ""].join("\n"),
+    );
+    expect(rows(db, "binds")).toContainEqual(["#other", "#item"]);
+  });
+
+  it("does not mistake a method call for a read of a same-named local", async () => {
+    const source = [
+      "def act",
+      "  where = Foo.new",
+      "  query.where(x)",
+      "  where = Bar.new",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${funcKey}#where`, keyOf(source, "Bar.new")],
+    ]);
   });
 });
