@@ -453,14 +453,14 @@ function enterScope(
   moduleName: string | null,
 ): RouteContext {
   const base = ctx.resource?.nestedBase ?? ctx.pathPrefix;
+  const { resource: _left, ...kept } = ctx;
   return {
+    ...kept,
     pathPrefix: pathSegment !== null ? joinPath(base, pathSegment) : base,
     modulePrefix:
       moduleName !== null
         ? joinKey(ctx.modulePrefix, moduleName)
         : ctx.modulePrefix,
-    defaults: ctx.defaults,
-    bindings: ctx.bindings,
   };
 }
 
