@@ -4,8 +4,8 @@
     "packagesWithExports": 75,
     "exports": 916,
     "internal": 3300,
-    "consumers": 1770,
-    "pairs": 1767,
+    "consumers": 1772,
+    "pairs": 1769,
     "unfollowedCalls": 497,
     "findingErrors": 0
   },
@@ -112,7 +112,7 @@
       "name": "@suss/client-web",
       "exports": 2,
       "internal": 0,
-      "consumers": 12,
+      "consumers": 14,
       "unfollowedCalls": 0
     },
     "packages/contract/appsync": {
