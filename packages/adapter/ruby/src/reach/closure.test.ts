@@ -253,6 +253,65 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
     const field = unitNamed(summaries, "Query.orders");
     expect(calls(field)).toEqual([["OrderService.new.list_orders", undefined]]);
+    expect(field.gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "OrderService.new.list_orders",
+        description: expect.stringContaining(
+          "lands on a method the project defines with define_method",
+        ),
+      }),
+    );
+  });
+
+  it("gaps a call on a name a define_method loop was read to define", async () => {
+    writeQueryType("orders", [
+      "Form::AdminSettings.new.update_site_title(current_user)",
+    ]);
+    write("app/forms/admin_settings.rb", [
+      "class Form::AdminSettings",
+      "  include ActiveModel::Model",
+      "",
+      "  KEYS = %i(site_title).freeze",
+      "",
+      "  KEYS.each do |key|",
+      '    define_method("update_#{key}") { |value| value }',
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(field.gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "Form::AdminSettings.new.update_site_title",
+        description: expect.stringContaining(
+          "lands on a method the project defines with define_method",
+        ),
+      }),
+    );
+  });
+
+  it("follows a build past a class whose define_method loop defines no initialize", async () => {
+    writeQueryType("orders", ["Form::AdminSettings.new(current_user)"]);
+    write("app/forms/admin_settings.rb", [
+      "class Form::AdminSettings",
+      "  include ActiveModel::Model",
+      "",
+      "  KEYS = %i(site_title).freeze",
+      "",
+      "  KEYS.each do |key|",
+      "    define_method(key) { 1 }",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(field.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
   });
 
   it("leaves a bare name two files each define at the top level as an unfollowed call", async () => {

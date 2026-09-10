@@ -7,6 +7,7 @@ import {
   runStatements,
 } from "./ast.js";
 import { resolveConstantFile } from "./constantPath.js";
+import { defineMethodNames } from "./defineMethod.js";
 import { qualifyConstantRef, walkDefinitions } from "./scope.js";
 
 import type { BlockConfigures } from "./ast.js";
@@ -17,9 +18,6 @@ import type { ClassInfo } from "./scope.js";
 /** Ruby's own module keywords. `extend` is not one: it adds class methods, and a field is answered by an instance method. */
 const INCLUDE_CALL = "include";
 const PREPEND_CALL = "prepend";
-
-/** Ruby's own dynamic definition. A method defined this way is called like any other and is invisible to a reader of `def` nodes. */
-const DEFINE_METHOD_CALL = "define_method";
 
 /** One class or module body a walk reached, with the definitions its own file makes, since a bare constant is shadowed per file. */
 export interface ReachedBody {
@@ -282,7 +280,8 @@ export type MethodLookup =
    * `cause` says why the search stopped, since a caller deciding
    * whether to look further needs more than the sentence: `unreadAncestor`
    * is a base whose file this run could not open, and `dynamicDefine`
-   * is a body that calls `define_method`.
+   * is a `define_method` call that defines this name, or one whose own
+   * name this reader could not read.
    */
   | {
       type: "unsettled";
@@ -315,7 +314,7 @@ export function methodInAncestry(
     if (found.method !== null && found.block !== null) {
       return { type: "found", method: found.method, block: found.block };
     }
-    if (found.dynamic) {
+    if (found.definedDynamically || found.unreadableDefine) {
       return {
         type: "unsettled",
         reason: "defined with define_method, which this reader does not follow",
@@ -326,14 +325,22 @@ export function methodInAncestry(
   return { type: "none" };
 }
 
-/** What one ancestor's blocks say about `name`: its last definition, the way Ruby's own redefinition works, and whether anything here defines methods a reader of `def` nodes cannot see. */
+/** What one ancestor's blocks say about `name`: its last definition, the way Ruby's own redefinition works, and what the `define_method` calls in them define. */
 function definitionIn(
   blocks: readonly ReachedBody[],
   name: string,
-): { method: RbNode | null; block: ReachedBody | null; dynamic: boolean } {
+): {
+  method: RbNode | null;
+  block: ReachedBody | null;
+  /** Whether a `define_method` here defines `name`, which has no body a reader of `def` nodes can see. */
+  definedDynamically: boolean;
+  /** Whether a `define_method` here was given a method name this reader could not read, so `name` may be one of them. */
+  unreadableDefine: boolean;
+} {
   let method: RbNode | null = null;
   let block: ReachedBody | null = null;
-  let dynamic = false;
+  let definedDynamically = false;
+  let unreadableDefine = false;
   for (const candidate of blocks) {
     const body = candidate.info.bodyNode;
     if (body === null) {
@@ -344,9 +351,11 @@ function definitionIn(
       method = found;
       block = candidate;
     }
-    dynamic ||= bareCallArgumentGroups(body, DEFINE_METHOD_CALL).length > 0;
+    const defined = defineMethodNames(body);
+    definedDynamically ||= defined.names.has(name);
+    unreadableDefine ||= defined.unreadable;
   }
-  return { method, block, dynamic };
+  return { method, block, definedDynamically, unreadableDefine };
 }
 
 /** Every statement of every body reached, most distant ancestor first, so a nearer declaration overwrites what it inherits. */

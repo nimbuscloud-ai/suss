@@ -298,6 +298,16 @@ export function singletonMethodsByName(body: RbNode): Map<string, RbNode> {
   return methods;
 }
 
+/** Each receiverless call to `name` the body runs, in source order. */
+export function bareCalls(body: RbNode, name: string): RbNode[] {
+  return runStatements(body).filter(
+    (stmt) =>
+      stmt.type === "call" &&
+      field(stmt, "receiver") === null &&
+      field(stmt, "method")?.text === name,
+  );
+}
+
 /**
  * The arguments of each receiverless call to `name` the body runs, one
  * group per call, in source order. Grouped rather than flattened
@@ -305,18 +315,10 @@ export function singletonMethodsByName(body: RbNode): Map<string, RbNode> {
  * modules differently.
  */
 export function bareCallArgumentGroups(body: RbNode, name: string): RbNode[][] {
-  const groups: RbNode[][] = [];
-  for (const stmt of runStatements(body)) {
-    if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
-      continue;
-    }
-    if (field(stmt, "method")?.text !== name) {
-      continue;
-    }
-    const args = field(stmt, "arguments");
-    groups.push(args === null ? [] : bodyStatements(args));
-  }
-  return groups;
+  return bareCalls(body, name).map((call) => {
+    const args = field(call, "arguments");
+    return args === null ? [] : bodyStatements(args);
+  });
 }
 
 /**

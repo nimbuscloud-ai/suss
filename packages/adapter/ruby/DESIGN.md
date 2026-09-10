@@ -44,9 +44,11 @@ What the summary then says:
 
 - When the walk finds a method, `bodyContent` comes from that method's body. Nothing in the body matches a shape this pack looks for, so the extractor falls back to its own sentence: what the field does is not described here.
 - When the walk reads a field's whole ancestry and finds no such method, `bodyContent` stays `"absent"` and the summary keeps its no-body sentence. That is right for such a field, because the library gets its value by reading the attribute off the object the field was resolved against.
-- When the walk stops early, `bodyContent` stays unset and the summary gets one sentence saying what stopped it: an ancestor whose file the convention cannot locate, a `define_method` call that defines methods a reader of `def` nodes cannot see, or a wiring value that is not a constant path. `bodyContent` stays unset because the extractor writes its own sentence from that field, and any value would be a claim this reader cannot make. The walk does not read `method_missing` either.
+- When the walk stops early, `bodyContent` stays unset and the summary gets one sentence saying what stopped it: an ancestor whose file the convention cannot locate, a `define_method` call that defines the name being looked for, or a wiring value that is not a constant path. `bodyContent` stays unset because the extractor writes its own sentence from that field, and any value would be a claim this reader cannot make. The walk does not read `method_missing` either.
 
 An ancestor the reader could not open stops the search, rather than the search continuing to a method further along. Ruby would have called whatever that ancestor defines, so a method found past it is not the one that runs, and reporting it would be a confident wrong claim instead of an abstention.
+
+A `define_method` call stops the search only for the names it defines. The reader takes those names from the call's first argument, through the same value evaluator that settles a route path: a symbol or a string written out, and, inside `each`, `each_with_index` or `map` over a literal array or a constant whose value is one, the element bound to the block's parameter, including an interpolated symbol built from it such as `:"#{key}="`. A `define_method` whose name does not settle leaves the class stopping every lookup, the way it did before any name was read.
 
 What a body does still goes unread. Reading it needs the path engine: statements to walk, a return value to turn into a shape, and calls to resolve against something that knows what they return. `RawCodeStructure.dependencyCalls` is no shortcut around that, because nothing in the summary assembly reads it. A field's location also stays where the field is declared rather than moving to a resolver method in another file, so the path and line numbers on a summary keep pointing at the same place.
 
@@ -355,7 +357,8 @@ Where it stops, and what the gap says:
 | Written as | Reason |
 | --- | --- |
 | `obj.send(:method)`, `public_send`, `__send__` | a dynamic send this run does not follow |
-| a method the project writes with `define_method`, called on `self` or on a name the rules settled on the class | a body this reader cannot see |
+| a method the project writes with `define_method`, called on `self` or on a name the rules settled on the class | defined with `define_method`, a body this reader cannot see |
+| a name no `define_method` in the class defines, where every `define_method` there was read | looked for further up the ancestry, as if the class wrote none |
 | a bare name two files each define at the top level | more than one possible source |
 | a local two branches write differently | more than one possible source |
 | an instance variable two methods build from different classes | more than one possible source |

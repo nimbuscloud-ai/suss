@@ -341,7 +341,7 @@ async function methodOnAncestryOf(
     // An ancestor this run never indexed is a class the project does
     // not define, the same as calling straight into a dependency.
     return stop(
-      found.cause === "dynamicDefine" ? "unsettledValue" : "outsideRun",
+      found.cause === "dynamicDefine" ? "definedAtLoadTime" : "outsideRun",
     );
   }
   return NO_DECLARATION;
