@@ -12,7 +12,7 @@
  */
 
 import { nodeOfKey } from "@suss/resolution";
-import { Evaluator, force, literalOf } from "@suss/values";
+import { Evaluator, force, literalOf, text } from "@suss/values";
 
 import { field } from "../ast.js";
 import {
@@ -55,14 +55,32 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   );
 }
 
+/** Strings to read for the parameters of the block or method `node` is written in, the way a caller would supply them. */
+export type ParameterBindings = ReadonlyMap<string, string>;
+
 /** The abstract value `node` comes down to, through the facts when `db` was bound. */
-export function evaluatedValue(node: RbNode, db?: Database): Value {
-  return force(evaluatorFor(node, db).evaluate(node));
+export function evaluatedValue(
+  node: RbNode,
+  db?: Database,
+  bindings?: ParameterBindings,
+): Value {
+  const evaluator = evaluatorFor(node, db);
+  if (bindings === undefined) {
+    return force(evaluator.evaluate(node));
+  }
+  const supplied = new Map(
+    [...bindings].map(([name, value]) => [name, text(value)]),
+  );
+  return force(evaluator.evaluate(node, { bindings: supplied }));
 }
 
 /** The one string `node` comes down to, or null when it does not settle on one. */
-export function stringValueOf(node: RbNode, db?: Database): string | null {
-  return literalOf(evaluatedValue(node, db));
+export function stringValueOf(
+  node: RbNode,
+  db?: Database,
+  bindings?: ParameterBindings,
+): string | null {
+  return literalOf(evaluatedValue(node, db, bindings));
 }
 
 /** Every method a file defines, keyed the way the facts key it, for `bindEvaluator`. */

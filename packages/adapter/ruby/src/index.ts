@@ -64,6 +64,7 @@ export {
   bindEvaluator,
   evaluatedValue,
   methodDefinitionsIn,
+  type ParameterBindings,
   stringValueOf,
 } from "./values/evaluator.js";
 export { ADAPTER_VERSION } from "./version.js";

@@ -391,8 +391,8 @@
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
       "exports": 4,
-      "internal": 18,
-      "consumers": 34,
+      "internal": 17,
+      "consumers": 33,
       "unfollowedCalls": 6
     },
     "packages/framework/react": {
