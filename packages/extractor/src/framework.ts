@@ -59,6 +59,12 @@ export type DiscoveryMatch =
        * `axios.get(...)`.
        */
       factoryMethods?: string[];
+      /**
+       * The import and every instance built from it can be called as a
+       * function, so `axios(config)` and `api(config)` are requests the
+       * same as a call through a method in `methodFilter`.
+       */
+      callable?: boolean;
     }
   | {
       /**

@@ -15,8 +15,9 @@ describe("axiosPack — pack shape", () => {
     const pack = axiosPack();
     expect(pack.name).toBe("axios");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
-    // One discovery pattern per HTTP verb: get, post, put, delete, patch, head, options
-    expect(pack.discovery).toHaveLength(7);
+    // One discovery pattern per HTTP verb: get, post, put, delete, patch,
+    // head, options, plus one for a request written as a config object
+    expect(pack.discovery).toHaveLength(8);
     for (const d of pack.discovery) {
       expect(d.kind).toBe("client");
       expect(d.match.type).toBe("clientCall");
@@ -200,6 +201,92 @@ describe("axiosPack — integration", () => {
     const del = summaries.find((s) => s.identity.name === "deleteUser");
     const delSem = del?.identity.boundaryBinding?.semantics;
     expect(delSem?.name === "rest" ? delSem.method : null).toBe("DELETE");
+  });
+});
+
+describe("axiosPack — a request written as one config object", () => {
+  async function bindingsOf(source: string) {
+    const project = createTestProject();
+    project.createSourceFile("consumer.ts", source);
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    return Object.fromEntries(
+      summaries.map((s) => [
+        s.identity.name,
+        s.identity.boundaryBinding?.semantics,
+      ]),
+    );
+  }
+
+  it("reads the url and method off the object axios itself is called with", async () => {
+    const found = await bindingsOf(`
+      import axios from "axios";
+
+      export async function createUser(body: unknown) {
+        return axios({ url: "/users", method: "post", data: body });
+      }
+
+      export async function getUser() {
+        return axios({ url: "/users/1" });
+      }
+    `);
+    expect(found).toEqual({
+      createUser: { name: "rest", method: "POST", path: "/users" },
+      getUser: { name: "rest", method: "GET", path: "/users/1" },
+    });
+  });
+
+  it("reads the same object through .request and on an instance", async () => {
+    const found = await bindingsOf(`
+      import axios from "axios";
+
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function listUsers() {
+        return axios.request({ url: "/users" });
+      }
+
+      export async function deleteUser() {
+        return api({ url: "/users/1", method: "delete" });
+      }
+    `);
+    expect(found).toEqual({
+      listUsers: { name: "rest", method: "GET", path: "/users" },
+      deleteUser: { name: "rest", method: "DELETE", path: "/users/1" },
+    });
+  });
+
+  it("reads a url spread in from an object the evaluator can follow", async () => {
+    const found = await bindingsOf(`
+      import axios from "axios";
+
+      const base = { url: "/users", method: "put" };
+
+      export async function updateUser() {
+        return axios({ ...base, data: {} });
+      }
+    `);
+    expect(found).toEqual({
+      updateUser: { name: "rest", method: "PUT", path: "/users" },
+    });
+  });
+
+  it("leaves the path open when the object comes in as a parameter", async () => {
+    const found = await bindingsOf(`
+      import axios from "axios";
+
+      const api = axios.create();
+
+      export function request(config: { url: string; method?: string }) {
+        return api({ ...config, headers: {} });
+      }
+    `);
+    expect(found.request?.name === "rest" ? found.request.path : "?").toBe(
+      null,
+    );
   });
 });
 

@@ -151,7 +151,7 @@ import {
   recognizerOnlyRoots,
 } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
-import { pathFromArgument } from "./resolve/routePath.js";
+import { pathFromArgument, pathFromProperty } from "./resolve/routePath.js";
 import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
 import { unfollowedCallGap } from "./resolve/unfollowedCall.js";
 import { withDefinitions } from "./shapes/definitions.js";
@@ -971,6 +971,12 @@ function extractBindingPath(
   if (p.type === "fromArgument") {
     const arg = callSite.callExpression.getArguments()[p.position];
     return arg === undefined ? undefined : pathFromArgument(arg, resolution);
+  }
+  if (p.type === "fromArgumentProperty") {
+    const arg = callSite.callExpression.getArguments()[p.position];
+    return arg === undefined
+      ? undefined
+      : pathFromProperty(arg, p.property, resolution);
   }
   return undefined;
 }
