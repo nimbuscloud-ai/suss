@@ -8,7 +8,11 @@
 
 import { type CallExpression, Node } from "ts-morph";
 
-import type { DeployableUnit, MessageBusSemantics } from "@suss/behavioral-ir";
+import type {
+  DeployableUnit,
+  MessageBusSemantics,
+  WrapperReference,
+} from "@suss/behavioral-ir";
 import type {
   DiscoveryPattern,
   InputMappingPattern,
@@ -195,6 +199,19 @@ export interface DiscoveredUnit {
    * walk records.
    */
   unfollowed?: UnfollowedCall;
+  /**
+   * The functions the registration call lists before this handler,
+   * `router.post("/", validate, handler)`, in the order they run. Each
+   * is a unit of its own in the same file, and these references point
+   * the handler at them. They run inside whatever the app registers
+   * for every route, so they are applied after those.
+   */
+  routeWrappers?: WrapperReference[];
+  /**
+   * The functions listed before this handler that a project factory
+   * returned and the store could not follow, one stop per call.
+   */
+  routeUnfollowed?: UnfollowedCall[];
 }
 
 /**

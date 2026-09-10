@@ -597,3 +597,73 @@ describe("expressFramework: a router a project wrapper builds", () => {
     expect(restPaths(summaries)).toEqual([]);
   });
 });
+
+describe("expressFramework: a route with middleware listed before its handler", () => {
+  it("reports what each listed function produces as part of the route", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "asyncHandler.ts",
+      `
+      import type { NextFunction, Request, RequestHandler, Response } from "express";
+      export const asyncHandler = (fn: RequestHandler) => (req: Request, res: Response, next: NextFunction) =>
+        Promise.resolve(fn(req, res, next)).catch(next);
+    `,
+    );
+    project.createSourceFile(
+      "respond.ts",
+      `
+      import type { Request, Response } from "express";
+      export function respond(req: Request, res: Response) {
+        res.status(200).json(res.locals["payload"]);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "login.ts",
+      `
+      import { Router } from "express";
+      import { asyncHandler } from "./asyncHandler";
+      import { respond } from "./respond";
+      export const router = Router();
+      router.post(
+        "/login",
+        asyncHandler(async (req, res, next) => {
+          if (!req.body.password) {
+            res.status(400).json({ error: "password is required" });
+            return;
+          }
+          res.locals["payload"] = { data: { token: "t" } };
+          return next();
+        }),
+        respond,
+      );
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+
+    const login = summaries.find(
+      (one) => one.identity.boundaryBinding?.semantics?.name === "rest",
+    );
+    expect(login?.location.file).toContain("respond.ts");
+    expect(
+      (login?.metadata?.wrappers as { applied: { name: string }[] })?.applied,
+    ).toEqual([
+      {
+        file: expect.stringContaining("login.ts"),
+        name: "asyncHandler@POST /login",
+      },
+    ]);
+    expect(
+      login?.transitions.map((t) =>
+        t.output.type === "response" && t.output.statusCode?.type === "literal"
+          ? t.output.statusCode.value
+          : null,
+      ),
+    ).toEqual([400, 200]);
+  });
+});

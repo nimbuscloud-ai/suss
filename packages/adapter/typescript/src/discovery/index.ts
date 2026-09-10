@@ -41,6 +41,7 @@ function runPattern(
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
   expandedElsewhere?: ExpandedRegistrations,
+  routeWrapperPattern?: DiscoveryPattern,
 ): DiscoveredUnit[] {
   if (pattern.match.type === "namedExport") {
     return discoverNamedExports(
@@ -59,6 +60,7 @@ function runPattern(
       resolution,
       mountPrefixes,
       expandedElsewhere,
+      routeWrapperPattern,
     );
   }
   if (pattern.match.type === "registrationTemplate") {
@@ -166,6 +168,26 @@ function runPattern(
 }
 
 /**
+ * The pack's declaration for a middleware that runs for every route,
+ * `app.use(fn)` with the continuation it calls, which is also how a
+ * middleware listed on one route is read. A pack with no such
+ * declaration has its route chains read as before: last function only.
+ */
+function routeWrapperPatternOf(
+  patterns: readonly DiscoveryPattern[],
+): DiscoveryPattern | undefined {
+  return patterns.find(
+    (pattern) =>
+      pattern.wraps !== undefined &&
+      "method" in pattern.wraps &&
+      pattern.wraps.continuationParam !== undefined &&
+      pattern.wraps.throwParam === undefined &&
+      pattern.wraps.arity === undefined &&
+      pattern.wraps.scopePosition === undefined,
+  );
+}
+
+/**
  * Discover code units in `sourceFile` by running all patterns.
  * Deduplicates entries with the same function node and kind.
  */
@@ -180,6 +202,7 @@ export function discoverUnits(
   // since reading an export table needs one.
   const store = resolution ?? new ResolutionStore();
   const allResults: DiscoveredUnit[] = [];
+  const routeWrapperPattern = routeWrapperPatternOf(patterns);
 
   for (const pattern of patterns) {
     const found = runPattern(
@@ -188,9 +211,13 @@ export function discoverUnits(
       store,
       mountPrefixes,
       expandedElsewhere,
+      routeWrapperPattern,
     );
     for (const unit of found) {
-      unit.pattern = pattern;
+      // A handler that already says which pattern to read it with is a
+      // middleware listed on a route, read with the pack's middleware
+      // declaration rather than the route pattern that found it.
+      unit.pattern ??= pattern;
     }
     allResults.push(...found);
   }

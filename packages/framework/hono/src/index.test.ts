@@ -348,6 +348,50 @@ describe("honoFramework, app.use", () => {
       { file: "/app.ts", name: "requireCaller" },
     ]);
   });
+
+  it("reads a middleware the route lists before its handler, inside the app's own", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import { Hono } from "hono";
+        const app = new Hono();
+        const requireCaller = async (c, next) => {
+          if (c.req.header("authorization") === undefined) {
+            return c.json({ error: "unauthorized" }, 401);
+          }
+          await next();
+        };
+        app.use(async (c, next) => { await next(); });
+        app.get("/health", requireCaller, (c) => c.json({ ok: true }, 200));
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [honoFramework()],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const health = summaries.find(
+      (s) => s.identity.boundaryBinding?.semantics?.name === "rest",
+    );
+    const wrappers = health?.metadata?.wrappers as
+      | { applied: { name: string }[] }
+      | undefined;
+    expect(wrappers?.applied).toEqual([
+      { file: "/app.ts", name: "use" },
+      { file: "/app.ts", name: "requireCaller" },
+    ]);
+    expect(
+      health?.transitions.map((t) =>
+        t.output.type === "response" && t.output.statusCode?.type === "literal"
+          ? t.output.statusCode.value
+          : null,
+      ),
+    ).toEqual([401, 200]);
+  });
 });
 
 describe("honoFramework, defaultHook", () => {

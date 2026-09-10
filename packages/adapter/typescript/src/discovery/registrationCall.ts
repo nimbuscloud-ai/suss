@@ -16,6 +16,7 @@ import { joinMountedPath } from "@suss/resolution";
 
 import { nodeId } from "../facts/extract.js";
 import { pathFromArgument } from "../resolve/routePath.js";
+import { functionNameOrAnon } from "./graphqlShared.js";
 import { importDeclarationsOf } from "./importScan.js";
 import { importedReferenceSpellings } from "./resolveImport.js";
 import {
@@ -24,7 +25,9 @@ import {
   writtenNodeOf,
 } from "./resolveValue.js";
 import { findEnclosingFunction, namesAParameter } from "./shared.js";
+import { factoryNameOf, factoryStopOf } from "./wrapperFactory.js";
 
+import type { UnfollowedCall, WrapperReference } from "@suss/behavioral-ir";
 import type {
   BindingExtraction,
   DiscoveryPattern,
@@ -73,6 +76,7 @@ export function discoverRegistrationCalls(
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
   expandedElsewhere?: ExpandedRegistrations,
+  routeWrapperPattern?: DiscoveryPattern,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
@@ -211,6 +215,16 @@ export function discoverRegistrationCalls(
         mountPrefixes,
       );
       if (handler !== null) {
+        const chain =
+          routeWrapperPattern === undefined
+            ? null
+            : routeChainOf(
+                args.slice(0, -1),
+                routeWrapperPattern,
+                methodName,
+                routeInfo,
+                resolution,
+              );
         results.push({
           func: handler,
           kind,
@@ -219,7 +233,16 @@ export function discoverRegistrationCalls(
           nameKind: "label",
           registrationSubjectId,
           ...(routeInfo !== null ? { routeInfo } : {}),
+          ...(chain === null || chain.references.length === 0
+            ? {}
+            : { routeWrappers: chain.references }),
+          ...(chain === null || chain.unfollowed.length === 0
+            ? {}
+            : { routeUnfollowed: chain.unfollowed }),
         });
+        if (chain !== null) {
+          results.push(...chain.units);
+        }
         return;
       }
       // A route this call gives, registered with a handler its own
@@ -318,6 +341,89 @@ function declinedRegistration(
  * compose: no index was built for this run, the router was never
  * mounted, or a mount call along the way couldn't be resolved.
  */
+/** What reading the functions listed before a route's handler turns up. */
+interface RouteChain {
+  /** Each listed function, as a unit of its own to summarize. */
+  units: DiscoveredUnit[];
+  /** The handler's references to those units, in the order they run. */
+  references: WrapperReference[];
+  /** The listed functions a project factory returned and the store could not follow. */
+  unfollowed: UnfollowedCall[];
+}
+
+/**
+ * The functions `router.post("/", validate, handler)` lists before its
+ * handler, read with the pack's middleware declaration so each has the
+ * pack's continuation as a terminal and composition can splice the
+ * handler in where it calls it. An array of them, which Express also
+ * accepts, is read in order. One a factory in a dependency returned
+ * leaves nothing, the way `app.use(cors())` leaves nothing.
+ *
+ * A listed function with no name of its own goes by its factory or the
+ * route's verb, followed by the route, so two on different routes in one
+ * file stay two units. Composition looks a wrapper up by file and name.
+ */
+function routeChainOf(
+  listed: readonly Node[],
+  pattern: DiscoveryPattern,
+  methodName: string,
+  routeInfo: { method: string; path: string } | null,
+  resolution: ResolutionStore | undefined,
+): RouteChain {
+  const chain: RouteChain = { units: [], references: [], unfollowed: [] };
+  const anonymousLabels = new Map<string, number>();
+  for (const arg of listed) {
+    const elements = Node.isArrayLiteralExpression(arg)
+      ? arg.getElements()
+      : [arg];
+    for (const element of elements) {
+      const target = functionValueOf(element, resolution);
+      if (target === null) {
+        const stop = factoryStopOf(element);
+        if (stop !== null) {
+          chain.unfollowed.push(stop);
+        }
+        continue;
+      }
+      const ownName = functionNameOrAnon(target);
+      const named = ownName !== "<anon>";
+      const label = factoryNameOf(element) ?? methodName;
+      const seen = anonymousLabels.get(label) ?? 0;
+      if (!named) {
+        anonymousLabels.set(label, seen + 1);
+      }
+      const name = named
+        ? ownName
+        : routeWrapperLabel(label, routeInfo, element, seen);
+      chain.units.push({
+        func: target,
+        kind: pattern.kind,
+        name,
+        pattern,
+        ...(named ? {} : { nameKind: "label" as const }),
+      });
+      chain.references.push({
+        file: target.getSourceFile().getFilePath(),
+        name,
+      });
+    }
+  }
+  return chain;
+}
+
+function routeWrapperLabel(
+  label: string,
+  routeInfo: { method: string; path: string } | null,
+  element: Node,
+  seen: number,
+): string {
+  const where =
+    routeInfo === null
+      ? `L${element.getStartLineNumber()}`
+      : `${routeInfo.method} ${routeInfo.path}`;
+  return seen === 0 ? `${label}@${where}` : `${label}@${where}#${seen + 1}`;
+}
+
 function withMountPrefix(
   routeInfo: { method: string; path: string } | null,
   subjectNode: Node,

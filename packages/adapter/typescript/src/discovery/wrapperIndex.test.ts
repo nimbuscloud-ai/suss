@@ -911,3 +911,212 @@ describe("wrapper registrations, end to end", () => {
     expect(wrappersOf(summaries, "/orders/list")).toEqual([]);
   });
 });
+
+describe("middleware listed on the route itself", () => {
+  it("points the route at each function listed before its handler, in order", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/requireCaller.ts",
+      `
+        export const requireCaller = (req, res, next) => {
+          if (!req.headers.authorization) {
+            res.status(401).json({ error: "unauthorized" });
+            return;
+          }
+          next();
+        };
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        import { requireCaller } from "./requireCaller";
+        const app = express();
+        app.get("/orders", requireCaller, (req, res, next) => {
+          if (!req.query.id) {
+            res.status(400).json({ error: "id is required" });
+            return;
+          }
+          next();
+        }, (req, res) => { res.status(200).json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([
+      { file: "/requireCaller.ts", name: "requireCaller" },
+      { file: "/app.ts", name: "get@GET /orders" },
+    ]);
+    const route = summaryFor(summaries, "/orders");
+    expect(statusesOf(route)).toEqual([401, 400, 200]);
+    expect(
+      route.transitions.map((t) => readWrapperMetadata(t)?.from?.name),
+    ).toEqual(["requireCaller", "get@GET /orders", undefined]);
+  });
+
+  it("runs the route's own middleware inside what the app registers", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        const app = express();
+        app.use((req, res, next) => { next(); });
+        app.get("/orders", (req, res, next) => { next(); }, (req, res) => { res.json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([
+      { file: "/app.ts", name: "use" },
+      { file: "/app.ts", name: "get@GET /orders" },
+    ]);
+  });
+
+  it("reads a middleware a project factory returns, and the handler after it", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/asyncHandler.ts",
+      `
+        export const asyncHandler = (fn) => (req, res, next) =>
+          Promise.resolve(fn(req, res, next)).catch(next);
+      `,
+    );
+    project.createSourceFile(
+      "/respond.ts",
+      `
+        export function respond(req, res) { res.status(200).json(res.locals.payload); }
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        import { asyncHandler } from "./asyncHandler";
+        import { respond } from "./respond";
+        const app = express();
+        app.post("/login", asyncHandler(async (req, res, next) => {
+          if (!req.body.password) {
+            res.status(400).json({ error: "password is required" });
+            return;
+          }
+          res.locals.payload = { data: { token: "t" } };
+          return next();
+        }), respond);
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/login")).toEqual([
+      { file: "/app.ts", name: "asyncHandler@POST /login" },
+    ]);
+    expect(statusesOf(summaryFor(summaries, "/login"))).toEqual([400, 200]);
+  });
+
+  it("keeps two anonymous middleware on different routes in one file apart", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        const app = express();
+        app.get("/orders", (req, res, next) => {
+          if (!req.query.id) { res.status(400).json({}); return; }
+          next();
+        }, (req, res) => { res.status(200).json({}); });
+        app.get("/items", (req, res, next) => {
+          if (!req.query.id) { res.status(404).json({}); return; }
+          next();
+        }, (req, res) => { res.status(200).json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(statusesOf(summaryFor(summaries, "/orders"))).toEqual([400, 200]);
+    expect(statusesOf(summaryFor(summaries, "/items"))).toEqual([404, 200]);
+  });
+
+  it("reads an array of middleware in order", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        const app = express();
+        const first = (req, res, next) => { next(); };
+        const second = (req, res, next) => { next(); };
+        app.get("/orders", [first, second], (req, res) => { res.json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([
+      { file: "/app.ts", name: "first" },
+      { file: "/app.ts", name: "second" },
+    ]);
+  });
+
+  it("leaves a gap for a project factory it cannot follow, and nothing for a dependency's", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/node_modules/passport/index.d.ts",
+      "export function authenticate(strategy: string): unknown;",
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        import { authenticate } from "passport";
+        declare function pickMiddleware(): unknown;
+        const app = express();
+        app.get("/orders", authenticate("jwt"), pickMiddleware(), (req, res) => { res.json({}); });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(wrappersOf(summaries, "/orders")).toEqual([]);
+    expect(unfollowedOn(summaries, "/orders")).toEqual([
+      {
+        callee: "pickMiddleware",
+        description: expect.stringContaining("pickMiddleware"),
+      },
+    ]);
+  });
+});
