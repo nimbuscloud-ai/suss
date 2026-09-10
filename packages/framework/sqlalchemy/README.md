@@ -26,6 +26,14 @@ no routes.
 `storageSystem` is yours to say. SQLAlchemy talks to Postgres, MySQL and
 SQLite alike and the connection URL settles which, so the pack cannot.
 
+From the CLI, the option comes from a config file, and a bare
+`-f sqlalchemy` stops with a message asking for one:
+
+```sh
+echo '{ "storageSystem": "postgresql" }' > suss.sqlalchemy.json
+suss extract -f flask-restx -f sqlalchemy=suss.sqlalchemy.json
+```
+
 ## Why it matches on the return
 
 A call chain matches when the method behind it says it returns one of
