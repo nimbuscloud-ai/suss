@@ -107,11 +107,28 @@ export function createProjectWithoutTsconfig(rootDir: string): {
   return { project, files };
 }
 
+/**
+ * `tsconfig.base.json` is the file an Nx or similar monorepo root keeps
+ * its path aliases in, with no `tsconfig.json` beside it. It is only
+ * read in the directory the command points at: a base file has no
+ * `include` of its own, so found while walking up it would claim every
+ * file below it, well past the directory that was asked for.
+ */
+export const TSCONFIG_NAMES = [
+  "tsconfig.json",
+  "jsconfig.json",
+  "tsconfig.base.json",
+] as const;
+
+const WALK_UP_TSCONFIG_NAMES = ["tsconfig.json", "jsconfig.json"] as const;
+
 /** The nearest tsconfig or jsconfig at or above `startDir`, or null. */
 export function findNearestTsconfig(startDir: string): string | null {
-  let dir = path.resolve(startDir);
+  const start = path.resolve(startDir);
+  let dir = start;
   while (true) {
-    for (const name of ["tsconfig.json", "jsconfig.json"]) {
+    const names = dir === start ? TSCONFIG_NAMES : WALK_UP_TSCONFIG_NAMES;
+    for (const name of names) {
       const candidate = path.join(dir, name);
       if (fs.existsSync(candidate)) {
         return candidate;

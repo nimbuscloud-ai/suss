@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { TSCONFIG_NAMES } from "@suss/adapter-typescript";
 import { describesOperations, describesTypes } from "@suss/contract-graphql";
 import { isConfigurationFile } from "@suss/contract-wrangler";
 import { commonDirectoryOf } from "@suss/extractor";
@@ -307,9 +308,9 @@ export async function inspectProject(root: string): Promise<InitReport> {
     });
   }
 
-  const tsconfig = ["tsconfig.json", "jsconfig.json"]
-    .map((name) => path.join(resolved, name))
-    .find((candidate) => fs.existsSync(candidate));
+  const tsconfig = TSCONFIG_NAMES.map((name) => path.join(resolved, name)).find(
+    (candidate) => fs.existsSync(candidate),
+  );
 
   const recognizedWithoutPack = [
     ...new Set(
