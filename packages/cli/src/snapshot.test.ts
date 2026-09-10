@@ -9,10 +9,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { storageBinding } from "@suss/behavioral-ir";
+
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 
 import type {
   BehavioralSummary,
+  Effect,
   Predicate,
   Transition,
 } from "@suss/behavioral-ir";
@@ -223,6 +226,53 @@ const clientSummary: BehavioralSummary = {
   confidence: { source: "inferred_static", level: "high" },
 };
 
+/** A read of one table, as a storage pack records it. */
+const READS_USERS: Effect = {
+  type: "interaction",
+  binding: storageBinding({
+    recognition: "prisma-query",
+    storageSystem: "postgresql",
+    scope: "default",
+    container: "users",
+  }),
+  callee: "prisma.user.findUnique",
+  interaction: {
+    class: "storage-access",
+    kind: "read",
+    fields: [],
+    operation: "findUnique",
+  },
+};
+
+/** A function the handler calls, which reads the table itself. */
+const loaderSummary: BehavioralSummary = {
+  kind: "library",
+  location: {
+    file: "src/handlers/users.ts",
+    range: { start: 50, end: 60 },
+    exportName: "loadUser",
+  },
+  identity: {
+    name: "loadUser",
+    exportPath: ["loadUser"],
+    boundaryBinding: null,
+    id: "src/handlers/users.ts::loadUser",
+  },
+  inputs: [],
+  transitions: [
+    {
+      id: "loadUser:return:none:ddd3333",
+      conditions: [],
+      output: { type: "return", value: null },
+      effects: [READS_USERS],
+      location: { start: 52, end: 58 },
+      isDefault: true,
+    },
+  ],
+  gaps: [],
+  confidence: { source: "inferred_static", level: "high" },
+};
+
 // ---------------------------------------------------------------------------
 // Inspect snapshots
 // ---------------------------------------------------------------------------
@@ -242,33 +292,67 @@ describe("inspect output snapshots", () => {
     expect(output).toMatchSnapshot();
   });
 
-  it("renders the effects closure as a Reaches block", () => {
-    const withClosure: BehavioralSummary = {
+  it("prints a table the handler reads in its own body beside its other effects", () => {
+    const readsUsers: BehavioralSummary = {
       ...handlerSummary,
-      metadata: {
-        effectsClosure: [
-          { kind: "invocation", target: "audit.log", transitive: true },
-          { kind: "invocation", target: "db.findById", transitive: false },
-        ],
-      },
+      transitions: [
+        {
+          ...(handlerSummary.transitions[2] as Transition),
+          effects: [READS_USERS],
+        },
+      ],
     };
-    const filePath = writeTempJson([withClosure]);
+    const filePath = writeTempJson([readsUsers]);
+    const output = captureStdout(() => inspect({ file: filePath }));
+    fs.rmSync(path.dirname(filePath), { recursive: true });
+    expect(output).toContain("+ reads postgresql:users");
+    expect(output).not.toContain("Reaches:");
+    expect(output).toMatchSnapshot();
+  });
+
+  it("renders what the handler reaches through its calls as a Reaches block", () => {
+    const callsLoader: BehavioralSummary = {
+      ...handlerSummary,
+      transitions: [
+        {
+          ...(handlerSummary.transitions[2] as Transition),
+          effects: [
+            {
+              type: "invocation",
+              callee: "loadUser",
+              args: [],
+              async: true,
+              summary: "src/handlers/users.ts::loadUser",
+            },
+          ],
+        },
+      ],
+    };
+    const filePath = writeTempJson([callsLoader, loaderSummary]);
     const output = captureStdout(() => inspect({ file: filePath }));
     fs.rmSync(path.dirname(filePath), { recursive: true });
     expect(output).toContain("Reaches:");
-    expect(output).toContain("invocation audit.log (via callees)");
-    expect(output).toContain("invocation db.findById");
+    expect(output).toContain("reads postgresql:users  through loadUser");
     expect(output).toMatchSnapshot();
   });
 
   it("renders unfollowed calls beside what the unit reaches", () => {
     const withStop: BehavioralSummary = {
       ...handlerSummary,
-      metadata: {
-        effectsClosure: [
-          { kind: "invocation", target: "db.findById", transitive: false },
-        ],
-      },
+      transitions: [
+        {
+          ...(handlerSummary.transitions[2] as Transition),
+          effects: [
+            {
+              type: "invocation",
+              callee: "loadUser",
+              args: [],
+              async: true,
+              summary: "src/handlers/users.ts::loadUser",
+            },
+          ],
+        },
+      ],
       gaps: [
         {
           type: "unfollowedCall",
@@ -279,7 +363,7 @@ describe("inspect output snapshots", () => {
         },
       ],
     };
-    const filePath = writeTempJson([withStop]);
+    const filePath = writeTempJson([withStop, loaderSummary]);
     const output = captureStdout(() => inspect({ file: filePath }));
     fs.rmSync(path.dirname(filePath), { recursive: true });
     expect(output).toContain("Reaches:");

@@ -133,6 +133,17 @@ src/vcs.ts
 "
 `;
 
+exports[`inspect output snapshots > prints a table the handler reads in its own body beside its other effects 1`] = `
+"src/handlers/users.ts
+└─ GET /users/{id}  (express handler | line 10)
+     Contract: 200, 400, 404, 500
+       -> 200 { id, name, email }
+         + reads postgresql:users
+
+1 summary.
+"
+`;
+
 exports[`inspect output snapshots > qualifies generic names (loader/action/default) with file path 1`] = `
 "app/routes/_app.tsx
 └─ loader  (react-router loader | line 10)
@@ -224,41 +235,24 @@ src/pages/user.ts
 "
 `;
 
-exports[`inspect output snapshots > renders the effects closure as a Reaches block 1`] = `
-"src/handlers/users.ts
-└─ GET /users/{id}  (express handler | line 10)
-       if  !req.params.id
-         -> 400 { error }
-       elif  db.findById() == null
-         -> 404 { error }
-       else
-         -> 200 { id, name, email }
-   
-     Reaches:
-       invocation audit.log (via callees)
-       invocation db.findById
-
-1 summary.
-"
-`;
-
 exports[`inspect output snapshots > renders unfollowed calls beside what the unit reaches 1`] = `
 "src/handlers/users.ts
-└─ GET /users/{id}  (express handler | line 10)
-       if  !req.params.id
-         -> 400 { error }
-       elif  db.findById() == null
-         -> 404 { error }
-       else
-         -> 200 { id, name, email }
-   
-     Reaches:
-       invocation db.findById
-   
-     Could not follow:
-       The call to this.dao.getEditions lands on a declaration with no body, so whatever runs there is missing from this summary
+├─ GET /users/{id}  (express handler | line 10)
+│    Contract: 200, 400, 404, 500
+│      -> 200 { id, name, email }
+│        + loadUser →
+│  
+│    Reaches:
+│      reads postgresql:users  through loadUser
+│  
+│    Could not follow:
+│      The call to this.dao.getEditions lands on a declaration with no body, so whatever runs there is missing from this summary
+│
+└─ loadUser  (line 50)
+       -> return
+         + reads postgresql:users
 
-1 summary.
+2 summaries.
 "
 `;
 
@@ -277,6 +271,24 @@ exports[`inspect output snapshots > renders useEffect deps: mount-only, every-re
        -> return
 
 4 summaries.
+"
+`;
+
+exports[`inspect output snapshots > renders what the handler reaches through its calls as a Reaches block 1`] = `
+"src/handlers/users.ts
+├─ GET /users/{id}  (express handler | line 10)
+│    Contract: 200, 400, 404, 500
+│      -> 200 { id, name, email }
+│        + loadUser →
+│  
+│    Reaches:
+│      reads postgresql:users  through loadUser
+│
+└─ loadUser  (line 50)
+       -> return
+         + reads postgresql:users
+
+2 summaries.
 "
 `;
 

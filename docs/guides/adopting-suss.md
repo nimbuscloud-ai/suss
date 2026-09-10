@@ -50,9 +50,6 @@ src/api.ts
 │        -> 410 { error }
 │      else
 │        -> 200 { id, name, email }
-│
-│    Reaches:
-│      invocation findUser
 ```
 
 There are no findings at this step. The value is a description of the
