@@ -54,6 +54,7 @@
   "isolate_namespace": "Rails: Rails::Engine.isolate_namespace, which puts every controller the engine routes under the given module",
   "lib": "Rails: the directory under an engine's root its Engine class is defined in, which Rails takes the root from",
   "config": "Rails: the directory under an engine's root its routes.rb is in",
+  "initializers": "Rails: the directory under config whose every .rb file Rails runs at boot, inflections.rb among them",
   "class": "suss: tree-sitter-ruby node type for a class definition",
   "module": "suss: tree-sitter-ruby node type for a module definition",
   "name": "suss: tree-sitter-ruby field name for a class or module definition's constant",

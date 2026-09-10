@@ -37,14 +37,18 @@ export interface RailsEngine {
 const ENGINE_BASE_NAMES = new Set(["Rails::Engine", "::Rails::Engine"]);
 const CONSTANT_TYPES = new Set(["constant", "scope_resolution"]);
 
-/** Every engine defined under one of `roots`, in the order the roots were given. A root with no engine class under its `lib/` is skipped. */
-export function readEngines(roots: readonly string[]): RailsEngine[] {
+/** Every engine defined under one of `roots`, in the order the roots were given. A root with no engine class under its `lib/` is skipped. `acronyms` are the project's inflector acronyms, which decide the routing key an isolated namespace gets. */
+export function readEngines(
+  roots: readonly string[],
+  acronyms: readonly string[] = [],
+): RailsEngine[] {
   const engines: RailsEngine[] = [];
   for (const root of roots) {
     const routesFile = engineRoutesFile(root);
     for (const file of engineFilesUnder(root)) {
       const source = fs.readFileSync(file, "utf8");
-      for (const found of engineClassesIn(parseRubySync(source).rootNode)) {
+      const rootNode = parseRubySync(source).rootNode;
+      for (const found of engineClassesIn(rootNode, acronyms)) {
         engines.push({ ...found, routesFile });
       }
     }
@@ -124,6 +128,7 @@ function rubyFilesUnder(directory: string): string[] {
 
 function engineClassesIn(
   node: RbNode,
+  acronyms: readonly string[],
   enclosing: readonly string[] = [],
 ): Omit<RailsEngine, "routesFile">[] {
   const found: Omit<RailsEngine, "routesFile">[] = [];
@@ -136,7 +141,7 @@ function engineClassesIn(
       if (name !== undefined) {
         found.push({
           qualifiedName: [...enclosing, name].join("::"),
-          modulePrefix: isolatedNamespaceOf(child),
+          modulePrefix: isolatedNamespaceOf(child, acronyms),
         });
       }
       continue;
@@ -145,7 +150,7 @@ function engineClassesIn(
       child.type === "module" || child.type === "class"
         ? [...enclosing, definedName(child) ?? ""]
         : enclosing;
-    found.push(...engineClassesIn(child, nested));
+    found.push(...engineClassesIn(child, acronyms, nested));
   }
   return found;
 }
@@ -166,7 +171,10 @@ function extendsEngine(classNode: RbNode): boolean {
 }
 
 /** The module `isolate_namespace Name` puts the engine's controllers under, as a routing key prefix. */
-function isolatedNamespaceOf(classNode: RbNode): string {
+function isolatedNamespaceOf(
+  classNode: RbNode,
+  acronyms: readonly string[],
+): string {
   const body = field(classNode, "body");
   if (body === null) {
     return "";
@@ -182,7 +190,7 @@ function isolatedNamespaceOf(classNode: RbNode): string {
     const argument =
       arguments_ === null ? undefined : bodyStatements(arguments_)[0];
     if (argument !== undefined && CONSTANT_TYPES.has(argument.type)) {
-      return underscoreConstantPath(argument.text.replace(/^::/, ""));
+      return underscoreConstantPath(argument.text.replace(/^::/, ""), acronyms);
     }
   }
   return "";
