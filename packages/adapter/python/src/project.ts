@@ -45,6 +45,7 @@ import { discoverUnits } from "./discovery.js";
 import { envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
+import { importedDefinitionLookup } from "./importedDefinitions.js";
 import { parsePython } from "./parser.js";
 import { reachedFunctions } from "./reach/closure.js";
 import { buildRouterIndex } from "./routers.js";
@@ -254,6 +255,8 @@ export async function extractPythonProject(
     }),
   );
 
+  const importedDefinition = importedDefinitionLookup(db, bound);
+
   // A route asks the wrapper index about its own parameters as it is
   // discovered, so the wrapper units of a file are complete only once
   // every file has been discovered.
@@ -269,6 +272,7 @@ export async function extractPythonProject(
         routerIndex,
         gapHandling,
         wrappers: wrapperIndex,
+        importedDefinition,
         ...(needsValues ? { facts: db } : {}),
         ...(storage === undefined ? {} : { storage }),
       }),

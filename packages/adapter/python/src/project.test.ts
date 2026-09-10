@@ -89,6 +89,197 @@ describe("a configured wrapper module nothing imports", () => {
   });
 });
 
+const fastapiLike: PythonPack = {
+  name: "fastapi-test",
+  protocol: "http",
+  discovery: [
+    {
+      type: "decoratedFunctionRoute",
+      importModule: ["fastapi"],
+      verbAttributeNames: { get: "GET", post: "POST" },
+      pathParamSyntax: "braces",
+      annotatedClassIsRequestBody: true,
+      injectedParameterCallees: ["Depends", "Security"],
+      defaultStatusCode: 200,
+    },
+  ],
+};
+
+describe("a parameter annotated with a name from another file", () => {
+  async function rolesOf(
+    files: Record<string, string>,
+  ): Promise<Record<string, [string, string | null][]>> {
+    const paths = Object.entries(files).map(([rel, content]) =>
+      write(rel, content),
+    );
+    const { summaries } = await extractPythonProject({
+      files: paths,
+      roots: [tmpDir],
+      packs: [fastapiLike],
+      workspaceRoot: tmpDir,
+    });
+    const out: Record<string, [string, string | null][]> = {};
+    for (const summary of summaries) {
+      if (summary.kind !== "handler") {
+        continue;
+      }
+      out[summary.identity.name] = summary.inputs.flatMap((input) =>
+        input.type === "parameter" ? [[input.name, input.role]] : [],
+      );
+    }
+    return out;
+  }
+
+  it("reads an imported model as the request body, with its fields", async () => {
+    const roles = await rolesOf({
+      "app/models.py": "class ItemCreate:\n    title: str\n    count: int\n",
+      "app/routes.py": [
+        "from fastapi import FastAPI",
+        "from app.models import ItemCreate",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        '@app.post("/items")',
+        "def create_item(item_in: ItemCreate):",
+        "    pass",
+        "",
+      ].join("\n"),
+    });
+    expect(roles.create_item).toEqual([["item_in", "requestBody"]]);
+  });
+
+  it("follows a model re-exported through a package's __init__", async () => {
+    const roles = await rolesOf({
+      "app/models/item.py": "class ItemCreate:\n    title: str\n",
+      "app/models/__init__.py": "from .item import ItemCreate\n",
+      "app/routes.py": [
+        "from fastapi import FastAPI",
+        "from app.models import ItemCreate",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        '@app.post("/items")',
+        "def create_item(item_in: ItemCreate):",
+        "    pass",
+        "",
+      ].join("\n"),
+    });
+    expect(roles.create_item).toEqual([["item_in", "requestBody"]]);
+  });
+
+  it("reads an injector written inside an imported Annotated alias as injected", async () => {
+    const roles = await rolesOf({
+      "app/deps.py": [
+        "from typing import Annotated",
+        "from fastapi import Depends",
+        "from sqlmodel import Session",
+        "",
+        "",
+        "def get_db():",
+        "    pass",
+        "",
+        "",
+        "def get_current_user():",
+        "    pass",
+        "",
+        "",
+        "class User:",
+        "    id: int",
+        "",
+        "",
+        "SessionDep = Annotated[Session, Depends(get_db)]",
+        "CurrentUser = Annotated[User, Depends(get_current_user)]",
+        "",
+      ].join("\n"),
+      "app/routes.py": [
+        "from fastapi import FastAPI",
+        "from app.deps import CurrentUser, SessionDep",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        '@app.get("/items/{item_id}")',
+        "def read_item(session: SessionDep, current_user: CurrentUser, item_id: int, q: str):",
+        "    pass",
+        "",
+      ].join("\n"),
+    });
+    expect(roles.read_item).toEqual([
+      ["session", null],
+      ["current_user", null],
+      ["item_id", "pathParams"],
+      ["q", "queryParams"],
+    ]);
+  });
+
+  it("reads an Annotated alias written in the route's own file the same way", async () => {
+    const roles = await rolesOf({
+      "app/routes.py": [
+        "from typing import Annotated",
+        "from fastapi import Depends, FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        "def get_db():",
+        "    pass",
+        "",
+        "",
+        "SessionDep = Annotated[object, Depends(get_db)]",
+        "",
+        "",
+        '@app.get("/items")',
+        "def list_items(session: SessionDep, q: str):",
+        "    pass",
+        "",
+      ].join("\n"),
+    });
+    expect(roles.list_items).toEqual([
+      ["session", null],
+      ["q", "queryParams"],
+    ]);
+  });
+
+  it("does not blame the path when an injected parameter is the only one without a role", async () => {
+    const routes = write(
+      "app/routes.py",
+      [
+        "from typing import Annotated",
+        "from fastapi import Depends, FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        "def get_db():",
+        "    pass",
+        "",
+        "",
+        '@app.get("/items")',
+        "def list_items(session: Annotated[object, Depends(get_db)]):",
+        "    pass",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractPythonProject({
+      files: [routes],
+      roots: [tmpDir],
+      packs: [fastapiLike],
+      workspaceRoot: tmpDir,
+    });
+    const route = summaries.find((s) => s.identity.name === "list_items");
+    expect(
+      route?.inputs.map((input) =>
+        input.type === "parameter" ? input.role : input.type,
+      ),
+    ).toEqual([null]);
+    expect(
+      route?.gaps.filter((gap) => gap.description.includes("name no role")),
+    ).toEqual([]);
+  });
+});
+
 describe("module imports on a summary", () => {
   it("records the project files a summary's own file imports", async () => {
     write(
