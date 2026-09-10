@@ -694,4 +694,65 @@ describe("the spellings a callee can have", () => {
       [],
     );
   });
+
+  it("leaves no gap for a method on a value a dependency built", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "import logging",
+      "from pwdlib import PasswordHash",
+      "",
+      "logger = logging.getLogger(__name__)",
+      "hasher = PasswordHash.recommended()",
+      "",
+      '@app.get("/login")',
+      "def login(session):",
+      "    logger.info('login')",
+      "    hasher.hash('x')",
+      "    logging.getLogger('other').warning('x')",
+      "    user = session.get(1)",
+      "    user.refresh()",
+      "    return 1",
+    ]);
+
+    const summaries = await extract();
+    const route = unitNamed(summaries, "login");
+    expect(
+      calls(route)
+        .map(([callee]) => callee)
+        .sort(),
+    ).toEqual([
+      "hasher.hash",
+      "logger.info",
+      "logging.getLogger",
+      "logging.getLogger('other').warning",
+      "session.get",
+      "user.refresh",
+    ]);
+    expect(route.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
+  });
+
+  it("still leaves a gap for a method on what a project function returned", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def make():",
+      "    return 1",
+      "",
+      "thing = make()",
+      "",
+      '@app.get("/run")',
+      "def run():",
+      "    return thing.start()",
+    ]);
+
+    const summaries = await extract();
+    const route = unitNamed(summaries, "run");
+    expect(route.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual([
+      expect.objectContaining({
+        callee: "thing.start",
+        description: expect.stringContaining("could not settle"),
+      }),
+    ]);
+  });
 });
