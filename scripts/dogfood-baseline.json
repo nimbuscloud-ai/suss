@@ -2,10 +2,10 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 916,
-    "internal": 3304,
-    "consumers": 1779,
-    "pairs": 1776,
+    "exports": 917,
+    "internal": 3307,
+    "consumers": 1782,
+    "pairs": 1779,
     "unfollowedCalls": 497,
     "findingErrors": 0
   },
@@ -19,8 +19,8 @@
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
-      "exports": 69,
-      "internal": 262,
+      "exports": 70,
+      "internal": 263,
       "consumers": 135,
       "unfollowedCalls": 74
     },
@@ -202,7 +202,7 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 69,
-      "internal": 88,
+      "internal": 89,
       "consumers": 19,
       "unfollowedCalls": 15
     },
@@ -294,7 +294,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 2,
-      "consumers": 24,
+      "consumers": 26,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
@@ -392,7 +392,7 @@
       "name": "@suss/framework-rails",
       "exports": 4,
       "internal": 39,
-      "consumers": 41,
+      "consumers": 42,
       "unfollowedCalls": 7
     },
     "packages/framework/react": {
@@ -482,7 +482,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 46,
-      "internal": 175,
+      "internal": 176,
       "consumers": 0,
       "unfollowedCalls": 7
     },

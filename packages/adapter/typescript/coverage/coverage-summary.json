@@ -19,10 +19,10 @@
       "pct": 92.79
     },
     "branches": {
-      "total": 7413,
-      "covered": 5945,
+      "total": 7415,
+      "covered": 5947,
       "skipped": 0,
-      "pct": 80.19
+      "pct": 80.2
     },
     "branchesTrue": {
       "total": 0,
@@ -1611,10 +1611,10 @@
       "pct": 94.81
     },
     "branches": {
-      "total": 96,
-      "covered": 84,
+      "total": 98,
+      "covered": 86,
       "skipped": 0,
-      "pct": 87.5
+      "pct": 87.75
     }
   },
   "src/facts/assignments.ts": {

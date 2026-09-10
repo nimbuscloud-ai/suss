@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3705,
-      "covered": 3573,
+      "total": 3716,
+      "covered": 3584,
       "skipped": 0,
-      "pct": 96.43
+      "pct": 96.44
     },
     "statements": {
-      "total": 3755,
-      "covered": 3622,
+      "total": 3766,
+      "covered": 3633,
       "skipped": 0,
-      "pct": 96.45
+      "pct": 96.46
     },
     "functions": {
-      "total": 767,
-      "covered": 761,
+      "total": 768,
+      "covered": 762,
       "skipped": 0,
       "pct": 99.21
     },
     "branches": {
-      "total": 2959,
-      "covered": 2588,
+      "total": 2963,
+      "covered": 2593,
       "skipped": 0,
-      "pct": 87.46
+      "pct": 87.51
     },
     "branchesTrue": {
       "total": 0,
@@ -59,28 +59,28 @@
   },
   "src/ast.ts": {
     "lines": {
-      "total": 62,
-      "covered": 56,
+      "total": 74,
+      "covered": 68,
       "skipped": 0,
-      "pct": 90.32
+      "pct": 91.89
     },
     "functions": {
-      "total": 17,
-      "covered": 17,
+      "total": 18,
+      "covered": 18,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 63,
-      "covered": 57,
+      "total": 75,
+      "covered": 69,
       "skipped": 0,
-      "pct": 90.47
+      "pct": 92
     },
     "branches": {
-      "total": 40,
-      "covered": 31,
+      "total": 46,
+      "covered": 37,
       "skipped": 0,
-      "pct": 77.5
+      "pct": 80.43
     }
   },
   "src/clientCalls.ts": {
@@ -397,8 +397,8 @@
   },
   "src/routers.ts": {
     "lines": {
-      "total": 517,
-      "covered": 504,
+      "total": 516,
+      "covered": 503,
       "skipped": 0,
       "pct": 97.48
     },
@@ -409,16 +409,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 522,
-      "covered": 509,
+      "total": 521,
+      "covered": 508,
       "skipped": 0,
       "pct": 97.5
     },
     "branches": {
-      "total": 386,
-      "covered": 360,
+      "total": 384,
+      "covered": 359,
       "skipped": 0,
-      "pct": 93.26
+      "pct": 93.48
     }
   },
   "src/scope.ts": {
