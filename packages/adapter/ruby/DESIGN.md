@@ -90,6 +90,35 @@ two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
 node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
 `npm run check:style` fails a build that keys either on a node.
 
+## Which scope a name belongs to
+
+Ruby declares no local. Assigning a name anywhere in a method body makes it a
+local of that method, inside an `if`, a `case`, a `begin` or a block included,
+and it is gone once the method returns. So the key a name fact joins on is the
+scope's, not the file's:
+
+| Where the name is written | Key |
+| --- | --- |
+| a method's parameter, or any name its body assigns | `<method node>#<name>` |
+| a block's parameter | `<block node>#<name>` |
+| a name assigned at the top of a file, and any constant | `<file>#<name>` |
+
+Two methods in one file that both write `query` are two names, and keying both
+on the file gave the rules a name with every value from both, which they
+refuse. Only a name at the top of a file is written down as something another
+file can read.
+
+A name written more than once needs a claim about which write a reader sees.
+The adapter collects the writes in source order, works out whether the scope's
+own statements order them, and hands both to `valueLeftByWrites` in
+`@suss/resolution`, which decides for every language at once. A name written
+once gets `binds`, a reassigned name the helper settles gets `endsHolding`,
+and one it does not settle gets nothing. The writes are plain assignment,
+`||=` and `&&=` (which write their whole right side), `+=` and the rest (which
+write a value the source states nowhere), a multiple assignment, a `for`
+variable, and a block parameter. A parameter counts as the first write of its
+name, which is why a parameter the body assigns again settles on nothing.
+
 ## Finding the definition behind a constant
 
 Ruby has no imports. A file says `require` to load another file, and after
