@@ -4318,6 +4318,71 @@ describe("response property semantics", () => {
   });
 });
 
+describe("a client called as a function with one config object", () => {
+  const configCallPack: PatternPack = {
+    name: "config-client",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "config-client",
+          importName: "client",
+          methodFilter: ["request"],
+          factoryMethods: ["create"],
+          callable: true,
+        },
+        bindingExtraction: {
+          method: {
+            type: "fromArgumentProperty",
+            position: 0,
+            property: "method",
+            default: "GET",
+          },
+          path: { type: "fromArgumentProperty", position: 0, property: "url" },
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+
+  it("reads method and url off the object, on the import and on an instance", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import client from "config-client";
+
+      const api = client.create();
+
+      export function createUser() {
+        return client({ url: "/users", method: "post" });
+      }
+
+      export function loadUser() {
+        return api({ url: "/users/1" });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [configCallPack],
+    });
+    const summaries = await adapter.extractAll();
+    const bindings = summaries
+      .filter((s) => s.kind === "client")
+      .map((s) => `${restMethodOf(s)} ${restPathOf(s)}`)
+      .sort();
+    expect(bindings).toEqual(["GET /users/1", "POST /users"]);
+  });
+});
+
 describe("client-side contract resolution via fromClientMethod", () => {
   const tsRestClientPack: PatternPack = {
     name: "ts-rest",
