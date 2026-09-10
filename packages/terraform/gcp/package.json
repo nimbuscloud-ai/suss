@@ -1,6 +1,6 @@
 {
   "name": "@suss/terraform-gcp",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "type": "module",
   "description": "What the Google Cloud Terraform provider declares, so suss can check your code against the infrastructure you deploy.",
   "keywords": [
@@ -47,8 +47,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/behavioral-ir": "0.28.0",
-    "@suss/contract-terraform": "0.28.0"
+    "@suss/behavioral-ir": "0.29.0",
+    "@suss/contract-terraform": "0.29.0"
   },
   "devDependencies": {
     "@suss/checker": "*",
