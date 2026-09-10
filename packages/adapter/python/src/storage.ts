@@ -13,7 +13,7 @@ import {
   parameterNameAndType,
   stringLiteralValue,
 } from "./ast.js";
-import { resolveCalls } from "./facts/resolve.js";
+import { originsOf, resolveCalls } from "./facts/resolve.js";
 import { readKey } from "./facts/values.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -262,16 +262,36 @@ function typedReceiverPattern(
   if (typeName === null) {
     return undefined;
   }
-  const from = options.facts
+  const typeKey = `${options.filePath}#${typeName}`;
+  const imported = options.facts
     .facts("pyImportedName")
-    .find((row) => String(row[0]) === `${options.filePath}#${typeName}`);
-  if (from === undefined) {
-    return undefined;
+    .find((row) => String(row[0]) === typeKey);
+  const direct =
+    imported === undefined
+      ? undefined
+      : queryTypePattern(options, String(imported[1]), String(imported[2]));
+  if (direct !== undefined) {
+    return direct;
   }
+  // `db: SessionDep` with `SessionDep = Annotated[Session, ...]` in another
+  // module reaches the library only through what that module exports.
+  for (const origin of originsOf(options.facts, typeKey)) {
+    const pattern = queryTypePattern(options, origin.module, origin.name);
+    if (pattern !== undefined) {
+      return pattern;
+    }
+  }
+  return undefined;
+}
+
+/** The pattern whose module exports `name` as one of its query types. */
+function queryTypePattern(
+  options: StorageOptions,
+  module: string,
+  name: string,
+): StoragePattern | undefined {
   return options.patterns.find(
-    (pattern) =>
-      String(from[1]) === pattern.module &&
-      pattern.queryTypes.includes(String(from[2])),
+    (pattern) => module === pattern.module && pattern.queryTypes.includes(name),
   );
 }
 

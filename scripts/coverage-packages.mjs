@@ -64,6 +64,7 @@ export const coveragePackages = [
   ["packages/framework/flask-restx", "flask-restx"],
   ["packages/framework/fastapi", "fastapi"],
   ["packages/framework/sqlalchemy", "sqlalchemy"],
+  ["packages/framework/sqlmodel", "sqlmodel"],
   ["packages/framework/activerecord", "activerecord"],
   ["packages/framework/graphql-ruby", "graphql-ruby"],
   ["packages/framework/rails", "rails"],

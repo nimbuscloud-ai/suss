@@ -2,7 +2,7 @@
 // The relation names and shapes come from that package's own header, so a
 // Python value follows the same rules a TypeScript one does.
 
-import { children, field, isFunction } from "../ast.js";
+import { children, field, fields, isFunction } from "../ast.js";
 
 import type { Database } from "@suss/datalog";
 import type { Parameter } from "@suss/values";
@@ -400,7 +400,7 @@ function emitBinding(
       emitter,
       "binds",
       nameId(emitter.filePath, left.text),
-      valueKey(emitter, right),
+      valueKey(emitter, assignedValue(right)),
     );
     return;
   }
@@ -440,8 +440,23 @@ function emitAssignment(emitter: Emitter, assignment: PyNode): void {
     "exportsAs",
     emitter.filePath,
     left.text,
-    valueKey(emitter, right),
+    valueKey(emitter, assignedValue(right)),
   );
+}
+
+/**
+ * What an assignment gives its name. `Annotated[T, ...]` is `T` with
+ * metadata beside it, so `SessionDep = Annotated[Session, Depends(get_db)]`
+ * gives the name `Session`, and a handler declared `db: SessionDep` is
+ * read as one declared `db: Session`.
+ */
+function assignedValue(right: PyNode): PyNode {
+  if (right.type !== "subscript") {
+    return right;
+  }
+  const outer = field(right, "value");
+  const first = fields(right, "subscript")[0];
+  return outer?.text === "Annotated" && first !== undefined ? first : right;
 }
 
 /** The declaration a class-body statement makes, under whatever the grammar wraps it in. */

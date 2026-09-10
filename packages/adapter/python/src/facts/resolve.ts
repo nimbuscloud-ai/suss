@@ -54,6 +54,22 @@ export interface SubjectOrigin {
   name: string;
 }
 
+/**
+ * Where a name came from, through any aliases and re-exports the project
+ * put between it and the import. Empty when nothing in the project
+ * imports what the name refers to.
+ */
+export function originsOf(db: Database, nameKey: string): SubjectOrigin[] {
+  if (!db.facts("wantedOrigin").some((row) => String(row[0]) === nameKey)) {
+    db.add("wantedOrigin", [nameKey]);
+    evaluate(db, RESOLUTION_PROGRAM.rules);
+  }
+  return db
+    .facts("wantedComesFrom")
+    .filter((row) => String(row[0]) === nameKey)
+    .map((row) => ({ module: String(row[1]), name: String(row[2]) }));
+}
+
 /** The call a value was built by, and where that call's callee came from. */
 export interface SubjectConstruction {
   /** The value key of the call, which is the key a router index keys its constructions by. */

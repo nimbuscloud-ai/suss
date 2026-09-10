@@ -170,6 +170,9 @@
       "path": "packages/framework/sqlalchemy/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/sqlmodel/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/ts-rest/tsconfig.typecheck.json"
     },
     {

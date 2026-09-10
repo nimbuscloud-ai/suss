@@ -143,6 +143,7 @@ back empty, so it is run alongside the pack that finds the units.
 | [`prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
 | [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands, emits storage-access interactions. | ![](../../.github/badges/coverage-redis.svg) |
 | [`sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
+| [`sqlmodel`](../../packages/framework/sqlmodel) | SQLModel calls (Python): says which types a query comes back as and which methods write, under the modules SQLModel exports them from, and includes the SQLAlchemy patterns a SQLModel project also reaches. | ![](../../.github/badges/coverage-sqlmodel.svg) |
 | [`zustand`](../../packages/framework/zustand) | zustand stores: `setState` writes and `getState` reads against the store as a client-side container. | ![](../../.github/badges/coverage-zustand.svg) |
 
 <!-- end effects -->
