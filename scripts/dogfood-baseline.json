@@ -3,9 +3,9 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 916,
-    "internal": 3300,
-    "consumers": 1772,
-    "pairs": 1769,
+    "internal": 3303,
+    "consumers": 1777,
+    "pairs": 1774,
     "unfollowedCalls": 497,
     "findingErrors": 0
   },
@@ -27,8 +27,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 89,
-      "internal": 830,
-      "consumers": 200,
+      "internal": 833,
+      "consumers": 201,
       "unfollowedCalls": 113
     },
     "packages/behavioral-ir": {
@@ -294,7 +294,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 2,
-      "consumers": 21,
+      "consumers": 23,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
@@ -336,7 +336,7 @@
       "name": "@suss/framework-hono",
       "exports": 2,
       "internal": 0,
-      "consumers": 19,
+      "consumers": 21,
       "unfollowedCalls": 0
     },
     "packages/framework/mongoose": {
