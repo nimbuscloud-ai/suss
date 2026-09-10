@@ -4,8 +4,8 @@
     "packagesWithExports": 75,
     "exports": 916,
     "internal": 3304,
-    "consumers": 1777,
-    "pairs": 1774,
+    "consumers": 1779,
+    "pairs": 1776,
     "unfollowedCalls": 497,
     "findingErrors": 0
   },
@@ -294,7 +294,7 @@
       "name": "@suss/framework-express",
       "exports": 2,
       "internal": 2,
-      "consumers": 22,
+      "consumers": 24,
       "unfollowedCalls": 0
     },
     "packages/framework/fastapi": {
