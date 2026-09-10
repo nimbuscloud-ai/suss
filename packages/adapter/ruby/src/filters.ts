@@ -81,8 +81,10 @@ export function controllerFilters(
     }
   }
 
-  const declared: Declaration[] = [];
-  const skips: Skip[] = [];
+  // The chain is built in declaration order, ancestors first, the way
+  // the library builds it: a method declared again moves to the end
+  // with its new options, and a skip edits what is in the chain so far.
+  let declared: Declaration[] = [];
   for (const { statement } of inheritedStatements(ancestry)) {
     const called = calledName(statement);
     if (called === null) {
@@ -90,17 +92,22 @@ export function controllerFilters(
     }
     const form = byName.get(called);
     if (form !== undefined) {
-      declared.push(...declarationsOf(statement, form));
+      for (const declaration of declarationsOf(statement, form)) {
+        declared = [
+          ...declared.filter((earlier) => !sameFilter(earlier, declaration)),
+          declaration,
+        ];
+      }
       continue;
     }
     const skipped = skipNames.get(called);
     if (skipped !== undefined) {
-      skips.push(...skipsOf(statement, skipped));
+      declared = applySkips(declared, skipsOf(statement, skipped));
     }
   }
 
   const resolved: ControllerFilter[] = [];
-  for (const declaration of applySkips(declared, skips)) {
+  for (const declaration of declared) {
     const found = methodInAncestry(ancestry, declaration.methodName);
     if (found.type !== "found") {
       continue;
@@ -264,6 +271,13 @@ function skipsOf(statement: RbNode, filterName: string): Skip[] {
     .map((arg) => symbolValue(arg))
     .filter((name): name is string => name !== null)
     .map((methodName) => ({ filterName, methodName, actions }));
+}
+
+/** Whether two declarations register the same method through the same call. */
+function sameFilter(one: Declaration, other: Declaration): boolean {
+  return (
+    one.filter.name === other.filter.name && one.methodName === other.methodName
+  );
 }
 
 /**

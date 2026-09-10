@@ -146,6 +146,46 @@ end
     expect(filters).toEqual([]);
   });
 
+  it("moves a filter declared again to the end, with its new options", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action :require_login
+  before_action :load_order
+  before_action :require_login, except: [:show]
+
+  def require_login
+  end
+
+  def load_order
+  end
+end
+`);
+
+    expect(filters.map((one) => one.methodName)).toEqual([
+      "load_order",
+      "require_login",
+    ]);
+    expect(filterCoversAction(filters[1] as never, "show")).toBe(false);
+    expect(filterCoversAction(filters[1] as never, "index")).toBe(true);
+  });
+
+  it("puts a filter back when it is declared again after a skip", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  before_action :require_login
+  skip_before_action :require_login
+  before_action :require_login, only: [:update]
+
+  def require_login
+  end
+end
+`);
+
+    expect(filters.map((one) => one.methodName)).toEqual(["require_login"]);
+    expect(filterCoversAction(filters[0] as never, "update")).toBe(true);
+    expect(filterCoversAction(filters[0] as never, "index")).toBe(false);
+  });
+
   it("names both methods a before_action lists", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController

@@ -188,6 +188,45 @@ describe("composeWrappers", () => {
     expect(new Set(composed.transitions.map((t) => t.id)).size).toBe(3);
   });
 
+  it("splices a pass-through once when its branches only repeat it", () => {
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [AUTH],
+    });
+    // A filter ending in `header if crawler?` hands on three ways: once
+    // outright, and once per arm, all with the same effects.
+    const middleware = unit("requireCaller", "src/requireCaller.ts", [
+      continues("passed"),
+      continues("crawler", [guard("crawler")]),
+      continues("browser", [{ type: "negation", operand: guard("crawler") }]),
+    ]);
+
+    const [composed] = composeWrappers([route, middleware]);
+
+    expect(composed.transitions.map((t) => t.id)).toEqual(["ok:via:passed"]);
+  });
+
+  it("keeps a pass-through branch whose effects differ", () => {
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [AUTH],
+    });
+    const logged: Transition = {
+      ...continues("crawler", [guard("crawler")]),
+      effects: [{ type: "invocation", callee: "log", args: [], async: false }],
+    };
+    const middleware = unit("requireCaller", "src/requireCaller.ts", [
+      continues("passed"),
+      logged,
+      continues("browser", [{ type: "negation", operand: guard("crawler") }]),
+    ]);
+
+    const [composed] = composeWrappers([route, middleware]);
+
+    expect(composed.transitions.map((t) => t.id)).toEqual([
+      "ok:via:passed",
+      "ok:via:crawler",
+    ]);
+  });
+
   it("applies a stack of two, the first registered outermost", () => {
     const outer: WrapperReference = { file: "src/outer.ts", name: "outer" };
     const inner: WrapperReference = { file: "src/inner.ts", name: "inner" };

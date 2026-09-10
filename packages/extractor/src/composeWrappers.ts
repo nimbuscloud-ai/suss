@@ -244,8 +244,8 @@ function applyWrapper(
     wrapper.summary.transitions.filter((t) => t.output.type !== "delegate"),
     wrapper.reference,
   );
-  const passThroughs = wrapper.summary.transitions.filter(
-    (t) => t.output.type === "delegate",
+  const passThroughs = withoutCoveredPassThroughs(
+    wrapper.summary.transitions.filter((t) => t.output.type === "delegate"),
   );
 
   if (
@@ -263,6 +263,38 @@ function applyWrapper(
     inner.transitions.map((transition) => splice(passThrough, transition)),
   );
   return { transitions: [...shortCircuits, ...continued], degraded: false };
+}
+
+/**
+ * The pass-throughs another pass-through already covers taken out. A
+ * wrapper whose body ends in a branch neither arm responds from comes
+ * back with one path that hands on unconditionally beside the two arms,
+ * and when the arms record the same effects, splicing them in as well
+ * multiplies the wrapped unit's transitions by three and says nothing
+ * the unconditional path did not. Ten such filters in front of every
+ * action of a large Rails app is a summary file measured in gigabytes.
+ */
+function withoutCoveredPassThroughs(
+  passThroughs: readonly Transition[],
+): Transition[] {
+  return passThroughs.filter(
+    (candidate, i) =>
+      !passThroughs.some(
+        (other, j) =>
+          j !== i &&
+          covers(other, candidate) &&
+          (j < i || !covers(candidate, other)),
+      ),
+  );
+}
+
+/** Whether every path `narrower` describes is one `wider` describes with the same effects. */
+function covers(wider: Transition, narrower: Transition): boolean {
+  if (JSON.stringify(wider.effects) !== JSON.stringify(narrower.effects)) {
+    return false;
+  }
+  const required = new Set(narrower.conditions.map((c) => JSON.stringify(c)));
+  return wider.conditions.every((c) => required.has(JSON.stringify(c)));
 }
 
 /**
