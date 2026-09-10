@@ -21,6 +21,7 @@ import {
   expandPathPattern,
   readEngines,
 } from "./engines.js";
+import { inflectionFiles, readAcronyms } from "./inflections.js";
 import { drawDirectoryOf, readRoutes } from "./routes.js";
 import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
@@ -161,11 +162,14 @@ const RAILS_CONTROLLER_METHODS = [
 ];
 
 /** The routing key `config/routes.rb` gives a controller, from the class name the adapter reads: `Admin::OrdersController` -> `admin/orders`. */
-function controllerKeyFromQualified(qualifiedName: string): string {
+function controllerKeyFromQualified(
+  qualifiedName: string,
+  acronyms: readonly string[],
+): string {
   const withoutSuffix = qualifiedName.endsWith("Controller")
     ? qualifiedName.slice(0, -"Controller".length)
     : qualifiedName;
-  return underscoreConstantPath(withoutSuffix);
+  return underscoreConstantPath(withoutSuffix, acronyms);
 }
 
 /** The path and method Rails' naming convention gives one of the seven conventional actions. Null for any other action name, since a naming convention says nothing about a custom one. */
@@ -210,12 +214,19 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
   const extraRoutesFiles = () =>
     expandPatterns(options.configDirectory, options.routesFiles);
 
+  // The acronyms decide how every constant maps to a file and a routing
+  // key, so they are read once, before anything is resolved.
+  const acronyms =
+    options.configDirectory === undefined
+      ? []
+      : readAcronyms(options.configDirectory);
+
   const routesInput = (): RoutesInput => ({
     routesFile: {
       file: routesFile,
       displayPath: options.routesFile ?? "config/routes.rb",
     },
-    engines: readEngines(engineRoots()).map((engine) => ({
+    engines: readEngines(engineRoots(), acronyms).map((engine) => ({
       ...engine,
       displayPath:
         engine.routesFile === null
@@ -244,6 +255,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     ],
     root,
     pathConvention: "railsUnderscore",
+    acronyms,
     ancestryRootClassNames: [...RAILS_ROOT_CLASS_NAMES],
     defaultStatusCode: 200,
     responseStatusCalls: RESPONSE_STATUS_CALLS,
@@ -255,7 +267,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     routesFile,
     filters: CONTROLLER_FILTERS,
     routeFor: (controllerQualifiedName, actionName) => {
-      const key = controllerKeyFromQualified(controllerQualifiedName);
+      const key = controllerKeyFromQualified(controllerQualifiedName, acronyms);
       const found = routeTable();
       // A routes file that exists is the source of truth: an action it
       // does not reach is unbound, not filled in from the convention.
@@ -270,14 +282,17 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     name: "rails",
     protocol: "http",
     discovery: [pattern],
-    // Every file routing is read from decides an action's method and
-    // path without being walked, so the cache key has to read them here.
-    // This runs before the grammar loads, so nothing here parses Ruby.
+    // Every file routing or naming is read from decides an action's
+    // binding without being walked, so the cache key has to read them
+    // here. This runs before the grammar loads, so nothing parses Ruby.
     discoveryInputs: () => [
       routesFile,
       ...drawableRoutesFiles(routesFile),
       ...engineRoots().flatMap(engineSourceFiles),
       ...extraRoutesFiles(),
+      ...(options.configDirectory === undefined
+        ? []
+        : inflectionFiles(options.configDirectory)),
     ],
   };
 }

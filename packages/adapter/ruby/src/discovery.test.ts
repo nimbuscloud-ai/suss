@@ -751,6 +751,45 @@ describe("discoverUnits: controller actions", () => {
     expect(units.map((u) => u.identity.name)).toEqual(["index"]);
   });
 
+  it("discovers a controller extending the library's own root directly, with no project base between", async () => {
+    const units = await discoverActions(
+      "class HealthController < ActionController::Base\n" +
+        "  def show\n" +
+        "  end\n" +
+        "end\n",
+    );
+    expect(units.map((u) => u.identity.name)).toEqual(["show"]);
+  });
+
+  it("reaches a project base whose file is at the path a registered acronym gives it", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ruby-acronym-"));
+    const baseDir = path.join(tmpDir, "activitypub");
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(baseDir, "base_controller.rb"),
+      "class ActivityPub::BaseController < ApplicationController\nend\n",
+    );
+    const source =
+      "class ActivityPub::InboxesController < ActivityPub::BaseController\n" +
+      "  def create\n" +
+      "  end\n" +
+      "end\n";
+    const discoverWith = async (acronyms: string[]) => {
+      const tree = await parseRuby(source);
+      return discoverUnits(tree.rootNode, {
+        packs: [railsTestPack({ root: tmpDir, acronyms })],
+        filePath: "activitypub/inboxes_controller.rb",
+        cache: diskCache(),
+      });
+    };
+
+    const withAcronym = await discoverWith(["ActivityPub"]);
+    expect(withAcronym.map((u) => u.identity.name)).toEqual(["create"]);
+    // Without it the base is looked for under activity_pub/, where nothing is.
+    expect(await discoverWith([])).toEqual([]);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
   it("discovers a controller nested in a module whose bare superclass is defined at top level", async () => {
     const units = await discoverActions(
       "module Api\n" +

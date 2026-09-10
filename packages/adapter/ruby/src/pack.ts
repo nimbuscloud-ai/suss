@@ -119,15 +119,17 @@ export interface RbLoaderPattern {
 
 export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;
 
-/** A class whose ancestry reaches one of `baseClassNames` is a controller, and every instance method it defines directly is one of its actions, bound by `routeFor` to the method and path a project's own routing gives it, or discovered with no boundary binding when `routeFor` finds none. */
+/** A class whose ancestry reaches one of `baseClassNames` or `ancestryRootClassNames` is a controller, and every instance method it defines directly is one of its actions, bound by `routeFor` to the method and path a project's own routing gives it, or discovered with no boundary binding when `routeFor` finds none. */
 export interface ControllerActions {
   type: "controllerActions";
-  /** The library's own base a project's controllers extend, `ActionController::Base` say. */
+  /** A base a project's controllers extend, `ApplicationController` say. The base itself is not a controller. */
   baseClassNames: string[];
   /** The directory a bare superclass name is looked up under, the project's own layout. */
   root: string;
   pathConvention: ConstantPathConvention;
-  /** The library's own classes a project's controller chain ends at. */
+  /** Acronyms the project registers with the inflector, which the path convention keeps as one word: `ActivityPub` is `activitypub`, not `activity_pub`. */
+  acronyms?: string[];
+  /** The library's own classes a project's controller chain ends at. A class extending one directly is a controller too. */
   ancestryRootClassNames: string[];
   /** Status code a wire response gets when the action does not say otherwise. */
   defaultStatusCode: number;
@@ -207,6 +209,8 @@ export interface GraphqlObjectFields {
   /** The directory a wiring keyword's referenced class is looked up under. That is the project's own layout, not the library's. */
   root: string;
   pathConvention: ConstantPathConvention;
+  /** Acronyms the project registers with the inflector, which the path convention keeps as one word. */
+  acronyms?: string[];
   /** The DSL call declaring one schema field in an object type's body. */
   fieldCallName: string;
   /** The DSL call declaring a referenced class's own return type. */

@@ -28,6 +28,28 @@ describe("underscoreConstantPath", () => {
       "types/iso8601_date_time",
     );
   });
+
+  it("keeps a registered acronym as one word, wherever it falls in the name", () => {
+    const acronyms = ["ActivityPub", "OEmbed", "OAuth", "HTML"];
+    expect(
+      underscoreConstantPath("ActivityPub::InboxesController", acronyms),
+    ).toBe("activitypub/inboxes_controller");
+    expect(underscoreConstantPath("Api::OEmbedController", acronyms)).toBe(
+      "api/oembed_controller",
+    );
+    expect(underscoreConstantPath("OAuth::UserinfoController", acronyms)).toBe(
+      "oauth/userinfo_controller",
+    );
+    expect(underscoreConstantPath("MyHTMLParser", acronyms)).toBe(
+      "my_html_parser",
+    );
+  });
+
+  it("splits the same name the ordinary way when the acronym is not registered", () => {
+    expect(underscoreConstantPath("ActivityPub::InboxesController")).toBe(
+      "activity_pub/inboxes_controller",
+    );
+  });
 });
 
 describe("resolveConstantFile", () => {

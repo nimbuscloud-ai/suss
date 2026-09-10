@@ -1228,4 +1228,57 @@ describe("railsFramework", () => {
       expect(table.gaps).toEqual([]);
     });
   });
+
+  describe("acronyms the project registers with the inflector", () => {
+    let dir: string;
+
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    function write(relative: string, source: string): string {
+      const file = path.join(dir, relative);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, source);
+      return file;
+    }
+
+    function projectWith(inflections: string | null) {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-acronyms-"));
+      write(
+        "config/routes.rb",
+        'Rails.application.routes.draw do\n  namespace :activitypub do\n    post "/inbox", to: "inboxes#create"\n  end\nend\n',
+      );
+      if (inflections !== null) {
+        write("config/initializers/inflections.rb", inflections);
+      }
+      return railsFramework({ configDirectory: dir });
+    }
+
+    const INFLECTIONS =
+      "ActiveSupport::Inflector.inflections(:en) do |inflect|\n  inflect.acronym 'ActivityPub'\nend\n";
+
+    it("keys a controller under a registered acronym the way Rails does", () => {
+      const pack = projectWith(INFLECTIONS);
+      expect(
+        pattern(pack).routeFor("ActivityPub::InboxesController", "create"),
+      ).toEqual({ method: "POST", path: "/activitypub/inbox" });
+      expect(pattern(pack).acronyms).toEqual(["ActivityPub"]);
+    });
+
+    it("splits the same name the ordinary way when nothing registers it", () => {
+      const pack = projectWith(null);
+      expect(
+        pattern(pack).routeFor("ActivityPub::InboxesController", "create"),
+      ).toBeNull();
+      expect(pattern(pack).acronyms).toEqual([]);
+    });
+
+    it("declares the initializer as a discovery input so the cache key reads it", () => {
+      const pack = projectWith(INFLECTIONS);
+      expect(pack.discoveryInputs?.([])).toContain(
+        path.join(dir, "config", "initializers", "inflections.rb"),
+      );
+    });
+  });
 });
