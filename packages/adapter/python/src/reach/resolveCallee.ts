@@ -1,20 +1,32 @@
 /**
- * What a call's callee is, read through the binder and the import
- * facts: a function in this run the walk can step into, or a reason it
- * cannot. A name is followed only through a binding that says where it
- * came from, so a name that could be two definitions is a stop rather
- * than a guess. The package README lists the spellings that are
- * followed and the ones that stop.
+ * What a call's callee is: a function in this run the walk can step
+ * into, or a reason it cannot.
+ *
+ * The rules in @suss/resolution decide it. Every language feature that
+ * moves a value is a hop they already state, so nothing here reads a
+ * name, an alias, an attribute, or an instance for itself.
+ *
+ * What is left is about files rather than values: a module before the
+ * dot, and a name only a wildcard import could have brought in.
  */
 
-import { field } from "../ast.js";
+import {
+  calleeOutcomeOf,
+  calleeOutcomes,
+  writtenSourcesOf,
+} from "@suss/resolution";
+
+import { children, enclosingFunction, field, isFunction } from "../ast.js";
+import { readKey } from "../facts/values.js";
 import { resolveModule } from "../moduleResolver.js";
 import { resolveName } from "../scope.js";
 
 import type { UnfollowedReason } from "@suss/behavioral-ir";
+import type { Database } from "@suss/datalog";
+import type { CalleeOutcome } from "@suss/resolution";
 import type { PyNode } from "../parser.js";
 import type { BoundPythonFile } from "../routers.js";
-import type { Binding, Scope } from "../scope.js";
+import type { Scope } from "../scope.js";
 
 /** A function in this run, and the export path its summary gets. */
 export interface ReachedFunction {
@@ -30,304 +42,379 @@ export type CalleeResolution =
   | { readonly kind: "followed"; readonly target: ReachedFunction }
   | { readonly kind: "stopped"; readonly reason: UnfollowedReason };
 
-/** What one dotted name came to, one segment at a time. */
-type Resolved =
-  | { kind: "function"; target: ReachedFunction }
-  | { kind: "class"; file: BoundPythonFile; node: PyNode }
-  | { kind: "module"; file: BoundPythonFile }
-  | {
-      kind: "package";
-      dotted: string;
-      relativeLevel: number;
-      from: BoundPythonFile;
-    }
-  | { kind: "stop"; reason: UnfollowedReason };
-
 export interface ResolveContext {
   /** Every file this run read, by absolute path. */
   readonly filesByPath: ReadonlyMap<string, BoundPythonFile>;
   readonly roots: string[];
+  /** The value facts, which are where a callee is settled. */
+  readonly facts: Database;
+  /** The function each function key was read from. */
+  readonly definitions: ReadonlyMap<string, PyNode>;
 }
 
 /** Where a call is written: the file, the binder's scope there, and the function whose body it is. */
 export interface CallSite {
   readonly file: BoundPythonFile;
   readonly scope: Scope;
-  /** Names the walk saw rebound on the way in, by a loop, a `with`, a lambda, and the like. */
-  readonly rebound: ReadonlySet<string>;
+  /** The key of the function being scanned, which is what tells its own parameters apart. */
+  readonly owner: string;
 }
 
-const stop = (reason: UnfollowedReason): Resolved => ({ kind: "stop", reason });
-
-const MODULE_STOP: Record<"ambiguous" | "outsideRoots", UnfollowedReason> = {
-  ambiguous: "multipleSources",
-  outsideRoots: "outsideRun",
+/** The word this adapter puts on each outcome the rules refuse with. */
+const STOP_FOR: Record<string, UnfollowedReason> = {
+  severalSources: "multipleSources",
+  outsideRun: "outsideRun",
+  unsettled: "unsettledValue",
+  undeclared: "noDeclaration",
 };
 
+const NO_DECLARATION: CalleeResolution = {
+  kind: "stopped",
+  reason: "noDeclaration",
+};
+
+/** The key the rules settle a callee under, or the stop that key would never reach. */
+type CalleeSpelling =
+  | { readonly kind: "key"; readonly key: string }
+  | { readonly kind: "stopped"; readonly reason: UnfollowedReason };
+
+/** What a batch of calls came down to: the key each was asked under, and what came back. */
+export interface CalleeSpellings {
+  readonly spellingOf: ReadonlyMap<number, CalleeSpelling>;
+  readonly outcomes: ReadonlyMap<string, CalleeOutcome>;
+}
+
+/**
+ * What every one of these calls is made through, asked as one batch. A
+ * callee written through modules is asked about under the name the
+ * module declares.
+ */
+export function calleeSpellings(
+  calls: readonly { call: PyNode; site: CallSite }[],
+  ctx: ResolveContext,
+): CalleeSpellings {
+  const spellingOf = new Map<number, CalleeSpelling>();
+  const keys = new Set<string>();
+  for (const { call, site } of calls) {
+    const spelling = spellingFor(call, site, ctx);
+    spellingOf.set(call.id, spelling);
+    if (spelling.kind === "key") {
+      keys.add(spelling.key);
+    }
+  }
+  return { spellingOf, outcomes: calleeOutcomes(ctx.facts, [...keys]) };
+}
+
+/** What a call's callee comes down to, once `calleeSpellings` has asked about the batch. */
 export function resolveCallee(
   call: PyNode,
   site: CallSite,
   ctx: ResolveContext,
+  read?: CalleeSpellings,
 ): CalleeResolution {
-  const callee = field(call, "function");
-  if (callee === null) {
-    return { kind: "stopped", reason: "noDeclaration" };
+  const spelling =
+    read?.spellingOf.get(call.id) ?? spellingFor(call, site, ctx);
+  if (spelling.kind === "stopped") {
+    return spelling;
   }
-  return asCallee(resolveExpression(callee, site, ctx), ctx);
+  const outcome =
+    read?.outcomes.get(spelling.key) ??
+    calleeOutcomeOf(ctx.facts, spelling.key);
+  return asCallee(outcome, site.owner, ctx);
 }
 
 /**
- * What a bare name argument is, when it is itself a project function
- * passed by name rather than called. A name bound by assignment stops
- * here rather than following the value it was last given, since only a
- * function passed by its own name counts, not a variable bound to one.
+ * The function a name refers to, when the name is the function's own. A
+ * name a scope assigned a function to is left out, since what counts is
+ * a function passed by the name it was declared under.
  */
-export function resolveNamedFunctionArgument(
-  name: string,
-  site: CallSite,
+export function functionNamed(
+  nameKey: string,
   ctx: ResolveContext,
 ): ReachedFunction | null {
-  if (site.rebound.has(name)) {
+  if (assignedElsewhere(ctx.facts, nameKey)) {
     return null;
   }
-  const binding = resolveName(site.scope, name);
-  if (binding !== null && binding.kind === "assignment") {
-    return null;
-  }
-  const resolved =
-    binding === null
-      ? throughOpenImports(site.file, name, ctx, new Set())
-      : resolveBinding(binding, site.file, site.scope, ctx, new Set());
-  return resolved.kind === "function" ? resolved.target : null;
+  const outcome = calleeOutcomeOf(ctx.facts, nameKey);
+  return outcome.kind === "function" ? functionAt(outcome.key, ctx) : null;
 }
 
-/** Calling a class runs its `__init__`; a module, a package, or a function's result is nothing this run can step into. */
-function asCallee(resolved: Resolved, ctx: ResolveContext): CalleeResolution {
-  if (resolved.kind === "function") {
-    return { kind: "followed", target: resolved.target };
-  }
-  if (resolved.kind === "class") {
-    return asCallee(
-      memberOfClass(resolved.file, resolved.node, "__init__", ctx),
-      ctx,
-    );
-  }
-  if (resolved.kind === "stop") {
-    return { kind: "stopped", reason: resolved.reason };
-  }
-  if (resolved.kind === "package") {
-    return { kind: "stopped", reason: "outsideRun" };
-  }
-  return { kind: "stopped", reason: "noDeclaration" };
-}
-
-const EXPRESSION_RESOLVERS: Record<
-  string,
-  (node: PyNode, site: CallSite, ctx: ResolveContext) => Resolved
-> = {
-  identifier: (node, site, ctx) => resolveIdentifier(node.text, site, ctx),
-  attribute: (node, site, ctx) => {
-    const object = field(node, "object");
-    const attribute = field(node, "attribute");
-    if (object === null || attribute === null) {
-      return stop("noDeclaration");
-    }
-    return memberOf(resolveExpression(object, site, ctx), attribute.text, ctx);
-  },
-  call: (node, site, ctx) => {
-    const callee = field(node, "function");
-    return callee === null
-      ? stop("noDeclaration")
-      : instanceBuiltBy(resolveExpression(callee, site, ctx), "noDeclaration");
-  },
-  parenthesized_expression: (node, site, ctx) => {
-    const inner = node.namedChildren[0];
-    return inner === null || inner === undefined
-      ? stop("noDeclaration")
-      : resolveExpression(inner, site, ctx);
-  },
-};
-
-function resolveExpression(
-  node: PyNode,
-  site: CallSite,
-  ctx: ResolveContext,
-): Resolved {
-  const resolver = EXPRESSION_RESOLVERS[node.type];
-  return resolver === undefined
-    ? stop("noDeclaration")
-    : resolver(node, site, ctx);
-}
-
-/**
- * What `Service()` puts in a name, or what `.run()` is called on when it
- * is written inline: an instance of a project class, whose methods are the
- * class's own. A constructor in a dependency builds something this run
- * never read, which is the same stop a direct call on it gets, and a
- * callee that already stopped keeps its reason, so `session.get(...)` on a
- * parameter stays caller-supplied. Anything else, a project function's
- * return say, is a value the walk cannot see through.
- */
-function instanceBuiltBy(
-  built: Resolved,
-  otherwise: UnfollowedReason,
-): Resolved {
-  if (built.kind === "class" || built.kind === "stop") {
-    return built;
-  }
-  return built.kind === "package" ? stop("outsideRun") : stop(otherwise);
-}
-
-function resolveIdentifier(
-  name: string,
-  site: CallSite,
-  ctx: ResolveContext,
-): Resolved {
-  // A loop target or a lambda parameter rebinds the name to whatever
-  // came through at run time, whatever the binder found further out.
-  if (site.rebound.has(name)) {
-    return stop("unsettledValue");
-  }
-  if (isReceiver(name, site.scope)) {
-    return receiverClass(site);
-  }
-  const binding = resolveName(site.scope, name);
-  if (binding === null) {
-    return throughOpenImports(site.file, name, ctx, new Set());
-  }
-  return resolveBinding(binding, site.file, site.scope, ctx, new Set());
-}
-
-/** `self` or `cls` in a method, which stand for the class the method is written in. */
-function isReceiver(name: string, scope: Scope): boolean {
-  return (
-    (name === "self" || name === "cls") &&
-    scope.kind === "function" &&
-    scope.parent?.kind === "class"
+/** Whether a write in this run gave the name a value other than a function declared under it. */
+function assignedElsewhere(facts: Database, nameKey: string): boolean {
+  return writtenSourcesOf(facts, nameKey).some(
+    (source) => !facts.has("func", [source]),
   );
 }
 
-function receiverClass(site: CallSite): Resolved {
-  const classScope = site.scope.parent;
-  if (classScope === null || classScope === undefined) {
-    return stop("noDeclaration");
+/** Parentheses say nothing about a value, so a callee is read through them. */
+function readThrough(node: PyNode | null): PyNode | null {
+  if (node?.type !== "parenthesized_expression") {
+    return node;
   }
-  return { kind: "class", file: site.file, node: classScope.node };
+  return readThrough(children(node)[0] ?? null);
 }
 
-const BINDING_RESOLVERS: {
-  [K in Binding["kind"]]: (
-    binding: Extract<Binding, { kind: K }>,
-    file: BoundPythonFile,
-    scope: Scope,
-    ctx: ResolveContext,
-    visited: Set<string>,
-  ) => Resolved;
-} = {
-  functionDef: (binding, file) => ({
-    kind: "function",
-    target: reachedFunction(file, binding.node),
-  }),
-  classDef: (binding, file) => ({ kind: "class", file, node: binding.node }),
-  parameter: () => stop("callerSupplied"),
-  // `import a.b.c` binds `a`, and `import a.b.c as m` binds `m` to `a.b.c`.
-  import: (binding, file, _scope, ctx) =>
-    moduleNamed(
-      file,
-      binding.localName === binding.module.split(".")[0]
-        ? binding.localName
-        : binding.module,
-      0,
-      ctx,
-    ),
-  importFrom: (binding, file, _scope, ctx, visited) =>
-    memberOf(
-      moduleNamed(file, binding.module, binding.relativeLevel, ctx),
-      binding.importedName,
-      ctx,
-      visited,
-    ),
-  // `run = load` is an alias worth one hop; anything else is a value.
-  assignment: (binding, file, scope, ctx, visited) =>
-    aliasedValue(binding.value, file, scope, ctx, visited),
-  global: () => stop("unsettledValue"),
-  nonlocal: () => stop("unsettledValue"),
-};
-
-function resolveBinding(
-  binding: Binding,
-  file: BoundPythonFile,
-  scope: Scope,
+/** The key the rules settle a callee under, which for a module member is the name that module declares. */
+function spellingFor(
+  call: PyNode,
+  site: CallSite,
   ctx: ResolveContext,
-  visited: Set<string>,
-): Resolved {
-  const resolver = BINDING_RESOLVERS[binding.kind] as (
-    binding: Binding,
-    file: BoundPythonFile,
-    scope: Scope,
-    ctx: ResolveContext,
-    visited: Set<string>,
-  ) => Resolved;
-  return resolver(binding, file, scope, ctx, visited);
+): CalleeSpelling {
+  const callee = readThrough(field(call, "function"));
+  // The grammar writes a callee on every call.
+  /* v8 ignore start */
+  if (callee === null) {
+    return { kind: "stopped", reason: "noDeclaration" };
+  }
+  /* v8 ignore stop */
+  return (
+    throughModules(callee, site, ctx) ?? {
+      kind: "key",
+      key: readKey(site.file.file, callee, enclosingFunction(callee)),
+    }
+  );
 }
 
-function aliasedValue(
-  value: PyNode | null,
-  file: BoundPythonFile,
-  scope: Scope,
+/** Calling a class runs its `__init__`; every other refusal keeps the word this adapter puts on it. */
+function asCallee(
+  outcome: CalleeOutcome,
+  owner: string,
   ctx: ResolveContext,
-  visited: Set<string>,
-): Resolved {
-  if (value === null) {
-    return stop("unsettledValue");
+): CalleeResolution {
+  if (outcome.kind === "function") {
+    return functionCallee(outcome.key, ctx);
   }
-  if (value.type === "identifier") {
-    const binding = resolveName(scope, value.text);
-    if (binding === null || binding.kind === "assignment") {
-      return stop("unsettledValue");
-    }
-    return resolveBinding(binding, file, scope, ctx, visited);
+  if (outcome.kind === "object") {
+    return constructorOf(outcome.key, ctx);
   }
-  if (value.type === "call") {
-    const callee = field(value, "function");
-    return callee === null
-      ? stop("unsettledValue")
-      : instanceBuiltBy(
-          aliasedValue(callee, file, scope, ctx, visited),
-          "unsettledValue",
-        );
+  if (outcome.kind === "callerSupplied") {
+    // Some other function's parameter is a value this body cannot see,
+    // rather than something this body's own caller decides.
+    return outcome.key.startsWith(`${owner}#`)
+      ? { kind: "stopped", reason: "callerSupplied" }
+      : { kind: "stopped", reason: "unsettledValue" };
   }
-  if (value.type === "attribute") {
-    const object = field(value, "object");
-    const attribute = field(value, "attribute");
-    if (object === null || attribute === null) {
-      return stop("unsettledValue");
-    }
-    return memberOf(
-      aliasedValue(object, file, scope, ctx, visited),
-      attribute.text,
-      ctx,
-    );
-  }
-  return stop("unsettledValue");
+  return {
+    kind: "stopped",
+    reason: STOP_FOR[outcome.kind] ?? "noDeclaration",
+  };
 }
 
-function reachedFunction(
-  file: BoundPythonFile,
-  node: PyNode,
-  owner?: PyNode,
-): ReachedFunction {
+/** A lambda has no summary of its own, so a call that comes down to one stops here. */
+function functionCallee(key: string, ctx: ResolveContext): CalleeResolution {
+  if (ctx.definitions.get(key)?.type === "lambda") {
+    return { kind: "stopped", reason: "unsettledValue" };
+  }
+  const target = functionAt(key, ctx);
+  return target === null ? NO_DECLARATION : { kind: "followed", target };
+}
+
+function constructorOf(
+  classKey: string,
+  ctx: ResolveContext,
+): CalleeResolution {
+  const declared = ctx.facts
+    .lookup("holdsProperty", 0, classKey)
+    .find((row) => String(row[1]) === "__init__");
+  if (declared === undefined) {
+    return NO_DECLARATION;
+  }
+  return functionCallee(String(declared[2]), ctx);
+}
+
+/** The function a key was read from, with the class it is a method of when it is one. */
+function functionAt(key: string, ctx: ResolveContext): ReachedFunction | null {
+  const node = ctx.definitions.get(key);
+  const file = ctx.filesByPath.get(key.slice(0, key.lastIndexOf(":")));
+  // The key came from a fact this run emitted for a file it read.
+  /* v8 ignore start */
+  if (node === undefined || file === undefined) {
+    return null;
+  }
+  /* v8 ignore stop */
   const name = field(node, "name")?.text ?? "<anon>";
-  const ownerName = owner === undefined ? null : field(owner, "name")?.text;
+  const owner = ownerClassOf(node);
+  const ownerName = owner === null ? undefined : field(owner, "name")?.text;
   return {
     file,
     node,
     name,
-    exportPath:
-      ownerName === null || ownerName === undefined
-        ? [name]
-        : [ownerName, name],
+    exportPath: ownerName === undefined ? [name] : [ownerName, name],
   };
+}
+
+/** The class a function is a method of, or null for a function written anywhere else. */
+function ownerClassOf(node: PyNode): PyNode | null {
+  for (let up = node.parent; up !== null; up = up.parent) {
+    if (isFunction(up)) {
+      return null;
+    }
+    if (up.type === "class_definition") {
+      return up;
+    }
+  }
+  return null;
+}
+
+/** A module this run read, or a dotted path under a package it did not. */
+type ModuleStep =
+  | { kind: "module"; file: BoundPythonFile }
+  | {
+      kind: "package";
+      dotted: string;
+      relativeLevel: number;
+      from: BoundPythonFile;
+    };
+
+/**
+ * The module-level name a callee ends at, when what it is read off is a
+ * module rather than a value, or when nothing but a wildcard import
+ * could have brought the name in. Null for every other callee, which
+ * leaves the rules to settle it from the key the call site gives.
+ */
+function throughModules(
+  callee: PyNode,
+  site: CallSite,
+  ctx: ResolveContext,
+): CalleeSpelling | null {
+  if (callee.type === "identifier") {
+    return resolveName(site.scope, callee.text) === null
+      ? openImportMember(site.file, callee.text, ctx, new Set())
+      : null;
+  }
+  if (callee.type !== "attribute") {
+    return null;
+  }
+  const object = field(callee, "object");
+  const attribute = field(callee, "attribute");
+  // The grammar writes both fields on every attribute read.
+  /* v8 ignore start */
+  if (object === null || attribute === null) {
+    return null;
+  }
+  /* v8 ignore stop */
+  const base = moduleAt(object, site, ctx);
+  return base === null ? null : memberKey(base, attribute.text, ctx);
+}
+
+/**
+ * A `from x import *` brings in whatever `x` declares, so a name nothing
+ * else binds is looked for in every module the file opened. One
+ * declaration is followed; two leave the call undecided.
+ */
+function openImportMember(
+  file: BoundPythonFile,
+  name: string,
+  ctx: ResolveContext,
+  visited: Set<string>,
+): CalleeSpelling | null {
+  if (visited.has(file.file)) {
+    return null;
+  }
+  visited.add(file.file);
+
+  const found = new Set<string>();
+  for (const spec of file.module.openImports) {
+    const dots = spec.length - spec.replace(/^\.+/, "").length;
+    const opened = moduleNamed(file, spec.slice(dots), dots, ctx);
+    if (opened === null || opened.kind !== "module") {
+      continue;
+    }
+    const member = opened.file.module.moduleScope.bindings.has(name)
+      ? { kind: "key" as const, key: `${opened.file.file}#${name}` }
+      : openImportMember(opened.file, name, ctx, visited);
+    if (member?.kind === "key") {
+      found.add(member.key);
+    }
+  }
+  if (found.size > 1) {
+    return { kind: "stopped", reason: "multipleSources" };
+  }
+  const only = [...found][0];
+  return only === undefined ? null : { kind: "key", key: only };
+}
+
+/** The module a receiver is, following the dotted chain the source writes. */
+function moduleAt(
+  node: PyNode,
+  site: CallSite,
+  ctx: ResolveContext,
+): ModuleStep | null {
+  if (node.type === "identifier") {
+    return importedModule(node.text, site, ctx);
+  }
+  if (node.type !== "attribute") {
+    return null;
+  }
+  const object = field(node, "object");
+  const attribute = field(node, "attribute");
+  /* v8 ignore start */
+  if (object === null || attribute === null) {
+    return null;
+  }
+  /* v8 ignore stop */
+  const base = moduleAt(object, site, ctx);
+  return base === null ? null : submoduleOf(base, attribute.text, ctx);
+}
+
+/** What an import binds a name to: `import a.b.c` binds the package `a`, and `as m` binds the module itself. */
+function importedModule(
+  name: string,
+  site: CallSite,
+  ctx: ResolveContext,
+): ModuleStep | null {
+  const binding = resolveName(site.scope, name);
+  if (binding?.kind === "import") {
+    const head = binding.module.split(".")[0];
+    const dotted =
+      binding.localName === head ? binding.localName : binding.module;
+    return moduleNamed(site.file, dotted, 0, ctx);
+  }
+  if (binding?.kind !== "importFrom") {
+    return null;
+  }
+  const from = moduleNamed(
+    site.file,
+    binding.module,
+    binding.relativeLevel,
+    ctx,
+  );
+  return from === null ? null : submoduleOf(from, binding.importedName, ctx);
+}
+
+/** The module a dotted segment lands on, which under a package is another dotted segment. */
+function submoduleOf(
+  base: ModuleStep,
+  name: string,
+  ctx: ResolveContext,
+): ModuleStep | null {
+  if (base.kind === "package") {
+    return moduleNamed(
+      base.from,
+      base.dotted === "" ? name : `${base.dotted}.${name}`,
+      base.relativeLevel,
+      ctx,
+    );
+  }
+  // A package's `__init__.py` need say nothing about a submodule beside it.
+  return base.file.file.endsWith("__init__.py")
+    ? moduleNamed(base.file, name, 1, ctx)
+    : null;
+}
+
+/** The key a module's own name joins on, or what one of its wildcard imports brought in. */
+function memberKey(
+  base: ModuleStep,
+  name: string,
+  ctx: ResolveContext,
+): CalleeSpelling | null {
+  if (base.kind === "package") {
+    return null;
+  }
+  if (base.file.module.moduleScope.bindings.has(name)) {
+    return { kind: "key", key: `${base.file.file}#${name}` };
+  }
+  return openImportMember(base.file, name, ctx, new Set());
 }
 
 function moduleNamed(
@@ -335,7 +422,7 @@ function moduleNamed(
   module: string,
   relativeLevel: number,
   ctx: ResolveContext,
-): Resolved {
+): ModuleStep | null {
   const resolution = resolveModule(
     from.file,
     { module, relativeLevel },
@@ -346,116 +433,8 @@ function moduleNamed(
   if (resolution.status !== "resolved") {
     return resolution.reason === "external"
       ? { kind: "package", dotted: module, relativeLevel, from }
-      : stop(MODULE_STOP[resolution.reason]);
+      : null;
   }
   const file = ctx.filesByPath.get(resolution.file);
-  // A module on disk that this run was not given to read is as far away
-  // as a dependency.
-  return file === undefined ? stop("outsideRun") : { kind: "module", file };
-}
-
-/** `.attr` on whatever came before it. */
-function memberOf(
-  base: Resolved,
-  name: string,
-  ctx: ResolveContext,
-  visited: Set<string> = new Set(),
-): Resolved {
-  if (base.kind === "module") {
-    return memberOfModule(base.file, name, ctx, visited);
-  }
-  if (base.kind === "package") {
-    return moduleNamed(
-      base.from,
-      base.dotted === "" ? name : `${base.dotted}.${name}`,
-      base.relativeLevel,
-      ctx,
-    );
-  }
-  if (base.kind === "class") {
-    return memberOfClass(base.file, base.node, name, ctx);
-  }
-  if (base.kind === "stop") {
-    return base;
-  }
-  return stop("noDeclaration");
-}
-
-function memberOfClass(
-  file: BoundPythonFile,
-  classNode: PyNode,
-  name: string,
-  ctx: ResolveContext,
-): Resolved {
-  const classScope = file.module.scopeFor.get(classNode.id);
-  const binding = classScope?.bindings.get(name);
-  if (binding === undefined) {
-    return stop("noDeclaration");
-  }
-  if (binding.kind === "functionDef") {
-    return {
-      kind: "function",
-      target: reachedFunction(file, binding.node, classNode),
-    };
-  }
-  return resolveBinding(binding, file, classScope as Scope, ctx, new Set());
-}
-
-/**
- * What `module.name` refers to: a definition of the module's own,
- * something it imported, a submodule of the package it heads, or a
- * definition one of its wildcard imports brought in.
- */
-function memberOfModule(
-  file: BoundPythonFile,
-  name: string,
-  ctx: ResolveContext,
-  visited: Set<string>,
-): Resolved {
-  const key = `${file.file}#${name}`;
-  if (visited.has(key)) {
-    return stop("unsettledValue");
-  }
-  visited.add(key);
-
-  const binding = file.module.moduleScope.bindings.get(name);
-  if (binding !== undefined) {
-    return resolveBinding(binding, file, file.module.moduleScope, ctx, visited);
-  }
-  if (file.file.endsWith("__init__.py")) {
-    const submodule = moduleNamed(file, name, 1, ctx);
-    if (submodule.kind === "module") {
-      return submodule;
-    }
-  }
-  return throughOpenImports(file, name, ctx, visited);
-}
-
-/**
- * A `from x import *` brings in whatever `x` defines, so a name nothing
- * else declares is looked for in every module the file opened. One
- * definition is followed; two leave the call undecided.
- */
-function throughOpenImports(
-  file: BoundPythonFile,
-  name: string,
-  ctx: ResolveContext,
-  visited: Set<string>,
-): Resolved {
-  const found: Resolved[] = [];
-  for (const spec of file.module.openImports) {
-    const dots = spec.length - spec.replace(/^\.+/, "").length;
-    const opened = moduleNamed(file, spec.slice(dots), dots, ctx);
-    if (opened.kind !== "module") {
-      continue;
-    }
-    const member = memberOfModule(opened.file, name, ctx, visited);
-    if (member.kind !== "stop") {
-      found.push(member);
-    }
-  }
-  if (found.length > 1) {
-    return stop("multipleSources");
-  }
-  return found[0] ?? stop("noDeclaration");
+  return file === undefined ? null : { kind: "module", file };
 }

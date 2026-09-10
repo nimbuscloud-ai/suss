@@ -1,3 +1,9 @@
+export {
+  type CalleeOutcome,
+  calleeOutcomeOf,
+  calleeOutcomes,
+  writtenSourcesOf,
+} from "./callee.js";
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export {
@@ -8,6 +14,12 @@ export {
   mountPathsOf,
 } from "./mount.js";
 export { nodeOfKey, type SpannedNode } from "./nodeKey.js";
+export {
+  ASKING_RELATIONS,
+  askResolution,
+  queryFacts,
+  resolutionProgram,
+} from "./program.js";
 export { explainResolvedKey } from "./session.js";
 export { placeholderValues, singleAnswers } from "./singleAnswer.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
@@ -78,6 +90,9 @@ export type {
 //   exportsAs(m, n, v)          module m exports v under the name n
 //   reExports(m, n, m2, n2)     m's n is m2's n2
 //   reExportsAll(m, m2)         m forwards everything m2 exports
+//   mayHold(x, y)               one write to x wrote y, and nothing
+//                               says which write ran last
+//   writesUnstated(x)           a write to x states no value at all
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language

@@ -144,7 +144,7 @@ describe("a Ruby constant", () => {
       .find((key) => key.startsWith("loader.rb"));
     expect(
       db
-        .facts("comesTo")
+        .facts("wantedComesTo")
         .filter((row) => row[0] === read?.[0])
         .map((row) => String(row[1])),
     ).toEqual([method]);

@@ -141,6 +141,9 @@ export function describeWrites(values: ReadonlyArray<Node>): NameWrite[] {
     value: String(index),
     placeholder: isNotYetPlaceholder(value),
     construction: isConstruction(value) ? sourceOf(value) : null,
+    // Which name each value was written to does not reach here, and
+    // that is what a narrowing write is compared against.
+    narrowsName: false,
   }));
 }
 

@@ -2,18 +2,10 @@
 // the one thing Ruby says differently. The rules live in @suss/resolution and
 // are the same ones the other two adapters evaluate.
 
+import { constant, lit, rule, variable as v } from "@suss/datalog";
 import {
-  constant,
-  deriveOnDemand,
-  evaluate,
-  lit,
-  rule,
-  variable as v,
-} from "@suss/datalog";
-import {
-  ANSWER_RELATIONS,
-  RESOLUTION_QUESTIONS,
-  RESOLUTION_RULES,
+  askResolution,
+  resolutionProgram,
   writtenValueOf as sharedWrittenValueOf,
   VALUE_STEP,
 } from "@suss/resolution";
@@ -37,29 +29,15 @@ export const RUBY_RULES = [
 ];
 
 /**
- * The rules rewritten so a relation is derived only where a question reaches
- * it. Built once, because the rewrite does not depend on the facts.
+ * The shared rules with Ruby's own, and the questions, as one program.
+ * Every question this adapter asks runs over it, so the whole run shares
+ * one evaluation state.
  */
-const RESOLUTION_PROGRAM = deriveOnDemand(
-  [...RESOLUTION_RULES, ...RUBY_RULES, ...RESOLUTION_QUESTIONS],
-  ANSWER_RELATIONS,
-);
+export const RUBY_PROGRAM = resolutionProgram(RUBY_RULES);
 
-/**
- * Ask what these values come down to, then derive. Asking about everything in
- * a project costs seconds on a large one and answers questions nobody has, so
- * a caller says which handful it needs.
- */
+/** Ask what these values come down to, then derive. */
 export function resolveValues(db: Database, keys: readonly string[]): void {
-  if (keys.length === 0) {
-    return;
-  }
-
-  for (const key of keys) {
-    db.add("wanted", [key]);
-  }
-
-  evaluate(db, RESOLUTION_PROGRAM.rules);
+  askResolution(db, keys, "wanted", RUBY_PROGRAM);
 }
 
 /** What a value came down to, when the rules settled it on a function. */

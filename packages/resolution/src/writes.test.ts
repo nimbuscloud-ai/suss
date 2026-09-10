@@ -3,21 +3,46 @@ import { describe, expect, it } from "vitest";
 import { type NameWrite, valueLeftByWrites } from "./writes.js";
 
 function built(key: string, source: string): NameWrite {
-  return { value: key, placeholder: false, construction: source };
+  return {
+    value: key,
+    placeholder: false,
+    construction: source,
+    narrowsName: false,
+  };
 }
 
 function named(key: string): NameWrite {
-  return { value: key, placeholder: false, construction: null };
+  return {
+    value: key,
+    placeholder: false,
+    construction: null,
+    narrowsName: false,
+  };
 }
 
 function placeholder(key: string): NameWrite {
-  return { value: key, placeholder: true, construction: null };
+  return {
+    value: key,
+    placeholder: true,
+    construction: null,
+    narrowsName: false,
+  };
+}
+
+function narrowing(key: string, source: string): NameWrite {
+  return {
+    value: key,
+    placeholder: false,
+    construction: source,
+    narrowsName: true,
+  };
 }
 
 const COMPOUND: NameWrite = {
   value: null,
   placeholder: false,
   construction: null,
+  narrowsName: false,
 };
 
 describe("valueLeftByWrites", () => {
@@ -71,5 +96,33 @@ describe("valueLeftByWrites", () => {
 
   it("settles on nothing when there are no writes", () => {
     expect(valueLeftByWrites([], true)).toBe(null);
+  });
+
+  it("sets a narrowing write aside and settles on what the name started as", () => {
+    const writes = [
+      built("a", "db.query(Entity)"),
+      narrowing("b", "query.filter(1)"),
+      narrowing("c", "query.limit(1)"),
+    ];
+
+    expect(valueLeftByWrites(writes, false)).toBe("a");
+    expect(valueLeftByWrites(writes, true)).toBe("a");
+  });
+
+  it("keeps the narrowing writes when every write narrows the name", () => {
+    const writes = [narrowing("a", "q.filter(1)"), narrowing("b", "q.all()")];
+
+    expect(valueLeftByWrites(writes, true)).toBe("b");
+    expect(valueLeftByWrites(writes, false)).toBe(null);
+  });
+
+  it("settles on nothing when a narrowing write leaves two that disagree", () => {
+    const writes = [
+      built("a", "Client()"),
+      narrowing("b", "a.with_timeout(1)"),
+      built("c", "Other()"),
+    ];
+
+    expect(valueLeftByWrites(writes, false)).toBe(null);
   });
 });

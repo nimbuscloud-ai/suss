@@ -992,9 +992,18 @@ const CONSTRUCTION_TYPES = new Set([
   "generator_expression",
 ]);
 
-function describeWrite(emitter: Emitter, write: RawWrite): NameWrite {
+function describeWrite(
+  emitter: Emitter,
+  write: RawWrite,
+  name: string,
+): NameWrite {
   if (write.value === null) {
-    return { value: write.given, placeholder: false, construction: null };
+    return {
+      value: write.given,
+      placeholder: false,
+      construction: null,
+      narrowsName: false,
+    };
   }
   return {
     value: valueKey(emitter, write.value),
@@ -1002,7 +1011,31 @@ function describeWrite(emitter: Emitter, write: RawWrite): NameWrite {
     construction: CONSTRUCTION_TYPES.has(write.value.type)
       ? write.value.text.replace(/\s+/g, " ").trim()
       : null,
+    narrowsName: write.value.type === "call" && startsAtName(write.value, name),
   };
+}
+
+/** The part of an expression that is read first, for the two ways a chain is written. */
+const READ_FIRST: Record<string, string> = {
+  call: "function",
+  attribute: "object",
+};
+
+/** Whether reading this expression starts by reading `name`, through however many attribute reads and calls. */
+function startsAtName(node: PyNode, name: string): boolean {
+  if (node.type === "identifier") {
+    return node.text === name;
+  }
+  if (node.type === "parenthesized_expression") {
+    const inner = children(node)[0];
+    return inner !== undefined && startsAtName(inner, name);
+  }
+  const fieldName = READ_FIRST[node.type];
+  if (fieldName === undefined) {
+    return false;
+  }
+  const inner = field(node, fieldName);
+  return inner !== null && startsAtName(inner, name);
 }
 
 /**
@@ -1021,7 +1054,7 @@ function settledValue(
     return only.value === null ? only.given : valueKey(emitter, only.value);
   }
   return valueLeftByWrites(
-    writes.map((write) => describeWrite(emitter, write)),
+    writes.map((write) => describeWrite(emitter, write, name)),
     writesRunInOrder(reading.bodyOwner, name, writes),
   );
 }
@@ -1030,6 +1063,9 @@ function settledValue(
  * One claim per name: `binds` for a name written once, `endsHolding` for a
  * reassigned name the policy settles, and nothing for one it does not. A
  * module's names are also what another file imports back out.
+ *
+ * A name the policy leaves undecided says what each write put there
+ * instead, so a reader can tell two sources from none.
  */
 function emitScopeWrites(
   emitter: Emitter,
@@ -1038,13 +1074,40 @@ function emitScopeWrites(
 ): void {
   for (const [name, writes] of reading.writes) {
     const settled = settledValue(emitter, reading, name, writes);
+    const key = nameKey(emitter.filePath, emitter.enclosing, name);
     if (settled === null) {
+      emitCandidates(emitter, key, name, writes);
       continue;
     }
-    const key = nameKey(emitter.filePath, emitter.enclosing, name);
     add(emitter, writes.length === 1 ? "binds" : "endsHolding", key, settled);
     if (atModule) {
       add(emitter, "exportsAs", emitter.filePath, name, settled);
+    }
+  }
+}
+
+/**
+ * Each value a write put in an unsettled name. A write that narrows the
+ * name is left out, and a write with no value of its own, a loop target
+ * or a `with ... as`, is what `writesUnstated` says.
+ */
+function emitCandidates(
+  emitter: Emitter,
+  key: string,
+  name: string,
+  writes: readonly RawWrite[],
+): void {
+  for (const write of writes) {
+    if (write.value === null) {
+      // A parameter arrives with a value the source spells nowhere, and
+      // that is the caller's rather than something this scope left out.
+      if (write.given === null) {
+        add(emitter, "writesUnstated", key);
+      }
+      continue;
+    }
+    if (!describeWrite(emitter, write, name).narrowsName) {
+      add(emitter, "mayHold", key, valueKey(emitter, write.value));
     }
   }
 }

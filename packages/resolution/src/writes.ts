@@ -26,6 +26,14 @@ export interface NameWrite {
    * call, a `new`, or an object or array literal. Null otherwise.
    */
   construction: string | null;
+  /**
+   * Whether the value is a call on the name being written, `query =
+   * query.filter(x)`, which leaves the name what the other writes gave
+   * it with a method applied. A call returning something of another kind
+   * is not told apart, and a narrowing written through a second name,
+   * `tmp = query.limit(1)` then `query = tmp`, is not recognized.
+   */
+  narrowsName: boolean;
 }
 
 /**
@@ -37,20 +45,22 @@ export interface NameWrite {
  * sees. Otherwise the writes are candidates the caller cannot order,
  * and they settle the name only when they all build the same thing.
  *
- * A write with no value of its own puts a hole in the sequence, and
- * then no write can be called the last one.
+ * A write with no value of its own puts a hole in the sequence, and then
+ * no write can be called the last one. A narrowing write is set aside.
  */
 export function valueLeftByWrites(
   writes: readonly NameWrite[],
   ordered: boolean,
 ): string | null {
-  if (writes.some((write) => write.value === null)) {
+  const deciding = writes.filter((write) => !write.narrowsName);
+  const left = deciding.length === 0 ? writes : deciding;
+  if (left.some((write) => write.value === null)) {
     return null;
   }
   if (ordered) {
-    return writes[writes.length - 1]?.value ?? null;
+    return left[left.length - 1]?.value ?? null;
   }
-  return sharedConstruction(writes);
+  return sharedConstruction(left);
 }
 
 /**

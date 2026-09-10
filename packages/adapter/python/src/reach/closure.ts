@@ -28,17 +28,18 @@ import {
   walkDescendants,
 } from "@suss/extractor";
 
-import { field, rangeOf, spanOf } from "../ast.js";
+import { enclosingFunction, field, rangeOf, spanOf } from "../ast.js";
 import {
   bodyContentOf,
   recognizedBodyEffects,
   recognizedCallIds,
 } from "../discovery.js";
-import { nodeId } from "../facts/values.js";
+import { nodeId, readKey } from "../facts/values.js";
 import { calleeText, invocationEffects } from "../paths/effects.js";
 import {
+  calleeSpellings,
+  functionNamed,
   resolveCallee,
-  resolveNamedFunctionArgument,
 } from "./resolveCallee.js";
 
 import type {
@@ -56,7 +57,12 @@ import type { PyNode } from "../parser.js";
 import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
 import type { StorageLookup } from "../storage.js";
-import type { ReachedFunction, ResolveContext } from "./resolveCallee.js";
+import type {
+  CalleeSpellings,
+  CallSite,
+  ReachedFunction,
+  ResolveContext,
+} from "./resolveCallee.js";
 
 export interface ReachOptions {
   readonly files: readonly BoundPythonFile[];
@@ -64,6 +70,10 @@ export interface ReachOptions {
   readonly gapHandling: ExtractorOptions["gapHandling"];
   /** What a pack needs to say a body in this file talks to the database. */
   readonly storageFor: (file: BoundPythonFile) => StorageLookup | undefined;
+  /** The value facts, which are where a callee is settled. */
+  readonly facts: Database;
+  /** The function each function key was read from. */
+  readonly definitions: ReadonlyMap<string, PyNode>;
 }
 
 /** A discovered unit's function, keyed the way its summary's span is. */
@@ -107,6 +117,8 @@ export function reachedFunctions(
   const ctx: ResolveContext = {
     filesByPath: new Map(options.files.map((file) => [file.file, file])),
     roots: options.roots,
+    facts: options.facts,
+    definitions: options.definitions,
   };
   const db = new Database();
   const functionByKey = new Map<string, ReachedFunction>();
@@ -144,16 +156,24 @@ export function reachedFunctions(
     if (frontier.length === 0) {
       break;
     }
-    for (const key of frontier) {
+    // Every body in this round asks the rules together, so evaluation
+    // runs once per round rather than once per body.
+    const bodies = frontier.flatMap((key) => {
       scanned.add(key);
       const source = functionByKey.get(key);
-      if (source === undefined) {
-        continue;
-      }
+      return source === undefined ? [] : [{ key, source, ...bodyOf(source) }];
+    });
+    const spellings = calleeSpellings(
+      bodies.flatMap((body) => body.written),
+      ctx,
+    );
+
+    for (const { key, source, body, written } of bodies) {
       const scan = scanBody(
         source,
         ctx,
         recognizedCallIds(source.node, options.storageFor(source.file)),
+        { body, written, spellings },
       );
       if (scan.stops.length > 0) {
         stopsByKey.set(key, scan.stops);
@@ -231,11 +251,6 @@ interface Scan {
   readonly passedPositions: ReadonlySet<string>;
 }
 
-interface Where {
-  readonly scope: Scope;
-  readonly rebound: ReadonlySet<string>;
-}
-
 const EMPTY_SCAN: Scan = {
   followed: [],
   stops: [],
@@ -245,10 +260,32 @@ const EMPTY_SCAN: Scan = {
   passedPositions: new Set(),
 };
 
+/** A body's calls, read before the round asks the rules about all of them at once. */
+interface BodyCalls {
+  readonly body: PyNode | null;
+  readonly written: { call: PyNode; site: CallSite }[];
+}
+
+function bodyOf(source: ReachedFunction): BodyCalls {
+  const { file, node } = source;
+  const body = field(node, "body");
+  // The grammar writes a body on every def.
+  /* v8 ignore start */
+  if (body === null) {
+    return { body, written: [] };
+  }
+  /* v8 ignore stop */
+  return {
+    body,
+    written: callsWritten(file, body, scopeAt(file, node), keyOf(source)),
+  };
+}
+
 function scanBody(
   source: ReachedFunction,
   ctx: ResolveContext,
   recognized: ReadonlySet<number>,
+  read: BodyCalls & { spellings: CalleeSpellings },
 ): Scan {
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
@@ -258,11 +295,13 @@ function scanBody(
   const seen = new Set<string>();
   const parameterCallsSeen = new Set<string>();
   const { file, node } = source;
+  const { written, spellings } = read;
 
-  const body = field(node, "body");
-  if (body === null) {
+  /* v8 ignore start */
+  if (read.body === null) {
     return EMPTY_SCAN;
   }
+  /* v8 ignore stop */
 
   const ownParameters = callParameterNames(node, source.exportPath.length > 1);
 
@@ -272,7 +311,6 @@ function scanBody(
     call: PyNode,
     callee: string,
     calleeKey: string | null,
-    where: Where,
   ): void => {
     const args = field(call, "arguments");
     if (args === null) {
@@ -282,9 +320,8 @@ function scanBody(
       if (arg === null || arg.type !== "identifier") {
         return;
       }
-      const resolved = resolveNamedFunctionArgument(
-        arg.text,
-        { file, scope: where.scope, rebound: where.rebound },
+      const resolved = functionNamed(
+        readKey(file.file, arg, enclosingFunction(arg)),
         ctx,
       );
       if (resolved === null) {
@@ -305,13 +342,9 @@ function scanBody(
     });
   };
 
-  const record = (call: PyNode, where: Where): void => {
+  const record = (call: PyNode, site: CallSite): void => {
     const callee = calleeText(call);
-    const outcome = resolveCallee(
-      call,
-      { file, scope: where.scope, rebound: where.rebound },
-      ctx,
-    );
+    const outcome = resolveCallee(call, site, ctx, spellings);
     // A stop is placed at its own call, where no summary can be, so the
     // link step neither links it nor guesses by name.
     const placed =
@@ -328,7 +361,6 @@ function scanBody(
       call,
       callee,
       outcome.kind === "followed" ? keyOf(outcome.target) : null,
-      where,
     );
 
     // One record per callee, however many times the body calls it. A call
@@ -362,33 +394,9 @@ function scanBody(
     }
   };
 
-  walkDescendants<PyNode, Where>(
-    body,
-    { scope: scopeAt(file, node), rebound: reboundNames(body) },
-    {
-      at: (child, where) => {
-        if (child.type === "call") {
-          record(child, where);
-        }
-      },
-      into: (child, where) => {
-        // A nested def is a function of its own, reached when something calls it.
-        if (child.type === "function_definition") {
-          return SKIP_CHILDREN;
-        }
-        if (child.type === "lambda") {
-          return {
-            scope: where.scope,
-            rebound: new Set([...where.rebound, ...lambdaParameters(child)]),
-          };
-        }
-        return {
-          scope: file.module.scopeFor.get(child.id) ?? where.scope,
-          rebound: where.rebound,
-        };
-      },
-    },
-  );
+  for (const { call, site } of written) {
+    record(call, site);
+  }
 
   return {
     followed,
@@ -398,6 +406,28 @@ function scanBody(
     parameterCalls,
     passedPositions,
   };
+}
+
+/** Every call written in a body, with the scope it is written in. A nested def is a function of its own. */
+function callsWritten(
+  file: BoundPythonFile,
+  body: PyNode,
+  outer: Scope,
+  owner: string,
+): { call: PyNode; site: CallSite }[] {
+  const found: { call: PyNode; site: CallSite }[] = [];
+  walkDescendants<PyNode, Scope>(body, outer, {
+    at: (child, scope) => {
+      if (child.type === "call") {
+        found.push({ call: child, site: { file, scope, owner } });
+      }
+    },
+    into: (child, scope) =>
+      child.type === "function_definition"
+        ? SKIP_CHILDREN
+        : (file.module.scopeFor.get(child.id) ?? scope),
+  });
+  return found;
 }
 
 /** The binder's scope for a function, or the nearest one above a def it did not bind. */
@@ -411,50 +441,6 @@ function scopeAt(file: BoundPythonFile, node: PyNode): Scope {
     current = current.parent;
   }
   return file.module.moduleScope;
-}
-
-/** Where a statement puts a name the binder does not track, so a call on that name is not followed to an outer definition. */
-const REBINDING_FIELDS: Record<string, string> = {
-  assignment: "left",
-  augmented_assignment: "left",
-  named_expression: "name",
-  for_statement: "left",
-  for_in_clause: "left",
-  as_pattern: "alias",
-};
-
-function reboundNames(body: PyNode): Set<string> {
-  const names = new Set<string>();
-  walkDescendants<PyNode, null>(body, null, {
-    at: (node) => {
-      const target = REBINDING_FIELDS[node.type];
-      if (target === undefined || boundByBinder(node, body)) {
-        return;
-      }
-      const written = field(node, target);
-      if (written !== null) {
-        for (const name of identifiersUnder(written)) {
-          names.add(name);
-        }
-      }
-    },
-    into: (node) =>
-      node.type === "function_definition" ? SKIP_CHILDREN : null,
-  });
-  return names;
-}
-
-/** `name = value` written straight in the body is the binder's, and it knows what the value was. */
-function boundByBinder(node: PyNode, body: PyNode): boolean {
-  if (node.type !== "assignment") {
-    return false;
-  }
-  const statement = node.parent;
-  return (
-    field(node, "left")?.type === "identifier" &&
-    statement?.type === "expression_statement" &&
-    statement.parent?.id === body.id
-  );
 }
 
 function identifiersUnder(node: PyNode, found: string[] = []): string[] {
@@ -472,11 +458,6 @@ function identifiersUnder(node: PyNode, found: string[] = []): string[] {
     }
   }
   return found;
-}
-
-function lambdaParameters(lambda: PyNode): string[] {
-  const parameters = field(lambda, "parameters");
-  return parameters === null ? [] : identifiersUnder(parameters);
 }
 
 function libraryUnit(

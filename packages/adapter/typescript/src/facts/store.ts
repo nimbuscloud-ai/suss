@@ -18,7 +18,6 @@ import { Node } from "ts-morph";
 import {
   clearRelations,
   Database,
-  deriveOnDemand,
   evaluate,
   lit,
   type OnDemandRules,
@@ -30,9 +29,11 @@ import {
   witnesses,
 } from "@suss/datalog";
 import {
-  ANSWER_RELATIONS,
+  ASKING_RELATIONS,
   type ExplainStats,
+  queryFacts,
   RESOLUTION_QUESTIONS,
+  resolutionProgram,
   RESOLUTION_RULES as SHARED_RULES,
   VALUE_STEP,
 } from "@suss/resolution";
@@ -69,22 +70,7 @@ const JS_RULES = [
   ),
 ];
 
-/**
- * `SUSS_RESOLUTION_ON_DEMAND=0` runs the same rules unrestricted. Both
- * settings give the same result for every question; they differ only in
- * how much never gets derived at all.
- */
-const RESOLUTION_PROGRAM: OnDemandRules =
-  process.env.SUSS_RESOLUTION_ON_DEMAND === "0"
-    ? {
-        rules: [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS],
-        demandDriven: [],
-        demands: [],
-      }
-    : deriveOnDemand(
-        [...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS],
-        ANSWER_RELATIONS,
-      );
+const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);
 
 /**
  * What a why-question re-evaluates: the rules as written, with no
@@ -100,12 +86,7 @@ const NOT_BASE_FACTS = new Set([
     (r) => r.head.relation,
   ),
   ...RESOLUTION_PROGRAM.rules.map((r) => r.head.relation),
-  "wanted",
-  "wantedOrigin",
-  "wantedCallOrigin",
-  "wantedExportsOf",
-  "wantedAnchor",
-  "wantedSubject",
+  ...ASKING_RELATIONS,
 ]);
 
 type Question =
@@ -120,18 +101,7 @@ type Question =
  * not re-derive over every question asked before it. The answer
  * relations stay, and a repeated query reads its result from those.
  */
-const QUERY_FACTS: readonly string[] =
-  RESOLUTION_PROGRAM.demandDriven.length === 0
-    ? []
-    : [
-        ...RESOLUTION_PROGRAM.demandDriven,
-        "wanted",
-        "wantedOrigin",
-        "wantedCallOrigin",
-        "wantedExportsOf",
-        "wantedAnchor",
-        "wantedSubject",
-      ];
+const QUERY_FACTS: readonly string[] = queryFacts(RESOLUTION_PROGRAM);
 
 /**
  * A rule consults another module through its export table, so a demand

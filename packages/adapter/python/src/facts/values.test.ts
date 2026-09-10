@@ -422,13 +422,58 @@ describe("python value facts", () => {
       [
         "def handler(session):",
         "    query = session.query(Entity)",
-        "    query = query.filter(1)",
+        "    query = build(1)",
         "    return query",
         "",
       ].join("\n"),
     );
     const [funcKey] = rows(db, "func")[0] ?? [];
     const [second] = rows(db, "call")[1] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, second]]);
+  });
+
+  it("ends a name a second write only narrows holding what the first write built", async () => {
+    const db = await factsFor(
+      [
+        "def handler(session):",
+        "    query = session.query(Entity)",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [first] = rows(db, "call")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, first]]);
+  });
+
+  it("reads a narrowing write through the parentheses around it", async () => {
+    const db = await factsFor(
+      [
+        "def handler(session):",
+        "    query = session.query(Entity)",
+        "    query = (query).filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [first] = rows(db, "call")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, first]]);
+  });
+
+  it("takes a write whose chain starts at an element rather than the name as a fresh value", async () => {
+    const db = await factsFor(
+      [
+        "def handler(session):",
+        "    query = session.query(Entity)",
+        "    query = query[0].filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const second = rows(db, "call")[1]?.[0];
     expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, second]]);
   });
 
@@ -642,7 +687,7 @@ describe("python value facts", () => {
         "    query = build()",
         "    def inner():",
         "        return query",
-        "    query = query.filter(1)",
+        "    query = rebuild(1)",
         "    return query",
         "",
       ].join("\n"),
@@ -661,7 +706,7 @@ describe("python value facts", () => {
         "    query = build()",
         "    class Inner:",
         "        query = 1",
-        "    query = query.filter(1)",
+        "    query = rebuild(1)",
         "    return query",
         "",
       ].join("\n"),
@@ -679,7 +724,7 @@ describe("python value facts", () => {
         "def handler(session):",
         "    query = session.query(Entity)",
         "    import query.sub",
-        "    query = query.filter(1)",
+        "    query = rebuild(1)",
         "    return query",
         "",
       ].join("\n"),
