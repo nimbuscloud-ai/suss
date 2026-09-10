@@ -198,8 +198,8 @@ function environmentVariableOf(node: RbNode): string | null {
 
 const EXPRESSION_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
   string: stringExpression,
-  // `:"a#{b}"` is worth the string it spells, and its parts are written
-  // the way a string's are.
+  // `:"a#{b}"` comes down to the same string `"a#{b}"` does, and its
+  // parts are written the way a string's are.
   delimited_symbol: stringExpression,
   chained_string: (node) => ({
     kind: "template",
