@@ -2,10 +2,10 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 927,
-    "internal": 3379,
-    "consumers": 1817,
-    "pairs": 1814,
+    "exports": 929,
+    "internal": 3387,
+    "consumers": 1827,
+    "pairs": 1824,
     "unfollowedCalls": 502,
     "findingErrors": 0
   },
@@ -13,8 +13,8 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 59,
-      "internal": 368,
-      "consumers": 203,
+      "internal": 374,
+      "consumers": 210,
       "unfollowedCalls": 64
     },
     "packages/adapter/ruby": {
@@ -425,16 +425,16 @@
     },
     "packages/framework/sqlalchemy": {
       "name": "@suss/framework-sqlalchemy",
-      "exports": 5,
+      "exports": 6,
       "internal": 0,
       "consumers": 0,
       "unfollowedCalls": 0
     },
     "packages/framework/sqlmodel": {
       "name": "@suss/framework-sqlmodel",
-      "exports": 5,
+      "exports": 6,
       "internal": 2,
-      "consumers": 4,
+      "consumers": 5,
       "unfollowedCalls": 0
     },
     "packages/framework/ts-rest": {
@@ -482,7 +482,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 46,
-      "internal": 176,
+      "internal": 178,
       "consumers": 0,
       "unfollowedCalls": 7
     },
@@ -497,7 +497,7 @@
       "name": "@suss/resolution",
       "exports": 20,
       "internal": 28,
-      "consumers": 71,
+      "consumers": 73,
       "unfollowedCalls": 27
     },
     "packages/runtime/node": {
