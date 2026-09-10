@@ -2,11 +2,11 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 929,
-    "internal": 3387,
-    "consumers": 1827,
-    "pairs": 1824,
-    "unfollowedCalls": 502,
+    "exports": 930,
+    "internal": 3394,
+    "consumers": 1830,
+    "pairs": 1827,
+    "unfollowedCalls": 504,
     "findingErrors": 0
   },
   "packages": {
@@ -20,9 +20,9 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 70,
-      "internal": 302,
-      "consumers": 148,
-      "unfollowedCalls": 74
+      "internal": 309,
+      "consumers": 150,
+      "unfollowedCalls": 76
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -495,9 +495,9 @@
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 20,
+      "exports": 21,
       "internal": 28,
-      "consumers": 73,
+      "consumers": 74,
       "unfollowedCalls": 27
     },
     "packages/runtime/node": {
