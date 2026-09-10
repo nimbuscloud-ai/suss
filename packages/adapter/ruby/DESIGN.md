@@ -239,6 +239,7 @@ storage: [
   {
     baseClasses: ["ActiveRecord::Base"],
     writes: ["update", "destroy", "save", "create", "delete_all"],
+    givesBack: ["find", "where", "first"],
     storageSystem: "postgresql",
   },
 ]
@@ -279,6 +280,32 @@ would report it as an unsettled value; a call the storage recognizer
 records is not reported as a gap, since the summary already says what it
 does. `dataload_association(record, :name)` is left out: the model behind
 an association is declared on another class, which nothing here reads yet.
+
+## What a finder gives back
+
+A pack also says which of its library's methods give back one of the model,
+in `givesBack` on the same storage pattern. ActiveRecord's list is `find`,
+`first`, `create` and the rest that come back with a record, plus `where`,
+`order`, `limit` and the rest that come back with a relation. Every one of
+those, paired with every base class the pattern lists, goes into the facts
+as `givesBackOne(base, method)` while the run is being read:
+
+```
+givesBackOne  ActiveRecord::Base  find
+givesBackOne  ActiveRecord::Base  where
+```
+
+The shared rules read that. `Account.find(params[:id])` steps to `Account`,
+so a method read off the result runs the one `Account` declares, and a
+`before_action` writing `@account` reaches the action the same way any other
+instance variable does. A chain composes one method at a time, so
+`Account.where(x).first` steps to `Account` twice. Ruby writes a call with
+no arguments as a property read rather than a call, which is why the adapter
+states the same step a second time in `RUBY_RULES` for that spelling.
+
+The storage recognizer still finds the model by the constant a chain starts
+at, so `@account.update(attrs)` is followed as a call and is not recorded as
+a write. Asking the facts for a receiver's class there is a separate change.
 
 ## What a file reads from the environment
 

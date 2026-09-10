@@ -41,6 +41,7 @@ const railsWithActiveRecord: RubyPack = {
     {
       baseClasses: ["ActiveRecord::Base"],
       writes: ["create", "update", "destroy", "save", "delete_all"],
+      givesBack: ["find", "where", "first"],
       storageSystem: "postgresql",
     },
   ],
