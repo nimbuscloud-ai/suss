@@ -137,6 +137,14 @@ describe("findNearestTsconfig", () => {
     expect(findNearestTsconfig(dir)).toBe(path.join(dir, "tsconfig.json"));
   });
 
+  it("does not walk up to a tsconfig.base.json above the start directory", () => {
+    fs.writeFileSync(path.join(dir, "tsconfig.base.json"), "{}");
+    const nested = path.join(dir, "fixtures", "one");
+    fs.mkdirSync(nested, { recursive: true });
+
+    expect(findNearestTsconfig(nested)).toBeNull();
+  });
+
   it("prefers the nearer one", () => {
     fs.writeFileSync(path.join(dir, "tsconfig.json"), "{}");
     const nested = path.join(dir, "service");
