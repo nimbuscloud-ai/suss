@@ -1,9 +1,9 @@
 /**
  * Resolves Ruby constant paths against lexical nesting.
  *
- * A compound path written out, like `Data::Record`, means the same thing
- * wherever it appears, so its text is the qualified name. A bare name is
- * relative to the nesting it is written inside. `require` is never resolved,
+ * A compound path referenced, like `Data::Record`, is read as absolute. A
+ * bare name is relative to the nesting it is written inside, and so is a
+ * compound name `class` or `module` opens. `require` is never resolved,
  * because Rails autoloads by naming convention rather than through a load graph
  * a static reader could follow, so a constant that nesting alone cannot qualify
  * keeps whatever name the source wrote and callers treat it as unresolved.
@@ -148,16 +148,37 @@ function walkBody(
  * The qualified name a class or module's `name` field gives it, along with the
  * nesting chain inside its body. `bodyNesting` always puts the qualified name on
  * the front of `outerNesting`, whichever form the name took.
+ *
+ * A compound name opened inside a module is nested under it, so
+ * `module Admin; class Users::RolesController` defines
+ * `Admin::Users::RolesController`, which is also the constant the file's
+ * path under `app/controllers/admin/users/` autoloads. Only a name
+ * written with a leading `::` opens the class at the top level.
  */
 function ownIdentity(
   nameNode: RbNode,
   outerNesting: readonly string[],
 ): { qualifiedName: string; bodyNesting: readonly string[] } | null {
-  const qualifiedName = qualifyConstantRef(nameNode, outerNesting);
+  const qualifiedName = definedName(nameNode, outerNesting);
   if (qualifiedName === null) {
     return null;
   }
   return { qualifiedName, bodyNesting: [qualifiedName, ...outerNesting] };
+}
+
+function definedName(
+  nameNode: RbNode,
+  outerNesting: readonly string[],
+): string | null {
+  const innermost = outerNesting[0] ?? null;
+  if (
+    nameNode.type === "scope_resolution" &&
+    innermost !== null &&
+    !nameNode.text.startsWith("::")
+  ) {
+    return `${innermost}::${nameNode.text}`;
+  }
+  return qualifyConstantRef(nameNode, outerNesting);
 }
 
 function visitClass(
