@@ -275,6 +275,121 @@ describe("ruby value facts", () => {
     expect(db.size("extendsNamed")).toBe(0);
   });
 
+  it("puts a module the class includes in the extends ancestry", async () => {
+    const db = await factsFor("class Order\n  include Payable\nend\n");
+    const [cls] = rows(db, "objectValue");
+    expect(rows(db, "extends")).toEqual([[cls?.[0], "#Payable"]]);
+  });
+
+  it("puts a module the class prepends in the extends ancestry", async () => {
+    const db = await factsFor("class Order\n  prepend Auditing\nend\n");
+    const [cls] = rows(db, "objectValue");
+    expect(rows(db, "extends")).toEqual([[cls?.[0], "#Auditing"]]);
+  });
+
+  it("leaves a mixin out of extendsNamed, which is for a library base alone", async () => {
+    const db = await factsFor(
+      "class Order < ApplicationRecord\n  include Payable\nend\n",
+    );
+    expect(rows(db, "extendsNamed").map((row) => row[1])).toEqual([
+      "ApplicationRecord",
+    ]);
+  });
+
+  it("reads a scope resolution mixin under the whole name it is written as", async () => {
+    const source = "class Account\n  include Account::Associations\nend\n";
+    const db = await factsFor(source);
+    const [cls] = rows(db, "objectValue");
+    expect(rows(db, "extends")).toEqual([
+      [cls?.[0], keyOf(source, "Account::Associations")],
+    ]);
+  });
+
+  it("orders prepends before includes, and include A, B in front of B", async () => {
+    const db = await factsFor(
+      [
+        "class Order < ApplicationRecord",
+        "  prepend Auditing",
+        "  include A, B",
+        "  include C",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "extends").map((row) => row[1])).toEqual([
+      "#Auditing",
+      "#C",
+      "#A",
+      "#B",
+      "#ApplicationRecord",
+    ]);
+  });
+
+  it("reads a method an included do block declares as the module's own", async () => {
+    const db = await factsFor(
+      [
+        "module Payable",
+        "  included do",
+        "    def pay",
+        "      charge",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [mod] = rows(db, "objectValue");
+    const [func] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([[mod?.[0], "pay", func?.[0]]]);
+  });
+
+  it("reads a method a with_options block declares as the class's own", async () => {
+    const db = await factsFor(
+      [
+        "class Order",
+        "  with_options dependent: :destroy do",
+        "    def pay",
+        "      charge",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [cls] = rows(db, "objectValue");
+    const [func] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([[cls?.[0], "pay", func?.[0]]]);
+  });
+
+  it("reads through a with_options block nested in an included do block", async () => {
+    const db = await factsFor(
+      [
+        "module Account::Associations",
+        "  included do",
+        "    with_options dependent: :destroy do",
+        "      def statuses",
+        "        relation",
+        "      end",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [mod] = rows(db, "objectValue");
+    const [func] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([
+      [mod?.[0], "statuses", func?.[0]],
+    ]);
+  });
+
+  it("leaves an included do block in a class alone, since nothing includes a class", async () => {
+    const db = await factsFor(
+      "class Order\n  included do\n    def pay\n    end\n  end\nend\n",
+    );
+    expect(db.size("holdsProperty")).toBe(0);
+  });
+
   it("keys a local under the method that writes it, so two methods keep two names", async () => {
     const db = await factsFor(
       [

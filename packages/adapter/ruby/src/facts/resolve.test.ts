@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { askResolution } from "@suss/resolution";
 
 import { parseRuby } from "../parser.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
-import { resolveValues, writtenValueOf } from "./resolve.js";
+import { RUBY_PROGRAM, resolveValues, writtenValueOf } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
 async function factsFor(source: string) {
@@ -239,5 +240,51 @@ describe("a method Ruby runs by reading it off a constant", () => {
     );
 
     expect(writtenValueOf(db, readOf(db))).toBe(listOf(db));
+  });
+});
+
+/** The shape a Rails concern takes: a method declared inside `included do`, mixed into a model. */
+const CONCERN_SOURCE = [
+  "module Payable",
+  "  extend ActiveSupport::Concern",
+  "",
+  "  included do",
+  "    def pay",
+  "      charge",
+  "    end",
+  "  end",
+  "end",
+  "",
+  "class Account",
+  "  include Payable",
+  "end",
+  "",
+].join("\n");
+
+describe("a method a concern declares", () => {
+  it("is reached by a read off the class that includes the concern", async () => {
+    const db = await runFactsFor(`${CONCERN_SOURCE}Account.pay\n`);
+    const [pay] = db.facts("func").map((row) => String(row[0]));
+    const read = String(
+      db.facts("readsProperty").find((row) => String(row[2]) === "pay")?.[0],
+    );
+
+    resolveValues(db, [read]);
+    expect(
+      db
+        .facts("wantedComesTo")
+        .filter((row) => String(row[0]) === read)
+        .map((row) => String(row[1])),
+    ).toContain(pay);
+  });
+
+  it("is one of the names the including class's ancestry declares", async () => {
+    const db = await runFactsFor(CONCERN_SOURCE);
+    const account = classBehind(db, "f.rb#Account");
+
+    askResolution(db, [account], "wantedAncestry", RUBY_PROGRAM);
+    expect(
+      db.lookup("wantedDeclaredName", 0, account).map((row) => String(row[1])),
+    ).toContain("pay");
   });
 });

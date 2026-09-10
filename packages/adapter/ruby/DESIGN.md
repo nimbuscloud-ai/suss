@@ -186,6 +186,40 @@ extendsNamed  order.rb:0-31  ApplicationRecord
 A pack matching a library base class reads the second one, and follows the
 first to keep going up.
 
+A module mixed in with `include` or `prepend` is an ancestor in Ruby's own
+`ancestors` list, so it goes in `extends` too and every rule that walks an
+ancestry reaches what the module declares:
+
+```ruby
+# account.rb
+class Account < ApplicationRecord
+  include Account::Associations
+end
+
+# associations.rb
+module Account::Associations
+end
+```
+
+```
+extends       account.rb:0-68  associations.rb:0-32
+extends       account.rb:0-68  account.rb#ApplicationRecord
+extendsNamed  account.rb:0-68  ApplicationRecord
+```
+
+The mixin goes in `extends` and nowhere else. `extendsNamed` says which library
+base a class arrives at, and a module is never one, so naming a mixin there
+would give a class a second base for a pack to match on. The facts read the
+same two calls the syntactic ancestry in `ancestry.ts` reads, so the two agree
+on which constant is mixed in, down to the order of `include A, B`.
+
+ActiveSupport's `included do ... end` runs its block on the class doing the
+including, and `with_options ... do ... end` runs its block with extra
+keywords. Both blocks are read as statements of the class or module around
+them, so a method or a value written inside one is a property of that class or
+module rather than something lost with the block. The keywords `with_options`
+passes down are not read.
+
 ## What a body calls out to
 
 A pack says which constant its library's request calls hang on, in `clients` on
@@ -294,11 +328,10 @@ data being written rather than a `where`.
 
 A call whose method the project writes itself is skipped: `wantedDeclaredName`
 says which methods the class's ancestry declares, the reach walk steps into
-that body, and the body reports whatever database work it does. Modules mixed
-in with `include` are not in that ancestry, since the facts follow `extends`
-alone, so a `def save` in a concern is still recorded here as a write. A block
-parameter is not bound in the facts either, so `orders.each { |o| o.save }`
-says nothing.
+that body, and the body reports whatever database work it does. A module mixed
+in with `include` is in that ancestry, so a `def save` in a concern is stepped
+into rather than recorded here as a write. A block parameter is not bound in
+the facts, so `orders.each { |o| o.save }` says nothing.
 
 A library that batches reads on the caller's behalf puts the model in an
 argument instead of on the receiver. graphql-ruby's dataloader is one: a
@@ -391,7 +424,7 @@ A call with a receiver is resolved in two steps. The rules in `@suss/resolution`
 
 Ruby has no property read. `config.host` and `c.run` parse the same way, so which of the two an expression is depends on what its receiver comes to. A call written with no arguments is a method call when the rules settle its receiver on a function or an object this run defines, and from there it is resolved like any other call, with the same stops and the same gaps. A receiver settled on anything else, a value a dependency built, a caller's parameter, or a name nothing in the run declares, makes the call a property read: no invocation, no gap, nothing. The effect list says what the walk did. A unit's list is written as its body is read, when nothing yet says which of the two a given expression is, so every no-argument call goes on it and the walk takes back the ones that reached no project method. What is left links to the summary of what it reached, the way a call with arguments does. A unit whose list is empty afterwards says its body went unread, which is right for a resolver whose one statement was `object.name`. A no-argument call does not take the place of the call it is written on, the way a call with arguments does. `Filter.new(scope).results` runs the class's `initialize` and then its `results`, so both are reported, each linked to its own summary. `Order.where(id: 1).limit(10).first` is unchanged, since nothing settles what `first` runs on.
 
-An instance variable is a name on the object rather than on any one method, so it is read as a property of the class: `@scope` written anywhere in the class body puts its value on the class under `@scope`, and every read of `@scope` is a property read off that class. A Rails controller sets one in a `before_action` and reads it in the action, and the two are different bodies, which is why a method-local key would never join them. `contains` already walks `extends`, so a write in a base controller reaches a read in a subclass with no step of its own; a module the class `include`s is not on that path. Nothing orders two methods, so several writes that disagree leave several values and a reader that needs one answer sees more than one source. A write that narrows the name, `@scope = @scope.where(a: 1)`, is set aside the way it is for a local.
+An instance variable is a name on the object rather than on any one method, so it is read as a property of the class: `@scope` written anywhere in the class body puts its value on the class under `@scope`, and every read of `@scope` is a property read off that class. A Rails controller sets one in a `before_action` and reads it in the action, and the two are different bodies, which is why a method-local key would never join them. `contains` already walks `extends`, so a write in a base controller reaches a read in a subclass with no step of its own, and a module the class `include`s is on that path too. Nothing orders two methods, so several writes that disagree leave several values and a reader that needs one answer sees more than one source. A write that narrows the name, `@scope = @scope.where(a: 1)`, is set aside the way it is for a local.
 
 A call with no receiver, or one on `self`, never reaches the rules: Ruby looks that name up on the enclosing class's ancestry, then among the methods the project writes outside any class, which Ruby mixes into every object as a private method.
 
