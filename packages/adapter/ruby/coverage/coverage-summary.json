@@ -1,16 +1,16 @@
 {
   "total": {
     "lines": {
-      "total": 2826,
-      "covered": 2739,
+      "total": 2813,
+      "covered": 2725,
       "skipped": 0,
-      "pct": 96.92
+      "pct": 96.87
     },
     "statements": {
-      "total": 2875,
-      "covered": 2788,
+      "total": 2862,
+      "covered": 2774,
       "skipped": 0,
-      "pct": 96.97
+      "pct": 96.92
     },
     "functions": {
       "total": 652,
@@ -19,10 +19,10 @@
       "pct": 98.77
     },
     "branches": {
-      "total": 2225,
-      "covered": 1975,
+      "total": 2206,
+      "covered": 1955,
       "skipped": 0,
-      "pct": 88.76
+      "pct": 88.62
     },
     "branchesTrue": {
       "total": 0,
@@ -605,10 +605,10 @@
   },
   "src/facts/locals.ts": {
     "lines": {
-      "total": 137,
-      "covered": 135,
+      "total": 126,
+      "covered": 124,
       "skipped": 0,
-      "pct": 98.54
+      "pct": 98.41
     },
     "functions": {
       "total": 28,
@@ -617,16 +617,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 140,
-      "covered": 138,
+      "total": 129,
+      "covered": 127,
       "skipped": 0,
-      "pct": 98.57
+      "pct": 98.44
     },
     "branches": {
-      "total": 100,
-      "covered": 96,
+      "total": 83,
+      "covered": 79,
       "skipped": 0,
-      "pct": 96
+      "pct": 95.18
     }
   },
   "src/facts/resolve.ts": {
@@ -657,10 +657,10 @@
   },
   "src/facts/values.ts": {
     "lines": {
-      "total": 214,
-      "covered": 212,
+      "total": 212,
+      "covered": 209,
       "skipped": 0,
-      "pct": 99.06
+      "pct": 98.58
     },
     "functions": {
       "total": 37,
@@ -669,16 +669,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 216,
-      "covered": 214,
+      "total": 214,
+      "covered": 211,
       "skipped": 0,
-      "pct": 99.07
+      "pct": 98.59
     },
     "branches": {
-      "total": 171,
-      "covered": 161,
+      "total": 169,
+      "covered": 158,
       "skipped": 0,
-      "pct": 94.15
+      "pct": 93.49
     }
   },
   "src/facts/why.ts": {
