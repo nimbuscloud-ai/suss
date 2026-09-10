@@ -183,7 +183,7 @@ describe("the database work a Ruby body does", () => {
     expect(effects).toEqual([]);
   });
 
-  it("says nothing about a name two files declare", async () => {
+  it("reads a model whose class a second file opens again", async () => {
     const { db, root } = await factsFor({
       "one.rb": "class Order < ApplicationRecord\nend\n",
       "two.rb": "class Order\nend\n",
@@ -196,7 +196,9 @@ describe("the database work a Ruby body does", () => {
         facts: db,
         patterns: [ACTIVE_RECORD],
       }),
-    ).toEqual([]);
+    ).toMatchObject([
+      { binding: { semantics: { container: "Order" } }, type: "interaction" },
+    ]);
   });
 
   describe("read through a loader", () => {
