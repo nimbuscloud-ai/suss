@@ -22,6 +22,18 @@ describe("the ActiveRecord pack", () => {
     expect(pattern?.writes).toContain("save!");
   });
 
+  it("says which methods give back one of the model", () => {
+    const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
+    expect(pattern?.givesBack).toContain("find");
+    expect(pattern?.givesBack).toContain("where");
+  });
+
+  it("leaves a method that gives back something else off that list", () => {
+    const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
+    expect(pattern?.givesBack).not.toContain("count");
+    expect(pattern?.givesBack).not.toContain("exists?");
+  });
+
   it("takes the database from the caller, since ActiveRecord talks to all of them", () => {
     const [pattern] = activeRecordStorage({ storageSystem: "mysql" });
     expect(pattern?.storageSystem).toBe("mysql");
@@ -43,6 +55,7 @@ describe("the ActiveRecord pack", () => {
         {
           baseClasses: ["Other::Base"],
           writes: [],
+          givesBack: [],
           storageSystem: "postgresql",
         },
       ],
