@@ -153,6 +153,27 @@ const stringRows: Row[] = [
   stripRow("chomp", "end"),
 ];
 
+/**
+ * What a project asks a list, rather than does to it. The answer is a
+ * value nothing here reads, so each row gives back a hole; what a row
+ * settles is that the call left the list as it was, which is what keeps
+ * a constant asked about in one method readable in another.
+ */
+const ASKING_METHODS = [
+  "include?",
+  "member?",
+  "any?",
+  "all?",
+  "none?",
+  "empty?",
+  "size",
+  "length",
+  "count",
+  "first",
+  "last",
+  "map",
+];
+
 const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [
   {
     kind: "method",
@@ -162,6 +183,25 @@ const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [
       result: joined(operand(receiver), args[0]),
     }),
   },
+  // Iterating a list gives the list back and leaves it as it was, which
+  // is what keeps `KEYS.each { ... }` from widening `KEYS` everywhere
+  // else.
+  ...["each", "each_with_index"].map(
+    (method): Row => ({
+      kind: "method",
+      method,
+      on: on as "sequence" | "unbounded",
+      apply: () => ({ result: "receiver" }),
+    }),
+  ),
+  ...ASKING_METHODS.map(
+    (method): Row => ({
+      kind: "method",
+      method,
+      on: on as "sequence" | "unbounded",
+      apply: () => ({ result: hole("value") }),
+    }),
+  ),
   ...["push", "append", "<<"].map(
     (method): Row => ({
       kind: "method",

@@ -39,6 +39,8 @@
   "delta": "OpenTelemetry metrics data model: aggregation temporality, the change across one interval",
   "derived": "suss: resolution confidence",
   "dictionary": "shape kind the extractor records",
+  "each": "Ruby: Enumerable#each, the loop the language itself supplies rather than any library",
+  "each_with_index": "Ruby: Enumerable#each_with_index, the same loop with the position of each element",
   "effect": "suss: effect class",
   "element": "suss: RenderNode variant tag, which react-router also happens to call its Route prop",
   "enum": "shape kind the extractor records",

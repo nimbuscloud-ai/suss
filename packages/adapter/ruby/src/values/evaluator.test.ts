@@ -117,6 +117,11 @@ describe("literals and names", () => {
     );
   });
 
+  it("reads a symbol written with quotes, interpolated or not", async () => {
+    expect(await literal('subject = :"width"')).toBe("width");
+    expect(await literal('key = "width"\nsubject = :"#{key}="')).toBe("width=");
+  });
+
   it("leaves a hole in an interpolation over an unknown name", async () => {
     expect(await route('subject = "/api/#{version}/x"')).toBe(
       "/api/{version}/x",
@@ -373,6 +378,44 @@ describe("records and sequences", () => {
         '# lead\ncfg = {\n  # inside\n  prefix: "/api",\n}\nsubject = cfg[:prefix] # trailing',
       ),
     ).toBe("/api");
+  });
+
+  it("keeps a list a method only iterates or asks about", async () => {
+    const value = await subjectOf(
+      [
+        "KEYS = %w(a b).freeze",
+        "def read",
+        "  KEYS.each { |key| key }",
+        "  KEYS.include?('a')",
+        "end",
+        "subject = KEYS",
+      ].join("\n"),
+    );
+    expect(value).toMatchObject({ kind: "sequence" });
+  });
+
+  it("gives back the list itself for each, and nothing for what a list is asked", async () => {
+    expect(
+      await subjectOf(
+        "KEYS = %w(a b).freeze\nsubject = KEYS.each { |key| key }",
+      ),
+    ).toMatchObject({ kind: "sequence" });
+    expect(
+      await subjectOf('KEYS = %w(a b).freeze\nsubject = KEYS.include?("a")'),
+    ).toMatchObject({ kind: "hole" });
+  });
+
+  it("widens a list a method calls something else on", async () => {
+    const value = await subjectOf(
+      [
+        "KEYS = %w(a b).freeze",
+        "def write",
+        "  KEYS.delete('a')",
+        "end",
+        "subject = KEYS",
+      ].join("\n"),
+    );
+    expect(value).toMatchObject({ kind: "unbounded" });
   });
 });
 
