@@ -31,6 +31,19 @@ function nameId(filePath: string, name: string): string {
 }
 
 /**
+ * Parentheses say nothing about a value, so every key reads through a pair
+ * holding one expression. A pair holding several is a `begin` block whose
+ * value is its last statement, which is a different question.
+ */
+function readThrough(node: RbNode): RbNode {
+  if (node.type !== "parenthesized_statements") {
+    return node;
+  }
+  const inner = node.namedChildren.filter((child) => child !== null);
+  return inner.length === 1 ? readThrough(inner[0] as RbNode) : node;
+}
+
+/**
  * The key a bare name joins on: its own scope's, so `query` in one method is
  * apart from `query` in the next. `enclosing` is the method the name is
  * written in, or null outside one.
@@ -53,9 +66,10 @@ function nameKey(
  */
 export function readKey(
   filePath: string,
-  node: RbNode,
+  written: RbNode,
   enclosing: RbNode | null,
 ): string {
+  const node = readThrough(written);
   if (node.type !== "identifier" && node.type !== "constant") {
     return nodeId(filePath, node);
   }
@@ -113,6 +127,8 @@ interface Emitter {
    * `loader` and they are not the same value.
    */
   enclosing: RbNode | null;
+  /** The class or module `self` means here, or null outside one. */
+  selfKey: string | null;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -123,7 +139,8 @@ function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
  * The key a value joins on. A bare name joins on the name, so a read of `x`
  * meets whatever `x` was bound to; anything else joins on its own node.
  */
-function valueKey(emitter: Emitter, value: RbNode): string {
+function valueKey(emitter: Emitter, written: RbNode): string {
+  const value = readThrough(written);
   if (value.type !== "identifier" && value.type !== "constant") {
     return nodeId(emitter.filePath, value);
   }
@@ -296,6 +313,11 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     if (child.type === "nil") {
       add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
     }
+    // A builder method returning `self` hands back one of the class it is
+    // written in, so the next method in a chain is one that class declares.
+    if (child.type === "self" && emitter.selfKey !== null) {
+      add(emitter, "binds", nodeId(emitter.filePath, child), emitter.selfKey);
+    }
   });
 }
 
@@ -386,16 +408,36 @@ function sourceOf(node: RbNode): string {
   return node.text.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Whether reading this expression starts by reading `name`, through
+ * however many calls. Ruby writes an attribute read as a call too, so
+ * `query = query.limit` reads the same way as `query = query.limit(1)`
+ * and both narrow the name. What either call gives back is left to the
+ * rules, which have the value key for it.
+ */
+function startsAtName(written: RbNode, name: string): boolean {
+  const node = readThrough(written);
+  if (node.type === "identifier") {
+    return node.text === name;
+  }
+  if (node.type !== "call") {
+    return false;
+  }
+  const receiver = field(node, "receiver");
+  return receiver !== null && startsAtName(receiver, name);
+}
+
 function describeWrite(emitter: Emitter, write: LocalWrite): NameWrite {
-  const value = write.value;
+  const value = write.value === null ? null : readThrough(write.value);
   return {
     value: value === null ? null : valueKey(emitter, value),
     placeholder: value?.type === "nil",
     construction:
       value !== null && isConstruction(value) ? sourceOf(value) : null,
-    // Ruby writes a method call and an attribute read the same way, so
-    // a narrowing write cannot be told from one that replaces the value.
-    narrowsName: false,
+    narrowsName:
+      value !== null &&
+      value.type === "call" &&
+      startsAtName(value, write.name),
   };
 }
 
@@ -429,13 +471,14 @@ function emitScopeWrites(
 ): void {
   for (const group of collectWrites(method, body)) {
     const settled = settledValue(emitter, group);
-    if (settled === null) {
-      continue;
-    }
     const key =
       group.owner === null
         ? nameId(emitter.filePath, group.name)
         : `${nodeId(emitter.filePath, group.owner)}#${group.name}`;
+    if (settled === null) {
+      emitCandidates(emitter, key, group);
+      continue;
+    }
     add(
       emitter,
       group.writes.length === 1 ? "binds" : "endsHolding",
@@ -445,6 +488,32 @@ function emitScopeWrites(
     // Only a name written at the top of a file is something another file can read.
     if (group.owner === null) {
       add(emitter, "exportsAs", emitter.filePath, group.name, settled);
+    }
+  }
+}
+
+/**
+ * Each value a write put in a name the writes left undecided. A write that
+ * narrows the name is left out, and a write with no value of its own, a
+ * `for` target or a block parameter, is what `writesUnstated` says. A
+ * method parameter is left out of both: `paramNamed` already says the
+ * value is whatever the caller passed.
+ */
+function emitCandidates(
+  emitter: Emitter,
+  key: string,
+  group: NameWrites,
+): void {
+  for (const write of group.writes) {
+    if (write.value === null) {
+      add(emitter, "writesUnstated", key);
+      continue;
+    }
+    if (write.fromParameter) {
+      continue;
+    }
+    if (!describeWrite(emitter, write).narrowsName) {
+      add(emitter, "mayHold", key, valueKey(emitter, write.value));
     }
   }
 }
@@ -471,6 +540,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   }
 
   const body = field(cls, "body");
+  const within: Emitter = { ...emitter, selfKey: classKey };
   for (const statement of body === null ? [] : children(body)) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
@@ -496,7 +566,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     if (!METHOD_TYPES.has(statement.type)) {
       continue;
     }
-    const funcKey = emitMethodFacts(emitter, statement);
+    const funcKey = emitMethodFacts(within, statement);
     const name = field(statement, "name");
     if (name !== null) {
       add(emitter, "holdsProperty", classKey, name.text, funcKey);
@@ -515,7 +585,7 @@ export function emitValueFacts(
   filePath: string,
   root: RbNode,
 ): void {
-  const emitter: Emitter = { db, filePath, enclosing: null };
+  const emitter: Emitter = { db, filePath, enclosing: null, selfKey: null };
 
   const declaresName = (child: RbNode, key: string): void => {
     const name = field(child, "name");
