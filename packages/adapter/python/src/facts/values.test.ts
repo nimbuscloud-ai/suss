@@ -267,6 +267,20 @@ describe("python value facts", () => {
     expect(rows(db, "binds").map((row) => row[0])).toContain(`${method}#app`);
   });
 
+  it("says the name a base class is written as, so a pack can match on it", async () => {
+    const db = await factsFor(
+      ["class Item(SQLModel, table=True):", "    pass", ""].join("\n"),
+    );
+    expect(rows(db, "extendsNamed").map((row) => row[1])).toEqual(["SQLModel"]);
+  });
+
+  it("says the dotted name too, and nothing for a subscript", async () => {
+    const db = await factsFor(
+      ["class Item(db.Model, Generic[T]):", "    pass", ""].join("\n"),
+    );
+    expect(rows(db, "extendsNamed").map((row) => row[1])).toEqual(["db.Model"]);
+  });
+
   it("keeps a class attribute under its name", async () => {
     const db = await factsFor(
       ["class Loader:", "    registry = built", ""].join("\n"),

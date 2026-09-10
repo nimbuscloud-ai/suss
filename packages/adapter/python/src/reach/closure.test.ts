@@ -888,3 +888,176 @@ describe("the spellings a callee can have", () => {
     ]);
   });
 });
+
+/**
+ * SQLModel's own vocabulary, the same values the pack ships. None of
+ * `get`, `query`, `exec`, `filter` or `first` is written anywhere in
+ * the fixtures below, and `select` comes from the library.
+ */
+const sqlmodelLike: PythonPack = {
+  name: "sqlmodel",
+  protocol: "http",
+  discovery: fastapiLike.discovery,
+  storage: [
+    {
+      module: "sqlmodel",
+      queryTypes: ["Session"],
+      writes: ["add", "commit"],
+      recordsNothing: ["exec"],
+      storageSystem: "postgresql",
+    },
+  ],
+  models: [
+    {
+      baseNames: ["SQLModel", "declarative_base"],
+      givesBack: ["filter", "first"],
+      entryMethods: [
+        { method: "get", argument: 0 },
+        { method: "query", argument: 0 },
+        { method: "exec", argument: 0 },
+      ],
+      entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
+    },
+  ],
+};
+
+async function extractWithModels(): Promise<BehavioralSummary[]> {
+  const { summaries } = await extractPythonProject({
+    files: findPythonFiles(tmpDir),
+    packs: [sqlmodelLike],
+    roots: [tmpDir],
+    workspaceRoot: tmpDir,
+  });
+  return summaries;
+}
+
+/** The summary a call in this body was linked to, or undefined when it was left unfollowed. */
+function callTo(
+  summary: BehavioralSummary,
+  callee: string,
+): string | undefined {
+  return calls(summary).find(([name]) => name === callee)?.[1];
+}
+
+/** `Item`, written the way SQLModel asks, with one method of its own. */
+function writeItemModel(): void {
+  write("app/models.py", [
+    "from sqlmodel import SQLModel",
+    "",
+    "class Item(SQLModel, table=True):",
+    "    def deactivate(self):",
+    "        return self",
+  ]);
+}
+
+describe("a call on what a model query gave back", () => {
+  it("follows a method read off what a session was asked for by class", async () => {
+    writeItemModel();
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from app.models import Item",
+      "",
+      '@app.get("/items")',
+      "def read_item(session, item_id):",
+      "    item = session.get(Item, item_id)",
+      "    return item.deactivate()",
+    ]);
+
+    const summaries = await extractWithModels();
+    const model = unitNamed(summaries, "deactivate");
+    expect(model.location.file).toBe("app/models.py");
+    expect(callTo(unitNamed(summaries, "read_item"), "item.deactivate")).toBe(
+      summaryIdentifier(model),
+    );
+  });
+
+  it("follows a query chain the pack said narrows to one of the model", async () => {
+    writeItemModel();
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from app.models import Item",
+      "",
+      '@app.get("/items")',
+      "def read_item(session, owner):",
+      "    item = session.query(Item).filter(owner).first()",
+      "    return item.deactivate()",
+    ]);
+
+    const summaries = await extractWithModels();
+    const model = unitNamed(summaries, "deactivate");
+    expect(callTo(unitNamed(summaries, "read_item"), "item.deactivate")).toBe(
+      summaryIdentifier(model),
+    );
+  });
+
+  it("follows a statement built by the library's own function into the call that runs it", async () => {
+    writeItemModel();
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from sqlmodel import select",
+      "from app.models import Item",
+      "",
+      '@app.get("/items")',
+      "def read_item(session):",
+      "    item = session.exec(select(Item)).first()",
+      "    return item.deactivate()",
+    ]);
+
+    const summaries = await extractWithModels();
+    const model = unitNamed(summaries, "deactivate");
+    expect(callTo(unitNamed(summaries, "read_item"), "item.deactivate")).toBe(
+      summaryIdentifier(model),
+    );
+  });
+
+  it("follows a model two classes below a base the library built by a call", async () => {
+    write("app/database.py", [
+      "from sqlalchemy.orm import declarative_base",
+      "",
+      "Base = declarative_base()",
+    ]);
+    write("app/models.py", [
+      "from app.database import Base",
+      "",
+      "class TimeStamped(Base):",
+      "    pass",
+      "",
+      "class Item(TimeStamped):",
+      "    def deactivate(self):",
+      "        return self",
+    ]);
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from app.models import Item",
+      "",
+      '@app.get("/items")',
+      "def read_item(session, item_id):",
+      "    item = session.get(Item, item_id)",
+      "    return item.deactivate()",
+    ]);
+
+    const summaries = await extractWithModels();
+    const model = unitNamed(summaries, "deactivate");
+    expect(callTo(unitNamed(summaries, "read_item"), "item.deactivate")).toBe(
+      summaryIdentifier(model),
+    );
+  });
+
+  it("says nothing about a call the pack declared no method of that name for", async () => {
+    writeItemModel();
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from app.models import Item",
+      "",
+      '@app.get("/items")',
+      "def read_item(session, item_id):",
+      "    item = session.fetch(Item, item_id)",
+      "    return item.deactivate()",
+    ]);
+
+    const summaries = await extractWithModels();
+    expect(
+      callTo(unitNamed(summaries, "read_item"), "item.deactivate"),
+    ).toBeUndefined();
+  });
+});

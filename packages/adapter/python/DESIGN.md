@@ -323,6 +323,59 @@ the keywords every other call in the chain picks rows by, `id` in
 `filter_by(id=user_id)`. Raw SQL handed to `text` is read as its own effect,
 with the kind and table taken from the statement.
 
+## What a model query gives back
+
+A query is also how a handler gets one of a project's own model classes,
+and a method it then calls on the result is code somebody wrote:
+
+```python
+item = session.get(Item, item_id)
+item.deactivate()
+```
+
+Nothing in the run declares `get`. SQLAlchemy does, and SQLAlchemy is not
+read. So a pack says what its own calls give back, in `models` beside
+`storage`:
+
+```ts
+models: [
+  {
+    baseNames: ["DeclarativeBase", "declarative_base", "SQLModel"],
+    givesBack: ["filter", "where", "first", "all"],
+    entryMethods: [{ method: "get", argument: 0 }],
+    entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
+  },
+]
+```
+
+Each of those goes into the facts while the run is read, paired with
+every base name the declaration lists:
+
+```
+givesBackOneOfArgument  SQLModel  get     0
+givesBackOne            SQLModel  first
+givesBackOneOfImport    sqlmodel  select  0
+```
+
+The shared rules read them. Python names the class in an argument rather
+than as the receiver a Rails finder is called on, so `entryMethods` and
+`entryFunctions` say where it is written, and the argument having to
+reach one of the base names is what keeps `config.get("timeout")` out.
+A function called on its own is keyed on the module it was imported
+from as well, because a project can write a `select` of its own.
+
+After the class is settled the chain is the receiver shape, and
+`givesBack` covers it one method at a time: `session.query(Item)` is one
+`Item`, `.filter(...)` off that is one again, and `.first()` after that
+is one more.
+
+`baseNames` covers the three ways SQLAlchemy and SQLModel let a project
+declare a base. `class Base(DeclarativeBase)` and `class Item(SQLModel,
+table=True)` give the name written in the class list, which the adapter
+puts in the facts as `extendsNamed`. `Base = declarative_base()` gives
+the name of the function that built it, which the shared rules reach
+through the call the base was written as.
+
 ## Where a mount is written
 
 Almost no service mounts anything at the top level of a module. It builds its routers or namespaces there, each with a literal prefix, and registers them inside the function that builds the app, often by looping over a list that another function put together:
