@@ -4,7 +4,7 @@
 
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 
-import { field, OWN_BODY_TYPES } from "../ast.js";
+import { field, NodeMap, OWN_BODY_TYPES } from "../ast.js";
 import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
 
@@ -64,6 +64,28 @@ export function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
 }
 
 /**
+ * The calls a reader reports, out of everything a body writes: one per
+ * chain, plus the no-argument calls `keeps` says are calls rather than
+ * property reads. A no-argument call does not take the place of the
+ * call it is written on, because `Filter.new(a, b).results` runs the
+ * class's `initialize` and then its `results`, and a reader that
+ * reported only the outermost of the two would never reach the first.
+ */
+export function callsReported(
+  written: readonly RbNode[],
+  keeps: (call: RbNode) => boolean,
+): RbNode[] {
+  const outermost = new Set(
+    withoutChainLinks(
+      written.filter((call) => !isArglessReceiverCall(call)),
+    ).map((call) => call.id),
+  );
+  return written.filter((call) =>
+    isArglessReceiverCall(call) ? keeps(call) : outermost.has(call.id),
+  );
+}
+
+/**
  * The method name a call spells. A bare call is an identifier and
  * spells its own name. The `.()` shorthand has no `method` field, and
  * its only other children are the receiver and the argument list, so
@@ -81,8 +103,16 @@ export function calleeMethodName(call: RbNode): string | undefined {
   return field(call, "receiver") !== null ? "call" : children(call)[0]?.text;
 }
 
-/** A receiver call with no arguments reads a property, unless it invokes a Proc or Method held in the receiver. */
-function isPropertyRead(node: RbNode): boolean {
+/**
+ * A call written on a receiver with no argument list. Ruby has no
+ * property read, so `config.host` and `c.run` are the same node, and
+ * which one this is depends on what the receiver turns out to be. That
+ * is what the mark is for: `bodyCalls` keeps these, and each reader
+ * decides for itself which of them count. `handler.call` is left out,
+ * because it runs the Proc the receiver refers to rather than a method
+ * looked up on it, and the walk settles that one through the caller.
+ */
+export function isArglessReceiverCall(node: RbNode): boolean {
   if (field(node, "receiver") === null || field(node, "arguments") !== null) {
     return false;
   }
@@ -103,6 +133,12 @@ export type InheritedMethods = ReadonlySet<string>;
 
 const NO_INHERITED_METHODS: InheritedMethods = new Set<string>();
 
+/** What a reader with no walk behind it makes of a no-argument call. */
+const NO_ARGLESS_CALLS = (): boolean => false;
+
+/** Every no-argument call, for a reader whose list the walk finishes. */
+export const EVERY_ARGLESS_CALL = (): boolean => true;
+
 /** Whether this call goes with no receiver to a method the library defines, which is how a body writes one. */
 function isInherited(node: RbNode, inherited: InheritedMethods): boolean {
   const method = field(node, "method");
@@ -119,9 +155,7 @@ function isCall(
   inherited: InheritedMethods,
 ): boolean {
   if (node.type === "call") {
-    return (
-      !isPropertyRead(node) && !isRaise(node) && !isInherited(node, inherited)
-    );
+    return !isRaise(node) && !isInherited(node, inherited);
   }
   return (
     isBareMethodCall(node, locals) &&
@@ -148,7 +182,12 @@ function collectCalls(
   return found;
 }
 
-/** Every call this method's own body makes, leaving out property reads, raises, and the calls a pack said the library defines. */
+/**
+ * Every call this method's own body makes. A raise is not one, and
+ * neither is a call to a method a pack said the library defines. A call
+ * written with no arguments is in here, and `isArglessReceiverCall`
+ * marks it so each reader can decide whether it counts.
+ */
 export function bodyCalls(
   definitionNode: RbNode,
   inherited: InheritedMethods = NO_INHERITED_METHODS,
@@ -176,7 +215,7 @@ function argOf(node: RbNode): EffectArg {
   if (literal !== null && literal !== undefined) {
     return literal;
   }
-  if (node.type === "call" && !isPropertyRead(node)) {
+  if (node.type === "call" && !isArglessReceiverCall(node)) {
     return { kind: "call", callee: calleeText(node), args: argsOf(node) };
   }
   return { kind: "identifier", name: node.text };
@@ -210,27 +249,45 @@ function enclosingStatement(call: RbNode, body: RbNode): RbNode {
  * The calls a body makes, each with the conditions that have to be true for
  * it to run. A call nobody gated says so by recording no preconditions, which
  * the IR reads as always firing.
+ *
+ * `keepsArglessCall` says which calls written with no arguments count.
+ * Ruby writes a property read the same way it writes such a call, and
+ * only the reach walk settles which one a given expression is, so a
+ * caller that the walk finishes for keeps them all and one with no walk
+ * behind it keeps none.
  */
 export function invocationEffects(
   definitionNode: RbNode,
   inherited: InheritedMethods = NO_INHERITED_METHODS,
+  keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
 ): InvocationEffect[] {
   const body = field(definitionNode, "body");
   if (body === null) {
     return [];
   }
 
-  const calls = withoutChainLinks(bodyCalls(definitionNode, inherited));
+  const calls = callsReported(
+    bodyCalls(definitionNode, inherited),
+    keepsArglessCall,
+  );
   if (calls.length === 0) {
     return [];
   }
 
+  // Two calls written in one statement, `Filter.new(a).results`, give
+  // two readings of that statement, and the engine keys a path by the
+  // node it was handed, so both calls have to be handed the same one.
   const statementOf = new Map<number, RbNode>();
+  const byStatement = new NodeMap<RbNode>();
   const statements: RbNode[] = [];
   for (const call of calls) {
-    const statement = enclosingStatement(call, body);
-    statementOf.set(call.id, statement);
-    statements.push(statement);
+    const written = enclosingStatement(call, body);
+    const statement = byStatement.get(written);
+    if (statement === undefined) {
+      byStatement.set(written, written);
+      statements.push(written);
+    }
+    statementOf.set(call.id, statement ?? written);
   }
 
   const lowered = lowerRubyBody(body, statements);

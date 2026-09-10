@@ -24,21 +24,20 @@ import {
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
-import {
-  bodyStatements,
-  field,
-  OWN_BODY_TYPES,
-  rangeOf,
-  spanOf,
-} from "../ast.js";
+import { bodyStatements, field, rangeOf, spanOf } from "../ast.js";
 import { bodyOfMethod } from "../discovery.js";
 import { nodeId } from "../facts/values.js";
-import { bodyCalls, calleeText, withoutChainLinks } from "../paths/effects.js";
-import { walkDefinitions } from "../scope.js";
+import {
+  bodyCalls,
+  calleeText,
+  callsReported,
+  isArglessReceiverCall,
+} from "../paths/effects.js";
 import { storageClaims } from "../storage.js";
-import { methodDefinitionsIn } from "../values/evaluator.js";
 import {
   calleeSpellings,
+  mightReadAsACall,
+  readsAsACall,
   resolveCallee,
   resolveMethodReference,
 } from "./resolveCallee.js";
@@ -50,7 +49,6 @@ import type {
   UnfollowedCall,
 } from "@suss/behavioral-ir";
 import type { RawCodeStructure, RawParameter } from "@suss/extractor";
-import type { AncestorLookup, ReachedBody } from "../ancestry.js";
 import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type {
@@ -61,12 +59,10 @@ import type {
 } from "./resolveCallee.js";
 
 export interface ReachOptions extends BodyReadOptions {
-  /** Every file this run parsed, so a call anywhere in the project can be placed against a class defined in any of them. */
-  readonly files: readonly { file: string; root: RbNode }[];
+  /** Every class the run defines and every method it writes outside one, which is what a call is placed against. */
+  readonly context: ReachContext;
   /** How a `location.file`/`declaredAt.file` spells an absolute path, the same way `project.ts` spells a discovered unit's. */
   readonly displayPathOf: (file: string) => string;
-  /** The value facts, which are where a callee is settled. */
-  readonly facts: Database;
 }
 
 /** A discovered unit's method, keyed the way its summary's span is. */
@@ -92,6 +88,8 @@ export interface ReachedUnits {
   >;
   /** The calls each scanned body makes through one of its own parameters, by the scanned method's key. */
   readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
+  /** The callee text of each no-argument call the walk found was a property read, by the scanned method's key, so a summary written before the walk can take it back. */
+  readonly propertyReadsByKey: ReadonlyMap<string, ReadonlySet<string>>;
   /** Every (method, position) some scanned body passed a named project method into, across the whole run. */
   readonly passedPositions: ReadonlySet<string>;
 }
@@ -109,7 +107,7 @@ export async function reachedFunctions(
   seeds: readonly Seed[],
   options: ReachOptions,
 ): Promise<ReachedUnits> {
-  const ctx = buildReachContext(options.files, options.facts);
+  const ctx = options.context;
   const db = new Database();
   const functionByKey = new Map<string, ReachedFunction>();
   const seedKeys = new Set<string>();
@@ -121,6 +119,7 @@ export async function reachedFunctions(
     ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
   >();
   const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
+  const propertyReadsByKey = new Map<string, ReadonlySet<string>>();
   // Every (method, position) some scanned body passes a named project
   // method into. An inline block or a variable does not count, so a
   // parameter call missing here is a gap even when a caller supplies one.
@@ -161,9 +160,10 @@ export async function reachedFunctions(
       ctx,
     );
 
-    for (const { key, source, calls, site } of bodies) {
-      const scan = await scanBody(source, ctx, options, {
+    for (const { key, source, calls, argless, site } of bodies) {
+      const scan = scanBody(source, ctx, options, {
         calls,
+        argless,
         site,
         spellings,
       });
@@ -172,6 +172,9 @@ export async function reachedFunctions(
       }
       targetsByKey.set(key, scan.targets);
       argTargetsByKey.set(key, scan.argTargets);
+      if (scan.propertyReads.size > 0) {
+        propertyReadsByKey.set(key, scan.propertyReads);
+      }
       if (scan.parameterCalls.length > 0) {
         parameterCallsByKey.set(key, scan.parameterCalls);
       }
@@ -196,9 +199,9 @@ export async function reachedFunctions(
     if (seedKeys.has(key) || target === undefined) {
       continue;
     }
-    const summary = assembleSummary(libraryUnit(target, options), {
-      gapHandling: "permissive",
-    });
+    const raw = libraryUnit(target, options);
+    dropPropertyReads(raw, propertyReadsByKey.get(key));
+    const summary = assembleSummary(raw, { gapHandling: "permissive" });
     summary.confidence = { source: "inferred_static", level: "low" };
     summary.gaps.push(...(stopsByKey.get(key) ?? []).map(unfollowedCallGap));
     placeCalls(summary, targetsByKey.get(key));
@@ -215,6 +218,7 @@ export async function reachedFunctions(
     stopsByKey,
     argTargetsByKey,
     parameterCallsByKey,
+    propertyReadsByKey,
     passedPositions,
   };
 }
@@ -223,103 +227,40 @@ function keyOf(target: ReachedFunction): string {
   return nodeId(target.file, target.node);
 }
 
-const METHOD_TYPES = new Set(["method", "singleton_method"]);
-
-/** Every class the run defines, and every method written outside one, so a call anywhere can be placed without re-reading a file per call. */
-function buildReachContext(
-  files: readonly { file: string; root: RbNode }[],
-  facts: Database,
-): ReachContext {
-  const blocksByQualifiedName = new Map<string, ReachedBody[]>();
-  const classes: { file: string; info: ReachedBody["info"] }[] = [];
-  // Both keyed the way the value facts key the node, so a class or a
-  // method the rules settle on can be named.
-  const classNames = new Map<string, string>();
-  const classOfMethod = new Map<string, string>();
-  for (const { file, root } of files) {
-    walkDefinitions(root, (info) => {
-      classes.push({ file, info });
-      classNames.set(nodeId(file, info.node), info.qualifiedName);
-      for (const statement of namedChildren(info.bodyNode)) {
-        if (METHOD_TYPES.has(statement.type)) {
-          classOfMethod.set(nodeId(file, statement), info.qualifiedName);
-        }
-      }
-    });
+/**
+ * Takes the property reads back off a unit read before the walk ran. A
+ * body's effect list is written as the body is read, when nothing yet
+ * says whether `config.host` runs a method, so every no-argument call
+ * goes on it and the ones that reached nothing come off here.
+ */
+export function dropPropertyReads(
+  raw: RawCodeStructure,
+  callees: ReadonlySet<string> | undefined,
+): void {
+  if (callees === undefined) {
+    return;
   }
-  const knownClasses = new Set(classes.map(({ info }) => info.qualifiedName));
-  for (const { file, info } of classes) {
-    const list = blocksByQualifiedName.get(info.qualifiedName) ?? [];
-    list.push({ info, knownClasses, file });
-    blocksByQualifiedName.set(info.qualifiedName, list);
+  for (const branch of raw.branches) {
+    branch.effects = branch.effects.filter(
+      (effect) => effect.type !== "invocation" || !callees.has(effect.callee),
+    );
   }
-
-  const definitions = new Map<string, ReachedFunction>();
-  for (const { file, root } of files) {
-    for (const [key, method] of methodDefinitionsIn(file, root)) {
-      const name = field(method, "name")?.text;
-      if (name === undefined) {
-        continue;
-      }
-      const owner = classOfMethod.get(key) ?? null;
-      definitions.set(key, {
-        file,
-        node: method,
-        name,
-        exportPath: owner === null ? [name] : [owner, name],
-        enclosingQualifiedName: owner,
-      });
-    }
-  }
-
-  const topLevelMethods = new Map<string, ReachedFunction[]>();
-  for (const { file, root } of files) {
-    for (const method of topLevelMethodNodes(root)) {
-      const found = definitions.get(nodeId(file, method));
-      if (found === undefined) {
-        continue;
-      }
-      const list = topLevelMethods.get(found.name) ?? [];
-      list.push(found);
-      topLevelMethods.set(found.name, list);
-    }
-  }
-
-  const lookup: AncestorLookup = {
-    root: "",
-    pathConvention: "railsUnderscore",
-    ancestryRootClassNames: [],
-    // Every class the run defines is already in `blocksByQualifiedName`
-    // above, so a name that misses there is outside the run and this
-    // never has a file on disk to read.
-    parsedFile: async () => null,
-    localDefinition: (name) => blocksByQualifiedName.get(name) ?? null,
-  };
-
-  return { lookup, topLevelMethods, facts, classNames, definitions };
+  raw.branches = raw.branches.filter((branch) => !saysNothing(branch));
 }
 
-/** tree-sitter types a named child as nullable, and a class with no body has no children at all. */
-function namedChildren(node: RbNode | null): RbNode[] {
-  if (node === null) {
-    return [];
-  }
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
-}
-
-/** A `def` written outside any class, module, or other method, which Ruby calls a private method on every object. */
-function topLevelMethodNodes(root: RbNode, found: RbNode[] = []): RbNode[] {
-  for (const child of bodyStatements(root)) {
-    if (child.type === "method") {
-      found.push(child);
-      continue;
-    }
-    if (OWN_BODY_TYPES.has(child.type)) {
-      continue;
-    }
-    topLevelMethodNodes(child, found);
-  }
-  return found;
+/**
+ * A branch that says nothing: a pack wrote it for what the body does,
+ * and the body turned out to do none of it. A unit left with no
+ * branches says instead that its body went unread, which is what a
+ * resolver whose one statement was a property read should say.
+ */
+function saysNothing(branch: RawCodeStructure["branches"][number]): boolean {
+  return (
+    branch.terminal.kind === "void" &&
+    branch.conditions.length === 0 &&
+    branch.effects.length === 0 &&
+    (branch.extraEffects ?? []).length === 0
+  );
 }
 
 /**
@@ -336,6 +277,8 @@ interface Scan {
   readonly argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
   readonly parameterCalls: readonly ParameterCall[];
   readonly passedPositions: ReadonlySet<string>;
+  /** The no-argument calls this body writes that reached no project method, by the text they were written as. */
+  readonly propertyReads: ReadonlySet<string>;
 }
 
 const EMPTY_SCAN: Scan = {
@@ -345,6 +288,7 @@ const EMPTY_SCAN: Scan = {
   argTargets: new Map(),
   parameterCalls: [],
   passedPositions: new Set(),
+  propertyReads: new Set(),
 };
 
 /**
@@ -373,10 +317,19 @@ function methodReferenceSymbol(node: RbNode): RbNode | null {
 /** A body's calls, read before the round asks the rules about all of them at once. */
 interface BodyCalls {
   readonly calls: RbNode[];
+  /** Every call this body writes with no arguments, which is what the summary already has an effect for. */
+  readonly argless: RbNode[];
   readonly site: CallSite;
   readonly written: { call: RbNode; site: CallSite }[];
 }
 
+/**
+ * The calls this round asks the rules about. A call written with no
+ * arguments is among them when the run says anything about its
+ * receiver, since whether it is a call at all is what the rules then
+ * settle; one with nothing behind its receiver is a property read
+ * already.
+ */
 function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
   const site: CallSite = {
     file: source.file,
@@ -384,25 +337,57 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
     owner: keyOf(source),
     enclosingQualifiedName: source.enclosingQualifiedName,
   };
-  const calls =
+  const written =
     field(source.node, "body") === null
       ? []
-      : withoutChainLinks(bodyCalls(source.node, options.inheritedMethods));
-  return { calls, site, written: calls.map((call) => ({ call, site })) };
+      : bodyCalls(source.node, options.inheritedMethods);
+  const calls = callsReported(written, (call) =>
+    mightReadAsACall(call, site, options.context),
+  );
+  return {
+    calls,
+    argless: written.filter(isArglessReceiverCall),
+    site,
+    written: calls.map((call) => ({ call, site })),
+  };
 }
 
-async function scanBody(
+/**
+ * The calls this body makes, out of the ones the round asked about. A
+ * no-argument call whose receiver the rules settled on something in the
+ * run is one of them, and it is resolved like any other. One they
+ * settled on anything else is a property read: no invocation, no gap.
+ */
+function callsMade(
+  asked: readonly RbNode[],
+  site: CallSite,
+  ctx: ReachContext,
+  spellings: CalleeSpellings,
+): RbNode[] {
+  return asked.filter(
+    (call) =>
+      !isArglessReceiverCall(call) || readsAsACall(call, site, ctx, spellings),
+  );
+}
+
+function scanBody(
   source: ReachedFunction,
   ctx: ReachContext,
   options: ReachOptions,
-  read: { calls: RbNode[]; site: CallSite; spellings: CalleeSpellings },
-): Promise<Scan> {
+  read: {
+    calls: RbNode[];
+    argless: RbNode[];
+    site: CallSite;
+    spellings: CalleeSpellings;
+  },
+): Scan {
   const displayPathOf = options.displayPathOf;
   if (field(source.node, "body") === null) {
     return EMPTY_SCAN;
   }
 
-  const { calls, site } = read;
+  const site = read.site;
+  const calls = callsMade(read.calls, site, ctx, read.spellings);
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
 
   const followed: ReachedFunction[] = [];
@@ -412,14 +397,15 @@ async function scanBody(
   const passedPositions = new Set<string>();
   const seen = new Set<string>();
   const parameterCallsSeen = new Set<string>();
+  const followedArgless = new Set<number>();
 
   // A `method(:name)` reference joins a `passes` fact to whichever
   // parameter of the followed callee it calls through.
-  const recordPassedArgs = async (
+  const recordPassedArgs = (
     call: RbNode,
     callee: string,
     calleeKey: string | null,
-  ): Promise<void> => {
+  ): void => {
     const args = field(call, "arguments");
     if (args === null) {
       return;
@@ -430,11 +416,7 @@ async function scanBody(
       if (symbol === null) {
         continue;
       }
-      const resolved = await resolveMethodReference(
-        symbol.text.slice(1),
-        site,
-        ctx,
-      );
+      const resolved = resolveMethodReference(symbol.text.slice(1), site, ctx);
       if (resolved === null) {
         continue;
       }
@@ -455,7 +437,7 @@ async function scanBody(
 
   for (const call of calls) {
     const callee = calleeText(call);
-    const outcome = await resolveCallee(call, site, ctx, read.spellings);
+    const outcome = resolveCallee(call, site, ctx, read.spellings);
     // A stop is placed at its own call, where no summary can be, so the
     // link step neither links it nor guesses by name.
     const placed =
@@ -468,7 +450,7 @@ async function scanBody(
           ? null
           : { file: displayPathOf(source.file), span: spanOf(call) };
     placements.place(callee, placed);
-    await recordPassedArgs(
+    recordPassedArgs(
       call,
       callee,
       outcome.kind === "followed" ? keyOf(outcome.target) : null,
@@ -499,6 +481,9 @@ async function scanBody(
       }
       continue;
     }
+    if (isArglessReceiverCall(call)) {
+      followedArgless.add(call.id);
+    }
     const key = keyOf(outcome.target);
     if (!seen.has(key)) {
       seen.add(key);
@@ -513,7 +498,33 @@ async function scanBody(
     argTargets: placements.argTargets,
     parameterCalls,
     passedPositions,
+    propertyReads: propertyReadsAmong(read.argless, calls, followedArgless),
   };
+}
+
+/**
+ * The no-argument calls that reached no project method, by the text
+ * they were written as. A text another call in this body kept is not
+ * one of them, since dropping it would take that call off the list too.
+ */
+function propertyReadsAmong(
+  argless: readonly RbNode[],
+  made: readonly RbNode[],
+  followed: ReadonlySet<number>,
+): ReadonlySet<string> {
+  const kept = new Set(
+    made
+      .filter((call) => !isArglessReceiverCall(call) || followed.has(call.id))
+      .map(calleeText),
+  );
+  const reads = new Set<string>();
+  for (const call of argless) {
+    const text = calleeText(call);
+    if (!kept.has(text)) {
+      reads.add(text);
+    }
+  }
+  return reads;
 }
 
 function libraryUnit(

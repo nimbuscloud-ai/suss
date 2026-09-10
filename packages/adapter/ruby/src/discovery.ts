@@ -43,7 +43,7 @@ import {
   filterReference,
   filterUnit,
 } from "./filters.js";
-import { invocationEffects } from "./paths/effects.js";
+import { EVERY_ARGLESS_CALL, invocationEffects } from "./paths/effects.js";
 import { responseBranches } from "./responseStatus.js";
 import {
   graphqlTypeNameFromQualified,
@@ -710,7 +710,13 @@ export function bodyOfMethod(
   file: string,
   bodyRead: BodyReadOptions = {},
 ): BodyReport {
-  const effects = invocationEffects(method, bodyRead.inheritedMethods);
+  // Every call written with no arguments goes on the list, and the reach
+  // walk takes back the ones that turned out to be property reads.
+  const effects = invocationEffects(
+    method,
+    bodyRead.inheritedMethods,
+    EVERY_ARGLESS_CALL,
+  );
   const storage = bodyRead.storage;
   const extra = [
     ...envReadEffects(method),

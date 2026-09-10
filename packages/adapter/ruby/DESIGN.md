@@ -356,6 +356,8 @@ The walk starts at the resolver method behind every discovered field (the one th
 
 A call with a receiver is resolved in two steps. The rules in `@suss/resolution` say what the receiver is, over the value facts `facts/values.ts` emits: a local reassigned, a name aliased through two more, `Klass.new`, a method that returns `self`, and parentheses are all steps they state, and asking `objectOf` about the receiver gives back the class the value is one of. Which method of that class runs is Ruby's own question, and `ancestry.ts` settles it, because `include` and `prepend` put modules in the lookup order at load time, a subclass overrides what its base declares, and `def self.` is looked up somewhere else again. A receiver written as a constant names the class object itself, so `Klass.build` looks for `def self.build` and `Klass.new` runs the class's own `initialize`.
 
+Ruby has no property read. `config.host` and `c.run` parse the same way, so which of the two an expression is depends on what its receiver comes to. A call written with no arguments is a method call when the rules settle its receiver on a function or an object this run defines, and from there it is resolved like any other call, with the same stops and the same gaps. A receiver settled on anything else, a value a dependency built, a caller's parameter, or a name nothing in the run declares, makes the call a property read: no invocation, no gap, nothing. The effect list says what the walk did. A unit's list is written as its body is read, when nothing yet says which of the two a given expression is, so every no-argument call goes on it and the walk takes back the ones that reached no project method. What is left links to the summary of what it reached, the way a call with arguments does. A unit whose list is empty afterwards says its body went unread, which is right for a resolver whose one statement was `object.name`. A no-argument call does not take the place of the call it is written on, the way a call with arguments does. `Filter.new(scope).results` runs the class's `initialize` and then its `results`, so both are reported, each linked to its own summary. `Order.where(id: 1).limit(10).first` is unchanged, since nothing settles what `first` runs on.
+
 An instance variable is a name on the object rather than on any one method, so it is read as a property of the class: `@scope` written anywhere in the class body puts its value on the class under `@scope`, and every read of `@scope` is a property read off that class. A Rails controller sets one in a `before_action` and reads it in the action, and the two are different bodies, which is why a method-local key would never join them. `contains` already walks `extends`, so a write in a base controller reaches a read in a subclass with no step of its own; a module the class `include`s is not on that path. Nothing orders two methods, so several writes that disagree leave several values and a reader that needs one answer sees more than one source. A write that narrows the name, `@scope = @scope.where(a: 1)`, is set aside the way it is for a local.
 
 A call with no receiver, or one on `self`, never reaches the rules: Ruby looks that name up on the enclosing class's ancestry, then among the methods the project writes outside any class, which Ruby mixes into every object as a private method.
@@ -371,6 +373,8 @@ A pack can also say which receiverless calls its own library defines, in `inheri
 | `Service.new.method` | `method` in `Service`'s own ancestry |
 | `s = Service.new` then `s.method`, however many names apart | `method` in `Service`'s own ancestry |
 | `s = Service.new` then `s = s.only(1)`, where `only` returns `self` | `only`, then `method` on the next call in the chain |
+| `s = Service.new` then `s.method`, written with no arguments at all | `method` in `Service`'s own ancestry |
+| `Service.new`, where `Service` declares `initialize` | that `initialize` |
 | `@scope = Service.new` in one method, `@scope.method` in another | `method` in `Service`'s own ancestry |
 | `@scope = Service.new` in a base class, `@scope.method` in a subclass | `method` in `Service`'s own ancestry |
 | `Service.method` | `def self.method` written in `Service`'s own body |
@@ -391,6 +395,8 @@ Where it stops, and what the gap says:
 | an instance variable two methods build from different classes | more than one possible source |
 | `Rails.cache.delete`, a call into a class this run does not define | outside the run (no gap) |
 | `user.orders`, where nothing in the run says what `user` is | no declaration this run could find (no gap) |
+| `config.host`, written with no arguments, where the rules settle nothing about `config` | a property read (nothing at all) |
+| `entity.name`, where `Entity` gets `name` from `attr_reader` | no declaration this run could find (no gap) |
 | a call on what another call gave back, where no fact says what that was | the value could not be settled |
 | `handler.call` or `handler.()`, where `handler` is a parameter that some caller in the run passes a method by name into | followed through the join above (no gap) |
 | `handler.call` or `handler.()`, where `handler` is a parameter that no caller in the run passes a method by name into | the caller supplies it, and nothing named what it passed |

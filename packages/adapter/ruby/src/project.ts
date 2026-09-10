@@ -49,7 +49,8 @@ import {
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
-import { reachedFunctions } from "./reach/closure.js";
+import { dropPropertyReads, reachedFunctions } from "./reach/closure.js";
+import { buildReachContext } from "./reach/context.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 
@@ -134,6 +135,15 @@ export function emitStorageFacts(
     }
   }
 }
+
+/**
+ * Something to put in the summary list once the walk has run: a unit
+ * still to assemble, with the method the walk finishes its effect list
+ * from, or a summary that was ready as it was read.
+ */
+type Discovered =
+  | { readonly raw: RawCodeStructure; readonly seedKey: string | null }
+  | { readonly summary: BehavioralSummary };
 
 /** Whether this unit is one an earlier file's discovery already reported, by where its body is written and what it is reported as. An action two controllers inherit is one body and two units, one per route. */
 function alreadyDiscovered(seen: Set<string>, raw: RawCodeStructure): boolean {
@@ -233,6 +243,9 @@ export async function extractRubyProject(
       ? { facts: db, patterns: storagePatterns, loaders: loaderPatterns }
       : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
+  const reachContext = await timer.timeAsync("discover", () =>
+    buildReachContext(parsed, db),
+  );
   // Facts keep the full filesystem path, because they are joined against
   // internally. Only the summary's `location.file` gets shortened.
   const displayPathOf = (file: string): string =>
@@ -241,8 +254,13 @@ export async function extractRubyProject(
       : file;
 
   const seeds: Seed[] = [];
+  const seedKeys = new Set<string>();
   const summariesBySeed = new Map<string, BehavioralSummary[]>();
   const discovered = new Set<string>();
+  // A unit is assembled after the walk, in the order it was discovered,
+  // because a Ruby body's effect list is not finished until the walk has
+  // said which of its no-argument calls were property reads.
+  const found: Discovered[] = [];
 
   for (const { file, root } of parsed) {
     const displayPath = displayPathOf(file);
@@ -270,33 +288,24 @@ export async function extractRubyProject(
       if (alreadyDiscovered(discovered, raw)) {
         continue;
       }
-      const summary = timer.time("summarize", () =>
-        assembleSummary(raw, { gapHandling: "permissive" }),
-      );
-      // `assembleSummary` scores confidence on the assumption that a unit's
-      // branches came from tracing its body. Nothing here traces a body, so
-      // that score would be meaningless and we set confidence directly.
-      summary.confidence = { source: "inferred_static", level: "low" };
-      summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
       tallyUnit(tallies, raw.boundaryBinding?.recognition);
 
       const seed = seedByRaw.get(raw);
       if (seed === undefined) {
+        found.push({ raw, seedKey: null });
         continue;
       }
       const key = nodeId(seed.file, seed.node);
-      const sharing = summariesBySeed.get(key);
-      if (sharing === undefined) {
+      found.push({ raw, seedKey: key });
+      if (!seedKeys.has(key)) {
+        seedKeys.add(key);
         seeds.push({
           key,
           file: seed.file,
           node: seed.node,
           enclosingQualifiedName: seed.enclosingQualifiedName,
         });
-        summariesBySeed.set(key, [summary]);
-      } else {
-        sharing.push(summary);
       }
     }
 
@@ -314,7 +323,7 @@ export async function extractRubyProject(
         ),
       );
       summary.confidence = { source: "inferred_static", level: "low" };
-      summaries.push(summary);
+      found.push({ summary });
     }
   }
 
@@ -336,19 +345,43 @@ export async function extractRubyProject(
         }),
       );
       summary.confidence = { source: "inferred_static", level: "low" };
-      summaries.push(summary);
+      found.push({ summary });
     }
   }
 
   const reached = await timer.timeAsync("summarize", () =>
     reachedFunctions(seeds, {
-      files: parsed,
+      context: reachContext,
       displayPathOf,
-      facts: db,
       ...(storage === undefined ? {} : { storage }),
       inheritedMethods,
     }),
   );
+  for (const entry of found) {
+    if ("summary" in entry) {
+      summaries.push(entry.summary);
+      continue;
+    }
+    const { raw, seedKey } = entry;
+    if (seedKey !== null) {
+      dropPropertyReads(raw, reached.propertyReadsByKey.get(seedKey));
+    }
+    const summary = timer.time("summarize", () =>
+      assembleSummary(raw, { gapHandling: "permissive" }),
+    );
+    // `assembleSummary` scores confidence on the assumption that a unit's
+    // branches came from tracing its body. Nothing here traces a body, so
+    // that score would be meaningless and we set confidence directly.
+    summary.confidence = { source: "inferred_static", level: "low" };
+    summaries.push(summary);
+    if (seedKey !== null) {
+      summariesBySeed.set(seedKey, [
+        ...(summariesBySeed.get(seedKey) ?? []),
+        summary,
+      ]);
+    }
+  }
+
   for (const [key, owners] of summariesBySeed) {
     for (const summary of owners) {
       summary.gaps.push(
