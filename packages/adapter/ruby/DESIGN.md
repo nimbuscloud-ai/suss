@@ -109,9 +109,11 @@ refuse. Only a name at the top of a file is written down as something another
 file can read.
 
 A name written more than once needs a claim about which write a reader sees.
-The adapter collects the writes in source order, works out whether the scope's
-own statements order them, and hands both to `valueLeftByWrites` in
-`@suss/resolution`, which decides for every language at once. A name written
+The adapter collects the writes in source order and hands them to
+`@suss/resolution`, which decides for every language at once: `writesRunInOrder`
+says whether the scope's own statements order them, over a description of
+Ruby's grammar this adapter passes it, and `valueLeftByWrites` picks the value
+the name comes down to. A name written
 once gets `binds`, a reassigned name the helper settles gets `endsHolding`,
 and one it does not settle gets nothing. The writes are plain assignment,
 `||=` and `&&=` (which write their whole right side), `+=` and the rest (which

@@ -46,6 +46,17 @@ export function isFunction(node: PyNode): boolean {
   return node.type === "function_definition" || node.type === "lambda";
 }
 
+/**
+ * The bodies that run when something calls or instantiates them, rather
+ * than where they are written. Keep this beside `isFunction`: it is those
+ * types plus a class.
+ */
+export const LATER_BODY_TYPES = new Set([
+  "function_definition",
+  "lambda",
+  "class_definition",
+]);
+
 /** The nearest function a node is written inside, or null at module level. */
 export function enclosingFunction(node: PyNode): PyNode | null {
   let current = node.parent;

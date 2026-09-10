@@ -11,7 +11,11 @@
  * so a reassigned name states one value or none rather than two.
  */
 
-import { valueLeftByWrites } from "@suss/resolution";
+import {
+  startsAtName,
+  valueLeftByWrites,
+  writesRunInOrder,
+} from "@suss/resolution";
 
 import {
   children,
@@ -19,10 +23,11 @@ import {
   field,
   fields,
   isFunction,
+  LATER_BODY_TYPES,
 } from "../ast.js";
 
 import type { Database } from "@suss/datalog";
-import type { NameWrite } from "@suss/resolution";
+import type { ChainReads, NameReads, NameWrite } from "@suss/resolution";
 import type { Parameter } from "@suss/values";
 import type { PyNode } from "../parser.js";
 
@@ -888,58 +893,6 @@ function isDirectStatement(node: PyNode, bodyOwner: PyNode | null): boolean {
   return statement !== null && statement.parent?.id === bodyOwner.id;
 }
 
-/**
- * Whether the writes run once each, in the order they are written. They do
- * when every one is a statement of the scope's own list, which runs through
- * once top to bottom, and nothing reads the name before the last of them.
- */
-function writesRunInOrder(
-  bodyOwner: PyNode | null,
-  name: string,
-  writes: readonly RawWrite[],
-): boolean {
-  const last = writes[writes.length - 1];
-  if (bodyOwner === null || last === undefined) {
-    return false;
-  }
-  if (!writes.every((write) => write.direct)) {
-    return false;
-  }
-  return !isReadBefore(bodyOwner, name, last.at.startIndex);
-}
-
-/**
- * Whether a statement before `position` reads the name. A read inside a
- * nested body does not count: that body runs when something calls it,
- * which is after the scope's own statements have finished.
- */
-function isReadBefore(
-  bodyOwner: PyNode,
-  name: string,
-  position: number,
-): boolean {
-  let found = false;
-  const visit = (node: PyNode): void => {
-    if (found || node.startIndex >= position) {
-      return;
-    }
-    if (isFunction(node) || node.type === "class_definition") {
-      return;
-    }
-    if (node.type === "identifier" && node.text === name) {
-      found = isNameRead(node);
-      return;
-    }
-    for (const child of children(node)) {
-      visit(child);
-    }
-  };
-  for (const statement of children(bodyOwner)) {
-    visit(statement);
-  }
-  return found;
-}
-
 /** Parents that make every name under them something other than a read of it. */
 const UNREAD_PARENTS = new Set([
   "as_pattern_target",
@@ -979,6 +932,29 @@ function isNameRead(name: PyNode): boolean {
   return fieldName === undefined || field(parent, fieldName)?.id !== name.id;
 }
 
+/** The part of an expression that is read first, for the two ways a chain is written. */
+const READ_FIRST: Record<string, string> = {
+  call: "function",
+  attribute: "object",
+};
+
+function readFirst(node: PyNode): PyNode | null {
+  if (node.type === "parenthesized_expression") {
+    return children(node)[0] ?? null;
+  }
+  const fieldName = READ_FIRST[node.type];
+  return fieldName === undefined ? null : field(node, fieldName);
+}
+
+/** What the shared name walks need to know about Python's grammar. */
+const NAME_READS: NameReads<PyNode> & ChainReads<PyNode> = {
+  nameType: "identifier",
+  laterBodies: LATER_BODY_TYPES,
+  childrenOf: children,
+  isRead: isNameRead,
+  readFirst,
+};
+
 /** A value built where it is written, which is what tells two writes of one name apart. */
 const CONSTRUCTION_TYPES = new Set([
   "call",
@@ -1011,31 +987,10 @@ function describeWrite(
     construction: CONSTRUCTION_TYPES.has(write.value.type)
       ? write.value.text.replace(/\s+/g, " ").trim()
       : null,
-    narrowsName: write.value.type === "call" && startsAtName(write.value, name),
+    narrowsName:
+      write.value.type === "call" &&
+      startsAtName(write.value, name, NAME_READS),
   };
-}
-
-/** The part of an expression that is read first, for the two ways a chain is written. */
-const READ_FIRST: Record<string, string> = {
-  call: "function",
-  attribute: "object",
-};
-
-/** Whether reading this expression starts by reading `name`, through however many attribute reads and calls. */
-function startsAtName(node: PyNode, name: string): boolean {
-  if (node.type === "identifier") {
-    return node.text === name;
-  }
-  if (node.type === "parenthesized_expression") {
-    const inner = children(node)[0];
-    return inner !== undefined && startsAtName(inner, name);
-  }
-  const fieldName = READ_FIRST[node.type];
-  if (fieldName === undefined) {
-    return false;
-  }
-  const inner = field(node, fieldName);
-  return inner !== null && startsAtName(inner, name);
 }
 
 /**
@@ -1055,7 +1010,7 @@ function settledValue(
   }
   return valueLeftByWrites(
     writes.map((write) => describeWrite(emitter, write, name)),
-    writesRunInOrder(reading.bodyOwner, name, writes),
+    writesRunInOrder(reading.bodyOwner, name, writes, NAME_READS),
   );
 }
 

@@ -7,9 +7,8 @@
  * each adapter decided for itself, the same source resolved in one
  * language and not in another.
  *
- * Whether the writes run in order is the one question this cannot
- * answer: it needs the language's statement structure. The adapter
- * works that out and passes the answer in.
+ * Whether the writes run in order is a question about statement
+ * structure, and `writesRunInOrder` works that out beside this.
  */
 
 /** One write to a name, in the order it is written. */

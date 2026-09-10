@@ -13,6 +13,14 @@ export {
   type MountEdges,
   mountPathsOf,
 } from "./mount.js";
+export {
+  type ChainReads,
+  type NameReads,
+  type OrderedWrite,
+  type ReadNode,
+  startsAtName,
+  writesRunInOrder,
+} from "./nameReads.js";
 export { nodeOfKey, type SpannedNode } from "./nodeKey.js";
 export {
   ASKING_RELATIONS,

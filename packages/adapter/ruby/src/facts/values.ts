@@ -2,7 +2,7 @@
 // The relation names and shapes come from that package's own header, and the
 // README says which Ruby constructs differ from the other adapters.
 
-import { valueLeftByWrites } from "@suss/resolution";
+import { startsAtName, valueLeftByWrites } from "@suss/resolution";
 
 import { field, NESTING_TYPES, OWN_BODY_TYPES } from "../ast.js";
 import {
@@ -13,7 +13,7 @@ import {
 } from "./locals.js";
 
 import type { Database } from "@suss/datalog";
-import type { NameWrite } from "@suss/resolution";
+import type { ChainReads, NameWrite } from "@suss/resolution";
 import type { RbNode } from "../parser.js";
 import type { LocalWrite, NameWrites } from "./locals.js";
 
@@ -409,23 +409,24 @@ function sourceOf(node: RbNode): string {
 }
 
 /**
- * Whether reading this expression starts by reading `name`, through
- * however many calls. Ruby writes an attribute read as a call too, so
- * `query = query.limit` reads the same way as `query = query.limit(1)`
- * and both narrow the name. What either call gives back is left to the
- * rules, which have the value key for it.
+ * Ruby writes an attribute read as a call too, so `query = query.limit`
+ * reads the same way as `query = query.limit(1)` and both narrow the
+ * name. What either call gives back is left to the rules, which have the
+ * value key for it.
  */
-function startsAtName(written: RbNode, name: string): boolean {
-  const node = readThrough(written);
-  if (node.type === "identifier") {
-    return node.text === name;
+function readFirst(node: RbNode): RbNode | null {
+  const inner = readThrough(node);
+  if (inner !== node) {
+    return inner;
   }
-  if (node.type !== "call") {
-    return false;
-  }
-  const receiver = field(node, "receiver");
-  return receiver !== null && startsAtName(receiver, name);
+  return node.type === "call" ? field(node, "receiver") : null;
 }
+
+/** What the shared chain walk needs to know about Ruby. */
+const CHAIN_READS: ChainReads<RbNode> = {
+  nameType: "identifier",
+  readFirst,
+};
 
 function describeWrite(emitter: Emitter, write: LocalWrite): NameWrite {
   const value = write.value === null ? null : readThrough(write.value);
@@ -437,7 +438,7 @@ function describeWrite(emitter: Emitter, write: LocalWrite): NameWrite {
     narrowsName:
       value !== null &&
       value.type === "call" &&
-      startsAtName(value, write.name),
+      startsAtName(value, write.name, CHAIN_READS),
   };
 }
 

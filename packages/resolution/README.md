@@ -6,10 +6,10 @@ The rules for following a value to the function it ends up being.
 
 ## What this package is
 
-A list of Datalog rules, and nothing else. It has no parser, no
-language, and no files of its own. An adapter reads source into facts,
-adds its own rules onto these, and evaluates the whole set on
-`@suss/datalog`.
+Datalog rules, and the few decisions that need source order rather than
+a fixpoint. It has no parser, no language, and no files of its own. An
+adapter reads source into facts, adds its own rules onto these, and
+evaluates the whole set on `@suss/datalog`.
 
 The rules are about programming languages in general rather than about
 any one of them. A name binds to a value. A call puts an argument in a
