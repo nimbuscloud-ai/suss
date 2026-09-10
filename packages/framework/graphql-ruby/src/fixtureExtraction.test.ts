@@ -121,13 +121,26 @@ describe("extraction over fixtures/ruby-graphql", () => {
       return (summary?.gaps ?? []).map((gap) => gap.description);
     }
 
+    /** What each call the method's body makes was written as, so a reach loss shows up as a missing line. */
+    async function callsFor(name: string): Promise<string[]> {
+      const { summaries } = await extractFixture();
+      const summary = summaries.find((s) => s.identity.name === name);
+      expect(summary, name).toBeDefined();
+      return (summary?.transitions ?? []).flatMap((transition) =>
+        transition.effects
+          .filter((effect) => effect.type === "invocation")
+          .map((effect) => effect.callee.replace(/\s+/g, " ")),
+      );
+    }
+
     it("attaches the method written below the field in the same class", async () => {
-      // `object` is a graphql-ruby DSL value this run has no binder for,
-      // so the reach walk the field now seeds leaves that call as a gap
-      // of its own, in place of the old "nothing matched" sentence.
-      expect(await gapsFor("Organizer.displayName")).toEqual([
-        "The call to [object.first_name, object.last_name].compact.join goes through a value this run could not settle, so whatever runs there is missing from this summary",
+      expect(await callsFor("Organizer.displayName")).toEqual([
+        "[object.first_name, object.last_name].compact.join",
       ]);
+      // `join` runs on an array literal, so it is the language's method
+      // rather than one this project declares, and a gap would say
+      // nothing a reader could look up.
+      expect(await gapsFor("Organizer.displayName")).toEqual([]);
     });
 
     it("attaches the method a concern the class includes defines", async () => {
@@ -137,12 +150,13 @@ describe("extraction over fixtures/ruby-graphql", () => {
     });
 
     it("attaches the resolve method of the class a mutation-wired field points at", async () => {
-      // `campaign` is a local variable this run has no binder for, so the
-      // reach walk the field now seeds leaves that call as a gap of its
-      // own, in place of the old "nothing matched" sentence.
-      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([
-        "The call to campaign.update goes through a value this run could not settle, so whatever runs there is missing from this summary",
+      expect(await callsFor("Mutation.campaignUpdate")).toEqual([
+        "Campaign.find",
+        "campaign.update",
       ]);
+      // `campaign` comes from `Campaign.find`, and this fixture declares
+      // no `Campaign`, so nothing here says what `update` runs.
+      expect(await gapsFor("Mutation.campaignUpdate")).toEqual([]);
     });
 
     it("attaches the resolve method of the class a resolver-wired field points at", async () => {
