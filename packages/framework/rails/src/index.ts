@@ -9,13 +9,14 @@
  * followed, only with no boundary. See the README for the rest.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 
 import { z } from "zod";
 
 import { underscoreConstantPath } from "@suss/adapter-ruby";
 
-import { readRoutesFile } from "./routes.js";
+import { drawDirectoryOf, readRoutesFile } from "./routes.js";
 import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
 import type { ControllerActions, RubyPack } from "@suss/adapter-ruby";
@@ -227,9 +228,23 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     protocol: "http",
     discovery: [pattern],
     // The routes file decides every action's method and path but is
-    // never walked, so the cache key has to read it here.
-    discoveryInputs: () => [routesFile],
+    // never walked, so the cache key has to read it here, along with
+    // the files a `draw(:name)` in it can pull in.
+    discoveryInputs: () => [routesFile, ...drawableRoutesFiles(routesFile)],
   };
+}
+
+/** Every `.rb` file in the directory `draw(:name)` reads from. */
+function drawableRoutesFiles(routesFile: string): string[] {
+  const directory = drawDirectoryOf(routesFile);
+  if (!fs.existsSync(directory)) {
+    return [];
+  }
+  return fs
+    .readdirSync(directory)
+    .filter((name) => name.endsWith(".rb"))
+    .sort()
+    .map((name) => path.join(directory, name));
 }
 
 /** What this pack reads, and what a project has to be using for it to. */

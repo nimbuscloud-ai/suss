@@ -41,5 +41,6 @@
   "block": "suss: tree-sitter-ruby field name for a call's do...end block",
   "body": "suss: tree-sitter-ruby field name for a block's own body",
   "receiver": "suss: tree-sitter-ruby field name for a call's receiver expression",
-  "method": "suss: tree-sitter-ruby field name for a call's method name"
+  "method": "suss: tree-sitter-ruby field name for a call's method name",
+  "all": "Rails routing DSL: the via: value on match that routes every HTTP method"
 }

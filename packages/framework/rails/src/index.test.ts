@@ -557,6 +557,187 @@ describe("railsFramework", () => {
     });
   });
 
+  describe("the routing calls a larger app spreads its routes across", () => {
+    let dir: string;
+
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    function packFor(source: string, drawn: Record<string, string> = {}) {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-routes-"));
+      const file = path.join(dir, "routes.rb");
+      fs.writeFileSync(file, source);
+      for (const [name, body] of Object.entries(drawn)) {
+        fs.mkdirSync(path.join(dir, "routes"), { recursive: true });
+        fs.writeFileSync(path.join(dir, "routes", `${name}.rb`), body);
+      }
+      return railsFramework({ root: dir, routesFile: file });
+    }
+
+    function routeFor(
+      source: string,
+      qualifiedName: string,
+      actionName: string,
+      drawn: Record<string, string> = {},
+    ) {
+      return pattern(packFor(source, drawn)).routeFor(
+        qualifiedName,
+        actionName,
+      );
+    }
+
+    it("reads a draw(:name) file under the scope the draw was written in", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  namespace :api do\n" +
+        "    draw(:v1)\n" +
+        "  end\nend\n";
+      const drawn = { v1: "resources :orders, only: [:index]\n" };
+      expect(routeFor(source, "Api::OrdersController", "index", drawn)).toEqual(
+        { method: "GET", path: "/api/orders" },
+      );
+    });
+
+    it("lists the drawn files beside the routes file as discovery inputs", () => {
+      const pack = packFor(
+        "Rails.application.routes.draw do\n  draw :v1\nend\n",
+        {
+          v1: "",
+        },
+      );
+      expect(pack.discoveryInputs?.([])).toEqual([
+        path.join(dir, "routes.rb"),
+        path.join(dir, "routes", "v1.rb"),
+      ]);
+    });
+
+    it("reports a draw whose file is missing as a gap", () => {
+      const pack = packFor(
+        "Rails.application.routes.draw do\n  draw(:missing)\nend\n",
+      );
+      const p = pattern(pack);
+      expect(p.routeFor("OrdersController", "index")).toBeNull();
+      expect(p.routingGaps?.()).toEqual([
+        expect.stringContaining(
+          "draws missing, but there is no missing.rb under routes/",
+        ),
+      ]);
+    });
+
+    it("walks a constraints block as if the block were not there", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  constraints(->(req) { req.format == :json }) do\n" +
+        "    resources :orders, only: [:index]\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "OrdersController", "index")).toEqual({
+        method: "GET",
+        path: "/orders",
+      });
+    });
+
+    it("binds match ... via: to its first listed verb, and via: :all as a wildcard", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  match '/hook', to: 'hooks#receive', via: [:get, :post]\n" +
+        "  match '/any', to: 'hooks#any', via: :all\n" +
+        "end\n";
+      expect(routeFor(source, "HooksController", "receive")).toEqual({
+        method: "GET",
+        path: "/hook",
+      });
+      expect(routeFor(source, "HooksController", "any")).toEqual({
+        method: "*",
+        path: "/any",
+      });
+    });
+
+    it("replays a concern where a resource asks for it, in both spellings", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  concern :archivable do\n" +
+        "    post :archive, on: :member\n" +
+        "  end\n" +
+        "  resources :orders, concerns: :archivable\n" +
+        "  resources :invoices do\n" +
+        "    concerns :archivable\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "OrdersController", "archive")).toEqual({
+        method: "POST",
+        path: "/orders/:id/archive",
+      });
+      expect(routeFor(source, "InvoicesController", "archive")).toEqual({
+        method: "POST",
+        path: "/invoices/:id/archive",
+      });
+    });
+
+    it("gives every call inside with_options its keywords, the call's own winning", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  with_options only: [:index] do\n" +
+        "    resources :orders\n" +
+        "    resources :invoices, only: [:show]\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "OrdersController", "index")).not.toBeNull();
+      expect(routeFor(source, "OrdersController", "show")).toBeNull();
+      expect(routeFor(source, "InvoicesController", "show")).not.toBeNull();
+      expect(routeFor(source, "InvoicesController", "index")).toBeNull();
+    });
+
+    it("puts a resource's controller under module: and keeps its path where it was", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :polls, only: [:show] do\n" +
+        "    resources :votes, only: :create, module: :polls\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "Polls::VotesController", "create")).toEqual({
+        method: "POST",
+        path: "/polls/:poll_id/votes",
+      });
+    });
+
+    it("continues a scope inside a resource block from the resource's nested path", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :users, only: [] do\n" +
+        "    scope module: :users do\n" +
+        "      resource :role, only: [:show]\n" +
+        "    end\n" +
+        "  end\n" +
+        "  resource :instance, only: [:show] do\n" +
+        "    namespace :stats do\n" +
+        "      resources :peers, only: [:index]\n" +
+        "    end\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "Users::RolesController", "show")).toEqual({
+        method: "GET",
+        path: "/users/:user_id/role",
+      });
+      expect(routeFor(source, "Stats::PeersController", "index")).toEqual({
+        method: "GET",
+        path: "/instance/stats/peers",
+      });
+    });
+
+    it("routes a singular resource whose name already ends in s to that controller", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resource :settings, only: [:show]\n" +
+        "  resource :status, only: [:show]\n" +
+        "end\n";
+      expect(routeFor(source, "SettingsController", "show")).toEqual({
+        method: "GET",
+        path: "/settings",
+      });
+      expect(routeFor(source, "StatusesController", "show")).toEqual({
+        method: "GET",
+        path: "/status",
+      });
+    });
+  });
+
   describe("a path written as something other than one literal", () => {
     let dir: string;
 
