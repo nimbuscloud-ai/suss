@@ -251,7 +251,12 @@ function drawableRoutesFiles(routesFile: string): string[] {
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-rails",
-  dependencies: [{ ecosystem: "rubygems", name: "rails" }],
+  // An app that depends on the Rails gems one at a time has railties in
+  // its Gemfile and no rails.
+  dependencies: [
+    { ecosystem: "rubygems", name: "rails" },
+    { ecosystem: "rubygems", name: "railties" },
+  ],
   reads:
     "Rails controller actions (Ruby), bound to the method and path \`config/routes.rb\` gives each one; an action the routes file does not reach is discovered with no boundary.",
   configuration: {

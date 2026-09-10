@@ -43,6 +43,11 @@ const SKIPPED = new Set([
   "vendor",
 ]);
 
+/** Whether `dir` itself declares a project in `language`. */
+export function isProjectIn(dir: string, language: Language): boolean {
+  return MARKERS[language].some((name) => fs.existsSync(path.join(dir, name)));
+}
+
 /** Paths of the markers below `root`, relative to it, in a stable order. */
 export function projectsBelow(root: string, language: Language): string[] {
   const markers = MARKERS[language];
