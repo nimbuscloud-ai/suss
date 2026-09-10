@@ -6,7 +6,7 @@ Pattern pack for [Prisma](https://www.prisma.io/) client calls in TypeScript. It
 
 `@suss/framework-prisma` returns a `PatternPack` with an empty `discovery` list and no terminals. Prisma calls become effects on handlers and services that some other pack discovered, so run this pack alongside a handler pack (Express, Fastify, NestJS, Lambda) or the effects have nothing to land on.
 
-The recognizer matches a three-segment chain, `<receiver>.<modelDelegate>.<method>(args)`, and verifies the receiver by type. Its symbol declaration has to live in `@prisma/client` or `.prisma/client`, which covers both `const db = new PrismaClient()` and a wrapped `ctx.prisma`.
+The recognizer matches a three-segment chain, `<receiver>.<modelDelegate>.<method>(args)`, and verifies the receiver by type. Its symbol declaration, or that of a class it extends, has to live in `@prisma/client` or `.prisma/client`, which covers `const db = new PrismaClient()`, a wrapped `ctx.prisma`, and a project's `class PrismaService extends PrismaClient`.
 
 The model comes from the delegate property. Prisma lowercases the first letter of a model when it builds the client (`prisma.user` for `model User`), so the recognizer reads the property and capitalizes the first letter back to the PascalCase schema model. That matches the channel `@suss/contract-prisma` publishes.
 

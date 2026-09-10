@@ -716,6 +716,25 @@ describe("prisma recognizer: happy path", () => {
     expect(access.interaction.operation).toBe("findMany");
   });
 
+  it("recognizes a call through a project subclass of PrismaClient", () => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      class PrismaService extends PrismaClient {
+        async onModuleInit() {}
+      }
+      class UserService {
+        constructor(private readonly prismaService: PrismaService) {}
+        async users() {
+          return await this.prismaService.user.findMany({});
+        }
+      }
+    `);
+    const access =
+      storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
+    expect(access.binding.semantics).toMatchObject({ container: "User" });
+    expect(access.interaction.operation).toBe("findMany");
+  });
+
   it("threads scope and storageSystem options into emitted effects", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";
