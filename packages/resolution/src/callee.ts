@@ -96,6 +96,21 @@ function askAboutSources(
   }
 }
 
+/**
+ * Whether this run says anything at all about the key: it is a value
+ * itself, or something built it. A key that fails this settles on
+ * nothing, and asking anyway adds a `wanted` fact that every later
+ * question has to derive over, so a caller with a batch of keys and a
+ * cheap question about each one puts this in front of the batch.
+ */
+export function couldBeSettled(db: Database, key: string): boolean {
+  return (
+    db.has("func", [key]) ||
+    db.has("objectValue", [key]) ||
+    sourcesOf(db, key).length > 0
+  );
+}
+
 /** Every value a key could have been built from, whichever construct built it. */
 function sourcesOf(db: Database, key: string): string[] {
   const base = db.lookup("readsProperty", 0, key)[0];
