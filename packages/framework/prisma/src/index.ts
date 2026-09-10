@@ -50,6 +50,7 @@ import {
   Node as N,
   type Node,
   type SourceFile,
+  type Type,
 } from "ts-morph";
 import { z } from "zod";
 
@@ -524,27 +525,35 @@ function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
  * resulting type does).
  */
 function isPrismaClientReceiver(node: Node): boolean {
-  const type = (node as unknown as { getType: () => unknown }).getType();
-  if (type === null || typeof type !== "object") {
+  return extendsPrismaClient(node.getType(), new Set());
+}
+
+/**
+ * A project's client is often a subclass, `class PrismaService extends
+ * PrismaClient`, whose own symbol is declared in the project. So the
+ * type counts when it, or anything it extends, comes from Prisma.
+ */
+function extendsPrismaClient(type: Type, seen: Set<Type>): boolean {
+  if (seen.has(type)) {
     return false;
   }
-  const symbol = (type as { getSymbol?: () => unknown }).getSymbol?.();
-  if (symbol === null || symbol === undefined) {
-    return false;
+  seen.add(type);
+  const declarations = type.getSymbol()?.getDeclarations() ?? [];
+  if (
+    declarations.some((declaration) =>
+      isPrismaClientPath(declaration.getSourceFile().getFilePath()),
+    )
+  ) {
+    return true;
   }
-  const decls =
-    (symbol as { getDeclarations?: () => Node[] }).getDeclarations?.() ?? [];
-  for (const decl of decls) {
-    const declSourceFile = decl.getSourceFile();
-    const filePath = declSourceFile.getFilePath();
-    if (
-      filePath.includes("/@prisma/client/") ||
-      filePath.includes("/.prisma/client/")
-    ) {
-      return true;
-    }
-  }
-  return false;
+  return type.getBaseTypes().some((base) => extendsPrismaClient(base, seen));
+}
+
+function isPrismaClientPath(filePath: string): boolean {
+  return (
+    filePath.includes("/@prisma/client/") ||
+    filePath.includes("/.prisma/client/")
+  );
 }
 
 function capitalizeFirst(name: string): string | null {
