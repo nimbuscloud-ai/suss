@@ -32,6 +32,7 @@ import {
   projectFileFor,
   writeProjectFile,
 } from "./projectFile.js";
+import { projectsBelow } from "./projectsBelow.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
@@ -111,24 +112,72 @@ export async function initInteractive(
 
 async function findTargets(root: string): Promise<Target[]> {
   const workspace = readWorkspace(root);
+  const directories: Array<Pick<Target, "directory" | "label">> =
+    workspace.packages.length === 0
+      ? [{ directory: ".", label: path.basename(root) }]
+      : (workspace.packages as Workspace[]).map((pkg) => ({
+          directory: pkg.directory,
+          label: pkg.name ?? pkg.directory,
+        }));
 
-  if (workspace.packages.length === 0) {
-    const report = await inspectProject(root);
-    return worthReporting(report)
-      ? [{ directory: ".", label: path.basename(root), report }]
-      : [];
+  // A Python or Ruby service beside an npm workspace, or under a root
+  // with no manifest of its own, is listed by no workspace file.
+  for (const directory of projectDirectoriesBelow(root)) {
+    if (!directories.some((known) => known.directory === directory)) {
+      directories.push({ directory, label: directory });
+    }
   }
 
   const targets: Target[] = [];
-  for (const pkg of workspace.packages as Workspace[]) {
+  for (const { directory, label } of directories) {
     targets.push({
-      directory: pkg.directory,
-      label: pkg.name ?? pkg.directory,
-      report: await inspectProject(path.join(root, pkg.directory)),
+      directory,
+      label,
+      report: await inspectProject(path.join(root, directory)),
     });
   }
 
-  return targets.filter((target) => worthReporting(target.report));
+  return withoutLanguagesCoveredBelow(targets).filter((target) =>
+    worthReporting(target.report),
+  );
+}
+
+/** The directories below the root that declare a Python or Ruby project of their own. */
+function projectDirectoriesBelow(root: string): string[] {
+  const found = new Set<string>();
+  for (const language of ["python", "ruby"] as const) {
+    for (const marker of projectsBelow(root, language)) {
+      found.add(path.dirname(marker));
+    }
+  }
+  return [...found].sort();
+}
+
+/**
+ * The root's own report counts the source files of every project below
+ * it, so it would report the language a project below already has packs
+ * for as one suss could not place.
+ */
+function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
+  const coveredBelow = new Set(
+    targets
+      .filter((target) => target.directory !== ".")
+      .flatMap((target) => declaredPacks(target.report))
+      .map((suggestion) => suggestion.language ?? "typescript"),
+  );
+  return targets.map((target) =>
+    target.directory === "."
+      ? {
+          ...target,
+          report: {
+            ...target.report,
+            languages: (target.report.languages ?? []).filter(
+              (language) => !coveredBelow.has(language),
+            ),
+          },
+        }
+      : target,
+  );
 }
 
 /**
@@ -206,7 +255,7 @@ async function chooseTargets(targets: Target[]): Promise<Target[] | null> {
   }
 
   p.log.info(
-    `This is a workspace. ${targets.length} of its packages have something suss can read.`,
+    `${targets.length} of the projects here have something suss can read.`,
   );
 
   const selected = await p.multiselect({
