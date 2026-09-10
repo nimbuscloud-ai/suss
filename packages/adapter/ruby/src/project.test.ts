@@ -268,7 +268,7 @@ describe("the method behind a field", () => {
     ]);
   });
 
-  it("finds the resolve method a wired class inherits, and leaves its unbound scope call as a gap", async () => {
+  it("finds the resolve method a wired class inherits, and says nothing about a call on a name nothing declares", async () => {
     write(
       "app/graphql/queries/base_query.rb",
       "class Queries::BaseQuery < GraphQL::Schema::Resolver\n  def resolve(**args)\n    scope.find_by(args)\n  end\nend\n",
@@ -281,9 +281,7 @@ describe("the method behind a field", () => {
       "app/graphql/types/query_type.rb",
       "class Types::QueryType < Types::BaseObject\n  field :campaign, resolver: Queries::CampaignQuery\nend\n",
     );
-    expect(await gapsOfOnlyField(queryType)).toEqual([
-      "The call to scope.find_by goes through a value this run could not settle, so whatever runs there is missing from this summary",
-    ]);
+    expect(await gapsOfOnlyField(queryType)).toEqual([]);
   });
 
   it("reads the arguments a wired class inherits from its base class", async () => {

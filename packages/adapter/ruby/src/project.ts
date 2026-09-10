@@ -322,6 +322,7 @@ export async function extractRubyProject(
     reachedFunctions(seeds, {
       files: parsed,
       displayPathOf,
+      facts: db,
       ...(storage === undefined ? {} : { storage }),
       inheritedMethods,
     }),

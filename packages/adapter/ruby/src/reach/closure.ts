@@ -36,7 +36,12 @@ import { nodeId } from "../facts/values.js";
 import { bodyCalls, calleeText, withoutChainLinks } from "../paths/effects.js";
 import { walkDefinitions } from "../scope.js";
 import { storageClaims } from "../storage.js";
-import { resolveCallee, resolveMethodReference } from "./resolveCallee.js";
+import { methodDefinitionsIn } from "../values/evaluator.js";
+import {
+  calleeSpellings,
+  resolveCallee,
+  resolveMethodReference,
+} from "./resolveCallee.js";
 
 import type {
   BehavioralSummary,
@@ -49,6 +54,7 @@ import type { AncestorLookup, ReachedBody } from "../ancestry.js";
 import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type {
+  CalleeSpellings,
   CallSite,
   ReachContext,
   ReachedFunction,
@@ -59,6 +65,8 @@ export interface ReachOptions extends BodyReadOptions {
   readonly files: readonly { file: string; root: RbNode }[];
   /** How a `location.file`/`declaredAt.file` spells an absolute path, the same way `project.ts` spells a discovered unit's. */
   readonly displayPathOf: (file: string) => string;
+  /** The value facts, which are where a callee is settled. */
+  readonly facts: Database;
 }
 
 /** A discovered unit's method, keyed the way its summary's span is. */
@@ -101,7 +109,7 @@ export async function reachedFunctions(
   seeds: readonly Seed[],
   options: ReachOptions,
 ): Promise<ReachedUnits> {
-  const ctx = buildReachContext(options.files);
+  const ctx = buildReachContext(options.files, options.facts);
   const db = new Database();
   const functionByKey = new Map<string, ReachedFunction>();
   const seedKeys = new Set<string>();
@@ -139,13 +147,26 @@ export async function reachedFunctions(
     if (frontier.length === 0) {
       break;
     }
-    for (const key of frontier) {
+    // Every body in this round asks the rules together, so evaluation
+    // runs once per round rather than once per body.
+    const bodies = frontier.flatMap((key) => {
       scanned.add(key);
       const source = functionByKey.get(key);
-      if (source === undefined) {
-        continue;
-      }
-      const scan = await scanBody(source, ctx, options);
+      return source === undefined
+        ? []
+        : [{ key, source, ...bodyOf(source, options) }];
+    });
+    const spellings = calleeSpellings(
+      bodies.flatMap((body) => body.written),
+      ctx,
+    );
+
+    for (const { key, source, calls, site } of bodies) {
+      const scan = await scanBody(source, ctx, options, {
+        calls,
+        site,
+        spellings,
+      });
       if (scan.stops.length > 0) {
         stopsByKey.set(key, scan.stops);
       }
@@ -202,14 +223,29 @@ function keyOf(target: ReachedFunction): string {
   return nodeId(target.file, target.node);
 }
 
+const METHOD_TYPES = new Set(["method", "singleton_method"]);
+
 /** Every class the run defines, and every method written outside one, so a call anywhere can be placed without re-reading a file per call. */
 function buildReachContext(
   files: readonly { file: string; root: RbNode }[],
+  facts: Database,
 ): ReachContext {
   const blocksByQualifiedName = new Map<string, ReachedBody[]>();
   const classes: { file: string; info: ReachedBody["info"] }[] = [];
+  // Both keyed the way the value facts key the node, so a class or a
+  // method the rules settle on can be named.
+  const classNames = new Map<string, string>();
+  const classOfMethod = new Map<string, string>();
   for (const { file, root } of files) {
-    walkDefinitions(root, (info) => classes.push({ file, info }));
+    walkDefinitions(root, (info) => {
+      classes.push({ file, info });
+      classNames.set(nodeId(file, info.node), info.qualifiedName);
+      for (const statement of namedChildren(info.bodyNode)) {
+        if (METHOD_TYPES.has(statement.type)) {
+          classOfMethod.set(nodeId(file, statement), info.qualifiedName);
+        }
+      }
+    });
   }
   const knownClasses = new Set(classes.map(({ info }) => info.qualifiedName));
   for (const { file, info } of classes) {
@@ -218,22 +254,34 @@ function buildReachContext(
     blocksByQualifiedName.set(info.qualifiedName, list);
   }
 
-  const topLevelMethods = new Map<string, ReachedFunction[]>();
+  const definitions = new Map<string, ReachedFunction>();
   for (const { file, root } of files) {
-    for (const method of topLevelMethodNodes(root)) {
+    for (const [key, method] of methodDefinitionsIn(file, root)) {
       const name = field(method, "name")?.text;
       if (name === undefined) {
         continue;
       }
-      const list = topLevelMethods.get(name) ?? [];
-      list.push({
+      const owner = classOfMethod.get(key) ?? null;
+      definitions.set(key, {
         file,
         node: method,
         name,
-        exportPath: [name],
-        enclosingQualifiedName: null,
+        exportPath: owner === null ? [name] : [owner, name],
+        enclosingQualifiedName: owner,
       });
-      topLevelMethods.set(name, list);
+    }
+  }
+
+  const topLevelMethods = new Map<string, ReachedFunction[]>();
+  for (const { file, root } of files) {
+    for (const method of topLevelMethodNodes(root)) {
+      const found = definitions.get(nodeId(file, method));
+      if (found === undefined) {
+        continue;
+      }
+      const list = topLevelMethods.get(found.name) ?? [];
+      list.push(found);
+      topLevelMethods.set(found.name, list);
     }
   }
 
@@ -248,7 +296,15 @@ function buildReachContext(
     localDefinition: (name) => blocksByQualifiedName.get(name) ?? null,
   };
 
-  return { lookup, knownClasses, topLevelMethods };
+  return { lookup, topLevelMethods, facts, classNames, definitions };
+}
+
+/** tree-sitter types a named child as nullable, and a class with no body has no children at all. */
+function namedChildren(node: RbNode | null): RbNode[] {
+  if (node === null) {
+    return [];
+  }
+  return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
 /** A `def` written outside any class, module, or other method, which Ruby calls a private method on every object. */
@@ -264,16 +320,6 @@ function topLevelMethodNodes(root: RbNode, found: RbNode[] = []): RbNode[] {
     topLevelMethodNodes(child, found);
   }
   return found;
-}
-
-/** The nesting a body written in `qualifiedName` runs a bare constant against, most specific first. */
-function nestingOf(qualifiedName: string): string[] {
-  const parts = qualifiedName.split("::");
-  const out: string[] = [];
-  for (let depth = parts.length; depth >= 1; depth--) {
-    out.push(parts.slice(0, depth).join("::"));
-  }
-  return out;
 }
 
 /**
@@ -324,29 +370,40 @@ function methodReferenceSymbol(node: RbNode): RbNode | null {
     : null;
 }
 
+/** A body's calls, read before the round asks the rules about all of them at once. */
+interface BodyCalls {
+  readonly calls: RbNode[];
+  readonly site: CallSite;
+  readonly written: { call: RbNode; site: CallSite }[];
+}
+
+function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
+  const site: CallSite = {
+    file: source.file,
+    method: source.node,
+    owner: keyOf(source),
+    enclosingQualifiedName: source.enclosingQualifiedName,
+  };
+  const calls =
+    field(source.node, "body") === null
+      ? []
+      : withoutChainLinks(bodyCalls(source.node, options.inheritedMethods));
+  return { calls, site, written: calls.map((call) => ({ call, site })) };
+}
+
 async function scanBody(
   source: ReachedFunction,
   ctx: ReachContext,
   options: ReachOptions,
+  read: { calls: RbNode[]; site: CallSite; spellings: CalleeSpellings },
 ): Promise<Scan> {
   const displayPathOf = options.displayPathOf;
-  const body = field(source.node, "body");
-  if (body === null) {
+  if (field(source.node, "body") === null) {
     return EMPTY_SCAN;
   }
 
-  const calls = withoutChainLinks(
-    bodyCalls(source.node, options.inheritedMethods),
-  );
+  const { calls, site } = read;
   const ownParameters = positionalParameters(source.node).map((p) => p.name);
-  const site: CallSite = {
-    enclosingQualifiedName: source.enclosingQualifiedName,
-    nesting:
-      source.enclosingQualifiedName === null
-        ? []
-        : nestingOf(source.enclosingQualifiedName),
-    ownParameters,
-  };
 
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
@@ -398,7 +455,7 @@ async function scanBody(
 
   for (const call of calls) {
     const callee = calleeText(call);
-    const outcome = await resolveCallee(call, site, ctx);
+    const outcome = await resolveCallee(call, site, ctx, read.spellings);
     // A stop is placed at its own call, where no summary can be, so the
     // link step neither links it nor guesses by name.
     const placed =
