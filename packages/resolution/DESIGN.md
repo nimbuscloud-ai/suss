@@ -239,8 +239,8 @@ None` at module level and `_client = make_client()` inside a getter, is
 two answers the same way. An adapter marks the placeholder write with
 `placeholderValue(x)` and passes those keys to `singleAnswers`, which
 sets them aside whenever the key has another answer. A name written only
-as a placeholder keeps that answer. The TypeScript store does the same
-for `null` and `undefined` in `sameConstructionAcrossWrites`.
+as a placeholder keeps that answer. `valueLeftByWrites` sets `null` and
+`undefined` aside the same way when it compares the writes to a name.
 
 A name bound to a call is a separate case. Its one answer is the call,
 and the rule that says a call is written as what its callee returns
@@ -334,6 +334,11 @@ rule set uses negation. The store evaluates after every wave of facts,
 so one negated rule turned a 66 second run on the Saleor dashboard into
 one that had not finished in ten minutes. Source order is something
 every adapter already knows.
+
+What the adapter supplies is the reading: the values in source order,
+and whether the writes run in order. `valueLeftByWrites` picks the one
+the name comes down to, so that decision is written once here rather
+than once per language.
 
 **Ambiguity is the caller's problem.** When the rules reach two
 different functions, the store returns nothing, because picking one

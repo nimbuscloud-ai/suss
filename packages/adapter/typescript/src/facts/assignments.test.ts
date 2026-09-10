@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { valueLeftByWrites } from "@suss/resolution";
 import { createTestProject } from "@suss/test-project";
 
-import {
-  sameConstructionAcrossWrites,
-  writesToBinding,
-} from "./assignments.js";
+import { describeWrites, writesToBinding } from "./assignments.js";
 
 import type { Project } from "ts-morph";
 
@@ -21,8 +19,14 @@ function bindingOf(project: Project, name: string) {
     .getVariableDeclarationOrThrow(name);
 }
 
-describe("sameConstructionAcrossWrites", () => {
-  it("returns the construction when a guard writes it once", () => {
+function settledText(project: Project, name: string): string | null {
+  const { values, inOrder } = writesToBinding(bindingOf(project, name));
+  const key = valueLeftByWrites(describeWrites(values), inOrder);
+  return key === null ? null : (values[Number(key)]?.getText() ?? null);
+}
+
+describe("describeWrites", () => {
+  it("settles on the construction a guard writes once", () => {
     const project = projectOf(`
       declare class Client {}
       let cachedClient: Client | null = null;
@@ -30,14 +34,11 @@ describe("sameConstructionAcrossWrites", () => {
         cachedClient = new Client();
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "cachedClient"));
 
-    expect(sameConstructionAcrossWrites(values)?.getText()).toBe(
-      "new Client()",
-    );
+    expect(settledText(project, "cachedClient")).toBe("new Client()");
   });
 
-  it("returns an object literal a guard writes into an uninitialized name", () => {
+  it("settles on an object literal a guard writes into an uninitialized name", () => {
     const project = projectOf(`
       declare const parsed: Record<string, string | undefined>;
       let db: { instance: string | undefined };
@@ -45,14 +46,11 @@ describe("sameConstructionAcrossWrites", () => {
         db = { instance: parsed.DB_INSTANCE };
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "db"));
 
-    expect(sameConstructionAcrossWrites(values)?.getText()).toBe(
-      "{ instance: parsed.DB_INSTANCE }",
-    );
+    expect(settledText(project, "db")).toBe("{ instance: parsed.DB_INSTANCE }");
   });
 
-  it("returns null when two guards write different object literals", () => {
+  it("settles on nothing when two guards write different object literals", () => {
     const project = projectOf(`
       declare const flag: boolean;
       let db: { name: string };
@@ -62,9 +60,8 @@ describe("sameConstructionAcrossWrites", () => {
         db = { name: "b" };
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "db"));
 
-    expect(sameConstructionAcrossWrites(values)).toBe(null);
+    expect(settledText(project, "db")).toBe(null);
   });
 
   it("reads the value of a ??= write as the write's construction", () => {
@@ -75,9 +72,8 @@ describe("sameConstructionAcrossWrites", () => {
         cachedClient ??= build();
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "cachedClient"));
 
-    expect(sameConstructionAcrossWrites(values)?.getText()).toBe("build()");
+    expect(settledText(project, "cachedClient")).toBe("build()");
   });
 
   it("reads the value of a ||= write as the write's construction", () => {
@@ -88,12 +84,11 @@ describe("sameConstructionAcrossWrites", () => {
         cachedClient ||= build();
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "cachedClient"));
 
-    expect(sameConstructionAcrossWrites(values)?.getText()).toBe("build()");
+    expect(settledText(project, "cachedClient")).toBe("build()");
   });
 
-  it("returns null when the writes are different constructions", () => {
+  it("settles on nothing when the writes are different constructions", () => {
     const project = projectOf(`
       declare class Client {}
       declare class OtherClient {}
@@ -106,24 +101,22 @@ describe("sameConstructionAcrossWrites", () => {
         }
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "cachedClient"));
 
-    expect(sameConstructionAcrossWrites(values)).toBe(null);
+    expect(settledText(project, "cachedClient")).toBe(null);
   });
 
-  it("returns null when every write is a null or undefined placeholder", () => {
+  it("settles on nothing when every write is a null or undefined placeholder", () => {
     const project = projectOf(`
       let cachedClient: unknown = null;
       function reset() {
         cachedClient = undefined;
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "cachedClient"));
 
-    expect(sameConstructionAcrossWrites(values)).toBe(null);
+    expect(settledText(project, "cachedClient")).toBe(null);
   });
 
-  it("returns null when a write is neither a placeholder nor a construction", () => {
+  it("settles on nothing when a write is neither a placeholder nor a construction", () => {
     const project = projectOf(`
       declare const fallback: unknown;
       let cachedClient: unknown = null;
@@ -131,9 +124,19 @@ describe("sameConstructionAcrossWrites", () => {
         cachedClient = fallback;
       }
     `);
-    const { values } = writesToBinding(bindingOf(project, "cachedClient"));
 
-    expect(sameConstructionAcrossWrites(values)).toBe(null);
+    expect(settledText(project, "cachedClient")).toBe(null);
+  });
+
+  it("settles on nothing when a name is written with +=", () => {
+    const project = projectOf(`
+      let count = 0;
+      function bump() {
+        count += 1;
+      }
+    `);
+
+    expect(settledText(project, "count")).toBe(null);
   });
 });
 

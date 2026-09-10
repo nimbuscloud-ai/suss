@@ -10,6 +10,7 @@ export {
 export { nodeOfKey, type SpannedNode } from "./nodeKey.js";
 export { explainResolvedKey } from "./session.js";
 export { placeholderValues, singleAnswers } from "./singleAnswer.js";
+export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export { writtenValueOf } from "./writtenValue.js";
 
 export type {
@@ -59,7 +60,8 @@ export type {
 //   readsProperty(x, o, n)      x is the expression o.n
 //   binds(x, y)                 the name x is declared as y
 //   endsHolding(x, y)           the name x is written more than once
-//                               and holds y once the writes have run
+//                               and holds y once the writes have run.
+//                               `valueLeftByWrites` picks y
 //   fallbackBranch(x, b)        x is a fallback expression and b is
 //                               one of its branches
 //   paramOf(f, k, p)            p is f's parameter at position k
