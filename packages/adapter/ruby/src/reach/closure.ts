@@ -35,6 +35,7 @@ import { bodyOfMethod } from "../discovery.js";
 import { nodeId } from "../facts/values.js";
 import { bodyCalls, calleeText, withoutChainLinks } from "../paths/effects.js";
 import { walkDefinitions } from "../scope.js";
+import { storageClaims } from "../storage.js";
 import { resolveCallee, resolveMethodReference } from "./resolveCallee.js";
 
 import type {
@@ -418,7 +419,12 @@ async function scanBody(
 
     if (outcome.kind === "stopped") {
       const stopKey = `${outcome.reason}:${callee}`;
-      if (!seen.has(stopKey) && worthRecording(outcome.reason)) {
+      // A call the storage recognizer records is already in the summary as
+      // database work, so it is not a gap in what this walk reached.
+      const claimed =
+        options.storage !== undefined &&
+        storageClaims(call, source.file, options.storage);
+      if (!seen.has(stopKey) && !claimed && worthRecording(outcome.reason)) {
         seen.add(stopKey);
         stops.push({ callee, reason: outcome.reason });
       }
@@ -458,7 +464,7 @@ function libraryUnit(
   options: ReachOptions,
 ): RawCodeStructure {
   const { file, node, name, exportPath } = target;
-  const body = bodyOfMethod(node, options);
+  const body = bodyOfMethod(node, file, options);
   const range = rangeOf(node);
   return {
     identity: {

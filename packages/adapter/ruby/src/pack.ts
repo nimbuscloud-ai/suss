@@ -36,6 +36,8 @@ export interface RubyPack {
   clients?: RbClientCall[];
   /** What the library's own database calls look like. The README says how one is matched. */
   storage?: RbStoragePattern[];
+  /** Calls the library gives a project for reading a model through a batching loader, rather than on the model itself. */
+  loaders?: RbLoaderPattern[];
 }
 
 /**
@@ -95,6 +97,24 @@ export interface RbStoragePattern {
   writes: string[];
   /** Which database is behind the connection, which the project settles. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
+}
+
+/**
+ * A loader that batches reads of a model on the caller's behalf, graphql-ruby's
+ * dataloader for one. The call that picks what to load is given the model as
+ * a constant argument, so the read is recorded against that model the same
+ * way a call on the model itself would be, and a storage pattern from another
+ * pack in the run says whether the constant is a model at all.
+ */
+export interface RbLoaderPattern {
+  /** The receiverless call that gives the loader, `dataloader`. */
+  loader: string;
+  /** The method on the loader that picks a source and its arguments, `with`. */
+  pick: string;
+  /** The methods on a picked source that perform the read, `load` and `load_all`. */
+  reads: string[];
+  /** Receiverless calls that pick and read in one, whose arguments include the model, `dataload` and `dataload_record`. */
+  shortcuts: string[];
 }
 
 export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;

@@ -7,6 +7,7 @@
  */
 
 import {
+  compoundName,
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
   shadowingClassFor,
@@ -83,7 +84,7 @@ export function typeShapeFromNode(
   }
 
   if (node.type === "scope_resolution") {
-    const qualified = node.text;
+    const qualified = compoundName(node);
     const scalar =
       ctx.scalars[scalarLookupName(qualified, ctx.scalarNamePrefixes)];
     if (scalar !== undefined) {

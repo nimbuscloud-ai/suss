@@ -58,6 +58,19 @@ describe("graphqlRubyFramework", () => {
         },
       },
     ]);
+    expect(pack.loaders).toEqual([
+      {
+        loader: "dataloader",
+        pick: "with",
+        reads: ["load", "load_all", "request", "request_all"],
+        shortcuts: [
+          "dataload",
+          "dataload_all",
+          "dataload_record",
+          "dataload_all_records",
+        ],
+      },
+    ]);
   });
 
   it("adds a project's own base class names alongside the defaults", () => {

@@ -494,6 +494,71 @@ describe("the method behind a field", () => {
       );
     expect(storage).toHaveLength(1);
   });
+
+  it("records the model a resolver reads through the pack's loader, and reports no gap for the call", async () => {
+    const graphqlRoot = path.join(tmpDir, "app", "graphql");
+    const orderType = write(
+      "app/graphql/types/order_type.rb",
+      [
+        "class Types::OrderType < Types::BaseObject",
+        "  field :user, Types::UserType, null: false",
+        "",
+        "  def user",
+        "    dataloader.with(Sources::ActiveRecordBelongsTo, ::User).load(object.user_id)",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const user = write(
+      "app/models/user.rb",
+      ["class User < ApplicationRecord", "end", ""].join("\n"),
+    );
+    const models = write(
+      "app/models/application_record.rb",
+      ["class ApplicationRecord < ActiveRecord::Base", "end", ""].join("\n"),
+    );
+
+    const pack: RubyPack = {
+      ...graphqlRubyPack(graphqlRoot),
+      storage: [
+        {
+          baseClasses: ["ActiveRecord::Base"],
+          writes: ["update", "destroy", "save"],
+          storageSystem: "postgresql",
+        },
+      ],
+      loaders: [
+        {
+          loader: "dataloader",
+          pick: "with",
+          reads: ["load", "load_all"],
+          shortcuts: ["dataload", "dataload_record"],
+        },
+      ],
+    };
+    const { summaries } = await extractRubyProject({
+      files: [orderType, user, models],
+      packs: [pack],
+    });
+
+    const storage = summaries
+      .flatMap((summary) =>
+        (summary.transitions ?? []).flatMap((transition) => transition.effects),
+      )
+      .filter(
+        (effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "storage-access",
+      );
+    expect(storage).toHaveLength(1);
+    const semantics =
+      storage[0]?.type === "interaction" ? storage[0].binding.semantics : null;
+    expect(semantics?.name === "storage" ? semantics.container : null).toBe(
+      "User",
+    );
+    expect(summaries.flatMap((summary) => summary.gaps)).toEqual([]);
+  });
 });
 
 describe("the extraction report", () => {

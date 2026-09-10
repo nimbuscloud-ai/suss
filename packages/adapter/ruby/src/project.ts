@@ -204,6 +204,11 @@ export async function extractRubyProject(
   });
 
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
+  const loaderPatterns = options.packs.flatMap((pack) => pack.loaders ?? []);
+  const storage =
+    storagePatterns.length > 0
+      ? { facts: db, patterns: storagePatterns, loaders: loaderPatterns }
+      : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
   // Facts keep the full filesystem path, because they are joined against
   // internally. Only the summary's `location.file` gets shortened.
@@ -229,9 +234,7 @@ export async function extractRubyProject(
         filePath: displayPath,
         absoluteFile: file,
         cache,
-        ...(storagePatterns.length > 0
-          ? { storage: { facts: db, patterns: storagePatterns } }
-          : {}),
+        ...(storage === undefined ? {} : { storage }),
         inheritedMethods,
         displayPathOf,
         facts: db,
@@ -318,9 +321,7 @@ export async function extractRubyProject(
     reachedFunctions(seeds, {
       files: parsed,
       displayPathOf,
-      ...(storagePatterns.length > 0
-        ? { storage: { facts: db, patterns: storagePatterns } }
-        : {}),
+      ...(storage === undefined ? {} : { storage }),
       inheritedMethods,
     }),
   );

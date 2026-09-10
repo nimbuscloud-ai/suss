@@ -163,6 +163,22 @@ export function graphqlRubyFramework(
     name: "graphql-ruby",
     protocol: "http-graphql",
     discovery: [pattern],
+    // A resolver that reads a model through the dataloader passes the model
+    // as an argument, so the read is recorded against that model when a
+    // storage pack in the same run says it is one.
+    loaders: [
+      {
+        loader: "dataloader",
+        pick: "with",
+        reads: ["load", "load_all", "request", "request_all"],
+        shortcuts: [
+          "dataload",
+          "dataload_all",
+          "dataload_record",
+          "dataload_all_records",
+        ],
+      },
+    ],
   };
 }
 
@@ -172,7 +188,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-graphql-ruby",
   dependencies: [{ ecosystem: "rubygems", name: "graphql" }],
   reads:
-    "graphql-ruby class-based field DSL (Ruby), including \`mutation:\` / \`resolver:\` wiring one hop out to what the referenced class itself declares.",
+    "graphql-ruby class-based field DSL (Ruby), including \`mutation:\` / \`resolver:\` wiring one hop out to what the referenced class itself declares, and the model a resolver reads through \`dataloader\` when a storage pack in the run recognizes it.",
   configuration: {
     file: "suss.graphql-ruby.json",
     example: { root: "app/graphql" },

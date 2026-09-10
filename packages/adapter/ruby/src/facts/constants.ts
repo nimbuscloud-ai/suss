@@ -120,14 +120,16 @@ export function collectFileConstants(
     ) {
       const written = writtenName(node);
       if (written !== null) {
-        references.push({
-          key:
-            node.type === "constant"
-              ? `${filePath}#${node.text}`
-              : nodeId(filePath, node),
-          written,
-          nesting,
-        });
+        const key =
+          node.type === "constant"
+            ? `${filePath}#${node.text}`
+            : nodeId(filePath, node);
+        // `::Order` is looked up from the top level, whatever it is written inside.
+        references.push(
+          written.startsWith("::")
+            ? { key, written: written.slice(2), nesting: [] }
+            : { key, written, nesting },
+        );
       }
     }
 

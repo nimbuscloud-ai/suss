@@ -32,7 +32,7 @@ export function qualifyConstantRef(
   nesting: readonly string[],
 ): string | null {
   if (node.type === "scope_resolution") {
-    return node.text;
+    return compoundName(node);
   }
   if (node.type === "constant") {
     const innermost = nesting[0] ?? null;
@@ -52,12 +52,17 @@ export function constantRefCandidates(
   nesting: readonly string[],
 ): string[] {
   if (node.type === "scope_resolution") {
-    return [node.text];
+    return [compoundName(node)];
   }
   if (node.type === "constant") {
     return [...nesting.map((level) => `${level}::${node.text}`), node.text];
   }
   return [];
+}
+
+/** The qualified name a compound path spells. `::Order` is `Order` looked up from the top level, so the leading `::` is not part of the name. */
+export function compoundName(node: RbNode): string {
+  return node.text.replace(/^::/, "");
 }
 
 /**

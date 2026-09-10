@@ -83,6 +83,29 @@ describe("a Ruby constant", () => {
     expect(inner?.[1]?.startsWith("types.rb")).toBe(true);
   });
 
+  it("reads a name written with a leading `::` from the top level, whatever module it is inside", async () => {
+    const db = await factsFor({
+      "types.rb": [
+        "module Types",
+        "  class Order",
+        "  end",
+        "  class Wrapper",
+        "    def build",
+        "      ::Order",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+      "other.rb": "class Order\nend\n",
+    });
+
+    const absolute = bindingsOf(db).find(([from]) =>
+      from.startsWith("types.rb:"),
+    );
+    expect(absolute?.[1]?.startsWith("other.rb")).toBe(true);
+  });
+
   it("says nothing when two files declare one name", async () => {
     const db = await factsFor({
       "one.rb": "class Order\nend\n",

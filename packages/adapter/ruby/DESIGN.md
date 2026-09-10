@@ -228,7 +228,26 @@ Order.where(id: 1).first   # one read, against Order, picking rows by id
 A chain is one thing the code does, so that counts once. The method the chain
 ends with tells a read from a write, and the keywords along it become the
 selector. `fields` comes back empty, and a call on anything that is not a
-constant says nothing, since there is no class to ask about.
+constant says nothing, since there is no class to ask about. The constant can
+be written any way Ruby allows: `Order`, `Shop::Order`, or `::Order` for the
+top-level class from inside a module that has its own `Order`. The binding
+facts settle which class each spelling means.
+
+A library that batches reads on the caller's behalf puts the model in an
+argument instead of on the receiver. graphql-ruby's dataloader is one: a
+resolver writes `dataloader.with(Sources::Record, ::User).load(id)` or the
+shorter `dataload_record(::User, id)`, and the model is `::User`. A pack for
+such a library declares the calls in `loaders`, and every constant argument
+of the picking call that reaches a storage base counts as a read of that
+model. The source class it is also given reaches no such base, so it drops
+out without the pack saying which argument position the model is in. This
+needs a storage pattern in the same run, so the graphql-ruby pack records
+nothing on its own and one read per model once the activerecord pack is
+there too. The reach walk cannot follow a call on the loader's result, and
+would report it as an unsettled value; a call the storage recognizer
+records is not reported as a gap, since the summary already says what it
+does. `dataload_association(record, :name)` is left out: the model behind
+an association is declared on another class, which nothing here reads yet.
 
 ## What a file reads from the environment
 
