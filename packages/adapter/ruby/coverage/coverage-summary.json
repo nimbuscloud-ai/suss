@@ -19,10 +19,10 @@
       "pct": 98.47
     },
     "branches": {
-      "total": 2050,
-      "covered": 1802,
+      "total": 2048,
+      "covered": 1801,
       "skipped": 0,
-      "pct": 87.9
+      "pct": 87.93
     },
     "branchesTrue": {
       "total": 0,
@@ -441,10 +441,10 @@
       "pct": 97.82
     },
     "branches": {
-      "total": 77,
-      "covered": 67,
+      "total": 75,
+      "covered": 66,
       "skipped": 0,
-      "pct": 87.01
+      "pct": 88
     }
   },
   "src/stubEvidence.ts": {
