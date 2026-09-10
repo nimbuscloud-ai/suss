@@ -34,6 +34,7 @@ import { type MountEdge, mountPathsOf } from "@suss/resolution";
 
 import {
   bodyStatements,
+  enclosingFunction,
   field,
   nestedStatements,
   rangeOf,
@@ -46,7 +47,7 @@ import {
   resolveCalls,
   subjectConstructions,
 } from "./facts/resolve.js";
-import { nodeId } from "./facts/values.js";
+import { nameKeyIn, nodeId } from "./facts/values.js";
 import { resolveModule } from "./moduleResolver.js";
 import { resolveName } from "./scope.js";
 import { stringValueOf } from "./values/evaluator.js";
@@ -1082,7 +1083,13 @@ function constructionThroughFacts(
     return null;
   }
 
-  const nameKey = `${scan.bound.file}#${name}`;
+  // A function's own names are keyed under it, so a router built inside an
+  // app factory has to be asked about there rather than at module level.
+  const nameKey = nameKeyIn(
+    scan.bound.file,
+    scope.kind === "function" ? scope.node : enclosingFunction(scope.node),
+    name,
+  );
   const constructionKey = subjectConstructions(facts, [nameKey]).get(
     nameKey,
   )?.constructionKey;

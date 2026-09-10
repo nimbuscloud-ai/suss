@@ -1746,9 +1746,7 @@ describe("discoverUnits: where in a Python file the app is built", () => {
     });
   }
 
-  // A walrus is not an `assignment`, and the fact layer writes down only
-  // assignments, so nothing says what `app` came from.
-  it("does not find the route when the app is bound by a walrus", async () => {
+  it("finds the route when the app is bound by a walrus", async () => {
     const units = await unitsWithRulesOf(
       [
         "from fastapi import FastAPI",
@@ -1761,7 +1759,7 @@ describe("discoverUnits: where in a Python file the app is built", () => {
       ].join("\n"),
       [fastapiLike],
     );
-    expect(units).toEqual([]);
+    expect(units.map((unit) => unit.identity.name)).toEqual(["health"]);
   });
 });
 

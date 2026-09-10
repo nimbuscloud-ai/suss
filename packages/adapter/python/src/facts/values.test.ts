@@ -237,7 +237,7 @@ describe("python value facts", () => {
     ]);
   });
 
-  it("binds a name a method's body assigns", async () => {
+  it("keys a name a method's body assigns under that method", async () => {
     const db = await factsFor(
       [
         "class Holder:",
@@ -246,7 +246,8 @@ describe("python value facts", () => {
         "",
       ].join("\n"),
     );
-    expect(rows(db, "binds").map((row) => row[0])).toContain("#app");
+    const [method] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "binds").map((row) => row[0])).toContain(`${method}#app`);
   });
 
   it("keeps a class attribute under its name", async () => {
@@ -345,5 +346,154 @@ describe("python value facts", () => {
   it("gives no key to the marker that ends the positional parameters", async () => {
     const db = await factsFor("def build(a, *, flag=False):\n    pass\n");
     expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
+  });
+
+  it("keys a name two functions both write under each of them", async () => {
+    const db = await factsFor(
+      [
+        "def first():",
+        "    query = build()",
+        "",
+        "def second():",
+        "    query = build()",
+        "",
+      ].join("\n"),
+    );
+    const keys = rows(db, "binds")
+      .map((row) => String(row[0]))
+      .filter((key) => key.endsWith("#query"));
+    expect(new Set(keys).size, "the two queries collided").toBe(2);
+  });
+
+  it("binds a name a function writes once to what it writes", async () => {
+    const db = await factsFor(
+      ["def handler():", "    query = build()", ""].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [call] = rows(db, "call")[0] ?? [];
+    expect(rows(db, "binds")).toContainEqual([`${funcKey}#query`, call]);
+  });
+
+  it("leaves a function's own name out of what the module exports", async () => {
+    const db = await factsFor(
+      ["def build():", "    registry = make()", ""].join("\n"),
+    );
+    expect(rows(db, "exportsAs").map((row) => row[1])).toEqual(["build"]);
+  });
+
+  it("ends a name written as None and then as a call holding the call", async () => {
+    const db = await factsFor(
+      [
+        "def handler(flag):",
+        "    client = None",
+        "    if flag:",
+        "        client = Client()",
+        "    return client",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [call] = rows(db, "call")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#client`, call]]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#client`,
+    );
+  });
+
+  it("ends a name written twice in a row holding the second write", async () => {
+    const db = await factsFor(
+      [
+        "def handler(session):",
+        "    query = session.query(Entity)",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [second] = rows(db, "call")[1] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, second]]);
+  });
+
+  it("says nothing about a name whose second write is behind a branch", async () => {
+    const db = await factsFor(
+      [
+        "def handler(flag):",
+        "    q = Entity.query",
+        "    if flag:",
+        "        q = q.filter(1)",
+        "    return q",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#q`,
+    );
+  });
+
+  it("says nothing about a parameter the body writes again", async () => {
+    const db = await factsFor(
+      ["def handler(db):", "    db = connect()", "    return db", ""].join(
+        "\n",
+      ),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#db`,
+    );
+  });
+
+  it("makes a loop target the function's own name with no value settled", async () => {
+    const db = await factsFor(
+      [
+        "def handler(items):",
+        "    for item in items:",
+        "        pass",
+        "    return item",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#item`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#item`,
+    );
+  });
+
+  it("reads a name a nested def only reads as the outer function's", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    query = build()",
+        "    def inner():",
+        "        return query",
+        "    return inner",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const returned = rows(db, "returnsValue").map((row) => row[1]);
+    expect(returned).toContain(`${outerKey}#query`);
+  });
+
+  it("writes a name a function declares global under the module", async () => {
+    const db = await factsFor(
+      [
+        "counter = 0",
+        "",
+        "def bump():",
+        "    global counter",
+        "    counter = 1",
+        "",
+      ].join("\n"),
+    );
+    const keys = rows(db, "binds").map((row) => String(row[0]));
+    expect(keys.filter((key) => key.endsWith("#counter"))).toEqual([
+      "#counter",
+      "#counter",
+    ]);
   });
 });
