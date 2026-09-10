@@ -141,12 +141,9 @@ import {
 import { moduleInitSummary } from "./moduleInit.js";
 import { parameterReads } from "./parameterReads.js";
 import { createReferenceIndex } from "./referencedFiles.js";
-import {
-  type ClosureFacts,
-  deriveBoundaryEffects,
-} from "./resolve/boundaryEffects.js";
 import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
 import {
+  type ClosureFacts,
   expandReachableClosure,
   recognizerOnlyRoots,
 } from "./resolve/reachableClosure.js";
@@ -2508,12 +2505,6 @@ export function createTypeScriptAdapter(
       const enriched = timer.time("enrichRethrows", () =>
         enrichRethrows(merged.summaries, project, closureFacts),
       );
-
-      if (config.includeReachable !== false) {
-        timer.time("deriveBoundaryEffects", () =>
-          deriveBoundaryEffects(enriched, closureFacts),
-        );
-      }
 
       // Absolute paths here; the CLI makes them relative beside `location.file`.
       // A leaf file stays unstamped, as it always has for TypeScript.

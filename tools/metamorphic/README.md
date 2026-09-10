@@ -36,10 +36,10 @@ and compares two things against the seed's own extraction:
 - **The boundary accesses the run describes**, wherever it attributes
   them. A rewrite that moves the call into a helper moves the effect onto
   that helper's own summary, and it is the same access.
-- **What the discovered unit reaches**, from the `effectsClosure` the
-  TypeScript adapter stamps on an entry summary. This is what says the
-  unit is connected to the access rather than the run happening to
-  mention it somewhere.
+- **What the discovered unit reaches**, by walking the calls the run
+  recorded from the unit and collecting the boundary accesses on every
+  function it comes to. This is what says the unit is connected to the
+  access rather than the run happening to mention it somewhere.
 
 Line numbers, unit names and file paths move under rewriting, so the
 comparison ignores them, along with the call's source text, its group id

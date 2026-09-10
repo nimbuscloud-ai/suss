@@ -3,9 +3,9 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 910,
-    "internal": 3240,
-    "consumers": 1763,
-    "pairs": 1760,
+    "internal": 3236,
+    "consumers": 1762,
+    "pairs": 1759,
     "unfollowedCalls": 499,
     "findingErrors": 0
   },
@@ -27,8 +27,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 89,
-      "internal": 832,
-      "consumers": 201,
+      "internal": 830,
+      "consumers": 200,
       "unfollowedCalls": 113
     },
     "packages/behavioral-ir": {
@@ -55,7 +55,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 24,
-      "internal": 537,
+      "internal": 535,
       "consumers": 325,
       "unfollowedCalls": 55
     },

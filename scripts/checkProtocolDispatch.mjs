@@ -118,9 +118,6 @@ const OWNING_DIRS = [
  * eventually replace an if.
  */
 const RATCHET = {
-  // #147: bindingLabel should become displayLabel dispatch; its labels
-  // feed effectsClosure, so the conversion wants its own change.
-  "packages/adapter/typescript/src/resolve/boundaryEffects.ts": 6,
   "packages/adapter/typescript/src/adapter.ts": 4,
   "packages/cli/src/check.ts": 2,
   "packages/cli/src/corroborate.ts": 1,

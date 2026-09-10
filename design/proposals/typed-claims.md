@@ -47,7 +47,7 @@ could no longer disagree about what a protocol means.
 Today at least 8 producer sites and 9 consumer sites hand-cast the
 same structures (`metadata.runtimeContract`, `messageBus`, `http`,
 `graphql`, `storageContract`, `react`, `component`, `awsLambda`,
-`appsync`, `effectsClosure`). The change is one zod schema per
+`appsync`). The change is one zod schema per
 namespace, exported from behavioral-ir, with a builder and a reader:
 
 ```ts

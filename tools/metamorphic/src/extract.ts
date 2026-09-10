@@ -1,7 +1,8 @@
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import { functionOf, readCallFacts } from "@suss/cli";
 import { createTestProject } from "@suss/test-project";
 
-import type { Effect } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 import type { Program } from "./rewrite.js";
 import type { Seed } from "./seed.js";
@@ -40,7 +41,11 @@ export interface RunDescription {
    * onto that function's own summary, and the access is the same one.
    */
   readonly effects: readonly string[];
-  /** What the discovered unit reaches, from the adapter's `effectsClosure`. */
+  /**
+   * Every boundary access the discovered unit reaches through the calls
+   * the run recorded, so a rewrite that keeps the effect but breaks the
+   * call chain to it is caught.
+   */
   readonly reaches: readonly string[];
 }
 
@@ -67,13 +72,27 @@ export function fingerprint(effect: Effect): string {
   return stable(effect);
 }
 
-interface ClosureEntry {
-  kind: string;
-  target: string;
-}
-
 function sortedSet(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function interactionsOf(summaries: readonly BehavioralSummary[]): string[] {
+  return summaries
+    .flatMap((summary) => summary.transitions)
+    .flatMap((transition) => transition.effects)
+    .filter((effect) => effect.type === "interaction")
+    .map(fingerprint);
+}
+
+/** The boundary accesses on the unit and on every function it ends up calling. */
+function reachedBy(
+  unit: BehavioralSummary,
+  summaries: readonly BehavioralSummary[],
+): string[] {
+  const facts = readCallFacts(summaries);
+  const start = functionOf(unit);
+  const reached = [start, ...facts.reachedFrom([start]).keys()];
+  return interactionsOf(reached.flatMap((key) => facts.units.get(key) ?? []));
 }
 
 /**
@@ -101,19 +120,8 @@ export async function describeRun(
   if (unit === undefined) {
     throw new Error("the rewrite left no discovered unit to describe");
   }
-  const closure = (unit.metadata?.effectsClosure ?? []) as ClosureEntry[];
   return {
-    effects: sortedSet(
-      summaries
-        .flatMap((summary) => summary.transitions)
-        .flatMap((transition) => transition.effects)
-        .filter((effect) => effect.type === "interaction")
-        .map(fingerprint),
-    ),
-    reaches: sortedSet(
-      closure
-        .filter((entry) => entry.kind === "interaction")
-        .map((entry) => entry.target),
-    ),
+    effects: sortedSet(interactionsOf(summaries)),
+    reaches: sortedSet(reachedBy(unit, summaries)),
   };
 }

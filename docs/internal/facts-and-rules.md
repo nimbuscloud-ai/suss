@@ -6,12 +6,12 @@ Value resolution is the largest rule set over this engine and has a page of its 
 
 ## Why rules
 
-Every whole-program analysis in extraction works the same way underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability, re-throw resolution, and effect propagation all work that way. Rules state it once, and you get four properties from that:
+Every whole-program analysis in extraction works the same way underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability and re-throw resolution both work that way. Rules state it once, and you get four properties from that:
 
 - **Termination comes from the engine.** The evaluator (`@suss/datalog`) runs semi-naive fixpoint iteration. Every analysis written in it terminates by construction, because there are only finitely many possible facts and rules only add.
 - **Negation is sound.** Rules are stratified before evaluation, and a cycle through negation is a hard error at evaluation time.
 - **The logic is data.** A rule is a plain object you can print, test, and review in isolation. What you audit is the facts a pass emits and the rules it runs.
-- **The analyses become language-independent.** A rule joins kinds of fact (`calls`, `entry`, `unitEffect`, and so on), never AST nodes. A second language adapter that emits the same facts gets every analysis for free. This is the concrete mechanism behind "the IR is the product": the facts are a second, lower-level IR.
+- **The analyses become language-independent.** A rule joins kinds of fact (`calls`, `entry`, `throwsDirect`, and so on), never AST nodes. A second language adapter that emits the same facts gets every analysis for free. This is the concrete mechanism behind "the IR is the product": the facts are a second, lower-level IR.
 
 ## The three layers
 
@@ -25,7 +25,7 @@ The boundary rules, in force now:
 
 1. **Only Layer 1 touches the AST.** A rule never gets a node, a `Project`, or anything from ts-morph. If a rule needs information, Layer 1 emits it as a fact.
 2. **One owner per relation.** Exactly one pass writes each relation name (see the table below). Consumers join against it; they never add to it.
-3. **Derived facts land as additive metadata.** Layer 3 stamps results onto summaries (e.g. `metadata.effectsClosure`) without rewriting what any transition itself claims. A rules pass can add knowledge, but it can never edit what extraction reported.
+3. **Derived facts land as additive metadata.** Layer 3 stamps results onto summaries (the resolved sources on a re-throw transition, say) without rewriting what any transition itself claims. A rules pass can add knowledge, but it can never edit what extraction reported.
 
 ## The engine: `@suss/datalog`
 
@@ -81,30 +81,7 @@ Evaluation is semi-naive: the seed round applies every rule to the whole databas
 
 The pass is demand-driven on top of this: after each evaluation it scans the newly reachable units for call edges, emits the `calls` facts, and evaluates again, so round 2 only happens after `orchestrate`'s body has actually been read.
 
-### Boundary effects: an effect two hops down
-
-Same call graph, plus one effect fact emitted from `persist`'s transitions:
-
-```
-unitEffect(persist, invocation, audit.log)
-```
-
-The effect rules track reachability per entry point, then join effects in:
-
-```
-reachFrom(e, e)            :- entry(e).
-reachFrom(e, v)            :- reachFrom(e, u), calls(u, v).
-boundaryEffect(e, k, t)    :- reachFrom(e, u), unitEffect(u, k, t).
-```
-
-| Round | New facts | How |
-|---|---|---|
-| seed | `reachFrom(handler, handler)` | rule 1 |
-| 1 | `reachFrom(handler, orchestrate)` | rule 2 walks one `calls` edge |
-| 2 | `reachFrom(handler, validate)`, `reachFrom(handler, persist)` | rule 2 again |
-| 3 | `boundaryEffect(handler, invocation, audit.log)` | rule 3 joins `reachFrom(handler, persist)` with the `unitEffect` fact |
-
-Assembly then stamps `metadata.effectsClosure: [{ kind: "invocation", target: "audit.log", transitive: true }]` on the handler's summary. The `transitive` flag comes from a plain-code check after evaluation: the effect's unit key is different from the entry's, so the effect belongs to a callee.
+What an entry point reaches two hops down is not derived here. The closure writes each reachable function's effects onto that function's own summary, and the CLI walks the invocation effects across summaries when `inspect`, `inspect --diff`, or `ask` needs the transitive answer. Every adapter writes those effects, so the walk comes out the same for Python and Ruby without a second derivation per language.
 
 ### Re-throw contribution: a chain of catches
 
@@ -143,12 +120,13 @@ Two requirements apply. First, a positive literal (`entry`) must bind the variab
 
 ## The shared fact store
 
-Each `extractAll` run creates **one** fact database and threads it through the passes (`ClosureFacts` in `resolve/boundaryEffects.ts`):
+Each `extractAll` run creates **one** fact database and threads it through the passes (`ClosureFacts` in `resolve/reachableClosure.ts`):
 
 ```ts
 interface ClosureFacts {
   db: Database;
   unitKeyBySummary: Map<BehavioralSummary, string>;
+  filesByKey?: Map<string, Set<string>>;
 }
 ```
 
@@ -166,9 +144,6 @@ Re-throw enrichment writes into the same store and identifies units with the sam
 | `entry` | 1 | reachable closure | unit is a pack-discovered entry point |
 | `calls` | 2 | reachable closure | unit statically calls unit |
 | `reachable` | 1 | derived (closure rules) | unit is reachable from some entry |
-| `unitEffect` | 3 | boundary effects | unit's transitions have this effect (kind, target) |
-| `reachFrom` | 2 | derived (effect rules) | unit is reachable from this specific entry |
-| `boundaryEffect` | 3 | derived (effect rules) | entry transitively reaches effect (kind, target) |
 | `throwsDirect` | 2 | rethrow enrichment | unit has a throw terminal with this source |
 | `rethrowSite` | 2 | rethrow enrichment | unit re-throws from a catch at this site |
 | `siteCalls` | 2 | rethrow enrichment | that rethrow site's try block calls this unit |
@@ -177,8 +152,7 @@ Re-throw enrichment writes into the same store and identifies units with the sam
 Derived results surface to users as:
 
 - `library` summaries with `recognition: "reachable"` (from `reachable`);
-- resolved messages on re-throw transitions' metadata (from `contributes`);
-- `metadata.effectsClosure: Array<{ kind, target, transitive }>` on entry summaries (from `boundaryEffect`): everything a boundary's promise transitively depends on, with `transitive: true` when the effect belongs to a callee. This is the raw material for cross-boundary cascade analysis. Join a provider's effects closure against other boundaries' identities and you can see which promises depend on which. Only the TypeScript adapter stamps it today, and nothing in the CLI reads it: `inspect` and `inspect --diff` walk the invocation effects in the summaries themselves, which every adapter writes, so the Reaches block comes out the same for Python and Ruby.
+- resolved messages on re-throw transitions' metadata (from `contributes`).
 
 ## Adding an analysis
 
@@ -186,12 +160,12 @@ Derived results surface to users as:
 2. **Emit facts from Layer 1.** Find the pass that already walks what you need (usually the closure pass) and add `db.add(...)` calls there, or write a small emitter that walks summaries. Walking summaries beats walking the AST when the information is already in the IR.
 3. **Write the rules as data** next to the pass, as a `const RULES = [...]` the tests can import. If a rule uses negation, make sure a positive literal binds every variable in the negated literal first, and expect `stratify` to reject cycles.
 4. **Stamp results in Layer 3** as additive metadata on summaries, sorted for stable output.
-5. **Test at two levels:** unit tests on the rules with a hand-built database (no ts-morph anywhere in the test), and one adapter-level test proving the end-to-end stamp (see the transitive-effects test in `adapter.test.ts` for the pattern).
+5. **Test at two levels:** unit tests on the rules with a hand-built database (no ts-morph anywhere in the test), and one adapter-level test proving the end-to-end stamp (see the rethrow enrichment tests in `adapter.test.ts` for the pattern).
 
 Two kinds of work do not belong here. Per-function local analysis stays in the path engine, which handles a single function's control flow directly. Because that work is local, the fixpoint machinery buys nothing. And anything that needs to ask the type checker a question part way through a derivation should resolve first and emit facts after.
 
 ## Where this is going
 
 - **CFG edges as facts.** What the path engine enumerates is the same thing a query over the lowered control-flow graph would return. If we put `cfgEdge` facts into the shared store, someone could write path-sensitive analyses (`mayThrow` through plain calls, path-scoped effect attribution) as rules instead of as new traversals.
-- **Cascade checking.** Joining `effectsClosure` across summaries tells you which boundaries' promises depend on which other boundaries. Nobody has written the checker-side join yet.
+- **Cascade checking.** Joining what each boundary reaches (the walk `inspect --diff` does) against the other boundaries' identities tells you which boundaries' promises depend on which other boundaries. Nobody has written the checker-side join yet.
 - **A second language.** From this layer, all we ask an adapter to do is discover units, emit summaries, and emit these facts. Layers 2 and 3 come along unchanged.

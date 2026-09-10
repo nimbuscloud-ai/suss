@@ -230,11 +230,12 @@ Two parallel mechanisms feed effects and sub-units into this pipeline:
 
 ## Whole-program passes: facts and rules
 
-Per-function extraction answers "what does this function do". Three passes answer whole-program questions afterward, and all three are Datalog rules (`@suss/datalog`) over one shared fact database per extraction:
+Per-function extraction answers "what does this function do". Two passes answer whole-program questions afterward, and both are Datalog rules (`@suss/datalog`) over one shared fact database per extraction:
 
 - **Reachable closure**: every function statically reachable from a pack-discovered entry point becomes its own `library` summary.
 - **Re-throw enrichment**: a bare `throw err` in a catch block learns the throw sources its try block's callees can raise, transitively.
-- **Boundary effects**: every effect statically reachable behind an entry point lands on that entry's summary as `metadata.effectsClosure`.
+
+What an entry point reaches transitively is not stamped on it. The CLI walks the invocation effects across summaries when a command needs that answer, so it comes out the same for every language.
 
 The layering is strict: extraction emits facts, rules derive new facts, assembly stamps derived results onto summaries as additive metadata. Rules never touch the AST, so the analyses are language-independent by construction. [`internal/facts-and-rules.md`](internal/facts-and-rules.md) is the working reference, including the relation table and the checklist for adding an analysis.
 

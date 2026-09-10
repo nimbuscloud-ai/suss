@@ -58,7 +58,23 @@ import type {
 import type { FunctionRoot } from "../conditions.js";
 import type { DiscoveredUnit } from "../discovery/index.js";
 import type { ResolutionStore } from "../facts/store.js";
-import type { ClosureFacts } from "./boundaryEffects.js";
+
+/**
+ * What the closure pass leaves behind for the passes after it: the
+ * `entry` and `calls` facts, and which unit key each summary got. The
+ * rethrow pass reads the callee summaries through it, and the per-file
+ * cache folds a callee's files into every entry that reaches it.
+ */
+export interface ClosureFacts {
+  db: Database;
+  unitKeyBySummary: Map<BehavioralSummary, string>;
+  /**
+   * When present, the closure records per scanned function the other
+   * files its scan read, so the per-file cache can fold them into the
+   * dependencies of every entry that reaches the function.
+   */
+  filesByKey?: Map<string, Set<string>>;
+}
 
 // ---------------------------------------------------------------------------
 // The "reachable" pack: terminals and input mapping for library functions
