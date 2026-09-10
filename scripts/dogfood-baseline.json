@@ -3,10 +3,10 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 916,
-    "internal": 3290,
-    "consumers": 1767,
-    "pairs": 1764,
-    "unfollowedCalls": 503,
+    "internal": 3300,
+    "consumers": 1770,
+    "pairs": 1767,
+    "unfollowedCalls": 497,
     "findingErrors": 0
   },
   "packages": {
@@ -384,15 +384,15 @@
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
       "exports": 2,
-      "internal": 16,
+      "internal": 18,
       "consumers": 8,
-      "unfollowedCalls": 7
+      "unfollowedCalls": 4
     },
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
       "exports": 4,
-      "internal": 37,
-      "consumers": 38,
+      "internal": 39,
+      "consumers": 41,
       "unfollowedCalls": 7
     },
     "packages/framework/react": {
@@ -482,9 +482,9 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 46,
-      "internal": 169,
+      "internal": 175,
       "consumers": 0,
-      "unfollowedCalls": 10
+      "unfollowedCalls": 7
     },
     "packages/recognize": {
       "name": "@suss/recognize",
