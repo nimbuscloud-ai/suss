@@ -12,7 +12,7 @@ import {
 
 import type { Database } from "@suss/datalog";
 
-/** The two steps Ruby states beyond the shared rules, both about a call written with no arguments. */
+/** The steps Ruby states beyond the shared rules, all about a call written with no arguments. */
 export const RUBY_RULES = [
   // `Loader.new` makes one of the class, which the shared rules already say
   // about calling a class. Ruby writes it as a method read off the constant
@@ -41,6 +41,31 @@ export const RUBY_RULES = [
       lit("givesBackOne", v("n"), v("m")),
     ],
     "declared finder",
+  ),
+
+  // Ruby cannot refer to a method without running it, so
+  // `Settings.filters` is worth what the method returns. The shared
+  // rules hang that step on a `call` fact this spelling never gets.
+  rule(
+    "invokes",
+    [v("x"), v("f")],
+    [
+      lit("readsProperty", v("x"), v("o"), v("m")),
+      lit("comesTo", v("x"), v("f")),
+      lit("func", v("f")),
+    ],
+    "property read runs a method",
+  ),
+
+  // `%i[a b].freeze` is worth the list it was written as. The evaluator
+  // says the same in its row table, for a value it reads in one file.
+  ...["freeze", "dup"].map((method) =>
+    rule(
+      "stepsTo",
+      [v("x"), v("o"), VALUE_STEP],
+      [lit("readsProperty", v("x"), v("o"), constant(method))],
+      "hands back the receiver",
+    ),
   ),
 ];
 

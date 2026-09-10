@@ -8,16 +8,18 @@
  * on up the ancestry instead of stopping at the class.
  *
  * A name is read when the argument comes down to one string on every
- * turn of the loops the call is written inside, which the value
- * evaluator settles. Anything else leaves the body with a name this
- * reader could not read, and a lookup on it stops the way it did before.
+ * turn of the loops around the call, which the value evaluator settles
+ * from the run's facts. A name read only in part is kept as a pattern
+ * the whole name has to match. Anything less stops every lookup here.
  */
 
-import { force, literalOf } from "@suss/values";
+import { force, literalOf, piecesOf } from "@suss/values";
 
 import { bareCalls, bodyStatements, field, OWN_BODY_TYPES } from "./ast.js";
-import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
+import { evaluatedValue } from "./values/evaluator.js";
 
+import type { Database } from "@suss/datalog";
+import type { Value } from "@suss/values";
 import type { RbNode } from "./parser.js";
 import type { ParameterBindings } from "./values/evaluator.js";
 
@@ -33,74 +35,135 @@ const BLOCK_TYPES = new Set(["block", "do_block"]);
 export interface DefinedNames {
   /** Every name this reader read a `define_method` call as defining. */
   readonly names: ReadonlySet<string>;
+  /** What a name read only in part has to match for the loop to be defining it. */
+  readonly patterns: readonly RegExp[];
   /** Whether some `define_method` in the body was given a method name this reader could not read. */
   readonly unreadable: boolean;
 }
 
-const NOTHING: DefinedNames = { names: new Set(), unreadable: false };
+const NOTHING: DefinedNames = {
+  names: new Set(),
+  patterns: [],
+  unreadable: false,
+};
 
-const byTree = new WeakMap<object, Map<number, DefinedNames>>();
+/** Whether `name` could be one a `define_method` here defines without this reader having read which. */
+export function couldBeDefined(defined: DefinedNames, name: string): boolean {
+  return (
+    defined.unreadable || defined.patterns.some((pattern) => pattern.test(name))
+  );
+}
+
+const byRun = new WeakMap<object, Map<number, DefinedNames>>();
 
 /**
  * The names `body` defines with `define_method`. Kept per body, since
  * one class is looked up once per call site that reaches it and the
  * answer is the same every time.
  */
-export function defineMethodNames(body: RbNode): DefinedNames {
-  let perTree = byTree.get(body.tree);
-  if (perTree === undefined) {
-    perTree = new Map();
-    byTree.set(body.tree, perTree);
-  }
-  const cached = perTree.get(body.id);
+export function defineMethodNames(
+  body: RbNode,
+  facts?: Database,
+): DefinedNames {
+  const perRun = cacheFor(facts ?? body.tree);
+  const cached = perRun.get(body.id);
   if (cached !== undefined) {
     return cached;
   }
-  const read = readNames(body);
-  perTree.set(body.id, read);
+  const read = readNames(body, facts);
+  perRun.set(body.id, read);
   return read;
 }
 
-function readNames(body: RbNode): DefinedNames {
+function cacheFor(owner: object): Map<number, DefinedNames> {
+  let perRun = byRun.get(owner);
+  if (perRun === undefined) {
+    perRun = new Map();
+    byRun.set(owner, perRun);
+  }
+  return perRun;
+}
+
+function readNames(body: RbNode, facts: Database | undefined): DefinedNames {
   const calls = bareCalls(body, DEFINE_METHOD_CALL);
   if (calls.length === 0) {
     return NOTHING;
   }
   const names = new Set<string>();
+  const patterns: RegExp[] = [];
   let unreadable = false;
   for (const call of calls) {
-    const defined = namesDefinedBy(call);
+    const defined = namesDefinedBy(call, facts);
     if (defined === null) {
       unreadable = true;
       continue;
     }
-    for (const name of defined) {
+    for (const name of defined.names) {
       names.add(name);
     }
+    patterns.push(...defined.patterns);
   }
-  return { names, unreadable };
+  return { names, patterns, unreadable };
 }
 
-/** The names one `define_method` call defines, or null when its first argument does not come down to a string on every turn. */
-function namesDefinedBy(call: RbNode): string[] | null {
+/** What one `define_method` call defines: a name per turn, or the pattern a turn's name matches. Null when a turn gives neither. */
+function namesDefinedBy(
+  call: RbNode,
+  facts: Database | undefined,
+): { names: string[]; patterns: RegExp[] } | null {
   const args = field(call, "arguments");
   const first = args === null ? undefined : bodyStatements(args)[0];
   if (first === undefined) {
     return null;
   }
   const names: string[] = [];
-  for (const bindings of loopTurns(call)) {
-    const name = stringValueOf(
+  const patterns: RegExp[] = [];
+  for (const bindings of loopTurns(call, facts)) {
+    const value = evaluatedValue(
       first,
-      undefined,
+      facts,
       bindings.size === 0 ? undefined : bindings,
     );
-    if (name === null) {
+    const name = literalOf(value);
+    if (name !== null) {
+      names.push(name);
+      continue;
+    }
+    const pattern = patternOf(value);
+    if (pattern === null) {
       return null;
     }
-    names.push(name);
+    patterns.push(pattern);
   }
-  return names;
+  return { names, patterns };
+}
+
+/**
+ * The pattern a partly read name matches: its literal parts in order,
+ * with anything at all where a part went unread. Null when no part was
+ * read, since such a pattern would match every name.
+ */
+function patternOf(value: Value): RegExp | null {
+  const pieces = piecesOf(value);
+  let source = "^";
+  let readSomething = false;
+  for (const piece of pieces) {
+    if (piece.kind === "hole") {
+      source += "[\\s\\S]*";
+      continue;
+    }
+    const options = piece.options.filter((option) => option.length > 0);
+    if (options.length === 0) {
+      continue;
+    }
+    readSomething = true;
+    source += `(?:${options.map(escapeForPattern).join("|")})`;
+  }
+  return readSomething ? new RegExp(`${source}$`) : null;
+}
+
+function escapeForPattern(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -108,10 +171,13 @@ function namesDefinedBy(call: RbNode): string[] | null {
  * written inside. A block this reader cannot replay contributes no
  * binding, which leaves a name taken from its parameter unread.
  */
-function loopTurns(call: RbNode): ParameterBindings[] {
+function loopTurns(
+  call: RbNode,
+  facts: Database | undefined,
+): ParameterBindings[] {
   let turns: Array<Map<string, string>> = [new Map()];
   for (const taken of blocksAround(call)) {
-    const perElement = elementBindings(taken);
+    const perElement = elementBindings(taken, facts);
     if (perElement === null) {
       continue;
     }
@@ -145,6 +211,7 @@ function blocksAround(call: RbNode): BlockAtCall[] {
 /** What each turn of a loop over a list of literals binds, or null for any other block. */
 function elementBindings(
   taken: BlockAtCall,
+  facts: Database | undefined,
 ): Array<Map<string, string>> | null {
   const { block, call } = taken;
   const receiver = field(call, "receiver");
@@ -157,7 +224,8 @@ function elementBindings(
     parameters === null
       ? []
       : bodyStatements(parameters).map((parameter) => parameter.text);
-  const elements = element === undefined ? null : literalElementsOf(receiver);
+  const elements =
+    element === undefined ? null : literalElementsOf(receiver, facts);
   if (element === undefined || elements === null) {
     return null;
   }
@@ -171,8 +239,11 @@ function elementBindings(
 }
 
 /** The strings a value comes down to when it is a list of them, or null when any element is something else. */
-function literalElementsOf(node: RbNode): string[] | null {
-  const value = evaluatedValue(node);
+function literalElementsOf(
+  node: RbNode,
+  facts: Database | undefined,
+): string[] | null {
+  const value = evaluatedValue(node, facts);
   if (value.kind !== "sequence") {
     return null;
   }

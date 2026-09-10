@@ -428,7 +428,30 @@ function implicitReturn(body: RbNode): RbNode | null {
     (child) => child.type !== "rescue" && child.type !== "ensure",
   );
   const last = statements[statements.length - 1];
-  return last === undefined || last.type === "return" ? null : last;
+  if (last === undefined || last.type === "return") {
+    return null;
+  }
+  return assignedValueOf(last) ?? last;
+}
+
+/**
+ * The value an assignment is worth, since Ruby hands back what it
+ * wrote. `@filters ||= %i[...]` as a method's last line is the
+ * memoised list, and a reader that stopped at the assignment would
+ * have nothing to read.
+ */
+function assignedValueOf(node: RbNode): RbNode | null {
+  if (!ASSIGNMENT_TYPES.has(node.type)) {
+    return null;
+  }
+  const operator = field(node, "operator")?.text;
+  if (
+    node.type !== "assignment" &&
+    !WHOLE_VALUE_OPERATORS.has(operator ?? "")
+  ) {
+    return null;
+  }
+  return field(node, "right");
 }
 
 /**
@@ -671,6 +694,9 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       continue;
     }
     if (!METHOD_TYPES.has(statement.type)) {
+      // Ruby runs a class body, so `Settings.filters.each do ... end`
+      // written there reads a value the same way a method body would.
+      emitExpressionFacts(within, statement);
       continue;
     }
     const funcKey = emitMethodFacts(within, statement);

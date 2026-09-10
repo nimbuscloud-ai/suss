@@ -191,3 +191,53 @@ describe("a finder Ruby writes with no arguments", () => {
     expect(objectsBehind(db, "f.rb#account")).toEqual([]);
   });
 });
+
+describe("a method Ruby runs by reading it off a constant", () => {
+  /** The list written out in the source, which is the object holding an element at position 0. */
+  const listOf = (db: Database): string =>
+    String(
+      db.facts("holdsProperty").find((row) => String(row[1]) === "0")?.[0],
+    );
+
+  /** The `Settings.filters` read, which is what the evaluator asks about. */
+  const readOf = (db: Database): string =>
+    String(
+      db
+        .facts("readsProperty")
+        .find((row) => String(row[1]).endsWith("#Settings"))?.[0],
+    );
+
+  it("is worth what the method gives back", async () => {
+    const db = await runFactsFor(
+      [
+        "class Settings",
+        "  def self.filters",
+        "    %i[latest unread]",
+        "  end",
+        "end",
+        "",
+        "chosen = Settings.filters",
+        "",
+      ].join("\n"),
+    );
+
+    expect(writtenValueOf(db, readOf(db))).toBe(listOf(db));
+  });
+
+  it("reads the memoised spelling, frozen or not", async () => {
+    const db = await runFactsFor(
+      [
+        "class Settings",
+        "  def self.periods",
+        "    @@periods ||= %i[daily weekly].freeze",
+        "  end",
+        "end",
+        "",
+        "chosen = Settings.periods",
+        "",
+      ].join("\n"),
+    );
+
+    expect(writtenValueOf(db, readOf(db))).toBe(listOf(db));
+  });
+});

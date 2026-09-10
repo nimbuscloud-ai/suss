@@ -123,6 +123,37 @@ describe("ruby value facts", () => {
     const db = await factsFor("def handler\n  log(event)\nend\n");
     expect(db.size("bodyCalls")).toBe(1);
   });
+
+  it("reads the expressions a class body runs, which Ruby runs like any other code", async () => {
+    const db = await factsFor(
+      [
+        "class Subject",
+        "  Settings.filters.each do |filter|",
+        "    define_method(filter) { 1 }",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "readsProperty")[0]?.slice(1)).toEqual([
+      "#Settings",
+      "filters",
+    ]);
+  });
+
+  it("gives back what an assignment on the last line wrote", async () => {
+    const db = await factsFor(
+      ["def filters", "  @filters ||= build", "end", ""].join("\n"),
+    );
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#build");
+  });
+
+  it("leaves the return unread when the last line combines with what is there", async () => {
+    const db = await factsFor(
+      ["def total", "  @total += one", "end", ""].join("\n"),
+    );
+    expect(rows(db, "returnsValue").map((row) => row[1])).not.toContain("#one");
+  });
   it("reads a plain symbol key on a hash", async () => {
     const db = await factsFor("config = { :host => host_name }\n");
     expect(rows(db, "holdsProperty").map((row) => [row[1], row[2]])).toEqual([

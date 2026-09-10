@@ -384,7 +384,7 @@ function methodOnAncestryOf(
   if (ancestry === undefined) {
     return stop("outsideRun");
   }
-  const found = methodInAncestry(ancestry, methodName);
+  const found = methodInAncestry(ancestry, methodName, ctx.facts);
   if (found.type === "found") {
     return followed(reachedMethod(found.method, found.block, methodName));
   }
