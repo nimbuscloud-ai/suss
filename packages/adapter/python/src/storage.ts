@@ -148,7 +148,7 @@ function receiverName(chain: Chain): string | null {
   return object !== null && object.type === "identifier" ? object.text : null;
 }
 
-/** The class an annotation refers to, read through the quotes of a forward reference and the first argument of an `Annotated` or `Optional`. */
+/** The class an annotation refers to, read through the quotes of a forward reference, the first argument of an `Annotated` or `Optional`, the `X` of `X | None`, and the outer name of any other generic. */
 function typeNameOf(annotation: PyNode): string | null {
   // The grammar wraps every annotation in a `type` node.
   if (annotation.type === "type" && annotation.namedChildren[0]) {
@@ -161,6 +161,12 @@ function typeNameOf(annotation: PyNode): string | null {
   if (quoted !== null) {
     return quoted;
   }
+  if (annotation.type === "binary_operator") {
+    const named = [field(annotation, "left"), field(annotation, "right")].find(
+      (side) => side !== null && side.type !== "none",
+    );
+    return named === undefined || named === null ? null : typeNameOf(named);
+  }
   if (annotation.type === "generic_type") {
     const outer = annotation.namedChildren[0];
     const first = genericTypeArgs(annotation)[0];
@@ -170,12 +176,17 @@ function typeNameOf(annotation: PyNode): string | null {
     ) {
       return typeNameOf(first);
     }
+    return outer?.type === "identifier" ? outer.text : null;
   }
   return null;
 }
 
 /** The class a statement gives a name: an annotation on the assignment, the callee it constructs with, or the call a `with ... as name` opens. */
-function typeGivenBy(statement: PyNode, name: string): string | null {
+function typeGivenBy(
+  statement: PyNode,
+  name: string,
+  options: StorageOptions,
+): string | null {
   if (statement.type === "assignment") {
     if (field(statement, "left")?.text !== name) {
       return null;
@@ -185,7 +196,7 @@ function typeGivenBy(statement: PyNode, name: string): string | null {
       return typeNameOf(annotation);
     }
     const right = field(statement, "right");
-    return right?.type === "call" ? builtType(right) : null;
+    return right?.type === "call" ? builtType(right, options) : null;
   }
   if (statement.type === "as_pattern") {
     const alias = field(statement, "alias");
@@ -204,13 +215,16 @@ function typeGivenBy(statement: PyNode, name: string): string | null {
  * such as `User.model_validate(data)` gives back one of its class, and a
  * method given a class as its first argument, `db.get(Orders, 1)` or the
  * `db.query(Orders)` a chain starts at, gives back one of that class.
- * A function written in lowercase says nothing here about what it returns.
+ * A function the project wrote, `get_user_by_email(...)`, gives back what
+ * its annotation says.
  */
-function builtType(call: PyNode): string | null {
+function builtType(call: PyNode, options: StorageOptions): string | null {
   const root = rootOf(call);
   const callee = field(root, "function");
   if (callee?.type === "identifier") {
-    return isClassName(callee.text) ? callee.text : null;
+    return isClassName(callee.text)
+      ? callee.text
+      : resolvedReturnType(options, callee);
   }
   const object = callee?.type === "attribute" ? field(callee, "object") : null;
   if (object?.type === "identifier" && isClassName(object.text)) {
@@ -218,9 +232,35 @@ function builtType(call: PyNode): string | null {
   }
   const args = field(root, "arguments");
   const first = (args === null ? [] : children(args))[0];
-  return first?.type === "identifier" && isClassName(first.text)
-    ? first.text
-    : null;
+  if (first?.type === "identifier" && isClassName(first.text)) {
+    return first.text;
+  }
+  return callee === null ? null : resolvedReturnType(options, callee);
+}
+
+/** What the project function a callee resolves to says it returns, or null when it resolves to none or to more than one. */
+function resolvedReturnType(
+  options: StorageOptions,
+  callee: PyNode,
+): string | null {
+  const settled = settledCallee(options, callee);
+  return settled === undefined
+    ? null
+    : returnTypeName(options.definitionAt(settled));
+}
+
+/** The one definition a callee resolves to, asking the rules first. Undefined when it resolves to none or to more than one. */
+function settledCallee(
+  options: StorageOptions,
+  callee: PyNode,
+): string | undefined {
+  const key = readKey(options.filePath, callee, enclosingFunction(callee));
+  resolveCalls(options.facts, [key]);
+  const resolved = options.facts
+    .facts("wantedResolves")
+    .filter((row) => String(row[0]) === key)
+    .map((row) => String(row[1]));
+  return resolved.length === 1 ? resolved[0] : undefined;
 }
 
 /**
@@ -228,7 +268,11 @@ function builtType(call: PyNode): string | null {
  * parameter of that name, or what the body binds it to. Null at module
  * level or when the function never says.
  */
-function declaredTypeName(name: string, from: PyNode): string | null {
+function declaredTypeName(
+  name: string,
+  from: PyNode,
+  options: StorageOptions,
+): string | null {
   const fn = enclosingFunction(from);
   if (fn === null) {
     return null;
@@ -241,7 +285,7 @@ function declaredTypeName(name: string, from: PyNode): string | null {
     }
   }
   const visit = (node: PyNode): string | null => {
-    const given = typeGivenBy(node, name);
+    const given = typeGivenBy(node, name, options);
     if (given !== null) {
       return given;
     }
@@ -281,7 +325,7 @@ function typedReceiverPattern(
   if (receiver === null) {
     return undefined;
   }
-  const typeName = declaredTypeName(receiver, chain.root);
+  const typeName = declaredTypeName(receiver, chain.root, options);
   if (typeName === null) {
     return undefined;
   }
@@ -394,14 +438,14 @@ const TABLE_METHODS = ["select_from", "join"];
  * starts on the model itself (`Orders.query()`). Null for a call that
  * works on no table of its own, `session.commit()` among them.
  */
-function modelOf(chain: Chain): string | null {
-  const fromRoot = modelArgument(chain.root, chain.root);
+function modelOf(chain: Chain, options: StorageOptions): string | null {
+  const fromRoot = modelArgument(chain.root, chain.root, options);
   if (fromRoot !== null) {
     return fromRoot;
   }
   for (const call of laterCalls(chain)) {
     if (TABLE_METHODS.includes(methodNameOf(call))) {
-      const named = modelArgument(call, chain.root);
+      const named = modelArgument(call, chain.root, options);
       if (named !== null) {
         return named;
       }
@@ -411,12 +455,16 @@ function modelOf(chain: Chain): string | null {
 }
 
 /** The model in the call's first positional argument, or null. */
-function modelArgument(call: PyNode, from: PyNode): string | null {
+function modelArgument(
+  call: PyNode,
+  from: PyNode,
+  options: StorageOptions,
+): string | null {
   const args = field(call, "arguments");
   const first = (args === null ? [] : children(args)).find(
     (argument) => argument.type !== "keyword_argument",
   );
-  return first === undefined ? null : modelNamed(first, from);
+  return first === undefined ? null : modelNamed(first, from, options);
 }
 
 /**
@@ -425,11 +473,17 @@ function modelArgument(call: PyNode, from: PyNode): string | null {
  * without a type checker: the class is its own name, and the variable is
  * whatever the enclosing function declares it as.
  */
-function modelNamed(node: PyNode, from: PyNode): string | null {
+function modelNamed(
+  node: PyNode,
+  from: PyNode,
+  options: StorageOptions,
+): string | null {
   if (node.type === "identifier") {
-    return isClassName(node.text)
-      ? node.text
-      : declaredTypeName(node.text, from);
+    if (isClassName(node.text)) {
+      return node.text;
+    }
+    const declared = declaredTypeName(node.text, from, options);
+    return declared === null ? null : classBehind(declared, options);
   }
   if (node.type === "attribute") {
     // `Item.id` and `models.Item` both refer to `Item`; `self.model` says nothing.
@@ -438,15 +492,46 @@ function modelNamed(node: PyNode, from: PyNode): string | null {
       return property.text;
     }
     const object = field(node, "object");
-    return object === null ? null : modelNamed(object, from);
+    return object === null ? null : modelNamed(object, from, options);
   }
   if (node.type === "call") {
     // `Item(name=...)` builds one, and `func.count(Item.id)` counts one.
     const callee = field(node, "function");
-    const built = callee === null ? null : modelNamed(callee, from);
-    return built ?? modelArgument(node, from);
+    const built = callee === null ? null : modelNamed(callee, from, options);
+    return built ?? modelArgument(node, from, options);
   }
   return null;
+}
+
+/**
+ * The class a declared type is an alias of. `current_user: CurrentUser`
+ * with `CurrentUser = Annotated[User, Depends(get_current_user)]` in the
+ * file or in a module it imports from declares a `User`, which is the
+ * class the shared rules say the name reaches. A name that reaches no
+ * class the project wrote is its own answer when it is spelled as one.
+ */
+function classBehind(typeName: string, options: StorageOptions): string | null {
+  const key = `${options.filePath}#${typeName}`;
+  originsOf(options.facts, key);
+  const reached = new Set(
+    options.facts
+      .facts("wantedComesTo")
+      .filter((row) => String(row[0]) === key)
+      .map((row) => String(row[1])),
+  );
+  const classes = new Set(
+    options.facts
+      .facts("objectValue")
+      .map((row) => String(row[0]))
+      .filter((value) => reached.has(value)),
+  );
+  const exported = options.facts
+    .facts("exportsAs")
+    .find((row) => classes.has(String(row[2])));
+  if (exported !== undefined) {
+    return String(exported[1]);
+  }
+  return isClassName(typeName) ? typeName : null;
 }
 
 function isClassName(name: string): boolean {
@@ -463,6 +548,7 @@ function effectFor(
   pattern: StoragePattern,
   chain: Chain,
   operation: string,
+  options: StorageOptions,
 ): Effect {
   const valueMethods = pattern.valueMethods ?? [];
   const picked = selectorOf(chain, valueMethods);
@@ -472,7 +558,7 @@ function effectFor(
       recognition: "python-storage",
       storageSystem: pattern.storageSystem,
       scope: "default",
-      container: modelOf(chain),
+      container: modelOf(chain, options),
     }),
     callee: chain.last.text,
     interaction: {
@@ -493,17 +579,8 @@ function fileOf(key: string): string {
 
 /** What a function says it gives back, as the name written in the annotation. */
 function returnTypeName(node: PyNode | undefined): string | null {
-  if (node === undefined) {
-    return null;
-  }
-  const annotation = field(node, "return_type");
-  if (annotation === null) {
-    return null;
-  }
-  // `List[Order]` says its element type too, and the outer name is enough.
-  return annotation.type === "subscript"
-    ? (field(annotation, "value")?.text ?? null)
-    : annotation.text;
+  const annotation = node === undefined ? null : field(node, "return_type");
+  return annotation === null ? null : typeNameOf(annotation);
 }
 
 export interface StorageOptions {
@@ -551,15 +628,7 @@ function resolvedMethodPattern(
   options: StorageOptions,
   callee: PyNode,
 ): StoragePattern | undefined {
-  const resolved = options.facts
-    .facts("wantedResolves")
-    .filter(
-      (row) =>
-        String(row[0]) ===
-        readKey(options.filePath, callee, enclosingFunction(callee)),
-    )
-    .map((row) => String(row[1]));
-  const settled = resolved.length === 1 ? resolved[0] : undefined;
+  const settled = settledCallee(options, callee);
   if (settled === undefined) {
     return undefined;
   }
@@ -690,6 +759,6 @@ export function storageEffects(
 ): Effect[] {
   return matchedChains(calls, options).flatMap(
     ({ chain, pattern, operation }) =>
-      operation === null ? [] : [effectFor(pattern, chain, operation)],
+      operation === null ? [] : [effectFor(pattern, chain, operation, options)],
   );
 }

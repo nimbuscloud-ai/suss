@@ -67,10 +67,14 @@ The table is the model the call works on. `select(User)`, `select(User.id)`,
 `db.get(User, 1)` and `db.query(User)` say it in their first argument, and
 `select(func.count()).select_from(User)` says it later in the chain.
 `db.add(user)` takes it from what the function declares `user` to be: a
-parameter annotated `user: User`, or a local assigned from `User(...)` or
-`db.get(User, 1)`. A class is told from a variable by its spelling, `User`
-against `user`, so a model written in lowercase is not read. `db.commit()`
-works on no table of its own and comes out with the container unnamed.
+parameter annotated `user: User`, or a local assigned from `User(...)`,
+`db.get(User, 1)`, `User.model_validate(data)`, or a project function
+annotated `-> User | None`. A parameter annotated with an alias,
+`current_user: CurrentUser` with `CurrentUser = Annotated[User,
+Depends(get_current_user)]` in this module or another, is read as a `User`.
+A class is told from a variable by its spelling, `User` against `user`, so a
+model written in lowercase is not read. `db.commit()` works on no table of
+its own and comes out with the container unnamed.
 
 A 2.0 statement is the operation its constructor says: `update(User).where(...).values(name="x")` is an update whose `fields` are the `values` keywords. `select(User.id)` puts the column in `fields`, and a keyword the chain picks rows by, `id` in `filter_by(id=1)`, goes in `selector`. A comparison written positionally, `where(User.id == 1)`, is not read.
 

@@ -572,6 +572,70 @@ describe("the database work a Python body does", () => {
     ]);
   });
 
+  it("charges a call on a parameter declared through an Annotated alias to the class behind the alias", async () => {
+    const effects = await effectsFor(
+      [
+        "from typing import Annotated",
+        "from fastapi import Depends",
+        "from sqlalchemy.orm import Session",
+        "from base import CurrentOrder",
+        "",
+        "LocalOrder = Annotated[Orders, Depends(get_order)]",
+        "",
+        "def update(db: Session, order: CurrentOrder, other: LocalOrder):",
+        "    db.add(order)",
+        "    db.refresh(order)",
+        "    db.delete(other)",
+        "",
+      ].join("\n"),
+      [
+        "from typing import Annotated",
+        "from fastapi import Depends",
+        "from models import Orders",
+        "",
+        "def get_order():",
+        "    return Orders()",
+        "",
+        "CurrentOrder = Annotated[Orders, Depends(get_order)]",
+        "",
+      ].join("\n"),
+      "update",
+    );
+    expect(effects.map((effect) => containerOf(effect))).toEqual([
+      "Orders",
+      "Orders",
+      "Orders",
+    ]);
+  });
+
+  it("charges a call on a local a project function returned to what that function says it returns", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.orm import Session",
+        "from base import load_order",
+        "",
+        "def update(db: Session, order_id: int):",
+        "    found = load_order(db, order_id)",
+        "    db.add(found)",
+        "    missing = unknown(order_id)",
+        "    db.add(missing)",
+        "",
+      ].join("\n"),
+      [
+        "from models import Orders",
+        "",
+        "def load_order(db, order_id: int) -> Orders | None:",
+        "    return db.get(Orders, order_id)",
+        "",
+      ].join("\n"),
+      "update",
+    );
+    expect(effects.map((effect) => containerOf(effect))).toEqual([
+      "Orders",
+      null,
+    ]);
+  });
+
   it("charges a statement to the model in its first argument, or to the table it selects from", async () => {
     const effects = await effectsFor(
       [
