@@ -60,6 +60,28 @@ written method win would take a negated literal on `contains`, and
 stratifiable. The on-demand rewrite refuses negation anywhere, before
 stratification is even reached.
 
+Some libraries take the class as an argument rather than as the
+receiver, which is how SQLAlchemy and SQLModel are written:
+`session.get(User, id)`, `session.query(User)`, `select(User)`. Two
+more pack-declared facts cover that. `givesBackOneOfArgument(base, m,
+k)` says that calling `m` with a class reaching the base at position
+`k` gives back one of that class, and `givesBackOneOfImport(module, n,
+k)` says the same for a function called on its own rather than read off
+anything. The first keys on the base the argument reaches, which is
+what keeps a call of `dict.get` out; the second keys on the module the
+function was imported from, the way the declared wrapper does, because
+a project can write a `select` of its own.
+
+Once the class is settled the chain is the same one a Rails finder
+walks, and `givesBackOne` covers it: `where`, `filter` and `order_by`
+give back one of the class, and so do `first`, `one` and `all`.
+
+`libraryBase` reaches a name three ways: a base the source writes as a
+name (`extendsNamed`), a base some project class in between extends,
+and a base a library hands back from a call. The last is SQLAlchemy's
+`Base = declarative_base()`, where the walk stops at the call and the
+imported function is the name to match on.
+
 `holdsProperty` is something an adapter states and the rules only read.
 What a value contains, a base class included, comes out as `contains`,
 so a method a base declares is found on a subclass that never overrode

@@ -539,6 +539,17 @@ function declaredMemberKey(
 }
 
 /**
+ * The name a base is written as, for the ones a pack can match on: a
+ * plain name and a dotted one. A class list can also contain
+ * `table=True` or a generic's subscript, which nobody extends.
+ */
+function writtenBaseName(base: PyNode): string | null {
+  return base.type === "identifier" || base.type === "attribute"
+    ? base.text
+    : null;
+}
+
+/**
  * A class is an object containing its methods, which is the treatment an
  * object literal gets. That is what lets a method read off an instance
  * resolve to the method the class declares.
@@ -550,6 +561,10 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   const bases = field(cls, "superclasses");
   for (const base of bases === null ? [] : children(bases)) {
     add(emitter, "extends", classKey, valueKey(emitter, base));
+    const written = writtenBaseName(base);
+    if (written !== null) {
+      add(emitter, "extendsNamed", classKey, written);
+    }
   }
 
   const body = field(cls, "body");

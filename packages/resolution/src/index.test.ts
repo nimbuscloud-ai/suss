@@ -845,6 +845,178 @@ describe("a method a pack says gives back one of the class", () => {
   });
 });
 
+/**
+ * `class User(SQLModel, table=True)`, with `deactivate` written on it.
+ * The pack's word is that `get`, `query` and `exec` take the class at
+ * argument 0, that `select` does the same when it is imported from
+ * `sqlmodel`, and that `filter` and `first` give back the same again.
+ */
+const SQLMODEL_FACTS: Array<[string, ...string[]]> = [
+  ["objectValue", "User"],
+  ["extendsNamed", "User", "SQLModel"],
+  ["binds", "#User", "User"],
+  ["func", "deactivate"],
+  ["holdsProperty", "User", "deactivate", "deactivate"],
+  ["givesBackOneOfArgument", "SQLModel", "get", "0"],
+  ["givesBackOneOfArgument", "SQLModel", "query", "0"],
+  ["givesBackOneOfArgument", "SQLModel", "exec", "0"],
+  ["givesBackOneOfImport", "sqlmodel", "select", "0"],
+  ["givesBackOne", "SQLModel", "filter"],
+  ["givesBackOne", "SQLModel", "first"],
+];
+
+/** `select(User)`, imported from the module the pack named. */
+const SELECT_CALL: Array<[string, ...string[]]> = [
+  ["imports", "#select", "sqlmodel", "select"],
+  ["writtenValue", "selectCall"],
+  ["call", "selectCall", "#select"],
+  ["callArg", "selectCall", "0", "#User"],
+];
+
+describe("a method a pack says gives back one of the class it was passed", () => {
+  it("follows a call that takes the class at the declared argument", () => {
+    // session.get(User, item_id)
+    expect(
+      objectsOf(
+        [
+          ...SQLMODEL_FACTS,
+          ["readsProperty", "getCallee", "session", "get"],
+          ["call", "getCall", "getCallee"],
+          ["callArg", "getCall", "0", "#User"],
+          ["callArg", "getCall", "1", "itemId"],
+        ],
+        "getCall",
+      ),
+    ).toEqual(["User"]);
+  });
+
+  it("reads a method off what such a call gave back", () => {
+    // user = session.get(User, item_id); user.deactivate()
+    expect(
+      resolutionsOf(
+        [
+          ...SQLMODEL_FACTS,
+          ["readsProperty", "getCallee", "session", "get"],
+          ["call", "getCall", "getCallee"],
+          ["callArg", "getCall", "0", "#User"],
+          ["binds", "user", "getCall"],
+          ["readsProperty", "deactivateCallee", "user", "deactivate"],
+        ],
+        "deactivateCallee",
+      ),
+    ).toEqual(["deactivate"]);
+  });
+
+  it("carries on through the chain methods the same pack declared", () => {
+    // session.query(User).filter(...).first()
+    expect(
+      objectsOf(
+        [
+          ...SQLMODEL_FACTS,
+          ["readsProperty", "queryCallee", "session", "query"],
+          ["call", "queryCall", "queryCallee"],
+          ["callArg", "queryCall", "0", "#User"],
+          ["readsProperty", "filterCallee", "queryCall", "filter"],
+          ["call", "filterCall", "filterCallee"],
+          ["readsProperty", "firstCallee", "filterCall", "first"],
+          ["call", "firstCall", "firstCallee"],
+        ],
+        "firstCall",
+      ),
+    ).toEqual(["User"]);
+  });
+
+  it("says nothing when the argument is no class of the pack's base", () => {
+    // config.get("timeout")
+    expect(
+      objectsOf(
+        [
+          ...SQLMODEL_FACTS,
+          ["objectValue", "config"],
+          ["readsProperty", "getCallee", "config", "get"],
+          ["call", "getCall", "getCallee"],
+          ["callArg", "getCall", "0", "timeoutKey"],
+        ],
+        "getCall",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reaches the base through a class the project wrote a call to build", () => {
+    // Base = declarative_base(); class Model(Base); class Incident(Model)
+    expect(
+      objectsOf(
+        [
+          [
+            "imports",
+            "#declarative_base",
+            "sqlalchemy.orm",
+            "declarative_base",
+          ],
+          ["writtenValue", "baseCall"],
+          ["call", "baseCall", "#declarative_base"],
+          ["binds", "#Base", "baseCall"],
+          ["objectValue", "Model"],
+          ["extends", "Model", "#Base"],
+          ["binds", "#Model", "Model"],
+          ["objectValue", "Incident"],
+          ["extends", "Incident", "#Model"],
+          ["binds", "#Incident", "Incident"],
+          ["givesBackOneOfArgument", "declarative_base", "get", "0"],
+          ["readsProperty", "getCallee", "session", "get"],
+          ["call", "getCall", "getCallee"],
+          ["callArg", "getCall", "0", "#Incident"],
+        ],
+        "getCall",
+      ),
+    ).toEqual(["Incident"]);
+  });
+});
+
+describe("a bare function a pack says gives back one of the class it was passed", () => {
+  it("follows a call of the function the pack's module exports", () => {
+    // select(User)
+    expect(
+      objectsOf([...SQLMODEL_FACTS, ...SELECT_CALL], "selectCall"),
+    ).toEqual(["User"]);
+  });
+
+  it("leaves a function of the same name from another module alone", () => {
+    expect(
+      objectsOf(
+        [
+          ...SQLMODEL_FACTS,
+          ["imports", "#select", "app.helpers", "select"],
+          ["writtenValue", "selectCall"],
+          ["call", "selectCall", "#select"],
+          ["callArg", "selectCall", "0", "#User"],
+        ],
+        "selectCall",
+      ),
+    ).toEqual([]);
+  });
+
+  it("hands the statement on to the method that runs it, and to the read after that", () => {
+    // item = session.exec(select(User)).first(); item.deactivate()
+    expect(
+      resolutionsOf(
+        [
+          ...SQLMODEL_FACTS,
+          ...SELECT_CALL,
+          ["readsProperty", "execCallee", "session", "exec"],
+          ["call", "execCall", "execCallee"],
+          ["callArg", "execCall", "0", "selectCall"],
+          ["readsProperty", "firstCallee", "execCall", "first"],
+          ["call", "firstCall", "firstCallee"],
+          ["binds", "item", "firstCall"],
+          ["readsProperty", "deactivateCallee", "item", "deactivate"],
+        ],
+        "deactivateCallee",
+      ),
+    ).toEqual(["deactivate"]);
+  });
+});
+
 describe("where a name comes from", () => {
   it("answers with the module an import names", () => {
     expect(

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   sqlalchemyFramework,
+  sqlalchemyModels,
   sqlalchemyStorage,
   withSqlalchemy,
 } from "./index.js";
@@ -56,6 +57,39 @@ describe("the SQLAlchemy pack", () => {
     const pack = sqlalchemyFramework({ storageSystem: "postgresql" });
     expect(pack.discovery).toEqual([]);
     expect(pack.storage).toHaveLength(2);
+  });
+
+  it("says which names a mapped class's ancestry arrives at", () => {
+    const [model] = sqlalchemyModels();
+    expect(model?.baseNames).toContain("DeclarativeBase");
+    expect(model?.baseNames).toContain("declarative_base");
+  });
+
+  it("says which calls take the mapped class and give back one of it", () => {
+    const [model] = sqlalchemyModels();
+    expect(model?.entryMethods).toContainEqual({ method: "get", argument: 0 });
+    expect(model?.entryMethods).toContainEqual({
+      method: "query",
+      argument: 0,
+    });
+    expect(model?.entryFunctions).toContainEqual({
+      module: "sqlalchemy",
+      name: "select",
+      argument: 0,
+    });
+  });
+
+  it("says which chain methods hand the same model on", () => {
+    const [model] = sqlalchemyModels();
+    expect(model?.givesBack).toContain("where");
+    expect(model?.givesBack).toContain("first");
+    expect(model?.givesBack).not.toContain("count");
+  });
+
+  it("carries the model declarations onto a route pack it composes with", () => {
+    expect(
+      withSqlalchemy(routePack, { storageSystem: "sqlite" }).models,
+    ).toHaveLength(1);
   });
 });
 

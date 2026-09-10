@@ -124,6 +124,41 @@ function reportUnresolvedProjectModules(
   }
 }
 
+/**
+ * Put each pack's model declarations in the facts, pairing every method
+ * with every base name the pack lists. Python writes no return type, so
+ * this is the only thing that says `session.get(User, id)` is one User,
+ * and the shared finder rules are what read it.
+ */
+export function emitModelQueryFacts(
+  db: Database,
+  packs: readonly PythonPack[],
+): void {
+  for (const pack of packs) {
+    for (const model of pack.models ?? []) {
+      for (const base of model.baseNames) {
+        for (const method of model.givesBack) {
+          db.add("givesBackOne", [base, method]);
+        }
+        for (const entry of model.entryMethods) {
+          db.add("givesBackOneOfArgument", [
+            base,
+            entry.method,
+            String(entry.argument),
+          ]);
+        }
+      }
+      for (const entry of model.entryFunctions) {
+        db.add("givesBackOneOfImport", [
+          entry.module,
+          entry.name,
+          String(entry.argument),
+        ]);
+      }
+    }
+  }
+}
+
 export async function extractPythonProject(
   options: ExtractPythonOptions,
 ): Promise<ExtractPythonResult> {
@@ -199,8 +234,13 @@ export async function extractPythonProject(
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
+  const modelQueries = options.packs.flatMap((pack) => pack.models ?? []);
   const discovers = options.packs.some((pack) => pack.discovery.length > 0);
-  const needsValues = discovers || mountsRouters || storagePatterns.length > 0;
+  const needsValues =
+    discovers ||
+    mountsRouters ||
+    storagePatterns.length > 0 ||
+    modelQueries.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns and the call walk can start from a route.
   const definitions = new Map<string, PyNode>();
@@ -215,6 +255,7 @@ export async function extractPythonProject(
     if (needsValues) {
       bindEvaluator(db, { files: bound, definitions });
     }
+    emitModelQueryFacts(db, options.packs);
   });
 
   reportUnresolvedProjectModules(options, db);

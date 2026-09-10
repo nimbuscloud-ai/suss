@@ -155,11 +155,33 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
   },
   "declared finder": ({ tuple, premises, describe }) => {
     const method = String(premises[1].tuple[2]);
-    const base = String(premises[5].tuple[0]);
+    const base = String(premises[4].tuple[0]);
     return {
       reason: `${describe(tuple[0])} calls ${method} on ${describe(tuple[1])}, which gives back one of it`,
       assumptions: [
         `a pack declares that ${method} on a class extending ${base} gives back one of that class`,
+      ],
+    };
+  },
+  "declared argument finder": ({ tuple, premises, describe }) => {
+    const method = String(premises[1].tuple[2]);
+    const position = String(premises[2].tuple[1]);
+    const base = String(premises[3].tuple[0]);
+    return {
+      reason: `${describe(tuple[0])} calls ${method} with ${describe(tuple[1])} at argument ${position}, which gives back one of it`,
+      assumptions: [
+        `a pack declares that ${method} with a class extending ${base} at argument ${position} gives back one of that class`,
+      ],
+    };
+  },
+  "declared import finder": ({ tuple, premises, describe }) => {
+    const module = String(premises[1].tuple[1]);
+    const name = String(premises[1].tuple[2]);
+    const position = String(premises[2].tuple[2]);
+    return {
+      reason: `${describe(tuple[0])} calls ${name} from ${module} with ${describe(tuple[1])} at argument ${position}, which gives back one of it`,
+      assumptions: [
+        `a pack declares that ${name} from ${module} gives back one of the class at argument ${position}`,
       ],
     };
   },

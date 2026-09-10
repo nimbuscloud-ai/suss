@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
-import { sqlmodelFramework, sqlmodelStorage, withSqlmodel } from "./index.js";
+import {
+  sqlmodelFramework,
+  sqlmodelModels,
+  sqlmodelStorage,
+  withSqlmodel,
+} from "./index.js";
 
 import type { PythonPack } from "@suss/adapter-python";
 
@@ -73,6 +78,36 @@ describe("the SQLModel pack", () => {
     expect(pack.storage?.map((pattern) => pattern.module)).toContain(
       "sqlmodel",
     );
+  });
+
+  it("puts its own model base beside the SQLAlchemy ones", () => {
+    const [model] = sqlmodelModels();
+    expect(model?.baseNames).toContain("SQLModel");
+    expect(model?.baseNames).toContain("DeclarativeBase");
+  });
+
+  it("adds exec and its own select to what SQLAlchemy already declares", () => {
+    const [model] = sqlmodelModels();
+    expect(model?.entryMethods).toContainEqual({ method: "exec", argument: 0 });
+    expect(model?.entryMethods).toContainEqual({ method: "get", argument: 0 });
+    expect(model?.entryFunctions).toContainEqual({
+      module: "sqlmodel",
+      name: "select",
+      argument: 0,
+    });
+    expect(model?.entryFunctions).toContainEqual({
+      module: "sqlalchemy",
+      name: "select",
+      argument: 0,
+    });
+  });
+
+  it("stands the model declarations up on the pack a run loads", () => {
+    const pack = sqlmodelFramework({ storageSystem: "postgresql" });
+    expect(pack.models?.length).toBeGreaterThan(0);
+    expect(
+      withSqlmodel(fastapiLike, { storageSystem: "sqlite" }).models?.length,
+    ).toBeGreaterThan(0);
   });
 
   it("refuses a config that says no database with a sentence instead of a TypeError", () => {

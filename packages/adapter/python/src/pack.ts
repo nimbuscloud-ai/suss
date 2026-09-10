@@ -45,6 +45,8 @@ export interface PythonPack {
   clients?: PyClientCall[];
   /** What the library's own database queries look like. The README says how one is matched. */
   storage?: StoragePattern[];
+  /** Which of the library's calls give back one of a model class. The README says what a chain of them composes into. */
+  models?: PyModelQueries[];
   /** How the library lets a project hand the database SQL it wrote itself. */
   rawSql?: RawSqlPattern[];
 }
@@ -84,6 +86,41 @@ export interface StoragePattern {
   queryFunctions?: string[];
   /** Which database the library is talking to, for the boundary binding. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
+}
+
+/**
+ * What a library gives back when a call is passed one of a project's
+ * model classes, so a method read off the result runs the one that
+ * class declares. SQLAlchemy and SQLModel take the class as an argument,
+ * `session.get(User, id)` and `select(User)`, rather than as the
+ * receiver a Rails finder is called on.
+ */
+export interface PyModelQueries {
+  /**
+   * The names a model's ancestry arrives at: a base class the library
+   * exports, `DeclarativeBase`, or the function that builds one,
+   * `declarative_base`.
+   */
+  baseNames: string[];
+  /** Methods whose result is the model again: one row, or a query a later read narrows to one. */
+  givesBack: string[];
+  /** Methods that take the model class and give back one of it, with the position it is written at. */
+  entryMethods: PyModelEntryMethod[];
+  /** Functions the library exports that do the same, called on their own rather than read off a session. */
+  entryFunctions: PyModelEntryFunction[];
+}
+
+/** `session.get(User, id)`: the method, and where the class is written. */
+export interface PyModelEntryMethod {
+  method: string;
+  argument: number;
+}
+
+/** `select(User)`: the function, the module it comes from, and where the class is written. */
+export interface PyModelEntryFunction {
+  module: string;
+  name: string;
+  argument: number;
 }
 
 /**

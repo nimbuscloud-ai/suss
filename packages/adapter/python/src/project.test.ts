@@ -5,11 +5,16 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
+import { Database } from "@suss/datalog";
 
-import { extractPythonProject, findPythonFiles } from "./project.js";
+import {
+  emitModelQueryFacts,
+  extractPythonProject,
+  findPythonFiles,
+} from "./project.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
-import type { PythonPack } from "./pack.js";
+import type { PyModelQueries, PythonPack } from "./pack.js";
 
 const flaskRestxLike: PythonPack = {
   name: "flask-restx",
@@ -1229,5 +1234,66 @@ describe("the extraction report", () => {
 
     expect(report?.summaries).toBe(0);
     expect(report?.emptyStage).toBe("discovery");
+  });
+});
+
+describe("what a pack's model declarations put in the facts", () => {
+  const packWithModels = (models: PyModelQueries[]): PythonPack => ({
+    name: "sqlmodel",
+    protocol: "postgresql",
+    discovery: [],
+    models,
+  });
+
+  it("pairs every method with every base name the declaration lists", () => {
+    const db = new Database();
+    emitModelQueryFacts(db, [
+      packWithModels([
+        {
+          baseNames: ["DeclarativeBase", "SQLModel"],
+          givesBack: ["first"],
+          entryMethods: [{ method: "get", argument: 0 }],
+          entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
+        },
+      ]),
+    ]);
+
+    expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
+      ["DeclarativeBase", "first"],
+      ["SQLModel", "first"],
+    ]);
+    expect(
+      db.facts("givesBackOneOfArgument").map((row) => row.map(String)),
+    ).toEqual([
+      ["DeclarativeBase", "get", "0"],
+      ["SQLModel", "get", "0"],
+    ]);
+  });
+
+  it("keys a function called on its own by the module it comes from", () => {
+    const db = new Database();
+    emitModelQueryFacts(db, [
+      packWithModels([
+        {
+          baseNames: ["SQLModel"],
+          givesBack: [],
+          entryMethods: [],
+          entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
+        },
+      ]),
+    ]);
+
+    expect(
+      db.facts("givesBackOneOfImport").map((row) => row.map(String)),
+    ).toEqual([["sqlmodel", "select", "0"]]);
+  });
+
+  it("says nothing for a pack that declares no models at all", () => {
+    const db = new Database();
+    emitModelQueryFacts(db, [flaskRestxLike]);
+
+    expect(db.size("givesBackOne")).toBe(0);
+    expect(db.size("givesBackOneOfArgument")).toBe(0);
+    expect(db.size("givesBackOneOfImport")).toBe(0);
   });
 });
