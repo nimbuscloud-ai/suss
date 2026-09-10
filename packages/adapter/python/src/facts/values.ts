@@ -428,9 +428,7 @@ function emitFunctionFacts(
     return funcKey;
   }
 
-  emitNestedDefinitions(inside, body, (nested) => {
-    add(inside, "containsFn", funcKey, nodeId(inside.filePath, nested));
-  });
+  emitNestedDefinitions(inside, body);
 
   // One walk for both, since this function's own facts and the expression
   // facts want the same nodes and the walk is the expensive part.
@@ -577,22 +575,25 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
  * walk stops at one rather than descending, so what is written inside it
  * belongs to it.
  */
-function emitNestedDefinitions(
-  emitter: Emitter,
-  node: PyNode,
-  onFunction?: (fn: PyNode) => void,
-): void {
+function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
   for (const child of children(node)) {
     if (isFunction(child)) {
       emitFunctionFacts(emitter, child);
-      onFunction?.(child);
+      if (emitter.enclosing !== null) {
+        add(
+          emitter,
+          "containsFn",
+          emitter.enclosing.funcKey,
+          nodeId(emitter.filePath, child),
+        );
+      }
       continue;
     }
     if (child.type === "class_definition") {
       emitClassFacts(emitter, child);
       continue;
     }
-    emitNestedDefinitions(emitter, child, onFunction);
+    emitNestedDefinitions(emitter, child);
   }
 }
 
