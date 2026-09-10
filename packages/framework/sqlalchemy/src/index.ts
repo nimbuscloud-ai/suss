@@ -7,6 +7,7 @@ import { z } from "zod";
 import { storageSystemOption } from "@suss/extractor";
 
 import type {
+  PyModelQueries,
   PythonPack,
   RawSqlPattern,
   StoragePattern,
@@ -85,6 +86,67 @@ export function sqlalchemyStorage(
   ];
 }
 
+/** The names a mapped class's ancestry arrives at, across the ways SQLAlchemy lets a project declare a base. */
+const MODEL_BASE_NAMES = [
+  "DeclarativeBase",
+  "declarative_base",
+  "DeclarativeBaseNoMeta",
+];
+
+/** Methods that hand back a query over the same model, which a later read narrows to one row. */
+const NARROWS_A_QUERY = [
+  "filter",
+  "filter_by",
+  "where",
+  "order_by",
+  "limit",
+  "offset",
+  "options",
+  "join",
+  "outerjoin",
+  "distinct",
+  "group_by",
+  "having",
+];
+
+/** Methods that run the query and hand back rows of the model. */
+const RUNS_A_QUERY = [
+  "first",
+  "one",
+  "one_or_none",
+  "scalar",
+  "scalar_one",
+  "scalar_one_or_none",
+  "scalars",
+  "get",
+  "all",
+];
+
+/** Session methods that take the mapped class itself and give back one of it. */
+const SESSION_ENTRY_METHODS = [
+  { method: "get", argument: 0 },
+  { method: "query", argument: 0 },
+  { method: "execute", argument: 0 },
+];
+
+/**
+ * What SQLAlchemy gives back when a call is passed a mapped class, so a
+ * method read off the result runs the one the project's model declares.
+ * `session.execute(stmt)` takes a statement rather than the class, and
+ * the statement has already settled on one, which is the same argument
+ * as far as the rules are concerned.
+ */
+export function sqlalchemyModels(): PyModelQueries[] {
+  return [
+    {
+      baseNames: MODEL_BASE_NAMES,
+      givesBack: [...NARROWS_A_QUERY, ...RUNS_A_QUERY],
+      entryMethods: SESSION_ENTRY_METHODS,
+      entryFunctions: [{ module: "sqlalchemy", name: "select", argument: 0 }],
+    },
+  ];
+}
+
 /**
  * The function SQLAlchemy gives a project for handing the database a
  * statement it wrote itself. `text` is the one, and it comes from the
@@ -114,6 +176,7 @@ export function withSqlalchemy(
   return {
     ...pack,
     storage: [...(pack.storage ?? []), ...sqlalchemyStorage(options)],
+    models: [...(pack.models ?? []), ...sqlalchemyModels()],
     rawSql: [...(pack.rawSql ?? []), ...sqlalchemyRawSql(options)],
   };
 }
@@ -133,6 +196,7 @@ export function sqlalchemyFramework(
     protocol: options.storageSystem,
     discovery: [],
     storage: sqlalchemyStorage(options),
+    models: sqlalchemyModels(),
     rawSql: sqlalchemyRawSql(options),
   };
 }
