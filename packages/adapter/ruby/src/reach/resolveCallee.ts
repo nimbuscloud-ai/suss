@@ -1,22 +1,29 @@
 /**
  * What a call's callee is: a project method the walk can step into, or
- * a reason it cannot. Ruby has no binder for local variables, so this
- * follows only what the source spells out directly: a bare or `self`
- * call resolved through the enclosing class's own ancestry, a call on
- * a known project class (`Const.new.method`, or `Const.method` for a
- * method defined with `def self.`), and a bare call to a method
- * defined outside any class, which Ruby treats as private on every
- * object. Everything else, a local variable, a parameter, `send`, a
- * chain built from something other than `.new`, stops rather than
- * guesses.
+ * a reason it cannot.
+ *
+ * The rules in @suss/resolution say what the receiver is. Every hop that
+ * moves a value, a local reassigned, a name aliased through two more,
+ * `Klass.new`, a method that returns `self`, parentheses, is a step they
+ * already state, so nothing here reads a receiver for itself.
+ *
+ * Which method of that class then runs is Ruby's own question, and
+ * `ancestry.ts` settles it: `include` puts modules in the lookup order
+ * at load time, a subclass overrides what its base declares, and `def
+ * self.` is looked up somewhere else again.
  */
+
+import { calleeOutcomeOf, calleeOutcomes } from "@suss/resolution";
 
 import { ancestryOf, methodInAncestry } from "../ancestry.js";
 import { field, singletonMethodsByName } from "../ast.js";
+import { RUBY_PROGRAM } from "../facts/resolve.js";
+import { readKey } from "../facts/values.js";
 import { calleeMethodName } from "../paths/effects.js";
-import { qualifyConstantRef, shadowingClassFor } from "../scope.js";
 
 import type { UnfollowedReason } from "@suss/behavioral-ir";
+import type { Database } from "@suss/datalog";
+import type { CalleeOutcome } from "@suss/resolution";
 import type { AncestorLookup, ReachedBody } from "../ancestry.js";
 import type { RbNode } from "../parser.js";
 
@@ -38,61 +45,226 @@ export type CalleeResolution =
 
 export interface ReachContext {
   readonly lookup: AncestorLookup;
-  readonly knownClasses: ReadonlySet<string>;
   /** Every method a project file writes outside any class or module, by name. More than one file writing the same name settles nothing. */
   readonly topLevelMethods: ReadonlyMap<string, ReachedFunction[]>;
+  /** The value facts, which are where a receiver is settled. */
+  readonly facts: Database;
+  /** The name of each class the run defines, by the key the value facts give its node. */
+  readonly classNames: ReadonlyMap<string, string>;
+  /** The method each function key was read from. */
+  readonly definitions: ReadonlyMap<string, ReachedFunction>;
 }
 
-/**
- * Where a call is written: the class its enclosing method belongs to,
- * if any, the nesting that class's body runs a bare constant against,
- * and what the enclosing method calls its own parameters, in call
- * order, so a call through one of them can be recognized.
- */
+/** Where a call is written: the file, the method whose body it is, and the class that method belongs to. */
 export interface CallSite {
+  readonly file: string;
+  /** The method being scanned, which is what keys its own locals. */
+  readonly method: RbNode;
+  /** That method's key, which is what tells its own parameters apart. */
+  readonly owner: string;
   readonly enclosingQualifiedName: string | null;
-  readonly nesting: readonly string[];
-  readonly ownParameters: readonly string[];
 }
 
 const DYNAMIC_SEND_NAMES = new Set(["send", "public_send", "__send__"]);
+
+/** The one method name that runs the receiver itself rather than something the receiver holds. */
+const INVOKES_RECEIVER = "call";
+
+/** The word this adapter puts on each outcome the rules settle nothing for. */
+const STOP_FOR: Record<string, UnfollowedReason> = {
+  severalSources: "multipleSources",
+  outsideRun: "outsideRun",
+  unsettled: "unsettledValue",
+  undeclared: "noDeclaration",
+};
 
 const stop = (reason: UnfollowedReason): CalleeResolution => ({
   kind: "stopped",
   reason,
 });
 
+const NO_DECLARATION = stop("noDeclaration");
+
 function followed(target: ReachedFunction): CalleeResolution {
   return { kind: "followed", target };
 }
 
+/** A call whose receiver goes to the rules, and what is read off it. */
+interface ReceiverSpelling {
+  readonly kind: "receiver";
+  /** The key the receiver expression is asked about. */
+  readonly key: string;
+  readonly method: string;
+  /** Whether the receiver names the class itself, `Klass.build`, rather than one of it. */
+  readonly onClassItself: boolean;
+}
+
+/** Where a callee is settled: the receiver's key, the name Ruby looks up on `self`, or the stop neither would reach. */
+type CalleeSpelling =
+  | ReceiverSpelling
+  | { readonly kind: "implicitSelf"; readonly name: string }
+  | { readonly kind: "stopped"; readonly reason: UnfollowedReason };
+
+/** What a batch of calls came down to: the key each receiver was asked under, and what came back. */
+export interface CalleeSpellings {
+  readonly spellingOf: ReadonlyMap<number, CalleeSpelling>;
+  readonly outcomes: ReadonlyMap<string, CalleeOutcome>;
+}
+
+/** What every one of these calls is made through, asked as one batch. */
+export function calleeSpellings(
+  calls: readonly { call: RbNode; site: CallSite }[],
+  ctx: ReachContext,
+): CalleeSpellings {
+  const spellingOf = new Map<number, CalleeSpelling>();
+  const keys = new Set<string>();
+  for (const { call, site } of calls) {
+    const spelling = spellingFor(call, site);
+    spellingOf.set(call.id, spelling);
+    if (spelling.kind === "receiver") {
+      keys.add(spelling.key);
+    }
+  }
+  return {
+    spellingOf,
+    outcomes: calleeOutcomes(ctx.facts, [...keys], RUBY_PROGRAM),
+  };
+}
+
+/** What a call's callee comes down to, once `calleeSpellings` has asked about the batch. */
 export async function resolveCallee(
   call: RbNode,
   site: CallSite,
   ctx: ReachContext,
+  read?: CalleeSpellings,
 ): Promise<CalleeResolution> {
+  const spelling = read?.spellingOf.get(call.id) ?? spellingFor(call, site);
+  if (spelling.kind === "stopped") {
+    return spelling;
+  }
+  if (spelling.kind === "implicitSelf") {
+    return resolveImplicitSelf(spelling.name, site, ctx);
+  }
+  const outcome =
+    read?.outcomes.get(spelling.key) ??
+    calleeOutcomeOf(ctx.facts, spelling.key, RUBY_PROGRAM);
+  return asCallee(spelling, outcome, site, ctx);
+}
+
+/** Where the receiver of this call is settled, or the name Ruby would look up on `self`. */
+function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
   const methodName = calleeMethodName(call);
   if (methodName === undefined) {
-    return stop("noDeclaration");
+    return { kind: "stopped", reason: "noDeclaration" };
   }
   if (DYNAMIC_SEND_NAMES.has(methodName)) {
-    return stop("unsettledValue");
+    return { kind: "stopped", reason: "unsettledValue" };
   }
-
   const receiver = field(call, "receiver");
   if (receiver === null || receiver.type === "self") {
-    return resolveImplicitSelf(methodName, site, ctx);
+    return { kind: "implicitSelf", name: methodName };
   }
-  // `handler.call` or `handler.()`, where `handler` is one of this
-  // method's own parameters, runs whatever a caller passed into it.
+  return {
+    kind: "receiver",
+    key: readKey(site.file, receiver, site.method),
+    method: methodName,
+    onClassItself:
+      receiver.type === "constant" || receiver.type === "scope_resolution",
+  };
+}
+
+async function asCallee(
+  spelling: ReceiverSpelling,
+  outcome: CalleeOutcome,
+  site: CallSite,
+  ctx: ReachContext,
+): Promise<CalleeResolution> {
+  if (outcome.kind === "severalSources") {
+    return stop("multipleSources");
+  }
+  if (outcome.kind === "callerSupplied") {
+    return fromCaller(spelling, outcome.key, site);
+  }
+  const objects = objectsBehind(ctx.facts, spelling.key);
+  if (objects.length > 1) {
+    return stop("multipleSources");
+  }
+  const objectKey =
+    objects[0] ?? (outcome.kind === "object" ? outcome.key : undefined);
+  if (objectKey !== undefined) {
+    return methodOnObject(spelling, objectKey, ctx);
+  }
+  if (outcome.kind === "function") {
+    // A method or a lambda a name refers to is run by calling it, and any
+    // other name read off one belongs to the language.
+    return spelling.method === INVOKES_RECEIVER
+      ? functionCallee(outcome.key, ctx)
+      : NO_DECLARATION;
+  }
+  return stop(STOP_FOR[outcome.kind] ?? "noDeclaration");
+}
+
+/**
+ * The objects a receiver could be. `objectOf` covers a call that gave one
+ * back as well as a name that refers to one, which is what a builder
+ * returning `self` needs and what `comesTo` refuses to say about a call.
+ */
+function objectsBehind(facts: Database, key: string): string[] {
+  return [
+    ...new Set(
+      facts.lookup("wantedObjectOf", 0, key).map((row) => String(row[1])),
+    ),
+  ];
+}
+
+/**
+ * Which method of a class runs. A class named in the source is the class
+ * object itself, so `Klass.build` looks for `def self.build` and
+ * `Klass.new` runs the class's own `initialize`. Anything else the rules
+ * settled on a class is one of that class, and its methods come from the
+ * ancestry.
+ */
+async function methodOnObject(
+  spelling: ReceiverSpelling,
+  objectKey: string,
+  ctx: ReachContext,
+): Promise<CalleeResolution> {
+  const qualifiedName = ctx.classNames.get(objectKey);
+  // An array, a hash, or anything else written out where it is used.
+  if (qualifiedName === undefined) {
+    return NO_DECLARATION;
+  }
+  if (!spelling.onClassItself) {
+    return methodOnAncestryOf(qualifiedName, spelling.method, ctx);
+  }
+  return spelling.method === "new"
+    ? methodOnAncestryOf(qualifiedName, "initialize", ctx)
+    : singletonMethodOn(qualifiedName, spelling.method, ctx);
+}
+
+/**
+ * A parameter of the method being scanned, called by name, runs whatever
+ * its caller passed. A method read off that parameter runs something
+ * only the caller's value would name, and another method's parameter is
+ * a value this body cannot see at all.
+ */
+function fromCaller(
+  spelling: ReceiverSpelling,
+  parameterKey: string,
+  site: CallSite,
+): CalleeResolution {
   if (
-    receiver.type === "identifier" &&
-    methodName === "call" &&
-    site.ownParameters.includes(receiver.text)
+    !parameterKey.startsWith(`${site.owner}#`) ||
+    spelling.method !== INVOKES_RECEIVER
   ) {
-    return stop("callerSupplied");
+    return stop("unsettledValue");
   }
-  return resolveOnReceiver(receiver, methodName, site, ctx);
+  return stop("callerSupplied");
+}
+
+function functionCallee(key: string, ctx: ReachContext): CalleeResolution {
+  const target = ctx.definitions.get(key);
+  return target === undefined ? NO_DECLARATION : followed(target);
 }
 
 /**
@@ -143,87 +315,12 @@ function resolveTopLevelName(
 ): CalleeResolution {
   const candidates = ctx.topLevelMethods.get(methodName);
   if (candidates === undefined || candidates.length === 0) {
-    return stop("noDeclaration");
+    return NO_DECLARATION;
   }
   if (candidates.length > 1) {
     return stop("multipleSources");
   }
   return followed(candidates[0] as ReachedFunction);
-}
-
-async function resolveOnReceiver(
-  receiver: RbNode,
-  methodName: string,
-  site: CallSite,
-  ctx: ReachContext,
-): Promise<CalleeResolution> {
-  // `Service.new.run`: the receiver is itself a call that builds an
-  // instance, and the method runs on that instance.
-  if (receiver.type === "call") {
-    const innerName = calleeMethodName(receiver);
-    const innerReceiver = field(receiver, "receiver");
-    if (innerName === "new" && innerReceiver !== null) {
-      const classRef = classRefOf(innerReceiver, site, ctx);
-      return classRef === null
-        ? stop("unsettledValue")
-        : methodOnAncestryOf(classRef, methodName, ctx);
-    }
-    // `Rails.cache.delete`: rooted at a constant this run does not own.
-    const root = rootConstantOf(receiver);
-    if (root === null) {
-      return stop("unsettledValue");
-    }
-    return classRefOf(root, site, ctx) === null
-      ? stop("outsideRun")
-      : stop("unsettledValue");
-  }
-
-  if (receiver.type === "constant" || receiver.type === "scope_resolution") {
-    const classRef = classRefOf(receiver, site, ctx);
-    return classRef === null
-      ? stop("outsideRun")
-      : singletonMethodOn(classRef, methodName, ctx);
-  }
-
-  // A local variable, a parameter, an instance variable, or anything
-  // else this run has no binder for.
-  return stop("unsettledValue");
-}
-
-/** The constant a chain of receivers starts at, `Rails` in `Rails.cache.delete`. Null when the chain bottoms out on anything else. */
-function rootConstantOf(node: RbNode): RbNode | null {
-  if (node.type === "constant" || node.type === "scope_resolution") {
-    return node;
-  }
-  if (node.type !== "call") {
-    return null;
-  }
-  const receiver = field(node, "receiver");
-  return receiver === null ? null : rootConstantOf(receiver);
-}
-
-function classRefOf(
-  node: RbNode,
-  site: CallSite,
-  ctx: ReachContext,
-): string | null {
-  if (node.type === "constant") {
-    const shadow = shadowingClassFor(node, site.nesting, ctx.knownClasses);
-    if (shadow !== null) {
-      return shadow;
-    }
-    const qualified = qualifyConstantRef(node, site.nesting);
-    return qualified !== null && ctx.knownClasses.has(qualified)
-      ? qualified
-      : null;
-  }
-  if (node.type === "scope_resolution") {
-    const qualified = qualifyConstantRef(node, site.nesting);
-    return qualified !== null && ctx.knownClasses.has(qualified)
-      ? qualified
-      : null;
-  }
-  return null;
 }
 
 async function methodOnAncestryOf(
@@ -247,7 +344,7 @@ async function methodOnAncestryOf(
       found.cause === "dynamicDefine" ? "unsettledValue" : "outsideRun",
     );
   }
-  return stop("noDeclaration");
+  return NO_DECLARATION;
 }
 
 function reachedMethod(
@@ -289,5 +386,5 @@ function singletonMethodOn(
       return followed(reachedMethod(found, block, methodName));
     }
   }
-  return stop("noDeclaration");
+  return NO_DECLARATION;
 }

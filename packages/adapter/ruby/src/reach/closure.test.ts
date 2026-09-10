@@ -239,7 +239,7 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
-  it("leaves a method defined with define_method as an unfollowed call", async () => {
+  it("leaves a method defined with define_method unfollowed, since no fact says the class has it", async () => {
     writeQueryType("orders", ["OrderService.new.list_orders(current_user)"]);
     write("app/services/order_service.rb", [
       "class OrderService",
@@ -252,12 +252,7 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
       [],
     );
     const field = unitNamed(summaries, "Query.orders");
-    expect(field.gaps).toContainEqual(
-      expect.objectContaining({
-        type: "unfollowedCall",
-        callee: "OrderService.new.list_orders",
-      }),
-    );
+    expect(calls(field)).toEqual([["OrderService.new.list_orders", undefined]]);
   });
 
   it("leaves a bare name two files each define at the top level as an unfollowed call", async () => {
@@ -477,7 +472,7 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
-  it("stops at a call on a local value this run has no binder for", async () => {
+  it("stops at a call on a local nothing in this run declares a value for", async () => {
     writeQueryType("orders", [
       "user = current_user",
       "user.notify(current_user)",
@@ -489,12 +484,232 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
     const field = unitNamed(summaries, "Query.orders");
     expect(calls(field)).toEqual([["user.notify", undefined]]);
+  });
+
+  it("reports a call on a local two branches write differently as more than one source", async () => {
+    writeQueryType("orders", [
+      "scope = OrderService.new",
+      'scope = "text" if current_user',
+      "scope.list_orders(current_user)",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
     expect(field.gaps).toContainEqual(
       expect.objectContaining({
         type: "unfollowedCall",
-        callee: "user.notify",
+        callee: "scope.list_orders",
+        description: expect.stringContaining("more than one possible source"),
       }),
     );
+  });
+
+  it("follows a call on a local a later write narrows with a call on itself", async () => {
+    writeQueryType("orders", [
+      "scope = OrderService.new",
+      "scope = scope.only(1)",
+      "scope.list_orders(current_user)",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def only(n)",
+      "    self",
+      "  end",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["only", "list_orders"]);
+  });
+
+  it("follows a chain through a method that returns self", async () => {
+    writeQueryType("orders", ["OrderService.new.only(1).list_orders(2)"]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def only(n)",
+      "    self",
+      "  end",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["list_orders"]);
+  });
+
+  it("follows a call on a name aliased through two more", async () => {
+    writeQueryType("orders", [
+      "a = OrderService.new",
+      "b = a",
+      "c = b",
+      "c.list_orders(current_user)",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["list_orders"]);
+  });
+
+  it("runs a class's own initialize when the call makes one of it", async () => {
+    writeQueryType("orders", ["OrderService.new(current_user)"]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def initialize(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["initialize"]);
+  });
+
+  it("reports a call on a local two branches build from different classes", async () => {
+    writeQueryType("orders", [
+      "scope = OrderService.new",
+      "scope = AuditService.new if current_user",
+      "scope.list_orders(current_user)",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+    write("app/services/audit_service.rb", [
+      "class AuditService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(field.gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "scope.list_orders",
+        description: expect.stringContaining("more than one possible source"),
+      }),
+    );
+  });
+
+  it("runs a method the file declares at the top level when a name calls it", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "def build_index(user)",
+      "  user",
+      "end",
+      "",
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    handler = build_index",
+      "    handler.call(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["build_index"]);
+  });
+
+  it("leaves a name read off a method this file declares to the language", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "def build_index(user)",
+      "  user",
+      "end",
+      "",
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    handler = build_index",
+      "    handler.arity(current_user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(calls(field)).toContainEqual(["handler.arity", undefined]);
+    expect(field.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
+  });
+
+  it("stops at a method called on an array, which the language rather than the project declares", async () => {
+    writeQueryType("orders", ["rows = []", "rows.push(current_user)"]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(calls(field)).toEqual([["rows.push", undefined]]);
+    expect(field.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
+  });
+
+  it("reads a call written inside parentheses through them", async () => {
+    writeQueryType("orders", [
+      "scope = (",
+      "  OrderService.new",
+      ")",
+      "scope.list_orders(current_user)",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["list_orders"]);
   });
 
   it("resolves a class written as a namespaced path", async () => {

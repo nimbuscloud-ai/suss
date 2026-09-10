@@ -323,7 +323,9 @@ A field's resolver method calls project methods, and those call others. Each met
 
 The walk starts at the resolver method behind every discovered field (the one the section above finds), and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A method two actions both reach gets one summary. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call into a gem, a call through a parameter that some caller passes a method by name into, or one with no declaration this reader could find).
 
-Ruby has no lexical binder for a local variable, so a callee is only followed when the source spells out where it goes: through the class ancestry `ancestry.ts` already computes, through a method the project writes outside any class, which Ruby mixes into every object as a private method, or through a method passed by name into the parameter that calls it.
+A call with a receiver is resolved in two steps. The rules in `@suss/resolution` say what the receiver is, over the value facts `facts/values.ts` emits: a local reassigned, a name aliased through two more, `Klass.new`, a method that returns `self`, and parentheses are all steps they state, and asking `objectOf` about the receiver gives back the class the value is one of. Which method of that class runs is Ruby's own question, and `ancestry.ts` settles it, because `include` and `prepend` put modules in the lookup order at load time, a subclass overrides what its base declares, and `def self.` is looked up somewhere else again. A receiver written as a constant names the class object itself, so `Klass.build` looks for `def self.build` and `Klass.new` runs the class's own `initialize`.
+
+A call with no receiver, or one on `self`, never reaches the rules: Ruby looks that name up on the enclosing class's ancestry, then among the methods the project writes outside any class, which Ruby mixes into every object as a private method.
 
 A call written as a bare name, with no receiver, no arguments and no parentheses, is one of these. `visible_items` on its own parses as an identifier, the same node a local variable read parses as, so `bareCalls.ts` tells the two apart the way Ruby does: a name the method binds is a local variable, and every other identifier read is a call on self. A name is bound by a parameter, an assignment, a block or lambda parameter, a `for` variable, or a `rescue => err` clause. Binding is over-approximated on purpose: a name assigned anywhere in the method counts as a local even below the read, so the mistake this can make is missing a call rather than inventing one. An identifier written where a name is spelled rather than a value read, a method's own name or an assignment's left side, is left alone. So is one written as another call's receiver, since `orders.first` gives no way to resolve what `first` runs on.
 
@@ -334,7 +336,10 @@ A pack can also say which receiverless calls its own library defines, in `inheri
 | `helper`, `helper(x)` or `self.helper(x)`, called in a method | that method in the enclosing class's own ancestry |
 | `helper`, when nothing in the enclosing ancestry defines it | `def helper` written outside any class, project-wide |
 | `Service.new.method` | `method` in `Service`'s own ancestry |
+| `s = Service.new` then `s.method`, however many names apart | `method` in `Service`'s own ancestry |
+| `s = Service.new` then `s = s.only(1)`, where `only` returns `self` | `only`, then `method` on the next call in the chain |
 | `Service.method` | `def self.method` written in `Service`'s own body |
+| `Service.new(x)` | `initialize` in `Service`'s own ancestry |
 | `register(method(:build_index))`, where `register(handler)` calls `handler.call` or `handler.()` | `build_index`, followed from wherever a caller in the run named it, through the parameter `register`'s own body calls |
 
 A method passed by name into a call is followed one hop further than the call itself. `method(:build_index)`, written bare with no receiver, is Ruby's way of naming a method rather than calling it, and only that bare form is followed; a `self.method(:build_index)` written with an explicit receiver is not. The same reference works as an `&`-prefixed block argument, `register(&method(:build_index))`, and is numbered by its position among the call's arguments, same as any other argument: `&method(...)` occupies whatever slot it is written in, and a receiving method's own `&blk` parameter is counted at its own declared position among that method's parameters, so the two line up without a separate convention for the block slot. `handler.call` (with or without parentheses) and the `handler.()` shorthand both invoke a `Proc` or `Method` a parameter is bound to, and are recognized the same way; a plain block passed with `do...end` or `{ }`, and `yield`, are not, so a resolver that only ever receives its block that way still gets `unboundParameter` on the call, with no join to fill it.
@@ -344,11 +349,12 @@ Where it stops, and what the gap says:
 | Written as | Reason |
 | --- | --- |
 | `obj.send(:method)`, `public_send`, `__send__` | a dynamic send this run does not follow |
-| a method the project writes with `define_method` | a body this reader cannot see |
+| a method the project writes with `define_method`, called on `self` or on a name the rules settled on the class | a body this reader cannot see |
 | a bare name two files each define at the top level | more than one possible source |
+| a local two branches write differently | more than one possible source |
 | `Rails.cache.delete`, a call into a class this run does not define | outside the run (no gap) |
-| `user.orders`, a local variable, or an instance variable | the value could not be settled |
-| `visible_items.first`, where the receiver is itself a bare call | the value could not be settled |
+| `user.orders`, where nothing in the run says what `user` is | no declaration this run could find (no gap) |
+| a call on what another call gave back, where no fact says what that was | the value could not be settled |
 | `handler.call` or `handler.()`, where `handler` is a parameter that some caller in the run passes a method by name into | followed through the join above (no gap) |
 | `handler.call` or `handler.()`, where `handler` is a parameter that no caller in the run passes a method by name into | the caller supplies it, and nothing named what it passed |
 | `service_class.new.method` where `service_class` is not a constant | the value could not be settled |

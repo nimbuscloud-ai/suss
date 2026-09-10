@@ -12,6 +12,8 @@ import type { RbNode } from "../parser.js";
 export interface ConstantDefinition {
   readonly qualifiedName: string;
   readonly key: string;
+  /** `class`/`module` opens a constant every file may open again; `X = ...` sets one. */
+  readonly kind: "declaration" | "assignment";
 }
 
 /** A constant read somewhere, with the nesting it was read inside. */
@@ -94,6 +96,7 @@ export function collectFileConstants(
         definitions.push({
           qualifiedName: qualify(nesting, written),
           key: nodeId(filePath, node),
+          kind: "declaration",
         });
         const inside = [...nesting, ...written.split("::")];
         for (const child of children(node)) {
@@ -110,6 +113,7 @@ export function collectFileConstants(
         definitions.push({
           qualifiedName: qualify(nesting, left.text),
           key: nodeId(filePath, right),
+          kind: "assignment",
         });
       }
     }
@@ -154,24 +158,32 @@ export function emitConstantBindings(
   db: Database,
   perFile: Iterable<FileConstants>,
 ): void {
-  const byName = new Map<string, string[]>();
+  const byName = new Map<string, ConstantDefinition[]>();
   const fileOfDefinition = new Map<string, string>();
   const files = [...perFile];
   for (const file of files) {
     for (const definition of file.definitions) {
       const found = byName.get(definition.qualifiedName) ?? [];
-      found.push(definition.key);
+      found.push(definition);
       byName.set(definition.qualifiedName, found);
       fileOfDefinition.set(definition.key, file.filePath);
     }
   }
 
-  // Two files defining one name says nothing, because choosing is a guess.
+  /**
+   * Which definition a reference means. Two files opening one class or
+   * module are the same constant reopened, so the first body is the one
+   * to bind to and a lookup by name reaches the rest. Two assignments
+   * are a guess, and one alongside a declaration is a script that
+   * happens to spell the name the same way.
+   */
   const settles = (candidate: string): string | null => {
-    const found = byName.get(candidate);
-    return found !== undefined && found.length === 1
-      ? (found[0] ?? null)
-      : null;
+    const found = byName.get(candidate) ?? [];
+    const declared = found.filter((one) => one.kind === "declaration");
+    if (declared.length > 0) {
+      return (declared[0] as ConstantDefinition).key;
+    }
+    return found.length === 1 ? (found[0] as ConstantDefinition).key : null;
   };
 
   for (const file of files) {

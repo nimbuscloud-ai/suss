@@ -12,9 +12,9 @@
  * meets the same stops. The words for an outcome stay with a language.
  */
 
-import { askResolution } from "./program.js";
+import { askResolution, resolutionProgram } from "./program.js";
 
-import type { Database } from "@suss/datalog";
+import type { Database, OnDemandRules } from "@suss/datalog";
 
 /** What a value a call is made through turns out to be. */
 export type CalleeOutcome =
@@ -37,12 +37,18 @@ const UNDECLARED: CalleeOutcome = { kind: "undeclared" };
 const UNSETTLED: CalleeOutcome = { kind: "unsettled" };
 const OUTSIDE_RUN: CalleeOutcome = { kind: "outsideRun" };
 
-/** What each of these callees is. One batch, so evaluation runs per wave rather than per callee. */
+/**
+ * What each of these callees is. One batch, so evaluation runs per wave
+ * rather than per callee. A language whose adapter states rules of its
+ * own passes the program those rules were built into, so this runs over
+ * the same evaluation state the rest of that run uses.
+ */
 export function calleeOutcomes(
   db: Database,
   keys: readonly string[],
+  program: OnDemandRules = resolutionProgram(),
 ): Map<string, CalleeOutcome> {
-  askAboutSources(db, keys);
+  askAboutSources(db, keys, program);
   const reading = new Reading(db);
   const outcomes = new Map<string, CalleeOutcome>();
   for (const key of keys) {
@@ -52,8 +58,12 @@ export function calleeOutcomes(
 }
 
 /** What one callee is, for a caller with a single key in hand. */
-export function calleeOutcomeOf(db: Database, key: string): CalleeOutcome {
-  return calleeOutcomes(db, [key]).get(key) ?? UNDECLARED;
+export function calleeOutcomeOf(
+  db: Database,
+  key: string,
+  program: OnDemandRules = resolutionProgram(),
+): CalleeOutcome {
+  return calleeOutcomes(db, [key], program).get(key) ?? UNDECLARED;
 }
 
 /**
@@ -61,11 +71,15 @@ export function calleeOutcomeOf(db: Database, key: string): CalleeOutcome {
  * were built from, until nothing new turns up. One wave is one
  * evaluation, and the facts a wave reads are already there.
  */
-function askAboutSources(db: Database, keys: readonly string[]): void {
+function askAboutSources(
+  db: Database,
+  keys: readonly string[],
+  program: OnDemandRules,
+): void {
   let wave = [...new Set(keys)];
   const asked = new Set(wave);
   while (wave.length > 0) {
-    askResolution(db, wave);
+    askResolution(db, wave, "wanted", program);
     const next: string[] = [];
     for (const key of wave) {
       if (!decidedByCallers(db, key) && answersFor(db, key).length > 0) {

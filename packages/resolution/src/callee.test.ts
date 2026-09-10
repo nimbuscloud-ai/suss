@@ -3,10 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { Database } from "@suss/datalog";
+import { Database, lit, rule, variable as v } from "@suss/datalog";
 
 import { calleeOutcomeOf, calleeOutcomes } from "./callee.js";
-import { RESOLUTION_QUESTIONS, RESOLUTION_RULES } from "./index.js";
+import { RESOLUTION_QUESTIONS, RESOLUTION_RULES, VALUE_STEP } from "./index.js";
 import {
   ASKING_RELATIONS,
   askResolution,
@@ -197,6 +197,26 @@ describe("calleeOutcomeOf", () => {
     const outcomes = calleeOutcomes(db, ["run", "nowhere"]);
     expect(outcomes.get("run")).toEqual({ kind: "function", key: "load" });
     expect(outcomes.get("nowhere")?.kind).toBe("undeclared");
+  });
+
+  it("settles a step only a language's own rules state", () => {
+    const aliased = (): Database => {
+      const db = new Database();
+      db.add("func", ["load"]);
+      db.add("rbAliases", ["run", "load"]);
+      return db;
+    };
+    const language = [
+      rule(
+        "stepsTo",
+        [v("x"), v("y"), VALUE_STEP],
+        [lit("rbAliases", v("x"), v("y"))],
+      ),
+    ];
+    expect(calleeOutcomeOf(aliased(), "run").kind).toBe("undeclared");
+    expect(
+      calleeOutcomeOf(aliased(), "run", resolutionProgram(language)),
+    ).toEqual({ kind: "function", key: "load" });
   });
 });
 

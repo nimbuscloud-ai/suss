@@ -297,6 +297,21 @@ describe("ruby value facts", () => {
     const source = [
       "def act",
       "  q = Entity.all",
+      "  q = Other.all",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${funcKey}#q`, keyOf(source, "Other.all")],
+    ]);
+  });
+
+  it("settles a name narrowed by a call on itself on the write the call started from", async () => {
+    const source = [
+      "def act",
+      "  q = Entity.all",
       "  q = q.where(a: 1)",
       "end",
       "",
@@ -304,7 +319,22 @@ describe("ruby value facts", () => {
     const db = await factsFor(source);
     const [funcKey] = rows(db, "func")[0] ?? [];
     expect(rows(db, "endsHolding")).toEqual([
-      [`${funcKey}#q`, keyOf(source, "q.where(a: 1)")],
+      [`${funcKey}#q`, keyOf(source, "Entity.all")],
+    ]);
+  });
+
+  it("counts a narrowing write through an attribute reader, which Ruby writes as a call too", async () => {
+    const source = [
+      "def act",
+      "  q = Entity.all",
+      "  q = q.list",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${funcKey}#q`, keyOf(source, "Entity.all")],
     ]);
   });
 
@@ -313,7 +343,7 @@ describe("ruby value facts", () => {
       [
         "def act",
         "  q = Entity.all",
-        "  q = q.where(a: 1) if flag",
+        "  q = Other.all if flag",
         "end",
         "",
       ].join("\n"),
@@ -325,11 +355,79 @@ describe("ruby value facts", () => {
     );
   });
 
+  it("names each write to a name the writes leave undecided", async () => {
+    const source = [
+      "def act",
+      "  q = Entity.all",
+      "  q = Other.all if flag",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "mayHold")).toEqual([
+      [`${funcKey}#q`, keyOf(source, "Entity.all")],
+      [`${funcKey}#q`, keyOf(source, "Other.all")],
+    ]);
+  });
+
+  it("leaves a narrowing write out of the values a name may hold", async () => {
+    const source = [
+      "def act",
+      "  q = Entity.all",
+      "  q = Other.all if flag",
+      "  q = q.where(a: 1) if flag",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "mayHold").map((row) => row[1])).toEqual([
+      keyOf(source, "Entity.all"),
+      keyOf(source, "Other.all"),
+    ]);
+  });
+
+  it("says a for-loop target is written with no value of its own", async () => {
+    const db = await factsFor("for row in rows\n  row\nend\n");
+    expect(rows(db, "writesUnstated")).toEqual([["#row"]]);
+  });
+
+  it("says a block parameter is written with no value of its own", async () => {
+    const source = "def act\n  rows.each { |row| row }\nend\n";
+    const db = await factsFor(source);
+    const block = source.indexOf("{ |row| row }");
+    expect(rows(db, "writesUnstated")).toEqual([
+      [`:${block}-${block + "{ |row| row }".length}#row`],
+    ]);
+  });
+
+  it("leaves a method parameter out, because paramNamed already says what it is", async () => {
+    const db = await factsFor("def act(scope)\n  scope\nend\n");
+    expect(db.size("writesUnstated")).toBe(0);
+    expect(db.size("mayHold")).toBe(0);
+  });
+
   it("settles nothing when a statement reads the name before the last write", async () => {
     const db = await factsFor(
-      ["q = Entity.all", "log(q)", "q = q.where(a: 1)", ""].join("\n"),
+      ["q = Entity.all", "log(q)", "q = Other.all", ""].join("\n"),
     );
     expect(db.size("endsHolding")).toBe(0);
+  });
+
+  it("reads a value through the parentheses it is written in", async () => {
+    const source = "q = (Entity.all)\n";
+    const db = await factsFor(source);
+    expect(rows(db, "binds")).toContainEqual([
+      "#q",
+      keyOf(source, "Entity.all"),
+    ]);
+  });
+
+  it("binds `self` to the class the method is written in, so a chain runs on", async () => {
+    const source = "class Entity\n  def filter\n    self\n  end\nend\n";
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    expect(rows(db, "binds")).toContainEqual([keyOf(source, "self"), classKey]);
   });
 
   it("settles nothing for a parameter the body writes again", async () => {

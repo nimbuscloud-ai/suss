@@ -106,16 +106,40 @@ describe("a Ruby constant", () => {
     expect(absolute?.[1]?.startsWith("other.rb")).toBe(true);
   });
 
-  it("says nothing when two files declare one name", async () => {
+  it("binds a name two files open to the first body, the way Ruby reopens one class", async () => {
     const db = await factsFor({
       "one.rb": "class Order\nend\n",
       "two.rb": "class Order\nend\n",
       "use.rb": "value = Order\n",
     });
 
-    expect(bindingsOf(db).some(([from]) => from === "use.rb#Order")).toBe(
+    expect(
+      bindingsOf(db).find(([from]) => from === "use.rb#Order")?.[1],
+    ).toMatch(/^one\.rb:/);
+  });
+
+  it("says nothing when two files assign one name", async () => {
+    const db = await factsFor({
+      "one.rb": "Limit = 1\n",
+      "two.rb": "Limit = 2\n",
+      "use.rb": "value = Limit\n",
+    });
+
+    expect(bindingsOf(db).some(([from]) => from === "use.rb#Limit")).toBe(
       false,
     );
+  });
+
+  it("takes the class over a script that assigns the same name", async () => {
+    const db = await factsFor({
+      "one.rb": "class Order\nend\n",
+      "bench.rb": "Order = Data.define(:id)\n",
+      "use.rb": "value = Order\n",
+    });
+
+    expect(
+      bindingsOf(db).find(([from]) => from === "use.rb#Order")?.[1],
+    ).toMatch(/^one\.rb:/);
   });
 
   it("resolves a method called on a class another file declares", async () => {
