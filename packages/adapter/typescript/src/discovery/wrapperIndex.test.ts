@@ -237,7 +237,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/orders")).toEqual([
-      { file: "/app.ts", name: "use" },
+      { file: "/app.ts", name: "use", line: 4 },
     ]);
   });
 
@@ -477,7 +477,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/orders")).toEqual([
-      { file: "/requireCaller.ts", name: "requireCaller" },
+      { file: "/requireCaller.ts", name: "requireCaller", line: 3 },
     ]);
     expect(statusesOf(summaryNamed(summaries, "requireCaller"))).toEqual([401]);
     expect(unfollowedOn(summaries, "/orders")).toEqual([]);
@@ -565,7 +565,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/orders")).toEqual([
-      { file: "/app.ts", name: "use", onThrow: true },
+      { file: "/app.ts", name: "use", line: 4, onThrow: true },
     ]);
   });
 
@@ -589,7 +589,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/v1/orders")).toEqual([
-      { file: "/app.ts", name: "use", scope: "/v1/*" },
+      { file: "/app.ts", name: "use", line: 4, scope: "/v1/*" },
     ]);
   });
 
@@ -615,7 +615,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/api/v1/orders")).toEqual([
-      { file: "/app.ts", name: "use", scope: "/api/v1/*" },
+      { file: "/app.ts", name: "use", line: 4, scope: "/api/v1/*" },
     ]);
   });
 
@@ -643,7 +643,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/api/svc/v1/orders")).toEqual([
-      { file: "/app.ts", name: "use", scope: "/api/svc/v1/*" },
+      { file: "/app.ts", name: "use", line: 4, scope: "/api/svc/v1/*" },
     ]);
   });
 
@@ -670,7 +670,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/v1/orders")).toEqual([
-      { file: "/app.ts", name: "use", scope: "/v1/*" },
+      { file: "/app.ts", name: "use", line: 4, scope: "/v1/*" },
     ]);
   });
 
@@ -829,7 +829,7 @@ describe("wrapper registrations, end to end", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/orders")).toEqual([
-      { file: "/app.ts", name: "defaultHook" },
+      { file: "/app.ts", name: "defaultHook", line: 3 },
     ]);
   });
 
@@ -882,7 +882,7 @@ describe("wrapper registrations, end to end", () => {
 
     for (const route of ["/v1/tenants"]) {
       expect(wrappersOf(summaries, route)).toEqual([
-        { file: "/mw.ts", name: "requireCaller", scope: "/v1/*" },
+        { file: "/mw.ts", name: "requireCaller", line: 3, scope: "/v1/*" },
       ]);
     }
     expect(statusesOf(summaryNamed(summaries, "requireCaller"))).toEqual([401]);
@@ -981,7 +981,7 @@ describe("middleware listed on the route itself", () => {
     const summaries = await adapter.extractAll();
 
     expect(wrappersOf(summaries, "/orders")).toEqual([
-      { file: "/app.ts", name: "use" },
+      { file: "/app.ts", name: "use", line: 4 },
       { file: "/app.ts", name: "get@GET /orders" },
     ]);
   });

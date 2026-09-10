@@ -716,3 +716,42 @@ describe("expressFramework: a route with middleware listed before its handler", 
     expect(statusesOf(summaries)).toEqual([400, 200]);
   });
 });
+
+describe("expressFramework: two middleware written out at app.use", () => {
+  it("composes each one, not the first one twice", async () => {
+    // Both go by `use`, since neither has a name of its own. The
+    // second used to be dropped for the first, so its 403 never
+    // reached the route.
+    const project = createTestProject();
+    project.createSourceFile(
+      "app.ts",
+      `
+      import express from "express";
+      const app = express();
+      app.use((req: any, res: any, next: any) => {
+        if (!req.headers.authorization) { return res.status(401).json({ error: "no auth" }); }
+        next();
+      });
+      app.use((req: any, res: any, next: any) => {
+        if (req.query.banned) { return res.status(403).json({ error: "banned" }); }
+        next();
+      });
+      app.get("/items", (req: any, res: any) => { res.status(200).json([]); });
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressFramework()],
+    });
+    const summaries = await adapter.extractAll();
+    const route = summaries.find(
+      (one) => one.identity.boundaryBinding?.semantics?.name === "rest",
+    );
+    const statuses = route?.transitions.map((t) =>
+      t.output.type === "response" && t.output.statusCode?.type === "literal"
+        ? t.output.statusCode.value
+        : null,
+    );
+    expect(statuses).toEqual([401, 403, 200]);
+  });
+});

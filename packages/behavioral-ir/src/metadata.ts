@@ -160,6 +160,12 @@ const WrapperReferenceSchema = z.object({
   /** The name that summary goes by in that file. */
   name: z.string(),
   /**
+   * The line that summary starts on, set when the name alone does not
+   * pick it out of the file. A function written out at its registration
+   * goes by the registering method, and one file can register several.
+   */
+  line: z.number().optional(),
+  /**
    * True when the framework invokes the wrapper only for a request that
    * ended by throwing, which is how an error handler is called.
    */

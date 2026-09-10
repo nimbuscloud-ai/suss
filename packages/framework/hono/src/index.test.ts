@@ -381,7 +381,7 @@ describe("honoFramework, app.use", () => {
       | { applied: { name: string }[] }
       | undefined;
     expect(wrappers?.applied).toEqual([
-      { file: "/app.ts", name: "use" },
+      { file: "/app.ts", name: "use", line: 10 },
       { file: "/app.ts", name: "requireCaller" },
     ]);
     expect(
@@ -426,7 +426,7 @@ describe("honoFramework, defaultHook", () => {
       | { applied: { name: string }[] }
       | undefined;
     expect(wrappers?.applied).toEqual([
-      { file: "/app.ts", name: "defaultHook" },
+      { file: "/app.ts", name: "defaultHook", line: 4 },
     ]);
     expect(
       health?.transitions.map((t) =>

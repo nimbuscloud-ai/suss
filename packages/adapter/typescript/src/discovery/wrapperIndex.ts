@@ -489,6 +489,7 @@ function candidateOf(
     reference: {
       file: target.getSourceFile().getFilePath(),
       name: named ? functionNameOrAnon(target) : label,
+      ...(named ? {} : { line: target.getStartLineNumber() }),
       ...(onThrow ? { onThrow: true } : {}),
       ...(scope === undefined ? {} : { scope }),
     },
