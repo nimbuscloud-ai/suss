@@ -41,6 +41,64 @@ export function bodyStatements(body: RbNode): RbNode[] {
   return body.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
+/** The fields of a branching statement that run when the branch is taken; the condition is left out. */
+const BRANCH_FIELDS: Record<string, string[]> = {
+  if: ["consequence", "alternative"],
+  unless: ["consequence", "alternative"],
+  elsif: ["consequence", "alternative"],
+  if_modifier: ["body"],
+  unless_modifier: ["body"],
+  while: ["body"],
+  until: ["body"],
+  while_modifier: ["body"],
+  until_modifier: ["body"],
+  when: ["body"],
+  rescue: ["body"],
+};
+
+/** A node whose named children are statements run in place, apart from a clause among them. */
+const STATEMENT_LISTS = new Set(["then", "else", "do", "ensure", "begin"]);
+
+/** A clause is part of the statement around it, not a statement of its own. */
+const CLAUSE_TYPES = new Set(["elsif", "else", "when", "rescue", "ensure"]);
+
+/**
+ * Every statement written directly inside a branching statement's
+ * branches, across its `elsif`, `else`, `when`, `rescue` and `ensure`
+ * clauses. A statement inside a nested branching statement is not
+ * included; the caller descends into that one itself.
+ */
+export function nestedStatements(stmt: RbNode): RbNode[] {
+  const branchFields = BRANCH_FIELDS[stmt.type];
+  if (branchFields !== undefined) {
+    return branchFields.flatMap((name) => {
+      const branch = field(stmt, name);
+      return branch === null ? [] : statementsRunBy(branch);
+    });
+  }
+
+  if (STATEMENT_LISTS.has(stmt.type)) {
+    return bodyStatements(stmt).flatMap((child) =>
+      CLAUSE_TYPES.has(child.type) ? nestedStatements(child) : [child],
+    );
+  }
+
+  if (stmt.type === "case") {
+    return bodyStatements(stmt)
+      .filter((child) => CLAUSE_TYPES.has(child.type))
+      .flatMap(nestedStatements);
+  }
+  return [];
+}
+
+/** A branch is a statement list, a clause, or, after a modifier, one statement. */
+function statementsRunBy(branch: RbNode): RbNode[] {
+  if (STATEMENT_LISTS.has(branch.type) || CLAUSE_TYPES.has(branch.type)) {
+    return nestedStatements(branch);
+  }
+  return [branch];
+}
+
 /**
  * A body written in one of these belongs to the thing it declares, so
  * its statements do not run when the enclosing body runs.

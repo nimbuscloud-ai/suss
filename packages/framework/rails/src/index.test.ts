@@ -705,6 +705,89 @@ describe("railsFramework", () => {
         "  end\nend\n";
       expect(routeFor(source, "OrdersController", "cancel")).toBeNull();
     });
+
+    it("reads a namespace declared under an if", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  if Rails.env.development?\n" +
+        "    namespace :private do\n" +
+        "      resources :items, only: [:show]\n" +
+        "    end\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "Private::ItemsController", "show")).toEqual({
+        method: "GET",
+        path: "/private/items/:id",
+      });
+    });
+
+    it("reads routes in every branch of an if, elsif, else", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  if Rails.env.test?\n" +
+        "    resources :orders, only: [:index]\n" +
+        "  elsif Rails.env.development?\n" +
+        "    resources :items, only: [:index]\n" +
+        "  else\n" +
+        "    resources :users, only: [:index]\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "OrdersController", "index")?.path).toBe(
+        "/orders",
+      );
+      expect(routeFor(source, "ItemsController", "index")?.path).toBe("/items");
+      expect(routeFor(source, "UsersController", "index")?.path).toBe("/users");
+    });
+
+    it("reads a route written with a trailing unless", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  mount Sidekiq::Web => '/sidekiq' unless Rails.env.production?\n" +
+        "  get 'debug', to: 'debug#show' unless Rails.env.production?\n" +
+        "end\n";
+      expect(routeFor(source, "DebugController", "show")).toEqual({
+        method: "GET",
+        path: "/debug",
+      });
+    });
+
+    it("reads a route under a case branch and one under a begin rescue", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  case ENV['MODE']\n" +
+        "  when 'admin' then resources :admins, only: [:index]\n" +
+        "  else resources :guests, only: [:index]\n" +
+        "  end\n" +
+        "  begin\n" +
+        "    resources :reports, only: [:index]\n" +
+        "  rescue NameError\n" +
+        "    resources :fallbacks, only: [:index]\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "AdminsController", "index")?.path).toBe(
+        "/admins",
+      );
+      expect(routeFor(source, "GuestsController", "index")?.path).toBe(
+        "/guests",
+      );
+      expect(routeFor(source, "ReportsController", "index")?.path).toBe(
+        "/reports",
+      );
+      expect(routeFor(source, "FallbacksController", "index")?.path).toBe(
+        "/fallbacks",
+      );
+    });
+
+    it("does not take a call in the condition for a route", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  if feature_enabled?(:beta)\n" +
+        "    resources :betas, only: [:index]\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "BetasController", "index")?.path).toBe("/betas");
+      const pack = railsFramework({
+        root: dir,
+        routesFile: path.join(dir, "routes.rb"),
+      });
+      expect(pattern(pack).routingGaps?.()).toEqual([]);
+    });
   });
 
   describe("the routing calls a larger app spreads its routes across", () => {
