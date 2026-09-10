@@ -722,7 +722,7 @@ export function bodyOfMethod(
     ...envReadEffects(method),
     ...(storage === undefined
       ? []
-      : storageEffects(callsUnder(method), file, storage)),
+      : storageEffects(callsUnder(method), file, storage, method)),
   ];
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",
