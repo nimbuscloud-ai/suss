@@ -76,6 +76,38 @@ describe("webFetchPack — integration", () => {
     }
   });
 
+  it("reads the global through globalThis or window the same as bare fetch", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export async function proxied() {
+        return globalThis.fetch("/proxied", { method: "PUT" });
+      }
+      export async function fromWindow() {
+        return window.fetch("/from-window");
+      }
+      export async function notAGlobal(api: { fetch: (p: string) => Promise<Response> }) {
+        return api.fetch("/not-a-global");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const summaries = await adapter.extractAll();
+    expect(
+      summaries
+        .map((s) => {
+          const sem = s.identity.boundaryBinding?.semantics;
+          return sem?.name === "rest" ? `${sem.method} ${sem.path}` : null;
+        })
+        .sort(),
+    ).toEqual(["GET /from-window", "PUT /proxied"]);
+  });
+
   it("produces transitions from branches in the consumer function", async () => {
     const project = createTestProject();
     project.createSourceFile(
