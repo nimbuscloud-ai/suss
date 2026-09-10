@@ -3,9 +3,9 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 916,
-    "internal": 3242,
-    "consumers": 1762,
-    "pairs": 1759,
+    "internal": 3282,
+    "consumers": 1767,
+    "pairs": 1764,
     "unfollowedCalls": 501,
     "findingErrors": 0
   },
@@ -391,8 +391,8 @@
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
       "exports": 4,
-      "internal": 17,
-      "consumers": 33,
+      "internal": 35,
+      "consumers": 38,
       "unfollowedCalls": 7
     },
     "packages/framework/react": {
@@ -482,7 +482,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 46,
-      "internal": 145,
+      "internal": 167,
       "consumers": 0,
       "unfollowedCalls": 10
     },
