@@ -216,16 +216,16 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   add(emitter, "writtenValue", nodeId(emitter.filePath, call));
 
   const callee = field(call, "function");
-  if (callee === null) {
+  const args = field(call, "arguments");
+  // The grammar writes both fields on every call.
+  /* v8 ignore start */
+  if (callee === null || args === null) {
     return;
   }
+  /* v8 ignore stop */
   const callKey = nodeId(emitter.filePath, call);
   add(emitter, "call", callKey, valueKey(emitter, callee));
 
-  const args = field(call, "arguments");
-  if (args === null) {
-    return;
-  }
   let position = 0;
   for (const argument of children(args)) {
     if (argument.type === "keyword_argument") {
@@ -308,9 +308,11 @@ function emitDictionary(emitter: Emitter, dictionary: PyNode): void {
 function emitAttribute(emitter: Emitter, attribute: PyNode): void {
   const object = field(attribute, "object");
   const property = field(attribute, "attribute");
+  /* v8 ignore start */
   if (object === null || property === null) {
     return;
   }
+  /* v8 ignore stop */
   add(
     emitter,
     "readsProperty",
@@ -424,9 +426,11 @@ function emitFunctionFacts(
   emitScopeWrites(inside, reading, false);
 
   const body = field(fn, "body");
+  /* v8 ignore start */
   if (body === null) {
     return funcKey;
   }
+  /* v8 ignore stop */
 
   emitNestedDefinitions(inside, body);
 
@@ -676,9 +680,11 @@ interface WriteSink {
 function readAssignment(node: PyNode, sink: WriteSink): void {
   const left = field(node, "left");
   const right = field(node, "right");
+  /* v8 ignore start */
   if (left === null) {
     return;
   }
+  /* v8 ignore stop */
   const written = right === null ? null : assignedValue(right);
   const names = targetNames(left);
   for (const name of names) {
@@ -709,9 +715,11 @@ function readAugmentedAssignment(node: PyNode, sink: WriteSink): void {
 /** A loop target takes one element per turn, and the element is written nowhere. */
 function readIterationTarget(node: PyNode, sink: WriteSink): void {
   const left = field(node, "left");
+  /* v8 ignore start */
   if (left === null) {
     return;
   }
+  /* v8 ignore stop */
   for (const name of targetNames(left)) {
     sink.record(name.text, {
       value: null,

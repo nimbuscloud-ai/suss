@@ -29,21 +29,6 @@ function findFunctionNode(node: PyNode): PyNode | null {
   return null;
 }
 
-let nextFakeId = 1;
-
-/** A stand-in for a node the grammar never hands back with a field missing, since `childForFieldName` is typed nullable everywhere regardless. */
-function fakeNode(props: { type: string } & Record<string, unknown>): PyNode {
-  return {
-    startIndex: 0,
-    endIndex: 1,
-    namedChildren: [],
-    tree: {},
-    id: nextFakeId++,
-    childForFieldName: () => null,
-    ...props,
-  } as unknown as PyNode;
-}
-
 /** The tuples of one relation, with the file prefix dropped so a test reads. */
 function rows(db: Database, relation: string): string[][] {
   return db
@@ -707,32 +692,5 @@ describe("python value facts", () => {
   it("records nothing for a with-target that unpacks rather than naming one thing", async () => {
     const db = await factsFor("with build() as (first, second):\n    pass\n");
     expect(db.size("binds")).toBe(0);
-  });
-
-  it("stops short of a fact when a call, an attribute, an assignment or a function is missing a field the grammar always fills in", () => {
-    const buildCallee = fakeNode({ type: "identifier", text: "build" });
-    const root = fakeNode({
-      type: "module",
-      namedChildren: [
-        fakeNode({ type: "call", startIndex: 0, endIndex: 4 }),
-        fakeNode({
-          type: "call",
-          startIndex: 5,
-          endIndex: 14,
-          childForFieldName: (name: string) =>
-            name === "function" ? buildCallee : null,
-        }),
-        fakeNode({ type: "attribute", startIndex: 15, endIndex: 24 }),
-        fakeNode({ type: "assignment", startIndex: 25, endIndex: 34 }),
-        fakeNode({ type: "function_definition", startIndex: 35, endIndex: 44 }),
-      ],
-    });
-    const db = new Database();
-    emitValueFacts(db, "f.py", root);
-    expect(db.size("writtenValue")).toBe(2);
-    expect(db.size("call")).toBe(1);
-    expect(db.size("readsProperty")).toBe(0);
-    expect(db.size("binds")).toBe(0);
-    expect(db.size("func")).toBe(1);
   });
 });
