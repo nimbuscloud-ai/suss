@@ -68,7 +68,7 @@ export function parametersOf(owner: RbNode): RbNode[] {
 }
 
 /** The names a method or a block declares as parameters. */
-export function parameterNames(owner: RbNode): ReadonlySet<string> {
+function parameterNames(owner: RbNode): ReadonlySet<string> {
   const names = new Set<string>();
   for (const param of parametersOf(owner)) {
     const name = paramNameOf(param);
@@ -167,38 +167,67 @@ function writesUnder(body: RbNode): LocalWrite[] {
   return found;
 }
 
-const localsByTree = new WeakMap<RbTree, NodeMap<ReadonlySet<string>>>();
+/** The names one scope has, worked out once because every key asks about them. */
+interface ScopeNames {
+  /** Its parameters and every name its body writes to. */
+  locals: ReadonlySet<string>;
+  /** Every name a block inside it declares as a parameter. */
+  blockParams: ReadonlySet<string>;
+}
 
-function localsCacheFor(tree: RbTree): NodeMap<ReadonlySet<string>> {
-  const known = localsByTree.get(tree);
+interface TreeCache {
+  file: ScopeNames | null;
+  byMethod: NodeMap<ScopeNames>;
+}
+
+const namesByTree = new WeakMap<RbTree, TreeCache>();
+
+function cacheFor(tree: RbTree): TreeCache {
+  const known = namesByTree.get(tree);
   if (known !== undefined) {
     return known;
   }
-  const fresh = new NodeMap<ReadonlySet<string>>();
-  localsByTree.set(tree, fresh);
+  const fresh: TreeCache = { file: null, byMethod: new NodeMap<ScopeNames>() };
+  namesByTree.set(tree, fresh);
   return fresh;
 }
 
+function scopeNames(
+  parameters: ReadonlySet<string>,
+  body: RbNode | null,
+): ScopeNames {
+  const locals = new Set<string>(parameters);
+  const blockParams = new Set<string>();
+  for (const write of body === null ? [] : writesUnder(body)) {
+    if (write.fromParameter) {
+      blockParams.add(write.name);
+      continue;
+    }
+    locals.add(write.name);
+  }
+  return { locals, blockParams };
+}
+
 /**
- * The names a method owns: its parameters, and every name its body writes to.
- * A block parameter is left out, because the block owns it and Ruby does not
- * let it outlive the block.
+ * The names a method owns. A block parameter is kept apart, because the block
+ * owns it and Ruby does not let it outlive the block.
  */
-export function localNamesOf(method: RbNode): ReadonlySet<string> {
-  const cache = localsCacheFor(method.tree);
-  const remembered = cache.get(method);
+function namesOfMethod(method: RbNode): ScopeNames {
+  const cache = cacheFor(method.tree);
+  const remembered = cache.byMethod.get(method);
   if (remembered !== undefined) {
     return remembered;
   }
-  const names = new Set<string>(parameterNames(method));
-  const body = field(method, "body");
-  for (const write of body === null ? [] : writesUnder(body)) {
-    if (!write.fromParameter) {
-      names.add(write.name);
-    }
-  }
-  cache.set(method, names);
+  const names = scopeNames(parameterNames(method), field(method, "body"));
+  cache.byMethod.set(method, names);
   return names;
+}
+
+/** The names a file has outside any definition, which is a scope with no parameters. */
+function namesOfFile(tree: RbTree): ScopeNames {
+  const cache = cacheFor(tree);
+  cache.file ??= scopeNames(new Set(), tree.rootNode);
+  return cache.file;
 }
 
 /**
@@ -215,18 +244,30 @@ export function ownerOfName(
   if (node.type === "constant") {
     return null;
   }
+  const names =
+    enclosing === null ? namesOfFile(node.tree) : namesOfMethod(enclosing);
+  // Reading the parents costs a wrapper object per step, so the scope's own
+  // names settle every name no block declares before any of that happens.
+  if (names.blockParams.has(name)) {
+    const block = blockDeclaring(node, name);
+    if (block !== null) {
+      return block;
+    }
+  }
+  return enclosing !== null && names.locals.has(name) ? enclosing : null;
+}
+
+/** The nearest block around a node that declares the name as a parameter. */
+function blockDeclaring(node: RbNode, name: string): RbNode | null {
   let current = node.parent;
   while (current !== null) {
     if (BLOCK_TYPES.has(current.type) && parameterNames(current).has(name)) {
       return current;
     }
     if (OWN_BODY_TYPES.has(current.type)) {
-      break;
+      return null;
     }
     current = current.parent;
-  }
-  if (enclosing !== null && localNamesOf(enclosing).has(name)) {
-    return enclosing;
   }
   return null;
 }
