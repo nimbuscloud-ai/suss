@@ -2,14 +2,46 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
+import { children } from "../ast.js";
 import { parsePython } from "../parser.js";
-import { emitValueFacts } from "./values.js";
+import { emitValueFacts, parameterList, parameterShapes } from "./values.js";
+
+import type { PyNode } from "../parser.js";
 
 async function factsFor(source: string) {
   const tree = await parsePython(source);
   const db = new Database();
   emitValueFacts(db, "f.py", tree.rootNode);
   return db;
+}
+
+/** The first def in a tree, for a test that wants the node rather than the facts it emits. */
+function findFunctionNode(node: PyNode): PyNode | null {
+  if (node.type === "function_definition") {
+    return node;
+  }
+  for (const child of children(node)) {
+    const found = findFunctionNode(child);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+let nextFakeId = 1;
+
+/** A stand-in for a node the grammar never hands back with a field missing, since `childForFieldName` is typed nullable everywhere regardless. */
+function fakeNode(props: { type: string } & Record<string, unknown>): PyNode {
+  return {
+    startIndex: 0,
+    endIndex: 1,
+    namedChildren: [],
+    tree: {},
+    id: nextFakeId++,
+    childForFieldName: () => null,
+    ...props,
+  } as unknown as PyNode;
 }
 
 /** The tuples of one relation, with the file prefix dropped so a test reads. */
@@ -495,5 +527,212 @@ describe("python value facts", () => {
       "#counter",
       "#counter",
     ]);
+  });
+
+  it("lists a function's parameters by name, leaving a splat and a bare separator out", async () => {
+    const tree = await parsePython(
+      "def build(a, /, *args, flag=False):\n    pass\n",
+    );
+    const fn = findFunctionNode(tree.rootNode);
+    if (fn === null) {
+      throw new Error("expected a function_definition node");
+    }
+    expect(parameterList(fn)).toEqual(["a", "flag"]);
+  });
+
+  it("pairs a parameter with the default it declares", async () => {
+    const tree = await parsePython("def build(a, flag=False):\n    pass\n");
+    const fn = findFunctionNode(tree.rootNode);
+    if (fn === null) {
+      throw new Error("expected a function_definition node");
+    }
+    const shapes = parameterShapes(fn);
+    expect(shapes.map((parameter) => parameter.name)).toEqual(["a", "flag"]);
+    expect(shapes[0]?.default).toBeNull();
+    expect(shapes[1]?.default?.text).toBe("False");
+  });
+
+  it("skips a dictionary child written as a spread rather than a pair", async () => {
+    const db = await factsFor("config = {**other}\n");
+    expect(db.size("holdsProperty")).toBe(0);
+    expect(db.size("objectValue")).toBe(1);
+  });
+
+  it("binds nothing for an augmented assignment whose left is not a plain name", async () => {
+    const db = await factsFor("counts[0] += 1\n");
+    expect(db.size("binds")).toBe(0);
+  });
+
+  it("says nothing about a name a += statement reassigns, since it states no value of its own", async () => {
+    const db = await factsFor(
+      [
+        "def handler():",
+        "    count = 0",
+        "    count += 1",
+        "    return count",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#count`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#count`,
+    );
+    expect(rows(db, "endsHolding").map((row) => row[0])).not.toContain(
+      `${funcKey}#count`,
+    );
+  });
+
+  it("sends a name a nested function declares nonlocal to the enclosing function", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    total = 0",
+        "    def inner():",
+        "        nonlocal total",
+        "        total = 1",
+        "    inner()",
+        "    return total",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const keys = rows(db, "binds").map((row) => row[0]);
+    expect(keys.filter((key) => key === `${outerKey}#total`)).toHaveLength(2);
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${outerKey}#total`);
+  });
+
+  it("makes a with-target the function's own name with no value settled", async () => {
+    const db = await factsFor(
+      [
+        "def handler():",
+        "    with open('config') as fh:",
+        "        return fh",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#fh`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#fh`,
+    );
+  });
+
+  it("makes an except-target the function's own name with no value settled", async () => {
+    const db = await factsFor(
+      [
+        "def handler():",
+        "    try:",
+        "        pass",
+        "    except Exception as err:",
+        "        return err",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#err`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#err`,
+    );
+  });
+
+  it("binds a match-case alias the same way an as-pattern does elsewhere", async () => {
+    const db = await factsFor(
+      [
+        "def handler(x):",
+        "    match x:",
+        "        case str() as s:",
+        "            return s",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#s`);
+  });
+
+  it("does not count a nested def's own read as a read before the outer write", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    query = build()",
+        "    def inner():",
+        "        return query",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const secondCall = rows(db, "call")[1]?.[0];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${outerKey}#query`, secondCall],
+    ]);
+  });
+
+  it("does not count a name inside a nested class body as a read before the outer write", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    query = build()",
+        "    class Inner:",
+        "        query = 1",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const secondCall = rows(db, "call")[1]?.[0];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${outerKey}#query`, secondCall],
+    ]);
+  });
+
+  it("does not count a name mentioned in an import path as a read before a later write", async () => {
+    const db = await factsFor(
+      [
+        "def handler(session):",
+        "    query = session.query(Entity)",
+        "    import query.sub",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const secondCall = rows(db, "call")[1]?.[0];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, secondCall]]);
+  });
+
+  it("records nothing for a with-target that unpacks rather than naming one thing", async () => {
+    const db = await factsFor("with build() as (first, second):\n    pass\n");
+    expect(db.size("binds")).toBe(0);
+  });
+
+  it("stops short of a fact when a call, an attribute, an assignment or a function is missing a field the grammar always fills in", () => {
+    const buildCallee = fakeNode({ type: "identifier", text: "build" });
+    const root = fakeNode({
+      type: "module",
+      namedChildren: [
+        fakeNode({ type: "call", startIndex: 0, endIndex: 4 }),
+        fakeNode({
+          type: "call",
+          startIndex: 5,
+          endIndex: 14,
+          childForFieldName: (name: string) =>
+            name === "function" ? buildCallee : null,
+        }),
+        fakeNode({ type: "attribute", startIndex: 15, endIndex: 24 }),
+        fakeNode({ type: "assignment", startIndex: 25, endIndex: 34 }),
+        fakeNode({ type: "function_definition", startIndex: 35, endIndex: 44 }),
+      ],
+    });
+    const db = new Database();
+    emitValueFacts(db, "f.py", root);
+    expect(db.size("writtenValue")).toBe(2);
+    expect(db.size("call")).toBe(1);
+    expect(db.size("readsProperty")).toBe(0);
+    expect(db.size("binds")).toBe(0);
+    expect(db.size("func")).toBe(1);
   });
 });
