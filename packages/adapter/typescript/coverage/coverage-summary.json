@@ -1,26 +1,26 @@
 {
   "total": {
     "lines": {
-      "total": 9366,
-      "covered": 8176,
+      "total": 9378,
+      "covered": 8188,
       "skipped": 0,
-      "pct": 87.29
+      "pct": 87.31
     },
     "statements": {
-      "total": 9461,
-      "covered": 8265,
+      "total": 9473,
+      "covered": 8277,
       "skipped": 0,
-      "pct": 87.35
+      "pct": 87.37
     },
     "functions": {
-      "total": 1408,
-      "covered": 1306,
+      "total": 1411,
+      "covered": 1309,
       "skipped": 0,
-      "pct": 92.75
+      "pct": 92.77
     },
     "branches": {
-      "total": 7362,
-      "covered": 5897,
+      "total": 7369,
+      "covered": 5903,
       "skipped": 0,
       "pct": 80.1
     },
@@ -709,36 +709,36 @@
   },
   "src/bootstrap/lazyProjectInit.ts": {
     "lines": {
-      "total": 194,
-      "covered": 184,
+      "total": 202,
+      "covered": 192,
       "skipped": 0,
-      "pct": 94.84
+      "pct": 95.04
     },
     "functions": {
-      "total": 29,
-      "covered": 28,
+      "total": 32,
+      "covered": 31,
       "skipped": 0,
-      "pct": 96.55
+      "pct": 96.87
     },
     "statements": {
-      "total": 196,
-      "covered": 186,
+      "total": 204,
+      "covered": 194,
       "skipped": 0,
-      "pct": 94.89
+      "pct": 95.09
     },
     "branches": {
-      "total": 78,
-      "covered": 66,
+      "total": 83,
+      "covered": 70,
       "skipped": 0,
-      "pct": 84.61
+      "pct": 84.33
     }
   },
   "src/bootstrap/noTsconfigProject.ts": {
     "lines": {
-      "total": 33,
-      "covered": 32,
+      "total": 37,
+      "covered": 36,
       "skipped": 0,
-      "pct": 96.96
+      "pct": 97.29
     },
     "functions": {
       "total": 3,
@@ -747,16 +747,16 @@
       "pct": 100
     },
     "statements": {
-      "total": 33,
-      "covered": 32,
+      "total": 37,
+      "covered": 36,
       "skipped": 0,
-      "pct": 96.96
+      "pct": 97.29
     },
     "branches": {
-      "total": 17,
-      "covered": 16,
+      "total": 19,
+      "covered": 18,
       "skipped": 0,
-      "pct": 94.11
+      "pct": 94.73
     }
   },
   "src/bootstrap/preFilter.ts": {
