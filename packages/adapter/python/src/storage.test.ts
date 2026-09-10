@@ -544,12 +544,16 @@ describe("the database work a Python body does", () => {
       [
         "from sqlalchemy.orm import Session",
         "",
-        "def create(db: Session, order: Orders, order_id: int):",
+        "def create(db: Session, order: Orders, order_id: int, data: dict):",
         "    db.add(order)",
         "    db.add(Orders(id=2))",
         "    db.commit()",
         "    found = db.get(Orders, order_id)",
         "    db.refresh(found)",
+        "    built = Orders.model_validate(data)",
+        "    db.add(built)",
+        "    fetched = load_order(order_id)",
+        "    db.add(fetched)",
         "    return db.query(Orders).filter_by(id=1).first()",
         "",
       ].join("\n"),
@@ -562,6 +566,8 @@ describe("the database work a Python body does", () => {
       null,
       "Orders",
       "Orders",
+      "Orders",
+      null,
       "Orders",
     ]);
   });

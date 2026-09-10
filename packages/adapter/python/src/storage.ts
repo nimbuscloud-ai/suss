@@ -200,15 +200,21 @@ function typeGivenBy(statement: PyNode, name: string): string | null {
 }
 
 /**
- * The class a call builds: `Session()` builds a Session, and a method given
- * a class as its first argument, `db.get(Orders, 1)` or the
+ * The class a call builds: `Session()` builds a Session, a class method
+ * such as `User.model_validate(data)` gives back one of its class, and a
+ * method given a class as its first argument, `db.get(Orders, 1)` or the
  * `db.query(Orders)` a chain starts at, gives back one of that class.
+ * A function written in lowercase says nothing here about what it returns.
  */
 function builtType(call: PyNode): string | null {
   const root = rootOf(call);
   const callee = field(root, "function");
   if (callee?.type === "identifier") {
-    return callee.text;
+    return isClassName(callee.text) ? callee.text : null;
+  }
+  const object = callee?.type === "attribute" ? field(callee, "object") : null;
+  if (object?.type === "identifier" && isClassName(object.text)) {
+    return object.text;
   }
   const args = field(root, "arguments");
   const first = (args === null ? [] : children(args))[0];
