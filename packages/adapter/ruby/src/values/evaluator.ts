@@ -102,7 +102,7 @@ function evaluatorFor(
   return local;
 }
 
-/** The method a node is written inside, which is what a parameter read is keyed under. */
+/** The method a node is written inside. A parameter read is keyed under it. */
 function enclosingMethod(node: RbNode): RbNode | null {
   let current = node.parent;
   while (current !== null) {

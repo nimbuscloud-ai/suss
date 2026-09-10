@@ -112,8 +112,8 @@ Three sources declare it, and each already has the fact in hand:
   among the response methods that leave the sent value unchanged, so
   the walk reaches the header and drops what it says.
 - An inline encode call the walk reads: `JSON.stringify` at a producer
-  and `JSON.parse` at a consumer, which is what both
-  `unwrapJsonStringify` copies find before discarding it.
+  and `JSON.parse` at a consumer. Both `unwrapJsonStringify` copies
+  find this call and then discard it.
 
 Where a declared media type and an inline call at one site disagree,
 the code is what runs, so the code's encoding is recorded and the
@@ -210,8 +210,8 @@ form, and it makes one JSON payload compare unequal to itself depending
 on which wire it arrived over.
 
 The two meet at one point. An envelope slot typed as a string says that
-something was encoded into it, which is what `unwrapJsonStringify: true`
-says today: the envelope says an encoding happened, and the encoding
+something was encoded into it, the same claim `unwrapJsonStringify: true`
+makes today. The envelope says an encoding happened, and the encoding
 field says which one.
 
 ## Acceptance

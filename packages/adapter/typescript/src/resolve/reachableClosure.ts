@@ -495,7 +495,7 @@ export interface ClosureRecognizers {
    * The store that says what a name in a reached body was written as.
    * A recognizer in a unit's own body gets this, and one in a body the
    * walk stepped into needs the same, or a data access class keeping
-   * its table name in a field reads as a class that states no table.
+   * its table name in a field is reported as a class that states no table.
    */
   resolution?: ResolutionStore;
   /**

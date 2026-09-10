@@ -5,7 +5,7 @@
  *
  * Usage: `node scripts/generatePackTables.mjs` writes them,
  * `node scripts/generatePackTables.mjs --check` fails when they are out
- * of date, which is what CI runs.
+ * of date. CI runs the check.
  */
 
 import fs from "node:fs";

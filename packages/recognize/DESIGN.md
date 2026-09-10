@@ -103,8 +103,8 @@ source writes `new User({ name })` and what `User` is comes from the
 `model("User", schema)` call it was declared as.
 
 The last two reach a value rather than a call. `propertyAt` pulls one
-name out of a property bag, which is what a pack that wants a bucket or
-a table wants. `valueAt` hands the value over whole, for a pack whose
+name out of a property bag, for a pack that wants a bucket or a table.
+`valueAt` hands the value over whole, for a pack whose
 rule has to walk it:
 
 | op | what it gives back |
@@ -330,7 +330,7 @@ once for the whole call.
 
 `dialect` is which SQL the statements are written in, and a pack always
 states it. Wherever the store is the database it is the store's own name
-again, which is what Prisma writes above. A Cloudflare D1 database is a
+again, as the Prisma pack above writes it. A Cloudflare D1 database is a
 store of its own whose statements are SQLite, so a pack for it says
 `system: "d1", dialect: "sqlite"`. Nothing defaults, because a reader
 that guessed Postgres for a MySQL project would report the wrong tables
@@ -354,7 +354,7 @@ method table rather than two declarations.
 
 The invocation walk never reaches a tagged template, so `pack` puts a
 chain with this ending on the access walk instead. That walk visits
-calls as well, which is what catches the unsafe form.
+calls as well, so it catches the unsafe form too.
 
 ### A hole that is a table rather than a value
 

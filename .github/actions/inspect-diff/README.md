@@ -119,7 +119,7 @@ Both caches are keyed on the installed version of `@suss/cli` and on `extract` a
 
 The first line counts what moved: how many boundaries, how many of their outcomes and effects, and how many units further in the project changed as well.
 
-An outcome that reached several routes from one filter, middleware or error handler is printed once under `From <wrapper>`, with the routes that have it and the routes the wrapper runs on that still do not, so fourteen routes gaining a 401 reads as the one edit it was. A route that already responded the same way is left off both lines, since nothing about it moved.
+An outcome that reached several routes from one filter, middleware or error handler is printed once under `From <wrapper>`, with the routes that have it and the routes the wrapper runs on that still do not, so fourteen routes gaining a 401 is printed as the one edit it was. A route that already responded the same way is left off both lines, since nothing about it moved.
 
 Then comes a block per boundary that moved, with `outcomes` for what it returns and under what test, and `effects` for what a request now reaches or stopped reaching through the calls it makes. A unit deeper in the project gets no block of its own, since the boundaries that reach it already show what its change did. When no boundary moved, the first line says so.
 

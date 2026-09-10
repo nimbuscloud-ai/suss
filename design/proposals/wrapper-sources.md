@@ -47,9 +47,9 @@ gives nothing. `functionValueOf` tries the returned callable only when
 the argument is a call, so a name still resolves the way it does now.
 
 The returned arrow has no name, and the summary key is file plus name.
-The reference takes the factory's name, `requireCaller`, which is what
-a reader asking why a route returns 401 wants to see, and the unit the
-index creates for the arrow is named the same way. Two registrations
+The reference takes the factory's name, `requireCaller`, since that is
+the name a reader asking why a route returns 401 wants to see, and the
+unit the index creates for the arrow is named the same way. Two registrations
 calling the same factory with different arguments land on one arrow
 node and one summary, which is right: the body is the same, and what
 the arguments change is not something the walk reads.
@@ -60,8 +60,8 @@ the unwrapping answer stays where it is.
 
 A registration whose argument is a call the store cannot follow gets a
 gap on the route, `unfollowedCall`, the way a refused receiver does.
-Today it gets nothing, which is why the motivating service reads as
-unwrapped rather than as partly read.
+Today it gets nothing, which is why the motivating service is reported
+as unwrapped rather than as partly read.
 
 ## A wrapper handed to the constructor
 

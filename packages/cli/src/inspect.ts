@@ -1852,7 +1852,7 @@ function renderTransitionShort(
   spellDefault = false,
   alone = false,
 ): string {
-  // A bare `401` reads as a number to anybody who has not seen a
+  // A bare `401` means nothing to anybody who has not seen a
   // summary before, and a diff is where they usually start.
   const output =
     t.output.type === "response"
@@ -2214,7 +2214,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): Line[] {
     const marked = markedBody(b, a);
     const status = statusWord(a);
     // A body that gained or lost a field under the same status and the
-    // same test reads as one line with the fields marked, where two
+    // same test prints as one line with the fields marked, where two
     // shapes side by side leave the comparing to the reader.
     if (
       marked !== null &&
@@ -2663,8 +2663,8 @@ function fileBlock(
 }
 
 /**
- * What a reader is not seeing, so a cut report never reads as the whole
- * of the change.
+ * What a reader is not seeing, so a cut report never passes for the
+ * whole of the change.
  */
 function omissionLine(
   boundaries: number,

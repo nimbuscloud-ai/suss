@@ -127,7 +127,7 @@ export interface PyClientCall {
   };
   /** Constructors whose instances take the same calls, `Session`. */
   receiverConstructors?: string[];
-  /** What the response object gives a caller, so a guard on it reads as a guard on a status. */
+  /** What the response object gives a caller, so a guard on one of its members counts as a guard on a status. */
   response?: PyClientResponse;
 }
 
@@ -172,7 +172,7 @@ export interface RouteConventions {
   defaultStatusCode?: number;
   /**
    * Set it only when the library reads a status out of the tuple a handler
-   * returns, which is what Flask does with `return body, 201`. Without it
+   * returns, as Flask does with `return body, 201`. Without it
    * the library default applies whatever the body returns, and a route
    * that sets its own status would be reported at the default.
    */
@@ -192,7 +192,7 @@ export interface RouteConventions {
    * own status; a return of anything else keeps the declared one.
    */
   responseConstructors?: PyStatusCall[];
-  /** Unset means the library has no router mounting, and a route's decorator path stands as written. */
+  /** Unset means the library has no router mounting, and a route's decorator path is used as written. */
   routerComposition?: RouterComposition;
   /** The ways the library runs a project's own function around a route. The README lists what each one covers. */
   wrappers?: PyWrapperForm[];
@@ -252,7 +252,7 @@ export interface PyDecoratedWrapperForm {
   continuationParam?: number;
   /**
    * Set when a value returned ends the request and only a bare return
-   * hands on, which is what Flask does with `before_request`.
+   * hands on. Flask's `before_request` works this way.
    */
   returnedValueResponds?: boolean;
   /** The position the library hands the raised exception at. Set on an error handler, which runs only when the handler raised. */

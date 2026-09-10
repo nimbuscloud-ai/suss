@@ -197,7 +197,7 @@ class Lowerer {
   }
 
   /**
-   * `unless ok` runs its body when `ok` is false, so it reads as an `if` on
+   * `unless ok` runs its body when `ok` is false, so it lowers to an `if` on
    * the same test with the two arms the other way around. Without the swap
    * a summary would say a branch runs on the test that skips it.
    */
@@ -214,7 +214,7 @@ class Lowerer {
     };
   }
 
-  /** `render :gone if expired?` gates one statement on one test, so it reads as an if with one arm, on whichever side the test puts it. */
+  /** `render :gone if expired?` gates one statement on one test, so it lowers to an if with one arm, on whichever side the test puts it. */
   private lowerIfModifier(node: RbNode): StructuredStatement<RbNode> {
     const body = field(node, "body");
     const gated = body === null ? [] : [this.lower(body)];

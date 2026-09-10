@@ -308,8 +308,8 @@ function pathAt(
   if (written === undefined) {
     return null;
   }
-  // A path that is one hole and nothing else, which is what a URL
-  // handed in whole gives, names no route and pairs with nothing.
+  // A URL handed in whole evaluates to one hole and nothing else, and
+  // a path like that matches no route and pairs with nothing.
   const path = pathOf(evaluatedValue(written, options.facts));
   return path === undefined || namesNothing(path) ? null : path;
 }

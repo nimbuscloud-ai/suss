@@ -120,8 +120,8 @@ through `const_set` or `Object.const_get`, which nothing here reads.
 The definitions are collected per file and matched afterwards, since which
 file defines a constant is only settled once every file has been read.
 
-A class reached by name rather than by a reading site, which is what an
-ancestry walk does, goes through the naming convention instead: the constant
+A class reached by name rather than by a reading site, as an ancestry walk
+reaches it, goes through the naming convention instead: the constant
 underscores to a path, and that path is looked for under the configured root
 and then under each directory directly beneath it. Rails autoloads from every
 directory under `app`, so `ApplicationController` is
@@ -172,8 +172,8 @@ one assigned to a name in the same method are read.
 A library that takes a URL object rather than a string needs nothing from the
 pack. `URI("...")` and `URI.parse("...")` are Ruby's own, so they are rows in
 the value tables like `File.join`, and every reader of a path sees through them.
-A path that comes back with no text of its own, which is what a URL handed in
-whole gives, names no route and is left unbound.
+A URL handed in whole evaluates to a path with no text of its own, and a path
+like that matches no route and is left unbound.
 
 The enclosing method becomes a `client` unit bound to that method and path, and
 a method that makes two calls is a client of both. A call written outside any

@@ -21,8 +21,7 @@ import type { Piece, Value } from "./value.js";
 const URL_SCHEME = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//;
 
 // Matches the host as well, so replacing a match with "" leaves the
-// path's own leading "/" in place, which is what
-// `new URL(...).pathname` gives back.
+// path's own leading "/" in place, the same as `new URL(...).pathname`.
 const URL_ORIGIN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\/[^/]*/;
 
 const PROTOCOL_RELATIVE = /^\/\//;

@@ -9,9 +9,9 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ## If you use suss
 
-**A GraphQL schema and the resolvers behind it are compared, not counted as rivals.** A schema read with `suss contract` and the code that implements it both provide `gql:Mutation.articleApprove`, and `check` used to report those as "claimed by more than one file": 210 of them on one repository, with nothing compared. A document describes a boundary rather than serving it, which the REST reader already knew. The schema reader also states what each named type stands for now, so the two sides have structure to compare: a field's return type used to be the name `ArticleApprovePayload`, and a name has nothing to compare against the record a resolver declares.
+**A GraphQL schema is compared against the resolvers behind it.** A schema read with `suss contract` and the code that implements it both provide `gql:Mutation.articleApprove`, and `check` used to report those as "claimed by more than one file": 210 of them on one repository, with nothing compared. A document describes a boundary rather than serving it, the same way an OpenAPI document does, and the two are paired now. The schema reader also writes out the record behind each named type, so the two sides have structure to compare: a field's return type used to be the name `ArticleApprovePayload`, and a name has nothing to compare against the record a resolver declares.
 
-**A pack config kept outside the project says so.** A relative path in a pack config is read against the config file, so a config written somewhere else resolves to a directory that is not there. Every class lookup through it came back empty and the run reported hundreds of gaps naming a base class that sits in the project. The run now says which value points where, before it starts:
+**A pack config kept outside the project says so.** A relative path in a pack config is read against the config file, so a config written somewhere else resolves to a directory that is not there. Every class lookup through it came back empty and the run reported hundreds of gaps naming a base class the project defines. The run now says which value points where, before it starts:
 
 ```
 suss.graphql-ruby.json says root is app/graphql, and there is nothing at
@@ -27,7 +27,7 @@ config kept outside the project points at nothing.
 
 **A fragment written in a `.graphql` file counts as registered.** graphql-codegen scans `.ts`, `.tsx` and `.graphql` alike for documents, and the reader looked in the TypeScript alone, so a project keeping a fragment in a file of its own got an error saying its query throws.
 
-**A GraphQL query that spreads a fragment the codegen preset registers is left alone.** graphql-codegen's client preset registers a fragment by writing it in a document of its own and inlines it by name, so nothing interpolates it. `check` read the query on its own, saw a spread with no definition, and reported that the query throws when it runs. On one React codebase that was 20 errors, every one of them wrong. A fragment written on its own in a `gql(...)` call now counts as registered; a fragment written beside an operation still belongs to that document alone, so a query that genuinely ships an undefined spread is still an error.
+**A GraphQL query that spreads a fragment the codegen preset registers is left alone.** graphql-codegen's client preset registers a fragment by writing it in a document of its own and inlines it by name, so nothing interpolates it. `check` read the query on its own, saw a spread with no definition, and reported that the query throws when it runs. On one React codebase that was 20 errors, every one of them wrong. A fragment written on its own in a `gql(...)` call now counts as registered; a fragment written beside an operation still belongs to that document alone, so a query that spreads a fragment nothing defines is still an error.
 
 **A Ruby service object's calls come back, however it keeps its connection.** A class that builds its connection once in `def self.conn` and calls it from every request method used to report nothing: the reader followed a name assigned in the same method and no further. It now reads what a method of that name in the same file comes back with, `@conn ||= Faraday.new(...)` included, and takes a base URL written as the first argument as well as under `url:`. On one Rails application with four vendor services, the calls it finds went from 4 to 12.
 
@@ -44,7 +44,7 @@ config kept outside the project points at nothing.
   second delivery makes that call again.
 ```
 
-PUT, PATCH and DELETE land on the same resource twice, so they are left alone, and so is a FIFO queue. A call that sends an idempotency key is safe and still reported: a summary does not record the headers a call sends, so the finding says so rather than pretending to know. The consumer's call is found whether the pack recorded it as an effect, which is what the TypeScript clients do, or as a unit bound to the route it calls, which is what the Python and Ruby clients do.
+PUT, PATCH and DELETE land on the same resource twice, so they are left alone, and so is a FIFO queue. A call that sends an idempotency key is safe and still reported: a summary does not record the headers a call sends, and the finding says that it cannot tell. The consumer's call is found whether the pack recorded it as an effect, as the TypeScript clients do, or as a unit bound to the route it calls, as the Python and Ruby clients do.
 
 **A GitHub Action posts the behavior diff on a pull request.** Point a workflow at `nimbuscloud-ai/suss/.github/actions/inspect-diff@main` and it reads both sides of the pull request, runs `inspect --diff` over them, and posts one comment that it edits again on every push. The comment says which units changed behavior and how they changed, whether or not the pull request edited the lines they are on. It keeps both summary files as an artifact of the run. The [action README](https://github.com/nimbuscloud-ai/suss/tree/main/.github/actions/inspect-diff) has a workflow to copy. Runs share suss's per-file cache, so reading the head costs about what the pull request touched. If the workflow also runs when something lands on `main`, it reads each of those commits as it goes, and a later pull request compares against what it already read.
 
@@ -69,7 +69,7 @@ From require_login  app/controllers/application_controller.rb
     not at GET /health, which it also runs on
 ```
 
-A route the filter covers that already responded the same way is not one of the exceptions, since nothing about it moved. A route that is on the second line is one where the filter runs and the outcome is still missing, which is what a reviewer checks.
+A route the filter covers that already responded the same way is not one of the exceptions, since nothing about it moved. A route on the second line is one where the filter runs and the outcome is still missing, and that is the line a reviewer checks.
 
 A unit further down the call chain gets no block of its own, since the boundaries that reach it already show what its change did. Under the boundaries, the files with units that moved. A unit with a couple of lines to its name has them written out, one with more gets a count of the outcomes and the effects that moved, and one with a block of its own above is only named. A chain longer than three calls prints its first and last with `(2 intermediate units collapsed)` between them; `--chain full` prints every call and `--chain 0` prints none. Two more flags cap what the report costs: `--changed-files` takes the paths a change touched, one per line, so those files come last, and `--budget` stops the report at a number of characters and counts what it left out. The action passes both.
 
@@ -119,7 +119,7 @@ async with aiohttp.ClientSession() as session:
 
 For that, the Python binder had to bind what `with X() as name` opens, and every name the adapter resolves goes through that binder.
 
-**A Ruby method that calls out through Faraday is a client of the route it calls.** `@suss/client-faraday` reads a request method on the module itself and on a connection `Faraday.new` built, so a service object comes back bound to the route it reaches. A connection built with `url: "https://api.example.com/v1"` serves its calls under `/v1`, and an interpolated path reads as the path parameter it states. Run it as `-f faraday` beside the rails pack.
+**A Ruby method that calls out through Faraday is a client of the route it calls.** `@suss/client-faraday` reads a request method on the module itself and on a connection `Faraday.new` built, so a service object comes back bound to the route it reaches. A connection built with `url: "https://api.example.com/v1"` serves its calls under `/v1`, and an interpolated segment in a path becomes a path parameter. Run it as `-f faraday` beside the rails pack.
 
 **A Python function that calls out over HTTP is a client of the route it calls.** A FastAPI or Flask project used to report its own routes and its database calls, and nothing it reached, so `suss check` had no consumer side in Python at all. `@suss/client-requests` reads the calls requests gives a project, and a function that makes one comes back bound to the method and path it states:
 

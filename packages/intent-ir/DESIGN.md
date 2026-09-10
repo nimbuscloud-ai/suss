@@ -45,7 +45,7 @@ The check is one of `finds` (`nothing` or `something`, what a lookup came back w
 
 A fall-through branch states its own condition rather than pointing at the ones above it, since the summary records that branch's guards as the negations of theirs. `otherwise` is left for the one case that has none to state, which is a default branch the summary recorded nothing for. A word that means "not the branches above" would change what it claims the moment somebody inserts a transition over it, in a file people hand-edit.
 
-A guard that maps to none of this keeps a sentence, and `when` written as one plain string stays valid, which is what existing authored documents use.
+A guard that maps to none of this keeps a sentence, and `when` written as one plain string stays valid, since that is how existing authored documents write it.
 
 The point of naming the boundary is that the line survives a rename of the variable the source used, and that the checker can compare it. `when: "!doc.send().Item"` could do neither.
 
@@ -88,7 +88,7 @@ A clause can go further, since the summary does. `fields` is the columns the acc
 
 Both are optional and a clause with only the verb and the name means what it always did. What they buy is that "the customer's contact details are erased" stops being satisfied by any write at all to that table. The checker asks that the access cover every column the clause stated; an access that states none is unread rather than empty (no pack parses a DynamoDB `UpdateExpression`), and one that asked for every column covers whatever the clause stated.
 
-The outcome id stays free-form on purpose. That is where a person writes what the outcome means, and it is what a PRD scenario links to: `invoice-intake.invoice-recorded`, read as "a duplicate delivery changes nothing". A `kind: prd` document is the level where a scenario reads as prose; `kind: boundary` is system intent for engineers, so it stays structural.
+The outcome id stays free-form on purpose. That is where a person writes what the outcome means, and it is what a PRD scenario links to: `invoice-intake.invoice-recorded`, meaning "a duplicate delivery changes nothing". A `kind: prd` document is the level where a scenario is written as prose; `kind: boundary` is system intent for engineers, so it stays structural.
 
 Adding `results` changes nothing about `response`, `returns` and `throws`. A doc that states only those parses and pairs the way it always did.
 

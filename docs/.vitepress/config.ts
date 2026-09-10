@@ -26,8 +26,8 @@ function firstWithText(...candidates: (string | undefined)[]): string {
 /** The public URL of a page, given the markdown file VitePress read it from. */
 function pageUrl(relativePath: string): string {
   const withoutExtension = relativePath.replace(/\.md$/, "");
-  const clean = withoutExtension.replace(/(^|\/)index$/, "$1");
-  return `${SITE_ORIGIN}${clean}`;
+  const withoutIndex = withoutExtension.replace(/(^|\/)index$/, "$1");
+  return `${SITE_ORIGIN}${withoutIndex}`;
 }
 
 // VitePress config: the site reads straight from docs/*.md, so
@@ -132,7 +132,10 @@ export default defineConfig({
         text: "How-to guides",
         collapsed: false,
         items: [
-          { text: "Adopt suss one step at a time", link: "/guides/adopting-suss" },
+          {
+            text: "Adopt suss one step at a time",
+            link: "/guides/adopting-suss",
+          },
           { text: "Add suss to a project", link: "/guides/add-to-project" },
           { text: "Set up CI checking", link: "/guides/ci-integration" },
           { text: "Set up the MCP server", link: "/guides/mcp-server" },

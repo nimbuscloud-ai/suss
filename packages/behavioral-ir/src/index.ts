@@ -451,7 +451,7 @@ function behaviourOf(t: Transition): string {
  * A transition's id includes a hash of its conditions, so adding a guard
  * in front of a branch gives that branch a new id. Matched by id alone,
  * the diff would then say the branch was removed and an identical one
- * added, which reads as a no-op. Pairing a removed and an added
+ * added, which looks like a no-op. Pairing a removed and an added
  * transition that produce the same thing reports the guard change as
  * the one change it is.
  */

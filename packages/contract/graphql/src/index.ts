@@ -230,7 +230,7 @@ function buildResolverSummary(
     },
     inputs: buildInputs(field),
     transitions: buildTransitions(ownerKey, field),
-    // What each named type this field mentions stands for, so a reader
+    // The record behind each named type this field mentions, so a reader
     // comparing the field against an implementation has structure on
     // both sides rather than a name on one.
     ...(Object.keys(definitions).length > 0 ? { definitions } : {}),
