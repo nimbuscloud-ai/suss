@@ -6,11 +6,13 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 import {
+  sqlalchemyModels,
   sqlalchemyRawSql,
   sqlalchemyStorage,
 } from "@suss/framework-sqlalchemy";
 
 import type {
+  PyModelQueries,
   PythonPack,
   RawSqlPattern,
   StoragePattern,
@@ -106,6 +108,24 @@ export function sqlmodelStorage(
   ];
 }
 
+/**
+ * What SQLModel gives back when a call is passed one of a project's
+ * model classes. A model is written `class User(SQLModel, table=True)`,
+ * and `exec` is SQLModel's own name for running a statement, so both go
+ * on top of what SQLAlchemy already declares.
+ */
+export function sqlmodelModels(): PyModelQueries[] {
+  return sqlalchemyModels().map((model) => ({
+    baseNames: [...model.baseNames, "SQLModel"],
+    givesBack: model.givesBack,
+    entryMethods: [...model.entryMethods, { method: "exec", argument: 0 }],
+    entryFunctions: [
+      ...model.entryFunctions,
+      { module: "sqlmodel", name: "select", argument: 0 },
+    ],
+  }));
+}
+
 /** `text` for a statement the project wrote itself, from SQLModel's root and from SQLAlchemy's. */
 export function sqlmodelRawSql(options: SqlmodelPackOptions): RawSqlPattern[] {
   return [
@@ -130,6 +150,7 @@ export function withSqlmodel(
   return {
     ...pack,
     storage: [...(pack.storage ?? []), ...sqlmodelStorage(options)],
+    models: [...(pack.models ?? []), ...sqlmodelModels()],
     rawSql: [...(pack.rawSql ?? []), ...sqlmodelRawSql(options)],
   };
 }
@@ -147,6 +168,7 @@ export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
     protocol: options.storageSystem,
     discovery: [],
     storage: sqlmodelStorage(options),
+    models: sqlmodelModels(),
     rawSql: sqlmodelRawSql(options),
   };
 }
