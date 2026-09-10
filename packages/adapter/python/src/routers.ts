@@ -32,7 +32,13 @@
 
 import { type MountEdge, mountPathsOf } from "@suss/resolution";
 
-import { bodyStatements, field, rangeOf, stripDecorators } from "./ast.js";
+import {
+  bodyStatements,
+  field,
+  nestedStatements,
+  rangeOf,
+  stripDecorators,
+} from "./ast.js";
 import { readCallArguments } from "./decorators.js";
 import {
   containedValues,
@@ -1176,7 +1182,9 @@ type StatementVisitor = (
   scan: Scan,
 ) => void;
 
-/** Statement shapes whose body can contain a call the reading follows. Every other block statement is left alone, since the binder records no name written inside one. */
+// A `def` opens its own scope and a `for` binds its targets. Every other
+// block runs in the scope it is written in, so a mount under an `if` or a
+// `try` reads the same names as one written at the top level.
 const WALK_DESCENTS: Record<
   string,
   (
@@ -1217,11 +1225,20 @@ const WALK_DESCENTS: Record<
       visit,
     );
   },
+  if_statement: descendInPlace,
+  try_statement: descendInPlace,
+  while_statement: descendInPlace,
+  with_statement: descendInPlace,
+  match_statement: descendInPlace,
 };
 
-function nestedStatements(stmt: PyNode): PyNode[] {
-  const body = field(stmt, "body");
-  return body === null ? [] : bodyStatements(body);
+function descendInPlace(
+  stmt: PyNode,
+  position: WalkPosition,
+  scan: Scan,
+  visit: StatementVisitor,
+): void {
+  walkStatements(nestedStatements(stmt), position, scan, visit);
 }
 
 function walkStatements(

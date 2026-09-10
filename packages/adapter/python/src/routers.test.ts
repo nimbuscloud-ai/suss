@@ -1491,54 +1491,93 @@ describe("a mount whose function may not be the one the app calls", () => {
   });
 });
 
-describe("blocks the mount walk does not enter", () => {
-  const mountInside = (header: string, indent: string) =>
-    [
-      "from fastapi import FastAPI, APIRouter",
-      "",
-      "app = FastAPI()",
-      'router = APIRouter(prefix="/items")',
-      "",
-      "",
-      '@router.get("/{item_id}")',
-      "def read_item(item_id: int):",
-      "    pass",
-      "",
-      "",
-      header,
-      `${indent}app.include_router(router, prefix="/api")`,
-      "",
-    ].join("\n");
+const mountInside = (header: string, indent: string) =>
+  [
+    "from fastapi import FastAPI, APIRouter",
+    "",
+    "app = FastAPI()",
+    'router = APIRouter(prefix="/items")',
+    "",
+    "",
+    '@router.get("/{item_id}")',
+    "def read_item(item_id: int):",
+    "    pass",
+    "",
+    "",
+    header,
+    `${indent}app.include_router(router, prefix="/api")`,
+    "",
+  ].join("\n");
 
-  it("does not read a mount written under an if", async () => {
-    const units = await unitsOf(mountInside("if True:", "    "));
-    expect(pathOf(units, "read_item")).toBeNull();
+describe("blocks the mount walk enters in the scope they are written in", () => {
+  it("reads a mount written under an if", async () => {
+    const units = await unitsOf(
+      mountInside('if settings.ENV == "local":', "    "),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
   });
 
-  it("does not read a mount written under a try", async () => {
+  it("reads a mount written under an elif", async () => {
+    const units = await unitsOf(
+      mountInside("if False:\n    pass\nelif True:", "    "),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("reads a mount written under an else", async () => {
+    const units = await unitsOf(
+      mountInside("if False:\n    pass\nelse:", "    "),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("reads a mount written under a try", async () => {
     const units = await unitsOf(
       mountInside("try:", "    ").replace(
         /\n$/,
         "\nexcept ImportError:\n    pass\n",
       ),
     );
-    expect(pathOf(units, "read_item")).toBeNull();
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
   });
 
-  it("does not read a mount written under a with", async () => {
+  it("reads a mount written under an except", async () => {
+    const units = await unitsOf(
+      mountInside("try:\n    pass\nexcept ImportError:", "    "),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("reads a mount written under a with", async () => {
     const units = await unitsOf(mountInside("with app.app_context():", "    "));
-    expect(pathOf(units, "read_item")).toBeNull();
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
   });
 
+  it("reads a mount written in a while", async () => {
+    const units = await unitsOf(mountInside("while pending():", "    "));
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("reads a mount written under a match case", async () => {
+    const units = await unitsOf(
+      mountInside('match settings.ENV:\n    case "local":', "        "),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+
+  it("reads a mount a function makes under a condition", async () => {
+    const units = await unitsOf(
+      mountInside("def create_app(debug: bool):\n    if debug:", "        "),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+  });
+});
+
+describe("blocks the mount walk does not enter", () => {
   it("does not read a mount written in a class method", async () => {
     const units = await unitsOf(
       mountInside("class Factory:\n    def build(self):", "        "),
     );
-    expect(pathOf(units, "read_item")).toBeNull();
-  });
-
-  it("does not read a mount written in a while", async () => {
-    const units = await unitsOf(mountInside("while pending():", "    "));
     expect(pathOf(units, "read_item")).toBeNull();
   });
 
