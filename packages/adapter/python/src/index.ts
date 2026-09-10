@@ -19,7 +19,7 @@ export {
   objectReturnedBy,
   resolveCalls,
 } from "./facts/resolve.js";
-export { emitValueFacts, nodeId, readKey } from "./facts/values.js";
+export { emitValueFacts, nameKeyIn, nodeId, readKey } from "./facts/values.js";
 export { PythonWhySession } from "./facts/why.js";
 export { emitEntryFact, emitModuleImportFacts, unitKey } from "./facts.js";
 export {

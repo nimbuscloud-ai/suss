@@ -2,14 +2,31 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
+import { children } from "../ast.js";
 import { parsePython } from "../parser.js";
-import { emitValueFacts } from "./values.js";
+import { emitValueFacts, parameterList, parameterShapes } from "./values.js";
+
+import type { PyNode } from "../parser.js";
 
 async function factsFor(source: string) {
   const tree = await parsePython(source);
   const db = new Database();
   emitValueFacts(db, "f.py", tree.rootNode);
   return db;
+}
+
+/** The first def in a tree, for a test that wants the node rather than the facts it emits. */
+function findFunctionNode(node: PyNode): PyNode | null {
+  if (node.type === "function_definition") {
+    return node;
+  }
+  for (const child of children(node)) {
+    const found = findFunctionNode(child);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
 }
 
 /** The tuples of one relation, with the file prefix dropped so a test reads. */
@@ -237,7 +254,7 @@ describe("python value facts", () => {
     ]);
   });
 
-  it("binds a name a method's body assigns", async () => {
+  it("keys a name a method's body assigns under that method", async () => {
     const db = await factsFor(
       [
         "class Holder:",
@@ -246,7 +263,8 @@ describe("python value facts", () => {
         "",
       ].join("\n"),
     );
-    expect(rows(db, "binds").map((row) => row[0])).toContain("#app");
+    const [method] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "binds").map((row) => row[0])).toContain(`${method}#app`);
   });
 
   it("keeps a class attribute under its name", async () => {
@@ -345,5 +363,334 @@ describe("python value facts", () => {
   it("gives no key to the marker that ends the positional parameters", async () => {
     const db = await factsFor("def build(a, *, flag=False):\n    pass\n");
     expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
+  });
+
+  it("keys a name two functions both write under each of them", async () => {
+    const db = await factsFor(
+      [
+        "def first():",
+        "    query = build()",
+        "",
+        "def second():",
+        "    query = build()",
+        "",
+      ].join("\n"),
+    );
+    const keys = rows(db, "binds")
+      .map((row) => String(row[0]))
+      .filter((key) => key.endsWith("#query"));
+    expect(new Set(keys).size, "the two queries collided").toBe(2);
+  });
+
+  it("binds a name a function writes once to what it writes", async () => {
+    const db = await factsFor(
+      ["def handler():", "    query = build()", ""].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [call] = rows(db, "call")[0] ?? [];
+    expect(rows(db, "binds")).toContainEqual([`${funcKey}#query`, call]);
+  });
+
+  it("leaves a function's own name out of what the module exports", async () => {
+    const db = await factsFor(
+      ["def build():", "    registry = make()", ""].join("\n"),
+    );
+    expect(rows(db, "exportsAs").map((row) => row[1])).toEqual(["build"]);
+  });
+
+  it("ends a name written as None and then as a call holding the call", async () => {
+    const db = await factsFor(
+      [
+        "def handler(flag):",
+        "    client = None",
+        "    if flag:",
+        "        client = Client()",
+        "    return client",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [call] = rows(db, "call")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#client`, call]]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#client`,
+    );
+  });
+
+  it("ends a name written twice in a row holding the second write", async () => {
+    const db = await factsFor(
+      [
+        "def handler(session):",
+        "    query = session.query(Entity)",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [second] = rows(db, "call")[1] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, second]]);
+  });
+
+  it("says nothing about a name whose second write is behind a branch", async () => {
+    const db = await factsFor(
+      [
+        "def handler(flag):",
+        "    q = Entity.query",
+        "    if flag:",
+        "        q = q.filter(1)",
+        "    return q",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#q`,
+    );
+  });
+
+  it("says nothing about a parameter the body writes again", async () => {
+    const db = await factsFor(
+      ["def handler(db):", "    db = connect()", "    return db", ""].join(
+        "\n",
+      ),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([]);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#db`,
+    );
+  });
+
+  it("makes a loop target the function's own name with no value settled", async () => {
+    const db = await factsFor(
+      [
+        "def handler(items):",
+        "    for item in items:",
+        "        pass",
+        "    return item",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#item`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#item`,
+    );
+  });
+
+  it("reads a name a nested def only reads as the outer function's", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    query = build()",
+        "    def inner():",
+        "        return query",
+        "    return inner",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const returned = rows(db, "returnsValue").map((row) => row[1]);
+    expect(returned).toContain(`${outerKey}#query`);
+  });
+
+  it("writes a name a function declares global under the module", async () => {
+    const db = await factsFor(
+      [
+        "counter = 0",
+        "",
+        "def bump():",
+        "    global counter",
+        "    counter = 1",
+        "",
+      ].join("\n"),
+    );
+    const keys = rows(db, "binds").map((row) => String(row[0]));
+    expect(keys.filter((key) => key.endsWith("#counter"))).toEqual([
+      "#counter",
+      "#counter",
+    ]);
+  });
+
+  it("lists a function's parameters by name, leaving a splat and a bare separator out", async () => {
+    const tree = await parsePython(
+      "def build(a, /, *args, flag=False):\n    pass\n",
+    );
+    const fn = findFunctionNode(tree.rootNode);
+    if (fn === null) {
+      throw new Error("expected a function_definition node");
+    }
+    expect(parameterList(fn)).toEqual(["a", "flag"]);
+  });
+
+  it("pairs a parameter with the default it declares", async () => {
+    const tree = await parsePython("def build(a, flag=False):\n    pass\n");
+    const fn = findFunctionNode(tree.rootNode);
+    if (fn === null) {
+      throw new Error("expected a function_definition node");
+    }
+    const shapes = parameterShapes(fn);
+    expect(shapes.map((parameter) => parameter.name)).toEqual(["a", "flag"]);
+    expect(shapes[0]?.default).toBeNull();
+    expect(shapes[1]?.default?.text).toBe("False");
+  });
+
+  it("skips a dictionary child written as a spread rather than a pair", async () => {
+    const db = await factsFor("config = {**other}\n");
+    expect(db.size("holdsProperty")).toBe(0);
+    expect(db.size("objectValue")).toBe(1);
+  });
+
+  it("binds nothing for an augmented assignment whose left is not a plain name", async () => {
+    const db = await factsFor("counts[0] += 1\n");
+    expect(db.size("binds")).toBe(0);
+  });
+
+  it("says nothing about a name a += statement reassigns, since it states no value of its own", async () => {
+    const db = await factsFor(
+      [
+        "def handler():",
+        "    count = 0",
+        "    count += 1",
+        "    return count",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#count`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#count`,
+    );
+    expect(rows(db, "endsHolding").map((row) => row[0])).not.toContain(
+      `${funcKey}#count`,
+    );
+  });
+
+  it("sends a name a nested function declares nonlocal to the enclosing function", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    total = 0",
+        "    def inner():",
+        "        nonlocal total",
+        "        total = 1",
+        "    inner()",
+        "    return total",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const keys = rows(db, "binds").map((row) => row[0]);
+    expect(keys.filter((key) => key === `${outerKey}#total`)).toHaveLength(2);
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${outerKey}#total`);
+  });
+
+  it("makes a with-target the function's own name with no value settled", async () => {
+    const db = await factsFor(
+      [
+        "def handler():",
+        "    with open('config') as fh:",
+        "        return fh",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#fh`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#fh`,
+    );
+  });
+
+  it("makes an except-target the function's own name with no value settled", async () => {
+    const db = await factsFor(
+      [
+        "def handler():",
+        "    try:",
+        "        pass",
+        "    except Exception as err:",
+        "        return err",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#err`);
+    expect(rows(db, "binds").map((row) => row[0])).not.toContain(
+      `${funcKey}#err`,
+    );
+  });
+
+  it("binds a match-case alias the same way an as-pattern does elsewhere", async () => {
+    const db = await factsFor(
+      [
+        "def handler(x):",
+        "    match x:",
+        "        case str() as s:",
+        "            return s",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")[0]?.[1]).toBe(`${funcKey}#s`);
+  });
+
+  it("does not count a nested def's own read as a read before the outer write", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    query = build()",
+        "    def inner():",
+        "        return query",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const secondCall = rows(db, "call")[1]?.[0];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${outerKey}#query`, secondCall],
+    ]);
+  });
+
+  it("does not count a name inside a nested class body as a read before the outer write", async () => {
+    const db = await factsFor(
+      [
+        "def outer():",
+        "    query = build()",
+        "    class Inner:",
+        "        query = 1",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [outerKey] = rows(db, "func")[0] ?? [];
+    const secondCall = rows(db, "call")[1]?.[0];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${outerKey}#query`, secondCall],
+    ]);
+  });
+
+  it("does not count a name mentioned in an import path as a read before a later write", async () => {
+    const db = await factsFor(
+      [
+        "def handler(session):",
+        "    query = session.query(Entity)",
+        "    import query.sub",
+        "    query = query.filter(1)",
+        "    return query",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const secondCall = rows(db, "call")[1]?.[0];
+    expect(rows(db, "endsHolding")).toEqual([[`${funcKey}#query`, secondCall]]);
+  });
+
+  it("records nothing for a with-target that unpacks rather than naming one thing", async () => {
+    const db = await factsFor("with build() as (first, second):\n    pass\n");
+    expect(db.size("binds")).toBe(0);
   });
 });
