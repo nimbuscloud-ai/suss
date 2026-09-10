@@ -90,7 +90,8 @@ function readSimpleArgs(
     if (keyNode === null || valueNode === null) {
       continue;
     }
-    const symbolKey = hashKeySymbolName(keyNode);
+    // `constraints: x` and `:constraints => x` are the same keyword.
+    const symbolKey = hashKeySymbolName(keyNode) ?? symbolValue(keyNode);
     if (symbolKey !== null) {
       keyword[symbolKey] = valueNode;
     } else {
@@ -358,6 +359,11 @@ function handleVerb(
   method: string,
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
+  const on = wordValue(args.keyword.on);
+  // Inside a resource block the path continues from the resource, the
+  // same place a bare verb hangs its own.
+  const base =
+    ctx.resource === undefined ? ctx.pathPrefix : baseForOn(ctx.resource, on);
   const target = readRouteTarget(args);
   if (target !== null) {
     const literalPath = args.positional[0]
@@ -367,7 +373,7 @@ function handleVerb(
     if (path !== null) {
       out.add(joinKey(ctx.modulePrefix, target.controllerKey), target.action, {
         method,
-        path: joinPath(ctx.pathPrefix, path),
+        path: joinPath(base, path),
       });
     }
     return;
@@ -376,14 +382,13 @@ function handleVerb(
   if (ctx.resource === undefined) {
     return;
   }
-  const symbol = args.positional[0] ? symbolValue(args.positional[0]) : null;
-  if (symbol === null) {
+  const action = args.positional[0] ? wordValue(args.positional[0]) : null;
+  if (action === null) {
     return;
   }
-  const base = baseForOn(ctx.resource, wordValue(args.keyword.on));
-  out.add(ctx.resource.controllerKey, symbol, {
+  out.add(ctx.resource.controllerKey, action, {
     method,
-    path: `${base}/${symbol}`,
+    path: `${base}/${action}`,
   });
 }
 
