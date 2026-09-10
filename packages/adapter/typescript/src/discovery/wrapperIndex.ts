@@ -16,12 +16,7 @@ import { Node, type SourceFile } from "ts-morph";
 
 import { joinMountedPath } from "@suss/resolution";
 
-import { factKeyOf, nodeId } from "../facts/extract.js";
-import {
-  classifyStop,
-  declarationsBehind,
-  worthRecording,
-} from "../resolve/unfollowedCall.js";
+import { nodeId } from "../facts/extract.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import {
   registrationSubjectsOf,
@@ -37,6 +32,7 @@ import {
   propertyValueOf,
   stringValueOf,
 } from "./resolveValue.js";
+import { factoryNameOf, factoryStopOf } from "./wrapperFactory.js";
 
 import type { UnfollowedCall, WrapperReference } from "@suss/behavioral-ir";
 import type {
@@ -507,45 +503,6 @@ function candidateOf(
  */
 function labelFor(targetArg: Node, wraps: WrapperMethodRegistration): string {
   return factoryNameOf(targetArg) ?? wraps.method;
-}
-
-function factoryNameOf(targetArg: Node): string | undefined {
-  const written = factKeyOf(targetArg);
-  if (!Node.isCallExpression(written)) {
-    return undefined;
-  }
-  const callee = written.getExpression();
-  if (Node.isIdentifier(callee)) {
-    return callee.getText();
-  }
-  if (Node.isPropertyAccessExpression(callee)) {
-    return callee.getName();
-  }
-  return undefined;
-}
-
-/**
- * The stop a registration leaves when the factory it calls could not be
- * followed to one function. A factory in a dependency leaves none, for
- * the reason the resolve README gives: `app.use(cors())` on every route
- * is volume, and the run already describes the dependency.
- */
-function factoryStopOf(targetArg: Node): UnfollowedCall | null {
-  const written = factKeyOf(targetArg);
-  if (!Node.isCallExpression(written)) {
-    return null;
-  }
-  const callee = factoryNameOf(targetArg);
-  if (callee === undefined) {
-    return null;
-  }
-  const reason = classifyStop(
-    declarationsBehind(written.getExpression().getSymbol()),
-  );
-  if (!worthRecording(reason)) {
-    return null;
-  }
-  return { callee, reason: "unresolvedWrapper" };
 }
 
 /**

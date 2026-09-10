@@ -1530,14 +1530,18 @@ function stampWrappers(
   unit: DiscoveredUnit,
   wrappers: WrapperIndex | undefined,
 ): void {
-  if (wrappers === undefined || unit.registrationSubjectId === undefined) {
-    return;
-  }
-  const applied = wrappers.wrappersFor(unit.registrationSubjectId);
+  // The app's own wrappers come first and run outermost; the ones the
+  // route lists run inside them, in the order they are written.
+  const applied = [
+    ...(wrappers === undefined || unit.registrationSubjectId === undefined
+      ? []
+      : wrappers.wrappersFor(unit.registrationSubjectId)),
+    ...(unit.routeWrappers ?? []),
+  ];
   if (applied.length === 0) {
     return;
   }
-  raw.wrappers = [...applied];
+  raw.wrappers = applied;
   for (const wrapper of applied) {
     recordFileDependency(wrapper.file);
   }
@@ -1552,7 +1556,10 @@ function unfollowedStopsOf(
   unit: DiscoveredUnit,
   wrappers: WrapperIndex | undefined,
 ): UnfollowedCall[] {
-  const stops = unit.unfollowed === undefined ? [] : [unit.unfollowed];
+  const stops = [
+    ...(unit.unfollowed === undefined ? [] : [unit.unfollowed]),
+    ...(unit.routeUnfollowed ?? []),
+  ];
   if (wrappers === undefined || unit.registrationSubjectId === undefined) {
     return stops;
   }
