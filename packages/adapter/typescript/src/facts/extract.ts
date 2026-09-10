@@ -22,7 +22,7 @@ import {
   ts,
 } from "ts-morph";
 
-import { NAMESPACE_IMPORT_NAME } from "@suss/resolution";
+import { NAMESPACE_IMPORT_NAME, valueLeftByWrites } from "@suss/resolution";
 
 import {
   declarationCarryingTheBody,
@@ -30,8 +30,8 @@ import {
 } from "../discovery/shared.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
+  describeWrites,
   isWrittenAgain,
-  sameConstructionAcrossWrites,
   writesToBinding,
   writesToField,
 } from "./assignments.js";
@@ -529,16 +529,30 @@ export function emitValue(
 }
 
 /**
+ * The write a name comes down to, by the policy every adapter shares.
+ * Null when the writes settle on nothing.
+ */
+function settledWrite<T extends Node>(
+  values: ReadonlyArray<T>,
+  inOrder: boolean,
+): T | null {
+  const key = valueLeftByWrites(describeWrites(values), inOrder);
+  if (key === null) {
+    return null;
+  }
+  return values[Number(key)] ?? null;
+}
+
+/**
  * What a declaration's name comes down to. A name written once is its
  * initializer, and `binds` says so. A name written again is whatever
  * the last write left there, and saying `binds` about the initializer
  * would give every reader the value the name had before the module
  * finished.
  *
- * Which write that is comes from `writesToBinding`, which decides it
- * when control flow cannot change the result, or when it can but every
- * write is the same construction. Short of that, nothing is written
- * down and a reader asking about the name gets nothing.
+ * Which write that is comes from `valueLeftByWrites`. When it settles
+ * on none of them, nothing is written down and a reader asking about
+ * the name gets nothing.
  */
 function emitBindingValues(
   db: Database,
@@ -556,19 +570,13 @@ function emitBindingValues(
   }
 
   const { values, inOrder } = writesToBinding(declaration);
-  const last = values[values.length - 1];
-  if (inOrder && last !== undefined) {
-    fact(db, "endsHolding", declarationId, emitValue(db, table, last));
+  const settled = settledWrite(values, inOrder);
+  if (settled === null) {
+    reassignedUnstated.add(declarationId);
     return;
   }
 
-  const construction = sameConstructionAcrossWrites(values);
-  if (construction !== null) {
-    fact(db, "endsHolding", declarationId, emitValue(db, table, construction));
-    return;
-  }
-
-  reassignedUnstated.add(declarationId);
+  fact(db, "endsHolding", declarationId, emitValue(db, table, settled));
 }
 
 const reassignedUnstated = new Set<string>();
@@ -590,9 +598,9 @@ export function forgetReassignedNamesUnstated(): void {
 /**
  * What a class field comes down to. `writesToField` says whether the
  * field takes one value every reader sees, which is the case a
- * constructor assignment makes; a field it cannot order that way is
- * still written down when every write is the same construction, and
- * otherwise comes down to nothing rather than its first value.
+ * constructor assignment makes, and the shared policy settles the rest.
+ * A field it settles on nothing for comes down to nothing rather than
+ * to its first value.
  */
 function emitFieldValues(
   db: Database,
@@ -600,16 +608,12 @@ function emitFieldValues(
   declaration: PropertyDeclaration,
 ): void {
   const { values, inOrder } = writesToField(declaration);
-  const last = values[values.length - 1];
-  if (inOrder && last !== undefined && Node.isExpression(last)) {
-    fact(db, "binds", nodeId(declaration), emitValue(db, table, last));
+  const settled = settledWrite(values, inOrder);
+  if (settled === null || !Node.isExpression(settled)) {
     return;
   }
 
-  const construction = sameConstructionAcrossWrites(values);
-  if (construction !== null) {
-    fact(db, "binds", nodeId(declaration), emitValue(db, table, construction));
-  }
+  fact(db, "binds", nodeId(declaration), emitValue(db, table, settled));
 }
 
 /**
@@ -625,21 +629,19 @@ function emitParameterPropertyRead(
   declaration: ParameterDeclaration,
 ): void {
   const { values, inOrder } = writesToField(declaration);
-  const last = values[values.length - 1];
-  if (inOrder && last !== undefined && Node.isExpression(last)) {
-    fact(db, "binds", referenceId, emitValue(db, table, last));
+  const settled = settledWrite(values, inOrder);
+  if (settled === null) {
     return;
   }
-  if (inOrder && last !== undefined) {
-    table.byId.set(nodeId(last), last);
-    fact(db, "binds", referenceId, nodeId(last));
+  if (Node.isExpression(settled)) {
+    fact(db, "binds", referenceId, emitValue(db, table, settled));
     return;
   }
 
-  const construction = sameConstructionAcrossWrites(values);
-  if (construction !== null) {
-    fact(db, "binds", referenceId, emitValue(db, table, construction));
-  }
+  // The parameter itself is not an expression, so it is written down
+  // here rather than through `emitValue`.
+  table.byId.set(nodeId(settled), settled);
+  fact(db, "binds", referenceId, nodeId(settled));
 }
 
 /**

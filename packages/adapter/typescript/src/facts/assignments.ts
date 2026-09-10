@@ -14,13 +14,14 @@
 // statement list, so each runs exactly once in the order it is
 // written, and nothing at that level reads the binding before the last
 // one. A write inside a branch, a loop, or a function body cannot be
-// ordered this way, but it can still be read when every such write is
-// the same construction. Short of that, the name resolves to nothing.
+// ordered this way. `valueLeftByWrites` takes the values and that
+// answer, and says what the name comes down to.
 
 import { Node, SyntaxKind, VariableDeclarationKind } from "ts-morph";
 
 import { createPerFileCache } from "../perFileCache.js";
 
+import type { NameWrite } from "@suss/resolution";
 import type {
   Expression,
   ParameterDeclaration,
@@ -131,38 +132,19 @@ function writesToBindingUncached(
 }
 
 /**
- * Whether every write in a set the adapter could not order is the same
- * construction, so the name was assigned that no matter which write
- * ran last. A write of `null` or `undefined` is set aside first: that
- * is a placeholder for "not yet assigned", not a value in its own
- * right, and a name whose writes are only placeholders stays
- * unresolved rather than resolving to one of them.
- *
- * Returns the shared construction, or null when the writes do not
- * agree, or agree on nothing but placeholders.
+ * The values a name takes, as `valueLeftByWrites` reads them. Each one
+ * is keyed by its place in the list, which is all the answer has to
+ * name for the caller to find the node again.
  */
-export function sameConstructionAcrossWrites(
-  values: ReadonlyArray<Node>,
-): Expression | null {
-  const candidates = values.filter((value) => !isNotYetPlaceholder(value));
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  let construction: Expression | null = null;
-  for (const value of candidates) {
-    if (!isConstruction(value)) {
-      return null;
-    }
-    if (construction !== null && sourceOf(value) !== sourceOf(construction)) {
-      return null;
-    }
-    construction = value;
-  }
-  return construction;
+export function describeWrites(values: ReadonlyArray<Node>): NameWrite[] {
+  return values.map((value, index) => ({
+    value: String(index),
+    placeholder: isNotYetPlaceholder(value),
+    construction: isConstruction(value) ? sourceOf(value) : null,
+  }));
 }
 
-/** A `null` or `undefined` literal, standing in for "not written yet". */
+/** A `null` or `undefined` literal, which a later write is expected to replace. */
 function isNotYetPlaceholder(value: Node): boolean {
   return (
     value.getKind() === SyntaxKind.NullKeyword ||
