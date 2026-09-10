@@ -16,6 +16,7 @@
   "dependencies": {
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
+    "@suss/cli": "*",
     "@suss/client-axios": "*",
     "@suss/client-web": "*",
     "@suss/extractor": "*",

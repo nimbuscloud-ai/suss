@@ -7,6 +7,12 @@ export {
   ask,
   preloadForQuestion,
 } from "./ask.js";
+export {
+  type CallFacts,
+  type FunctionKey,
+  functionOf,
+  readCallFacts,
+} from "./callFacts.js";
 export { check, checkDir, checkDirectory } from "./check.js";
 export { type CheckAtOptions, type CheckAtResult, checkAt } from "./checkAt.js";
 export { contract } from "./contract.js";

@@ -40,7 +40,7 @@ import { lineRangeKey, offsetKeyFor } from "../walk/nodeKeys.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "../conditions.js";
-import type { ClosureFacts } from "./boundaryEffects.js";
+import type { ClosureFacts } from "./reachableClosure.js";
 
 interface RethrowSource {
   /** Name of the callee inside the try block whose throw we might be propagating. */
