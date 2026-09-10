@@ -95,10 +95,7 @@ describe("what a Rails controller action reaches", () => {
       touched
         .filter((touch) => touch.summary === service)
         .map((touch) => touch.touched.label),
-    ).toEqual([
-      "function-call:reachable",
-      "postgresql:ActiveRecord::Base/Order",
-    ]);
+    ).toEqual(["function-call:reachable", "postgresql:Order"]);
   });
 
   it("answers the question the way a user asks it", async () => {
@@ -117,7 +114,7 @@ describe("what a Rails controller action reaches", () => {
     expect(exitCode).toBe(0);
     const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
     expect(answer?.headline).toContain("reaches 1 boundary");
-    expect(text).toContain("reads postgresql:ActiveRecord::Base/Order");
+    expect(text).toContain("reads postgresql:Order");
   });
 
   it("walks the chain for a why question without asking TypeScript to prove a Ruby hop", async () => {
@@ -128,8 +125,7 @@ describe("what a Rails controller action reaches", () => {
     fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
 
     const { exitCode } = answerQuestion({
-      question:
-        "why does GET /orders reach postgresql:ActiveRecord::Base/Order",
+      question: "why does GET /orders reach postgresql:Order",
       dir: out,
       project: fixtureRoot,
       output: path.join(dir, "answer.txt"),

@@ -121,7 +121,7 @@ describe("what a Python route reaches", () => {
       touched
         .filter((touch) => touch.summary === store)
         .map((touch) => touch.touched.label),
-    ).toEqual(["function-call:reachable", "postgresql:sqlalchemy/select"]);
+    ).toEqual(["function-call:reachable", "postgresql:Orders"]);
   });
 
   it("answers the question the way a user asks it", async () => {
@@ -139,7 +139,7 @@ describe("what a Python route reaches", () => {
     expect(exitCode).toBe(0);
     const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
     expect(answer?.headline).toContain("reaches 1 boundary");
-    expect(text).toContain("reads postgresql:sqlalchemy/select");
+    expect(text).toContain("reads postgresql:Orders");
   });
 
   it("walks the chain for a why question without asking TypeScript to prove a Python hop", async () => {
@@ -169,7 +169,7 @@ describe("what a Python route reaches", () => {
     fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
 
     const { exitCode } = answerQuestion({
-      question: "why does GET /orders reach postgresql:sqlalchemy/select",
+      question: "why does GET /orders reach postgresql:Orders",
       dir: out,
       project: dir,
       output: path.join(dir, "answer.txt"),
@@ -179,7 +179,7 @@ describe("what a Python route reaches", () => {
     const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
     expect(text).toContain("list_orders -> orders_for -> read_orders");
     expect(text).toContain(
-      "read_orders reads postgresql:sqlalchemy/select through select(Orders.id).all() (app/store.py:3)",
+      "read_orders reads postgresql:Orders through select(Orders.id).all() (app/store.py:3)",
     );
     expect(text).not.toContain("in its own body");
   });
@@ -248,7 +248,7 @@ describe("what a Python route reaches through a function passed by name", () => 
     expect(exitCode).toBe(0);
     expect(answer?.headline).toContain("reaches 1 boundary");
     const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
-    expect(text).toContain("reads postgresql:sqlalchemy/select");
+    expect(text).toContain("reads postgresql:Orders");
     expect(text).not.toContain("unfollowedCall");
   });
 });

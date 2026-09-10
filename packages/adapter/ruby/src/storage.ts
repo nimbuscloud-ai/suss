@@ -164,7 +164,7 @@ function storageEffect(
     binding: storageBinding({
       recognition: "ruby-storage",
       storageSystem: pattern.storageSystem,
-      scope: pattern.baseClasses[0] ?? "",
+      scope: "default",
       container: constantName(model),
     }),
     callee: call.text,
