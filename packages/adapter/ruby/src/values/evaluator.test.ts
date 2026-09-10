@@ -675,4 +675,17 @@ describe("stringValueOf", () => {
     const other = field(statements[2] as RbNode, "right") as RbNode;
     expect(stringValueOf(other)).toBeNull();
   });
+
+  it("reads a block parameter as the string a caller supplies for it", async () => {
+    const tree = await parseRuby(
+      '%w[users u].each do |root_path|\n  subject = "#{root_path}/x"\nend',
+    );
+    const block = field(bodyStatements(tree.rootNode)[0] as RbNode, "block");
+    const body = field(block as RbNode, "body") as RbNode;
+    const node = subjectNodeIn(body);
+    expect(stringValueOf(node)).toBeNull();
+    expect(stringValueOf(node, undefined, new Map([["root_path", "u"]]))).toBe(
+      "u/x",
+    );
+  });
 });

@@ -377,6 +377,10 @@ describe("railsFramework", () => {
         '    get guidelines_alias => "static#show", :id => "guidelines"\n' +
         "  end\n" +
         '  [:a, :b].each { |name| get name => "letters#show" }\n' +
+        '  %i[c d].each { |name| get name => "symbols#show" }\n' +
+        '  %w[e].map { |name| get name => "mapped#show" }\n' +
+        '  %w[f].each { get "f" => "unbound#show" }\n' +
+        '  [g].each { |name| get name => "unspelled#show" }\n' +
         "end\n";
       expect(routeFor(source, "UsersController", "index")).toEqual({
         method: "GET",
@@ -405,6 +409,13 @@ describe("railsFramework", () => {
         method: "GET",
         path: "/a",
       });
+      expect(routeFor(source, "SymbolsController", "show")).toEqual({
+        method: "GET",
+        path: "/c",
+      });
+      expect(routeFor(source, "MappedController", "show")).toBeNull();
+      expect(routeFor(source, "UnboundController", "show")).toBeNull();
+      expect(routeFor(source, "UnspelledController", "show")).toBeNull();
     });
 
     it("leaves a loop over anything but a literal list unread", () => {
