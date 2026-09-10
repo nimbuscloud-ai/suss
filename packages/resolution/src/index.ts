@@ -101,6 +101,8 @@ export type {
 //   mayHold(x, y)               one write to x wrote y, and nothing
 //                               says which write ran last
 //   writesUnstated(x)           a write to x states no value at all
+//   givesBackOne(base, m)       a pack's word: m on a class reaching base
+//                               gives back one of that class
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -217,6 +219,23 @@ export const RESOLUTION_RULES = [
       lit("objectValue", v("cls")),
     ],
     "class instance",
+  ),
+
+  // A finder the library declares, keyed on the base a pack named so a
+  // project class with a method of the same name on another hierarchy is
+  // left alone. The DESIGN says what a chain of them composes into.
+  rule(
+    "stepsTo",
+    [v("r"), v("cls"), VALUE_STEP],
+    [
+      lit("call", v("r"), v("c")),
+      lit("readsProperty", v("c"), v("o"), v("m")),
+      lit("objectOf", v("o"), v("cls")),
+      lit("objectValue", v("cls")),
+      lit("libraryBase", v("cls"), v("n")),
+      lit("givesBackOne", v("n"), v("m")),
+    ],
+    "declared finder",
   ),
 
   // Wrapper transparency, derived: calling a factory that returns a
@@ -505,6 +524,20 @@ export const RESOLUTION_RULES = [
       lit("extends", v("cls"), v("base")),
       lit("comesTo", v("base"), v("baseCls")),
       lit("contains", v("baseCls"), v("n"), v("held")),
+    ],
+  ),
+
+  // The library base a class's ancestry arrives at, however many of a
+  // project's own classes sit in between. A base the run declares has a
+  // node to keep walking from; one it does not has only a name.
+  rule("libraryBase", [v("c"), v("n")], [lit("extendsNamed", v("c"), v("n"))]),
+  rule(
+    "libraryBase",
+    [v("c"), v("n")],
+    [
+      lit("extends", v("c"), v("x")),
+      lit("comesTo", v("x"), v("b")),
+      lit("libraryBase", v("b"), v("n")),
     ],
   ),
 
