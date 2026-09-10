@@ -170,7 +170,7 @@ Reference and internals: [Summary format](docs/behavioral-summary-format.md), [I
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
-Forty-three packs read code today, reached by name with `-f`:
+Forty-four packs read code today, reached by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
