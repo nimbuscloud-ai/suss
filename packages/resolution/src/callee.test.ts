@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { Database, lit, rule, variable as v } from "@suss/datalog";
 
-import { calleeOutcomeOf, calleeOutcomes } from "./callee.js";
+import { calleeOutcomeOf, calleeOutcomes, couldBeSettled } from "./callee.js";
 import { RESOLUTION_QUESTIONS, RESOLUTION_RULES, VALUE_STEP } from "./index.js";
 import {
   ASKING_RELATIONS,
@@ -217,6 +217,42 @@ describe("calleeOutcomeOf", () => {
     expect(
       calleeOutcomeOf(aliased(), "run", resolutionProgram(language)),
     ).toEqual({ kind: "function", key: "load" });
+  });
+});
+
+describe("couldBeSettled", () => {
+  const over = (facts: Array<[string, ...string[]]>, key: string): boolean => {
+    const db = new Database();
+    for (const [name, ...tuple] of facts) {
+      db.add(name, tuple);
+    }
+    return couldBeSettled(db, key);
+  };
+
+  it("says yes to a name something wrote to", () => {
+    expect(over([["binds", "run", "load"]], "run")).toBe(true);
+  });
+
+  it("says yes to a value the run states outright", () => {
+    expect(over([["func", "load"]], "load")).toBe(true);
+    expect(over([["objectValue", "Service"]], "Service")).toBe(true);
+  });
+
+  it("says yes to a read off another value, and to what a call gave back", () => {
+    expect(over([["readsProperty", "host", "config", "host"]], "host")).toBe(
+      true,
+    );
+    expect(over([["call", "made", "build"]], "made")).toBe(true);
+  });
+
+  it("says no to a key this run says nothing about", () => {
+    expect(over([["binds", "other", "load"]], "run")).toBe(false);
+  });
+
+  it("agrees with the outcome, which is undeclared for such a key", () => {
+    expect(outcomeOf([["binds", "other", "load"]], "run").kind).toBe(
+      "undeclared",
+    );
   });
 });
 

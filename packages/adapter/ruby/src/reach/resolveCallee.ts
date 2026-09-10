@@ -13,9 +13,13 @@
  * self.` is looked up somewhere else again.
  */
 
-import { calleeOutcomeOf, calleeOutcomes } from "@suss/resolution";
+import {
+  calleeOutcomeOf,
+  calleeOutcomes,
+  couldBeSettled,
+} from "@suss/resolution";
 
-import { ancestryOf, methodInAncestry } from "../ancestry.js";
+import { methodInAncestry } from "../ancestry.js";
 import { field, singletonMethodsByName } from "../ast.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
 import { readKey } from "../facts/values.js";
@@ -24,7 +28,7 @@ import { calleeMethodName } from "../paths/effects.js";
 import type { UnfollowedReason } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { CalleeOutcome } from "@suss/resolution";
-import type { AncestorLookup, ReachedBody } from "../ancestry.js";
+import type { AncestorLookup, Ancestry, ReachedBody } from "../ancestry.js";
 import type { RbNode } from "../parser.js";
 
 /** A method in this run, and the export path its summary gets. */
@@ -45,6 +49,8 @@ export type CalleeResolution =
 
 export interface ReachContext {
   readonly lookup: AncestorLookup;
+  /** Every class the run defines, with its method-lookup order worked out once, so placing a call reads a map rather than walking the chain again. */
+  readonly ancestries: ReadonlyMap<string, Ancestry>;
   /** Every method a project file writes outside any class or module, by name. More than one file writing the same name settles nothing. */
   readonly topLevelMethods: ReadonlyMap<string, ReachedFunction[]>;
   /** The value facts, which are where a receiver is settled. */
@@ -132,12 +138,12 @@ export function calleeSpellings(
 }
 
 /** What a call's callee comes down to, once `calleeSpellings` has asked about the batch. */
-export async function resolveCallee(
+export function resolveCallee(
   call: RbNode,
   site: CallSite,
   ctx: ReachContext,
   read?: CalleeSpellings,
-): Promise<CalleeResolution> {
+): CalleeResolution {
   const spelling = read?.spellingOf.get(call.id) ?? spellingFor(call, site);
   if (spelling.kind === "stopped") {
     return spelling;
@@ -145,10 +151,56 @@ export async function resolveCallee(
   if (spelling.kind === "implicitSelf") {
     return resolveImplicitSelf(spelling.name, site, ctx);
   }
-  const outcome =
-    read?.outcomes.get(spelling.key) ??
-    calleeOutcomeOf(ctx.facts, spelling.key, RUBY_PROGRAM);
-  return asCallee(spelling, outcome, site, ctx);
+  return asCallee(spelling, outcomeFor(spelling.key, ctx, read), site, ctx);
+}
+
+function outcomeFor(
+  key: string,
+  ctx: ReachContext,
+  read?: CalleeSpellings,
+): CalleeOutcome {
+  return (
+    read?.outcomes.get(key) ?? calleeOutcomeOf(ctx.facts, key, RUBY_PROGRAM)
+  );
+}
+
+/**
+ * Whether to ask the rules about this no-argument call at all. Ask when
+ * the run says anything about its receiver. Most of what a Rails body
+ * writes is `config.host` on a name nothing built, and asking about
+ * every one of those makes each later question costlier without
+ * changing an answer.
+ */
+export function mightReadAsACall(
+  call: RbNode,
+  site: CallSite,
+  ctx: ReachContext,
+): boolean {
+  const spelling = spellingFor(call, site);
+  return (
+    spelling.kind === "receiver" && couldBeSettled(ctx.facts, spelling.key)
+  );
+}
+
+/**
+ * Whether a call written with no arguments is a method call rather than
+ * a property read. It is one when the rules bring its receiver down to
+ * something this run defines. `config.host`, whose receiver they say
+ * nothing about, is the property read, and reporting it as a call would
+ * put an effect and a gap on every attribute a body reads.
+ */
+export function readsAsACall(
+  call: RbNode,
+  site: CallSite,
+  ctx: ReachContext,
+  read?: CalleeSpellings,
+): boolean {
+  const spelling = read?.spellingOf.get(call.id) ?? spellingFor(call, site);
+  if (spelling.kind !== "receiver") {
+    return false;
+  }
+  const outcome = outcomeFor(spelling.key, ctx, read);
+  return outcome.kind === "function" || outcome.kind === "object";
 }
 
 /** Where the receiver of this call is settled, or the name Ruby would look up on `self`. */
@@ -173,12 +225,12 @@ function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
   };
 }
 
-async function asCallee(
+function asCallee(
   spelling: ReceiverSpelling,
   outcome: CalleeOutcome,
   site: CallSite,
   ctx: ReachContext,
-): Promise<CalleeResolution> {
+): CalleeResolution {
   if (outcome.kind === "severalSources") {
     return stop("multipleSources");
   }
@@ -224,11 +276,11 @@ function objectsBehind(facts: Database, key: string): string[] {
  * settled on a class is one of that class, and its methods come from the
  * ancestry.
  */
-async function methodOnObject(
+function methodOnObject(
   spelling: ReceiverSpelling,
   objectKey: string,
   ctx: ReachContext,
-): Promise<CalleeResolution> {
+): CalleeResolution {
   const qualifiedName = ctx.classNames.get(objectKey);
   // An array, a hash, or anything else written out where it is used.
   if (qualifiedName === undefined) {
@@ -273,12 +325,12 @@ function functionCallee(key: string, ctx: ReachContext): CalleeResolution {
  * anything else. Used for a `method(:name)` reference passed by name
  * into a call, as an argument or as an `&`-prefixed block argument.
  */
-export async function resolveMethodReference(
+export function resolveMethodReference(
   name: string,
   site: CallSite,
   ctx: ReachContext,
-): Promise<ReachedFunction | null> {
-  const resolved = await resolveImplicitSelf(name, site, ctx);
+): ReachedFunction | null {
+  const resolved = resolveImplicitSelf(name, site, ctx);
   return resolved.kind === "followed" ? resolved.target : null;
 }
 
@@ -288,13 +340,13 @@ function leavesRoomForATopLevelMethod(reason: UnfollowedReason): boolean {
 }
 
 /** A bare or explicit-`self` call: the enclosing class's own ancestry first, then every method the project writes outside a class, the way Ruby mixes `Object`'s private methods into everything. */
-async function resolveImplicitSelf(
+function resolveImplicitSelf(
   methodName: string,
   site: CallSite,
   ctx: ReachContext,
-): Promise<CalleeResolution> {
+): CalleeResolution {
   if (site.enclosingQualifiedName !== null) {
-    const onClass = await methodOnAncestryOf(
+    const onClass = methodOnAncestryOf(
       site.enclosingQualifiedName,
       methodName,
       ctx,
@@ -323,16 +375,15 @@ function resolveTopLevelName(
   return followed(candidates[0] as ReachedFunction);
 }
 
-async function methodOnAncestryOf(
+function methodOnAncestryOf(
   qualifiedName: string,
   methodName: string,
   ctx: ReachContext,
-): Promise<CalleeResolution> {
-  const ownBlocks = ctx.lookup.localDefinition?.(qualifiedName) ?? null;
-  if (ownBlocks === null) {
+): CalleeResolution {
+  const ancestry = ctx.ancestries.get(qualifiedName);
+  if (ancestry === undefined) {
     return stop("outsideRun");
   }
-  const ancestry = await ancestryOf(qualifiedName, ownBlocks, ctx.lookup);
   const found = methodInAncestry(ancestry, methodName);
   if (found.type === "found") {
     return followed(reachedMethod(found.method, found.block, methodName));

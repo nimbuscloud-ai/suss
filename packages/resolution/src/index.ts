@@ -2,6 +2,7 @@ export {
   type CalleeOutcome,
   calleeOutcomeOf,
   calleeOutcomes,
+  couldBeSettled,
   writtenSourcesOf,
 } from "./callee.js";
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";

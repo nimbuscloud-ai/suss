@@ -1091,6 +1091,73 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     expect(helper.transitions[0]?.effects).toEqual([]);
   });
 
+  it("follows a call written with no arguments through an alias chain", async () => {
+    writeQueryType("orders", ["a = Entity.new", "b = a", "c = b", "c.run"]);
+    write("app/services/entity.rb", [
+      "class Entity",
+      "  def run",
+      "    1",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const helper = unitNamed(summaries, "run");
+    expect(helper.kind).toBe("library");
+    expect(helper.identity.exportPath).toEqual(["Entity", "run"]);
+
+    const field = unitNamed(summaries, "Query.orders");
+    expect(calls(field)).toEqual([["c.run", summaryIdentifier(helper)]]);
+  });
+
+  it("reads a no-argument call on a receiver nothing settles as a property read", async () => {
+    writeQueryType("orders", ["config.host"]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(calls(field)).toEqual([]);
+    expect(field.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
+  });
+
+  it("says nothing about a no-argument call whose class declares no such method", async () => {
+    writeQueryType("orders", ["entity = Entity.new", "entity.name"]);
+    write("app/services/entity.rb", [
+      "class Entity",
+      "  attr_reader :name",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(calls(field)).toEqual([]);
+    expect(field.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
+  });
+
+  it("reports the gap a define_method stop gives a no-argument call", async () => {
+    writeQueryType("orders", ["entity = Entity.new", "entity.run"]);
+    write("app/services/entity.rb", [
+      "class Entity",
+      "  define_method(:run) { 1 }",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(summaries.filter((summary) => summary.kind === "library")).toEqual(
+      [],
+    );
+    const field = unitNamed(summaries, "Query.orders");
+    expect(field.gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "entity.run",
+      }),
+    );
+  });
+
   it("skips a reopened block that declares no body when scanning for a resolver", async () => {
     write("app/graphql/types/query_type.rb", [
       "class Types::QueryType < Types::BaseObject",

@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import { parseRuby } from "../parser.js";
-import { invocationEffects } from "./effects.js";
+import { EVERY_ARGLESS_CALL, invocationEffects } from "./effects.js";
 
 import type { RbNode } from "../parser.js";
 
 async function effectsFor(lines: string[], inherited?: ReadonlySet<string>) {
   const tree = await parseRuby(lines.join("\n"));
   return invocationEffects(tree.rootNode.namedChildren[0] as RbNode, inherited);
+}
+
+/** The same body, read the way a discovered unit is, before the walk takes the property reads back. */
+async function effectsWithArglessCalls(lines: string[]) {
+  const tree = await parseRuby(lines.join("\n"));
+  return invocationEffects(
+    tree.rootNode.namedChildren[0] as RbNode,
+    undefined,
+    EVERY_ARGLESS_CALL,
+  );
 }
 
 /** The callee of each invocation, with the conditions gating it. */
@@ -70,6 +80,39 @@ describe("ruby invocation effects", () => {
   it("leaves a property read out, since it does no work", async () => {
     const effects = await effectsFor(["def total", "  object.total", "end"]);
     expect(effects).toEqual([]);
+  });
+
+  it("records a call written with no arguments", async () => {
+    const effects = await effectsWithArglessCalls([
+      "def total(record)",
+      "  record.save",
+      "end",
+    ]);
+    expect(shape(effects)).toEqual([["record.save", []]]);
+  });
+
+  it("gates both calls written in one statement on that arm's test", async () => {
+    const effects = await effectsWithArglessCalls([
+      "def total(flag, scope)",
+      "  if flag",
+      "    Filter.new(scope).results",
+      "  end",
+      "end",
+    ]);
+    expect(shape(effects)).toEqual([
+      ["Filter.new(scope).results", ["flag"]],
+      ["Filter.new", ["flag"]],
+    ]);
+  });
+
+  it("keeps the call a no-argument call is written on, since both of them run", async () => {
+    const lines = ["def total(query)", "  Filter.new(query).results", "end"];
+    expect(shape(await effectsFor(lines)).map((row) => row[0])).toEqual([
+      "Filter.new",
+    ]);
+    expect(
+      shape(await effectsWithArglessCalls(lines)).map((row) => row[0]),
+    ).toEqual(["Filter.new(query).results", "Filter.new"]);
   });
 
   it("leaves a raise out, since it leaves the method rather than doing work", async () => {
