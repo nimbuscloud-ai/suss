@@ -7,10 +7,10 @@
  * resources, `namespace`, `scope`, the bare HTTP-verb methods and
  * `match ... via:`, `root`, `draw(:name)`, `constraints` and
  * `with_options` blocks, `concern`/`concerns`, `.each` over a literal
- * list, and `mount` of an engine the project keeps in its own tree.
- * Anything else the file declares, `direct` and a gem's own routing
- * call among them, is left unread and reported once as a gap rather
- * than guessed at. The package README says why each stops here.
+ * list, `mount` of an engine the project keeps in its own tree, and a
+ * gem's block call whose body is written in that grammar. Anything
+ * else, `direct` and a gem's own routing call among them, is left
+ * unread and reported once as a gap. The README says why each stops.
  */
 
 import fs from "node:fs";
@@ -223,6 +223,8 @@ interface EngineRouteSet {
 class RouteAccumulator {
   private readonly byKey = new Map<string, Route>();
   private readonly unread = new Map<string, Set<string>>();
+  /** Per file, each gem block call whose body was walked as though the call changed nothing about it. */
+  private readonly walkedBlocks = new Map<string, Set<string>>();
   private readonly missingDrawn: { file: string; name: string }[] = [];
   /** The block each `concern :name do ... end` declared, for `concerns` to replay. */
   readonly concerns = new Map<string, RbNode>();
@@ -247,9 +249,11 @@ class RouteAccumulator {
   }
 
   recordUnread(callName: string): void {
-    const names = this.unread.get(this.file) ?? new Set<string>();
-    names.add(callName);
-    this.unread.set(this.file, names);
+    addUnderFile(this.unread, this.file, callName);
+  }
+
+  recordWalkedBlock(callName: string): void {
+    addUnderFile(this.walkedBlocks, this.file, callName);
   }
 
   recordMissingDrawn(name: string): void {
@@ -276,6 +280,12 @@ class RouteAccumulator {
         `${file} also declares ${names}, which this pack does not read; whatever those declarations route is missing from what suss reports`,
       );
     }
+    for (const [file, walked] of this.walkedBlocks) {
+      const names = [...walked].sort().join(", ");
+      gaps.push(
+        `${file} wraps routes in ${names}, which this pack does not know; it read the routes inside as though the wrapper changed nothing about their path or controller`,
+      );
+    }
     for (const { file, name } of this.missingDrawn) {
       gaps.push(
         `${file} draws ${name}, but there is no ${name}.rb under ${path.basename(this.drawDirectory)}/ beside it to read; whatever that file routes is missing from what suss reports`,
@@ -283,6 +293,16 @@ class RouteAccumulator {
     }
     return gaps;
   }
+}
+
+function addUnderFile(
+  byFile: Map<string, Set<string>>,
+  file: string,
+  name: string,
+): void {
+  const names = byFile.get(file) ?? new Set<string>();
+  names.add(name);
+  byFile.set(file, names);
 }
 
 function joinKey(prefix: string, segment: string): string {
@@ -782,12 +802,38 @@ function walkBody(
       continue;
     }
     const handler = HANDLERS[name];
-    if (handler === undefined) {
-      out.recordUnread(name);
+    if (handler !== undefined) {
+      handler(statement, ctx, out);
       continue;
     }
-    handler(statement, ctx, out);
+    if (blockWrittenInRoutesGrammar(statement)) {
+      out.recordWalkedBlock(name);
+      walkBlockInPlace(statement, ctx, out);
+      continue;
+    }
+    out.recordUnread(name);
   }
+}
+
+/**
+ * A gem's own block call, `devise_scope :user do ... end` or
+ * `authenticated :admin do ... end`, wraps routes written in the
+ * ordinary grammar and, in every gem read so far, leaves their path
+ * and controller alone. One whose block is something else, a `direct`
+ * building a URL say, stays unread with the call's own name.
+ */
+function blockWrittenInRoutesGrammar(call: RbNode): boolean {
+  const block = field(call, "block");
+  const body = block !== null ? field(block, "body") : null;
+  if (body === null) {
+    return false;
+  }
+  return bodyStatements(body).some(
+    (statement) =>
+      statement.type === "call" &&
+      field(statement, "receiver") === null &&
+      Object.hasOwn(HANDLERS, field(statement, "method")?.text ?? ""),
+  );
 }
 
 type DeclarationKind = "prepend" | "draw" | "append";
