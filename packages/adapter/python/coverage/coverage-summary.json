@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3792,
-      "covered": 3659,
+      "total": 3791,
+      "covered": 3660,
       "skipped": 0,
-      "pct": 96.49
+      "pct": 96.54
     },
     "statements": {
-      "total": 3841,
-      "covered": 3707,
+      "total": 3840,
+      "covered": 3708,
       "skipped": 0,
-      "pct": 96.51
+      "pct": 96.56
     },
     "functions": {
-      "total": 778,
-      "covered": 772,
+      "total": 779,
+      "covered": 773,
       "skipped": 0,
       "pct": 99.22
     },
     "branches": {
-      "total": 3028,
-      "covered": 2656,
+      "total": 3030,
+      "covered": 2660,
       "skipped": 0,
-      "pct": 87.71
+      "pct": 87.78
     },
     "branchesTrue": {
       "total": 0,
@@ -476,9 +476,9 @@
   "src/storage.ts": {
     "lines": {
       "total": 270,
-      "covered": 264,
+      "covered": 265,
       "skipped": 0,
-      "pct": 97.77
+      "pct": 98.14
     },
     "functions": {
       "total": 62,
@@ -488,15 +488,15 @@
     },
     "statements": {
       "total": 271,
-      "covered": 265,
+      "covered": 266,
       "skipped": 0,
-      "pct": 97.78
+      "pct": 98.15
     },
     "branches": {
       "total": 260,
-      "covered": 222,
+      "covered": 223,
       "skipped": 0,
-      "pct": 85.38
+      "pct": 85.76
     }
   },
   "src/stubEvidence.ts": {
@@ -839,28 +839,28 @@
   },
   "src/reach/resolveCallee.ts": {
     "lines": {
-      "total": 128,
+      "total": 127,
       "covered": 121,
       "skipped": 0,
-      "pct": 94.53
+      "pct": 95.27
     },
     "functions": {
-      "total": 28,
-      "covered": 26,
+      "total": 29,
+      "covered": 27,
       "skipped": 0,
-      "pct": 92.85
+      "pct": 93.1
     },
     "statements": {
-      "total": 129,
+      "total": 128,
       "covered": 122,
       "skipped": 0,
-      "pct": 94.57
+      "pct": 95.31
     },
     "branches": {
-      "total": 115,
-      "covered": 100,
+      "total": 117,
+      "covered": 103,
       "skipped": 0,
-      "pct": 86.95
+      "pct": 88.03
     }
   },
   "src/values/evaluator.ts": {
