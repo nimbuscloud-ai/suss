@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { preloadRubyGrammar } from "@suss/adapter-ruby";
 
 import { railsFramework } from "./index.js";
+import { readRoutes } from "./routes.js";
 
 import type { ControllerActions } from "@suss/adapter-ruby";
 
@@ -1054,7 +1055,7 @@ describe("railsFramework", () => {
     it("reads an engine that isolates no namespace at the top-level controller key", () => {
       const pack = projectWith(app('  mount Billing::Engine, at: "/billing"'), {
         "engines/billing/lib/billing/engine.rb":
-          "module Billing\n  class Engine < Rails::Engine\n  end\nend\n",
+          "module Billing\n  class Engine < Rails::Engine\n    engine_name :billing\n  end\nend\n",
         "engines/billing/config/routes.rb": ENGINE_ROUTES,
       });
       expect(pattern(pack).routeFor("InvoicesController", "index")).toEqual({
@@ -1176,18 +1177,55 @@ describe("railsFramework", () => {
       ]);
     });
 
-    it("skips an engine root pattern that matches nothing", () => {
+    it("skips an engine root pattern that matches nothing, and a root with no lib/", () => {
       const pack = projectWith(
         app('  get "ping" => "status#show"'),
         {},
         {
-          engineRoots: ["nowhere/*", "also/missing"],
+          engineRoots: ["nowhere/*", "also/missing", "config"],
         },
       );
       expect(pattern(pack).routeFor("StatusController", "show")).toEqual({
         method: "GET",
         path: "/ping",
       });
+      expect(pack.discoveryInputs?.([])).toEqual([
+        path.join(dir, "config", "routes.rb"),
+      ]);
+    });
+
+    it("skips a routes.draw block with no owner in front of routes, and lists a gem's routing call as unread", () => {
+      const pack = projectWith(
+        'routes.draw do\n  get "orphan" => "status#show"\nend\n' +
+          app('  devise_for :users\n  get "ping" => "status#show"'),
+      );
+      const p = pattern(pack);
+      expect(p.routeFor("StatusController", "show")).toEqual({
+        method: "GET",
+        path: "/ping",
+      });
+      expect(p.routingGaps?.()).toEqual([
+        expect.stringContaining("also declares devise_for"),
+      ]);
+    });
+
+    it("reads nothing from an extra routes file that does not exist", () => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-engines-"));
+      const table = readRoutes({
+        routesFile: {
+          file: write("config/routes.rb", app('  get "ping" => "status#show"')),
+          displayPath: "config/routes.rb",
+        },
+        engines: [],
+        routesFiles: [
+          { file: path.join(dir, "missing.rb"), displayPath: "missing.rb" },
+        ],
+      });
+      expect(table.routeFor("status", "show")).toEqual({
+        method: "GET",
+        path: "/ping",
+      });
+      expect(table.gaps).toEqual([]);
     });
   });
 });

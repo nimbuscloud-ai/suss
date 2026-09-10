@@ -953,15 +953,3 @@ export function readRoutes(input: RoutesInput): RouteTable {
     gaps: out.gaps(),
   };
 }
-
-/** Reads one routes file on its own, with nothing mounted into it. */
-export function readRoutesFile(
-  absRoutesPath: string,
-  displayPath: string,
-): RouteTable {
-  return readRoutes({
-    routesFile: { file: absRoutesPath, displayPath },
-    engines: [],
-    routesFiles: [],
-  });
-}
