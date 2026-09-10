@@ -430,6 +430,102 @@ describe("ruby value facts", () => {
     expect(rows(db, "binds")).toContainEqual([keyOf(source, "self"), classKey]);
   });
 
+  it("reads an instance variable as a property of the class it is written in", async () => {
+    const source = "class C\n  def go\n    @thing\n  end\nend\n";
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    expect(rows(db, "readsProperty")).toContainEqual([
+      keyOf(source, "@thing"),
+      classKey,
+      "@thing",
+    ]);
+  });
+
+  it("puts what a method writes to an instance variable on the class", async () => {
+    const source = "class C\n  def set\n    @thing = Entity.all\n  end\nend\n";
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    expect(rows(db, "holdsProperty")).toContainEqual([
+      classKey,
+      "@thing",
+      keyOf(source, "Entity.all"),
+    ]);
+  });
+
+  it("does not read the name an assignment writes to as a property", async () => {
+    const source = "class C\n  def set\n    @thing = Entity.all\n  end\nend\n";
+    const db = await factsFor(source);
+    expect(rows(db, "readsProperty").map((row) => row[2])).not.toContain(
+      "@thing",
+    );
+  });
+
+  it("names both values when two methods write an instance variable differently", async () => {
+    const source = [
+      "class C",
+      "  def one",
+      "    @thing = First.all",
+      "  end",
+      "  def two",
+      "    @thing = Second.all",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "holdsProperty")
+        .filter((row) => row[1] === "@thing")
+        .map((row) => row[2]),
+    ).toEqual([keyOf(source, "First.all"), keyOf(source, "Second.all")]);
+  });
+
+  it("leaves out a write that narrows an instance variable with a call on itself", async () => {
+    const source = [
+      "class C",
+      "  def one",
+      "    @thing = First.all",
+      "  end",
+      "  def two",
+      "    @thing = @thing.where(a: 1)",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "holdsProperty")
+        .filter((row) => row[1] === "@thing")
+        .map((row) => row[2]),
+    ).toEqual([keyOf(source, "First.all")]);
+  });
+
+  it("says nothing about what `@count += 1` writes, since that value is written nowhere", async () => {
+    const source = "class C\n  def go\n    @count += 1\n  end\nend\n";
+    const db = await factsFor(source);
+    expect(
+      rows(db, "holdsProperty").filter((row) => row[1] === "@count"),
+    ).toEqual([]);
+  });
+
+  it("writes what `@thing ||= build` puts there, which runs as a whole value", async () => {
+    const source = "class C\n  def go\n    @thing ||= Entity.all\n  end\nend\n";
+    const db = await factsFor(source);
+    expect(
+      rows(db, "holdsProperty")
+        .filter((row) => row[1] === "@thing")
+        .map((row) => row[2]),
+    ).toEqual([keyOf(source, "Entity.all")]);
+  });
+
+  it("says nothing about an instance variable written outside any class", async () => {
+    const db = await factsFor("@thing = Entity.all\n@thing\n");
+    expect(db.size("holdsProperty")).toBe(0);
+    expect(rows(db, "readsProperty").map((row) => row[2])).not.toContain(
+      "@thing",
+    );
+  });
+
   it("settles nothing for a parameter the body writes again", async () => {
     const db = await factsFor("def act(scope)\n  scope = Entity.all\nend\n");
     expect(db.size("endsHolding")).toBe(0);
