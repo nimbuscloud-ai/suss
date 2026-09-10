@@ -12,46 +12,9 @@
  * meets the same stops. The words for an outcome stay with a language.
  */
 
-import { deriveOnDemand, evaluate } from "@suss/datalog";
+import { askResolution } from "./program.js";
 
-import {
-  ANSWER_RELATIONS,
-  RESOLUTION_QUESTIONS,
-  RESOLUTION_RULES,
-} from "./index.js";
-
-import type { Database, Rule } from "@suss/datalog";
-
-/**
- * The rules rewritten so a relation is derived only where a question
- * reaches it. Built on the first question and kept, because the rewrite
- * does not depend on facts.
- */
-let onDemand: ReturnType<typeof deriveOnDemand> | null = null;
-
-function demandDrivenRules(): Rule[] {
-  onDemand ??= deriveOnDemand(
-    [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS],
-    ANSWER_RELATIONS,
-  );
-  return onDemand.rules;
-}
-
-/**
- * Ask what these values come down to, then derive. Asking about every
- * value in a project costs seconds on a large one and settles questions
- * nobody has, so a caller lists the ones it needs.
- */
-export function askResolution(db: Database, keys: Iterable<string>): void {
-  const fresh = [...keys].filter((key) => !db.has("wanted", [key]));
-  if (fresh.length === 0) {
-    return;
-  }
-  for (const key of fresh) {
-    db.add("wanted", [key]);
-  }
-  evaluate(db, demandDrivenRules());
-}
+import type { Database } from "@suss/datalog";
 
 /** What a value a call is made through turns out to be. */
 export type CalleeOutcome =
@@ -139,7 +102,7 @@ function sourcesOf(db: Database, key: string): string[] {
  */
 const WRITE_RELATIONS = ["binds", "endsHolding", "mayHold"];
 
-function writtenSourcesOf(db: Database, key: string): string[] {
+export function writtenSourcesOf(db: Database, key: string): string[] {
   const found: string[] = [];
   for (const relation of WRITE_RELATIONS) {
     for (const row of db.lookup(relation, 0, key)) {

@@ -10,7 +10,11 @@
  * dot, and a name only a wildcard import could have brought in.
  */
 
-import { calleeOutcomeOf, calleeOutcomes } from "@suss/resolution";
+import {
+  calleeOutcomeOf,
+  calleeOutcomes,
+  writtenSourcesOf,
+} from "@suss/resolution";
 
 import { children, enclosingFunction, field, isFunction } from "../ast.js";
 import { readKey } from "../facts/values.js";
@@ -135,18 +139,11 @@ export function functionNamed(
   return outcome.kind === "function" ? functionAt(outcome.key, ctx) : null;
 }
 
-const WRITE_RELATIONS = ["binds", "endsHolding", "mayHold"];
-
 /** Whether a write in this run gave the name a value other than a function declared under it. */
 function assignedElsewhere(facts: Database, nameKey: string): boolean {
-  for (const relation of WRITE_RELATIONS) {
-    for (const row of facts.lookup(relation, 0, nameKey)) {
-      if (!facts.has("func", [String(row[1])])) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return writtenSourcesOf(facts, nameKey).some(
+    (source) => !facts.has("func", [source]),
+  );
 }
 
 /** Parentheses say nothing about a value, so a callee is read through them. */

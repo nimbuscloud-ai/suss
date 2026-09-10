@@ -393,6 +393,9 @@ function describeWrite(emitter: Emitter, write: LocalWrite): NameWrite {
     placeholder: value?.type === "nil",
     construction:
       value !== null && isConstruction(value) ? sourceOf(value) : null,
+    // Ruby writes a method call and an attribute read the same way, so
+    // a narrowing write cannot be told from one that replaces the value.
+    narrowsName: false,
   };
 }
 

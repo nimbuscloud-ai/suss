@@ -683,16 +683,9 @@ function matchedChains(
   if (chains.length === 0) {
     return [];
   }
-  // Anything already asked about was derived when the run asked, so asking
-  // again would rerun the rules for an answer that is already there.
-  const alreadyAsked = new Set(
-    options.facts.facts("wanted").map((row) => String(row[0])),
-  );
   resolveCalls(
     options.facts,
-    storageCallees(calls, options.filePath, options.couldMatch).filter(
-      (key) => !alreadyAsked.has(key),
-    ),
+    storageCallees(calls, options.filePath, options.couldMatch),
   );
 
   const matched: MatchedChain[] = [];

@@ -2,27 +2,14 @@
 // The rules live in @suss/resolution and are the same ones the TypeScript
 // adapter evaluates, so a Python value is followed the way any value is.
 
-import { deriveOnDemand, evaluate } from "@suss/datalog";
 import {
-  ANSWER_RELATIONS,
   askResolution,
   placeholderValues,
-  RESOLUTION_QUESTIONS,
-  RESOLUTION_RULES,
   writtenValueOf as sharedWrittenValueOf,
   singleAnswers,
 } from "@suss/resolution";
 
 import type { Database } from "@suss/datalog";
-
-/**
- * The rules rewritten so a relation is derived only where a question reaches
- * it. Built once, because the rewrite does not depend on the facts.
- */
-const RESOLUTION_PROGRAM = deriveOnDemand(
-  [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS],
-  ANSWER_RELATIONS,
-);
 
 /** Ask what these calls come down to, then derive. */
 export function resolveCalls(db: Database, callKeys: readonly string[]): void {
@@ -47,10 +34,7 @@ export interface SubjectOrigin {
  * imports what the name refers to.
  */
 export function originsOf(db: Database, nameKey: string): SubjectOrigin[] {
-  if (!db.facts("wantedOrigin").some((row) => String(row[0]) === nameKey)) {
-    db.add("wantedOrigin", [nameKey]);
-    evaluate(db, RESOLUTION_PROGRAM.rules);
-  }
+  askResolution(db, [nameKey], "wantedOrigin");
   return db
     .facts("wantedComesFrom")
     .filter((row) => String(row[0]) === nameKey)
@@ -83,10 +67,7 @@ export function subjectConstructions(
   }
 
   const askSubjects = (keys: Iterable<string>): void => {
-    for (const key of keys) {
-      db.add("wantedSubject", [key]);
-    }
-    evaluate(db, RESOLUTION_PROGRAM.rules);
+    askResolution(db, keys, "wantedSubject");
   };
   askSubjects(valueKeys);
   const placeholders = placeholderValues(db);

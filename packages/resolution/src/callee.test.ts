@@ -6,6 +6,13 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { calleeOutcomeOf, calleeOutcomes } from "./callee.js";
+import { RESOLUTION_QUESTIONS, RESOLUTION_RULES } from "./index.js";
+import {
+  ASKING_RELATIONS,
+  askResolution,
+  queryFacts,
+  resolutionProgram,
+} from "./program.js";
 
 import type { CalleeOutcome } from "./callee.js";
 
@@ -190,5 +197,62 @@ describe("calleeOutcomeOf", () => {
     const outcomes = calleeOutcomes(db, ["run", "nowhere"]);
     expect(outcomes.get("run")).toEqual({ kind: "function", key: "load" });
     expect(outcomes.get("nowhere")?.kind).toBe("undeclared");
+  });
+});
+
+describe("askResolution", () => {
+  const asked = (): Database => {
+    const db = new Database();
+    db.add("func", ["load"]);
+    db.add("binds", ["run", "load"]);
+    db.add("binds", ["again", "run"]);
+    askResolution(db, ["run"]);
+    return db;
+  };
+
+  it("leaves the question and everything derived under it behind", () => {
+    const db = asked();
+    for (const relation of queryFacts(resolutionProgram())) {
+      expect([relation, db.facts(relation).length]).toEqual([relation, 0]);
+    }
+    expect(db.facts("wantedComesTo")).toEqual([["run", "load"]]);
+  });
+
+  it("keeps the answer to a question asked twice, and settles a new one", () => {
+    const db = asked();
+    askResolution(db, ["run"]);
+    expect(calleeOutcomeOf(db, "run")).toEqual({
+      kind: "function",
+      key: "load",
+    });
+    expect(calleeOutcomeOf(db, "again")).toEqual({
+      kind: "function",
+      key: "load",
+    });
+    expect(db.facts("wanted")).toEqual([]);
+  });
+
+  it("asks with the relation the caller names", () => {
+    const db = new Database();
+    db.add("func", ["load"]);
+    db.add("imports", ["run", "lib", "load"]);
+    askResolution(db, ["run"], "wantedOrigin");
+    expect(db.facts("wantedComesFrom")).toEqual([["run", "lib", "load"]]);
+  });
+});
+
+describe("ASKING_RELATIONS", () => {
+  it("lists every fact a question waits for a caller to add", () => {
+    const derived = new Set(
+      [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS].map(
+        (one) => one.head.relation,
+      ),
+    );
+    const seeds = new Set(
+      RESOLUTION_QUESTIONS.flatMap((one) => one.body.map((l) => l.relation))
+        .filter((relation) => relation.startsWith("wanted"))
+        .filter((relation) => !derived.has(relation)),
+    );
+    expect([...seeds].sort()).toEqual([...ASKING_RELATIONS].sort());
   });
 });

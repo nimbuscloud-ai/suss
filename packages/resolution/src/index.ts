@@ -1,8 +1,8 @@
 export {
-  askResolution,
   type CalleeOutcome,
   calleeOutcomeOf,
   calleeOutcomes,
+  writtenSourcesOf,
 } from "./callee.js";
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
@@ -14,6 +14,12 @@ export {
   mountPathsOf,
 } from "./mount.js";
 export { nodeOfKey, type SpannedNode } from "./nodeKey.js";
+export {
+  ASKING_RELATIONS,
+  askResolution,
+  queryFacts,
+  resolutionProgram,
+} from "./program.js";
 export { explainResolvedKey } from "./session.js";
 export { placeholderValues, singleAnswers } from "./singleAnswer.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";

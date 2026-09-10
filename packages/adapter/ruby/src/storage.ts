@@ -7,15 +7,11 @@
  * the model as an argument instead, and those go through the same test.
  */
 
-import { deriveOnDemand, evaluate } from "@suss/datalog";
 import { storageBinding } from "@suss/ir-core";
-import {
-  ANSWER_RELATIONS,
-  RESOLUTION_QUESTIONS,
-  RESOLUTION_RULES,
-} from "@suss/resolution";
+import { askResolution } from "@suss/resolution";
 
 import { field } from "./ast.js";
+import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
 import { compoundName } from "./scope.js";
 
@@ -66,15 +62,6 @@ function constantName(constant: RbNode): string {
 }
 
 /**
- * The rules rewritten so ancestry is derived only for the classes asked
- * about. Built once, since the rewrite does not depend on the facts.
- */
-const ANCESTRY_PROGRAM = deriveOnDemand(
-  [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS],
-  ANSWER_RELATIONS,
-);
-
-/**
  * Whether a class reaches one of the named base classes. The shared
  * ancestry rules follow what each one extends through the binding
  * behind it; a base the library gives is matched by the name it is
@@ -85,8 +72,7 @@ function reachesBase(
   classKey: string,
   bases: readonly string[],
 ): boolean {
-  facts.add("wantedAncestry", [classKey]);
-  evaluate(facts, ANCESTRY_PROGRAM.rules);
+  askResolution(facts, [classKey], "wantedAncestry", RUBY_PROGRAM);
   return facts
     .lookup("wantedBaseName", 0, classKey)
     .some((row) => bases.includes(String(row[1])));
