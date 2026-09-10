@@ -3,7 +3,7 @@
     "packages": 74,
     "packagesWithExports": 74,
     "exports": 904,
-    "internal": 3197,
+    "internal": 3208,
     "consumers": 1748,
     "pairs": 1745,
     "unfollowedCalls": 498,
@@ -20,7 +20,7 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 69,
-      "internal": 245,
+      "internal": 256,
       "consumers": 134,
       "unfollowedCalls": 72
     },
