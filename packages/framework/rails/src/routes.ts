@@ -3,16 +3,17 @@
  * pack at, into a table of controller action -> HTTP method and path.
  *
  * The grammar read here is bounded on purpose: `resources`/`resource`
- * with `only:`/`except:`, `member`/`collection` blocks, one level of
- * resource nesting, `namespace`, `scope` with a path or `module:`, the
- * bare HTTP-verb methods with `to:` or the `"path" => "controller#action"`
- * spelling, and `root`. Anything else the file declares, `mount`,
- * `draw`, `concern`, `constraints`, `match`, `direct` among them, is
- * left unread and reported once as a gap rather than guessed at. The
- * package README says why each of those stops here.
+ * with `only:`/`except:`, `member`/`collection` blocks, nested
+ * resources, `namespace`, `scope`, the bare HTTP-verb methods and
+ * `match ... via:`, `root`, `draw(:name)` for a file under
+ * `config/routes/`, `constraints` and `with_options` blocks, and
+ * `concern`/`concerns`. Anything else the file declares, `mount` and
+ * `direct` among them, is left unread and reported once as a gap
+ * rather than guessed at. The package README says why each stops here.
  */
 
 import fs from "node:fs";
+import path from "node:path";
 
 import {
   bodyStatements,
@@ -57,6 +58,8 @@ interface RouteContext {
   pathPrefix: string;
   modulePrefix: string;
   resource?: ResourceScope;
+  /** Keywords an enclosing `with_options` gives every call inside it; a call's own keyword wins. */
+  defaults: Record<string, RbNode>;
 }
 
 interface SimpleArgs {
@@ -66,10 +69,13 @@ interface SimpleArgs {
   hashRocketPair: { key: RbNode; value: RbNode } | null;
 }
 
-function readSimpleArgs(call: RbNode): SimpleArgs {
+function readSimpleArgs(
+  call: RbNode,
+  defaults: Record<string, RbNode> = {},
+): SimpleArgs {
   const argumentList = field(call, "arguments");
   const positional: RbNode[] = [];
-  const keyword: Record<string, RbNode> = {};
+  const keyword: Record<string, RbNode> = { ...defaults };
   let hashRocketPair: SimpleArgs["hashRocketPair"] = null;
   if (argumentList === null) {
     return { positional, keyword, hashRocketPair };
@@ -174,10 +180,12 @@ function pluralize(word: string): string {
   if (/[^aeiou]y$/.test(word)) {
     return `${word.slice(0, -1)}ies`;
   }
-  if (/(s|x|z|ch|sh)$/.test(word)) {
+  if (/(ss|us|is|x|z|ch|sh)$/.test(word)) {
     return `${word}es`;
   }
-  return `${word}s`;
+  // A name that already ends in `s` is left as it is, the way Rails
+  // routes `resource :settings` to `SettingsController`.
+  return /s$/.test(word) ? word : `${word}s`;
 }
 
 function singularize(word: string): string {
@@ -193,13 +201,29 @@ function singularize(word: string): string {
 class RouteAccumulator {
   private readonly byKey = new Map<string, Route>();
   private readonly unread = new Set<string>();
+  private readonly missingDrawn: string[] = [];
+  /** The block each `concern :name do ... end` declared, for `concerns` to replay. */
+  readonly concerns = new Map<string, RbNode>();
+  /** Files `draw(:name)` has already read, so a file drawing itself stops. */
+  readonly drawn = new Set<string>();
 
+  /** `drawDirectory` is where `draw(:name)` finds `name.rb`. */
+  constructor(readonly drawDirectory: string) {}
+
+  /** The first route written for an action wins, the way Rails matches the first route it declared. */
   add(controllerKey: string, action: string, route: Route): void {
-    this.byKey.set(`${controllerKey}#${action}`, route);
+    const key = `${controllerKey}#${action}`;
+    if (!this.byKey.has(key)) {
+      this.byKey.set(key, route);
+    }
   }
 
   recordUnread(callName: string): void {
     this.unread.add(callName);
+  }
+
+  recordMissingDrawn(name: string): void {
+    this.missingDrawn.push(name);
   }
 
   routeFor(controllerKey: string, action: string): Route | null {
@@ -207,13 +231,19 @@ class RouteAccumulator {
   }
 
   gapsAgainst(displayPath: string): string[] {
-    if (this.unread.size === 0) {
-      return [];
+    const gaps: string[] = [];
+    if (this.unread.size > 0) {
+      const names = [...this.unread].sort().join(", ");
+      gaps.push(
+        `${displayPath} also declares ${names}, which this pack does not read; whatever those declarations route is missing from what suss reports`,
+      );
     }
-    const names = [...this.unread].sort().join(", ");
-    return [
-      `${displayPath} also declares ${names}, which this pack does not read; whatever those declarations route is missing from what suss reports`,
-    ];
+    for (const name of this.missingDrawn) {
+      gaps.push(
+        `${displayPath} draws ${name}, but there is no ${name}.rb under ${path.basename(this.drawDirectory)}/ beside it to read; whatever that file routes is missing from what suss reports`,
+      );
+    }
+    return gaps;
   }
 }
 
@@ -237,16 +267,22 @@ function handleResourceCall(
   out: RouteAccumulator,
   plural: boolean,
 ): void {
-  const args = readSimpleArgs(call);
+  const args = readSimpleArgs(call, ctx.defaults);
   const symbol = args.positional[0] ? symbolValue(args.positional[0]) : null;
   if (symbol === null) {
     return;
   }
   // Rails routes a singular resource to the plural controller, and
   // `controller:` or `path:` overrides what the name would have given.
+  // `module:` puts the controller under one more directory.
   const controllerSegment =
     wordValue(args.keyword.controller) ?? (plural ? symbol : pluralize(symbol));
-  const controllerKey = joinKey(ctx.modulePrefix, controllerSegment);
+  const moduleName = wordValue(args.keyword.module);
+  const modulePrefix =
+    moduleName === null
+      ? ctx.modulePrefix
+      : joinKey(ctx.modulePrefix, moduleName);
+  const controllerKey = joinKey(modulePrefix, controllerSegment);
   const prefixBase =
     ctx.resource !== undefined ? ctx.resource.nestedBase : ctx.pathPrefix;
   const base = joinPath(prefixBase, wordValue(args.keyword.path) ?? symbol);
@@ -264,11 +300,6 @@ function handleResourceCall(
     out.add(controllerKey, action, routeAt(base));
   }
 
-  const block = field(call, "block");
-  const body = block !== null ? field(block, "body") : null;
-  if (body === null) {
-    return;
-  }
   // Rails takes the nesting parameter from the resource's own name,
   // whatever `path:` said the URL reads.
   const nestedBase = plural ? `${base}/:${singularize(symbol)}_id` : base;
@@ -279,7 +310,14 @@ function handleResourceCall(
     nestedBase,
     ambientBase: nestedBase,
   };
-  walkBody(body, { ...ctx, resource: nested }, out);
+  const inside: RouteContext = { ...ctx, modulePrefix, resource: nested };
+  applyConcerns(readSymbolList(args.keyword.concerns) ?? [], inside, out);
+
+  const block = field(call, "block");
+  const body = block !== null ? field(block, "body") : null;
+  if (body !== null) {
+    walkBody(body, inside, out);
+  }
 }
 
 function handleOnBlock(
@@ -319,7 +357,7 @@ function handleVerb(
   out: RouteAccumulator,
   method: string,
 ): void {
-  const args = readSimpleArgs(call);
+  const args = readSimpleArgs(call, ctx.defaults);
   const target = readRouteTarget(args);
   if (target !== null) {
     const literalPath = args.positional[0]
@@ -354,7 +392,7 @@ function handleRoot(
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  const args = readSimpleArgs(call);
+  const args = readSimpleArgs(call, ctx.defaults);
   const target =
     readRouteTarget(args) ??
     (args.positional[0]
@@ -373,21 +411,36 @@ function handleNamespace(
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  const args = readSimpleArgs(call);
+  const args = readSimpleArgs(call, ctx.defaults);
   const symbol = args.positional[0] ? symbolValue(args.positional[0]) : null;
   const block = field(call, "block");
   const body = block !== null ? field(block, "body") : null;
   if (symbol === null || body === null) {
     return;
   }
-  walkBody(
-    body,
-    {
-      pathPrefix: joinPath(ctx.pathPrefix, symbol),
-      modulePrefix: joinKey(ctx.modulePrefix, symbol),
-    },
-    out,
-  );
+  walkBody(body, enterScope(ctx, symbol, symbol), out);
+}
+
+/**
+ * The context a `namespace` or `scope` block walks under. Inside a
+ * resource block the path continues from where a nested resource would
+ * go, `/users/:user_id`, and the resource itself is left behind, so a
+ * bare verb inside the scope is unread rather than guessed at.
+ */
+function enterScope(
+  ctx: RouteContext,
+  pathSegment: string | null,
+  moduleName: string | null,
+): RouteContext {
+  const base = ctx.resource?.nestedBase ?? ctx.pathPrefix;
+  return {
+    pathPrefix: pathSegment !== null ? joinPath(base, pathSegment) : base,
+    modulePrefix:
+      moduleName !== null
+        ? joinKey(ctx.modulePrefix, moduleName)
+        : ctx.modulePrefix,
+    defaults: ctx.defaults,
+  };
 }
 
 function handleScope(
@@ -395,7 +448,7 @@ function handleScope(
   ctx: RouteContext,
   out: RouteAccumulator,
 ): void {
-  const args = readSimpleArgs(call);
+  const args = readSimpleArgs(call, ctx.defaults);
   const moduleName = wordValue(args.keyword.module);
   // `scope "v1"` and `scope path: "v1"` both set the path in Rails.
   const pathSegment =
@@ -406,20 +459,130 @@ function handleScope(
   if (body === null) {
     return;
   }
-  walkBody(
-    body,
-    {
-      pathPrefix:
-        pathSegment !== null
-          ? joinPath(ctx.pathPrefix, pathSegment)
-          : ctx.pathPrefix,
-      modulePrefix:
-        moduleName !== null
-          ? joinKey(ctx.modulePrefix, moduleName)
-          : ctx.modulePrefix,
-    },
-    out,
+  walkBody(body, enterScope(ctx, pathSegment, moduleName), out);
+}
+
+/** A block whose calls route under the enclosing scope unchanged: `constraints` only narrows which requests match. */
+function walkBlockInPlace(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const block = field(call, "block");
+  const body = block !== null ? field(block, "body") : null;
+  if (body !== null) {
+    walkBody(body, ctx, out);
+  }
+}
+
+function handleWithOptions(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const args = readSimpleArgs(call, ctx.defaults);
+  const block = field(call, "block");
+  const body = block !== null ? field(block, "body") : null;
+  if (body === null) {
+    return;
+  }
+  walkBody(body, { ...ctx, defaults: args.keyword }, out);
+}
+
+function handleConcern(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const args = readSimpleArgs(call, ctx.defaults);
+  const name = args.positional[0] ? symbolValue(args.positional[0]) : null;
+  const block = field(call, "block");
+  const body = block !== null ? field(block, "body") : null;
+  if (name !== null && body !== null) {
+    out.concerns.set(name, body);
+  }
+}
+
+/** Replays each named concern's block where `concerns :a, :b` or `concerns: [:a, :b]` was written. */
+function applyConcerns(
+  names: readonly string[],
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  for (const name of names) {
+    const body = out.concerns.get(name);
+    if (body !== undefined) {
+      walkBody(body, ctx, out);
+    }
+  }
+}
+
+function handleConcerns(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const args = readSimpleArgs(call, ctx.defaults);
+  const names = args.positional
+    .map((node) => symbolValue(node))
+    .filter((name): name is string => name !== null);
+  applyConcerns(names, ctx, out);
+}
+
+/** The HTTP methods a `match ... via:` serves, `*` for `via: :all`. */
+function methodsOfVia(node: RbNode | undefined): string[] {
+  const names = readSymbolList(node) ?? [];
+  if (names.includes("all")) {
+    return ["*"];
+  }
+  return names.map((name) => name.toUpperCase());
+}
+
+function handleMatch(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const via = readSimpleArgs(call, ctx.defaults).keyword.via;
+  for (const method of methodsOfVia(via)) {
+    handleVerb(call, ctx, out, method);
+  }
+}
+
+/**
+ * Where `draw(:name)` reads `name.rb` from: the directory beside the
+ * routes file that shares its stem, `config/routes/` for
+ * `config/routes.rb`, which is where Rails reads it from too.
+ */
+export function drawDirectoryOf(routesFile: string): string {
+  return path.join(
+    path.dirname(routesFile),
+    path.basename(routesFile, path.extname(routesFile)),
   );
+}
+
+/** `draw(:name)` reads `name.rb` from the draw directory; its top-level calls route under the scope the draw was written in. */
+function handleDraw(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const args = readSimpleArgs(call, ctx.defaults);
+  const name = args.positional[0] ? wordValue(args.positional[0]) : null;
+  if (name === null) {
+    return;
+  }
+  const file = path.join(out.drawDirectory, `${name}.rb`);
+  if (out.drawn.has(file)) {
+    return;
+  }
+  out.drawn.add(file);
+  if (!fs.existsSync(file)) {
+    out.recordMissingDrawn(name);
+    return;
+  }
+  const tree = parseRubySync(fs.readFileSync(file, "utf8"));
+  walkBody(tree.rootNode, ctx, out);
 }
 
 type StatementHandler = (
@@ -441,6 +604,12 @@ const HANDLERS: Record<string, StatementHandler> = {
   patch: (call, ctx, out) => handleVerb(call, ctx, out, "PATCH"),
   put: (call, ctx, out) => handleVerb(call, ctx, out, "PUT"),
   delete: (call, ctx, out) => handleVerb(call, ctx, out, "DELETE"),
+  match: handleMatch,
+  draw: handleDraw,
+  constraints: walkBlockInPlace,
+  with_options: handleWithOptions,
+  concern: handleConcern,
+  concerns: handleConcerns,
 };
 
 function walkBody(
@@ -501,10 +670,10 @@ export function readRoutesFile(
   }
   const source = fs.readFileSync(absRoutesPath, "utf8");
   const tree = parseRubySync(source);
-  const out = new RouteAccumulator();
+  const out = new RouteAccumulator(drawDirectoryOf(absRoutesPath));
   const body = drawBlockBody(tree.rootNode);
   if (body !== null) {
-    walkBody(body, { pathPrefix: "", modulePrefix: "" }, out);
+    walkBody(body, { pathPrefix: "", modulePrefix: "", defaults: {} }, out);
   }
   return {
     routeFor: (controllerKey, action) => out.routeFor(controllerKey, action),

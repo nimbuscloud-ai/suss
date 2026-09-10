@@ -48,6 +48,24 @@ describe("walkClasses: qualified names", () => {
     expect(info?.superclassCandidates).toEqual(["ApplicationRecord"]);
   });
 
+  it("nests a compound class name under the module it is opened inside", async () => {
+    const [info] = await classesIn(
+      "module Admin\n  class Users::RolesController < BaseController\n  end\nend\n",
+    );
+    expect(info?.qualifiedName).toBe("Admin::Users::RolesController");
+    expect(info?.superclassCandidates).toEqual([
+      "Admin::BaseController",
+      "BaseController",
+    ]);
+  });
+
+  it("opens a compound class name written with a leading :: at the top level", async () => {
+    const [info] = await classesIn(
+      "module Admin\n  class ::Users::RolesController\n  end\nend\n",
+    );
+    expect(info?.qualifiedName).toBe("Users::RolesController");
+  });
+
   it("qualifies a bare class name against its enclosing module", async () => {
     const [info] = await classesIn(
       "module Types\n  class QueryType < Types::BaseObject\n  end\nend\n",
@@ -117,7 +135,7 @@ describe("walkClasses: bodyNesting (Module.nesting)", () => {
     const [info] = await classesIn(
       "module Foo\n  class Types::CampaignType < Types::BaseObject\n  end\nend\n",
     );
-    expect(info?.bodyNesting).toEqual(["Types::CampaignType", "Foo"]);
+    expect(info?.bodyNesting).toEqual(["Foo::Types::CampaignType", "Foo"]);
   });
 
   it("prepends each level for multiple nested bare blocks", async () => {
