@@ -2,20 +2,20 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 918,
-    "internal": 3335,
-    "consumers": 1785,
-    "pairs": 1782,
-    "unfollowedCalls": 499,
+    "exports": 925,
+    "internal": 3364,
+    "consumers": 1798,
+    "pairs": 1795,
+    "unfollowedCalls": 497,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
-      "exports": 58,
-      "internal": 359,
-      "consumers": 196,
-      "unfollowedCalls": 66
+      "exports": 59,
+      "internal": 374,
+      "consumers": 201,
+      "unfollowedCalls": 64
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
@@ -495,9 +495,9 @@
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 12,
-      "internal": 12,
-      "consumers": 58,
+      "exports": 18,
+      "internal": 26,
+      "consumers": 66,
       "unfollowedCalls": 22
     },
     "packages/runtime/node": {
