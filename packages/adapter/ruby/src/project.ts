@@ -114,9 +114,10 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
   return found;
 }
 
-/** Whether this unit is one an earlier file's discovery already reported, by where its body is written. */
+/** Whether this unit is one an earlier file's discovery already reported, by where its body is written and what it is reported as. An action two controllers inherit is one body and two units, one per route. */
 function alreadyDiscovered(seen: Set<string>, raw: RawCodeStructure): boolean {
-  const key = `${raw.identity.file}::${raw.identity.name}::${raw.identity.range.start}`;
+  const reported = raw.identity.exportPath?.join(".") ?? raw.identity.name;
+  const key = `${raw.identity.file}::${reported}::${raw.identity.range.start}`;
   if (seen.has(key)) {
     return true;
   }
