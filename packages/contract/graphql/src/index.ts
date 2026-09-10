@@ -44,7 +44,11 @@ export {
   graphqlDocumentsPathToSummaries,
   graphqlDocumentsToSummaries,
 } from "./documents.js";
-export { SCALAR_SHAPES } from "./typeShape.js";
+export {
+  describesOperations,
+  describesTypes,
+  SCALAR_SHAPES,
+} from "./typeShape.js";
 
 const ROOT_TYPES = ["Query", "Mutation", "Subscription"] as const;
 type RootType = (typeof ROOT_TYPES)[number];

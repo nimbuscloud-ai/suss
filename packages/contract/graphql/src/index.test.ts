@@ -9,7 +9,12 @@ import {
   readSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
 
-import { graphqlSdlToSummaries, loadSdlFile } from "./index.js";
+import {
+  describesOperations,
+  describesTypes,
+  graphqlSdlToSummaries,
+  loadSdlFile,
+} from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -177,7 +182,7 @@ describe("loadSdlFile", () => {
 });
 
 describe("the types a field's contract names", () => {
-  it("states what each one stands for, so a comparison has structure", () => {
+  it("writes out the record behind each one, so a comparison has structure", () => {
     const summaries = graphqlSdlToSummaries(
       `
       type Query { order(id: ID!): Order }
@@ -247,5 +252,30 @@ describe("the types a schema splits or takes as input", () => {
     expect(resolvers(summaries)[0]?.definitions).toEqual({
       Query: { properties: { ok: { type: "boolean" } }, type: "record" },
     });
+  });
+});
+
+describe("what a graphql file describes", () => {
+  it("calls a file with a type definition a schema", () => {
+    expect(describesTypes("type Query { ok: Boolean }")).toBe(true);
+    expect(describesTypes("extend type Query { ok: Boolean }")).toBe(true);
+    expect(describesTypes("input Filter { name: String }")).toBe(true);
+  });
+
+  it("does not call a query whose field is named type a schema", () => {
+    const query = "query Items { items { id type } }";
+    expect(describesTypes(query)).toBe(false);
+    expect(describesOperations(query)).toBe(true);
+  });
+
+  it("does not call a fragment on its own an operation", () => {
+    const fragment = "fragment Row on Item { id }";
+    expect(describesOperations(fragment)).toBe(false);
+    expect(describesTypes(fragment)).toBe(false);
+  });
+
+  it("describes nothing when the text does not parse", () => {
+    expect(describesTypes("type {")).toBe(false);
+    expect(describesOperations("query {")).toBe(false);
   });
 });

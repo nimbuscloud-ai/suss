@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { CORPUS_TARGETS } from "./corpusTargets.mjs";
+import { initPlan } from "./initPlan.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -94,9 +95,17 @@ function takeProfile(targetName) {
   if (!fs.existsSync(bin)) {
     fail("This checkout has no built CLI. Run `npm run build` first.");
   }
-  const tsconfig = path.join(resolveTargetsDir(), target.tsconfig);
-  if (!fs.existsSync(tsconfig)) {
-    fail(`No tsconfig for ${targetName} at ${tsconfig}.`);
+  const project = path.join(resolveTargetsDir(), target.directory);
+  if (!fs.existsSync(project)) {
+    fail(`${targetName} is not checked out at ${project}.`);
+  }
+  // The profile reads the code the way a run does, so it takes the
+  // packs from what init suggests rather than from a list here.
+  const extract = initPlan(bin, project).commands.find((command) =>
+    command.startsWith("suss extract"),
+  );
+  if (extract === undefined) {
+    fail(`suss init suggested no extract command for ${targetName}.`);
   }
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-profile-"));
@@ -108,15 +117,18 @@ function takeProfile(targetName) {
       "--cpu-prof-dir",
       dir,
       bin,
-      "extract",
-      "-p",
-      tsconfig,
-      ...target.packs.flatMap((p) => ["-f", p]),
+      ...extract
+        .split(" ")
+        .slice(1)
+        .filter((argument, index, all) => {
+          const previous = all[index - 1];
+          return argument !== "-o" && previous !== "-o";
+        }),
       "--no-cache",
       "-o",
       summaries,
     ],
-    { cwd: repoRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
+    { cwd: project, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
   );
   if (res.status !== 0) {
     fail(

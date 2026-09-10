@@ -418,3 +418,65 @@ describe("a project with more than one contract file", () => {
     expect(read).toEqual(["graphql-documents operations"]);
   });
 });
+
+describe("a reader that walks a directory", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-walked-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("is named once for everything under it", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    for (const component of ["Button", "Chip", "Table"]) {
+      const under = path.join(dir, "src", "components", component);
+      fs.mkdirSync(under, { recursive: true });
+      fs.writeFileSync(
+        path.join(under, `${component}.stories.tsx`),
+        "export default { title: 'x' };\n",
+      );
+    }
+
+    const report = await inspectProject(dir);
+    const stories = report.suggestions.filter((s) => s.name === "storybook");
+
+    expect(stories.map((s) => s.file)).toEqual([
+      path.join("src", "components"),
+    ]);
+  });
+
+  it("gives two files read by one reader their own output", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    for (const name of ["schema-main", "schema-staging"]) {
+      fs.writeFileSync(
+        path.join(dir, `${name}.graphql`),
+        "type Query { viewer: String }\n",
+      );
+    }
+
+    const printed = formatInitReport(await inspectProject(dir));
+
+    expect(printed).toContain("-o summaries/graphql-schema-main.json");
+    expect(printed).toContain("-o summaries/graphql-schema-staging.json");
+  });
+
+  it("reads a query file as a document, whatever its fields are called", async () => {
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(
+      path.join(dir, "src", "product.graphql"),
+      "query Product($slug: String!) { product(slug: $slug) { id type } }\n",
+    );
+
+    const report = await inspectProject(dir);
+    const read = report.suggestions
+      .filter((s) => s.kind === "contract")
+      .map((s) => s.name);
+
+    expect(read).toEqual(["graphql-documents"]);
+  });
+});

@@ -14,7 +14,7 @@
 
 import path from "node:path";
 
-import { commonDirectoryOf } from "../diagnostics.js";
+import { commonDirectoryOf } from "@suss/extractor";
 
 import type { ImportDeclaration, Project, SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";

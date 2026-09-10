@@ -48,6 +48,7 @@ import {
   type CacheDiagnostic,
   type CacheInput,
   type CacheLayer,
+  commonDirectoryOf,
   composeWrappers,
   createCacheLayer,
   type DiscoveredSubUnit,
@@ -97,7 +98,6 @@ import {
 } from "./depTracking.js";
 import {
   buildExtractionReport,
-  commonDirectoryOf,
   createPackTallies,
   type ExtractionReport,
   type PackTally,

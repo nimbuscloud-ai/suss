@@ -42,35 +42,6 @@ export type {
 };
 export { createPackTallies, recordPackFailure };
 
-/**
- * The deepest directory that contains every file, or undefined when the
- * paths share no absolute root. Stands in for the project root when no
- * tsconfig gives one, since resolution from anywhere inside the tree
- * finds the same `node_modules`.
- */
-export function commonDirectoryOf(
-  files: ReadonlyArray<string>,
-): string | undefined {
-  const absolute = files.filter((f) => path.isAbsolute(f));
-  const first = absolute[0];
-  if (first === undefined) {
-    return undefined;
-  }
-
-  let shared = path.dirname(first).split(path.sep);
-  for (const file of absolute.slice(1)) {
-    const parts = path.dirname(file).split(path.sep);
-    let i = 0;
-    while (i < shared.length && i < parts.length && shared[i] === parts[i]) {
-      i += 1;
-    }
-    shared = shared.slice(0, i);
-  }
-
-  const joined = shared.join(path.sep);
-  return joined.length > 1 ? joined : undefined;
-}
-
 /** Bundler-style defaults for a project that never wrote a tsconfig. */
 const DEFAULT_RESOLUTION: ts.CompilerOptions = {
   moduleResolution: ts.ModuleResolutionKind.Bundler,
