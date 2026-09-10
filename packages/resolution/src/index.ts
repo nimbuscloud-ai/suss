@@ -103,6 +103,9 @@ export type {
 //   writesUnstated(x)           a write to x states no value at all
 //   givesBackOne(base, m)       a pack's word: m on a class reaching base
 //                               gives back one of that class
+//   givesBackOneOfArgument(base, m, k)   the same, with the class at k
+//   givesBackOneOfImport(mod, n, k)      the same, for the bare
+//                               function n that module mod exports
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -236,6 +239,41 @@ export const RESOLUTION_RULES = [
       lit("givesBackOne", v("n"), v("m")),
     ],
     "declared finder",
+  ),
+
+  // The same word, for a library that takes the class as an argument
+  // instead of as the receiver. The argument having to reach the base a
+  // pack named is what keeps an unrelated `get` out.
+  rule(
+    "stepsTo",
+    [v("r"), v("cls"), VALUE_STEP],
+    [
+      lit("call", v("r"), v("c")),
+      lit("readsProperty", v("c"), v("o"), v("m")),
+      lit("callArg", v("r"), v("k"), v("a")),
+      lit("objectOf", v("a"), v("cls")),
+      lit("objectValue", v("cls")),
+      lit("libraryBase", v("cls"), v("n")),
+      lit("givesBackOneOfArgument", v("n"), v("m"), v("k")),
+    ],
+    "declared argument finder",
+  ),
+
+  // The same again for a function called on its own rather than read off
+  // anything, keyed on the module it was imported from so a project
+  // function spelled the same way is not mistaken for it.
+  rule(
+    "stepsTo",
+    [v("r"), v("cls"), VALUE_STEP],
+    [
+      lit("call", v("r"), v("c")),
+      lit("comesFrom", v("c"), v("mod"), v("n")),
+      lit("givesBackOneOfImport", v("mod"), v("n"), v("k")),
+      lit("callArg", v("r"), v("k"), v("a")),
+      lit("objectOf", v("a"), v("cls")),
+      lit("objectValue", v("cls")),
+    ],
+    "declared import finder",
   ),
 
   // Wrapper transparency, derived: calling a factory that returns a
@@ -538,6 +576,19 @@ export const RESOLUTION_RULES = [
       lit("extends", v("c"), v("x")),
       lit("comesTo", v("x"), v("b")),
       lit("libraryBase", v("b"), v("n")),
+    ],
+  ),
+  // A base a library hands back from a call rather than exporting as a
+  // class, SQLAlchemy's `Base = declarative_base()`. The walk stops at
+  // the call, so the function it called is the name to match on.
+  rule(
+    "libraryBase",
+    [v("c"), v("n")],
+    [
+      lit("extends", v("c"), v("x")),
+      lit("isWrittenAs", v("x"), v("r")),
+      lit("call", v("r"), v("cc")),
+      lit("comesFrom", v("cc"), v("m"), v("n")),
     ],
   ),
 

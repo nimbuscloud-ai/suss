@@ -173,6 +173,55 @@ describe("explainResolutionProof", () => {
     ]);
   });
 
+  it("surfaces a pack-declared finder that takes the class as an argument", () => {
+    const db = evaluated([
+      ["objectValue", "User"],
+      ["extendsNamed", "User", "SQLModel"],
+      ["binds", "UserRef", "User"],
+      ["givesBackOneOfArgument", "SQLModel", "get", "0"],
+      ["readsProperty", "getCallee", "session", "get"],
+      ["call", "found", "getCallee"],
+      ["callArg", "found", "0", "UserRef"],
+    ]);
+
+    const proof = proofOf(db, "comesTo", ["found", "User"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "declared argument finder",
+    ]);
+    expect(explained?.steps[0].reason).toBe(
+      "found calls get with User at argument 0, which gives back one of it",
+    );
+    expect(explained?.assumptions).toEqual([
+      "a pack declares that get with a class extending SQLModel at argument 0 gives back one of that class",
+    ]);
+  });
+
+  it("surfaces a pack-declared function called on its own", () => {
+    const db = evaluated([
+      ["objectValue", "User"],
+      ["binds", "UserRef", "User"],
+      ["givesBackOneOfImport", "sqlmodel", "select", "0"],
+      ["imports", "selectRef", "sqlmodel", "select"],
+      ["call", "found", "selectRef"],
+      ["callArg", "found", "0", "UserRef"],
+    ]);
+
+    const proof = proofOf(db, "comesTo", ["found", "User"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "declared import finder",
+    ]);
+    expect(explained?.steps[0].reason).toBe(
+      "found calls select from sqlmodel with User at argument 0, which gives back one of it",
+    );
+    expect(explained?.assumptions).toEqual([
+      "a pack declares that select from sqlmodel gives back one of the class at argument 0",
+    ]);
+  });
+
   it("says when the depth cap stopped the walk", () => {
     const facts: Array<[string, ...string[]]> = [["func", "end"]];
     let previous = "end";
