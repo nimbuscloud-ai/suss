@@ -29,10 +29,17 @@ export interface ReachedBody {
   file: string;
 }
 
-/** One ancestor: every block reopening its name, or the name alone when nothing reached it. Blocks stay together because Ruby treats a reopened class as one place in the chain. */
+/**
+ * One ancestor: every block reopening its name, the name alone when
+ * nothing reached it, or the library's own class the walk stopped at.
+ * Blocks stay together because Ruby treats a reopened class as one
+ * place in the chain. The root is kept by name so a caller can tell a
+ * chain that ended at the library from one that ended at nothing.
+ */
 export type AncestorEntry =
   | { type: "bodies"; name: string; blocks: ReachedBody[] }
-  | { type: "unfollowed"; name: string };
+  | { type: "unfollowed"; name: string }
+  | { type: "root"; name: string };
 
 /** A class and everything it inherits from, in Ruby's own method-lookup order. */
 export type Ancestry = readonly AncestorEntry[];
@@ -42,6 +49,8 @@ export interface AncestorLookup {
   /** Directory the constant-to-path convention resolves an ancestor's name against. */
   root: string;
   pathConvention: ConstantPathConvention;
+  /** Acronyms the convention keeps as one word, `ActivityPub` to `activitypub`. */
+  acronyms?: readonly string[];
   /**
    * The library's own classes a project's chain ends at. Reaching one
    * ends a walk with nothing left unfollowed.
@@ -69,6 +78,7 @@ export async function reachDefinition(
     lookup.root,
     qualifiedName,
     lookup.pathConvention,
+    lookup.acronyms,
   );
   if (filePath === null) {
     return null;
@@ -135,10 +145,10 @@ async function superclassChain(
 ): Promise<AncestorEntry[]> {
   const candidates = superclassCandidatesOf(self.blocks);
   for (const candidate of candidates) {
-    if (
-      lookup.ancestryRootClassNames.includes(candidate) ||
-      active.has(candidate)
-    ) {
+    if (lookup.ancestryRootClassNames.includes(candidate)) {
+      return [{ type: "root", name: candidate }];
+    }
+    if (active.has(candidate)) {
       return [];
     }
     const blocks = await definitionOf(candidate, lookup);
@@ -290,6 +300,9 @@ export function methodInAncestry(
   name: string,
 ): MethodLookup {
   for (const entry of ancestry) {
+    if (entry.type === "root") {
+      return { type: "none" };
+    }
     if (entry.type === "unfollowed") {
       return {
         type: "unsettled",

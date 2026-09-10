@@ -172,6 +172,7 @@ function fieldReadContext(
     lookup: {
       root: pattern.root,
       pathConvention: pattern.pathConvention,
+      acronyms: pattern.acronyms ?? [],
       ancestryRootClassNames: pattern.ancestryRootClassNames,
       parsedFile: (absPath) => cache.get(absPath),
       localDefinition: (name) => sameFileBlocks(name, fileBlocks),
@@ -367,13 +368,19 @@ async function controllerActionUnits(
   const lookup: AncestorLookup = {
     root: pattern.root,
     pathConvention: pattern.pathConvention,
+    acronyms: pattern.acronyms ?? [],
     ancestryRootClassNames: pattern.ancestryRootClassNames,
     parsedFile: (absPath) => options.cache.get(absPath),
     localDefinition: (name) => sameFileBlocks(name, fileBlocks),
   };
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, lookup);
+  // A class extending one of the library's own roots directly is a
+  // controller too, with no project base in between.
   if (
-    !reachesConfiguredBase(ancestry, info.qualifiedName, pattern.baseClassNames)
+    !reachesConfiguredBase(ancestry, info.qualifiedName, [
+      ...pattern.baseClassNames,
+      ...pattern.ancestryRootClassNames,
+    ])
   ) {
     return [];
   }
