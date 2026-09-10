@@ -302,7 +302,9 @@ calls the resolver bodies make, with `{ "storageSystem": "postgresql" }`
 in the config, since ActiveRecord talks to several databases and only
 `database.yml` says which. The Python equivalent is
 `-f sqlalchemy=suss.sqlalchemy.json`, added beside `fastapi` or
-`flask-restx` the same way.
+`flask-restx` the same way. A project on SQLModel, which is how the
+FastAPI template talks to its database, uses `-f sqlmodel=suss.sqlmodel.json`
+instead; it reads the SQLAlchemy calls too.
 
 Add `-f requests` to a Python run and every function that calls another
 service through requests comes back as a client of the route it calls.

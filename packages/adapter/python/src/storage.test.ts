@@ -381,6 +381,58 @@ describe("the database work a Python body does", () => {
     ]);
   });
 
+  it("reads a session through an Annotated alias another module exports", async () => {
+    const effects = await effectsFor(
+      [
+        "from base import SessionDep",
+        "",
+        "def create(db: SessionDep):",
+        "    db.add(Orders())",
+        "    db.commit()",
+        "    return db.query(Orders).filter_by(id=1).first()",
+        "",
+      ].join("\n"),
+      [
+        "from typing import Annotated",
+        "from fastapi import Depends",
+        "from sqlalchemy.orm import Session",
+        "",
+        "def get_db():",
+        "    yield Session()",
+        "",
+        "SessionDep = Annotated[Session, Depends(get_db)]",
+        "",
+      ].join("\n"),
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "add" },
+      { kind: "write", operation: "commit" },
+      { kind: "read", operation: "first", selector: ["id"] },
+    ]);
+  });
+
+  it("reads a session through an Annotated alias in the same module", async () => {
+    const effects = await effectsFor(
+      [
+        "from typing import Annotated",
+        "from fastapi import Depends",
+        "from sqlalchemy.orm import Session",
+        "",
+        "SessionDep = Annotated[Session, Depends(get_db)]",
+        "",
+        "def create(db: SessionDep):",
+        "    db.add(Orders())",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "add" },
+    ]);
+  });
+
   it("reads a session the body builds or opens itself", async () => {
     const effects = await effectsFor(
       [

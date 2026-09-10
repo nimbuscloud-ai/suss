@@ -193,6 +193,10 @@
       "types": "./dist/sqlalchemy.d.ts",
       "import": "./dist/sqlalchemy.js"
     },
+    "./sqlmodel": {
+      "types": "./dist/sqlmodel.d.ts",
+      "import": "./dist/sqlmodel.js"
+    },
     "./ts-rest": {
       "types": "./dist/ts-rest.d.ts",
       "import": "./dist/ts-rest.js"
@@ -267,6 +271,7 @@
     "@suss/framework-react-router": "*",
     "@suss/framework-redis": "*",
     "@suss/framework-sqlalchemy": "*",
+    "@suss/framework-sqlmodel": "*",
     "@suss/framework-ts-rest": "*",
     "@suss/runtime-node": "*",
     "tsup": "*",
