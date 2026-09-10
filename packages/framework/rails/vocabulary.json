@@ -48,5 +48,16 @@
   "bare_symbol": "suss: tree-sitter-ruby node type for one element of a %i[] list",
   "each": "Ruby core: Array#each, looping a routes block once per element",
   "each_with_index": "Ruby core: Array#each_with_index, looping a routes block once per element with its position",
-  "all": "Rails routing DSL: the via: value on match that routes every HTTP method"
+  "all": "Rails routing DSL: the via: value on match that routes every HTTP method",
+  "mount": "Rails routing DSL: ActionDispatch::Routing::Mapper::Base#mount, serving an engine's route set under a path",
+  "routes": "Rails: Rails::Engine#routes, the route set an app or engine draws into",
+  "isolate_namespace": "Rails: Rails::Engine.isolate_namespace, which puts every controller the engine routes under the given module",
+  "lib": "Rails: the directory under an engine's root its Engine class is defined in, which Rails takes the root from",
+  "config": "Rails: the directory under an engine's root its routes.rb is in",
+  "class": "suss: tree-sitter-ruby node type for a class definition",
+  "module": "suss: tree-sitter-ruby node type for a module definition",
+  "name": "suss: tree-sitter-ruby field name for a class or module definition's constant",
+  "superclass": "suss: tree-sitter-ruby field name for the class a class definition extends",
+  "constant": "suss: tree-sitter-ruby node type for a bare constant",
+  "scope_resolution": "suss: tree-sitter-ruby node type for a Name::Nested constant path"
 }

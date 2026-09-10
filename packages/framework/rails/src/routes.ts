@@ -5,12 +5,12 @@
  * The grammar read here is bounded on purpose: `resources`/`resource`
  * with `only:`/`except:`, `member`/`collection` blocks, nested
  * resources, `namespace`, `scope`, the bare HTTP-verb methods and
- * `match ... via:`, `root`, `draw(:name)` for a file under
- * `config/routes/`, `constraints` and `with_options` blocks,
- * `concern`/`concerns`, and `.each` over a literal list, replayed once
- * per element. Anything else the file declares, `mount` and
- * `direct` among them, is left unread and reported once as a gap
- * rather than guessed at. The package README says why each stops here.
+ * `match ... via:`, `root`, `draw(:name)`, `constraints` and
+ * `with_options` blocks, `concern`/`concerns`, `.each` over a literal
+ * list, and `mount` of an engine the project keeps in its own tree.
+ * Anything else the file declares, `direct` and a gem's own routing
+ * call among them, is left unread and reported once as a gap rather
+ * than guessed at. The package README says why each stops here.
  */
 
 import fs from "node:fs";
@@ -26,6 +26,7 @@ import {
 } from "@suss/adapter-ruby";
 
 import type { ParameterBindings, RbNode } from "@suss/adapter-ruby";
+import type { RailsEngine } from "./engines.js";
 
 export interface Route {
   method: string;
@@ -210,14 +211,29 @@ function singularize(word: string): string {
   return /s$/.test(word) ? word.slice(0, -1) : word;
 }
 
+/** An engine's own route set, walked under the path each `mount` gives it. */
+interface EngineRouteSet {
+  readonly modulePrefix: string;
+  /** The block of the engine's `Name::Engine.routes.draw do ... end`, or null when its routes file draws none. */
+  readonly body: RbNode | null;
+  /** The engine's routes file as written into a gap. */
+  readonly displayPath: string;
+}
+
 class RouteAccumulator {
   private readonly byKey = new Map<string, Route>();
-  private readonly unread = new Set<string>();
-  private readonly missingDrawn: string[] = [];
+  private readonly unread = new Map<string, Set<string>>();
+  private readonly missingDrawn: { file: string; name: string }[] = [];
   /** The block each `concern :name do ... end` declared, for `concerns` to replay. */
   readonly concerns = new Map<string, RbNode>();
   /** Files `draw(:name)` has already read, so a file drawing itself stops. */
   readonly drawn = new Set<string>();
+  /** Every engine a `mount` may refer to, by the class name it is written with. */
+  readonly engines = new Map<string, EngineRouteSet>();
+  /** Engines whose route set is being walked, so an engine that mounts itself stops. */
+  readonly mounting = new Set<string>();
+  /** The file whose statements are being walked, as a gap writes it. */
+  file = "";
 
   /** `drawDirectory` is where `draw(:name)` finds `name.rb`. */
   constructor(readonly drawDirectory: string) {}
@@ -231,28 +247,38 @@ class RouteAccumulator {
   }
 
   recordUnread(callName: string): void {
-    this.unread.add(callName);
+    const names = this.unread.get(this.file) ?? new Set<string>();
+    names.add(callName);
+    this.unread.set(this.file, names);
   }
 
   recordMissingDrawn(name: string): void {
-    this.missingDrawn.push(name);
+    this.missingDrawn.push({ file: this.file, name });
   }
 
   routeFor(controllerKey: string, action: string): Route | null {
     return this.byKey.get(`${controllerKey}#${action}`) ?? null;
   }
 
-  gapsAgainst(displayPath: string): string[] {
+  /** Runs `walk` with gaps attributed to `file`, then goes back to the file being walked before. */
+  inFile(file: string, walk: () => void): void {
+    const previous = this.file;
+    this.file = file;
+    walk();
+    this.file = previous;
+  }
+
+  gaps(): string[] {
     const gaps: string[] = [];
-    if (this.unread.size > 0) {
-      const names = [...this.unread].sort().join(", ");
+    for (const [file, unread] of this.unread) {
+      const names = [...unread].sort().join(", ");
       gaps.push(
-        `${displayPath} also declares ${names}, which this pack does not read; whatever those declarations route is missing from what suss reports`,
+        `${file} also declares ${names}, which this pack does not read; whatever those declarations route is missing from what suss reports`,
       );
     }
-    for (const name of this.missingDrawn) {
+    for (const { file, name } of this.missingDrawn) {
       gaps.push(
-        `${displayPath} draws ${name}, but there is no ${name}.rb under ${path.basename(this.drawDirectory)}/ beside it to read; whatever that file routes is missing from what suss reports`,
+        `${file} draws ${name}, but there is no ${name}.rb under ${path.basename(this.drawDirectory)}/ beside it to read; whatever that file routes is missing from what suss reports`,
       );
     }
     return gaps;
@@ -683,7 +709,53 @@ const HANDLERS: Record<string, StatementHandler> = {
   with_options: handleWithOptions,
   concern: handleConcern,
   concerns: handleConcerns,
+  mount: handleMount,
 };
+
+/**
+ * `mount Billing::Engine, at: "/billing"` serves the engine's own route
+ * set under that path, its controllers keyed under the engine's
+ * namespace whatever module the mount was written in. A mount of
+ * anything but an engine this run knows, a gem's `Sidekiq::Web` say,
+ * is recorded as unread.
+ */
+function handleMount(
+  call: RbNode,
+  ctx: RouteContext,
+  out: RouteAccumulator,
+): void {
+  const args = readSimpleArgs(call, ctx.defaults);
+  const target = args.positional[0] ?? args.hashRocketPair?.key;
+  const at = args.keyword.at ?? args.hashRocketPair?.value;
+  const name = target?.text.replace(/^::/, "");
+  const engine = name === undefined ? undefined : out.engines.get(name);
+  const mountPath = at === undefined ? null : textValue(at, ctx);
+  if (
+    name === undefined ||
+    engine === undefined ||
+    mountPath === null ||
+    out.mounting.has(name)
+  ) {
+    out.recordUnread("mount");
+    return;
+  }
+  if (engine.body === null) {
+    return;
+  }
+  out.mounting.add(name);
+  out.inFile(engine.displayPath, () => {
+    walkBody(
+      engine.body as RbNode,
+      {
+        pathPrefix: joinPath(ctx.pathPrefix, mountPath),
+        modulePrefix: engine.modulePrefix,
+        defaults: {},
+      },
+      out,
+    );
+  });
+  out.mounting.delete(name);
+}
 
 function walkBody(
   body: RbNode,
@@ -711,50 +783,178 @@ function walkBody(
   }
 }
 
-/** The block body of the file's own `Rails.application.routes.draw do ... end` wrapper: the first top-level call carrying a block, whatever its receiver chain is spelled. */
-function drawBlockBody(root: RbNode): RbNode | null {
-  for (const statement of bodyStatements(root)) {
-    if (statement.type !== "call") {
-      continue;
+type DeclarationKind = "prepend" | "draw" | "append";
+
+/** The calls that add routes to a route set, in the order Rails runs them: every `prepend` block first, then each `draw`, then every `append`. */
+const DECLARATION_ORDER: Record<DeclarationKind, number> = {
+  prepend: 0,
+  draw: 1,
+  append: 2,
+};
+
+function isDeclarationKind(name: string): name is DeclarationKind {
+  return name in DECLARATION_ORDER;
+}
+
+interface RouteDeclaration {
+  /** What the block adds routes to, as written before `.routes`: `Rails.application`, `Shop::Application` or `Billing::Engine`. */
+  readonly owner: string;
+  readonly kind: DeclarationKind;
+  readonly body: RbNode;
+  readonly displayPath: string;
+}
+
+/** Every `<owner>.routes.draw|prepend|append do ... end` written anywhere in the file, however deep. */
+function routeDeclarations(
+  root: RbNode,
+  displayPath: string,
+): RouteDeclaration[] {
+  const found: RouteDeclaration[] = [];
+  const visit = (node: RbNode): void => {
+    const declaration = asRouteDeclaration(node, displayPath);
+    if (declaration !== null) {
+      found.push(declaration);
+      return;
     }
-    const block = field(statement, "block");
-    const body = block !== null ? field(block, "body") : null;
-    if (body !== null) {
-      return body;
+    for (const child of node.namedChildren) {
+      if (child !== null) {
+        visit(child);
+      }
     }
+  };
+  visit(root);
+  return found;
+}
+
+function asRouteDeclaration(
+  node: RbNode,
+  displayPath: string,
+): RouteDeclaration | null {
+  if (node.type !== "call") {
+    return null;
   }
-  return null;
+  const kind = field(node, "method")?.text;
+  const receiver = field(node, "receiver");
+  const block = field(node, "block");
+  const body = block !== null ? field(block, "body") : null;
+  if (
+    kind === undefined ||
+    !isDeclarationKind(kind) ||
+    receiver === null ||
+    receiver.type !== "call" ||
+    field(receiver, "method")?.text !== "routes" ||
+    body === null
+  ) {
+    return null;
+  }
+  const owner = field(receiver, "receiver");
+  if (owner === null) {
+    return null;
+  }
+  return { owner: owner.text.replace(/^::/, ""), kind, body, displayPath };
+}
+
+/** `Rails.application` and the `Shop::Application` class Rails generates are the same route set, the app's own. */
+function isApplication(owner: string): boolean {
+  return owner === "Rails.application" || /(^|::)Application$/.test(owner);
+}
+
+/** A routes file to read, with the path a gap writes it under. */
+export interface RoutesSource {
+  readonly file: string;
+  readonly displayPath: string;
+}
+
+export interface RoutesInput {
+  /** The app's own routes file, which decides whether routing is read at all. */
+  readonly routesFile: RoutesSource;
+  /** Engines a `mount` may refer to, each with its own routes file to read the engine's route set from. */
+  readonly engines: readonly (RailsEngine & { readonly displayPath: string })[];
+  /** Files beyond the routes file that add routes, by a `routes.draw`, `routes.append` or `routes.prepend` block written anywhere in them. */
+  readonly routesFiles: readonly RoutesSource[];
+}
+
+function parseDeclarations(source: RoutesSource): RouteDeclaration[] {
+  if (!fs.existsSync(source.file)) {
+    return [];
+  }
+  const tree = parseRubySync(fs.readFileSync(source.file, "utf8"));
+  return routeDeclarations(tree.rootNode, source.displayPath);
 }
 
 /**
- * Reads `absRoutesPath` with the grammar above. `displayPath` is the
- * same file's own path, written into the one gap this reading may
- * report; the table itself is keyed the way routing keys a
- * controller, independent of where the file that declared it lives.
+ * Reads the app's routes file, every engine's, and any other file that
+ * adds routes, into one table keyed the way routing keys a controller.
+ * An engine's own `Name::Engine.routes.draw` block is kept aside and
+ * walked under the path each `mount Name::Engine, at:` gives it; every
+ * other declaration adds to the app's route set, in the order Rails
+ * runs them.
  */
-export function readRoutesFile(
-  absRoutesPath: string,
-  displayPath: string,
-): RouteTable {
-  if (!fs.existsSync(absRoutesPath)) {
+export function readRoutes(input: RoutesInput): RouteTable {
+  if (!fs.existsSync(input.routesFile.file)) {
     return {
       routeFor: () => null,
       fileFound: false,
       gaps: [
-        `${displayPath} does not exist, so this run assumes each action's path and method from Rails' RESTful naming convention instead of reading it from routing`,
+        `${input.routesFile.displayPath} does not exist, so this run assumes each action's path and method from Rails' RESTful naming convention instead of reading it from routing`,
       ],
     };
   }
-  const source = fs.readFileSync(absRoutesPath, "utf8");
-  const tree = parseRubySync(source);
-  const out = new RouteAccumulator(drawDirectoryOf(absRoutesPath));
-  const body = drawBlockBody(tree.rootNode);
-  if (body !== null) {
-    walkBody(body, { pathPrefix: "", modulePrefix: "", defaults: {} }, out);
+  const out = new RouteAccumulator(drawDirectoryOf(input.routesFile.file));
+  const engineDeclarations = input.engines.flatMap((engine) =>
+    engine.routesFile === null
+      ? []
+      : parseDeclarations({
+          file: engine.routesFile,
+          displayPath: engine.displayPath,
+        }),
+  );
+  for (const engine of input.engines) {
+    out.engines.set(engine.qualifiedName, {
+      modulePrefix: engine.modulePrefix,
+      body:
+        engineDeclarations.find(
+          (declaration) => declaration.owner === engine.qualifiedName,
+        )?.body ?? null,
+      displayPath: engine.displayPath,
+    });
+  }
+  const applicationDeclarations = [
+    ...parseDeclarations(input.routesFile),
+    ...input.routesFiles.flatMap(parseDeclarations),
+    ...engineDeclarations,
+  ].filter((declaration) => isApplication(declaration.owner));
+  const ordered = applicationDeclarations
+    .map((declaration, position) => ({ declaration, position }))
+    .sort(
+      (a, b) =>
+        DECLARATION_ORDER[a.declaration.kind] -
+          DECLARATION_ORDER[b.declaration.kind] || a.position - b.position,
+    );
+  for (const { declaration } of ordered) {
+    out.inFile(declaration.displayPath, () => {
+      walkBody(
+        declaration.body,
+        { pathPrefix: "", modulePrefix: "", defaults: {} },
+        out,
+      );
+    });
   }
   return {
     routeFor: (controllerKey, action) => out.routeFor(controllerKey, action),
     fileFound: true,
-    gaps: out.gapsAgainst(displayPath),
+    gaps: out.gaps(),
   };
+}
+
+/** Reads one routes file on its own, with nothing mounted into it. */
+export function readRoutesFile(
+  absRoutesPath: string,
+  displayPath: string,
+): RouteTable {
+  return readRoutes({
+    routesFile: { file: absRoutesPath, displayPath },
+    engines: [],
+    routesFiles: [],
+  });
 }
