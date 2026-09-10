@@ -13,12 +13,18 @@
  * source order and whether the scope's own statements order them.
  */
 
+import { writesRunInOrder } from "@suss/resolution";
+
 import { bodyStatements, field, NodeMap, OWN_BODY_TYPES } from "../ast.js";
 
+import type { NameReads, OrderedWrite } from "@suss/resolution";
 import type { RbNode, RbTree } from "../parser.js";
 
 /** A call's block, which owns the names it declares as parameters. */
 const BLOCK_TYPES = new Set(["block", "do_block"]);
+
+/** A block and a definition both open a body that runs later than the statements around it. */
+const LATER_BODY_TYPES = new Set([...OWN_BODY_TYPES, ...BLOCK_TYPES]);
 
 /** The left sides of a multiple assignment that hold further targets. */
 const TARGET_LIST_TYPES = new Set([
@@ -315,81 +321,50 @@ export function collectWrites(
     group.writes.push(write);
   }
 
+  const rules = nameReads(targetIds);
   for (const group of groups.values()) {
     const scope = group.owner === null ? body : field(group.owner, "body");
-    group.ordered = scope !== null && writesRunInOrder(group, scope, targetIds);
+    if (scope === null) {
+      continue;
+    }
+    group.ordered = writesRunInOrder(
+      scope,
+      group.name,
+      group.writes.map((write) => orderedWrite(write, scope)),
+      rules,
+    );
   }
   return [...groups.values()];
 }
 
 /**
- * Whether the writes run once each, in the order they are written.
- *
- * They do when every one of them is a statement of the scope's own list. That
- * list runs through once, top to bottom: nothing repeats and nothing is
- * skipped. A write inside a branch, a loop, a `begin` or a block runs when
- * something reaches it, and how many times is not a question this reads.
- *
- * The last write also has to be the one every read sees, so a read before it
- * makes the answer depend on where the reader is, which the rules cannot
- * express.
+ * A write is a statement of the scope's own list when the scope is its
+ * parent. A parameter arrives before the body runs, so no statement of the
+ * body orders it.
  */
-function writesRunInOrder(
-  group: NameWrites,
-  scope: RbNode,
-  targetIds: ReadonlySet<number>,
-): boolean {
-  const direct = group.writes.every(
-    (write) => !write.fromParameter && write.at.parent?.id === scope.id,
-  );
-  const last = group.writes[group.writes.length - 1];
-  if (!direct || last === undefined) {
-    return false;
-  }
-  return !readsBefore(scope, group.name, last.at.startIndex, targetIds);
+function orderedWrite(write: LocalWrite, scope: RbNode): OrderedWrite<RbNode> {
+  return {
+    at: write.at,
+    direct: !write.fromParameter && write.at.parent?.id === scope.id,
+  };
 }
 
 /**
- * Whether anything before `position` reads the name. A read inside a block or
- * a nested definition is not one yet: that body runs when something calls or
- * enters it, which is after the statements around it have finished.
+ * What the shared read walk needs to know about Ruby. The targets it has
+ * to leave out are the ones this scope writes, so each reading of a scope
+ * builds its own.
  */
-function readsBefore(
-  scope: RbNode,
-  name: string,
-  position: number,
-  targetIds: ReadonlySet<number>,
-): boolean {
-  let found = false;
-  const visit = (node: RbNode): void => {
-    for (const child of bodyStatements(node)) {
-      if (found || child.startIndex >= position) {
-        return;
-      }
-      if (OWN_BODY_TYPES.has(child.type) || BLOCK_TYPES.has(child.type)) {
-        continue;
-      }
-      if (isNameRead(child, name, targetIds)) {
-        found = true;
-        return;
-      }
-      visit(child);
-    }
+function nameReads(targetIds: ReadonlySet<number>): NameReads<RbNode> {
+  return {
+    nameType: "identifier",
+    laterBodies: LATER_BODY_TYPES,
+    childrenOf: bodyStatements,
+    isRead: (node) => isNameRead(node, targetIds),
   };
-  visit(scope);
-  return found;
 }
 
-function isNameRead(
-  node: RbNode,
-  name: string,
-  targetIds: ReadonlySet<number>,
-): boolean {
-  if (
-    node.type !== "identifier" ||
-    node.text !== name ||
-    targetIds.has(node.id)
-  ) {
+function isNameRead(node: RbNode, targetIds: ReadonlySet<number>): boolean {
+  if (targetIds.has(node.id)) {
     return false;
   }
   // In `query.where`, `where` is a method on the receiver, not the local spelled the same.
