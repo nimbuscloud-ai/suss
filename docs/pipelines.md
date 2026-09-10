@@ -130,17 +130,14 @@ src/handler.ts
          -> 200 { id, total, state }
            + src/db.findInvoice →
 
-     Reaches:
-       invocation findInvoice
-
        !! Declared response 500 is never produced by the handler
 ```
 
 Three things in that block are notation rather than content, and they come up in every rendering.
 
-A line starting `+` is an **effect**: something the branch does besides producing its output. `+ src/db.findInvoice →` says this branch calls `findInvoice`, and the arrow says that callee has a summary of its own in the same run, so you can go and read it. The name comes with a path when the callee lives in another file, which is why this one reads `src/db.findInvoice` rather than plain `findInvoice`.
+A line starting `+` is an **effect**: something the branch does besides producing its output. `+ src/db.findInvoice →` says this branch calls `findInvoice`, and the arrow says that callee has a summary of its own in the same run, so you can go and read it. The name comes with a path when the callee lives in another file, which is why this one reads `src/db.findInvoice` rather than plain `findInvoice`. A query the branch runs itself prints the same way, as `+ reads postgresql:invoices`.
 
-**Reaches** collects the same effects for the whole unit, so you can see everything a handler touches without reading down its branches.
+A **Reaches** block appears under a handler when something it calls touches a store, a bus or another service. `reads postgresql:invoices  through findInvoice` says the read happens inside `findInvoice`, so you can see what a request touches without reading down the chain of calls.
 
 A line starting `!!` is a **gap**: something suss could not settle, written down instead of dropped. This one is the contract promising a 500 that no branch produces. A gap in the output is the difference between "there is nothing here" and "suss could not tell", and keeping them apart is why an empty answer never looks like an all-clear.
 

@@ -258,10 +258,6 @@ src/api.ts
            + c.req.param
            + findUser
 
-     Reaches:
-       invocation c.req.param
-       invocation findUser
-
      Could not follow:
        The call to findUser lands on a declaration with no body, so whatever runs there is missing from this summary
 

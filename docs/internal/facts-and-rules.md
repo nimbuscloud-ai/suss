@@ -178,7 +178,7 @@ Derived results surface to users as:
 
 - `library` summaries with `recognition: "reachable"` (from `reachable`);
 - resolved messages on re-throw transitions' metadata (from `contributes`);
-- `metadata.effectsClosure: Array<{ kind, target, transitive }>` on entry summaries (from `boundaryEffect`): everything a boundary's promise transitively depends on, with `transitive: true` when the effect belongs to a callee. This is the raw material for cross-boundary cascade analysis. Join a provider's effects closure against other boundaries' identities and you can see which promises depend on which.
+- `metadata.effectsClosure: Array<{ kind, target, transitive }>` on entry summaries (from `boundaryEffect`): everything a boundary's promise transitively depends on, with `transitive: true` when the effect belongs to a callee. This is the raw material for cross-boundary cascade analysis. Join a provider's effects closure against other boundaries' identities and you can see which promises depend on which. Only the TypeScript adapter stamps it today, and nothing in the CLI reads it: `inspect` and `inspect --diff` walk the invocation effects in the summaries themselves, which every adapter writes, so the Reaches block comes out the same for Python and Ruby.
 
 ## Adding an analysis
 

@@ -32,12 +32,13 @@ import {
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
 
-import { reachChanges } from "./diffReach.js";
+import { boundaryReach, reachChanges } from "./diffReach.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
 import { UsageError } from "./usageError.js";
 
 import type {
   BehavioralSummary,
+  BoundaryBinding,
   Derivation,
   Effect,
   Gap,
@@ -444,6 +445,12 @@ interface RenderCtx {
    * differently from one something does.
    */
   invokes: InvokesInRun;
+  /**
+   * What a request through each boundary reaches by way of the calls
+   * out of the unit serving it, walked over the same call facts the
+   * diff reads, so every language's summaries get the same block.
+   */
+  reach: ReadonlyMap<BehavioralSummary, readonly ReachedEffect[]>;
 }
 
 /**
@@ -460,15 +467,22 @@ interface PerSummaryRenderCtx {
    * readers skimming the output know which file-group to scroll to.
    */
   readonly parentFile: string;
+  /** The boundary this unit serves or calls, which its header already says. */
+  readonly ownBoundary: string | null;
   readonly spawnerUsed: Map<string, number>;
 }
 
 function perSummary(
   base: RenderCtx,
-  parentName: string,
-  parentFile: string,
+  summary: BehavioralSummary,
 ): PerSummaryRenderCtx {
-  return { base, parentName, parentFile, spawnerUsed: new Map() };
+  return {
+    base,
+    parentName: summary.identity.name,
+    parentFile: summary.location.file,
+    ownBoundary: boundaryOf(summary),
+    spawnerUsed: new Map(),
+  };
 }
 
 /**
@@ -782,6 +796,13 @@ function renderEffect(effect: Effect, ctx: PerSummaryRenderCtx): string | null {
   }
   if (effect.type === "stateChange") {
     return `+ state ${effect.variable}`;
+  }
+  if (effect.type === "interaction") {
+    if (bindingKey(effect.binding) === ctx.ownBoundary) {
+      return null;
+    }
+    const label = effectLabel(effect);
+    return label === null ? null : `+ ${label}`;
   }
   return null;
 }
@@ -1104,7 +1125,7 @@ function renderSummary(
   ctx: RenderCtx,
   layout: SummaryLayout = STANDALONE_LAYOUT,
 ): string {
-  const perCtx = perSummary(ctx, summary.identity.name, summary.location.file);
+  const perCtx = perSummary(ctx, summary);
   const lines: string[] = [];
 
   // Single header line: `<name> (<recognition> <kind> | line N [| confidence])`.
@@ -1138,19 +1159,16 @@ function renderSummary(
     bodyLines.push(...renderTransitions(summary.transitions, declares, perCtx));
   }
 
-  // Effects closure: everything this boundary transitively touches,
-  // stamped by the adapter's boundary-effects pass on entry summaries.
-  // `(via callees)` marks effects inherited from deeper in the call
-  // chain rather than the boundary's own body.
-  const effectsClosure = summary.metadata?.effectsClosure as
-    | Array<{ kind: string; target: string; transitive: boolean }>
-    | undefined;
-  if (effectsClosure !== undefined && effectsClosure.length > 0) {
+  // What the unit's own body touches is in its transitions above, so
+  // this block is what a request reaches through the calls out of it.
+  const reached = (ctx.reach.get(summary) ?? []).filter(
+    (effect) => effect.through.length > 0,
+  );
+  if (reached.length > 0) {
     bodyLines.push("");
     bodyLines.push("  Reaches:");
-    for (const effect of effectsClosure) {
-      const suffix = effect.transitive ? " (via callees)" : "";
-      bodyLines.push(`    ${effect.kind} ${effect.target}${suffix}`);
+    for (const effect of reached) {
+      bodyLines.push(`    ${reachText(effect, CHAIN_HOPS)}`);
     }
   }
 
@@ -1606,6 +1624,12 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     spawnerIndex,
     ambiguousNames,
     invokes: invokersOfUnits(summaries),
+    reach: new Map(
+      boundaryReach(summaries).map(({ summary, effects }) => [
+        summary,
+        effects,
+      ]),
+    ),
   };
 }
 
@@ -1623,7 +1647,11 @@ function boundaryOf(s: BehavioralSummary): string | null {
   if (binding === null) {
     return null;
   }
-  return boundaryKey(binding) ?? boundaryLabel(binding);
+  return bindingKey(binding);
+}
+
+function bindingKey(binding: BoundaryBinding): string {
+  return boundaryKey(binding) ?? displayLabel(binding);
 }
 
 function summaryKey(s: BehavioralSummary): string {
@@ -2277,12 +2305,16 @@ function chainLine(through: readonly string[], hops: number | "full"): string {
   return `  through ${through[0]} -> ${middle} -> ${through[through.length - 1]}`;
 }
 
+function reachText(effect: ReachedEffect, hops: number | "full"): string {
+  return `${effect.relation} ${effect.label}${chainLine(effect.through, hops)}`;
+}
+
 function reachLine(
   effect: ReachedEffect,
   marker: string,
   hops: number | "full",
 ): string {
-  return `${marker} ${effect.relation} ${effect.label}${chainLine(effect.through, hops)}`;
+  return `${marker} ${reachText(effect, hops)}`;
 }
 
 /** What a unit that came or went whole responds with. */

@@ -30,6 +30,13 @@ export interface ReachedEffect {
   readonly through: readonly string[];
 }
 
+/** A unit serving a boundary, and what a request through it reaches. */
+export interface ServedBoundaryReach {
+  readonly summary: BehavioralSummary;
+  readonly boundary: string;
+  readonly effects: readonly ReachedEffect[];
+}
+
 /** What one boundary reaches, on one side of the diff. */
 interface Entrypoint {
   readonly boundary: string;
@@ -135,24 +142,55 @@ function reachedFrom(
   return reached;
 }
 
+/** The boundary a unit serves from outside the process, if it serves one. */
+function servedBoundary(summary: BehavioralSummary): string | null {
+  const binding = summary.identity.boundaryBinding;
+  if (
+    binding === null ||
+    BOUNDARY_ROLE[summary.kind] !== "provider" ||
+    !leavesTheProcess(binding)
+  ) {
+    return null;
+  }
+  return boundarySpelling(binding);
+}
+
+/**
+ * What each unit serving a boundary reaches, on one side. The walk is
+ * shared by the diff and by the plain tree, so both say the same thing
+ * about a route.
+ */
+export function boundaryReach(
+  summaries: readonly BehavioralSummary[],
+): ServedBoundaryReach[] {
+  const facts = readCallFacts(summaries);
+  const out = adjacency(facts.edges());
+  const reach: ServedBoundaryReach[] = [];
+
+  for (const summary of summaries) {
+    const boundary = servedBoundary(summary);
+    if (boundary === null) {
+      continue;
+    }
+    const reached = reachedFrom(
+      functionOf(summary),
+      boundary,
+      out,
+      facts.units,
+    );
+    reach.push({ summary, boundary, effects: [...reached.values()] });
+  }
+
+  return reach;
+}
+
 /** What every boundary in one summary set reaches. */
 function entrypointsOf(
   summaries: readonly BehavioralSummary[],
 ): Map<string, Entrypoint> {
-  const facts = readCallFacts(summaries);
-  const out = adjacency(facts.edges());
   const entrypoints = new Map<string, Entrypoint>();
 
-  for (const summary of summaries) {
-    const binding = summary.identity.boundaryBinding;
-    if (
-      binding === null ||
-      BOUNDARY_ROLE[summary.kind] !== "provider" ||
-      !leavesTheProcess(binding)
-    ) {
-      continue;
-    }
-    const boundary = boundarySpelling(binding);
+  for (const { summary, boundary, effects } of boundaryReach(summaries)) {
     const key = entrypointKey(summary, boundary);
     if (entrypoints.has(key)) {
       continue;
@@ -161,7 +199,12 @@ function entrypointsOf(
       boundary,
       unit: summary.identity.name,
       file: summary.location.file,
-      reached: reachedFrom(functionOf(summary), boundary, out, facts.units),
+      reached: new Map(
+        effects.map((effect) => [
+          effectKey(effect.relation, effect.label),
+          effect,
+        ]),
+      ),
     });
   }
 

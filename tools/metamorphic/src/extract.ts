@@ -40,7 +40,7 @@ export interface RunDescription {
    * onto that function's own summary, and the access is the same one.
    */
   readonly effects: readonly string[];
-  /** What the discovered unit reaches, which is the `Reaches:` of inspect. */
+  /** What the discovered unit reaches, from the adapter's `effectsClosure`. */
   readonly reaches: readonly string[];
 }
 

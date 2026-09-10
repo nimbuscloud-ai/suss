@@ -89,9 +89,6 @@ src/handler.ts
          -> 200 { id, total, state }
            + src/db.findInvoice →
 
-     Reaches:
-       invocation findInvoice
-
        !! Declared response 500 is never produced by the handler
 
 src/invoicePanel.ts
@@ -102,11 +99,6 @@ src/invoicePanel.ts
          -> throw Error
            + fetch
            + response.json
-
-     Reaches:
-       interaction GET /invoices/{id}
-       invocation fetch
-       invocation response.json
 
 src/db.ts
 └─ findInvoice  (reachable library | line 5)
