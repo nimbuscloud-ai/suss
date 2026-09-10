@@ -350,6 +350,63 @@ describe("railsFramework", () => {
       });
     });
 
+    it("takes a bare verb route's action from a string as well as a symbol", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  resources :orders do\n" +
+        '    collection { get "search" }\n' +
+        "  end\nend\n";
+      expect(routeFor(source, "OrdersController", "search")).toEqual({
+        method: "GET",
+        path: "/orders/search",
+      });
+    });
+
+    it("continues a hash-rocket route inside member or collection from the resource", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        "  namespace :admin do\n" +
+        "    resources :backups, only: [:index] do\n" +
+        "      member do\n" +
+        '        put "" => "backups#email", :constraints => { id: /.+/ }\n' +
+        '        post "restore" => "backups#restore"\n' +
+        "      end\n" +
+        "      collection do\n" +
+        '        get "logs/:id" => "backup_logs#show"\n' +
+        "      end\n" +
+        "    end\n" +
+        "  end\nend\n";
+      expect(routeFor(source, "Admin::BackupsController", "email")).toEqual({
+        method: "PUT",
+        path: "/admin/backups/:id",
+      });
+      expect(routeFor(source, "Admin::BackupsController", "restore")).toEqual({
+        method: "POST",
+        path: "/admin/backups/:id/restore",
+      });
+      expect(routeFor(source, "Admin::BackupLogsController", "show")).toEqual({
+        method: "GET",
+        path: "/admin/backups/logs/:id",
+      });
+    });
+
+    it("reads a keyword written with a hash rocket the same as with a colon", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  get "dashboard" => "dashboard#index", :constraints => { format: /json/ }\n' +
+        "  resources :orders, :only => [:index]\n" +
+        "end\n";
+      expect(routeFor(source, "DashboardController", "index")).toEqual({
+        method: "GET",
+        path: "/dashboard",
+      });
+      expect(routeFor(source, "OrdersController", "index")).toEqual({
+        method: "GET",
+        path: "/orders",
+      });
+      expect(routeFor(source, "OrdersController", "show")).toBeNull();
+    });
+
     it("nests a bare verb route inside a resources block under the parent's id", () => {
       const source =
         "Rails.application.routes.draw do\n" +
