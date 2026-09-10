@@ -2165,7 +2165,13 @@ export function createTypeScriptAdapter(
         );
       }
 
-      return named(summaries, config.workspace, runRoot);
+      // A route's own middleware is read from the same file, so it
+      // composes here as it does in a full run.
+      return named(
+        composeWrappers(summaries, config.extractorOptions ?? {}),
+        config.workspace,
+        runRoot,
+      );
     },
 
     async extractAll(): Promise<BehavioralSummary[]> {
