@@ -2,11 +2,11 @@
   "totals": {
     "packages": 74,
     "packagesWithExports": 74,
-    "exports": 901,
-    "internal": 3198,
-    "consumers": 1742,
-    "pairs": 1739,
-    "unfollowedCalls": 492,
+    "exports": 904,
+    "internal": 3197,
+    "consumers": 1748,
+    "pairs": 1745,
+    "unfollowedCalls": 498,
     "findingErrors": 0
   },
   "packages": {
@@ -27,9 +27,9 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 89,
-      "internal": 834,
-      "consumers": 196,
-      "unfollowedCalls": 107
+      "internal": 831,
+      "consumers": 199,
+      "unfollowedCalls": 113
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 24,
-      "internal": 529,
-      "consumers": 322,
+      "internal": 530,
+      "consumers": 325,
       "unfollowedCalls": 55
     },
     "packages/client/aiohttp": {
@@ -138,8 +138,8 @@
     },
     "packages/contract/graphql": {
       "name": "@suss/contract-graphql",
-      "exports": 6,
-      "internal": 26,
+      "exports": 8,
+      "internal": 27,
       "consumers": 12,
       "unfollowedCalls": 0
     },
@@ -201,7 +201,7 @@
     },
     "packages/extractor": {
       "name": "@suss/extractor",
-      "exports": 68,
+      "exports": 69,
       "internal": 86,
       "consumers": 19,
       "unfollowedCalls": 15
