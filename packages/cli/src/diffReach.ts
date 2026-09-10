@@ -64,9 +64,18 @@ export interface EntrypointChange {
  */
 const WALK_LIMIT = 5000;
 
-/** A boundary and the unit serving it, which is how the two sides pair. */
-function entrypointKey(summary: BehavioralSummary, boundary: string): string {
-  return `${boundary} ${summary.location.file}::${summary.identity.name}`;
+/**
+ * A boundary and the unit serving it, which is how the two sides pair.
+ * The boundary is part of it because one function often serves many:
+ * a shared `respond` middleware is the handler of every route that
+ * lists it last.
+ */
+export function entrypointKey(
+  file: string,
+  unit: string,
+  boundary: string,
+): string {
+  return `${boundary} ${file}::${unit}`;
 }
 
 function effectKey(relation: Relation, label: string): string {
@@ -191,7 +200,11 @@ function entrypointsOf(
   const entrypoints = new Map<string, Entrypoint>();
 
   for (const { summary, boundary, effects } of boundaryReach(summaries)) {
-    const key = entrypointKey(summary, boundary);
+    const key = entrypointKey(
+      summary.location.file,
+      summary.identity.name,
+      boundary,
+    );
     if (entrypoints.has(key)) {
       continue;
     }
@@ -259,7 +272,7 @@ function changeOf(
     return null;
   }
   return {
-    key: `${side.file}::${side.unit}`,
+    key: entrypointKey(side.file, side.unit, side.boundary),
     boundary: side.boundary,
     unit: side.unit,
     file: side.file,

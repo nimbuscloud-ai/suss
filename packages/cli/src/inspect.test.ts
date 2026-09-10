@@ -988,6 +988,52 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  it("gives each boundary one function serves a block of its own", () => {
+    // A shared `respond` middleware is the handler of every route that
+    // lists it last, so the same file and name serve many boundaries.
+    const serving = (routePath: string, status: number) => ({
+      ...changedTo("respond", "src/respond.ts", status),
+      identity: routeSummary("respond", routePath).identity,
+    });
+    const before = [serving("/users", 200), serving("/teams", 200)];
+    const after = [serving("/users", 201), serving("/teams", 202)];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output.split("\n")[0]).toContain("2 boundaries changed");
+      expect(output).toContain("~ serves GET /teams  src/respond.ts::respond");
+      expect(output).toContain("~ serves GET /users  src/respond.ts::respond");
+    });
+  });
+
+  it("prints no pair for an outcome that moved only in its effects", () => {
+    const before = [changedTo("getTeam", "src/teams.ts", 200)];
+    const after = [
+      {
+        ...changedTo("getTeam", "src/teams.ts", 200),
+        transitions: [
+          {
+            ...(changedTo("getTeam", "src/teams.ts", 200)
+              .transitions[0] as Transition),
+            effects: [
+              {
+                type: "invocation" as const,
+                callee: "audit",
+                args: [],
+                async: false,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).not.toContain("~ was");
+    });
+  });
+
   it("writes out what a unit did where the file names it", () => {
     // A reader wants to know whether a unit changed what it returns or
     // what it does on the way, which a count of transitions never says.

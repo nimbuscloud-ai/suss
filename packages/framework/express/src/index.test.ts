@@ -599,7 +599,7 @@ describe("expressFramework: a router a project wrapper builds", () => {
 });
 
 describe("expressFramework: a route with middleware listed before its handler", () => {
-  it("reports what each listed function produces as part of the route", async () => {
+  function routeWithListedMiddleware() {
     const project = createTestProject();
     project.createSourceFile(
       "asyncHandler.ts",
@@ -639,11 +639,26 @@ describe("expressFramework: a route with middleware listed before its handler", 
       );
     `,
     );
-
     const adapter = createTypeScriptAdapter({
       project,
       frameworks: [expressFramework()],
     });
+    return { project, adapter };
+  }
+
+  function statusesOf(summaries: BehavioralSummary[]) {
+    const login = summaries.find(
+      (one) => one.identity.boundaryBinding?.semantics?.name === "rest",
+    );
+    return login?.transitions.map((t) =>
+      t.output.type === "response" && t.output.statusCode?.type === "literal"
+        ? t.output.statusCode.value
+        : null,
+    );
+  }
+
+  it("reports what each listed function produces as part of the route", async () => {
+    const { adapter } = routeWithListedMiddleware();
     const summaries = await adapter.extractAll();
 
     const login = summaries.find(
@@ -658,12 +673,15 @@ describe("expressFramework: a route with middleware listed before its handler", 
         name: "asyncHandler@POST /login",
       },
     ]);
-    expect(
-      login?.transitions.map((t) =>
-        t.output.type === "response" && t.output.statusCode?.type === "literal"
-          ? t.output.statusCode.value
-          : null,
-      ),
-    ).toEqual([400, 200]);
+    expect(statusesOf(summaries)).toEqual([400, 200]);
+  });
+
+  it("composes the listed function in a run over named files too", async () => {
+    const { project, adapter } = routeWithListedMiddleware();
+    const summaries = await adapter.extractFromFiles(
+      project.getSourceFiles().map((file) => file.getFilePath()),
+    );
+
+    expect(statusesOf(summaries)).toEqual([400, 200]);
   });
 });
