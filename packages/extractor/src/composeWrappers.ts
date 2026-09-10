@@ -65,12 +65,15 @@ export function composeWrappers(
   summaries: readonly BehavioralSummary[],
   options: ComposeOptions = {},
 ): BehavioralSummary[] {
-  const byKey = new Map<string, BehavioralSummary>();
+  const byKey = new Map<string, BehavioralSummary[]>();
   for (const summary of summaries) {
     const key = summaryKey(summary.location.file, summary.identity.name);
-    if (!byKey.has(key)) {
-      byKey.set(key, summary);
+    const sharing = byKey.get(key);
+    if (sharing === undefined) {
+      byKey.set(key, [summary]);
+      continue;
     }
+    sharing.push(summary);
   }
 
   const keepGaps = options.gapHandling !== "silent";
@@ -81,9 +84,28 @@ function summaryKey(file: string, name: string): string {
   return `${file}::${name}`;
 }
 
+/**
+ * The summary a reference points at. Two functions written out at
+ * their registrations in one file go by the same name, and the line
+ * is what tells them apart.
+ */
+function summaryOf(
+  reference: WrapperReference,
+  byKey: ReadonlyMap<string, BehavioralSummary[]>,
+): BehavioralSummary | undefined {
+  const sharing = byKey.get(summaryKey(reference.file, reference.name)) ?? [];
+  if (reference.line === undefined) {
+    return sharing[0];
+  }
+  return (
+    sharing.find((one) => one.location.range.start === reference.line) ??
+    sharing[0]
+  );
+}
+
 function composeOne(
   summary: BehavioralSummary,
-  byKey: ReadonlyMap<string, BehavioralSummary>,
+  byKey: ReadonlyMap<string, BehavioralSummary[]>,
   keepGaps: boolean,
 ): BehavioralSummary {
   const recorded = readWrapperMetadata(summary);
@@ -105,7 +127,7 @@ function composeOne(
         };
 
   const wrappers = covering.flatMap((reference): ResolvedWrapper[] => {
-    const found = byKey.get(summaryKey(reference.file, reference.name));
+    const found = summaryOf(reference, byKey);
     return found === undefined ? [] : [{ reference, summary: found }];
   });
   if (wrappers.length === 0) {

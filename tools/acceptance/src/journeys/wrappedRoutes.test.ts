@@ -52,11 +52,13 @@ describe("read a service whose statuses come from around the handler", () => {
         {
           file: "fixtures/wrapped-routes/requireCaller.ts",
           name: "requireCaller",
+          line: 8,
           scope: "/v1/*",
         },
         {
           file: "fixtures/wrapped-routes/app.ts",
           name: "onError",
+          line: 28,
           onThrow: true,
         },
         {
@@ -121,6 +123,7 @@ describe("read a service whose statuses come from around the handler", () => {
         {
           file: "fixtures/wrapped-routes/app.ts",
           name: "onError",
+          line: 28,
           onThrow: true,
         },
         {

@@ -77,6 +77,7 @@ function unit(
     path?: string;
     wrappers?: WrapperReference[];
     contract?: number[];
+    line?: number;
   } = {},
 ): BehavioralSummary {
   const declaredContract =
@@ -101,7 +102,11 @@ function unit(
       : contractStatusGaps(declaredContract, transitions);
   return {
     kind: "handler",
-    location: { file, range: { start: 1, end: 9 }, exportName: name },
+    location: {
+      file,
+      range: { start: options.line ?? 1, end: (options.line ?? 1) + 8 },
+      exportName: name,
+    },
     identity: {
       name,
       exportPath: [name],
@@ -269,6 +274,59 @@ describe("composeWrappers", () => {
     expect(composed.transitions[2].conditions).toEqual([
       { type: "negation", operand: guard("tooMany") },
       { type: "negation", operand: guard("noToken") },
+    ]);
+  });
+
+  it("tells two wrappers with the same name in one file apart by line", () => {
+    // Two functions written out at their registrations both go by the
+    // registering method. Pairing on the name alone applied the first
+    // twice and lost what the second returns.
+    const first: WrapperReference = {
+      file: "src/app.ts",
+      name: "use",
+      line: 3,
+    };
+    const second: WrapperReference = {
+      file: "src/app.ts",
+      name: "use",
+      line: 9,
+    };
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [first, second],
+      line: 15,
+    });
+    const summaries = [
+      unit(
+        "use",
+        "src/app.ts",
+        [
+          responds("denied", 401, [guard("noToken")]),
+          continues("passed", [
+            { type: "negation", operand: guard("noToken") },
+          ]),
+        ],
+        { line: 3 },
+      ),
+      unit(
+        "use",
+        "src/app.ts",
+        [
+          responds("banned", 403, [guard("banned")]),
+          continues("allowed", [
+            { type: "negation", operand: guard("banned") },
+          ]),
+        ],
+        { line: 9 },
+      ),
+      route,
+    ];
+
+    const composed = composeWrappers(summaries)[2];
+
+    expect(statusesOf(composed)).toEqual([
+      { type: "literal", value: 401 },
+      { type: "literal", value: 403 },
+      { type: "literal", value: 200 },
     ]);
   });
 
