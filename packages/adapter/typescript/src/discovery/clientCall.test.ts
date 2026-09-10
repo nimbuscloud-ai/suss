@@ -122,4 +122,20 @@ describe("naming a unit by its enclosing shape", () => {
     );
     expect(names.sort()).toEqual(["getUser", "listOrders"]);
   });
+
+  it("matches the global through globalThis and window, and not a method of that name elsewhere", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/consumer.ts",
+      `
+      export const proxied = () => globalThis.fetch("/proxied");
+      export const fromWindow = () => window.fetch("/from-window");
+      export const notAGlobal = (api: { fetch: (p: string) => unknown }) => api.fetch("/x");
+      `,
+    );
+    const names = discoverClientCalls(file, match, "client").map(
+      (unit) => unit.name,
+    );
+    expect(names.sort()).toEqual(["fromWindow", "proxied"]);
+  });
 });

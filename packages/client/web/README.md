@@ -6,7 +6,7 @@ Client pack for the web `fetch` API. It discovers `fetch()` call sites, extracts
 
 `@suss/client-web` returns a `PatternPack` object describing:
 
-- **Discovery** via global `fetch()` call sites (not an import; `fetch` is a built-in)
+- **Discovery** via global `fetch()` call sites (not an import; `fetch` is a built-in), written bare or through the global object as `globalThis.fetch()`, `window.fetch()`, `self.fetch()` or `global.fetch()`
 - **Binding extraction**: URL path from the first argument (literal strings only), HTTP method from `options.method` (defaults to `GET`)
 - **Terminals**: `returnStatement` (any return) and `throwExpression`
 

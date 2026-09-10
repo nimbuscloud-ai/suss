@@ -34,6 +34,9 @@ import type { CallExpression, NewExpression } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
+/** The objects a global is reachable through, in a browser or in Node. */
+const GLOBAL_OBJECTS = new Set(["globalThis", "window", "self", "global"]);
+
 type ClientCallMatch = Extract<
   DiscoveryPattern["match"],
   { type: "clientCall" }
@@ -85,6 +88,14 @@ export function discoverClientCalls(
     if (isGlobal && Node.isIdentifier(callee)) {
       // Bare call: fetch(...)
       if (callee.getText() === match.importName) {
+        matched = true;
+      }
+    } else if (isGlobal && Node.isPropertyAccessExpression(callee)) {
+      // The same global through its object: globalThis.fetch(...)
+      if (
+        callee.getName() === match.importName &&
+        GLOBAL_OBJECTS.has(callee.getExpression().getText())
+      ) {
         matched = true;
       }
     } else if (

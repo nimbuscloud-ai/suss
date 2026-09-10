@@ -9,6 +9,8 @@ The latest round of changes, in two passes: what it means if you use suss, and w
 
 ## If you use suss
 
+**A `fetch` written through the global object is read.** `globalThis.fetch(url, init)` is how a project's own HTTP service reaches the built-in when it has a method called `fetch` itself, and `window.fetch` is common in browser code; the fetch pack matched only the bare spelling, so those calls had no HTTP effect. The call is now read through `globalThis`, `window`, `self` or `global` the same as bare `fetch`, and a `fetch` method on some other object is still left alone.
+
 **A Prisma call through a project's own client subclass is read.** A NestJS app writes `class PrismaService extends PrismaClient` and injects it, so a handler's `this.prismaService.user.findMany()` has a receiver whose type is declared in the project, and the prisma pack checked only that declaration for `@prisma/client`, so every call through the service had no storage effect. The pack now follows the type's base classes, so a subclass of the client counts the same as `new PrismaClient()`.
 
 **An axios request written as one config object is read.** `axios({ url: "/users", method: "post" })`, `api({ url })` on an instance built by `axios.create`, and `axios.request(config)` are spellings axios accepts that the pack did not match, so a project whose own wrapper ends in `instance({ ...opts, url })` had no HTTP effects at all. The pack now reads the `url` and `method` properties off the object, and the object is evaluated, so a spread from a name the evaluator can follow contributes its fields the same as one written in place. A wrapper whose object comes in as a parameter is reported with its path open, as it is for `api.get(path)` today.
