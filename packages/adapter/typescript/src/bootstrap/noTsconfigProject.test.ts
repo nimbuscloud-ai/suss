@@ -126,6 +126,17 @@ describe("findNearestTsconfig", () => {
     expect(findNearestTsconfig(dir)).toBe(path.join(dir, "jsconfig.json"));
   });
 
+  it("accepts a tsconfig.base.json, which is what a monorepo root keeps", () => {
+    fs.writeFileSync(path.join(dir, "tsconfig.base.json"), "{}");
+    expect(findNearestTsconfig(dir)).toBe(path.join(dir, "tsconfig.base.json"));
+  });
+
+  it("prefers tsconfig.json over tsconfig.base.json beside it", () => {
+    fs.writeFileSync(path.join(dir, "tsconfig.json"), "{}");
+    fs.writeFileSync(path.join(dir, "tsconfig.base.json"), "{}");
+    expect(findNearestTsconfig(dir)).toBe(path.join(dir, "tsconfig.json"));
+  });
+
   it("prefers the nearer one", () => {
     fs.writeFileSync(path.join(dir, "tsconfig.json"), "{}");
     const nested = path.join(dir, "service");

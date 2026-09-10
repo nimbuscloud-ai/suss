@@ -333,10 +333,19 @@ function readFileText(project: Project, filePath: string): string | null {
   }
 }
 
-function parseTsconfig(tsConfigFilePath: string): {
+/**
+ * A solution-style tsconfig lists no files of its own and points at
+ * `tsconfig.app.json` and `tsconfig.spec.json` under `references`, so
+ * the file list is the union of what those list.
+ */
+function parseTsconfig(
+  tsConfigFilePath: string,
+  seen: Set<string> = new Set(),
+): {
   fileNames: string[];
   options: ts.CompilerOptions;
 } {
+  seen.add(tsConfigFilePath);
   const configFile = ts.readConfigFile(tsConfigFilePath, ts.sys.readFile);
   if (configFile.error !== undefined) {
     return { fileNames: [], options: {} };
@@ -348,7 +357,20 @@ function parseTsconfig(tsConfigFilePath: string): {
     /*existingOptions*/ undefined,
     tsConfigFilePath,
   );
-  return { fileNames: parsed.fileNames, options: parsed.options };
+  if (parsed.fileNames.length > 0) {
+    return { fileNames: parsed.fileNames, options: parsed.options };
+  }
+  const referenced = (parsed.projectReferences ?? [])
+    .map((reference) => ts.resolveProjectReferencePath(reference))
+    .filter((referencePath) => !seen.has(referencePath));
+  const fileNames = [
+    ...new Set(
+      referenced.flatMap(
+        (referencePath) => parseTsconfig(referencePath, seen).fileNames,
+      ),
+    ),
+  ];
+  return { fileNames, options: parsed.options };
 }
 
 interface FileImports {

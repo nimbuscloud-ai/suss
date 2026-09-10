@@ -8,6 +8,7 @@ export { extractRawBranches } from "./assembly.js";
 export {
   createProjectWithoutTsconfig,
   findNearestTsconfig,
+  TSCONFIG_NAMES,
 } from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches } from "./conditions.js";
 export { readConfiguredCall, rootIdentifier } from "./configuredCall.js";

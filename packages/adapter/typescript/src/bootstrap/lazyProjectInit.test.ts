@@ -244,6 +244,46 @@ describe("createLazyProject", () => {
     const result = await createLazyProject(tsconfigPath, [gatedPack]);
     expect(result.projectFileSet.size).toBe(2);
   });
+
+  it("takes the file list from the references of a solution-style tsconfig", async () => {
+    const { dir, tsconfigPath } = await makeTempProject({
+      "src/main.ts": `import "@gated/lib"; export const loader = () => 1;`,
+      "src/main.spec.ts": "export const x = 1;",
+    });
+    await fs.writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        files: [],
+        include: [],
+        references: [
+          { path: "./tsconfig.app.json" },
+          { path: "./tsconfig.spec.json" },
+        ],
+      }),
+    );
+    await fs.writeFile(
+      path.join(dir, "tsconfig.app.json"),
+      JSON.stringify({
+        extends: "./tsconfig.json",
+        include: ["src/**/*.ts"],
+        exclude: ["**/*.spec.ts"],
+      }),
+    );
+    await fs.writeFile(
+      path.join(dir, "tsconfig.spec.json"),
+      JSON.stringify({
+        extends: "./tsconfig.json",
+        include: ["src/**/*.spec.ts"],
+      }),
+    );
+    const result = await createLazyProject(tsconfigPath, [gatedPack]);
+    expect(
+      [...result.projectFileSet].map((p) => path.basename(p)).sort(),
+    ).toEqual(["main.spec.ts", "main.ts"]);
+    expect(result.candidatePaths.map((p) => path.basename(p))).toEqual([
+      "main.ts",
+    ]);
+  });
 });
 
 describe("lazyAddSourceFile", () => {
