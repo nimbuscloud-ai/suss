@@ -1,20 +1,20 @@
 {
   "total": {
     "lines": {
-      "total": 482,
-      "covered": 469,
+      "total": 485,
+      "covered": 472,
       "skipped": 0,
-      "pct": 97.3
+      "pct": 97.31
     },
     "statements": {
-      "total": 505,
-      "covered": 492,
+      "total": 508,
+      "covered": 495,
       "skipped": 0,
-      "pct": 97.42
+      "pct": 97.44
     },
     "functions": {
-      "total": 107,
-      "covered": 107,
+      "total": 108,
+      "covered": 108,
       "skipped": 0,
       "pct": 100
     },
@@ -85,22 +85,22 @@
   },
   "src/explain.ts": {
     "lines": {
-      "total": 104,
-      "covered": 98,
+      "total": 107,
+      "covered": 101,
       "skipped": 0,
-      "pct": 94.23
+      "pct": 94.39
     },
     "functions": {
-      "total": 25,
-      "covered": 25,
+      "total": 26,
+      "covered": 26,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 106,
-      "covered": 100,
+      "total": 109,
+      "covered": 103,
       "skipped": 0,
-      "pct": 94.33
+      "pct": 94.49
     },
     "branches": {
       "total": 62,
