@@ -3,9 +3,9 @@
     "packages": 74,
     "packagesWithExports": 74,
     "exports": 904,
-    "internal": 3212,
-    "consumers": 1748,
-    "pairs": 1745,
+    "internal": 3220,
+    "consumers": 1754,
+    "pairs": 1751,
     "unfollowedCalls": 498,
     "findingErrors": 0
   },
@@ -20,7 +20,7 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 69,
-      "internal": 256,
+      "internal": 257,
       "consumers": 134,
       "unfollowedCalls": 72
     },
@@ -391,8 +391,8 @@
     "packages/framework/rails": {
       "name": "@suss/framework-rails",
       "exports": 4,
-      "internal": 13,
-      "consumers": 28,
+      "internal": 18,
+      "consumers": 34,
       "unfollowedCalls": 6
     },
     "packages/framework/react": {
@@ -475,7 +475,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 45,
-      "internal": 136,
+      "internal": 138,
       "consumers": 0,
       "unfollowedCalls": 9
     },
