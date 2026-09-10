@@ -18,8 +18,8 @@ All five run code. The schema is reused whole by two protocols, and
 it". `runtime-config` is the unit's environment, keyed by
 `(deploymentTarget, instanceName)`. `unit-invocation` is the same pair
 as a callee. The third use is `identity.deployableUnit`, the stamp that
-says which unit a summary's code runs in, which is what the flow walk
-keys its nodes on.
+says which unit a summary's code runs in. The flow walk keys its nodes
+on that stamp.
 
 An RDS instance is deployed, is declared in the same template, and is
 on the same network, and none of the three uses covers it. The

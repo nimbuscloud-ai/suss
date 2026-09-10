@@ -63,7 +63,7 @@ async function branchesOf(
   return branches;
 }
 
-/** The reading each branch claims, which is what a summary collapses into a status. */
+/** The reading each branch claims, before a summary collapses it into a status. */
 function readings(branches: readonly RawBranch[]): Array<Reading<number>> {
   return branches.map((branch) => {
     const reading = branch.statusCodeReading?.reading;

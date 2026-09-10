@@ -154,8 +154,7 @@ export interface FilterBody {
 
 /**
  * The unit for one filter method. A path that responds ends the
- * request and every other path hands it on, which is what the
- * `delegate` branches say.
+ * request, and every other path hands it on as a `delegate` branch.
  */
 export function filterUnit(
   filter: ControllerFilter,

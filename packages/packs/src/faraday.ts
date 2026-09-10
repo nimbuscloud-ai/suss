@@ -1,2 +1,2 @@
-// The pack factory, which is what `-f faraday` loads.
+// The pack factory that `-f faraday` loads.
 export { declares, default } from "@suss/client-faraday";

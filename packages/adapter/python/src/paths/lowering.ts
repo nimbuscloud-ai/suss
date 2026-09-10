@@ -257,7 +257,7 @@ class Lowerer {
  * its return statements and the calls its pack says end the request.
  *
  * `thrown` is the set of statements that leave the unit without being
- * written as a `raise`, which is what a call like Flask's `abort` does.
+ * written as a `raise`, such as a call to Flask's `abort`.
  */
 export function lowerPythonBody(
   body: PyNode | null,

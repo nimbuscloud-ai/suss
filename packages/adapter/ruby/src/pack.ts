@@ -54,7 +54,7 @@ export interface RbClientCall {
   receiverBuilders?: string[];
   /** The keyword such a builder takes the base URL under, which comes in front of the path of a call on it. */
   builderUrlKeyword?: string;
-  /** What the response object gives a caller, so a test on it reads as a test on a status. */
+  /** What the response object gives a caller, so a test on one of its members counts as a test on a status. */
   response?: RbClientResponse;
   /** A call that sends a request object built somewhere else, which is how Net::HTTP sends anything with a body. */
   requestObject?: {
@@ -151,7 +151,7 @@ export interface RbControllerFilter {
    * `rescue_from ActiveRecord::RecordNotFound, with: :not_found`.
    */
   methodFrom: "argument" | "withKeyword";
-  /** Set when the library runs the method only for an action that raised, which is what `rescue_from` does. */
+  /** Set when the library runs the method only for an action that raised, as `rescue_from` does. */
   onThrow?: boolean;
   /** The name of the call that takes a filter back off, `skip_before_action` for `before_action`. */
   skippedBy?: string;
@@ -162,7 +162,7 @@ export interface RbControllerFilter {
 /**
  * One call an action writes to send a response, and where that call takes
  * the status. A call may take it both ways, and then the keyword wins,
- * which is what Rails does with `head :ok, status: :created`.
+ * as it does in Rails for `head :ok, status: :created`.
  */
 export interface RbStatusCall {
   /** The call's own name as an action writes it, `render` for Rails. */

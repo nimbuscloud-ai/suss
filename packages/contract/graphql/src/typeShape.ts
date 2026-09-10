@@ -45,7 +45,7 @@ function scalarOrRef(node: NamedTypeNode): TypeShape {
 }
 
 /**
- * Every named type the document defines, as the shape it stands for.
+ * Every named type the document defines, with the record behind it.
  *
  * A field's return type is a name, and a name has no structure to
  * compare against what a resolver in code returns. A summary states

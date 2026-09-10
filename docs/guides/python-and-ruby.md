@@ -305,8 +305,8 @@ in the config, since ActiveRecord talks to several databases and only
 `flask-restx` the same way.
 
 Add `-f requests` to a Python run and every function that calls another
-service through requests comes back as a client of the route it calls,
-which is what gives `suss check` a consumer side in Python. `-f httpx`
+service through requests comes back as a client of the route it calls.
+That gives `suss check` a consumer side in Python. `-f httpx`
 and `-f aiohttp` read the same thing through those two libraries, an
 `async with aiohttp.ClientSession() as session` included. `-f faraday`
 does the same for a Ruby run, over Faraday's own module and over a

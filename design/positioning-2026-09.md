@@ -139,7 +139,7 @@ that adopted an agent last month has a use for that today.
 
 ## Risks
 
-- The frame reads as a claim about agents that suss cannot back.
+- The frame could be taken as a claim about agents that suss cannot back.
   Mitigation: the demonstration, the limits paragraph, and never
   naming a vendor on the page.
 - A reader tries rung one on a stack suss reads poorly and leaves.

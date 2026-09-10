@@ -50,7 +50,7 @@ function writeConfig(contents: string): string {
  * The config a pack refuses to run without, taken from what the pack
  * declares. `suss init` prints that same example, so a pack whose
  * declaration is missing it hands somebody a command that fails on the
- * first line, which is what the test below is about.
+ * first line. The test below checks each one.
  */
 async function configuredExamples(): Promise<Record<string, unknown>> {
   const examples: Record<string, unknown> = {};

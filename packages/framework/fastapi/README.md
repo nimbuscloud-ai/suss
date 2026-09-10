@@ -18,7 +18,7 @@ Depends only on `@suss/adapter-python` (for the `PythonPack` type and the Python
 
 ## What abstains
 
-The decorator's path argument and both prefixes go through the value evaluator, so a name, two strings joined with `+`, and an f-string over a name the evaluator settles all read as the path they produce. An f-string spells a literal brace by doubling it, so `@app.get(f"/v1/{{id}}")` reads as `/v1/{id}`, which is where FastAPI serves it. A placeholder in the path argument that the evaluator cannot settle stays in the path as a hole, which is how a path parameter is written anyway.
+The decorator's path argument and both prefixes go through the value evaluator, so a name, two strings joined with `+`, and an f-string over a name the evaluator settles all come out as the path they produce. An f-string spells a literal brace by doubling it, so `@app.get(f"/v1/{{id}}")` comes out as `/v1/{id}`, which is where FastAPI serves it. A placeholder in the path argument that the evaluator cannot settle stays in the path as a hole, which is how a path parameter is written anyway.
 
 The pack never guesses a path. A route keeps its name and has no path when:
 

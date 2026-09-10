@@ -569,7 +569,7 @@ async function runInspect(argv: string[]): Promise<number> {
     }
     if (changedFilesAt !== undefined && !existsSync(changedFilesAt)) {
       process.stderr.write(
-        `No file at ${changedFilesAt}. --changed-files reads one path per line, which is what \`git diff --name-only\` writes.\n`,
+        `No file at ${changedFilesAt}. --changed-files reads one path per line, the format \`git diff --name-only\` writes.\n`,
       );
       return 1;
     }

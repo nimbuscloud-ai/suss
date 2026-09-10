@@ -5,7 +5,7 @@ import { predicateOf } from "./predicates.js";
 
 import type { RbNode } from "../parser.js";
 
-/** The condition of `x = 1 if <source>`, which is what a branch is gated on. */
+/** The condition node of `x = 1 if <source>`, the node a branch is gated on. */
 async function conditionOf(source: string): Promise<RbNode> {
   const tree = await parseRuby(`x = 1 if ${source}\n`);
   const modifier = tree.rootNode.namedChildren[0] as RbNode;
@@ -15,7 +15,7 @@ async function conditionOf(source: string): Promise<RbNode> {
 const read = async (source: string) => predicateOf(await conditionOf(source));
 
 describe("what a Ruby condition says", () => {
-  it("reads a comparison against a literal, which is what a status test looks like", async () => {
+  it("reads a comparison against a literal, the form a status test takes", async () => {
     expect(await read("response.status == 404")).toEqual({
       type: "comparison",
       left: { type: "dependency", name: "response", accessChain: ["status"] },

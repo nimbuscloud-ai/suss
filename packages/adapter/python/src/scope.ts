@@ -126,8 +126,8 @@ const STATEMENT_BINDERS: Record<
 /**
  * `with httpx.Client() as client:` binds the name to what the call
  * returns. A context manager may hand `__enter__` something other than
- * itself, and this reads the call, which is what every one a project
- * opens for its own use does return. Python has no block scope, so the
+ * itself, and this binds the call anyway, since every one a project
+ * opens for its own use does return itself. Python has no block scope, so the
  * name goes in the scope the statement is written in, and the body's
  * own statements bind there too.
  */

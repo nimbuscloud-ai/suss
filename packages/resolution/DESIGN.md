@@ -62,8 +62,8 @@ call passes it, a property read to what the object contains under that
 name, a construction to the class, a transparent wrapper to the argument
 it wraps. A result step goes the other way, from a call to what the
 function it invokes returns. A walk counts as a result walk once it has
-run a call anywhere along it, which is what keeps a factory call out of
-the answers that stop at a value.
+run a call anywhere along it. That rule keeps a factory call out of
+the results that stop at a value.
 
 A language with a hop of its own states it as a step too. JavaScript's
 `.bind` and Ruby's `Const.new` are each one rule, and every question
@@ -157,7 +157,7 @@ one it cares about is among them.
 Two relations exist for the rules' own use rather than for callers:
 
 ```
-objectOf(x, obj)            x stands for the object literal obj
+objectOf(x, obj)            x is the object literal obj
 invokes(r, f)               the call r runs the function f
 ```
 
@@ -293,8 +293,8 @@ the rest without any change.
 Every rule here composes with every other one, so a change meant for one
 construct lands on chains nobody had in mind. `@suss/resolution-fuzz`
 generates four thousand fact bases, runs these rules over each, and
-compares what came out against a committed baseline, which is what turns
-a change into a diff a reviewer reads. Run `npm run resolution:baseline`
+compares what came out against a committed baseline, so a rule change
+shows up as a diff a reviewer reads. Run `npm run resolution:baseline`
 to accept one, and commit the rewritten file with the rule.
 
 ## What is not modelled

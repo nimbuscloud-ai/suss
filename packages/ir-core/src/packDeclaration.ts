@@ -4,9 +4,7 @@
  *
  * `suss init` suggests a pack when it sees the library in a project's
  * manifest, and the packages page lists every pack with a line about
- * what it reads. Both used to be tables somebody edited by hand, in the
- * CLI and in a document, and both went stale the release after a pack
- * arrived. A pack states this beside its own patterns instead.
+ * what it reads. Both come from here, so nobody maintains a table.
  */
 
 /** The manifest a dependency is declared in. */

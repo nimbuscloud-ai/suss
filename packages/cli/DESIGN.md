@@ -15,7 +15,7 @@ How `suss init` reads a project's dependency manifests, and how a run treats a n
 | `Pipfile` | TOML. We read both the `packages` and `dev-packages` tables, each keyed by library name. |
 | `Gemfile.lock` | A Gemfile is Ruby, and its gem list can come out of a loop or a call into another file, so we read the lock file that bundler writes instead. Only the `DEPENDENCIES` section counts. The `GEM` section below it lists everything those gems pulled in transitively, and suggesting a pack for a library the project never asked for would be a worse answer than suggesting none. If there is no lock file, we say so. |
 
-We normalize Python names per PEP 503, which is what makes `Flask-RESTX`, `flask_restx`, and `flask.restx` one library instead of three.
+We normalize Python names per PEP 503, so `Flask-RESTX`, `flask_restx`, and `flask.restx` count as one library instead of three.
 
 ## Nested repositories and submodules
 

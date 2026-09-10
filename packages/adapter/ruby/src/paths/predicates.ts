@@ -134,7 +134,7 @@ function literalOf(node: RbNode): ValueRef | null {
  * `response.status` as the name it starts from and the members read off
  * it, so a reader can ask which member the test read. A trailing
  * conversion is the language's own and says nothing about that, so
- * `response.code.to_i` reads as `code` the way `response.status` does.
+ * `response.code.to_i` comes out as `code` the way `response.status` does.
  * Null for anything with arguments or a receiver that is not a name.
  */
 function memberChain(node: RbNode, tail: string[] = []): string[] | null {

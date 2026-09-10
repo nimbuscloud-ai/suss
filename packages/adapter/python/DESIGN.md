@@ -4,7 +4,7 @@ The reference for `@suss/adapter-python`: what it discovers, how it decides, and
 
 ## Path templates
 
-A pack declares which syntax its library uses for path parameters, under `pathParamSyntax`. The adapter understands two. `"braces"` covers `{name}` and `{name:converter}`, which is what FastAPI uses via Starlette. `"flaskConverters"` covers `<name>`, `<converter:name>`, and `<converter(arguments):name>`, which is what flask-restx uses via Werkzeug. In both cases the adapter rewrites the path into the IR's plain-brace form and treats the parameters in the template as path parameters.
+A pack declares which syntax its library uses for path parameters, under `pathParamSyntax`. The adapter understands two. `"braces"` covers `{name}` and `{name:converter}`, the syntax FastAPI gets from Starlette. `"flaskConverters"` covers `<name>`, `<converter:name>`, and `<converter(arguments):name>`, the syntax flask-restx gets from Werkzeug. In both cases the adapter rewrites the path into the IR's plain-brace form and treats the parameters in the template as path parameters.
 
 If a pack declares nothing, it gets paths exactly as written and no parameter is treated as a path parameter. If a pack declares a syntax the adapter has no reader for, its routes are still discovered, but they come out with no path and a recorded gap. Packs written against 0.3 assumed brace parsing applied to every path, so those packs now have to declare `"braces"` explicitly.
 
@@ -38,7 +38,7 @@ Whatever the binder declines goes to the rules in `@suss/resolution`, as `wanted
 
 The rules settle on one construction or on nothing. A name that could be two different constructions comes back with neither, because keying a route on the wrong app is worse than keying it on none, and then the decorator stays unclassified and the route is not discovered.
 
-Three Python facts feed the question. A method's receiver binds to the class it is declared in, which is what makes `self.app` the value the class puts under `app`. An assignment written inside a method body binds its name, which the class walk used to skip. And an import of a package the repo cannot read still records which module a name came from, which is how `FastAPI()` is told apart from a same-named constructor the project wrote itself.
+Three Python facts feed the question. A method's receiver binds to the class it is declared in, so `self.app` is the value the class puts under `app`. An assignment written inside a method body binds its name, which the class walk used to skip. And an import of a package the repo cannot read still records which module a name came from, which is how `FastAPI()` is told apart from a same-named constructor the project wrote itself.
 
 ## How a prefix is read
 
@@ -125,21 +125,21 @@ the two is the work that would settle this.
 
 | Written | flask-restx serves | The reader says |
 | --- | --- | --- |
-| nothing | where the blueprint's own `url_prefix` put it | the reading stands |
+| nothing | where the blueprint's own `url_prefix` put it | the blueprint's prefix |
 | `url_prefix="/over"` | `/over` + the rest, replacing the blueprint's | abstain |
 | `url_prefix=""` | the rest, replacing the blueprint's with nothing | abstain |
 | `url_prefix=None` | where the blueprint's own `url_prefix` put it | abstain |
 | registered on another blueprint | the outer blueprint's prefix in front of everything | abstain |
 | registered twice | flask-restx refuses to start | abstain |
-| never registered | nothing at all | the reading stands |
+| never registered | nothing at all | the blueprint's prefix |
 
 Any spelling of `url_prefix` at the registration abstains, `None` included. The three that are written say different things (`"/over"` replaces, `""` replaces with nothing, `None` falls back to the blueprint's own), so a written keyword there says nothing on its own about where the routes land.
 
-A registration nobody wrote leaves the reading standing rather than abstaining. A blueprint the run never sees registered is one whose registration might sit in a file outside the run, and reading the prefix it was built with is the same claim the constructor already makes.
+A registration nobody wrote keeps the blueprint's own prefix rather than abstaining. A blueprint the run never sees registered is one whose registration might sit in a file outside the run, and reading the prefix it was built with is the same claim the constructor already makes.
 
 ### Repeated slashes
 
-A prefix written with a trailing slash leaves the composed path with two. Werkzeug answers such a rule at the merged path and redirects the written one, so `/api/v1//orders` is reached at `/api/v1/orders`; the pack says so, and the reader merges repeated slashes in every path it composes. Starlette does not do this, so FastAPI's pack says nothing and its paths stand as composed.
+A prefix written with a trailing slash leaves the composed path with two. Werkzeug answers such a rule at the merged path and redirects the written one, so `/api/v1//orders` is reached at `/api/v1/orders`; the pack says so, and the reader merges repeated slashes in every path it composes. Starlette does not do this, so FastAPI's pack says nothing and its paths are kept as composed.
 
 ## What a body lowers to
 
@@ -156,7 +156,7 @@ are all shared with TypeScript.
 | `while`, `for` | `loop` |
 | `try` / `except` / `finally` | `try`, with every except arm as the catch body |
 | `match` / `case` | `switch`, one group per case, `case _` as the default group |
-| `return`, `raise` | `exit`, which is what gives each of them its own transition |
+| `return`, `raise` | `exit`, so each of them gets its own transition |
 | `break`, `continue` | `exit`, which the engine uses for reachability rather than as an outcome |
 | anything else | `opaque` |
 
@@ -250,8 +250,8 @@ success flag and the body. Those names go on the summary, and the caller's own
 body is walked the way a route's is, so a test it writes on one of them becomes
 a path with a condition naming that member. `suss check` reads the status a
 condition names and reports a caller that handles one the other side never
-sends. A condition reads a member as the name it starts from and the members
-read off it, which is what makes the status in it findable at all.
+sends. A condition records a member as the name it starts from and the members
+read off it. Without that, nothing could find the status in it.
 
 ## What a body does with the database
 

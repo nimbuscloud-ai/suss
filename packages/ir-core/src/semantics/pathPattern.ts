@@ -163,7 +163,7 @@ function absorbsAnything(item: Item): boolean {
   );
 }
 
-/** Whether the two items can stand for the same single segment. */
+/** Whether the two items can match the same single segment. */
 function meetOnOneSegment(a: Item, b: Item): boolean {
   if (absorbsAnything(a) || absorbsAnything(b)) {
     return true;

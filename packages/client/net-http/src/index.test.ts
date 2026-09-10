@@ -185,8 +185,8 @@ describe("what a caller does with the response", () => {
       | { statusAccessors?: string[] }
       | undefined;
     expect(http?.statusAccessors).toEqual(["code"]);
-    // A summary carries the condition itself, past the reading a raw
-    // structure holds it in.
+    // The summary records the condition as structure, so the member
+    // and the literal can be read off it.
     expect(summaries[0]?.transitions[0]?.conditions[0]).toMatchObject({
       type: "comparison",
       left: { type: "dependency", accessChain: ["code"] },
