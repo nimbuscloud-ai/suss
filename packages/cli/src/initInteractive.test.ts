@@ -473,6 +473,40 @@ describe("suss init, guided", () => {
       expect(text).not.toContain("could not tell which packs");
     });
 
+    it("reads the Rails app at the root of a workspace that lists its frontend packages", async () => {
+      write(
+        "package.json",
+        JSON.stringify({ name: "root", workspaces: ["frontend/*"] }),
+      );
+      project("frontend/web", "web", ["axios"]);
+      write("Gemfile", 'source "https://rubygems.org"\ngem "railties"\n');
+      write(
+        "Gemfile.lock",
+        "GEM\n  specs:\n    railties (8.0.0)\n\nDEPENDENCIES\n  railties\n",
+      );
+      write(
+        "app/controllers/application_controller.rb",
+        "class ApplicationController < ActionController::Base\nend\n",
+      );
+
+      const written: string[] = [];
+      const spy = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation((chunk) => {
+          written.push(String(chunk));
+          return true;
+        });
+
+      await initInteractive({ dir, plain: true });
+      spy.mockRestore();
+
+      const text = written.join("");
+      expect(text).toContain("═ frontend/web ═");
+      expect(text).toContain("═ . ═");
+      expect(text).toContain("railties in Gemfile");
+      expect(text).toContain("suss extract --lang ruby -f rails");
+    });
+
     it("reads a Python service and a Ruby service under a root with no manifest", async () => {
       write(
         "api/pyproject.toml",

@@ -32,7 +32,7 @@ import {
   projectFileFor,
   writeProjectFile,
 } from "./projectFile.js";
-import { projectsBelow } from "./projectsBelow.js";
+import { isProjectIn, projectsBelow } from "./projectsBelow.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
@@ -120,9 +120,9 @@ async function findTargets(root: string): Promise<Target[]> {
           label: pkg.name ?? pkg.directory,
         }));
 
-  // A Python or Ruby service beside an npm workspace, or under a root
-  // with no manifest of its own, is listed by no workspace file.
-  for (const directory of projectDirectoriesBelow(root)) {
+  // No workspace file lists a Python or Ruby service beside an npm
+  // workspace, nor a root that is itself the Rails app the packages sit in.
+  for (const directory of projectDirectoriesAtOrBelow(root)) {
     if (!directories.some((known) => known.directory === directory)) {
       directories.push({ directory, label: directory });
     }
@@ -142,10 +142,13 @@ async function findTargets(root: string): Promise<Target[]> {
   );
 }
 
-/** The directories below the root that declare a Python or Ruby project of their own. */
-function projectDirectoriesBelow(root: string): string[] {
+/** The root and the directories below it that declare a Python or Ruby project of their own. */
+function projectDirectoriesAtOrBelow(root: string): string[] {
   const found = new Set<string>();
   for (const language of ["python", "ruby"] as const) {
+    if (isProjectIn(root, language)) {
+      found.add(".");
+    }
     for (const marker of projectsBelow(root, language)) {
       found.add(path.dirname(marker));
     }
