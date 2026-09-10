@@ -28,7 +28,10 @@
 // name is string overlap, not ownership leaking. Entries whose note
 // starts with "suss:" name suss's own tags and convention names, which
 // both sides legitimately spell, so they are excluded, as are shared-
-// vocabulary names and literals shorter than three characters.
+// vocabulary names and literals shorter than three characters. A note
+// starting with "language:" is excluded the same way: the language
+// defines a name of its own that the library spells too, `dict.get`
+// beside SQLAlchemy's `Session.get`.
 //
 // Run it with `npm run check:vocabulary`.
 
@@ -77,6 +80,9 @@ const KEYED_BY_IDENTIFIER = new Set([
  * often to signal anything.
  */
 const ADAPTER_SCAN_MIN_LENGTH = 3;
+
+/** A note saying the name belongs to suss or to the language as well as to the library. */
+const SPELLED_BY_BOTH = /^(suss|language):/;
 
 /** A string that could be a symbol in someone's source. */
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -366,7 +372,8 @@ function adaptersByPackageName() {
  * The library vocabulary each adapter must not name, gathered from the
  * framework packs that declare a dependency on that adapter. Entries
  * noted "suss:" are suss's own tags and convention names, spelled on
- * both sides by design; shared-vocabulary names are suss's own too.
+ * both sides by design, and entries noted "language:" are names the
+ * language defines too; shared-vocabulary names are suss's own.
  */
 function libraryNamesByAdapter(adapters) {
   const byAdapter = new Map();
@@ -396,7 +403,7 @@ function libraryNamesByAdapter(adapters) {
 
     for (const [name, note] of Object.entries(readJson(vocabularyFile))) {
       if (
-        (typeof note === "string" && note.startsWith("suss:")) ||
+        (typeof note === "string" && SPELLED_BY_BOTH.test(note)) ||
         shared.has(name) ||
         name.length < ADAPTER_SCAN_MIN_LENGTH
       ) {
