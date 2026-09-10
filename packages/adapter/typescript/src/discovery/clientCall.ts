@@ -87,6 +87,12 @@ export function discoverClientCalls(
       if (callee.getText() === match.importName) {
         matched = true;
       }
+    } else if (
+      match.callable === true &&
+      isClientItself(callee, match, clientVarNames, resolution)
+    ) {
+      // The client called as a function: axios(config), api(config)
+      matched = true;
     } else if (Node.isPropertyAccessExpression(callee)) {
       /**
        * Method call, matched four ways: `client.getUser()` on an
@@ -95,12 +101,7 @@ export function discoverClientCalls(
        * `client().get()` on what a project function returns.
        */
       const subject = callee.getExpression();
-      if (
-        (Node.isIdentifier(subject) &&
-          (isClientImport(subject, match, resolution, true) ||
-            clientVarNames.has(subject.getText()))) ||
-        resolvesToKnownInstance(subject, match, resolution)
-      ) {
+      if (isClientItself(subject, match, clientVarNames, resolution)) {
         methodName = callee.getName();
         if (methodFilter === null || methodFilter.has(methodName)) {
           matched = true;
@@ -130,6 +131,25 @@ export function discoverClientCalls(
   });
 
   return results;
+}
+
+/**
+ * Whether this expression is the client: the import under its
+ * conventional name, an instance this file built from it, or one the
+ * fact layer finds built elsewhere.
+ */
+function isClientItself(
+  subject: Node,
+  match: ClientCallMatch,
+  clientVarNames: Set<string>,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return (
+    (Node.isIdentifier(subject) &&
+      (isClientImport(subject, match, resolution, true) ||
+        clientVarNames.has(subject.getText()))) ||
+    resolvesToKnownInstance(subject, match, resolution)
+  );
 }
 
 /**

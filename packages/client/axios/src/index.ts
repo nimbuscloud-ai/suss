@@ -125,6 +125,59 @@ function isPathShapedSpecifier(specifier: string): boolean {
   return specifier.startsWith(".") || specifier.startsWith("/");
 }
 
+/**
+ * A request written as one config object: `axios({ url, method })`,
+ * `api({ url })` on an instance, or `axios.request(config)`. The method
+ * is whatever the object says, and GET when it says nothing, which is
+ * what axios does with it.
+ */
+function configCallDiscovery(
+  factories: AxiosClientFactory[],
+): DiscoveryPattern[] {
+  const bindingExtraction: DiscoveryPattern["bindingExtraction"] = {
+    method: {
+      type: "fromArgumentProperty",
+      position: 0,
+      property: "method",
+      default: "GET",
+    },
+    path: { type: "fromArgumentProperty", position: 0, property: "url" },
+  };
+  const patterns: DiscoveryPattern[] = [
+    {
+      kind: "client",
+      match: {
+        type: "clientCall",
+        importModule: "axios",
+        importName: "axios",
+        methodFilter: ["request"],
+        factoryMethods: ["create"],
+        callable: true,
+      },
+      bindingExtraction,
+      requiresImport: ["axios"],
+    },
+  ];
+  // Calling a declared factory builds a client rather than sending a
+  // request, so only `.request(config)` is read on what it returns.
+  for (const factory of factories) {
+    patterns.push({
+      kind: "client",
+      match: {
+        type: "clientCall",
+        importModule: factory.module,
+        importName: factory.export,
+        methodFilter: ["request"],
+      },
+      bindingExtraction,
+      requiresImport: isPathShapedSpecifier(factory.module)
+        ? []
+        : [factory.module],
+    });
+  }
+  return patterns;
+}
+
 export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
   const factories = options.factories ?? [];
   return {
@@ -132,9 +185,10 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
     protocol: "http",
     languages: ["typescript", "javascript"],
 
-    discovery: HTTP_METHODS.flatMap((verb) =>
-      discoveryForVerb(verb, factories),
-    ),
+    discovery: [
+      ...HTTP_METHODS.flatMap((verb) => discoveryForVerb(verb, factories)),
+      ...configCallDiscovery(factories),
+    ],
 
     terminals: [
       {

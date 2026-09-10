@@ -5,7 +5,7 @@
  * as one in any other language.
  */
 
-import { pathOf } from "@suss/values";
+import { force, pathOf } from "@suss/values";
 
 import { evaluatedValue } from "../values/evaluator.js";
 
@@ -22,4 +22,23 @@ export function pathFromArgument(
   resolution?: ResolutionStore,
 ): string | undefined {
   return pathOf(evaluatedValue(arg, resolution));
+}
+
+/**
+ * The path stated by a property of the object at a call site, for a
+ * client that takes its request as one config object, `axios({ url })`.
+ * The object is evaluated whole, so a spread from a name the evaluator
+ * can follow contributes its `url` the same as one written in place.
+ */
+export function pathFromProperty(
+  arg: Node,
+  property: string,
+  resolution?: ResolutionStore,
+): string | undefined {
+  const record = evaluatedValue(arg, resolution);
+  if (record.kind !== "record") {
+    return undefined;
+  }
+  const field = record.fields.get(property);
+  return field === undefined ? undefined : pathOf(force(field.value));
 }

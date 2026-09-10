@@ -6,8 +6,8 @@ Client pack for the [axios](https://axios-http.com/) HTTP client. It discovers `
 
 `@suss/client-axios` returns a `PatternPack` object describing:
 
-- **Discovery** via `axios.get/post/put/delete/patch/head/options(url, ...)` call sites where `axios` is imported as the default export from `"axios"`, whether the call is made on the `axios` import itself, on a variable built by `axios.create(...)`, or on a name imported from wherever that variable was declared
-- **Binding extraction**: HTTP method from the called method name; URL path from the first argument (literal strings only)
+- **Discovery** via `axios.get/post/put/delete/patch/head/options(url, ...)` call sites where `axios` is imported as the default export from `"axios"`, whether the call is made on the `axios` import itself, on a variable built by `axios.create(...)`, or on a name imported from wherever that variable was declared. A request written as one config object, `axios({ url, method })`, `api({ url })` on an instance, or `axios.request(config)`, is read the same way.
+- **Binding extraction**: HTTP method from the called method name, or from the `method` property of a config object (GET when it has none); URL path from the first argument, or from the `url` property of a config object. The argument is evaluated, so a name, a concatenation, or a spread from an object the evaluator can follow all come out with a path.
 - **Terminals**: `returnStatement` and `throwExpression`
 - **Response semantics**: `response.data` → body, `response.status` → status code, `response.headers` → headers
 
@@ -59,7 +59,6 @@ The `factories` pack option said the same thing until 0.21.0 removed it. A confi
 
 ### Limitations (v0)
 
-- **Bare-call form not supported.** `axios({ url, method })` and `axios.request(config)` aren't matched, and only the per-verb method calls are.
 - **Aliased default imports calling axios directly are not recognized in the same file.** `import ax from "axios"; ax.get(...)` in one file isn't matched, because for that form the pack matches the conventional `import axios from "axios"`. An aliased default import that feeds `axios.create(...)` resolves fine, wherever the resulting instance ends up being called from. The alias only matters for the bare call, the one with no `.create()`.
 - **Wrapper delegation is single-hop.** A wrapper method whose body forwards to another wrapper, rather than straight to a resolved instance, isn't followed through the second hop.
 - **A subject the resolution chain can't follow produces nothing.** A client instance passed through a parameter, built behind a conditional, or otherwise not traceable back to an `axios.create()` (or configured factory) call produces no boundary at all, rather than a guessed one.
