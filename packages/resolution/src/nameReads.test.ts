@@ -54,7 +54,7 @@ function assign(target: TestNode, value: TestNode): TestNode {
 }
 
 const RULES: NameReads<TestNode> & ChainReads<TestNode> = {
-  nameType: "identifier",
+  nameTypes: new Set(["identifier"]),
   laterBodies: new Set(["function", "block"]),
   childrenOf: (node) => node.children,
   isRead: (node) => {
