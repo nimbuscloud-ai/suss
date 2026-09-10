@@ -12,7 +12,7 @@ import {
 
 import type { Database } from "@suss/datalog";
 
-/** The one step Ruby states beyond the shared rules: `Loader.new`. */
+/** The two steps Ruby states beyond the shared rules, both about a call written with no arguments. */
 export const RUBY_RULES = [
   // `Loader.new` makes one of the class, which the shared rules already say
   // about calling a class. Ruby writes it as a method read off the constant
@@ -25,6 +25,22 @@ export const RUBY_RULES = [
       lit("comesTo", v("o"), v("cls")),
       lit("objectValue", v("cls")),
     ],
+  ),
+
+  // The shared `declared finder` step, for the same spelling: `Account.first`
+  // and `Account.where(x).first` write no arguments, so Ruby reads them as
+  // property reads and neither gets a `call` fact to hang that step on.
+  rule(
+    "stepsTo",
+    [v("x"), v("cls"), VALUE_STEP],
+    [
+      lit("readsProperty", v("x"), v("o"), v("m")),
+      lit("objectOf", v("o"), v("cls")),
+      lit("objectValue", v("cls")),
+      lit("libraryBase", v("cls"), v("n")),
+      lit("givesBackOne", v("n"), v("m")),
+    ],
+    "declared finder",
   ),
 ];
 

@@ -4,9 +4,15 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { Database } from "@suss/datalog";
+
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
-import { extractRubyProject, findRubyFiles } from "./project.js";
+import {
+  emitStorageFacts,
+  extractRubyProject,
+  findRubyFiles,
+} from "./project.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
@@ -472,6 +478,7 @@ describe("the method behind a field", () => {
         {
           baseClasses: ["ActiveRecord::Base"],
           writes: ["update", "destroy", "save"],
+          givesBack: ["find", "where", "first"],
           storageSystem: "postgresql",
         },
       ],
@@ -523,6 +530,7 @@ describe("the method behind a field", () => {
         {
           baseClasses: ["ActiveRecord::Base"],
           writes: ["update", "destroy", "save"],
+          givesBack: ["find", "where", "first"],
           storageSystem: "postgresql",
         },
       ],
@@ -720,5 +728,40 @@ describe("a controllerActions pattern's routing gaps", () => {
     });
     expect(gapDescriptions(summaries)).toEqual([]);
     expect(summaries.some((s) => s.kind === "module-init")).toBe(false);
+  });
+});
+
+describe("what a pack's storage patterns put in the facts", () => {
+  const patternFor = (
+    baseClasses: string[],
+    givesBack: string[],
+  ): RubyPack => ({
+    name: "activerecord",
+    protocol: "postgresql",
+    discovery: [],
+    storage: [
+      { baseClasses, writes: [], givesBack, storageSystem: "postgresql" },
+    ],
+  });
+
+  it("pairs every declared method with every base class the pattern lists", () => {
+    const db = new Database();
+    emitStorageFacts(db, [
+      patternFor(["ActiveRecord::Base", "Legacy::Model"], ["find", "where"]),
+    ]);
+
+    expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
+      ["ActiveRecord::Base", "find"],
+      ["ActiveRecord::Base", "where"],
+      ["Legacy::Model", "find"],
+      ["Legacy::Model", "where"],
+    ]);
+  });
+
+  it("says nothing for a pack with no storage patterns at all", () => {
+    const db = new Database();
+    emitStorageFacts(db, [{ name: "rails", protocol: "http", discovery: [] }]);
+
+    expect(db.size("givesBackOne")).toBe(0);
   });
 });

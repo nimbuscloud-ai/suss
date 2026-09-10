@@ -16,6 +16,7 @@ import type { RbNode } from "./parser.js";
 const ACTIVE_RECORD: RbStoragePattern = {
   baseClasses: ["ActiveRecord::Base"],
   writes: ["update", "destroy", "save", "create", "delete_all"],
+  givesBack: ["find", "where", "first"],
   storageSystem: "postgresql",
 };
 

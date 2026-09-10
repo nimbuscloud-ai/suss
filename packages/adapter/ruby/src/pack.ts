@@ -95,6 +95,8 @@ export interface RbStoragePattern {
   baseClasses: string[];
   /** Methods that change what is stored. Anything else reads. */
   writes: string[];
+  /** Methods whose result is the model again: one record, or a relation a later read narrows to one. */
+  givesBack: string[];
   /** Which database is behind the connection, which the project settles. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
 }

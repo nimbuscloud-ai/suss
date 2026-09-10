@@ -114,6 +114,27 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
   return found;
 }
 
+/**
+ * Put each storage pattern's `givesBack` methods in the facts, paired
+ * with every base class the pattern lists. Ruby writes no return type,
+ * so this is the only thing that says `Account.find(id)` is one Account,
+ * and the shared `declared finder` rule is what reads it.
+ */
+export function emitStorageFacts(
+  db: Database,
+  packs: readonly RubyPack[],
+): void {
+  for (const pack of packs) {
+    for (const pattern of pack.storage ?? []) {
+      for (const base of pattern.baseClasses) {
+        for (const method of pattern.givesBack) {
+          db.add("givesBackOne", [base, method]);
+        }
+      }
+    }
+  }
+}
+
 /** Whether this unit is one an earlier file's discovery already reported, by where its body is written and what it is reported as. An action two controllers inherit is one body and two units, one per route. */
 function alreadyDiscovered(seen: Set<string>, raw: RawCodeStructure): boolean {
   const reported = raw.identity.exportPath?.join(".") ?? raw.identity.name;
@@ -202,6 +223,7 @@ export async function extractRubyProject(
       emitRequireFacts(db, file, root, known);
     }
     bindEvaluator(db, { files: parsed, definitions });
+    emitStorageFacts(db, options.packs);
   });
 
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);

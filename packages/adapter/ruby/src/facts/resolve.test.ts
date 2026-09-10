@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { parseRuby } from "../parser.js";
+import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import { resolveValues, writtenValueOf } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
@@ -137,5 +138,56 @@ describe("resolving a value across a Ruby file", () => {
     const nameKey = "f.rb#value";
     resolveValues(db, [nameKey]);
     expect(writtenValueOf(db, nameKey)).toBe(String(placeholder?.[0]));
+  });
+});
+
+/** A whole run's facts, so a constant read reaches the class it refers to. */
+async function runFactsFor(source: string) {
+  const tree = await parseRuby(source);
+  const db = new Database();
+  emitValueFacts(db, "f.rb", tree.rootNode);
+  emitConstantBindings(db, [collectFileConstants("f.rb", tree.rootNode)]);
+  return db;
+}
+
+/** Rails' own two-class ancestry, with the library base above both. */
+const MODEL_SOURCE = [
+  "class ApplicationRecord < ActiveRecord::Base",
+  "end",
+  "",
+  "class Account < ApplicationRecord",
+  "end",
+  "",
+].join("\n");
+
+function objectsBehind(db: Database, key: string): string[] {
+  resolveValues(db, [key]);
+  return db
+    .facts("wantedObjectOf")
+    .filter((row) => String(row[0]) === key)
+    .map((row) => String(row[1]));
+}
+
+/** The key of the class a constant read is bound to. */
+function classBehind(db: Database, constantKey: string): string {
+  const bound = db.facts("binds").find((row) => String(row[0]) === constantKey);
+  return String(bound?.[1]);
+}
+
+describe("a finder Ruby writes with no arguments", () => {
+  it("steps a bare read of one to the class its ancestry reaches the base from", async () => {
+    const db = await runFactsFor(`${MODEL_SOURCE}account = Account.first\n`);
+    db.add("givesBackOne", ["ActiveRecord::Base", "first"]);
+
+    expect(objectsBehind(db, "f.rb#account")).toEqual([
+      classBehind(db, "f.rb#Account"),
+    ]);
+  });
+
+  it("says nothing when the pack declares no method of that name", async () => {
+    const db = await runFactsFor(`${MODEL_SOURCE}account = Account.sample\n`);
+    db.add("givesBackOne", ["ActiveRecord::Base", "first"]);
+
+    expect(objectsBehind(db, "f.rb#account")).toEqual([]);
   });
 });

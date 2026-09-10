@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { graphqlRubyTestPack } from "../__fixtures__/graphqlRubyPattern.js";
+import { controllerActionsPattern } from "../__fixtures__/railsControllerPattern.js";
 import { extractRubyProject, findRubyFiles } from "../project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -1106,5 +1107,145 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
 
     const summaries = await extract();
     expect(unitNamed(summaries, "Query.orders").kind).toBe("resolver");
+  });
+});
+
+/**
+ * Rails' own vocabulary for a controller and a model, the same values a
+ * project's pack config would supply. `givesBack` is what ActiveRecord
+ * declares, and none of those methods is written anywhere in the run.
+ */
+function railsWithModels(): RubyPack {
+  return {
+    name: "rails",
+    protocol: "http",
+    discovery: [
+      controllerActionsPattern({
+        root: path.join(tmpDir, "app", "controllers"),
+        filters: [
+          {
+            name: "before_action",
+            methodFrom: "argument",
+            skippedBy: "skip_before_action",
+            actionKeywords: { include: "only", exclude: "except" },
+          },
+        ],
+      }),
+    ],
+    storage: [
+      {
+        baseClasses: ["ActiveRecord::Base"],
+        writes: ["update", "save", "destroy"],
+        givesBack: ["find", "where", "first"],
+        storageSystem: "postgresql",
+      },
+    ],
+  };
+}
+
+async function extractRails(): Promise<BehavioralSummary[]> {
+  const { summaries } = await extractRubyProject({
+    files: findRubyFiles(tmpDir),
+    packs: [railsWithModels()],
+    workspaceRoot: tmpDir,
+  });
+  return summaries;
+}
+
+/** `Account`, whose ancestry reaches the library base two classes up, with one method of its own. */
+function writeAccountModel(): void {
+  write("app/models/application_record.rb", [
+    "class ApplicationRecord < ActiveRecord::Base",
+    "end",
+  ]);
+  write("app/models/account.rb", [
+    "class Account < ApplicationRecord",
+    "  def suspend_account(reason)",
+    "    update(suspended: true, reason: reason)",
+    "  end",
+    "end",
+  ]);
+}
+
+/** The call an action makes, and the summary it was linked to. */
+function callTo(
+  summary: BehavioralSummary,
+  callee: string,
+): string | undefined {
+  return calls(summary).find(([name]) => name === callee)?.[1];
+}
+
+describe("a call on what an ActiveRecord finder gave back", () => {
+  it("follows a method read off an instance variable a before_action set", async () => {
+    writeAccountModel();
+    write("app/controllers/accounts_controller.rb", [
+      "class AccountsController < ApplicationController",
+      "  before_action :set_account",
+      "",
+      "  def suspend",
+      "    @account.suspend_account(params[:reason])",
+      "  end",
+      "",
+      "  def set_account",
+      "    @account = Account.find(params[:id])",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extractRails();
+    const model = summaries.find(
+      (summary) => summary.location.file === "app/models/account.rb",
+    );
+    expect(model?.identity.exportPath).toEqual(["Account", "suspend_account"]);
+    const action = summaries.find(
+      (summary) => summary.identity.exportPath?.[1] === "suspend",
+    );
+    expect(
+      callTo(action as BehavioralSummary, "@account.suspend_account"),
+    ).toBe(summaryIdentifier(model as BehavioralSummary));
+  });
+
+  it("follows a method read off a local a relation chain narrowed to one", async () => {
+    writeAccountModel();
+    write("app/controllers/accounts_controller.rb", [
+      "class AccountsController < ApplicationController",
+      "  def suspend",
+      "    account = Account.where(handle: params[:handle]).first",
+      "    account.suspend_account(params[:reason])",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extractRails();
+    const model = summaries.find(
+      (summary) => summary.location.file === "app/models/account.rb",
+    );
+    expect(model?.identity.exportPath).toEqual(["Account", "suspend_account"]);
+    const action = summaries.find(
+      (summary) => summary.identity.exportPath?.[0] === "AccountsController",
+    );
+    expect(callTo(action as BehavioralSummary, "account.suspend_account")).toBe(
+      summaryIdentifier(model as BehavioralSummary),
+    );
+  });
+
+  it("says nothing about the receiver when the pack declares no such method", async () => {
+    writeAccountModel();
+    write("app/controllers/accounts_controller.rb", [
+      "class AccountsController < ApplicationController",
+      "  def suspend",
+      "    account = Account.sample(params[:handle])",
+      "    account.suspend_account(params[:reason])",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extractRails();
+    const action = summaries.find(
+      (summary) => summary.identity.exportPath?.[0] === "AccountsController",
+    );
+    expect(
+      callTo(action as BehavioralSummary, "account.suspend_account"),
+    ).toBeUndefined();
   });
 });

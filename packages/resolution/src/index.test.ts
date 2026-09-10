@@ -71,6 +71,16 @@ function perCallSite(
     .sort();
 }
 
+/** The objects an expression refers to. */
+function objectsOf(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+): string[] {
+  return derive(facts, "objectOf", value)
+    .map((t) => String(t[1]))
+    .sort();
+}
+
 /** The (module, name) pairs a value's chain arrives at. */
 function originsOf(
   facts: Array<[string, ...string[]]>,
@@ -680,6 +690,158 @@ describe("a wrapper the caller declared transparent", () => {
         "handler",
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * `class ApplicationRecord < ActiveRecord::Base` and `class Account <
+ * ApplicationRecord`, with `suspend!` written on Account. The library
+ * base is two `extends` hops above the model, which is what a Rails
+ * project looks like, and the pack's word is that `find`, `where` and
+ * `first` each give back one of the class.
+ */
+const MODEL_FACTS: Array<[string, ...string[]]> = [
+  ["objectValue", "AppRecord"],
+  ["extendsNamed", "AppRecord", "ActiveRecord::Base"],
+  ["objectValue", "Account"],
+  ["extends", "Account", "#AppRecord"],
+  ["extendsNamed", "Account", "ApplicationRecord"],
+  ["binds", "#AppRecord", "AppRecord"],
+  ["binds", "#Account", "Account"],
+  ["func", "suspend"],
+  ["holdsProperty", "Account", "suspend!", "suspend"],
+  ["givesBackOne", "ActiveRecord::Base", "find"],
+  ["givesBackOne", "ActiveRecord::Base", "where"],
+  ["givesBackOne", "ActiveRecord::Base", "first"],
+];
+
+describe("a method a pack says gives back one of the class", () => {
+  it("follows a finder on the class object to the class two extends hops below the base", () => {
+    // Account.find(id)
+    expect(
+      objectsOf(
+        [
+          ...MODEL_FACTS,
+          ["readsProperty", "findCallee", "#Account", "find"],
+          ["call", "findCall", "findCallee"],
+        ],
+        "findCall",
+      ),
+    ).toEqual(["Account"]);
+  });
+
+  it("reads a method off what a finder gave back", () => {
+    // @account = Account.find(id); @account.suspend!
+    expect(
+      resolutionsOf(
+        [
+          ...MODEL_FACTS,
+          ["readsProperty", "findCallee", "#Account", "find"],
+          ["call", "findCall", "findCallee"],
+          ["binds", "account", "findCall"],
+          ["readsProperty", "suspendCallee", "account", "suspend!"],
+        ],
+        "suspendCallee",
+      ),
+    ).toEqual(["suspend"]);
+  });
+
+  it("follows a relation chain one declared method at a time", () => {
+    // account = Account.where(x).first; account.suspend!
+    expect(
+      resolutionsOf(
+        [
+          ...MODEL_FACTS,
+          ["readsProperty", "whereCallee", "#Account", "where"],
+          ["call", "whereCall", "whereCallee"],
+          ["readsProperty", "firstCallee", "whereCall", "first"],
+          ["call", "firstCall", "firstCallee"],
+          ["binds", "account", "firstCall"],
+          ["readsProperty", "suspendCallee", "account", "suspend!"],
+        ],
+        "suspendCallee",
+      ),
+    ).toEqual(["suspend"]);
+  });
+
+  it("follows a project method whose own body returns a finder result", () => {
+    // def self.by_name(n) = Account.find(name: n); Account.by_name(n).suspend!
+    expect(
+      resolutionsOf(
+        [
+          ...MODEL_FACTS,
+          ["func", "byName"],
+          ["holdsProperty", "Account", "by_name", "byName"],
+          ["readsProperty", "findCallee", "#Account", "find"],
+          ["call", "findCall", "findCallee"],
+          ["returnsValue", "byName", "findCall"],
+          ["readsProperty", "byNameCallee", "#Account", "by_name"],
+          ["call", "byNameCall", "byNameCallee"],
+          ["binds", "account", "byNameCall"],
+          ["readsProperty", "suspendCallee", "account", "suspend!"],
+        ],
+        "suspendCallee",
+      ),
+    ).toEqual(["suspend"]);
+  });
+
+  it("leaves a class on another hierarchy that writes a method of the same name alone", () => {
+    // class Registry; def self.find(k); end; end
+    expect(
+      objectsOf(
+        [
+          ["objectValue", "Registry"],
+          ["binds", "#Registry", "Registry"],
+          ["func", "registryFind"],
+          ["holdsProperty", "Registry", "find", "registryFind"],
+          ["givesBackOne", "ActiveRecord::Base", "find"],
+          ["readsProperty", "findCallee", "#Registry", "find"],
+          ["call", "findCall", "findCallee"],
+        ],
+        "findCall",
+      ),
+    ).toEqual([]);
+  });
+
+  it("gives one answer when a class overrides the method and its own body agrees", () => {
+    // def self.find(id) = where(id: id).first, written on Account itself.
+    expect(
+      objectsOf(
+        [
+          ...MODEL_FACTS,
+          ["func", "ownFind"],
+          ["holdsProperty", "Account", "find", "ownFind"],
+          ["readsProperty", "whereCallee", "#Account", "where"],
+          ["call", "whereCall", "whereCallee"],
+          ["readsProperty", "firstCallee", "whereCall", "first"],
+          ["call", "firstCall", "firstCallee"],
+          ["returnsValue", "ownFind", "firstCall"],
+          ["readsProperty", "findCallee", "#Account", "find"],
+          ["call", "findCall", "findCallee"],
+        ],
+        "findCall",
+      ),
+    ).toEqual(["Account"]);
+  });
+
+  it("gives both when an override hands back one of another class", () => {
+    // The single-answer policy is what refuses the pair; the rules
+    // report the declared step and the written method side by side.
+    expect(
+      objectsOf(
+        [
+          ...MODEL_FACTS,
+          ["objectValue", "Cache"],
+          ["func", "ownFind"],
+          ["holdsProperty", "Account", "find", "ownFind"],
+          ["binds", "cached", "Cache"],
+          ["returnsValue", "ownFind", "cached"],
+          ["readsProperty", "findCallee", "#Account", "find"],
+          ["call", "findCall", "findCallee"],
+        ],
+        "findCall",
+      ),
+    ).toEqual(["Account", "Cache"]);
   });
 });
 

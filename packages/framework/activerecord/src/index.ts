@@ -25,6 +25,62 @@ export const optionsSchema = z
 
 export type ActiveRecordPackOptions = z.infer<typeof optionsSchema>;
 
+/** Methods that hand back one record of the model they were called on. */
+const RETURNS_A_RECORD = [
+  "find",
+  "find_by",
+  "find_by!",
+  "find_or_create_by",
+  "find_or_create_by!",
+  "find_or_initialize_by",
+  "first",
+  "first!",
+  "last",
+  "last!",
+  "take",
+  "take!",
+  "sole",
+  "find_sole_by",
+  "new",
+  "build",
+  "create",
+  "create!",
+  "reload",
+];
+
+/** Methods that hand back a relation, which a later read narrows to one record. */
+const RETURNS_A_RELATION = [
+  "where",
+  "rewhere",
+  "or",
+  "order",
+  "reorder",
+  "limit",
+  "offset",
+  "includes",
+  "preload",
+  "eager_load",
+  "joins",
+  "left_joins",
+  "left_outer_joins",
+  "distinct",
+  "select",
+  "group",
+  "having",
+  "merge",
+  "readonly",
+  "lock",
+  "none",
+  "all",
+  "unscoped",
+  "unscope",
+  "extending",
+  "from",
+  "references",
+  "only",
+  "except",
+];
+
 /**
  * The base class the library gives a model, and the methods that change what
  * is stored rather than read it. Everything here is ActiveRecord's own. A
@@ -56,6 +112,7 @@ export function activeRecordStorage(
         "delete_all",
         "touch",
       ],
+      givesBack: [...RETURNS_A_RECORD, ...RETURNS_A_RELATION],
       storageSystem: options.storageSystem,
     },
   ];

@@ -38,6 +38,28 @@ body nobody can read: `unwrapsByName(name, k)` and
 `calleeOrigin`, so a local function that happens to be spelled the same
 as the library's does not match.
 
+A third comes from a pack for the same reason: `givesBackOne(base, m)`
+says that calling `m` on a class whose ancestry reaches the base written
+as `base` gives back one of that class. That covers a Rails finder,
+where the library declares `find` and the project's model never mentions
+it. `libraryBase` walks `extends` up to the name no node in the run
+backs, so a model two or ten classes below `ActiveRecord::Base` matches
+the same way. The step lands back on the class, so a chain composes:
+`Account.where(x)` is one Account, and `first` read off that is one
+Account again.
+
+Keying on the base is what keeps a project class that writes its own
+`find` on an unrelated hierarchy out of it, the same reason the declared
+wrapper keys on `wrapperModule`. A class that does override a declared
+method gets both the declared step and the step through the method it
+wrote. When that method gives back one of the class the two agree and
+the caller sees one answer; when it gives back something else the caller
+sees two and its single-answer policy refuses the pair. Letting the
+written method win would take a negated literal on `contains`, and
+`contains` is derived from `comesTo`, so the rule set stops being
+stratifiable. The on-demand rewrite refuses negation anywhere, before
+stratification is even reached.
+
 `holdsProperty` is something an adapter states and the rules only read.
 What a value contains, a base class included, comes out as `contains`,
 so a method a base declares is found on a subclass that never overrode

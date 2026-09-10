@@ -149,6 +149,30 @@ describe("explainResolutionProof", () => {
     );
   });
 
+  it("surfaces a pack-declared finder as an assumption", () => {
+    const db = evaluated([
+      ["objectValue", "Account"],
+      ["extendsNamed", "Account", "ActiveRecord::Base"],
+      ["binds", "AccountRef", "Account"],
+      ["givesBackOne", "ActiveRecord::Base", "find"],
+      ["readsProperty", "findCallee", "AccountRef", "find"],
+      ["call", "found", "findCallee"],
+    ]);
+
+    const proof = proofOf(db, "comesTo", ["found", "Account"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "declared finder",
+    ]);
+    expect(explained?.steps[0].reason).toBe(
+      "found calls find on Account, which gives back one of it",
+    );
+    expect(explained?.assumptions).toEqual([
+      "a pack declares that find on a class extending ActiveRecord::Base gives back one of that class",
+    ]);
+  });
+
   it("says when the depth cap stopped the walk", () => {
     const facts: Array<[string, ...string[]]> = [["func", "end"]];
     let previous = "end";
