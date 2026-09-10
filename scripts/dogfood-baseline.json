@@ -3,7 +3,7 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 910,
-    "internal": 3239,
+    "internal": 3240,
     "consumers": 1763,
     "pairs": 1760,
     "unfollowedCalls": 499,
@@ -55,7 +55,7 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 24,
-      "internal": 536,
+      "internal": 537,
       "consumers": 325,
       "unfollowedCalls": 55
     },

@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 5481,
-      "covered": 5161,
+      "total": 5484,
+      "covered": 5164,
       "skipped": 0,
       "pct": 94.16
     },
     "statements": {
-      "total": 5632,
-      "covered": 5305,
+      "total": 5636,
+      "covered": 5309,
       "skipped": 0,
       "pct": 94.19
     },
     "functions": {
-      "total": 1278,
-      "covered": 1217,
+      "total": 1280,
+      "covered": 1219,
       "skipped": 0,
-      "pct": 95.22
+      "pct": 95.23
     },
     "branches": {
-      "total": 3873,
-      "covered": 3229,
+      "total": 3875,
+      "covered": 3232,
       "skipped": 0,
-      "pct": 83.37
+      "pct": 83.4
     },
     "branchesTrue": {
       "total": 0,
@@ -579,10 +579,10 @@
   },
   "src/initInteractive.ts": {
     "lines": {
-      "total": 227,
-      "covered": 206,
+      "total": 229,
+      "covered": 208,
       "skipped": 0,
-      "pct": 90.74
+      "pct": 90.82
     },
     "functions": {
       "total": 59,
@@ -591,16 +591,16 @@
       "pct": 91.52
     },
     "statements": {
-      "total": 234,
-      "covered": 213,
+      "total": 236,
+      "covered": 215,
       "skipped": 0,
-      "pct": 91.02
+      "pct": 91.1
     },
     "branches": {
-      "total": 134,
-      "covered": 100,
+      "total": 136,
+      "covered": 103,
       "skipped": 0,
-      "pct": 74.62
+      "pct": 75.73
     }
   },
   "src/inspect.ts": {
@@ -865,22 +865,22 @@
   },
   "src/projectsBelow.ts": {
     "lines": {
-      "total": 35,
-      "covered": 33,
+      "total": 36,
+      "covered": 34,
       "skipped": 0,
-      "pct": 94.28
+      "pct": 94.44
     },
     "functions": {
-      "total": 8,
-      "covered": 7,
+      "total": 10,
+      "covered": 9,
       "skipped": 0,
-      "pct": 87.5
+      "pct": 90
     },
     "statements": {
-      "total": 35,
-      "covered": 33,
+      "total": 37,
+      "covered": 35,
       "skipped": 0,
-      "pct": 94.28
+      "pct": 94.59
     },
     "branches": {
       "total": 14,
