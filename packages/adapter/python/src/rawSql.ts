@@ -53,7 +53,7 @@ export function rawSqlEffects(
         binding: storageBinding({
           recognition: `python-${pattern.module}`,
           storageSystem: pattern.storageSystem,
-          scope: pattern.module,
+          scope: "default",
           container: access.table,
         }),
         callee: field(call, "function")?.text ?? "",

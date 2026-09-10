@@ -538,4 +538,66 @@ describe("the database work a Python body does", () => {
     );
     expect(effects).toEqual([]);
   });
+
+  it("charges each session call to the model it works on, and commit to none", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def create(db: Session, order: Orders, order_id: int):",
+        "    db.add(order)",
+        "    db.add(Orders(id=2))",
+        "    db.commit()",
+        "    found = db.get(Orders, order_id)",
+        "    db.refresh(found)",
+        "    return db.query(Orders).filter_by(id=1).first()",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map((effect) => containerOf(effect))).toEqual([
+      "Orders",
+      "Orders",
+      null,
+      "Orders",
+      "Orders",
+      "Orders",
+    ]);
+  });
+
+  it("charges a statement to the model in its first argument, or to the table it selects from", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import func, select",
+        "from models import Orders as models_Orders",
+        "import models",
+        "",
+        "def read(db):",
+        "    a = select(Orders).where(Orders.id == 1)",
+        "    b = select(Orders.id, Orders.total)",
+        "    c = select(models.Orders.id)",
+        "    d = select(func.count()).select_from(Orders)",
+        "    e = select(func.count(Orders.id))",
+        "    f = select(text)",
+        "",
+      ].join("\n"),
+      BASE,
+      "read",
+    );
+    expect(effects.map((effect) => containerOf(effect))).toEqual([
+      "Orders",
+      "Orders",
+      "Orders",
+      "Orders",
+      "Orders",
+      null,
+    ]);
+  });
 });
+
+function containerOf(effect: Effect): string | null {
+  const semantics =
+    effect.type === "interaction" ? effect.binding.semantics : null;
+  return semantics?.name === "storage" ? semantics.container : null;
+}

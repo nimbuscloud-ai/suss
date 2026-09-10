@@ -185,8 +185,7 @@ function typeGivenBy(statement: PyNode, name: string): string | null {
       return typeNameOf(annotation);
     }
     const right = field(statement, "right");
-    const callee = right?.type === "call" ? field(right, "function") : null;
-    return callee?.type === "identifier" ? callee.text : null;
+    return right?.type === "call" ? builtType(right) : null;
   }
   if (statement.type === "as_pattern") {
     const alias = field(statement, "alias");
@@ -198,6 +197,24 @@ function typeGivenBy(statement: PyNode, name: string): string | null {
       : null;
   }
   return null;
+}
+
+/**
+ * The class a call builds: `Session()` builds a Session, and a method given
+ * a class as its first argument, `db.get(Orders, 1)` or the
+ * `db.query(Orders)` a chain starts at, gives back one of that class.
+ */
+function builtType(call: PyNode): string | null {
+  const root = rootOf(call);
+  const callee = field(root, "function");
+  if (callee?.type === "identifier") {
+    return callee.text;
+  }
+  const args = field(root, "arguments");
+  const first = (args === null ? [] : children(args))[0];
+  return first?.type === "identifier" && isClassName(first.text)
+    ? first.text
+    : null;
 }
 
 /**
@@ -360,6 +377,76 @@ function selectorOf(chain: Chain, valueMethods: readonly string[]): string[] {
   ];
 }
 
+/** The calls whose first argument says which table a statement reads when `select(func.count())` did not. */
+const TABLE_METHODS = ["select_from", "join"];
+
+/**
+ * The model a chain works on. It is the first argument of a statement
+ * (`select(Item)`, `session.get(Item, 1)`), the class a column is read
+ * off (`select(Item.id)`), what the function declares a variable to be
+ * (`session.add(item)` with `item: Item`), or the receiver when the chain
+ * starts on the model itself (`Orders.query()`). Null for a call that
+ * works on no table of its own, `session.commit()` among them.
+ */
+function modelOf(chain: Chain): string | null {
+  const fromRoot = modelArgument(chain.root, chain.root);
+  if (fromRoot !== null) {
+    return fromRoot;
+  }
+  for (const call of laterCalls(chain)) {
+    if (TABLE_METHODS.includes(methodNameOf(call))) {
+      const named = modelArgument(call, chain.root);
+      if (named !== null) {
+        return named;
+      }
+    }
+  }
+  return isClassName(chain.subject) ? chain.subject : null;
+}
+
+/** The model in the call's first positional argument, or null. */
+function modelArgument(call: PyNode, from: PyNode): string | null {
+  const args = field(call, "arguments");
+  const first = (args === null ? [] : children(args)).find(
+    (argument) => argument.type !== "keyword_argument",
+  );
+  return first === undefined ? null : modelNamed(first, from);
+}
+
+/**
+ * The model an expression refers to. Python writes a class in CapWords
+ * and a variable in lowercase, which is how `Item` is told from `item`
+ * without a type checker: the class is its own name, and the variable is
+ * whatever the enclosing function declares it as.
+ */
+function modelNamed(node: PyNode, from: PyNode): string | null {
+  if (node.type === "identifier") {
+    return isClassName(node.text)
+      ? node.text
+      : declaredTypeName(node.text, from);
+  }
+  if (node.type === "attribute") {
+    // `Item.id` and `models.Item` both refer to `Item`; `self.model` says nothing.
+    const property = field(node, "attribute");
+    if (property !== null && isClassName(property.text)) {
+      return property.text;
+    }
+    const object = field(node, "object");
+    return object === null ? null : modelNamed(object, from);
+  }
+  if (node.type === "call") {
+    // `Item(name=...)` builds one, and `func.count(Item.id)` counts one.
+    const callee = field(node, "function");
+    const built = callee === null ? null : modelNamed(callee, from);
+    return built ?? modelArgument(node, from);
+  }
+  return null;
+}
+
+function isClassName(name: string): boolean {
+  return /^[A-Z][A-Za-z0-9_]*$/.test(name) && name !== name.toUpperCase();
+}
+
 /**
  * One effect for a chain. `operation` is the call that says what the chain
  * does to the database: the last one for a query built up by methods, and
@@ -378,8 +465,8 @@ function effectFor(
     binding: storageBinding({
       recognition: "python-storage",
       storageSystem: pattern.storageSystem,
-      scope: pattern.module,
-      container: chain.subject,
+      scope: "default",
+      container: modelOf(chain),
     }),
     callee: chain.last.text,
     interaction: {

@@ -63,6 +63,15 @@ Session() as db:`, or a project function annotated `-> Session`. `db.add`,
 records nothing of its own, since the statement it runs is its own chain, and
 neither do `begin`, `rollback` or `close`.
 
+The table is the model the call works on. `select(User)`, `select(User.id)`,
+`db.get(User, 1)` and `db.query(User)` say it in their first argument, and
+`select(func.count()).select_from(User)` says it later in the chain.
+`db.add(user)` takes it from what the function declares `user` to be: a
+parameter annotated `user: User`, or a local assigned from `User(...)` or
+`db.get(User, 1)`. A class is told from a variable by its spelling, `User`
+against `user`, so a model written in lowercase is not read. `db.commit()`
+works on no table of its own and comes out with the container unnamed.
+
 A 2.0 statement is the operation its constructor says: `update(User).where(...).values(name="x")` is an update whose `fields` are the `values` keywords. `select(User.id)` puts the column in `fields`, and a keyword the chain picks rows by, `id` in `filter_by(id=1)`, goes in `selector`. A comparison written positionally, `where(User.id == 1)`, is not read.
 
 Raw SQL handed to `text("...")` is read as its own effect, with the kind and
