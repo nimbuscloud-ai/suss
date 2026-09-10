@@ -336,9 +336,17 @@ one that had not finished in ten minutes. Source order is something
 every adapter already knows.
 
 What the adapter supplies is the reading: the values in source order,
-and whether the writes run in order. `valueLeftByWrites` picks the one
-the name comes down to, so that decision is written once here rather
-than once per language.
+and a description of its grammar. `writesRunInOrder` walks the scope
+with that description and says whether the writes run once each in the
+order they are written, and `valueLeftByWrites` picks the value the name
+comes down to. Both decisions are written once here rather than once per
+language.
+
+A description says four things: what a bare name is spelled as, which
+node types open a body that runs later than the statements around it,
+how to enumerate a node's children, and which spellings of a name are
+reads rather than writes or declarations. The walk itself never touches
+a parser, so a Python `def` and a Ruby block are the same case to it.
 
 **Ambiguity is the caller's problem.** When the rules reach two
 different functions, the store returns nothing, because picking one
