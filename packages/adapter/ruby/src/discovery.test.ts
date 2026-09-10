@@ -790,6 +790,72 @@ describe("discoverUnits: controller actions", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  it("reports a routed action the controller inherits from a project base, under the subclass", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ruby-inherit-"));
+    const baseDir = path.join(tmpDir, "settings");
+    fs.mkdirSync(baseDir, { recursive: true });
+    const baseFile = path.join(baseDir, "base_controller.rb");
+    fs.writeFileSync(
+      baseFile,
+      "class Settings::BaseController < ApplicationController\n" +
+        "  def show\n" +
+        "    render :show\n" +
+        "  end\n\n" +
+        "  def update\n" +
+        "    head :ok\n" +
+        "  end\n\n" +
+        "  def helper\n" +
+        "  end\n\n" +
+        "  private\n\n" +
+        "  def hidden\n" +
+        "  end\nend\n",
+    );
+    const source =
+      "class Settings::ProfilesController < Settings::BaseController\n" +
+      "  def update\n" +
+      "    head :no_content\n" +
+      "  end\n" +
+      "end\n";
+    const tree = await parseRuby(source);
+    const routed = new Set(["show", "update", "hidden"]);
+    const units = await discoverUnits(tree.rootNode, {
+      packs: [
+        railsTestPack({
+          root: tmpDir,
+          routeFor: (controller, action) =>
+            controller === "Settings::ProfilesController" && routed.has(action)
+              ? { method: "GET", path: `/settings/profile/${action}` }
+              : null,
+        }),
+      ],
+      filePath: "settings/profiles_controller.rb",
+      cache: diskCache(),
+    });
+
+    expect(
+      units.map((u) => [
+        u.identity.name,
+        u.identity.file,
+        u.identity.exportPath,
+      ]),
+    ).toEqual([
+      [
+        "update",
+        "settings/profiles_controller.rb",
+        ["Settings::ProfilesController", "update"],
+      ],
+      ["show", baseFile, ["Settings::ProfilesController", "show"]],
+    ]);
+    // The base's own `update` is overridden, `helper` is not routed, and
+    // `hidden` is private, so none of them is an action of the subclass.
+    const inherited = units[1];
+    expect(inherited?.boundaryBinding?.semantics).toMatchObject({
+      method: "GET",
+      path: "/settings/profile/show",
+    });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
   it("discovers a controller nested in a module whose bare superclass is defined at top level", async () => {
     const units = await discoverActions(
       "module Api\n" +

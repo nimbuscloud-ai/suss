@@ -6,7 +6,7 @@
     "internal": 3288,
     "consumers": 1767,
     "pairs": 1764,
-    "unfollowedCalls": 501,
+    "unfollowedCalls": 503,
     "findingErrors": 0
   },
   "packages": {
@@ -22,7 +22,7 @@
       "exports": 69,
       "internal": 260,
       "consumers": 135,
-      "unfollowedCalls": 72
+      "unfollowedCalls": 74
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",

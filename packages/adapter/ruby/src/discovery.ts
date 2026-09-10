@@ -404,44 +404,89 @@ async function controllerActionUnits(
     });
   }
 
-  for (const block of ownBlocks) {
+  const emitAction = (
+    actionName: string,
+    method: RbNode,
+    block: ReachedBody,
+  ) => {
+    const around = filters
+      .filter((filter) => filterCoversAction(filter, actionName))
+      .map((filter) =>
+        filterReference(
+          filter,
+          options.displayPathOf?.(filter.file) ?? filter.file,
+        ),
+      );
+    const raw = buildControllerActionUnit(
+      pack,
+      pattern,
+      info.qualifiedName,
+      actionName,
+      method,
+      {
+        display:
+          block.file === (options.absoluteFile ?? options.filePath)
+            ? options.filePath
+            : (options.displayPathOf?.(block.file) ?? block.file),
+        absolute: block.file,
+      },
+      options,
+      around,
+    );
+    units.push(raw);
+    options.onReachSeed?.(raw, {
+      file: block.file,
+      node: method,
+      enclosingQualifiedName: block.info.qualifiedName,
+    });
+  };
+
+  const own = new Set<string>();
+  for (const [actionName, method, block] of publicInstanceMethods(ownBlocks)) {
+    own.add(actionName);
+    emitAction(actionName, method, block);
+  }
+
+  // Rails dispatches a routed action to whichever ancestor defines it,
+  // so a subclass that routes `show` without writing it gets the base's.
+  const seen = new Set(own);
+  for (const entry of ancestry) {
+    if (entry.type !== "bodies" || entry.name === info.qualifiedName) {
+      continue;
+    }
+    for (const [actionName, method, block] of publicInstanceMethods(
+      entry.blocks,
+    )) {
+      if (seen.has(actionName)) {
+        continue;
+      }
+      seen.add(actionName);
+      if (pattern.routeFor(info.qualifiedName, actionName) === null) {
+        continue;
+      }
+      emitAction(actionName, method, block);
+    }
+  }
+  return units;
+}
+
+/** Every public instance method the blocks define, with the block it is written in, in source order. */
+function publicInstanceMethods(
+  blocks: readonly ReachedBody[],
+): Array<[string, RbNode, ReachedBody]> {
+  const found: Array<[string, RbNode, ReachedBody]> = [];
+  for (const block of blocks) {
     if (block.info.bodyNode === null) {
       continue;
     }
     const visibility = instanceMethodVisibility(block.info.bodyNode);
-    for (const [actionName, method] of instanceMethodsByName(
-      block.info.bodyNode,
-    )) {
-      if ((visibility.get(actionName) ?? "public") !== "public") {
-        continue;
+    for (const [name, method] of instanceMethodsByName(block.info.bodyNode)) {
+      if ((visibility.get(name) ?? "public") === "public") {
+        found.push([name, method, block]);
       }
-      const around = filters
-        .filter((filter) => filterCoversAction(filter, actionName))
-        .map((filter) =>
-          filterReference(
-            filter,
-            options.displayPathOf?.(filter.file) ?? filter.file,
-          ),
-        );
-      const raw = buildControllerActionUnit(
-        pack,
-        pattern,
-        info.qualifiedName,
-        actionName,
-        method,
-        { display: options.filePath, absolute: block.file },
-        options,
-        around,
-      );
-      units.push(raw);
-      options.onReachSeed?.(raw, {
-        file: block.file,
-        node: method,
-        enclosingQualifiedName: info.qualifiedName,
-      });
     }
   }
-  return units;
+  return found;
 }
 
 function buildControllerActionUnit(
