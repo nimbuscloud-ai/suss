@@ -32,7 +32,7 @@ import {
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
 
-import { boundaryReach, reachChanges } from "./diffReach.js";
+import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
 import { UsageError } from "./usageError.js";
 
@@ -2253,14 +2253,19 @@ function transitionLines(diff: SummaryDiff, alone: boolean): Line[] {
       lines.push({ text: `~ ${text}`, wrapper: undefined });
       continue;
     }
+    // A pair that reads the same and differs in nothing the fields
+    // would show moved only in its effects, which the unit's own effect
+    // lines already say.
+    const fields = beforeLine === afterLine ? fieldChanges(b, a) : [];
+    if (beforeLine === afterLine && fields.length === 0) {
+      continue;
+    }
     // Otherwise it takes both lines to read either, so the pair never
     // leaves its block.
     lines.push({ text: `~ was  ${beforeLine}`, wrapper: undefined });
     lines.push({ text: `  now  ${afterLine}`, wrapper: undefined });
-    if (beforeLine === afterLine) {
-      for (const field of fieldChanges(b, a)) {
-        lines.push({ text: `  ${field}`, wrapper: undefined });
-      }
+    for (const field of fields) {
+      lines.push({ text: `  ${field}`, wrapper: undefined });
     }
   }
 
@@ -2393,10 +2398,11 @@ function boundaryBlocks(
     if (!atABoundary(unit)) {
       continue;
     }
-    blocks.set(`${unit.file}::${unit.name}`, {
+    const boundary = unit.boundary ?? unit.name;
+    blocks.set(entrypointKey(unit.file, unit.name, boundary), {
       change: unit.change,
       does: boundaryVerb(unit),
-      boundary: unit.boundary ?? unit.name,
+      boundary,
       unit: unit.name,
       file: unit.file,
       outcomes: responseLines(unit),
