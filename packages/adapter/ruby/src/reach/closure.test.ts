@@ -689,6 +689,108 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
+  it("follows a call on an instance variable another method of the class writes", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def set_scope",
+      "    @scope = OrderService.new",
+      "  end",
+      "",
+      "  def orders(current_user)",
+      "    @scope.list_orders(current_user)",
+      "  end",
+      "end",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["list_orders"]);
+  });
+
+  it("follows a call on an instance variable a base class writes", async () => {
+    write("app/graphql/types/base_object.rb", [
+      "class Types::BaseObject",
+      "  def set_scope",
+      "    @scope = OrderService.new",
+      "  end",
+      "end",
+    ]);
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    @scope.list_orders(current_user)",
+      "  end",
+      "end",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      summaries
+        .filter((summary) => summary.kind === "library")
+        .map((summary) => summary.identity.name),
+    ).toEqual(["list_orders"]);
+  });
+
+  it("reports an instance variable two methods build from different classes", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def one",
+      "    @scope = OrderService.new",
+      "  end",
+      "",
+      "  def two",
+      "    @scope = AuditService.new",
+      "  end",
+      "",
+      "  def orders(current_user)",
+      "    @scope.list_orders(current_user)",
+      "  end",
+      "end",
+    ]);
+    for (const name of ["order_service", "audit_service"]) {
+      write(`app/services/${name}.rb`, [
+        `class ${name === "order_service" ? "OrderService" : "AuditService"}`,
+        "  def list_orders(user)",
+        "    user",
+        "  end",
+        "end",
+      ]);
+    }
+
+    const summaries = await extract();
+    const field = unitNamed(summaries, "Query.orders");
+    expect(field.gaps).toContainEqual(
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "@scope.list_orders",
+        description: expect.stringContaining("more than one possible source"),
+      }),
+    );
+  });
+
   it("reads a call written inside parentheses through them", async () => {
     writeQueryType("orders", [
       "scope = (",
