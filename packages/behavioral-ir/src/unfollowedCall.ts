@@ -16,15 +16,15 @@ import type { Gap } from "./index.js";
  * Why the walk stopped.
  *
  * `noBody` states a shape and nothing else, an interface method say.
- * `unsettledValue` is declared as something other than a function,
- * with something in it that could not be read. `multipleSources`
- * reaches two different functions, so no single body can be followed.
- * `outsideRun` is a declaration in a dependency, whose source this run
- * never read. `noDeclaration` is a callee nothing declares.
- * `callerSupplied` is a parameter of the function being scanned, so the
- * call runs whatever its caller handed in. `multipleReceivers` is a
- * registration whose receiver comes down to more than one thing, and
- * `unresolvedWrapper` one whose function the run could not settle on.
+ * `unsettledValue` is declared as something other than a function, with
+ * something in it that could not be read. `multipleSources` reaches two
+ * functions, so no single body can be followed. `outsideRun` is declared
+ * in a dependency this run never read. `noDeclaration` is a callee
+ * nothing declares. `callerSupplied` is a parameter, so the call runs
+ * what the caller handed in. `multipleReceivers` is a registration whose
+ * receiver comes down to more than one thing, and `unresolvedWrapper`
+ * one whose function the run could not settle on. `definedAtLoadTime` is
+ * a method the project writes while the file loads.
  */
 export type UnfollowedReason =
   | "noBody"
@@ -35,7 +35,8 @@ export type UnfollowedReason =
   | "callerSupplied"
   | "multipleReceivers"
   | "unboundParameter"
-  | "unresolvedWrapper";
+  | "unresolvedWrapper"
+  | "definedAtLoadTime";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
@@ -64,6 +65,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   multipleReceivers: true,
   unboundParameter: true,
   unresolvedWrapper: true,
+  definedAtLoadTime: true,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -92,6 +94,8 @@ const STOP_SENTENCE: Record<
     `The call to ${callee} runs through a parameter, and no caller in this run passes it a function by name, so whatever runs there is missing from this summary`,
   unresolvedWrapper: ({ callee }) =>
     `The call to ${callee} registers middleware this run could not follow to one function, so whatever it does around this route is missing from this summary`,
+  definedAtLoadTime: ({ callee }) =>
+    `The call to ${callee} lands on a method the project defines with define_method, which this reader does not follow, so whatever runs there is missing from this summary`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {
