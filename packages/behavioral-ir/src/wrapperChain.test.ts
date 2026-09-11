@@ -8,7 +8,7 @@ import type { BehavioralSummary } from "./index.js";
 function unit(name: string, file: string, line: number): BehavioralSummary {
   return {
     kind: "middleware",
-    location: { file, range: { start: line, end: line + 5 } },
+    location: { file, range: { start: line, end: line + 5 }, exportName: name },
     identity: { name, exportPath: [name], boundaryBinding: null },
     inputs: [],
     transitions: [],

@@ -110,7 +110,13 @@ describe("read a service whose statuses come from around the handler", () => {
               | undefined
           )?.from?.name,
       ),
-    ).toEqual(["requireCaller", "validationHook", undefined, "onError"]);
+    ).toEqual([
+      "requireCaller",
+      "validationHook",
+      undefined,
+      undefined,
+      "onError",
+    ]);
   });
 
   it("reports the hook's 400 on a route outside the middleware's path pattern", () => {

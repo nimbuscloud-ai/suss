@@ -107,6 +107,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
       "require_tenant_header",
       "require_admin",
       undefined,
+      undefined,
       "on_error",
     ]);
     expect(
@@ -146,7 +147,12 @@ describe("read a flask-restx service whose statuses come from around the handler
     ).toEqual([401, 404, 200]);
     const create = routeFor(summaries, "POST", "/v1/tenants");
     expect(statusesOf(create)).toEqual([401, 201, 500]);
-    expect(fromOf(create)).toEqual(["require_caller", undefined, "on_error"]);
+    expect(fromOf(create)).toEqual([
+      "require_caller",
+      undefined,
+      undefined,
+      "on_error",
+    ]);
   });
 });
 
