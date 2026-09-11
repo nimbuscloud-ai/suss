@@ -82,6 +82,24 @@ and a base a library hands back from a call. The last is SQLAlchemy's
 `Base = declarative_base()`, where the walk stops at the call and the
 imported function is the name to match on.
 
+A pack also says what an association looks like, and the adapter turns
+every declaration it finds into `declaresAssociation(cls, n, t)`: the
+class declares an association called `n`, and `t` is a reference the
+run's own bindings settle on the class it targets. Rails writes one as
+`has_many :statuses` and SQLModel as `items: list[Item] =
+Relationship(...)`, and in both the library reads it off an instance as
+a property. That is why the fact is stated as `contains` rather than as
+a step of its own: `contains` already walks the ancestry, so a model
+that gets its associations from a concern or a base class declares them
+too, and the property read already steps to what `contains` gives back.
+The target lands on the class, so a finder composes from there and
+`@account.statuses.find(id)` is one Status.
+
+Nothing says whether an association is a collection. A relation and a
+record settle on the same class today, the way `Account.where(x)` and
+`Account.find(x)` both do, so no rule has anything to do with the
+difference.
+
 `holdsProperty` is something an adapter states and the rules only read.
 What a value contains, a base class included, comes out as `contains`,
 so a method a base declares is found on a subclass that never overrode
