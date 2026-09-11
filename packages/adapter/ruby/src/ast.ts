@@ -127,6 +127,97 @@ export const PREPEND_CALL = "prepend";
 /** A call's arguments are values it is handed, not statements the body runs. */
 const ARGUMENT_LIST_TYPE = "argument_list";
 
+/** The two spellings of a block, `{ }` and `do ... end`. */
+const BLOCK_TYPES = new Set(["block", "do_block"]);
+
+/** What a pack says about one call whose block runs as part of the body around it, with the fields it left out settled. */
+export interface BodyBlockKind {
+  /** Whether the library only gives the call to a module, so a class writing the same name means something else. */
+  readonly moduleOnly: boolean;
+  /** Whether a `def` in the block declares a method on the class itself rather than on an instance. */
+  readonly definesClassMethods: boolean;
+}
+
+/**
+ * The calls a run's packs say run their block as part of the class or
+ * module body it is written in, by the name a project writes. Ruby
+ * defines no such call, so this is empty until a pack declares one.
+ */
+export type BodyBlocks = ReadonlyMap<string, BodyBlockKind>;
+
+/** What a reader that was given no packs works from. */
+export const NO_BODY_BLOCKS: BodyBlocks = new Map();
+
+/** Whether the class or module a body belongs to is a module. */
+export function isModuleBody(body: RbNode): boolean {
+  return body.parent?.type === "module";
+}
+
+/** What a pack declared about the block this statement opens on the body around it, or null when the statement opens no such block. */
+function declaredBlockAt(
+  statement: RbNode,
+  isModule: boolean,
+  blocks: BodyBlocks,
+): BodyBlockKind | null {
+  if (statement.type !== "call" || field(statement, "receiver") !== null) {
+    return null;
+  }
+  const method = field(statement, "method");
+  const kind = method === null ? undefined : blocks.get(method.text);
+  if (kind === undefined || (kind.moduleOnly && !isModule)) {
+    return null;
+  }
+  return field(statement, "block") === null ? null : kind;
+}
+
+/**
+ * The statements a class or module body runs, with every block a pack
+ * declared opened out where it is written. Without that, a method or a
+ * value a concern declares inside such a block belongs to the block and
+ * nothing can read it off the module.
+ */
+export function bodyStatementsRun(
+  body: RbNode,
+  isModule: boolean,
+  blocks: BodyBlocks,
+): RbNode[] {
+  return bodyStatements(body).flatMap((statement) => {
+    if (declaredBlockAt(statement, isModule, blocks) === null) {
+      return [statement];
+    }
+    const block = field(statement, "block");
+    const inner = block === null ? null : field(block, "body");
+    return inner === null ? [] : bodyStatementsRun(inner, isModule, blocks);
+  });
+}
+
+/**
+ * Whether a definition written somewhere inside `body` runs on the
+ * class rather than on an instance, because a declared block that
+ * defines class methods encloses it.
+ */
+export function definedAtClassLevel(
+  node: RbNode,
+  body: RbNode,
+  blocks: BodyBlocks,
+): boolean {
+  if (blocks.size === 0) {
+    return false;
+  }
+  const isModule = isModuleBody(body);
+  let current = node.parent;
+  while (current !== null && current.id !== body.id) {
+    const parent: RbNode | null = current.parent;
+    if (BLOCK_TYPES.has(current.type) && parent !== null) {
+      if (declaredBlockAt(parent, isModule, blocks)?.definesClassMethods) {
+        return true;
+      }
+    }
+    current = parent;
+  }
+  return false;
+}
+
 /** A call whose block is the thing being configured rather than a place statements run. */
 export type BlockConfigures = (call: RbNode) => boolean;
 
@@ -190,12 +281,16 @@ export function symbolValue(node: RbNode): string | null {
  *
  * `def self.name` parses as a `singleton_method` and is deliberately
  * not one of these: it runs on the class, and what resolves a field is
- * an instance method.
+ * an instance method, and so is a `def` inside a block a pack declared
+ * as defining class methods.
  */
-export function instanceMethodsByName(body: RbNode): Map<string, RbNode> {
+export function instanceMethodsByName(
+  body: RbNode,
+  blocks: BodyBlocks = NO_BODY_BLOCKS,
+): Map<string, RbNode> {
   const methods = new Map<string, RbNode>();
   for (const stmt of runStatements(body)) {
-    if (stmt.type !== "method") {
+    if (stmt.type !== "method" || definedAtClassLevel(stmt, body, blocks)) {
       continue;
     }
     const name = field(stmt, "name")?.text;
@@ -291,12 +386,18 @@ export function instanceMethodVisibility(
  * Every `def self.name` a class body writes directly, keyed by the name
  * it is defined under. Used for a call written straight on the
  * constant, `OrderService.call` say, which runs on the class rather
- * than an instance and so is never in `instanceMethodsByName`.
+ * than an instance and so is never in `instanceMethodsByName`. A `def`
+ * inside a block a pack declared as defining class methods is one too.
  */
-export function singletonMethodsByName(body: RbNode): Map<string, RbNode> {
+export function singletonMethodsByName(
+  body: RbNode,
+  blocks: BodyBlocks = NO_BODY_BLOCKS,
+): Map<string, RbNode> {
   const methods = new Map<string, RbNode>();
   for (const stmt of runStatements(body)) {
-    if (stmt.type !== "singleton_method") {
+    const classLevel =
+      stmt.type === "method" && definedAtClassLevel(stmt, body, blocks);
+    if (stmt.type !== "singleton_method" && !classLevel) {
       continue;
     }
     const name = field(stmt, "name")?.text;

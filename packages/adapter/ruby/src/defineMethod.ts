@@ -1,21 +1,21 @@
 /**
- * The method names a class body defines with `define_method`.
+ * The method names a class gets under a name the source computes.
  *
- * Ruby runs a class body like any other code, so
  * `KEYS.each { |key| define_method(key) { ... } }` defines one method
  * per element of `KEYS`, and a reader of `def` nodes sees none of them.
  * Reading the names lets a lookup for a name none of them defines carry
  * on up the ancestry instead of stopping at the class.
  *
- * A name is read when the argument comes down to one string on every
- * turn of the loops around the call, which the value evaluator settles
- * from the run's facts. A name read only in part is kept as a pattern
- * the whole name has to match. Anything less stops every lookup here.
+ * Which calls those are, and what each name is written as, arrive as
+ * `definesMethodFrom` and `nameTurnsOn`, so this reads no source of its
+ * own. Each name goes through the shared value evaluator, which follows
+ * names and constants across the whole run. A name read only in part
+ * becomes a pattern the whole name has to match.
  */
 
-import { force, literalOf, piecesOf } from "@suss/values";
+import { nodeOfKey } from "@suss/resolution";
+import { force, hole, literalOf, piecesOf } from "@suss/values";
 
-import { bareCalls, bodyStatements, field, OWN_BODY_TYPES } from "./ast.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
@@ -23,23 +23,18 @@ import type { Value } from "@suss/values";
 import type { RbNode } from "./parser.js";
 import type { ParameterBindings } from "./values/evaluator.js";
 
-/** Ruby's own dynamic definition. A method defined this way is called like any other and is invisible to a reader of `def` nodes. */
-const DEFINE_METHOD_CALL = "define_method";
-
-/** The list methods that run their block once per element, with the element bound to its first parameter. */
-const LOOP_METHODS = new Set(["each", "each_with_index", "map"]);
-
-const BLOCK_TYPES = new Set(["block", "do_block"]);
-
-/** What the `define_method` calls in one class body define. */
+/** What the dynamic definitions in one class define. */
 export interface DefinedNames {
-  /** Every name this reader read a `define_method` call as defining. */
+  /** Every name this reader read one as defining. */
   readonly names: ReadonlySet<string>;
-  /** What a name read only in part has to match for the loop to be defining it. */
+  /** What a name read only in part has to match for the class to be defining it. */
   readonly patterns: readonly RegExp[];
-  /** Whether some `define_method` in the body was given a method name this reader could not read. */
+  /** Whether one of them was given a name this reader could not read. */
   readonly unreadable: boolean;
 }
+
+/** Every class's reading, by the key the value facts give the class node. */
+export type DynamicNames = ReadonlyMap<string, DefinedNames>;
 
 const NOTHING: DefinedNames = {
   names: new Set(),
@@ -47,83 +42,82 @@ const NOTHING: DefinedNames = {
   unreadable: false,
 };
 
-/** Whether `name` could be one a `define_method` here defines without this reader having read which. */
+/** Whether `name` could be one the class defines without this reader having read which. */
 export function couldBeDefined(defined: DefinedNames, name: string): boolean {
   return (
     defined.unreadable || defined.patterns.some((pattern) => pattern.test(name))
   );
 }
 
-const byRun = new WeakMap<object, Map<number, DefinedNames>>();
+/** What a class defines dynamically, or an empty reading for one that defines nothing that way. */
+export function definedNamesOf(
+  dynamic: DynamicNames | undefined,
+  classKey: string,
+): DefinedNames {
+  return dynamic?.get(classKey) ?? NOTHING;
+}
 
 /**
- * The names `body` defines with `define_method`. Kept per body, since
- * one class is looked up once per call site that reaches it and the
- * answer is the same every time.
+ * Read every dynamic definition in the run, put the names it settles on
+ * in the facts so the shared `wantedDeclaredName` rule reports them
+ * beside the ones a `def` writes out, and hand back what else the
+ * ancestry lookup needs. Runs after the evaluator is bound, since
+ * settling a name reads the run's own facts.
  */
-export function defineMethodNames(
-  body: RbNode,
-  facts?: Database,
+export function readDynamicNames(
+  db: Database,
+  rootsByFile: ReadonlyMap<string, RbNode>,
+): DynamicNames {
+  const byClass = new Map<string, DefinedNames>();
+  for (const [classKey, nameKey] of db.facts("definesMethodFrom")) {
+    const key = String(classKey);
+    byClass.set(
+      key,
+      foldReading(
+        byClass.get(key) ?? NOTHING,
+        readOne(db, rootsByFile, String(nameKey)),
+      ),
+    );
+  }
+  for (const [classKey, reading] of byClass) {
+    for (const name of reading.names) {
+      db.add("declaresName", [classKey, name]);
+    }
+  }
+  return byClass;
+}
+
+/** What the calls read so far say, with one more call's reading folded in. */
+function foldReading(
+  soFar: DefinedNames,
+  reading: { names: string[]; patterns: RegExp[] } | null,
 ): DefinedNames {
-  const perRun = cacheFor(facts ?? body.tree);
-  const cached = perRun.get(body.id);
-  if (cached !== undefined) {
-    return cached;
+  if (reading === null) {
+    return { ...soFar, unreadable: true };
   }
-  const read = readNames(body, facts);
-  perRun.set(body.id, read);
-  return read;
+  return {
+    names: new Set([...soFar.names, ...reading.names]),
+    patterns: [...soFar.patterns, ...reading.patterns],
+    unreadable: soFar.unreadable,
+  };
 }
 
-function cacheFor(owner: object): Map<number, DefinedNames> {
-  let perRun = byRun.get(owner);
-  if (perRun === undefined) {
-    perRun = new Map();
-    byRun.set(owner, perRun);
-  }
-  return perRun;
-}
-
-function readNames(body: RbNode, facts: Database | undefined): DefinedNames {
-  const calls = bareCalls(body, DEFINE_METHOD_CALL);
-  if (calls.length === 0) {
-    return NOTHING;
-  }
-  const names = new Set<string>();
-  const patterns: RegExp[] = [];
-  let unreadable = false;
-  for (const call of calls) {
-    const defined = namesDefinedBy(call, facts);
-    if (defined === null) {
-      unreadable = true;
-      continue;
-    }
-    for (const name of defined.names) {
-      names.add(name);
-    }
-    patterns.push(...defined.patterns);
-  }
-  return { names, patterns, unreadable };
-}
-
-/** What one `define_method` call defines: a name per turn, or the pattern a turn's name matches. Null when a turn gives neither. */
-function namesDefinedBy(
-  call: RbNode,
-  facts: Database | undefined,
+/** What one call defines: a name per turn of the loops around it, or the pattern a turn's name matches. Null when a turn gives neither. */
+function readOne(
+  db: Database,
+  rootsByFile: ReadonlyMap<string, RbNode>,
+  nameKey: string,
 ): { names: string[]; patterns: RegExp[] } | null {
-  const args = field(call, "arguments");
-  const first = args === null ? undefined : bodyStatements(args)[0];
-  if (first === undefined) {
-    return null;
-  }
+  // A key naming no node in the run settles on nothing, which is what
+  // an unreadable name settles on too.
+  const node = nodeOfKey(rootsByFile, nameKey);
   const names: string[] = [];
   const patterns: RegExp[] = [];
-  for (const bindings of loopTurns(call, facts)) {
-    const value = evaluatedValue(
-      first,
-      facts,
-      bindings.size === 0 ? undefined : bindings,
-    );
+  for (const bindings of loopTurns(db, rootsByFile, nameKey)) {
+    const value =
+      node === null
+        ? hole(nameKey)
+        : evaluatedValue(node, db, bindings.size === 0 ? undefined : bindings);
     const name = literalOf(value);
     if (name !== null) {
       names.push(name);
@@ -167,84 +161,68 @@ function escapeForPattern(text: string): string {
 }
 
 /**
- * One set of block-parameter bindings per turn of the loops the call is
- * written inside. A block this reader cannot replay contributes no
- * binding, which leaves a name taken from its parameter unread.
+ * One set of block-parameter bindings per turn of the loops the name is
+ * written inside. A loop whose elements this reader cannot list
+ * contributes no binding, which leaves a name taken from its parameter
+ * unread.
  */
 function loopTurns(
-  call: RbNode,
-  facts: Database | undefined,
+  db: Database,
+  rootsByFile: ReadonlyMap<string, RbNode>,
+  nameKey: string,
 ): ParameterBindings[] {
   let turns: Array<Map<string, string>> = [new Map()];
-  for (const taken of blocksAround(call)) {
-    const perElement = elementBindings(taken, facts);
-    if (perElement === null) {
-      continue;
-    }
+  for (const over of listsBehind(db, rootsByFile, nameKey)) {
     turns = turns.flatMap((base) =>
-      perElement.map((element) => new Map([...base, ...element])),
+      over.elements.map((value, position) => {
+        const binding = new Map([...base, [over.element, value]]);
+        if (over.index !== "") {
+          binding.set(over.index, String(position));
+        }
+        return binding;
+      }),
     );
   }
   return turns;
 }
 
-/** A block written out at a call, `%i(a).each do |key| ... end`. */
-interface BlockAtCall {
-  readonly block: RbNode;
-  readonly call: RbNode;
+/** One loop around a name, with what it runs over read out. */
+interface LoopOver {
+  readonly element: string;
+  /** The name the position is bound to, or the empty string for a block that takes one parameter. */
+  readonly index: string;
+  readonly elements: string[];
 }
 
-/** The blocks a call is written inside, outermost first. */
-function blocksAround(call: RbNode): BlockAtCall[] {
-  const blocks: BlockAtCall[] = [];
-  let current = call.parent;
-  while (current !== null && !OWN_BODY_TYPES.has(current.type)) {
-    const parent = current.parent;
-    if (BLOCK_TYPES.has(current.type) && parent?.type === "call") {
-      blocks.unshift({ block: current, call: parent });
+/** Every loop around the name whose elements this reader could list, in the order the facts state them. */
+function listsBehind(
+  db: Database,
+  rootsByFile: ReadonlyMap<string, RbNode>,
+  nameKey: string,
+): LoopOver[] {
+  const found: LoopOver[] = [];
+  for (const [, element, index, overKey] of db.lookup(
+    "nameTurnsOn",
+    0,
+    nameKey,
+  )) {
+    const elements = literalElementsOf(rootsByFile, String(overKey), db);
+    if (elements !== null) {
+      found.push({ element: String(element), index: String(index), elements });
     }
-    current = parent;
   }
-  return blocks;
+  return found;
 }
 
-/** What each turn of a loop over a list of literals binds, or null for any other block. */
-function elementBindings(
-  taken: BlockAtCall,
-  facts: Database | undefined,
-): Array<Map<string, string>> | null {
-  const { block, call } = taken;
-  const receiver = field(call, "receiver");
-  const method = field(call, "method")?.text;
-  if (receiver === null || method === undefined || !LOOP_METHODS.has(method)) {
-    return null;
-  }
-  const parameters = field(block, "parameters");
-  const [element, index] =
-    parameters === null
-      ? []
-      : bodyStatements(parameters).map((parameter) => parameter.text);
-  const elements =
-    element === undefined ? null : literalElementsOf(receiver, facts);
-  if (element === undefined || elements === null) {
-    return null;
-  }
-  return elements.map((value, position) => {
-    const binding = new Map([[element, value]]);
-    if (index !== undefined) {
-      binding.set(index, String(position));
-    }
-    return binding;
-  });
-}
-
-/** The strings a value comes down to when it is a list of them, or null when any element is something else. */
+/** The strings the expression at `key` comes down to when it is a list of them, or null when any element is something else. */
 function literalElementsOf(
-  node: RbNode,
-  facts: Database | undefined,
+  rootsByFile: ReadonlyMap<string, RbNode>,
+  key: string,
+  db: Database,
 ): string[] | null {
-  const value = evaluatedValue(node, facts);
-  if (value.kind !== "sequence") {
+  const node = nodeOfKey(rootsByFile, key);
+  const value = node === null ? null : evaluatedValue(node, db);
+  if (value === null || value.kind !== "sequence") {
     return null;
   }
   const elements: string[] = [];

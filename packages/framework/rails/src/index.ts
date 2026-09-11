@@ -21,11 +21,15 @@ import {
   expandPathPattern,
   readEngines,
 } from "./engines.js";
-import { inflectionFiles, readAcronyms } from "./inflections.js";
+import { inflectionFiles, readInflections } from "./inflections.js";
 import { drawDirectoryOf, readRoutes } from "./routes.js";
 import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
-import type { ControllerActions, RubyPack } from "@suss/adapter-ruby";
+import type {
+  ControllerActions,
+  RbInflections,
+  RubyPack,
+} from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { Route, RoutesInput } from "./routes.js";
 
@@ -161,6 +165,33 @@ const RAILS_CONTROLLER_METHODS = [
   "controller_path",
 ];
 
+/**
+ * The five ActiveSupport calls whose block runs as part of the class or
+ * module body it is written in. A concern's `included` and `prepended`
+ * evaluate their block against the class doing the including, and only
+ * a module gets them; `class_methods` evaluates its block against a
+ * nested `ClassMethods` module that the including class extends, so a
+ * `def` there is a class method. `Module#concerning` module_evals its
+ * block against a new module and mixes that module in, and
+ * `Object#with_options` runs its block with extra keywords wherever it
+ * is written, so both reach a class body as well as a module's.
+ */
+const BODY_BLOCKS = [
+  { name: "included", moduleOnly: true },
+  { name: "prepended", moduleOnly: true },
+  { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+  { name: "concerning" },
+  { name: "with_options" },
+];
+
+/** What a project that registered nothing taught its inflector. */
+const EMPTY_INFLECTIONS: Required<RbInflections> = {
+  acronyms: [],
+  irregular: [],
+  uncountable: [],
+  singular: [],
+};
+
 /** The routing key `config/routes.rb` gives a controller, from the class name the adapter reads: `Admin::OrdersController` -> `admin/orders`. */
 function controllerKeyFromQualified(
   qualifiedName: string,
@@ -216,10 +247,11 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
 
   // The acronyms decide how every constant maps to a file and a routing
   // key, so they are read once, before anything is resolved.
-  const acronyms =
+  const inflections =
     options.configDirectory === undefined
-      ? []
-      : readAcronyms(options.configDirectory);
+      ? EMPTY_INFLECTIONS
+      : readInflections(options.configDirectory);
+  const acronyms = inflections.acronyms;
 
   const routesInput = (): RoutesInput => ({
     routesFile: {
@@ -282,6 +314,8 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     name: "rails",
     protocol: "http",
     discovery: [pattern],
+    bodyBlocks: BODY_BLOCKS,
+    inflections,
     // Every file routing or naming is read from decides an action's
     // binding without being walked, so the cache key has to read them
     // here. This runs before the grammar loads, so nothing parses Ruby.

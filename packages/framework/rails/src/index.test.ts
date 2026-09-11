@@ -63,6 +63,17 @@ describe("railsFramework", () => {
     ]);
   });
 
+  it("declares the ActiveSupport calls whose block runs as part of the body", () => {
+    const pack = railsFramework({ configDirectory: "/repo" });
+    expect(pack.bodyBlocks).toEqual([
+      { name: "included", moduleOnly: true },
+      { name: "prepended", moduleOnly: true },
+      { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+      { name: "concerning" },
+      { name: "with_options" },
+    ]);
+  });
+
   it("declares Rack's status symbols, including the ones Rack renamed", () => {
     const p = pattern(railsFramework({ configDirectory: "/repo" }));
     expect(p.statusCodeNames).toMatchObject({

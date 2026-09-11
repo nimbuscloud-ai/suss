@@ -19,7 +19,7 @@ import {
 } from "../ast.js";
 import { associationTargetName } from "../inflect.js";
 
-import type { RbAssociationCalls } from "../pack.js";
+import type { RbAssociationCalls, RbInflections } from "../pack.js";
 import type { RbNode } from "../parser.js";
 import type { ConstantReference } from "./constants.js";
 
@@ -66,19 +66,20 @@ function targetName(
   calls: RbAssociationCalls,
   name: string,
   plural: boolean,
+  inflections: RbInflections | undefined,
 ): string | null {
   const override = readCallArgs(field(call, "arguments")).keyword[
     calls.classNameKeyword
   ];
   if (override === undefined) {
-    return associationTargetName(name, plural);
+    return associationTargetName(name, plural, inflections);
   }
   return stringLiteralValue(override);
 }
 
 /**
- * Every association declared in one class or module body, the ones
- * inside an `included do` or a `with_options` block included. `nesting`
+ * Every association declared in one class or module body, one written
+ * inside a block that body runs included. `nesting`
  * is the enclosing module and class names, outermost first, and is
  * where the lookup of a target reference starts.
  */
@@ -87,6 +88,7 @@ export function associationsDeclaredIn(
   classKey: string,
   nesting: readonly string[],
   calls: readonly RbAssociationCalls[],
+  inflections?: RbInflections,
 ): AssociationDeclaration[] {
   const body = field(cls, "body");
   if (body === null || calls.length === 0) {
@@ -109,7 +111,13 @@ export function associationsDeclaredIn(
       if (name === null) {
         continue;
       }
-      const written = targetName(statement, declaration, name, plural);
+      const written = targetName(
+        statement,
+        declaration,
+        name,
+        plural,
+        inflections,
+      );
       if (written === null) {
         continue;
       }

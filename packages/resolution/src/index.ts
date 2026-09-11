@@ -107,6 +107,8 @@ export type {
 //   givesBackOneOfArgument(base, m, k)   the same, with the class at k
 //   givesBackOneOfImport(mod, n, k)      the same, for the bare
 //                               function n that module mod exports
+//   declaresName(c, n)          c declares a method n under a name the
+//                               source computes rather than writes out
 //   declaresAssociation(c, n, t)  class c declares an association n,
 //                               and t refers to the class it targets
 //   fieldCall(c, n, callee, t)  c's field n is given a call of callee,
@@ -1006,6 +1008,14 @@ export const RESOLUTION_QUESTIONS = [
       lit("ancestryChain", v("c"), v("b")),
       lit("holdsProperty", v("b"), v("n"), v("held")),
     ],
+  ),
+  // A method the class gets under a name the source computes rather than
+  // writes out. The adapter settles the name against the same facts and
+  // says so, and the chain reports it beside the ones written out.
+  rule(
+    "wantedDeclaredName",
+    [v("c"), v("n")],
+    [lit("ancestryChain", v("c"), v("b")), lit("declaresName", v("b"), v("n"))],
   ),
 
   rule("anchorChain", [v("x"), v("x")], [lit("wantedAnchor", v("x"))]),

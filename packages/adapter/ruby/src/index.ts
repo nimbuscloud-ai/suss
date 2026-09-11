@@ -87,6 +87,8 @@ export type {
 export type {
   ControllerActions,
   GraphqlObjectFields,
+  RbBodyBlock,
+  RbInflections,
   RbStatusCall,
   RbStoragePattern,
   RubyDiscoveryPattern,

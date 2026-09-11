@@ -6,9 +6,11 @@ import { startsAtName, valueLeftByWrites } from "@suss/resolution";
 
 import {
   bareCallArgumentGroups,
+  bodyStatementsRun,
   field,
   INCLUDE_CALL,
   NESTING_TYPES,
+  NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
   PREPEND_CALL,
 } from "../ast.js";
@@ -23,6 +25,7 @@ import {
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameWrite } from "@suss/resolution";
+import type { BodyBlocks } from "../ast.js";
 import type { RbNode } from "../parser.js";
 import type { LocalWrite, NameWrites } from "./locals.js";
 
@@ -145,6 +148,8 @@ interface Emitter {
    * different bodies, and nothing here orders them.
    */
   instanceWrites: Map<string, NameWrite[]> | null;
+  /** The calls the run's packs say run their block as part of the body around it. */
+  bodyBlocks: BodyBlocks;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -299,19 +304,122 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
   }
 }
 
-/** Every expression under a node, without crossing into a nested declaration. */
-function walkExpressions(node: RbNode, visit: (child: RbNode) => void): void {
+/** The two spellings of a block, `{ }` and `do ... end`. */
+const BLOCK_TYPES = new Set(["block", "do_block"]);
+
+/**
+ * Ruby's own iteration methods, whose block runs once per element with
+ * the element bound to its first parameter and, for `each_with_index`,
+ * the position bound to its second. They are `Enumerable`'s, so they
+ * are the language core the way `ENV` is rather than a library's.
+ */
+const LOOP_METHODS = new Set(["each", "each_with_index", "map"]);
+
+/** Ruby's own dynamic definition, whose argument is the name the method gets. */
+const DEFINE_METHOD_CALL = "define_method";
+
+/** What one turn of a loop block binds, and the value its elements come from. */
+interface LoopTurn {
+  readonly element: string;
+  /** The name the position is bound to, or the empty string for a block that takes one parameter. */
+  readonly index: string;
+  readonly overKey: string;
+}
+
+/** What a block binds per turn when a loop call opened it, or null for every other block. */
+function loopTurnAt(emitter: Emitter, block: RbNode): LoopTurn | null {
+  const call = block.parent;
+  if (call?.type !== "call") {
+    return null;
+  }
+  const receiver = field(call, "receiver");
+  const method = field(call, "method");
+  if (receiver === null || method === null || !LOOP_METHODS.has(method.text)) {
+    return null;
+  }
+  const parameters = field(block, "parameters");
+  const names =
+    parameters === null ? [] : children(parameters).map((p) => p.text);
+  const element = names[0];
+  if (element === undefined) {
+    return null;
+  }
+  // The expression's own key, not the name's: what it comes down to is
+  // the evaluator's question, and it reads these same facts to answer it.
+  return {
+    element,
+    index: names[1] ?? "",
+    overKey: nodeId(emitter.filePath, receiver),
+  };
+}
+
+/**
+ * A method the class gets under a name the source computes. The name is
+ * whatever the argument comes down to, which the value evaluator settles
+ * from these same facts, so nothing here reads the argument itself.
+ */
+function emitDynamicDefinition(
+  emitter: Emitter,
+  call: RbNode,
+  turns: readonly LoopTurn[],
+): void {
+  if (
+    emitter.selfKey === null ||
+    // A call inside a method runs when that method does, not at load time.
+    emitter.enclosing !== null ||
+    call.type !== "call" ||
+    field(call, "receiver") !== null ||
+    field(call, "method")?.text !== DEFINE_METHOD_CALL
+  ) {
+    return;
+  }
+  const args = field(call, "arguments");
+  const first = args === null ? undefined : children(args)[0];
+  // A call handed no name at all points at itself, which settles on nothing.
+  const nameKey = nodeId(emitter.filePath, first ?? call);
+  add(emitter, "definesMethodFrom", emitter.selfKey, nameKey);
+  for (const turn of turns) {
+    add(
+      emitter,
+      "nameTurnsOn",
+      nameKey,
+      turn.element,
+      turn.index,
+      turn.overKey,
+    );
+  }
+}
+
+/** Every expression under a node, without crossing into a nested declaration. `turns` is the loop blocks the expression is written inside, outermost first. */
+function walkExpressions(
+  node: RbNode,
+  emitter: Emitter,
+  visit: (child: RbNode, turns: readonly LoopTurn[]) => void,
+  turns: readonly LoopTurn[] = [],
+): void {
   for (const child of children(node)) {
     if (OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
-    visit(child);
-    walkExpressions(child, visit);
+    visit(child, turns);
+    const opened = BLOCK_TYPES.has(child.type)
+      ? loopTurnAt(emitter, child)
+      : null;
+    walkExpressions(
+      child,
+      emitter,
+      visit,
+      opened === null ? turns : [...turns, opened],
+    );
   }
 }
 
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
-  walkExpressions(node, (child) => {
+  // The walk below starts at the children, so a statement that is itself
+  // a definition would go unseen.
+  emitDynamicDefinition(emitter, node, []);
+  walkExpressions(node, emitter, (child, turns) => {
+    emitDynamicDefinition(emitter, child, turns);
     if (isPropertyRead(child)) {
       emitPropertyRead(emitter, child);
     } else if (child.type === "call") {
@@ -498,7 +606,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   };
   recordNested(body);
 
-  walkExpressions(body, (child) => {
+  walkExpressions(body, inside, (child) => {
     if (child.type === "return") {
       // `return x` wraps the value in an argument list, the same shape a
       // call's arguments take.
@@ -690,46 +798,6 @@ function emitMixinFacts(
 }
 
 /**
- * A receiverless call whose block runs on the class or module it is
- * written in, and whether that has to be a module. ActiveSupport's
- * `included` and `prepended` run their block on the class doing the
- * including; `with_options` runs its block with extra keywords wherever
- * it is written.
- */
-const BLOCK_RUNS_ON_BODY: Record<string, { moduleOnly: boolean }> = {
-  included: { moduleOnly: true },
-  prepended: { moduleOnly: true },
-  with_options: { moduleOnly: false },
-};
-
-/** The body of a block that runs on the enclosing class or module, or null when this statement has no such block. */
-function blockRunOnBody(statement: RbNode, isModule: boolean): RbNode | null {
-  if (statement.type !== "call" || field(statement, "receiver") !== null) {
-    return null;
-  }
-  const method = field(statement, "method");
-  const runs = method === null ? undefined : BLOCK_RUNS_ON_BODY[method.text];
-  if (runs === undefined || (runs.moduleOnly && !isModule)) {
-    return null;
-  }
-  const block = field(statement, "block");
-  return block === null ? null : field(block, "body");
-}
-
-/**
- * The statements a class or module body runs, with a block that runs on
- * the body itself opened out where it is written. Without that, a
- * method or a value a concern declares inside `included do` belongs to
- * the block and nothing can read it off the module.
- */
-function bodyStatementsRun(body: RbNode, isModule: boolean): RbNode[] {
-  return children(body).flatMap((statement) => {
-    const inner = blockRunOnBody(statement, isModule);
-    return inner === null ? [statement] : bodyStatementsRun(inner, isModule);
-  });
-}
-
-/**
  * A class or a module is an object containing its methods, which is the
  * treatment an array and a hash already get. That is what lets a method
  * read off an instance resolve to the method the class declares, and a
@@ -763,7 +831,9 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     instanceWrites: collected,
   };
   const statements =
-    body === null ? [] : bodyStatementsRun(body, cls.type === "module");
+    body === null
+      ? []
+      : bodyStatementsRun(body, cls.type === "module", emitter.bodyBlocks);
   for (const statement of statements) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
@@ -811,6 +881,7 @@ export function emitValueFacts(
   db: Database,
   filePath: string,
   root: RbNode,
+  bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
 ): void {
   const emitter: Emitter = {
     db,
@@ -818,6 +889,7 @@ export function emitValueFacts(
     enclosing: null,
     selfKey: null,
     instanceWrites: null,
+    bodyBlocks,
   };
 
   const declaresName = (child: RbNode, key: string): void => {

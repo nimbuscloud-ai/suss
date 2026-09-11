@@ -13,8 +13,10 @@ import {
   rangeOf,
   readCallArgs,
   runStatements,
+  singletonMethodsByName,
   symbolValue,
 } from "./ast.js";
+import { bodyBlocksIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 
 import type { RbNode } from "./parser.js";
@@ -234,6 +236,32 @@ async function classBody(source: string): Promise<RbNode> {
   return must(field(klass, "body"));
 }
 
+const moduleBody = classBody;
+
+const CONCERN_BLOCKS = bodyBlocksIn([
+  {
+    name: "test",
+    protocol: "http",
+    discovery: [],
+    bodyBlocks: [
+      { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+    ],
+  },
+]);
+
+const CLASS_METHODS_CONCERN = [
+  "module Payable",
+  "  class_methods do",
+  "    def build",
+  "    end",
+  "  end",
+  "",
+  "  def pay",
+  "  end",
+  "end",
+  "",
+].join("\n");
+
 describe("instanceMethodsByName", () => {
   it("keys every instance method by the name it is defined under", async () => {
     const body = await classBody(
@@ -253,6 +281,27 @@ describe("instanceMethodsByName", () => {
   it("leaves out a method defined on the class rather than its instances", async () => {
     const body = await classBody("class C\n  def self.build\n  end\nend\n");
     expect([...instanceMethodsByName(body).keys()]).toEqual([]);
+  });
+
+  it("leaves out a def inside a block a pack declared as defining class methods", async () => {
+    const body = await moduleBody(CLASS_METHODS_CONCERN);
+    expect([...instanceMethodsByName(body, CONCERN_BLOCKS).keys()]).toEqual([
+      "pay",
+    ]);
+  });
+
+  it("keeps that def when no pack declares the block", async () => {
+    const body = await moduleBody(CLASS_METHODS_CONCERN);
+    expect([...instanceMethodsByName(body).keys()]).toEqual(["build", "pay"]);
+  });
+});
+
+describe("singletonMethodsByName", () => {
+  it("keys a def inside a declared class-method block by its name", async () => {
+    const body = await moduleBody(CLASS_METHODS_CONCERN);
+    expect([...singletonMethodsByName(body, CONCERN_BLOCKS).keys()]).toEqual([
+      "build",
+    ]);
   });
 });
 

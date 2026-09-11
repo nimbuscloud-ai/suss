@@ -3,10 +3,21 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 import { askResolution } from "@suss/resolution";
 
+import { bodyBlocksIn } from "../pack.js";
 import { parseRuby } from "../parser.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import { RUBY_PROGRAM, resolveValues, writtenValueOf } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
+
+/** What the Rails pack says about a concern's own block. */
+const CONCERN_BLOCKS = bodyBlocksIn([
+  {
+    name: "test",
+    protocol: "http",
+    discovery: [],
+    bodyBlocks: [{ name: "included", moduleOnly: true }],
+  },
+]);
 
 async function factsFor(source: string) {
   const tree = await parseRuby(source);
@@ -146,7 +157,7 @@ describe("resolving a value across a Ruby file", () => {
 async function runFactsFor(source: string) {
   const tree = await parseRuby(source);
   const db = new Database();
-  emitValueFacts(db, "f.rb", tree.rootNode);
+  emitValueFacts(db, "f.rb", tree.rootNode, CONCERN_BLOCKS);
   emitConstantBindings(db, [collectFileConstants("f.rb", tree.rootNode)]);
   return db;
 }
@@ -247,7 +258,7 @@ describe("a method Ruby runs by reading it off a constant", () => {
 async function modelFactsFor(source: string) {
   const tree = await parseRuby(source);
   const db = new Database();
-  emitValueFacts(db, "f.rb", tree.rootNode);
+  emitValueFacts(db, "f.rb", tree.rootNode, CONCERN_BLOCKS);
   emitConstantBindings(db, [
     collectFileConstants("f.rb", tree.rootNode, [
       {
@@ -360,5 +371,19 @@ describe("a method a concern declares", () => {
     expect(
       db.lookup("wantedDeclaredName", 0, account).map((row) => String(row[1])),
     ).toContain("pay");
+  });
+});
+
+describe("a name a class defines dynamically", () => {
+  it("is one of the names its ancestry declares", async () => {
+    const db = await runFactsFor(CONCERN_SOURCE);
+    const payable = classBehind(db, "f.rb#Payable");
+    const account = classBehind(db, "f.rb#Account");
+    db.add("declaresName", [payable, "suspended?"]);
+
+    askResolution(db, [account], "wantedAncestry", RUBY_PROGRAM);
+    expect(
+      db.lookup("wantedDeclaredName", 0, account).map((row) => String(row[1])),
+    ).toContain("suspended?");
   });
 });

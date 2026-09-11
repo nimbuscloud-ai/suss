@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { ancestryOf, methodInAncestry } from "./ancestry.js";
+import { readDynamicNames } from "./defineMethod.js";
 import {
   collectFileConstants,
   emitConstantBindings,
@@ -28,22 +29,11 @@ async function lookup(source: string, name: string): Promise<MethodLookup> {
   if (first === undefined) {
     throw new Error("the source defines no class");
   }
-  const own = blocks.filter(
-    (block) => block.info.qualifiedName === first.info.qualifiedName,
+  return lookupInRun(
+    { "/app/models/subject.rb": source },
+    first.info.qualifiedName,
+    name,
   );
-  const ancestry = await ancestryOf(first.info.qualifiedName, own, {
-    root: "/app/models",
-    pathConvention: "railsUnderscore",
-    ancestryRootClassNames: ["ActiveRecord::Base"],
-    parsedFile: async () => null,
-    localDefinition: (qualifiedName) => {
-      const found = blocks.filter(
-        (block) => block.info.qualifiedName === qualifiedName,
-      );
-      return found.length === 0 ? null : found;
-    },
-  });
-  return methodInAncestry(ancestry, name);
 }
 
 const DYNAMIC = {
@@ -76,6 +66,10 @@ async function lookupInRun(
   }
   emitConstantBindings(db, constants);
   bindEvaluator(db, { files: parsed, definitions });
+  const dynamicNames = readDynamicNames(
+    db,
+    new Map(parsed.map(({ file, root }) => [file, root])),
+  );
 
   const blocks: ReachedBody[] = [];
   const knownClasses = new Set<string>();
@@ -101,7 +95,7 @@ async function lookupInRun(
       },
     },
   );
-  return methodInAncestry(ancestry, name, db);
+  return methodInAncestry(ancestry, name, { facts: db, dynamicNames });
 }
 
 const BASE = `
@@ -256,33 +250,61 @@ class Subject < Base
   %i(height).each { |key| define_method(key) { 1 } }
 end
 `;
-    const tree = await parseRuby(source);
-    const blocks: ReachedBody[] = [];
-    const knownClasses = new Set<string>();
-    walkDefinitions(tree.rootNode as unknown as RbNode, (info) => {
-      knownClasses.add(info.qualifiedName);
-      blocks.push({ info, knownClasses, file: "/app/models/subject.rb" });
-    });
-    const ancestry = await ancestryOf(
-      "Subject",
-      blocks.filter((block) => block.info.qualifiedName === "Subject"),
-      {
-        root: "/app/models",
-        pathConvention: "railsUnderscore",
-        ancestryRootClassNames: ["ActiveRecord::Base"],
-        parsedFile: async () => null,
-        localDefinition: (qualifiedName) => {
-          const found = blocks.filter(
-            (block) => block.info.qualifiedName === qualifiedName,
-          );
-          return found.length === 0 ? null : found;
-        },
-      },
-    );
-    expect(methodInAncestry(ancestry, "width")).toMatchObject({
+    const files = { "/app/subject.rb": source };
+    expect(await lookupInRun(files, "Subject", "width")).toMatchObject({
       type: "found",
     });
-    expect(methodInAncestry(ancestry, "height")).toMatchObject(DYNAMIC);
+    expect(await lookupInRun(files, "Subject", "height")).toMatchObject(
+      DYNAMIC,
+    );
+  });
+
+  it("reads a loop over a constant another file defines", async () => {
+    const files = {
+      "/app/base.rb": BASE,
+      "/app/keys.rb": "KEYS = %i[width height].freeze\n",
+      "/app/subject.rb": `
+class Subject < Base
+  KEYS.each do |key|
+    define_method(key) { 1 }
+  end
+end
+`,
+    };
+    expect(await lookupInRun(files, "Subject", "width")).toMatchObject(DYNAMIC);
+    expect(await lookupInRun(files, "Subject", "depth")).toEqual({
+      type: "none",
+    });
+  });
+
+  it("reads an interpolated name whose parts another file settles", async () => {
+    const files = {
+      "/app/base.rb": BASE,
+      "/app/prefix.rb": 'PREFIX = "draft"\n',
+      "/app/subject.rb": `
+class Subject < Base
+  define_method(:"#{PREFIX}_state") { 1 }
+end
+`,
+    };
+    expect(await lookupInRun(files, "Subject", "draft_state")).toMatchObject(
+      DYNAMIC,
+    );
+    expect(await lookupInRun(files, "Subject", "final_state")).toEqual({
+      type: "none",
+    });
+  });
+
+  it("stops every lookup when nothing in the run settles the name", async () => {
+    const files = {
+      "/app/base.rb": BASE,
+      "/app/subject.rb": `
+class Subject < Base
+  define_method(chosen_name) { 1 }
+end
+`,
+    };
+    expect(await lookupInRun(files, "Subject", "width")).toMatchObject(DYNAMIC);
   });
 
   it("reads a loop over a list a project method gives back", async () => {

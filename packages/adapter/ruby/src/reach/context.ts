@@ -11,13 +11,20 @@
  */
 
 import { ancestryOf } from "../ancestry.js";
-import { bodyStatements, field, OWN_BODY_TYPES } from "../ast.js";
+import {
+  bodyStatements,
+  field,
+  NO_BODY_BLOCKS,
+  OWN_BODY_TYPES,
+} from "../ast.js";
 import { nodeId } from "../facts/values.js";
 import { walkDefinitions } from "../scope.js";
 import { methodDefinitionsIn } from "../values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
 import type { AncestorLookup, Ancestry, ReachedBody } from "../ancestry.js";
+import type { BodyBlocks } from "../ast.js";
+import type { DynamicNames } from "../defineMethod.js";
 import type { RbNode } from "../parser.js";
 import type { ReachContext, ReachedFunction } from "./resolveCallee.js";
 
@@ -27,6 +34,8 @@ const METHOD_TYPES = new Set(["method", "singleton_method"]);
 export async function buildReachContext(
   files: readonly { file: string; root: RbNode }[],
   facts: Database,
+  bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
+  dynamicNames: DynamicNames = new Map(),
 ): Promise<ReachContext> {
   const blocksByQualifiedName = new Map<string, ReachedBody[]>();
   const classes: { file: string; info: ReachedBody["info"] }[] = [];
@@ -110,6 +119,8 @@ export async function buildReachContext(
     facts,
     classNames,
     definitions,
+    bodyBlocks,
+    dynamicNames,
   };
 }
 

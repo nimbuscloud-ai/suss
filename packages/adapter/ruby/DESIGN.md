@@ -48,9 +48,18 @@ What the summary then says:
 
 An ancestor the reader could not open stops the search, rather than the search continuing to a method further along. Ruby would have called whatever that ancestor defines, so a method found past it is not the one that runs, and reporting it would be a confident wrong claim instead of an abstention.
 
-A `define_method` call stops the search only for the names it defines. The reader takes those names from the call's first argument, through the same value evaluator that settles a route path: a symbol or a string written out, and, inside `each`, `each_with_index` or `map` over a literal array or a constant whose value is one, the element bound to the block's parameter, including an interpolated symbol built from it such as `:"#{key}="`.
+A `define_method` call stops the search only for the names it defines. Nothing reads the call's argument as a shape. The adapter states two facts as it walks a class body, and the reader joins them:
 
-The list a loop runs over may also be one a project method gives back, `Settings.filters.each do |filter|`. Ruby runs a class body like any other code, so the value facts cover a class body's expressions, and a rule of Ruby's own says a method read off a constant runs and is worth what it returns. That reaches the memoised spelling too, `@filters ||= %i[...]` and `@@periods ||= %i[...].freeze`, since a method's last line hands back what it wrote.
+```
+definesMethodFrom  order.rb:0-120  order.rb:64-67
+nameTurnsOn        order.rb:64-67  key  element  order.rb:30-52
+```
+
+`definesMethodFrom` says the class defines a method whose name is whatever that expression comes down to. `nameTurnsOn` says a loop around the call binds `key` to each element of another expression. Both expressions then go through the same value evaluator that settles a route path, which follows names and constants across the whole run, so a symbol written out, a constant another file defines, a list a project method gives back, and an interpolated symbol built from a loop's element all read the same way.
+
+The name the evaluator settles on goes back in the facts as `declaresName`, and one shared rule puts it on `wantedDeclaredName` beside the names a `def` writes out. So a caller asking which methods a class declares gets the dynamic ones without knowing they were dynamic.
+
+Ruby's own `each`, `each_with_index` and `map` are the loops the adapter recognizes, the way `ENV` is: they are `Enumerable`'s rather than a library's.
 
 A name only part of which settles, `"category_#{filter}"` with nothing behind `filter`, is kept as a pattern its literal parts spell out. A lookup for a name matching no pattern carries on up the ancestry; one that matches stops at the class, since the loop may be defining it. A `define_method` whose name settles on nothing at all, a bare variable or a call nothing binds, leaves the class stopping every lookup, the way it did before any name was read.
 
@@ -213,12 +222,29 @@ would give a class a second base for a pack to match on. The facts read the
 same two calls the syntactic ancestry in `ancestry.ts` reads, so the two agree
 on which constant is mixed in, down to the order of `include A, B`.
 
-ActiveSupport's `included do ... end` runs its block on the class doing the
-including, and `with_options ... do ... end` runs its block with extra
-keywords. Both blocks are read as statements of the class or module around
-them, so a method or a value written inside one is a property of that class or
-module rather than something lost with the block. The keywords `with_options`
-passes down are not read.
+## A block that runs as part of the body
+
+Ruby has no call whose block runs as part of the class or module body around
+it. A library defines one, so a pack says which calls its own library gives a body,
+in `bodyBlocks` on the pack:
+
+```ts
+bodyBlocks: [
+  { name: "included", moduleOnly: true },
+  { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+  { name: "with_options" },
+]
+```
+
+A declared block is opened out where it is written, so a method or a value
+inside one is a property of the class or module rather than something lost with
+the block. `moduleOnly` keeps a call a library only gives a module from
+matching the same name written in a class body. `definesClassMethods` says a
+`def` in the block runs on the class itself, so the lookup finds it where it
+looks for `def self.name` and never as an instance method.
+
+A run whose packs declare none of these reads every block as a block. The
+keywords a block passes down are not read.
 
 ## What a body calls out to
 
@@ -436,7 +462,18 @@ it from the association's own name: `has_many :statuses` reaches
 itself ships. `class_name: "Status"` on the call says the name instead,
 and a call that writes a `class_name` the adapter cannot read as a plain
 string declares nothing rather than falling back to a name that would be
-wrong. A project's own `config/initializers/inflections.rb` is not read.
+wrong.
+
+A project may teach its own inflector more words. Where it writes them,
+and how, is the library's business, so the pack reads them and declares
+the result in `inflections` on the pack: acronyms, irregular plurals,
+uncountable words, and singularisation rules, each one a plain word or a
+pattern with nothing of the library left in it. Those are searched
+before the defaults, the way ActiveSupport searches its newest rule
+first, so `has_many :kine` reaches `Cow` in a project that said so and
+reaches nothing in a project that did not. An acronym stays whole in the
+constant name, which is how `has_many :api_tokens` reaches `APIToken`
+rather than `ApiToken`.
 
 That reference is looked up from the nesting the declaring class is
 written in, the way every other constant read is, so a `has_many
@@ -446,9 +483,9 @@ reaches `Status`. The shared rules take it from there: a read of
 composes the same way `Account.where(x).first` does.
 
 A concern needs nothing extra. The mixed-in module is in the `extends`
-ancestry and the statements inside its `included do` and `with_options`
-blocks are read as the module's own, so `has_many :statuses` written
-there is an association of every class that includes it.
+ancestry and the statements inside a block a pack declared are read as
+the module's own, so `has_many :statuses` written there is an
+association of every class that includes it.
 
 Nothing says whether an association is a collection. `@account.statuses`
 and `@account.profile` both settle on the class, which is what

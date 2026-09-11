@@ -8,8 +8,40 @@
  */
 
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { GraphqlTypeNameConvention } from "./scope.js";
+
+/** Everything the run's packs read from their own projects' inflectors, pooled in the order the packs are listed. */
+export function inflectionsIn(packs: readonly RubyPack[]): RbInflections {
+  const pooled: RbInflections = {
+    acronyms: [],
+    irregular: [],
+    uncountable: [],
+    singular: [],
+  };
+  for (const pack of packs) {
+    pooled.acronyms?.push(...(pack.inflections?.acronyms ?? []));
+    pooled.irregular?.push(...(pack.inflections?.irregular ?? []));
+    pooled.uncountable?.push(...(pack.inflections?.uncountable ?? []));
+    pooled.singular?.push(...(pack.inflections?.singular ?? []));
+  }
+  return pooled;
+}
+
+/** Every body block the run's packs declare, pooled, with the fields each left out settled. */
+export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
+  const pooled = new Map<string, BodyBlockKind>();
+  for (const pack of packs) {
+    for (const declared of pack.bodyBlocks ?? []) {
+      pooled.set(declared.name, {
+        moduleOnly: declared.moduleOnly ?? false,
+        definesClassMethods: declared.definesClassMethods ?? false,
+      });
+    }
+  }
+  return pooled;
+}
 
 export interface RubyPack {
   name: string;
@@ -38,6 +70,42 @@ export interface RubyPack {
   storage?: RbStoragePattern[];
   /** Calls the library gives a project for reading a model through a batching loader, rather than on the model itself. */
   loaders?: RbLoaderPattern[];
+  /** Calls the library gives a class or module body whose block runs as part of that body. */
+  bodyBlocks?: RbBodyBlock[];
+  /** What the project taught the library's inflector, which comes ahead of the adapter's own defaults. */
+  inflections?: RbInflections;
+}
+
+/**
+ * The words and rules a project registered with its library's
+ * inflector. The library says where a project writes them and how; what
+ * arrives here is the reading, so the adapter applies them without
+ * knowing any of that.
+ */
+export interface RbInflections {
+  /** Words a constant name keeps whole: `API` gives `APIToken` rather than `ApiToken`. */
+  acronyms?: string[];
+  /** A plural and the singular it comes from: `["people", "person"]`. */
+  irregular?: Array<[plural: string, singular: string]>;
+  /** Words spelled the same in both numbers. */
+  uncountable?: string[];
+  /** A rule turning a word singular, and what the part it matched becomes. A rule written `/body/flags` is a pattern; anything else is the text to replace. */
+  singular?: Array<[rule: string, replacement: string]>;
+}
+
+/**
+ * A receiverless call a library gives a class or module body, whose
+ * block runs as part of that body rather than keeping what it declares
+ * to itself. Ruby has no such call of its own, so a run whose packs
+ * declare nothing here never opens a block out into the body.
+ */
+export interface RbBodyBlock {
+  /** The call as a project writes it, `included`. */
+  name: string;
+  /** Set when the library only gives the call to a module, as a concern's own `included` is. */
+  moduleOnly?: boolean;
+  /** Set when a `def` in the block declares a method on the class itself rather than on an instance. */
+  definesClassMethods?: boolean;
 }
 
 /**

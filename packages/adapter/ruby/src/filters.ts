@@ -23,9 +23,8 @@ import {
 import { responseBranches } from "./responseStatus.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
-import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
-import type { Ancestry } from "./ancestry.js";
+import type { Ancestry, BodyReading } from "./ancestry.js";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -68,7 +67,7 @@ interface Skip {
 export function controllerFilters(
   pattern: ControllerActions,
   ancestry: Ancestry,
-  facts?: Database,
+  read: BodyReading = {},
 ): ControllerFilter[] {
   const forms = pattern.filters ?? [];
   if (forms.length === 0) {
@@ -110,7 +109,7 @@ export function controllerFilters(
 
   const resolved: ControllerFilter[] = [];
   for (const declaration of declared) {
-    const found = methodInAncestry(ancestry, declaration.methodName, facts);
+    const found = methodInAncestry(ancestry, declaration.methodName, read);
     if (found.type !== "found") {
       continue;
     }
