@@ -8,7 +8,6 @@ import {
 
 import { composeWrappers } from "./composeWrappers.js";
 import { contractStatusGaps } from "./contractStatusGaps.js";
-import { MAX_PATHS } from "./paths/enumeratePaths.js";
 
 import type {
   BehavioralSummary,
@@ -164,7 +163,7 @@ describe("composeWrappers", () => {
     ]);
   });
 
-  it("carries the pass-through conditions onto every outcome behind it", () => {
+  it("leaves the wrapped unit's own outcomes as they were written", () => {
     const route = unit(
       "route",
       "src/app.ts",
@@ -186,19 +185,20 @@ describe("composeWrappers", () => {
       { type: "literal", value: 404 },
       { type: "literal", value: 200 },
     ]);
-    expect(composed.transitions[1].conditions).toEqual([
-      { type: "negation", operand: guard("noToken") },
-      guard("notFound"),
+    expect(composed.transitions[1].conditions).toEqual([guard("notFound")]);
+    expect(composed.transitions.map((t) => t.id)).toEqual([
+      "denied",
+      "missing",
+      "ok",
     ]);
-    expect(new Set(composed.transitions.map((t) => t.id)).size).toBe(3);
   });
 
-  it("splices a pass-through once when its branches only repeat it", () => {
+  it("adds nothing for a wrapper that only hands the request on", () => {
     const route = unit("route", "src/app.ts", [responds("ok", 200)], {
       wrappers: [AUTH],
     });
     // A filter ending in `header if crawler?` hands on three ways: once
-    // outright, and once per arm, all with the same effects.
+    // outright, and once per arm.
     const middleware = unit("requireCaller", "src/requireCaller.ts", [
       continues("passed"),
       continues("crawler", [guard("crawler")]),
@@ -207,28 +207,67 @@ describe("composeWrappers", () => {
 
     const [composed] = composeWrappers([route, middleware]);
 
-    expect(composed.transitions.map((t) => t.id)).toEqual(["ok:via:passed"]);
+    expect(composed.transitions).toBe(route.transitions);
   });
 
-  it("keeps a pass-through branch whose effects differ", () => {
+  it("keeps what a wrapper does on its way through out of the unit", () => {
     const route = unit("route", "src/app.ts", [responds("ok", 200)], {
       wrappers: [AUTH],
     });
-    const logged: Transition = {
-      ...continues("crawler", [guard("crawler")]),
-      effects: [{ type: "invocation", callee: "log", args: [], async: false }],
+    const read: Transition = {
+      ...continues("passed"),
+      effects: [
+        { type: "invocation", callee: "currentUser", args: [], async: false },
+      ],
     };
-    const middleware = unit("requireCaller", "src/requireCaller.ts", [
-      continues("passed"),
-      logged,
-      continues("browser", [{ type: "negation", operand: guard("crawler") }]),
-    ]);
+    const middleware = unit("requireCaller", "src/requireCaller.ts", [read]);
 
     const [composed] = composeWrappers([route, middleware]);
 
-    expect(composed.transitions.map((t) => t.id)).toEqual([
-      "ok:via:passed",
-      "ok:via:crawler",
+    expect(composed.transitions).toBe(route.transitions);
+    expect(composed.transitions[0].effects).toEqual([]);
+  });
+
+  it("lists two branching wrappers' responses once each, not one per pairing", () => {
+    const first: WrapperReference = { file: "src/first.ts", name: "first" };
+    const second: WrapperReference = { file: "src/second.ts", name: "second" };
+    const route = unit(
+      "route",
+      "src/app.ts",
+      [
+        responds("missing", 404, [guard("notFound")]),
+        responds("ok", 200, [{ type: "negation", operand: guard("notFound") }]),
+      ],
+      { wrappers: [first, second] },
+    );
+    // Each wrapper hands on two ways and short-circuits one, so the
+    // product of the pass-throughs would be four copies of each outcome.
+    const branching = (name: string, file: string, status: number) =>
+      unit(name, file, [
+        responds("denied", status, [guard(`${name}Denied`)]),
+        continues(`${name}A`, [guard(`${name}A`)]),
+        continues(`${name}B`, [
+          { type: "negation", operand: guard(`${name}A`) },
+        ]),
+      ]);
+
+    const [composed] = composeWrappers([
+      route,
+      branching("first", "src/first.ts", 401),
+      branching("second", "src/second.ts", 403),
+    ]);
+
+    expect(statusesOf(composed)).toEqual([
+      { type: "literal", value: 401 },
+      { type: "literal", value: 403 },
+      { type: "literal", value: 404 },
+      { type: "literal", value: 200 },
+    ]);
+    expect(composed.transitions.map(fromOf)).toEqual([
+      "first",
+      "second",
+      undefined,
+      undefined,
     ]);
   });
 
@@ -266,15 +305,10 @@ describe("composeWrappers", () => {
       "inner",
       undefined,
     ]);
-    // The outer middleware let it through, then the inner one did.
-    expect(composed.transitions[1].conditions).toEqual([
-      { type: "negation", operand: guard("tooMany") },
-      guard("noToken"),
-    ]);
-    expect(composed.transitions[2].conditions).toEqual([
-      { type: "negation", operand: guard("tooMany") },
-      { type: "negation", operand: guard("noToken") },
-    ]);
+    // Each wrapper's response keeps the condition its own body tested.
+    expect(composed.transitions[0].conditions).toEqual([guard("tooMany")]);
+    expect(composed.transitions[1].conditions).toEqual([guard("noToken")]);
+    expect(composed.transitions[2].conditions).toEqual([]);
   });
 
   it("tells two wrappers with the same name in one file apart by line", () => {
@@ -330,7 +364,7 @@ describe("composeWrappers", () => {
     ]);
   });
 
-  it("puts the error handler's response where the handler threw", () => {
+  it("lists the error handler's response beside the throw it covers", () => {
     const onError: WrapperReference = {
       file: "src/app.ts",
       name: "onError",
@@ -348,10 +382,11 @@ describe("composeWrappers", () => {
 
     expect(statusesOf(composed)).toEqual([
       { type: "literal", value: 200 },
+      "throw",
       { type: "literal", value: 500 },
     ]);
-    expect(composed.transitions[1].conditions).toEqual([guard("invalid")]);
-    expect(fromOf(composed.transitions[1])).toBe("onError");
+    expect(composed.transitions[2].conditions).toEqual([]);
+    expect(fromOf(composed.transitions[2])).toBe("onError");
   });
 
   it("leaves a route that never throws alone, error handler or not", () => {
@@ -370,13 +405,13 @@ describe("composeWrappers", () => {
     expect(composed).toBe(route);
   });
 
-  it("degrades an error handler over more throws than the budget allows", () => {
+  it("adds one outcome per error handler response however many throw", () => {
     const onError: WrapperReference = {
       file: "src/app.ts",
       name: "onError",
       onThrow: true,
     };
-    const throwing = Array.from({ length: MAX_PATHS }, (_, i) =>
+    const throwing = Array.from({ length: 40 }, (_, i) =>
       throws(`boom${i}`, [guard(`case${i}`)]),
     );
     const route = unit("route", "src/app.ts", throwing, {
@@ -391,8 +426,8 @@ describe("composeWrappers", () => {
 
     const [composed] = composeWrappers([route, handler]);
 
-    expect(composed.transitions).toHaveLength(MAX_PATHS + 2);
-    expect(composed.gaps.map((gap) => gap.type)).toEqual(["unreadOutcome"]);
+    expect(composed.transitions).toHaveLength(42);
+    expect(composed.gaps).toEqual([]);
   });
 
   it("leaves a route the scope does not cover alone", () => {
@@ -448,8 +483,8 @@ describe("composeWrappers", () => {
     expect(composed.gaps).toEqual([]);
   });
 
-  it("degrades to the two sides side by side rather than going past the path budget", () => {
-    const wide = Array.from({ length: MAX_PATHS }, (_, i) =>
+  it("adds one outcome per wrapper response however wide the unit is", () => {
+    const wide = Array.from({ length: 200 }, (_, i) =>
       responds(`ok${i}`, 200, [guard(`case${i}`)]),
     );
     const route = unit("route", "src/app.ts", wide, { wrappers: [AUTH] });
@@ -461,9 +496,8 @@ describe("composeWrappers", () => {
 
     const [composed] = composeWrappers([route, middleware]);
 
-    expect(composed.transitions).toHaveLength(MAX_PATHS + 1);
-    expect(composed.gaps.map((gap) => gap.type)).toEqual(["unreadOutcome"]);
-    expect(composed.gaps[0].description).toContain(String(MAX_PATHS));
+    expect(composed.transitions).toHaveLength(201);
+    expect(composed.gaps).toEqual([]);
   });
 
   it("leaves a unit whose wrapper this run has no summary for alone", () => {
@@ -541,6 +575,23 @@ describe("composeWrappers and the declared contract", () => {
 
     expect(descriptionsOf(composed)).toEqual([]);
     expect(composed.transitions).toBe(route.transitions);
+  });
+
+  it("keeps reporting a declared status when the wrapper only hands on", () => {
+    const route = unit("route", "src/app.ts", [responds("ok", 200)], {
+      wrappers: [AUTH],
+      contract: [200, 404],
+    });
+    const auth = unit("requireCaller", "src/requireCaller.ts", [
+      continues("pass"),
+    ]);
+
+    const [composed] = composeWrappers([route, auth]);
+
+    expect(descriptionsOf(composed)).toEqual([
+      "Declared response 404 is never produced by the handler",
+    ]);
+    expect(composed.gaps).toBe(route.gaps);
   });
 
   it("keeps the gaps that are not about the contract", () => {

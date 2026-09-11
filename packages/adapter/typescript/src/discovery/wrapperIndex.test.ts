@@ -382,7 +382,74 @@ describe("wrapper registrations, end to end", () => {
     ).toEqual(["requireCaller", undefined]);
   });
 
-  it("reports the error handler's response where the route threw", async () => {
+  it("lists each middleware's response once, whatever its pass-through branches", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/middleware.ts",
+      `
+        export const tagRequest = (req, res, next) => {
+          if (req.headers["x-trace"]) {
+            trace(req);
+          } else {
+            count(req);
+          }
+          next();
+        };
+        export const requireCaller = (req, res, next) => {
+          if (!req.headers.authorization) {
+            res.status(401).json({ error: "unauthorized" });
+            return;
+          }
+          if (req.headers["x-tenant"]) {
+            loadTenant(req);
+          } else {
+            loadDefault(req);
+          }
+          next();
+        };
+        function trace(req) {}
+        function count(req) {}
+        function loadTenant(req) {}
+        function loadDefault(req) {}
+      `,
+    );
+    project.createSourceFile(
+      "/app.ts",
+      `
+        import express from "express";
+        import { requireCaller, tagRequest } from "./middleware";
+        const app = express();
+        app.use(tagRequest);
+        app.use(requireCaller);
+        app.get("/orders", (req, res) => {
+          if (!req.query.id) {
+            res.status(404).json({});
+            return;
+          }
+          res.status(200).json({});
+        });
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [expressLikePack],
+      cacheDir: null,
+    });
+    const summaries = await adapter.extractAll();
+
+    const route = summaries.find(
+      (one) => one.identity.boundaryBinding?.semantics.name === "rest",
+    ) as BehavioralSummary;
+    // Pairing two branching pass-throughs off against the route would
+    // give four copies of each of its own two outcomes.
+    expect(statusesOf(route)).toEqual([401, 404, 200]);
+    expect(
+      route.transitions.map((t) => readWrapperMetadata(t)?.from?.name),
+    ).toEqual(["requireCaller", undefined, undefined]);
+  });
+
+  it("reports the error handler's response beside the throw it covers", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "/app.ts",
@@ -412,9 +479,11 @@ describe("wrapper registrations, end to end", () => {
       (one) => one.identity.boundaryBinding?.semantics.name === "rest",
     ) as BehavioralSummary;
     expect(statusesOf(route)).toEqual([200, 500]);
-    expect(route.transitions.every((t) => t.output.type === "response")).toBe(
-      true,
-    );
+    expect(route.transitions.map((t) => t.output.type)).toEqual([
+      "throw",
+      "response",
+      "response",
+    ]);
   });
 
   it("reads an error handler's own body past the thrown value it is handed", async () => {

@@ -10,19 +10,21 @@ A wrapper is a meta-function: it takes a unit and returns a unit. Its own body s
 
 ```
 composed = the wrapper's short circuits
-         + (its pass-throughs x the wrapped unit's transitions)
+         + the wrapped unit's own transitions
 ```
 
-`composeWrappers` runs that over a whole run's summaries. It reads the `wrappers` metadata a unit records, finds each wrapper's summary by file and name, and folds them innermost first, the way `mw1(mw2(handler))` reads. A wrapper the framework only calls on a throw goes on last and replaces the paths that ended by throwing with its own response. Every transition a wrapper contributed records which one, under `wrappers.from`, so a reader asking why a route returns 401 lands in the middleware.
+A pass-through contributes nothing. It hands the request on without responding, so the unit's own outcomes already say what a caller gets on that path, and what the wrapper did on the way there is in the wrapper's own summary. Pairing every pass-through off against every outcome of the unit was the earlier design, and on an app with ten branching filters in front of every route it turned each route into a summary of hundreds of transitions that repeated every filter's effects, all of them saying the same thing about the same two outcomes.
 
-What it does not read:
+`composeWrappers` runs that over a whole run's summaries. It reads the `wrappers` metadata a unit records, finds each wrapper's summary by file and name, and lists their responses outermost first, the way `mw1(mw2(handler))` reads. A wrapper the framework only calls on a throw goes last, and its responses are listed when some path through the unit ends by throwing. Every transition a wrapper contributed records which one, under `wrappers.from`, so a reader asking why a route returns 401 lands in the middleware.
+
+The chain in `wrappers.applied` is what a reader follows for the rest. The effects along a whole request, what `inspect` prints under `Reaches:` and what `inspect --diff` compares, come from the wrapper summaries the chain points at: the CLI states a `wraps` call fact per link, so the same reach walk that follows a call out of a route follows the framework's call into a filter. Counting them there counts each filter once, however many routes it covers.
+
+What composition does not read:
 
 - **Anything after the continuation returns.** A middleware that inspects the response on the way back out is read up to the `next()` call and no further.
-- **A wrapper whose continuation the pack does not declare, or whose call the walk cannot see.** Nothing says where control passes on, so the wrapper's outcomes are reported beside the unit's own rather than around them.
-- **A throw the walk never saw.** An error handler composes over the paths that end by throwing, so a route whose 500 comes from a call the walk could not follow still does not report 500 as a transition. The contract comparison below is the one place that counts it anyway.
-- **Registration order against route order.** A wrapper registered after a route still composes into it.
-
-Composition multiplies paths, so it is capped by the same `MAX_PATHS` budget path enumeration uses. Past it the two sides are reported side by side and the unit gets a gap saying so.
+- **A wrapper whose continuation the pack does not declare, or whose call the walk cannot see.** Nothing says where control passes on, so every outcome it has is listed, including the ones that would have been pass-throughs.
+- **A throw the walk never saw.** An error handler's responses are listed on the routes some path throws out of, so a route whose 500 comes from a call the walk could not follow still does not report 500 as a transition. The contract comparison below is the one place that counts it anyway.
+- **Registration order against route order.** A wrapper registered after a route still applies to it.
 
 ### The declared contract, compared again
 

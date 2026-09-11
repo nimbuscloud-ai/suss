@@ -633,6 +633,8 @@ const HOP_LINE: Record<CallRecord, (hop: WhyHop) => string> = {
   // calls the passed function as, e.g. "walkStatements, which calls it as visit".
   passed: (hop) =>
     `${hop.from.identity.name} (${locationClause(hop.from)}) passes ${hop.to?.identity.name} to ${hop.callee}:`,
+  wraps: (hop) =>
+    `${hop.callee} (${hop.to === null ? "" : locationClause(hop.to)}) is registered around ${hop.from.identity.name} (${locationClause(hop.from)}), so it runs on the way in:`,
 };
 
 function hopLine(hop: WhyHop): string {
