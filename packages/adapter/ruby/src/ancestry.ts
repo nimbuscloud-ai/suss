@@ -13,7 +13,7 @@ import { couldBeDefined, defineMethodNames } from "./defineMethod.js";
 import { qualifyConstantRef, walkDefinitions } from "./scope.js";
 
 import type { Database } from "@suss/datalog";
-import type { BlockConfigures } from "./ast.js";
+import type { BlockConfigures, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { RbNode } from "./parser.js";
 import type { ClassInfo } from "./scope.js";
@@ -40,6 +40,12 @@ export type AncestorEntry =
 
 /** A class and everything it inherits from, in Ruby's own method-lookup order. */
 export type Ancestry = readonly AncestorEntry[];
+
+/** What reading a class body takes beyond the body: the run's facts, and what its packs declare about a block written in one. */
+export interface BodyReading {
+  readonly facts?: Database | undefined;
+  readonly bodyBlocks?: BodyBlocks | undefined;
+}
 
 /** What a walk needs to reach a class it knows only by name. */
 export interface AncestorLookup {
@@ -296,7 +302,7 @@ export type MethodLookup =
 export function methodInAncestry(
   ancestry: Ancestry,
   name: string,
-  facts?: Database,
+  read: BodyReading = {},
 ): MethodLookup {
   for (const entry of ancestry) {
     if (entry.type === "root") {
@@ -310,7 +316,7 @@ export function methodInAncestry(
       };
     }
 
-    const found = definitionIn(entry.blocks, name, facts);
+    const found = definitionIn(entry.blocks, name, read);
     if (found.method !== null && found.block !== null) {
       return { type: "found", method: found.method, block: found.block };
     }
@@ -329,7 +335,7 @@ export function methodInAncestry(
 function definitionIn(
   blocks: readonly ReachedBody[],
   name: string,
-  facts: Database | undefined,
+  read: BodyReading,
 ): {
   method: RbNode | null;
   block: ReachedBody | null;
@@ -347,12 +353,12 @@ function definitionIn(
     if (body === null) {
       continue;
     }
-    const found = instanceMethodsByName(body).get(name);
+    const found = instanceMethodsByName(body, read.bodyBlocks).get(name);
     if (found !== undefined) {
       method = found;
       block = candidate;
     }
-    const defined = defineMethodNames(body, facts);
+    const defined = defineMethodNames(body, read.facts);
     definedDynamically ||= defined.names.has(name);
     unreadableDefine ||= couldBeDefined(defined, name);
   }

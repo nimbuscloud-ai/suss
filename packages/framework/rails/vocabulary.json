@@ -58,5 +58,10 @@
   "name": "suss: tree-sitter-ruby field name for a class or module definition's constant",
   "superclass": "suss: tree-sitter-ruby field name for the class a class definition extends",
   "constant": "suss: tree-sitter-ruby node type for a bare constant",
-  "scope_resolution": "suss: tree-sitter-ruby node type for a Name::Nested constant path"
+  "scope_resolution": "suss: tree-sitter-ruby node type for a Name::Nested constant path",
+  "included": "Rails: ActiveSupport::Concern#included, which evaluates its block against the class doing the including",
+  "prepended": "Rails: ActiveSupport::Concern#prepended, the same for a module that is prepended",
+  "class_methods": "Rails: ActiveSupport::Concern#class_methods, whose block defines methods on the including class itself",
+  "concerning": "Rails: Module#concerning, which evaluates its block against a new module and mixes that module into the class",
+  "with_options": "Rails: Object#with_options, which runs its block with extra keywords on whatever it is written in"
 }

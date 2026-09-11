@@ -101,7 +101,7 @@ async function lookupInRun(
       },
     },
   );
-  return methodInAncestry(ancestry, name, db);
+  return methodInAncestry(ancestry, name, { facts: db });
 }
 
 const BASE = `

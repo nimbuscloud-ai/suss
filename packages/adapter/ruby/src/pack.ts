@@ -8,8 +8,23 @@
  */
 
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { GraphqlTypeNameConvention } from "./scope.js";
+
+/** Every body block the run's packs declare, pooled, with the fields each left out settled. */
+export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
+  const pooled = new Map<string, BodyBlockKind>();
+  for (const pack of packs) {
+    for (const declared of pack.bodyBlocks ?? []) {
+      pooled.set(declared.name, {
+        moduleOnly: declared.moduleOnly ?? false,
+        definesClassMethods: declared.definesClassMethods ?? false,
+      });
+    }
+  }
+  return pooled;
+}
 
 export interface RubyPack {
   name: string;
@@ -38,6 +53,23 @@ export interface RubyPack {
   storage?: RbStoragePattern[];
   /** Calls the library gives a project for reading a model through a batching loader, rather than on the model itself. */
   loaders?: RbLoaderPattern[];
+  /** Calls the library gives a class or module body whose block runs as part of that body. */
+  bodyBlocks?: RbBodyBlock[];
+}
+
+/**
+ * A receiverless call a library gives a class or module body, whose
+ * block runs as part of that body rather than keeping what it declares
+ * to itself. Ruby has no such call of its own, so a run whose packs
+ * declare nothing here never opens a block out into the body.
+ */
+export interface RbBodyBlock {
+  /** The call as a project writes it, `included`. */
+  name: string;
+  /** Set when the library only gives the call to a module, as a concern's own `included` is. */
+  moduleOnly?: boolean;
+  /** Set when a `def` in the block declares a method on the class itself rather than on an instance. */
+  definesClassMethods?: boolean;
 }
 
 /**

@@ -161,6 +161,25 @@ const RAILS_CONTROLLER_METHODS = [
   "controller_path",
 ];
 
+/**
+ * The five ActiveSupport calls whose block runs as part of the class or
+ * module body it is written in. A concern's `included` and `prepended`
+ * evaluate their block against the class doing the including, and only
+ * a module gets them; `class_methods` evaluates its block against a
+ * nested `ClassMethods` module that the including class extends, so a
+ * `def` there is a class method. `Module#concerning` module_evals its
+ * block against a new module and mixes that module in, and
+ * `Object#with_options` runs its block with extra keywords wherever it
+ * is written, so both reach a class body as well as a module's.
+ */
+const BODY_BLOCKS = [
+  { name: "included", moduleOnly: true },
+  { name: "prepended", moduleOnly: true },
+  { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+  { name: "concerning" },
+  { name: "with_options" },
+];
+
 /** The routing key `config/routes.rb` gives a controller, from the class name the adapter reads: `Admin::OrdersController` -> `admin/orders`. */
 function controllerKeyFromQualified(
   qualifiedName: string,
@@ -282,6 +301,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     name: "rails",
     protocol: "http",
     discovery: [pattern],
+    bodyBlocks: BODY_BLOCKS,
     // Every file routing or naming is read from decides an action's
     // binding without being walked, so the cache key has to read them
     // here. This runs before the grammar loads, so nothing parses Ruby.

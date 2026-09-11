@@ -213,12 +213,29 @@ would give a class a second base for a pack to match on. The facts read the
 same two calls the syntactic ancestry in `ancestry.ts` reads, so the two agree
 on which constant is mixed in, down to the order of `include A, B`.
 
-ActiveSupport's `included do ... end` runs its block on the class doing the
-including, and `with_options ... do ... end` runs its block with extra
-keywords. Both blocks are read as statements of the class or module around
-them, so a method or a value written inside one is a property of that class or
-module rather than something lost with the block. The keywords `with_options`
-passes down are not read.
+## A block that runs as part of the body
+
+Ruby has no call whose block runs as part of the class or module body around
+it. A library defines one, so a pack says which calls its own library gives a body,
+in `bodyBlocks` on the pack:
+
+```ts
+bodyBlocks: [
+  { name: "included", moduleOnly: true },
+  { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+  { name: "with_options" },
+]
+```
+
+A declared block is opened out where it is written, so a method or a value
+inside one is a property of the class or module rather than something lost with
+the block. `moduleOnly` keeps a call a library only gives a module from
+matching the same name written in a class body. `definesClassMethods` says a
+`def` in the block runs on the class itself, so the lookup finds it where it
+looks for `def self.name` and never as an instance method.
+
+A run whose packs declare none of these reads every block as a block. The
+keywords a block passes down are not read.
 
 ## What a body calls out to
 
@@ -446,9 +463,9 @@ reaches `Status`. The shared rules take it from there: a read of
 composes the same way `Account.where(x).first` does.
 
 A concern needs nothing extra. The mixed-in module is in the `extends`
-ancestry and the statements inside its `included do` and `with_options`
-blocks are read as the module's own, so `has_many :statuses` written
-there is an association of every class that includes it.
+ancestry and the statements inside a block a pack declared are read as
+the module's own, so `has_many :statuses` written there is an
+association of every class that includes it.
 
 Nothing says whether an association is a collection. `@account.statuses`
 and `@account.profile` both settle on the class, which is what

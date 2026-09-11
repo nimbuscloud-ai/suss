@@ -6,9 +6,11 @@ import { startsAtName, valueLeftByWrites } from "@suss/resolution";
 
 import {
   bareCallArgumentGroups,
+  bodyStatementsRun,
   field,
   INCLUDE_CALL,
   NESTING_TYPES,
+  NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
   PREPEND_CALL,
 } from "../ast.js";
@@ -23,6 +25,7 @@ import {
 
 import type { Database } from "@suss/datalog";
 import type { ChainReads, NameWrite } from "@suss/resolution";
+import type { BodyBlocks } from "../ast.js";
 import type { RbNode } from "../parser.js";
 import type { LocalWrite, NameWrites } from "./locals.js";
 
@@ -145,6 +148,8 @@ interface Emitter {
    * different bodies, and nothing here orders them.
    */
   instanceWrites: Map<string, NameWrite[]> | null;
+  /** The calls the run's packs say run their block as part of the body around it. */
+  bodyBlocks: BodyBlocks;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -690,46 +695,6 @@ function emitMixinFacts(
 }
 
 /**
- * A receiverless call whose block runs on the class or module it is
- * written in, and whether that has to be a module. ActiveSupport's
- * `included` and `prepended` run their block on the class doing the
- * including; `with_options` runs its block with extra keywords wherever
- * it is written.
- */
-const BLOCK_RUNS_ON_BODY: Record<string, { moduleOnly: boolean }> = {
-  included: { moduleOnly: true },
-  prepended: { moduleOnly: true },
-  with_options: { moduleOnly: false },
-};
-
-/** The body of a block that runs on the enclosing class or module, or null when this statement has no such block. */
-function blockRunOnBody(statement: RbNode, isModule: boolean): RbNode | null {
-  if (statement.type !== "call" || field(statement, "receiver") !== null) {
-    return null;
-  }
-  const method = field(statement, "method");
-  const runs = method === null ? undefined : BLOCK_RUNS_ON_BODY[method.text];
-  if (runs === undefined || (runs.moduleOnly && !isModule)) {
-    return null;
-  }
-  const block = field(statement, "block");
-  return block === null ? null : field(block, "body");
-}
-
-/**
- * The statements a class or module body runs, with a block that runs on
- * the body itself opened out where it is written. Without that, a
- * method or a value a concern declares inside `included do` belongs to
- * the block and nothing can read it off the module.
- */
-function bodyStatementsRun(body: RbNode, isModule: boolean): RbNode[] {
-  return children(body).flatMap((statement) => {
-    const inner = blockRunOnBody(statement, isModule);
-    return inner === null ? [statement] : bodyStatementsRun(inner, isModule);
-  });
-}
-
-/**
  * A class or a module is an object containing its methods, which is the
  * treatment an array and a hash already get. That is what lets a method
  * read off an instance resolve to the method the class declares, and a
@@ -763,7 +728,9 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     instanceWrites: collected,
   };
   const statements =
-    body === null ? [] : bodyStatementsRun(body, cls.type === "module");
+    body === null
+      ? []
+      : bodyStatementsRun(body, cls.type === "module", emitter.bodyBlocks);
   for (const statement of statements) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
@@ -811,6 +778,7 @@ export function emitValueFacts(
   db: Database,
   filePath: string,
   root: RbNode,
+  bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
 ): void {
   const emitter: Emitter = {
     db,
@@ -818,6 +786,7 @@ export function emitValueFacts(
     enclosing: null,
     selfKey: null,
     instanceWrites: null,
+    bodyBlocks,
   };
 
   const declaresName = (child: RbNode, key: string): void => {

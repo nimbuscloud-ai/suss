@@ -72,10 +72,11 @@ import type {
 import type {
   AncestorLookup,
   Ancestry,
+  BodyReading,
   MethodLookup,
   ReachedBody,
 } from "./ancestry.js";
-import type { BlockConfigures, CallArgs, Range } from "./ast.js";
+import type { BlockConfigures, BodyBlocks, CallArgs, Range } from "./ast.js";
 import type {
   ControllerActions,
   GraphqlObjectFields,
@@ -121,6 +122,8 @@ export interface BodyReadOptions {
   readonly storage?: RbStorageOptions | undefined;
   /** The methods every pack in the run said its own library defines, which are left off an effect list. */
   readonly inheritedMethods?: InheritedMethods | undefined;
+  /** The calls every pack in the run said run their block as part of the body around it. */
+  readonly bodyBlocks?: BodyBlocks | undefined;
 }
 
 export interface DiscoveryOptions extends BodyReadOptions {
@@ -158,6 +161,8 @@ interface FieldReadContext {
   lookup: AncestorLookup;
   bodyRead: BodyReadOptions;
   facts: Database | undefined;
+  /** The same two, in the shape a lookup down an ancestry takes them. */
+  read: BodyReading;
 }
 
 function fieldReadContext(
@@ -172,6 +177,7 @@ function fieldReadContext(
     cache,
     bodyRead,
     facts,
+    read: { facts, bodyBlocks: bodyRead.bodyBlocks },
     lookup: {
       root: pattern.root,
       pathConvention: pattern.pathConvention,
@@ -394,7 +400,10 @@ async function controllerActionUnits(
     return [];
   }
 
-  const filters = controllerFilters(pattern, ancestry, options.facts);
+  const filters = controllerFilters(pattern, ancestry, {
+    facts: options.facts,
+    bodyBlocks: options.bodyBlocks,
+  });
   const units: RawCodeStructure[] = [];
 
   for (const filter of filters) {
@@ -451,7 +460,10 @@ async function controllerActionUnits(
   };
 
   const own = new Set<string>();
-  for (const [actionName, method, block] of publicInstanceMethods(ownBlocks)) {
+  for (const [actionName, method, block] of publicInstanceMethods(
+    ownBlocks,
+    options.bodyBlocks,
+  )) {
     own.add(actionName);
     emitAction(actionName, method, block);
   }
@@ -465,6 +477,7 @@ async function controllerActionUnits(
     }
     for (const [actionName, method, block] of publicInstanceMethods(
       entry.blocks,
+      options.bodyBlocks,
     )) {
       if (seen.has(actionName)) {
         continue;
@@ -482,6 +495,7 @@ async function controllerActionUnits(
 /** Every public instance method the blocks define, with the block it is written in, in source order. */
 function publicInstanceMethods(
   blocks: readonly ReachedBody[],
+  bodyBlocks: BodyBlocks | undefined,
 ): Array<[string, RbNode, ReachedBody]> {
   const found: Array<[string, RbNode, ReachedBody]> = [];
   for (const block of blocks) {
@@ -489,7 +503,10 @@ function publicInstanceMethods(
       continue;
     }
     const visibility = instanceMethodVisibility(block.info.bodyNode);
-    for (const [name, method] of instanceMethodsByName(block.info.bodyNode)) {
+    for (const [name, method] of instanceMethodsByName(
+      block.info.bodyNode,
+      bodyBlocks,
+    )) {
       if ((visibility.get(name) ?? "public") === "public") {
         found.push([name, method, block]);
       }
@@ -893,7 +910,7 @@ async function readFieldShape(
   return {
     contract: literalContract(callArgs, scope, ctx),
     body: bodyFromLookup(
-      methodInAncestry(ancestry, symbol, ctx.facts),
+      methodInAncestry(ancestry, symbol, ctx.read),
       range,
       "This field",
       NO_METHOD_BEHIND_IT,
@@ -953,7 +970,7 @@ async function readWiredClass(
   return {
     contract: readClassContract(ancestry, ctx.pattern),
     body: bodyFromLookup(
-      methodInAncestry(ancestry, ctx.pattern.resolverMethodName, ctx.facts),
+      methodInAncestry(ancestry, ctx.pattern.resolverMethodName, ctx.read),
       range,
       `This field's ${targetQualifiedName}`,
       methodNotSettled(

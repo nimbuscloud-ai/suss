@@ -77,8 +77,8 @@ function targetName(
 }
 
 /**
- * Every association declared in one class or module body, the ones
- * inside an `included do` or a `with_options` block included. `nesting`
+ * Every association declared in one class or module body, one written
+ * inside a block that body runs included. `nesting`
  * is the enclosing module and class names, outermost first, and is
  * where the lookup of a target reference starts.
  */

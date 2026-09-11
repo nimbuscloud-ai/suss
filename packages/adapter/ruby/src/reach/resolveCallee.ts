@@ -29,6 +29,7 @@ import type { UnfollowedReason } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { CalleeOutcome } from "@suss/resolution";
 import type { AncestorLookup, Ancestry, ReachedBody } from "../ancestry.js";
+import type { BodyBlocks } from "../ast.js";
 import type { RbNode } from "../parser.js";
 
 /** A method in this run, and the export path its summary gets. */
@@ -59,6 +60,8 @@ export interface ReachContext {
   readonly classNames: ReadonlyMap<string, string>;
   /** The method each function key was read from. */
   readonly definitions: ReadonlyMap<string, ReachedFunction>;
+  /** The calls the run's packs said run their block as part of the body around it. */
+  readonly bodyBlocks: BodyBlocks;
 }
 
 /** Where a call is written: the file, the method whose body it is, and the class that method belongs to. */
@@ -384,7 +387,10 @@ function methodOnAncestryOf(
   if (ancestry === undefined) {
     return stop("outsideRun");
   }
-  const found = methodInAncestry(ancestry, methodName, ctx.facts);
+  const found = methodInAncestry(ancestry, methodName, {
+    facts: ctx.facts,
+    bodyBlocks: ctx.bodyBlocks,
+  });
   if (found.type === "found") {
     return followed(reachedMethod(found.method, found.block, methodName));
   }
@@ -432,7 +438,10 @@ function singletonMethodOn(
     if (block.info.bodyNode === null) {
       continue;
     }
-    const found = singletonMethodsByName(block.info.bodyNode).get(methodName);
+    const found = singletonMethodsByName(
+      block.info.bodyNode,
+      ctx.bodyBlocks,
+    ).get(methodName);
     if (found !== undefined) {
       return followed(reachedMethod(found, block, methodName));
     }

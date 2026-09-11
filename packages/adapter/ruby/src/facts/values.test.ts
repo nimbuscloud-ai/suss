@@ -2,13 +2,33 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
+import { bodyBlocksIn } from "../pack.js";
 import { parseRuby } from "../parser.js";
 import { emitValueFacts } from "./values.js";
 
-async function factsFor(source: string) {
+import type { BodyBlocks } from "../ast.js";
+
+/** What a pack that knows ActiveSupport declares, which is what every block test here runs with. */
+const CONCERN_BLOCKS = bodyBlocksIn([
+  {
+    name: "test",
+    protocol: "http",
+    discovery: [],
+    bodyBlocks: [
+      { name: "included", moduleOnly: true },
+      { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+      { name: "with_options" },
+    ],
+  },
+]);
+
+async function factsFor(
+  source: string,
+  bodyBlocks: BodyBlocks = CONCERN_BLOCKS,
+) {
   const tree = await parseRuby(source);
   const db = new Database();
-  emitValueFacts(db, "f.rb", tree.rootNode);
+  emitValueFacts(db, "f.rb", tree.rootNode, bodyBlocks);
   return db;
 }
 
@@ -386,6 +406,14 @@ describe("ruby value facts", () => {
   it("leaves an included do block in a class alone, since nothing includes a class", async () => {
     const db = await factsFor(
       "class Order\n  included do\n    def pay\n    end\n  end\nend\n",
+    );
+    expect(db.size("holdsProperty")).toBe(0);
+  });
+
+  it("leaves every block alone when no pack declares one", async () => {
+    const db = await factsFor(
+      "module Payable\n  included do\n    def pay\n    end\n  end\nend\n",
+      new Map(),
     );
     expect(db.size("holdsProperty")).toBe(0);
   });

@@ -48,6 +48,7 @@ import {
 } from "./facts/constants.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
+import { bodyBlocksIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 import { dropPropertyReads, reachedFunctions } from "./reach/closure.js";
 import { buildReachContext } from "./reach/context.js";
@@ -228,6 +229,7 @@ export async function extractRubyProject(
   const parsed: { file: string; root: RbNode }[] = [];
   const definitions = new Map<string, RbNode>();
   const associationCalls = associationCallsIn(options.packs);
+  const bodyBlocks = bodyBlocksIn(options.packs);
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const root = await cache.get(file);
@@ -235,7 +237,7 @@ export async function extractRubyProject(
         return;
       }
       parsed.push({ file, root });
-      emitValueFacts(db, file, root);
+      emitValueFacts(db, file, root, bodyBlocks);
       for (const [key, method] of methodDefinitionsIn(file, root)) {
         definitions.set(key, method);
       }
@@ -260,7 +262,7 @@ export async function extractRubyProject(
       : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const reachContext = await timer.timeAsync("discover", () =>
-    buildReachContext(parsed, db),
+    buildReachContext(parsed, db, bodyBlocks),
   );
   // Facts keep the full filesystem path, because they are joined against
   // internally. Only the summary's `location.file` gets shortened.
@@ -293,6 +295,7 @@ export async function extractRubyProject(
         cache,
         ...(storage === undefined ? {} : { storage }),
         inheritedMethods,
+        bodyBlocks,
         displayPathOf,
         facts: db,
         onReachSeed: (raw, seed) => seedByRaw.set(raw, seed),
@@ -371,6 +374,7 @@ export async function extractRubyProject(
       displayPathOf,
       ...(storage === undefined ? {} : { storage }),
       inheritedMethods,
+      bodyBlocks,
     }),
   );
   for (const entry of found) {
