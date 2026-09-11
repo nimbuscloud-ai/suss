@@ -22,7 +22,7 @@ import {
 } from "vitest";
 
 import { preloadPythonGrammar } from "@suss/adapter-python";
-import { storageBinding } from "@suss/behavioral-ir";
+import { storageBinding, withWrapperMetadata } from "@suss/behavioral-ir";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -248,5 +248,32 @@ describe("askWhy", () => {
     expect(
       answer?.caveats.filter((c) => c.includes("does not line up")),
     ).toHaveLength(1);
+  });
+
+  it("follows the chain into a wrapper the framework runs in front", () => {
+    const wrapped: BehavioralSummary = {
+      ...caller,
+      transitions: [{ ...caller.transitions[0], effects: [] }],
+      metadata: withWrapperMetadata(undefined, {
+        applied: [{ file: "src/orderStore.ts", name: "readRow", line: 1 }],
+      }),
+    };
+    const question: ParsedQuestion = {
+      shape: "whyReaches",
+      subject: "getOrder",
+      object: "aws.dynamodb:orders",
+    };
+
+    const answer = askWhy(question, options(), () =>
+      loadedSummaries([wrapped, helper]),
+    );
+
+    expect(answer.found).toBe(true);
+    expect(answer.items.map((item) => item.text)).toContain(
+      "getOrder -> readRow -> client.send",
+    );
+    expect(answer.items.map((item) => item.text).join("\n")).toContain(
+      "is registered around getOrder",
+    );
   });
 });

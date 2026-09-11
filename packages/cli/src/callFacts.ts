@@ -2,9 +2,10 @@
  * The call facts a summary set states, and the reach questions asked
  * over them as rules.
  *
- * A summary says "this calls that" two ways: an invocation effect the
- * run resolved, and a caller-kind unit's own binding to the export it
- * calls. Both are one-hop facts here, `calls` joins them, and a reach
+ * A summary says "this calls that" three ways: an invocation effect the
+ * run resolved, a wrapper the framework runs on the way in, and a
+ * caller-kind unit's own binding to the export it calls. All three are
+ * one-hop facts here, `calls` joins them, and a reach
  * question in either direction is the fixpoint over `calls` with the
  * shortest call path kept as the tag on each derived fact.
  *
@@ -19,6 +20,8 @@ import {
   boundaryKey,
   displayLabel,
   summaryIdentifier,
+  wrapperChain,
+  wrapperIndex,
 } from "@suss/behavioral-ir";
 import {
   constant,
@@ -42,11 +45,13 @@ export type FunctionKey = string;
 /**
  * Where a call came from: the caller's body, only the caller's binding
  * to the export it imports, or a function the caller passed to
- * something else that calls it back. A written call can be proved from
- * source; a bound one has no call expression to find; a passed one runs
- * through a parameter one hop further in.
+ * something else that calls it back, or a wrapper the framework runs in
+ * front of the caller. A written call can be proved from source; a
+ * bound one has no call expression to find; a passed one runs
+ * through a parameter one hop further in; a wrapping one is nowhere in
+ * the caller's own body.
  */
-export type CallRecord = "written" | "bound" | "passed";
+export type CallRecord = "written" | "bound" | "passed" | "wraps";
 
 export interface CallHop {
   callee: string;
@@ -110,8 +115,10 @@ export function readCallFacts(
   const byId = new Map(
     summaries.map((summary) => [summaryIdentifier(summary), summary]),
   );
+  const chain = wrapperIndex(summaries);
   const units = new Map<FunctionKey, BehavioralSummary[]>();
   const invocation: Array<[FunctionKey, FunctionKey, string]> = [];
+  const wraps: Array<[FunctionKey, FunctionKey, string]> = [];
   const boundTo: Array<[FunctionKey, string, string]> = [];
   const provides: Array<[FunctionKey, string]> = [];
   const passes: Array<[FunctionKey, FunctionKey, number, FunctionKey]> = [];
@@ -120,6 +127,12 @@ export function readCallFacts(
   for (const summary of summaries) {
     const fn = functionOf(summary);
     units.set(fn, [...(units.get(fn) ?? []), summary]);
+    for (const reference of wrapperChain(summary)) {
+      const wrapper = chain.find(reference);
+      if (wrapper !== undefined) {
+        wraps.push([fn, functionOf(wrapper), reference.name]);
+      }
+    }
     for (const transition of summary.transitions) {
       for (const effect of transition.effects) {
         if (effect.type !== "invocation") {
@@ -178,6 +191,9 @@ export function readCallFacts(
     for (const fact of invocation) {
       db.add("invocation", fact);
     }
+    for (const fact of wraps) {
+      db.add("wraps", fact);
+    }
     for (const fact of boundTo) {
       db.add("boundTo", fact);
     }
@@ -233,6 +249,14 @@ const CALLS: Rule[] = [
     [F, G, L, constant("bound")],
     [lit("boundTo", F, K, L), lit("provides", G, K)],
     "calls-bound",
+  ),
+  // Nothing in F's body calls G. The framework runs G on the way into
+  // F, so a request through F does what G does before F starts.
+  rule(
+    "calls",
+    [F, G, L, constant("wraps")],
+    [lit("wraps", F, G, L)],
+    "calls-wraps",
   ),
   // F passes G to B at position I, and B calls its own parameter I: the
   // join is what makes a callback reachable through the function it was
@@ -293,6 +317,7 @@ const CALL_RECORD_OF: Record<string, CallRecord> = {
   written: "written",
   bound: "bound",
   passed: "passed",
+  wraps: "wraps",
 };
 
 /** The hop recorded by the `calls` fact at `index` in a rule body. */
@@ -325,6 +350,7 @@ const PATH_OF: Record<
   "calls-written": () => [],
   "calls-bound": () => [],
   "calls-passed": () => [],
+  "calls-wraps": () => [],
   provided: () => [],
   "reaches-at": () => [],
   "reaches-into": (body) => [callAt(body, 1)],
@@ -427,10 +453,11 @@ function directCallers(db: Database, target: ReachTarget): DirectCall[] {
   const seen = new Set<string>();
   // Bound callers are placed below from boundTo/provides directly,
   // since a "calls" fact of that kind says the same thing a second way.
+  // A wrapped unit does not call its wrapper, so it is left out too.
   evaluate(db, CALLS);
   for (const fn of target.functions) {
     for (const tuple of db.lookup("calls", 1, fn)) {
-      if (tuple[3] === "bound") {
+      if (tuple[3] === "bound" || tuple[3] === "wraps") {
         continue;
       }
       const caller = String(tuple[0]);

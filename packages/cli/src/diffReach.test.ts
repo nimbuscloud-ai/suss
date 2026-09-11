@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { restBinding, storageBinding } from "@suss/behavioral-ir";
+import {
+  restBinding,
+  storageBinding,
+  withWrapperMetadata,
+} from "@suss/behavioral-ir";
 
 import { reachChanges } from "./diffReach.js";
 
@@ -215,5 +219,25 @@ describe("what a boundary reaches, between two runs", () => {
     };
 
     expect(reachChanges([], [route([CALLS_STORE]), inProcess])).toEqual([]);
+  });
+
+  it("counts what a wrapper reads once, through the chain the route records", () => {
+    const wrapper = unit("requireCaller", "src/auth.ts", [readsOrders()], 20);
+    const wrapped: BehavioralSummary = {
+      ...route([]),
+      metadata: withWrapperMetadata(undefined, {
+        applied: [{ file: "src/auth.ts", name: "requireCaller", line: 20 }],
+      }),
+    };
+
+    const [change] = reachChanges([], [wrapped, wrapper]);
+
+    expect(change?.gained).toEqual([
+      {
+        relation: "reads",
+        label: "aws.dynamodb:orders",
+        through: ["requireCaller"],
+      },
+    ]);
   });
 });
