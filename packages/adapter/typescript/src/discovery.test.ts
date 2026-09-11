@@ -2478,6 +2478,262 @@ describe("graphqlHookCall discovery", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Bare fragment spreads in a document the project's own tag assembles
+// ---------------------------------------------------------------------------
+
+// What the graphql-codegen client preset generates. Its `gql` lives in
+// the project rather than in a library, which is what says a spread in
+// its templates is resolved before the document ships.
+const GENERATED_GQL_MODULE = `
+  export function gql(source: string): unknown {
+    return { source };
+  }
+`;
+
+function profileQueryModule(query: string): string {
+  return `
+    import { useQuery } from "@apollo/client";
+    import { gql } from "./generated/gql.js";
+    const ProfileQuery = gql(/* GraphQL */ \`${query}\`);
+    export function useProfile() {
+      return useQuery(ProfileQuery);
+    }
+  `;
+}
+
+describe("graphqlHookCall discovery, spreads resolved from the project", () => {
+  it("takes the definition from the file that defines the fragment", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    project.createSourceFile(
+      "userCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const UserCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { id name avatarUrl }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      "profile.ts",
+      profileQueryModule("query Profile { user { ...UserCard email } }"),
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units).toHaveLength(1);
+    const document = units[0].operationInfo?.document ?? "";
+    expect(document).toContain("fragment UserCard on User");
+    expect(document).toContain("avatarUrl");
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("follows a fragment that spreads another fragment", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    project.createSourceFile(
+      "userCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const UserCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { ...Avatar name }
+      \`);
+    `,
+    );
+    project.createSourceFile(
+      "avatar.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const AvatarFragment = gql(/* GraphQL */ \`
+        fragment Avatar on User { avatarUrl }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      "profile.ts",
+      profileQueryModule("query Profile { user { ...UserCard } }"),
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    const document = units[0].operationInfo?.document ?? "";
+    expect(document).toContain("fragment UserCard on User");
+    expect(document).toContain("fragment Avatar on User");
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("indexes a fragment written as a statement and assigned to nothing", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    project.createSourceFile(
+      "userCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      gql(/* GraphQL */ \`
+        fragment UserCard on User { id name }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      "profile.ts",
+      profileQueryModule("query Profile { user { ...UserCard } }"),
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.document).toContain(
+      "fragment UserCard on User",
+    );
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("leaves a name nothing in the project defines unresolved", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    const file = project.createSourceFile(
+      "profile.ts",
+      profileQueryModule("query Profile { user { ...UserCard } }"),
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.unresolvedFragments).toEqual(["UserCard"]);
+    expect(units[0].operationInfo?.ambiguousFragments).toBeUndefined();
+    expect(units[0].operationInfo?.document).toContain("...UserCard");
+  });
+
+  it("uses neither definition when two files define the name differently", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    project.createSourceFile(
+      "userCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const UserCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { id name }
+      \`);
+    `,
+    );
+    project.createSourceFile(
+      "adminCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const AdminCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { id email }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      "profile.ts",
+      profileQueryModule("query Profile { user { ...UserCard } }"),
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.unresolvedFragments).toEqual(["UserCard"]);
+    expect(units[0].operationInfo?.ambiguousFragments).toEqual(["UserCard"]);
+    expect(units[0].operationInfo?.document).not.toContain("fragment UserCard");
+  });
+
+  it("reads a library tag's document as written, spread and all", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    project.createSourceFile(
+      "userCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const UserCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { id name }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      "profile.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const ProfileQuery = gql\`
+        query Profile { user { ...UserCard } }
+      \`;
+      export function useProfile() {
+        return useQuery(ProfileQuery);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.unresolvedFragments).toEqual(["UserCard"]);
+    expect(units[0].operationInfo?.document).not.toContain("fragment UserCard");
+  });
+
+  it("reads a library tag a project module passes along as the library's", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    project.createSourceFile(
+      "node_modules/graphql-tag/index.d.ts",
+      `
+      export declare function gql(
+        literals: unknown,
+        ...placeholders: unknown[]
+      ): unknown;
+    `,
+    );
+    project.createSourceFile(
+      "lib/gql.ts",
+      `export { gql } from "graphql-tag";`,
+    );
+    project.createSourceFile(
+      "userCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const UserCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { id name }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      "profile.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      import { gql } from "./lib/gql.js";
+      const ProfileQuery = gql\`
+        query Profile { user { ...UserCard } }
+      \`;
+      export function useProfile() {
+        return useQuery(ProfileQuery);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.unresolvedFragments).toEqual(["UserCard"]);
+  });
+
+  it("keeps the interpolated definition when the index has the name too", () => {
+    const project = createProject();
+    project.createSourceFile("generated/gql.ts", GENERATED_GQL_MODULE);
+    project.createSourceFile(
+      "userCard.ts",
+      `
+      import { gql } from "./generated/gql.js";
+      export const UserCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { id indexed }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      "profile.ts",
+      `
+      import { useQuery } from "@apollo/client";
+      import { gql } from "./generated/gql.js";
+      const LOCAL_CARD = gql(/* GraphQL */ \`
+        fragment UserCard on User { id interpolated }
+      \`);
+      const ProfileQuery = gql(/* GraphQL */ \`
+        query Profile { user { ...UserCard } }
+        \${LOCAL_CARD}
+      \`);
+      export function useProfile() {
+        return useQuery(ProfileQuery);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    const document = units[0].operationInfo?.document ?? "";
+    expect(document).toContain("interpolated");
+    expect(document).not.toContain("indexed");
+    expect(document.match(/fragment UserCard on User/g)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // graphqlImperativeCall discovery
 // ---------------------------------------------------------------------------
 

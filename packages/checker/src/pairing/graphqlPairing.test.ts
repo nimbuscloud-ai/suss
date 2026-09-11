@@ -592,6 +592,33 @@ describe("pairGraphqlOperations — meta-fields and fragments", () => {
     expect(unchecked[0].description).toContain("were not checked");
   });
 
+  it("says so when the project defines the spread more than one way", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields } }`,
+    );
+    op.metadata = {
+      graphql: {
+        document: `query GetPet { pet(id: "1") { ...PetFields } }`,
+        unresolvedFragments: ["PetFields"],
+        ambiguousFragments: ["PetFields"],
+      },
+    };
+    const result = pairGraphqlOperations([petResolver, op]);
+    const unchecked = result.findings.filter(
+      (finding) => finding.kind === "lowConfidence",
+    );
+    expect(unchecked).toHaveLength(1);
+    expect(unchecked[0].description).toContain(
+      '"...PetFields" is defined more than once in the project, with different bodies',
+    );
+  });
+
   it("reports a dangling spread as an error when no fragment registry is configured", () => {
     const petResolver = resolver("Query", "pet", "apollo", {
       schemaSdl: petSchemaSdl,

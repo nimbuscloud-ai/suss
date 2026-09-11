@@ -209,8 +209,13 @@ function withoutFragmentsDefinedElsewhere(
     return metadata;
   }
 
+  // A name the project defines two ways stays: the document reader had
+  // both definitions and could not say which one the build picks.
+  const ambiguous = new Set(metadata.ambiguousFragments ?? []);
   const defined = definedInProject();
-  const left = unresolved.filter((name) => !defined.has(name));
+  const left = unresolved.filter(
+    (name) => ambiguous.has(name) || !defined.has(name),
+  );
   if (left.length === unresolved.length) {
     return metadata;
   }

@@ -20,6 +20,7 @@ import { Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "../moduleExports.js";
 
+import type { ImportDeclaration, Project, SourceFile } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -161,6 +162,12 @@ interface DocumentAssembly {
    * exactly which.
    */
   unresolvedInsideSelection: boolean;
+  /**
+   * Where the tag of the document being assembled came from. The first
+   * tag reached is the document's own; an interpolated document's tag
+   * says nothing about how the outer one is built.
+   */
+  tagOrigin: DocumentTagOrigin | null;
 }
 
 function startAssembly(
@@ -171,6 +178,7 @@ function startAssembly(
     seen: new Set(),
     unresolvedInterpolations: [],
     unresolvedInsideSelection: false,
+    tagOrigin: null,
   };
 }
 
@@ -281,6 +289,13 @@ export interface DocumentResolution {
    * wrong, and the summary says so.
    */
   unresolvedFragments?: string[];
+  /**
+   * Spreads in `document` the project defines more than once, with
+   * different bodies. Which one a build picks is not something the
+   * reader can say, so none of them is used and the name stays in
+   * `unresolvedFragments` too.
+   */
+  ambiguousFragments?: string[];
   unresolved?: { reference: string; reason: string };
 }
 
@@ -378,19 +393,213 @@ function assembledDocumentResolution(
       },
     };
   }
-  if (dangling.length > 0) {
-    return { document: text, unresolvedFragments: dangling };
+  const filled = fillDanglingSpreads(text, dangling, arg, assembly);
+  if (filled.unresolved.length > 0) {
+    return {
+      document: filled.text,
+      unresolvedFragments: filled.unresolved,
+      ...(filled.ambiguous.length > 0
+        ? { ambiguousFragments: filled.ambiguous }
+        : {}),
+    };
   }
   if (interpolations.length > 0) {
     return {
-      document: text,
+      document: filled.text,
       unresolved: {
         reference: singleLine(arg.getText()),
         reason: `interpolated ${describeInterpolations(interpolations)} did not resolve to a GraphQL document, so whatever it contributes is not part of the stored document`,
       },
     };
   }
-  return { document: text };
+  return { document: filled.text };
+}
+
+/** A document and the spreads in it still without a definition. */
+interface FilledDocument {
+  text: string;
+  unresolved: string[];
+  ambiguous: string[];
+}
+
+/**
+ * Give a build-time assembled document a definition for each spread in
+ * it, out of the fragments the project writes elsewhere. A
+ * document a library's tag sends as written gets nothing: whatever its
+ * template does not define is dangling at run time, which is what the
+ * spreads left over say. A fragment can spread another, so this repeats
+ * until it appends nothing new, and the set of appended names stops a
+ * cycle.
+ */
+function fillDanglingSpreads(
+  text: string,
+  dangling: string[],
+  arg: Node,
+  assembly: DocumentAssembly,
+): FilledDocument {
+  if (dangling.length === 0 || assembly.tagOrigin !== "project") {
+    return { text, unresolved: dangling, ambiguous: [] };
+  }
+  const definitions = projectFragmentDefinitions(arg.getProject());
+  const appended = new Set<string>();
+  const unresolved = new Set<string>();
+  const ambiguous = new Set<string>();
+  let filled = text;
+  let pending = dangling;
+  while (pending.length > 0) {
+    let grew = false;
+    for (const name of pending) {
+      if (appended.has(name) || unresolved.has(name)) {
+        continue;
+      }
+      const definition = definitions.get(name);
+      if (definition === undefined) {
+        unresolved.add(name);
+        continue;
+      }
+      if (definition === null) {
+        unresolved.add(name);
+        ambiguous.add(name);
+        continue;
+      }
+      filled += `\n\n${definition}`;
+      appended.add(name);
+      grew = true;
+    }
+    if (!grew) {
+      break;
+    }
+    const left = danglingFragmentSpreads(filled);
+    if (left === null) {
+      // A printed definition appended to a document that parsed parses
+      // too, so this only guards against a graphql-js surprise.
+      return { text, unresolved: dangling, ambiguous: [] };
+    }
+    pending = left;
+  }
+  return {
+    text: filled,
+    unresolved: [...unresolved].sort(),
+    ambiguous: [...ambiguous].sort(),
+  };
+}
+
+/**
+ * Every fragment the project defines, by name, as printed GraphQL. A
+ * `null` value means two documents define that name differently.
+ */
+type FragmentDefinitions = ReadonlyMap<string, string | null>;
+
+interface CachedFragmentIndex {
+  definitions: FragmentDefinitions;
+  /** What the project looked like when this index was built. */
+  signature: string;
+}
+
+const fragmentIndexes = new WeakMap<Project, CachedFragmentIndex>();
+
+/** No fragment is defined in a file that never writes the word. */
+const FRAGMENT_DEFINITION_TEXT = /\bfragment\s+\w+\s+on\b/;
+
+/**
+ * The project's fragment definitions, built on the first document that
+ * needs one and kept for the rest of the run. A run adds source files
+ * as it follows imports, so an index built before that is rebuilt.
+ */
+function projectFragmentDefinitions(project: Project): FragmentDefinitions {
+  const signature = projectSignature(project);
+  const cached = fragmentIndexes.get(project);
+  if (cached !== undefined && cached.signature === signature) {
+    return cached.definitions;
+  }
+  const definitions = buildFragmentIndex(project);
+  fragmentIndexes.set(project, { definitions, signature });
+  return definitions;
+}
+
+/**
+ * Enough of the project to tell one state of it from another without
+ * reading a file: how many source files there are and how much text
+ * they come to.
+ */
+function projectSignature(project: Project): string {
+  let files = 0;
+  let characters = 0;
+  for (const sourceFile of project.getSourceFiles()) {
+    files += 1;
+    characters += sourceFile.getEnd();
+  }
+  return `${files}:${characters}`;
+}
+
+function buildFragmentIndex(project: Project): FragmentDefinitions {
+  const definitions = new Map<string, string | null>();
+  const sourceFiles = [...project.getSourceFiles()].sort((left, right) =>
+    left.getFilePath().localeCompare(right.getFilePath()),
+  );
+  for (const sourceFile of sourceFiles) {
+    if (sourceFile.isInNodeModules() || sourceFile.isDeclarationFile()) {
+      continue;
+    }
+    // The text test comes first because this runs over every file the
+    // project has, and walking the AST of each is the expensive half.
+    if (!FRAGMENT_DEFINITION_TEXT.test(sourceFile.getFullText())) {
+      continue;
+    }
+    for (const text of documentTextsIn(sourceFile)) {
+      recordFragmentDefinitions(text, definitions);
+    }
+  }
+  return definitions;
+}
+
+/**
+ * Each document written out as a tag in one file, assembled. Every
+ * position counts: a client-preset codebase often writes a fragment as
+ * a bare `gql(...)` statement assigned to nothing, since codegen finds
+ * it by reading the file rather than by following an import.
+ */
+function documentTextsIn(sourceFile: SourceFile): string[] {
+  const texts: string[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (
+      !Node.isTaggedTemplateExpression(node) &&
+      !Node.isCallExpression(node)
+    ) {
+      return;
+    }
+    const text = documentTextFromExpression(node, startAssembly(undefined));
+    if (text !== null && text !== "") {
+      texts.push(text);
+    }
+  });
+  return texts;
+}
+
+function recordFragmentDefinitions(
+  text: string,
+  definitions: Map<string, string | null>,
+): void {
+  let doc: GraphqlDocumentNode;
+  try {
+    doc = graphqlParse(text);
+  } catch {
+    return;
+  }
+  for (const definition of doc.definitions) {
+    if (definition.kind !== GraphqlKind.FRAGMENT_DEFINITION) {
+      continue;
+    }
+    const name = definition.name.value;
+    const printed = graphqlPrint(definition);
+    if (!definitions.has(name)) {
+      definitions.set(name, printed);
+      continue;
+    }
+    if (definitions.get(name) !== printed) {
+      definitions.set(name, null);
+    }
+  }
 }
 
 function describeInterpolations(interpolations: string[]): string {
@@ -465,6 +674,7 @@ function documentTextFromExpression(
     if (assembly.seen.has(node)) {
       return "";
     }
+    assembly.tagOrigin ??= documentTagOrigin(node.getTag());
     assembly.seen.add(node);
     return assembledTemplateText(node.getTemplate(), assembly);
   }
@@ -488,6 +698,7 @@ function documentTextFromExpression(
   if (assembly.seen.has(node)) {
     return "";
   }
+  assembly.tagOrigin ??= documentTagOrigin(node.getExpression());
   assembly.seen.add(node);
   return assembledTemplateText(template, assembly);
 }
@@ -517,6 +728,115 @@ function isDocumentTag(tag: Node): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Where a document tag came from, which decides what a bare fragment
+ * spread in its template means.
+ *
+ * A tag a library exports parses the template as written and sends
+ * that, so a spread the template does not define is dangling when the
+ * query runs unless a fragment registry supplies it. A tag the project
+ * generates (graphql-codegen's client preset writes one) is a build
+ * step: it finds the fragment by name among the documents the project
+ * writes and puts the definition in the document it emits, so the same
+ * spread is resolved before anything is sent.
+ */
+type DocumentTagOrigin = "project" | "library";
+
+/**
+ * Which of the two a tag is. A tag with no import behind it (a bare
+ * `gql`) is read as a library's, since that is what the name means
+ * everywhere it appears without one.
+ */
+function documentTagOrigin(tag: Node): DocumentTagOrigin {
+  const declaredIn = tagDeclarationFile(tag);
+  if (declaredIn !== null) {
+    return declaredIn.isInNodeModules() ? "library" : "project";
+  }
+  const importDeclaration = importDeclarationOf(tag);
+  if (importDeclaration === null) {
+    return "library";
+  }
+  // The generated directory is usually gitignored, so in a fresh
+  // checkout the specifier resolves to nothing and how it is written
+  // is all there is to go on.
+  return isProjectSpecifier(importDeclaration) ? "project" : "library";
+}
+
+/**
+ * The file the tag is declared in, through any re-export chain, so a
+ * project module that passes a library's tag along is still that
+ * library's. Null when the import resolves to nothing.
+ */
+function tagDeclarationFile(tag: Node): SourceFile | null {
+  const symbol = tag.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  const resolved = resolveAliasedSymbol(symbol) ?? symbol;
+  for (const declaration of resolved.getDeclarations()) {
+    if (
+      Node.isImportSpecifier(declaration) ||
+      Node.isImportClause(declaration)
+    ) {
+      continue;
+    }
+    return declaration.getSourceFile();
+  }
+  return null;
+}
+
+/** The `import ... from "..."` a tag's name was brought in by. */
+function importDeclarationOf(tag: Node): ImportDeclaration | null {
+  const symbol = tag.getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  for (const declaration of symbol.getDeclarations()) {
+    const importDeclaration = importDeclarationAround(declaration);
+    if (importDeclaration !== null) {
+      return importDeclaration;
+    }
+  }
+  return null;
+}
+
+function importDeclarationAround(declaration: Node): ImportDeclaration | null {
+  if (Node.isImportSpecifier(declaration)) {
+    return declaration.getImportDeclaration();
+  }
+  if (!Node.isImportClause(declaration)) {
+    return null;
+  }
+  const parent = declaration.getParent();
+  return Node.isImportDeclaration(parent) ? parent : null;
+}
+
+/**
+ * Whether a module specifier points at a module of the project rather
+ * than at a package: a relative or absolute path, the `~` root
+ * convention, or anything an alias in the project's
+ * `compilerOptions.paths` covers.
+ */
+function isProjectSpecifier(importDeclaration: ImportDeclaration): boolean {
+  const specifier = importDeclaration.getModuleSpecifierValue();
+  if (/^[./~]/.test(specifier)) {
+    return true;
+  }
+  const aliases = importDeclaration.getProject().getCompilerOptions().paths;
+  for (const alias of Object.keys(aliases ?? {})) {
+    if (aliasCovers(alias, specifier)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether a `paths` key such as `@app/*` covers a written specifier. */
+function aliasCovers(alias: string, specifier: string): boolean {
+  const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped.replace(/\\\*/g, ".*")}$`).test(specifier);
 }
 
 /**
@@ -557,6 +877,8 @@ export interface ResolvedOperationInfo {
   rootFields: string[];
   /** Spreads in `document` with no definition in it: read partially. */
   unresolvedFragments?: string[];
+  /** Spreads the project defines more than once, with different bodies. */
+  ambiguousFragments?: string[];
   unresolved?: { reference: string; reason: string };
 }
 
@@ -588,6 +910,9 @@ export function operationInfoFromResolution(
       document: resolution.document,
       ...(resolution.unresolvedFragments !== undefined
         ? { unresolvedFragments: resolution.unresolvedFragments }
+        : {}),
+      ...(resolution.ambiguousFragments !== undefined
+        ? { ambiguousFragments: resolution.ambiguousFragments }
         : {}),
       ...(resolution.unresolved !== undefined
         ? { unresolved: resolution.unresolved }

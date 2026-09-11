@@ -750,6 +750,85 @@ describe("apolloClientPack — interpolated fragments", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Fragments spread by name, the way codegen's client preset writes them
+// ---------------------------------------------------------------------------
+
+// A component writes its own fragment and the page spreads it by name,
+// interpolating nothing and importing nothing: codegen finds the
+// definition among the project's documents.
+describe("apolloClientPack, client-preset fragments", () => {
+  const generatedGql = `
+    export function gql(source: string): unknown {
+      return { source };
+    }
+  `;
+
+  const profilePage = `
+    import { useQuery } from "@apollo/client";
+    import { gql } from "./generated/gql.js";
+    const ProfileQuery = gql(/* GraphQL */ \`
+      query Profile($id: ID!) {
+        user(id: $id) {
+          ...UserCard
+          email
+        }
+      }
+    \`);
+    export function useProfile(id: string) {
+      return useQuery(ProfileQuery, { variables: { id } });
+    }
+  `;
+
+  it("puts the definition the project writes elsewhere into the document", async () => {
+    const summaries = await runInMemoryFiles({
+      "generated/gql.ts": generatedGql,
+      "userCard.ts": `
+        import { gql } from "./generated/gql.js";
+        export const UserCardFragment = gql(/* GraphQL */ \`
+          fragment UserCard on User {
+            id
+            name
+            avatarUrl
+          }
+        \`);
+      `,
+      "profile.ts": profilePage,
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual([
+      "useProfile.Profile",
+    ]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toContain("fragment UserCard on User");
+    expect(graphql?.document).toContain("avatarUrl");
+    expect(graphql?.unresolvedFragments).toBeUndefined();
+    expect(graphql?.ambiguousFragments).toBeUndefined();
+  });
+
+  it("uses neither body when two files define the fragment differently", async () => {
+    const summaries = await runInMemoryFiles({
+      "generated/gql.ts": generatedGql,
+      "userCard.ts": `
+        import { gql } from "./generated/gql.js";
+        export const UserCardFragment = gql(/* GraphQL */ \`
+          fragment UserCard on User { id name }
+        \`);
+      `,
+      "adminCard.ts": `
+        import { gql } from "./generated/gql.js";
+        export const AdminCardFragment = gql(/* GraphQL */ \`
+          fragment UserCard on User { id email }
+        \`);
+      `,
+      "profile.ts": profilePage,
+    });
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).not.toContain("fragment UserCard");
+    expect(graphql?.unresolvedFragments).toEqual(["UserCard"]);
+    expect(graphql?.ambiguousFragments).toEqual(["UserCard"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Documents held in named constants
 // ---------------------------------------------------------------------------
 

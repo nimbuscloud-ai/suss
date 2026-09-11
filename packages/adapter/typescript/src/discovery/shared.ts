@@ -125,6 +125,8 @@ export interface DiscoveredUnit {
     rootFields: string[];
     /** Spreads in `document` with no definition in it: read partially. */
     unresolvedFragments?: string[];
+    /** Spreads the project defines more than once, with different bodies. */
+    ambiguousFragments?: string[];
     unresolved?: { reference: string; reason: string };
   };
   /**

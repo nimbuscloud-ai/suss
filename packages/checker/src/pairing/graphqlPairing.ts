@@ -102,6 +102,7 @@ export function pairGraphqlOperations(
           operation,
           unresolvedFragments,
           meta?.fragmentRegistry,
+          meta?.ambiguousFragments ?? [],
         ),
       );
     }
@@ -671,11 +672,12 @@ function danglingSpreadFinding(
   operation: BehavioralSummary,
   fragmentNames: string[],
   registry: "configured" | "absent" | "unknown" | undefined,
+  ambiguous: string[],
 ): Finding {
   if (registry === "absent") {
     return unknownFragmentFinding(operation, fragmentNames);
   }
-  return unresolvedFragmentsFinding(operation, fragmentNames);
+  return unresolvedFragmentsFinding(operation, fragmentNames, ambiguous);
 }
 
 /**
@@ -718,12 +720,14 @@ function unknownFragmentFinding(
 function unresolvedFragmentsFinding(
   operation: BehavioralSummary,
   fragmentNames: string[],
+  ambiguous: string[],
 ): Finding {
   const binding = operation.identity.boundaryBinding;
   if (binding === null) {
     throw new Error("expected graphql-operation boundary binding");
   }
   const spreads = fragmentNames.map((name) => `"...${name}"`).join(", ");
+  const defeated = whyNoDefinition(fragmentNames, ambiguous);
   return {
     kind: "lowConfidence",
     boundary: binding,
@@ -735,9 +739,31 @@ function unresolvedFragmentsFinding(
       summary: summaryRef(operation),
       location: operation.location,
     },
-    description: `GraphQL operation "${operation.identity.name}" spreads ${spreads} but no fragment definition with that name was found, so the fields selected through it were not checked.`,
+    description: `GraphQL operation "${operation.identity.name}" spreads ${spreads} but ${defeated}, so the fields selected through it were not checked.`,
     severity: "info",
   };
+}
+
+/**
+ * What stopped the definition getting into the document. A name the
+ * project defines twice with different bodies is a different problem
+ * from a name nothing defines: the reader found the fragment and could
+ * not say which of the two the build picks.
+ */
+function whyNoDefinition(fragmentNames: string[], ambiguous: string[]): string {
+  const clashing = fragmentNames.filter((name) => ambiguous.includes(name));
+  if (clashing.length === 0) {
+    return "no fragment definition with that name was found";
+  }
+  const named = clashing.map((name) => `"...${name}"`).join(", ");
+  const verb = clashing.length === 1 ? "is" : "are";
+  const clash = `${named} ${verb} defined more than once in the project, with different bodies`;
+  const missing = fragmentNames.filter((name) => !ambiguous.includes(name));
+  if (missing.length === 0) {
+    return clash;
+  }
+  const rest = missing.map((name) => `"...${name}"`).join(", ");
+  return `${clash}, and no definition of ${rest} was found`;
 }
 
 function nestedFieldUnknownFinding(

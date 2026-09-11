@@ -547,6 +547,15 @@ export const GraphqlMetadataSchema = z.object({
    */
   unresolvedFragments: z.array(z.string()).optional(),
   /**
+   * Spreads whose name the project defines more than once, with
+   * different bodies. A document a build step assembles takes the
+   * definition of a spread from elsewhere in the project, and with two
+   * candidates the reader cannot say which one the build picks, so it
+   * uses neither. Written beside `unresolvedFragments`, which lists
+   * them too.
+   */
+  ambiguousFragments: z.array(z.string()).optional(),
+  /**
    * Whether the project's client constructions install a fragment
    * registry, the one runtime mechanism that can supply a definition
    * for a spread the shipped document lacks. "absent" means every
