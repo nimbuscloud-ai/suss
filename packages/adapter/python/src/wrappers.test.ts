@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -118,6 +120,22 @@ const flaskRestxLike: PythonPack = {
   ],
 };
 
+async function extractWritten(files: Record<string, string>) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wrappers-"));
+  for (const [name, source] of Object.entries(files)) {
+    const full = path.join(dir, name);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, source);
+  }
+  const { summaries } = await extractPythonProject({
+    files: findPythonFiles(dir),
+    roots: [dir],
+    packs: [fastapiLike],
+    workspaceRoot: dir,
+  });
+  return summaries;
+}
+
 async function extract(app: string, pack: PythonPack) {
   const dir = path.join(FIXTURE, app);
   const { summaries } = await extractPythonProject({
@@ -227,11 +245,60 @@ describe("FastAPI wrappers", () => {
       "require_tenant_header",
       "require_admin",
       undefined,
+      undefined,
       "on_error",
     ]);
 
     const remove = routeFor(summaries, "DELETE", "/v1/tenants/{tenant_id}");
     expect(statusesOf(remove)).toEqual([429, 401, 400, 403, 204]);
+  });
+
+  it("lists each dependency's response once, whatever its pass-through branches", async () => {
+    const summaries = await extractWritten({
+      "app/__init__.py": "",
+      "app/main.py": [
+        "from fastapi import Depends, FastAPI, HTTPException, Request",
+        "",
+        "",
+        "def tag_request(request: Request):",
+        "    if request.headers.get('x-trace') is None:",
+        "        counted(request)",
+        "    else:",
+        "        traced(request)",
+        "",
+        "",
+        "def require_caller(request: Request):",
+        "    if request.headers.get('authorization') is None:",
+        "        raise HTTPException(status_code=401, detail='unauthorized')",
+        "    if request.headers.get('x-tenant') is None:",
+        "        load_default(request)",
+        "    else:",
+        "        load_tenant(request)",
+        "",
+        "",
+        "def counted(request): pass",
+        "def traced(request): pass",
+        "def load_default(request): pass",
+        "def load_tenant(request): pass",
+        "",
+        "",
+        "app = FastAPI(dependencies=[Depends(tag_request), Depends(require_caller)])",
+        "",
+        "",
+        "@app.get('/orders')",
+        "def orders(request: Request):",
+        "    if request.query_params.get('id') is None:",
+        "        raise HTTPException(status_code=404, detail='not found')",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    });
+
+    // Pairing two branching pass-throughs off against the route would
+    // give four copies of each of its own two outcomes.
+    const orders = routeFor(summaries, "GET", "/orders");
+    expect(statusesOf(orders)).toEqual([401, 404, 200]);
+    expect(fromOf(orders)).toEqual(["require_caller", undefined, undefined]);
   });
 
   it("gives a route written in another file on an imported router that router's dependency", async () => {

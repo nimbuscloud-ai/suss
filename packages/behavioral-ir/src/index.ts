@@ -242,6 +242,11 @@ export {
   unfollowedCallGap,
   worthRecording,
 } from "./unfollowedCall.js";
+export {
+  type WrapperIndex,
+  wrapperChain,
+  wrapperIndex,
+} from "./wrapperChain.js";
 
 export type {
   BoundaryBinding,

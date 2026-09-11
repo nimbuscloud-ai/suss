@@ -2,13 +2,14 @@
  * composeWrappers.ts: what a unit does once the code registered around
  * it is folded in.
  *
- * A wrapper is a meta-function: it takes a unit and returns a unit. Its
- * summary already says what it does, because the call to its
- * continuation comes through as a `delegate` transition, so one
- * application is the wrapper's short circuits plus its pass-throughs
- * times the wrapped unit's transitions, and a stack is repeated
- * application. The package README works the example through and says
- * what composition does not read.
+ * A wrapper is a meta-function: it takes a unit and returns a unit. The
+ * call to its continuation comes through as a `delegate` transition, so
+ * a path that ends before that call is a response the caller gets
+ * instead of the unit's own, and a path that reaches it hands the
+ * request on without responding. The responses go beside the unit's own
+ * outcomes and the pass-throughs go nowhere, because the unit's
+ * outcomes already say what happens on them. The package README works
+ * the example through and says what composition does not read.
  */
 
 import {
@@ -17,15 +18,16 @@ import {
   readWrapperMetadata,
   withinScope,
   withWrapperMetadata,
+  wrapperIndex,
 } from "@suss/behavioral-ir";
 
 import { contractStatusGaps } from "./contractStatusGaps.js";
-import { MAX_PATHS } from "./paths/enumeratePaths.js";
 
 import type {
   BehavioralSummary,
   Gap,
   Transition,
+  WrapperIndex,
   WrapperReference,
 } from "@suss/behavioral-ir";
 
@@ -43,19 +45,6 @@ interface ResolvedWrapper {
   summary: BehavioralSummary;
 }
 
-/** The transitions of one composition step, and whether the budget cut it short. */
-interface Composition {
-  transitions: Transition[];
-  degraded: boolean;
-}
-
-const BUDGET_GAP: Gap = {
-  type: "unreadOutcome",
-  conditions: [],
-  consequence: "unknown",
-  description: `Composing the wrappers registered around this unit would have gone past the path budget of ${MAX_PATHS}, so what each of them produces is reported beside this unit's own outcomes rather than under the conditions that reach it`,
-};
-
 /**
  * Every summary, with the ones that record wrappers replaced by their
  * composition. A summary with no wrappers, and one whose wrappers this
@@ -65,47 +54,14 @@ export function composeWrappers(
   summaries: readonly BehavioralSummary[],
   options: ComposeOptions = {},
 ): BehavioralSummary[] {
-  const byKey = new Map<string, BehavioralSummary[]>();
-  for (const summary of summaries) {
-    const key = summaryKey(summary.location.file, summary.identity.name);
-    const sharing = byKey.get(key);
-    if (sharing === undefined) {
-      byKey.set(key, [summary]);
-      continue;
-    }
-    sharing.push(summary);
-  }
-
+  const chain = wrapperIndex(summaries);
   const keepGaps = options.gapHandling !== "silent";
-  return summaries.map((summary) => composeOne(summary, byKey, keepGaps));
-}
-
-function summaryKey(file: string, name: string): string {
-  return `${file}::${name}`;
-}
-
-/**
- * The summary a reference points at. Two functions written out at
- * their registrations in one file go by the same name, and the line
- * is what tells them apart.
- */
-function summaryOf(
-  reference: WrapperReference,
-  byKey: ReadonlyMap<string, BehavioralSummary[]>,
-): BehavioralSummary | undefined {
-  const sharing = byKey.get(summaryKey(reference.file, reference.name)) ?? [];
-  if (reference.line === undefined) {
-    return sharing[0];
-  }
-  return (
-    sharing.find((one) => one.location.range.start === reference.line) ??
-    sharing[0]
-  );
+  return summaries.map((summary) => composeOne(summary, chain, keepGaps));
 }
 
 function composeOne(
   summary: BehavioralSummary,
-  byKey: ReadonlyMap<string, BehavioralSummary[]>,
+  chain: WrapperIndex,
   keepGaps: boolean,
 ): BehavioralSummary {
   const recorded = readWrapperMetadata(summary);
@@ -127,49 +83,75 @@ function composeOne(
         };
 
   const wrappers = covering.flatMap((reference): ResolvedWrapper[] => {
-    const found = summaryOf(reference, byKey);
+    const found = chain.find(reference);
     return found === undefined ? [] : [{ reference, summary: found }];
   });
   if (wrappers.length === 0) {
     return narrowed;
   }
 
-  let composition: Composition = {
-    transitions: summary.transitions,
-    degraded: false,
-  };
-  // The first registration is the outermost wrapper, so the fold runs
-  // from the innermost outwards. An error handler goes on last: it
-  // covers what the middleware inside it threw as well.
-  for (const wrapper of [...wrappers].reverse()) {
-    if (wrapper.reference.onThrow === true) {
-      continue;
-    }
-    composition = merge(composition, applyWrapper(wrapper, composition));
-  }
-  for (const wrapper of wrappers) {
-    if (wrapper.reference.onThrow !== true) {
-      continue;
-    }
-    composition = merge(composition, applyThrowWrapper(wrapper, composition));
-  }
-
-  const transitions =
-    composition.transitions === summary.transitions
-      ? summary.transitions
-      : withDistinctIds(composition.transitions);
+  const responses = respondedInstead(wrappers);
+  const handled = handledThrows(wrappers);
+  const transitions = beside(summary, responses, handled);
   if (!keepGaps) {
-    return { ...narrowed, transitions };
+    return transitions === summary.transitions
+      ? narrowed
+      : { ...narrowed, transitions };
   }
-  const gaps = withContractStatusGaps(summary, transitions, wrappers);
+  const gaps = withContractStatusGaps(
+    summary,
+    [...responses, ...summary.transitions],
+    handled,
+  );
   if (transitions === summary.transitions && gaps === summary.gaps) {
     return narrowed;
   }
-  return {
-    ...narrowed,
-    transitions,
-    gaps: composition.degraded ? [...gaps, BUDGET_GAP] : gaps,
-  };
+  return { ...narrowed, transitions, gaps };
+}
+
+/**
+ * The unit's own outcomes with the wrappers' beside them, outermost
+ * first. An error handler runs only where a path ends by throwing.
+ */
+function beside(
+  summary: BehavioralSummary,
+  responses: readonly Transition[],
+  handled: readonly Transition[],
+): Transition[] {
+  const throws = summary.transitions.some((t) => t.output.type === "throw");
+  const onThrow = throws ? handled : [];
+  if (responses.length === 0 && onThrow.length === 0) {
+    return summary.transitions;
+  }
+  return withDistinctIds([...responses, ...summary.transitions, ...onThrow]);
+}
+
+/**
+ * What each wrapper responds with instead of handing the request on. A
+ * pass-through is left out: the unit's own outcomes already say what
+ * happens once the request gets through, and what the wrapper did on
+ * the way is in the summary the chain points at.
+ */
+function respondedInstead(wrappers: readonly ResolvedWrapper[]): Transition[] {
+  return wrappers.flatMap((wrapper) =>
+    wrapper.reference.onThrow === true
+      ? []
+      : attribute(
+          wrapper.summary.transitions.filter(
+            (t) => t.output.type !== "delegate",
+          ),
+          wrapper.reference,
+        ),
+  );
+}
+
+/** What the wrappers the framework calls with a throw respond with. */
+function handledThrows(wrappers: readonly ResolvedWrapper[]): Transition[] {
+  return wrappers.flatMap((wrapper) =>
+    wrapper.reference.onThrow === true
+      ? attribute(wrapper.summary.transitions, wrapper.reference)
+      : [],
+  );
 }
 
 /**
@@ -187,7 +169,7 @@ function composeOne(
 function withContractStatusGaps(
   summary: BehavioralSummary,
   composed: readonly Transition[],
-  wrappers: readonly ResolvedWrapper[],
+  handled: readonly Transition[],
 ): Gap[] {
   const contract = readHttpMetadata(summary)?.declaredContract;
   const binding = summary.identity.boundaryBinding;
@@ -204,14 +186,9 @@ function withContractStatusGaps(
   const stale = new Set(
     contractStatusGaps(declared, summary.transitions).map(gapKey),
   );
-  const onThrow = wrappers
-    .filter((wrapper) => wrapper.reference.onThrow === true)
-    .flatMap((wrapper) =>
-      attribute(wrapper.summary.transitions, wrapper.reference),
-    );
   const gaps = [
     ...summary.gaps.filter((gap) => !stale.has(gapKey(gap))),
-    ...contractStatusGaps(declared, [...composed, ...onThrow]),
+    ...contractStatusGaps(declared, [...composed, ...handled]),
   ];
   const unchanged =
     gaps.length === summary.gaps.length &&
@@ -221,14 +198,6 @@ function withContractStatusGaps(
 
 function gapKey(gap: Gap): string {
   return `${gap.type}|${gap.description}`;
-}
-
-/** One step's result, keeping the note that an earlier step degraded. */
-function merge(before: Composition, step: Composition): Composition {
-  return {
-    transitions: step.transitions,
-    degraded: before.degraded || step.degraded,
-  };
 }
 
 /**
@@ -246,128 +215,6 @@ function coversUnit(
   }
   const binding = summary.identity.boundaryBinding;
   return binding !== null && withinScope(binding, reference.scope);
-}
-
-/**
- * The wrapped unit's transitions with one middleware folded around
- * them: a path that responded before reaching the continuation is an
- * outcome by itself, and each path that reached it gets one composed
- * transition per outcome of the wrapped unit.
- *
- * A wrapper with no `delegate` transition never showed where control
- * passes on, so its outcomes are reported beside the wrapped unit's
- * rather than around them.
- */
-function applyWrapper(
-  wrapper: ResolvedWrapper,
-  inner: Composition,
-): Composition {
-  const shortCircuits = attribute(
-    wrapper.summary.transitions.filter((t) => t.output.type !== "delegate"),
-    wrapper.reference,
-  );
-  const passThroughs = withoutCoveredPassThroughs(
-    wrapper.summary.transitions.filter((t) => t.output.type === "delegate"),
-  );
-
-  if (
-    passThroughs.length === 0 ||
-    shortCircuits.length + passThroughs.length * inner.transitions.length >
-      MAX_PATHS
-  ) {
-    return {
-      transitions: [...shortCircuits, ...inner.transitions],
-      degraded: passThroughs.length > 0,
-    };
-  }
-
-  const continued = passThroughs.flatMap((passThrough) =>
-    inner.transitions.map((transition) => splice(passThrough, transition)),
-  );
-  return { transitions: [...shortCircuits, ...continued], degraded: false };
-}
-
-/**
- * The pass-throughs another pass-through already covers taken out. A
- * wrapper whose body ends in a branch neither arm responds from comes
- * back with one path that hands on unconditionally beside the two arms,
- * and when the arms record the same effects, splicing them in as well
- * multiplies the wrapped unit's transitions by three and says nothing
- * the unconditional path did not. Ten such filters in front of every
- * action of a large Rails app is a summary file measured in gigabytes.
- */
-function withoutCoveredPassThroughs(
-  passThroughs: readonly Transition[],
-): Transition[] {
-  return passThroughs.filter(
-    (candidate, i) =>
-      !passThroughs.some(
-        (other, j) =>
-          j !== i &&
-          covers(other, candidate) &&
-          (j < i || !covers(candidate, other)),
-      ),
-  );
-}
-
-/** Whether every path `narrower` describes is one `wider` describes with the same effects. */
-function covers(wider: Transition, narrower: Transition): boolean {
-  if (JSON.stringify(wider.effects) !== JSON.stringify(narrower.effects)) {
-    return false;
-  }
-  const required = new Set(narrower.conditions.map((c) => JSON.stringify(c)));
-  return wider.conditions.every((c) => required.has(JSON.stringify(c)));
-}
-
-/**
- * The same, for a wrapper the framework calls with what the wrapped
- * unit threw. It applies to the paths that ended by throwing, and its
- * own response is what the caller sees instead of the throw.
- */
-function applyThrowWrapper(
-  wrapper: ResolvedWrapper,
-  inner: Composition,
-): Composition {
-  const thrown = inner.transitions.filter((t) => t.output.type === "throw");
-  if (thrown.length === 0) {
-    return inner;
-  }
-  const rest = inner.transitions.filter((t) => t.output.type !== "throw");
-  const handled = wrapper.summary.transitions;
-
-  if (rest.length + thrown.length * handled.length > MAX_PATHS) {
-    return {
-      transitions: [
-        ...inner.transitions,
-        ...attribute(handled, wrapper.reference),
-      ],
-      degraded: true,
-    };
-  }
-
-  const composed = thrown.flatMap((transition) =>
-    attribute(
-      handled.map((handler) => splice(transition, handler)),
-      wrapper.reference,
-    ),
-  );
-  return { transitions: [...rest, ...composed], degraded: false };
-}
-
-/**
- * One path through the wrapper joined to one path through what it
- * wraps. The conditions are what both required, in the order they were
- * tested, and the outcome is the inner one's, since the outer path
- * handed control over before producing any of its own.
- */
-function splice(outer: Transition, inner: Transition): Transition {
-  return {
-    ...inner,
-    id: `${inner.id}:via:${outer.id}`,
-    conditions: [...outer.conditions, ...inner.conditions],
-    effects: [...outer.effects, ...inner.effects],
-    isDefault: outer.isDefault && inner.isDefault,
-  };
 }
 
 /** Say which wrapper produced each of these outcomes. */

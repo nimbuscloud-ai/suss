@@ -332,6 +332,24 @@ describe("extraction over fixtures/ruby-rails", () => {
     });
   });
 
+  it("lists each filter's response once, whatever its pass-through branches", async () => {
+    const { summaries } = await extractFixture();
+    const reportsIndex = action(summaries, "admin/reports_controller", "index");
+    // set_scope and set_window each hand the request on two ways, so
+    // pairing them off against the action would give four copies of it.
+    expect(own(reportsIndex)).toHaveLength(1);
+    expect(
+      reportsIndex.transitions.map(
+        (transition) =>
+          (
+            transition.metadata?.wrappers as
+              | { from?: { name: string } }
+              | undefined
+          )?.from?.name,
+      ),
+    ).toEqual(["require_login", undefined]);
+  });
+
   it("does not discover a private controller method as an action", async () => {
     const { summaries } = await extractFixture();
     expect(
