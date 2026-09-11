@@ -77,6 +77,7 @@ import type {
   ReachedBody,
 } from "./ancestry.js";
 import type { BlockConfigures, BodyBlocks, CallArgs, Range } from "./ast.js";
+import type { DynamicNames } from "./defineMethod.js";
 import type {
   ControllerActions,
   GraphqlObjectFields,
@@ -124,6 +125,8 @@ export interface BodyReadOptions {
   readonly inheritedMethods?: InheritedMethods | undefined;
   /** The calls every pack in the run said run their block as part of the body around it. */
   readonly bodyBlocks?: BodyBlocks | undefined;
+  /** What each class defines under a name the source computes, by class key. */
+  readonly dynamicNames?: DynamicNames | undefined;
 }
 
 export interface DiscoveryOptions extends BodyReadOptions {
@@ -177,7 +180,11 @@ function fieldReadContext(
     cache,
     bodyRead,
     facts,
-    read: { facts, bodyBlocks: bodyRead.bodyBlocks },
+    read: {
+      facts,
+      bodyBlocks: bodyRead.bodyBlocks,
+      dynamicNames: bodyRead.dynamicNames,
+    },
     lookup: {
       root: pattern.root,
       pathConvention: pattern.pathConvention,
@@ -403,6 +410,7 @@ async function controllerActionUnits(
   const filters = controllerFilters(pattern, ancestry, {
     facts: options.facts,
     bodyBlocks: options.bodyBlocks,
+    dynamicNames: options.dynamicNames,
   });
   const units: RawCodeStructure[] = [];
 

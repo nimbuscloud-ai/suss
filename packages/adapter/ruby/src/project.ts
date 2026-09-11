@@ -34,6 +34,7 @@ import {
 } from "@suss/extractor";
 
 import { rangeOf } from "./ast.js";
+import { readDynamicNames } from "./defineMethod.js";
 import {
   buildRubyExtractionReport,
   createPackTallies,
@@ -244,7 +245,7 @@ export async function extractRubyProject(
       constants.push(collectFileConstants(file, root, associationCalls));
     });
   }
-  timer.time("discover", () => {
+  const dynamicNames = timer.time("discover", () => {
     emitConstantBindings(db, constants);
     const known = new Set(parsed.map(({ file }) => file));
     for (const { file, root } of parsed) {
@@ -252,6 +253,10 @@ export async function extractRubyProject(
     }
     bindEvaluator(db, { files: parsed, definitions });
     emitStorageFacts(db, options.packs);
+    return readDynamicNames(
+      db,
+      new Map(parsed.map(({ file, root }) => [file, root])),
+    );
   });
 
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
@@ -262,7 +267,7 @@ export async function extractRubyProject(
       : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const reachContext = await timer.timeAsync("discover", () =>
-    buildReachContext(parsed, db, bodyBlocks),
+    buildReachContext(parsed, db, bodyBlocks, dynamicNames),
   );
   // Facts keep the full filesystem path, because they are joined against
   // internally. Only the summary's `location.file` gets shortened.
@@ -296,6 +301,7 @@ export async function extractRubyProject(
         ...(storage === undefined ? {} : { storage }),
         inheritedMethods,
         bodyBlocks,
+        dynamicNames,
         displayPathOf,
         facts: db,
         onReachSeed: (raw, seed) => seedByRaw.set(raw, seed),
@@ -375,6 +381,7 @@ export async function extractRubyProject(
       ...(storage === undefined ? {} : { storage }),
       inheritedMethods,
       bodyBlocks,
+      dynamicNames,
     }),
   );
   for (const entry of found) {

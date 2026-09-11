@@ -30,6 +30,7 @@ import type { Database } from "@suss/datalog";
 import type { CalleeOutcome } from "@suss/resolution";
 import type { AncestorLookup, Ancestry, ReachedBody } from "../ancestry.js";
 import type { BodyBlocks } from "../ast.js";
+import type { DynamicNames } from "../defineMethod.js";
 import type { RbNode } from "../parser.js";
 
 /** A method in this run, and the export path its summary gets. */
@@ -62,6 +63,8 @@ export interface ReachContext {
   readonly definitions: ReadonlyMap<string, ReachedFunction>;
   /** The calls the run's packs said run their block as part of the body around it. */
   readonly bodyBlocks: BodyBlocks;
+  /** What each class defines under a name the source computes, by class key. */
+  readonly dynamicNames: DynamicNames;
 }
 
 /** Where a call is written: the file, the method whose body it is, and the class that method belongs to. */
@@ -390,6 +393,7 @@ function methodOnAncestryOf(
   const found = methodInAncestry(ancestry, methodName, {
     facts: ctx.facts,
     bodyBlocks: ctx.bodyBlocks,
+    dynamicNames: ctx.dynamicNames,
   });
   if (found.type === "found") {
     return followed(reachedMethod(found.method, found.block, methodName));

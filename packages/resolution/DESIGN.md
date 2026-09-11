@@ -30,7 +30,19 @@ imports(x, m, n)            x is the name n imported from module m
 exportsAs(m, n, v)          module m exports v under the name n
 reExports(m, n, m2, n2)     m's n is m2's n2
 reExportsAll(m, m2)         m forwards everything m2 exports
+declaresName(c, n)          c declares a method n under a name the
+                            source computes rather than writes out
 ```
+
+`declaresName` is the one fact an adapter states after asking these
+rules a question of its own. Ruby's `define_method(key)`, Python's
+`setattr(cls, name, fn)` and a computed class member in TypeScript all
+put a method on a class under a name nothing writes out. The adapter
+says where the name comes from, settles it through the value evaluator,
+which reads these same facts, and states what it came to.
+`wantedDeclaredName` then reports it beside the names written out, so a
+caller asking which methods a class declares never has to know which
+kind it got.
 
 Two more come from a pack rather than from source, for a wrapper whose
 body nobody can read: `unwrapsByName(name, k)` and

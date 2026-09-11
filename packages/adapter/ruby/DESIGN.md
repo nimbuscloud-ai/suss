@@ -48,9 +48,18 @@ What the summary then says:
 
 An ancestor the reader could not open stops the search, rather than the search continuing to a method further along. Ruby would have called whatever that ancestor defines, so a method found past it is not the one that runs, and reporting it would be a confident wrong claim instead of an abstention.
 
-A `define_method` call stops the search only for the names it defines. The reader takes those names from the call's first argument, through the same value evaluator that settles a route path: a symbol or a string written out, and, inside `each`, `each_with_index` or `map` over a literal array or a constant whose value is one, the element bound to the block's parameter, including an interpolated symbol built from it such as `:"#{key}="`.
+A `define_method` call stops the search only for the names it defines. Nothing reads the call's argument as a shape. The adapter states two facts as it walks a class body, and the reader joins them:
 
-The list a loop runs over may also be one a project method gives back, `Settings.filters.each do |filter|`. Ruby runs a class body like any other code, so the value facts cover a class body's expressions, and a rule of Ruby's own says a method read off a constant runs and is worth what it returns. That reaches the memoised spelling too, `@filters ||= %i[...]` and `@@periods ||= %i[...].freeze`, since a method's last line hands back what it wrote.
+```
+definesMethodFrom  order.rb:0-120  order.rb:64-67
+nameTurnsOn        order.rb:64-67  key  element  order.rb:30-52
+```
+
+`definesMethodFrom` says the class defines a method whose name is whatever that expression comes down to. `nameTurnsOn` says a loop around the call binds `key` to each element of another expression. Both expressions then go through the same value evaluator that settles a route path, which follows names and constants across the whole run, so a symbol written out, a constant another file defines, a list a project method gives back, and an interpolated symbol built from a loop's element all read the same way.
+
+The name the evaluator settles on goes back in the facts as `declaresName`, and one shared rule puts it on `wantedDeclaredName` beside the names a `def` writes out. So a caller asking which methods a class declares gets the dynamic ones without knowing they were dynamic.
+
+Ruby's own `each`, `each_with_index` and `map` are the loops the adapter recognizes, the way `ENV` is: they are `Enumerable`'s rather than a library's.
 
 A name only part of which settles, `"category_#{filter}"` with nothing behind `filter`, is kept as a pattern its literal parts spell out. A lookup for a name matching no pattern carries on up the ancestry; one that matches stops at the class, since the loop may be defining it. A `define_method` whose name settles on nothing at all, a bare variable or a call nothing binds, leaves the class stopping every lookup, the way it did before any name was read.
 

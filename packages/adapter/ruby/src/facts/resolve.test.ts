@@ -373,3 +373,17 @@ describe("a method a concern declares", () => {
     ).toContain("pay");
   });
 });
+
+describe("a name a class defines dynamically", () => {
+  it("is one of the names its ancestry declares", async () => {
+    const db = await runFactsFor(CONCERN_SOURCE);
+    const payable = classBehind(db, "f.rb#Payable");
+    const account = classBehind(db, "f.rb#Account");
+    db.add("declaresName", [payable, "suspended?"]);
+
+    askResolution(db, [account], "wantedAncestry", RUBY_PROGRAM);
+    expect(
+      db.lookup("wantedDeclaredName", 0, account).map((row) => String(row[1])),
+    ).toContain("suspended?");
+  });
+});

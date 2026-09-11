@@ -9,12 +9,14 @@ import {
   runStatements,
 } from "./ast.js";
 import { resolveConstantFile } from "./constantPath.js";
-import { couldBeDefined, defineMethodNames } from "./defineMethod.js";
+import { couldBeDefined, definedNamesOf } from "./defineMethod.js";
+import { nodeId } from "./facts/values.js";
 import { qualifyConstantRef, walkDefinitions } from "./scope.js";
 
 import type { Database } from "@suss/datalog";
 import type { BlockConfigures, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
+import type { DynamicNames } from "./defineMethod.js";
 import type { RbNode } from "./parser.js";
 import type { ClassInfo } from "./scope.js";
 
@@ -45,6 +47,8 @@ export type Ancestry = readonly AncestorEntry[];
 export interface BodyReading {
   readonly facts?: Database | undefined;
   readonly bodyBlocks?: BodyBlocks | undefined;
+  /** What each class defines under a name the source computes, by class key. */
+  readonly dynamicNames?: DynamicNames | undefined;
 }
 
 /** What a walk needs to reach a class it knows only by name. */
@@ -358,7 +362,10 @@ function definitionIn(
       method = found;
       block = candidate;
     }
-    const defined = defineMethodNames(body, read.facts);
+    const defined = definedNamesOf(
+      read.dynamicNames,
+      nodeId(candidate.file, candidate.info.node),
+    );
     definedDynamically ||= defined.names.has(name);
     unreadableDefine ||= couldBeDefined(defined, name);
   }

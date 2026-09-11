@@ -410,6 +410,42 @@ describe("ruby value facts", () => {
     expect(db.size("holdsProperty")).toBe(0);
   });
 
+  it("says which expression a dynamic definition takes its name from", async () => {
+    const source = [
+      "class Subject",
+      "  KEYS.each do |key, at|",
+      "    define_method(key) { at }",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [cls] = rows(db, "objectValue");
+
+    const at = source.indexOf("define_method(") + "define_method(".length;
+    expect(rows(db, "definesMethodFrom")).toEqual([
+      [cls?.[0], `:${at}-${at + "key".length}`],
+    ]);
+    expect(rows(db, "nameTurnsOn").map((row) => row.slice(1, 3))).toEqual([
+      ["key", "at"],
+    ]);
+  });
+
+  it("says nothing about the turns of a loop whose block takes no parameter", async () => {
+    const db = await factsFor(
+      [
+        "class Subject",
+        "  KEYS.each do",
+        "    define_method(:width) { 1 }",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    expect(db.size("definesMethodFrom")).toBe(1);
+    expect(db.size("nameTurnsOn")).toBe(0);
+  });
+
   it("leaves every block alone when no pack declares one", async () => {
     const db = await factsFor(
       "module Payable\n  included do\n    def pay\n    end\n  end\nend\n",

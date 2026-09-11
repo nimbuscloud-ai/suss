@@ -304,19 +304,122 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
   }
 }
 
-/** Every expression under a node, without crossing into a nested declaration. */
-function walkExpressions(node: RbNode, visit: (child: RbNode) => void): void {
+/** The two spellings of a block, `{ }` and `do ... end`. */
+const BLOCK_TYPES = new Set(["block", "do_block"]);
+
+/**
+ * Ruby's own iteration methods, whose block runs once per element with
+ * the element bound to its first parameter and, for `each_with_index`,
+ * the position bound to its second. They are `Enumerable`'s, so they
+ * are the language core the way `ENV` is rather than a library's.
+ */
+const LOOP_METHODS = new Set(["each", "each_with_index", "map"]);
+
+/** Ruby's own dynamic definition, whose argument is the name the method gets. */
+const DEFINE_METHOD_CALL = "define_method";
+
+/** What one turn of a loop block binds, and the value its elements come from. */
+interface LoopTurn {
+  readonly element: string;
+  /** The name the position is bound to, or the empty string for a block that takes one parameter. */
+  readonly index: string;
+  readonly overKey: string;
+}
+
+/** What a block binds per turn when a loop call opened it, or null for every other block. */
+function loopTurnAt(emitter: Emitter, block: RbNode): LoopTurn | null {
+  const call = block.parent;
+  if (call?.type !== "call") {
+    return null;
+  }
+  const receiver = field(call, "receiver");
+  const method = field(call, "method");
+  if (receiver === null || method === null || !LOOP_METHODS.has(method.text)) {
+    return null;
+  }
+  const parameters = field(block, "parameters");
+  const names =
+    parameters === null ? [] : children(parameters).map((p) => p.text);
+  const element = names[0];
+  if (element === undefined) {
+    return null;
+  }
+  // The expression's own key, not the name's: what it comes down to is
+  // the evaluator's question, and it reads these same facts to answer it.
+  return {
+    element,
+    index: names[1] ?? "",
+    overKey: nodeId(emitter.filePath, receiver),
+  };
+}
+
+/**
+ * A method the class gets under a name the source computes. The name is
+ * whatever the argument comes down to, which the value evaluator settles
+ * from these same facts, so nothing here reads the argument itself.
+ */
+function emitDynamicDefinition(
+  emitter: Emitter,
+  call: RbNode,
+  turns: readonly LoopTurn[],
+): void {
+  if (
+    emitter.selfKey === null ||
+    // A call inside a method runs when that method does, not at load time.
+    emitter.enclosing !== null ||
+    call.type !== "call" ||
+    field(call, "receiver") !== null ||
+    field(call, "method")?.text !== DEFINE_METHOD_CALL
+  ) {
+    return;
+  }
+  const args = field(call, "arguments");
+  const first = args === null ? undefined : children(args)[0];
+  // A call handed no name at all points at itself, which settles on nothing.
+  const nameKey = nodeId(emitter.filePath, first ?? call);
+  add(emitter, "definesMethodFrom", emitter.selfKey, nameKey);
+  for (const turn of turns) {
+    add(
+      emitter,
+      "nameTurnsOn",
+      nameKey,
+      turn.element,
+      turn.index,
+      turn.overKey,
+    );
+  }
+}
+
+/** Every expression under a node, without crossing into a nested declaration. `turns` is the loop blocks the expression is written inside, outermost first. */
+function walkExpressions(
+  node: RbNode,
+  emitter: Emitter,
+  visit: (child: RbNode, turns: readonly LoopTurn[]) => void,
+  turns: readonly LoopTurn[] = [],
+): void {
   for (const child of children(node)) {
     if (OWN_BODY_TYPES.has(child.type)) {
       continue;
     }
-    visit(child);
-    walkExpressions(child, visit);
+    visit(child, turns);
+    const opened = BLOCK_TYPES.has(child.type)
+      ? loopTurnAt(emitter, child)
+      : null;
+    walkExpressions(
+      child,
+      emitter,
+      visit,
+      opened === null ? turns : [...turns, opened],
+    );
   }
 }
 
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
-  walkExpressions(node, (child) => {
+  // The walk below starts at the children, so a statement that is itself
+  // a definition would go unseen.
+  emitDynamicDefinition(emitter, node, []);
+  walkExpressions(node, emitter, (child, turns) => {
+    emitDynamicDefinition(emitter, child, turns);
     if (isPropertyRead(child)) {
       emitPropertyRead(emitter, child);
     } else if (child.type === "call") {
@@ -503,7 +606,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   };
   recordNested(body);
 
-  walkExpressions(body, (child) => {
+  walkExpressions(body, inside, (child) => {
     if (child.type === "return") {
       // `return x` wraps the value in an argument list, the same shape a
       // call's arguments take.

@@ -24,6 +24,7 @@ import { methodDefinitionsIn } from "../values/evaluator.js";
 import type { Database } from "@suss/datalog";
 import type { AncestorLookup, Ancestry, ReachedBody } from "../ancestry.js";
 import type { BodyBlocks } from "../ast.js";
+import type { DynamicNames } from "../defineMethod.js";
 import type { RbNode } from "../parser.js";
 import type { ReachContext, ReachedFunction } from "./resolveCallee.js";
 
@@ -34,6 +35,7 @@ export async function buildReachContext(
   files: readonly { file: string; root: RbNode }[],
   facts: Database,
   bodyBlocks: BodyBlocks = NO_BODY_BLOCKS,
+  dynamicNames: DynamicNames = new Map(),
 ): Promise<ReachContext> {
   const blocksByQualifiedName = new Map<string, ReachedBody[]>();
   const classes: { file: string; info: ReachedBody["info"] }[] = [];
@@ -118,6 +120,7 @@ export async function buildReachContext(
     classNames,
     definitions,
     bodyBlocks,
+    dynamicNames,
   };
 }
 
