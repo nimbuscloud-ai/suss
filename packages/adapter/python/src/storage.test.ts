@@ -475,6 +475,20 @@ describe("the database work a Python body does", () => {
     ]);
   });
 
+  it("records nothing for a call that only returned a session", async () => {
+    const effects = await effectsFor(
+      ["from base import open_session", "", "open_session()", ""].join("\n"),
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def open_session() -> Session:",
+        "    return Session()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects).toEqual([]);
+  });
+
   it("records nothing for a session method the pack says touches no rows", async () => {
     const effects = await effectsFor(
       [

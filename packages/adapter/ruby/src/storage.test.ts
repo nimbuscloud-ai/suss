@@ -10,13 +10,46 @@ import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
 import { storageClaims, storageEffects } from "./storage.js";
 
-import type { RbLoaderPattern, RbStoragePattern } from "./pack.js";
+import type {
+  RbAssociationCalls,
+  RbLoaderPattern,
+  RbStoragePattern,
+} from "./pack.js";
 import type { RbNode } from "./parser.js";
 
 const ACTIVE_RECORD: RbStoragePattern = {
   baseClasses: ["ActiveRecord::Base"],
-  writes: ["update", "update!", "destroy", "save", "create", "delete_all"],
+  writes: [
+    "update",
+    "update!",
+    "update_all",
+    "destroy",
+    "save",
+    "create",
+    "delete_all",
+  ],
+  reads: [
+    "find",
+    "find_by",
+    "where",
+    "order",
+    "limit",
+    "first",
+    "count",
+    "pluck",
+    "select",
+  ],
   givesBack: ["find", "where", "first"],
+  byPrimaryKey: {
+    methods: ["find", "update", "destroy"],
+    column: "id",
+  },
+  columnArguments: ["pluck", "select"],
+  associations: {
+    singular: ["has_one", "belongs_to"],
+    plural: ["has_many"],
+    classNameKeyword: "class_name",
+  },
   storageSystem: "postgresql",
 };
 
@@ -58,7 +91,11 @@ async function factsFor(files: Record<string, string>) {
   for (const [file, text] of Object.entries(files)) {
     const tree = await parseRuby(text);
     emitValueFacts(db, file, tree.rootNode);
-    constants.push(collectFileConstants(file, tree.rootNode));
+    constants.push(
+      collectFileConstants(file, tree.rootNode, [
+        ACTIVE_RECORD.associations as RbAssociationCalls,
+      ]),
+    );
     if (file === "use.rb") {
       root = tree.rootNode;
     }
@@ -78,6 +115,61 @@ async function effectsFor(source: string, models = MODELS) {
     loaders: [DATALOADER],
   });
 }
+
+/** Two models, one of which declares that it reaches the other. */
+const ASSOCIATED_MODELS = [
+  "class ApplicationRecord < ActiveRecord::Base",
+  "end",
+  "",
+  "class Status < ApplicationRecord",
+  "end",
+  "",
+  "class Account < ApplicationRecord",
+  "  has_many :statuses",
+  "end",
+  "",
+].join("\n");
+
+/** A filter sets the account, and each action reads or writes through it. */
+const ACCOUNTS_CONTROLLER = [
+  "class AccountsController",
+  "  before_action :set_account",
+  "",
+  "  def set_account",
+  "    @account = Account.find(params[:id])",
+  "  end",
+  "",
+  "  def show",
+  "    @account.statuses.find(params[:status_id])",
+  "  end",
+  "",
+  "  def rename",
+  "    @account.update(name: params[:name])",
+  "  end",
+  "",
+  "  def title",
+  "    @account.name",
+  "  end",
+  "end",
+  "",
+].join("\n");
+
+/** A model with a class method and an instance method of the project's own. */
+const PROJECT_METHODS = [
+  "class ApplicationRecord < ActiveRecord::Base",
+  "end",
+  "",
+  "class Order < ApplicationRecord",
+  "  def self.recent_for(account)",
+  "    where(account: account)",
+  "  end",
+  "",
+  "  def summary",
+  "    name",
+  "  end",
+  "end",
+  "",
+].join("\n");
 
 /** A filter sets the model on an instance variable, and the action writes through it. */
 const CONTROLLER = [
@@ -206,6 +298,80 @@ describe("the database work a Ruby body does", () => {
     expect(accessOf(effects[0])).toMatchObject({ kind: "write" });
   });
 
+  it("picks rows by the primary key when the finder was given one", async () => {
+    const effects = await effectsFor("found = Order.find(params[:id])\n");
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "read",
+      operation: "find",
+      selector: ["id"],
+      fields: [],
+    });
+  });
+
+  it("picks rows by the keywords a finder was given", async () => {
+    const effects = await effectsFor("found = Order.find_by(email: email)\n");
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "read",
+      selector: ["email"],
+    });
+  });
+
+  it("picks rows by the keywords written inside braces", async () => {
+    const effects = await effectsFor("found = Order.find_by({ email: x })\n");
+    expect(accessOf(effects[0])).toMatchObject({ selector: ["email"] });
+  });
+
+  it("reads a chain by what every read along it picked", async () => {
+    const effects = await effectsFor(
+      "found = Order.where(a: 1).order(:b).first\n",
+    );
+
+    expect(effects).toHaveLength(1);
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "read",
+      operation: "first",
+      selector: ["a"],
+      fields: [],
+    });
+  });
+
+  it("says which columns a write was given", async () => {
+    const effects = await effectsFor(
+      "Order.create(name: name, email: email)\n",
+    );
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "write",
+      operation: "create",
+      fields: ["name", "email"],
+    });
+  });
+
+  it("says both what a write picked and what it set", async () => {
+    const effects = await effectsFor(
+      "Order.where(id: id).update_all(state: 1)\n",
+    );
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "write",
+      operation: "update_all",
+      selector: ["id"],
+      fields: ["state"],
+    });
+  });
+
+  it("says which columns a read asked for by name", async () => {
+    const effects = await effectsFor("names = Order.pluck(:name)\n");
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "read",
+      operation: "pluck",
+      fields: ["name"],
+    });
+  });
+
+  it("says nothing about the columns a write was given as a variable", async () => {
+    const effects = await effectsFor("Order.create(attrs)\n");
+    expect(accessOf(effects[0])).toMatchObject({ kind: "write", fields: [] });
+  });
+
   it("says nothing about a class that reaches no base the pack says", async () => {
     const effects = await effectsFor(
       "found = Order.where(id: 1).first\n",
@@ -255,6 +421,98 @@ describe("the database work a Ruby body does", () => {
     ).toMatchObject([
       { binding: { semantics: { container: "Order" } }, type: "interaction" },
     ]);
+  });
+
+  describe("a method the library does not define", () => {
+    it("says nothing about a constructor, which asks the database for nothing", async () => {
+      expect(await effectsFor("order = Order.new(name: name)\n")).toEqual([]);
+    });
+
+    it("says nothing about a transaction, which runs no query of its own", async () => {
+      expect(await effectsFor("Order.transaction do\n  x = 1\nend\n")).toEqual(
+        [],
+      );
+    });
+
+    it("says nothing about a class method the project writes itself", async () => {
+      expect(
+        await effectsFor(
+          "found = Order.recent_for(account)\n",
+          PROJECT_METHODS,
+        ),
+      ).toEqual([]);
+    });
+
+    it("leaves that method to the walk rather than claiming it", async () => {
+      const { db, root } = await factsFor({
+        "models.rb": PROJECT_METHODS,
+        "use.rb": "found = Order.recent_for(account)\n",
+      });
+      const [call] = callsIn(root).filter((candidate) =>
+        candidate.text.startsWith("Order.recent_for"),
+      );
+
+      expect(
+        storageClaims(call as RbNode, "use.rb", {
+          facts: db,
+          patterns: [ACTIVE_RECORD],
+        }),
+      ).toBe(false);
+    });
+
+    it("records the read a chain did before a project method the walk follows", async () => {
+      const effects = await effectsFor(
+        "found = Order.where(id: id).recent_for(account)\n",
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "where",
+        selector: ["id"],
+      });
+    });
+  });
+
+  describe("a chain that goes on past the call the library defines", () => {
+    it("records the finder a safely navigated project method follows", async () => {
+      const effects = await effectsFor(
+        "quoted = Order.find(params[:id])&.summary\n",
+        PROJECT_METHODS,
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Order");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "find",
+        selector: ["id"],
+      });
+    });
+
+    it("records the read an attribute read follows", async () => {
+      const effects = await effectsFor("name = Order.where(a: 1).first.name\n");
+
+      expect(effects).toHaveLength(1);
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "first",
+        selector: ["a"],
+      });
+    });
+
+    it("records the read a predicate on the result follows", async () => {
+      const effects = await effectsFor(
+        "there = Order.find_by(email: email).present?\n",
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "find_by",
+        selector: ["email"],
+      });
+    });
   });
 
   describe("read through a loader", () => {
@@ -310,7 +568,7 @@ describe("the database work a Ruby body does", () => {
     });
   });
 
-  describe("a write on a receiver the rules settle on a model", () => {
+  describe("a call on a receiver the rules settle on a model", () => {
     it("records the write a controller makes on an instance variable a filter set", async () => {
       const effects = await writesIn("suspend", CONTROLLER);
 
@@ -344,9 +602,75 @@ describe("the database work a Ruby body does", () => {
       });
     });
 
-    it("says nothing about a keyword the write was given, since the record is already in hand", async () => {
+    it("counts a keyword the write was given as a column it set, not as one it picked by", async () => {
       const effects = await writesIn("suspend", CONTROLLER);
+
       expect(accessOf(effects[0])).not.toHaveProperty("selector");
+      expect(accessOf(effects[0])).toMatchObject({
+        fields: ["suspended_at"],
+      });
+    });
+
+    it("records the write an action makes with the columns it set", async () => {
+      const effects = await writesIn(
+        "rename",
+        ACCOUNTS_CONTROLLER,
+        ASSOCIATED_MODELS,
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Account");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "write",
+        operation: "update",
+        fields: ["name"],
+      });
+    });
+
+    it("records a read through an association against the model it reaches", async () => {
+      const effects = await writesIn(
+        "show",
+        ACCOUNTS_CONTROLLER,
+        ASSOCIATED_MODELS,
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Status");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "find",
+        selector: ["id"],
+      });
+    });
+
+    it("says nothing about a method the library does not define, attribute or not", async () => {
+      const effects = await writesIn(
+        "title",
+        ACCOUNTS_CONTROLLER,
+        ASSOCIATED_MODELS,
+      );
+      expect(effects).toEqual([]);
+    });
+
+    it("says nothing when the rules settle the receiver on two classes", async () => {
+      const effects = await writesIn(
+        "suspend",
+        [
+          "class ThingsController",
+          "  def set_thing",
+          "    @thing = Account.find(params[:id])",
+          "    @thing = Status.find(params[:id])",
+          "  end",
+          "",
+          "  def suspend",
+          "    @thing.save",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        ASSOCIATED_MODELS,
+      );
+      expect(effects).toEqual([]);
     });
 
     it("says nothing about a read on the same receiver", async () => {

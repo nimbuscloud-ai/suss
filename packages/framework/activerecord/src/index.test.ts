@@ -55,6 +55,7 @@ describe("the ActiveRecord pack", () => {
         {
           baseClasses: ["Other::Base"],
           writes: [],
+          reads: [],
           givesBack: [],
           storageSystem: "postgresql",
         },

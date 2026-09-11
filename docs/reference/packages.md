@@ -128,7 +128,7 @@ back empty, so it is run alongside the pack that finds the units.
 
 | Name | What it reads | Coverage |
 |---|---|---|
-| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when the constant its receivers start at reaches `ActiveRecord::Base`, following what each class extends through the project. | ![](../../.github/badges/coverage-activerecord.svg) |
+| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches `ActiveRecord::Base`, following what each class extends through the project. | ![](../../.github/badges/coverage-activerecord.svg) |
 | [`aws-dynamodb`](../../packages/framework/aws-dynamodb) | AWS SDK v3 DynamoDB calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-dynamodb.svg) |
 | [`aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
 | [`aws-s3`](../../packages/framework/aws-s3) | AWS SDK v3 S3 object calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-s3.svg) |

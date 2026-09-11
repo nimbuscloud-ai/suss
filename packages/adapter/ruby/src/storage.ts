@@ -1,14 +1,16 @@
 /**
  * storage.ts: which calls in a body talk to the database, for Ruby.
  *
- * A pack says which base class the library gives a model, and a call on a
- * class that reaches that base is a database call. The README says why
- * ancestry. A loader pattern from another pack adds calls that are given
- * the model as an argument instead, and those go through the same test.
+ * One rule covers both ways a call is written. It is database work when the
+ * pack lists its method as a read or a write, the class behind its receiver
+ * reaches a base class the pack lists, and the project does not declare that
+ * method itself. A chain counts once, at the outermost call the library
+ * defines, and every other call is left to the reach walk. The README says
+ * why ancestry.
  *
- * A write is also recorded when the receiver is not written as a
- * constant and the rules settle it on such a class, which is how
- * `@account.save` after a `before_action` finder counts.
+ * The class behind the receiver comes from the constant bindings for a chain
+ * written from a constant and from the resolution rules otherwise. A loader
+ * pattern adds calls given the model as an argument, tested the same way.
  */
 
 import { storageBinding } from "@suss/ir-core";
@@ -118,35 +120,154 @@ function modelPattern(
   );
 }
 
-/** What a chain was given to pick rows by, `id` in `where(id: 1)`. */
-function selectorOf(node: RbNode): string[] {
-  const picked: string[] = [];
-  const walk = (current: RbNode): void => {
-    const args = field(current, "arguments");
-    for (const argument of args === null ? [] : children(args)) {
-      if (argument.type !== "pair") {
-        continue;
-      }
-      const key = field(argument, "key");
+type StorageKind = "read" | "write";
+
+/** The calls a chain is made of, the last one first and the one it starts at last. */
+function chainLinks(call: RbNode): RbNode[] {
+  const links: RbNode[] = [];
+  let current: RbNode | null = call;
+  while (current !== null && current.type === "call") {
+    links.push(current);
+    current = receiverOf(current);
+  }
+  return links;
+}
+
+/** What the library does with this method, as the pattern states it. */
+function kindOfCall(
+  pattern: RbStoragePattern,
+  method: string,
+): StorageKind | undefined {
+  if (pattern.writes.includes(method)) {
+    return "write";
+  }
+  if (pattern.reads.includes(method)) {
+    return "read";
+  }
+  return undefined;
+}
+
+/** Whether any pattern in the run says its library defines this method. */
+function someLibraryDefines(
+  options: RbStorageOptions,
+  method: string,
+): boolean {
+  return options.patterns.some(
+    (pattern) => kindOfCall(pattern, method) !== undefined,
+  );
+}
+
+function argumentsOf(call: RbNode): RbNode[] {
+  const args = field(call, "arguments");
+  return args === null ? [] : children(args);
+}
+
+/** Whether this argument was written as keywords, either bare or inside braces. */
+function isKeywordArgument(argument: RbNode): boolean {
+  return argument.type === "pair" || argument.type === "hash";
+}
+
+/** The name a keyword or a symbol is written under, without the `:` either side of it. */
+function bareName(node: RbNode): string {
+  return node.text.replace(/^:/, "").replace(/:$/, "");
+}
+
+/** The keyword pairs one argument is made of, whether it was written bare or inside braces. */
+function pairsIn(argument: RbNode): RbNode[] {
+  if (argument.type === "pair") {
+    return [argument];
+  }
+  if (argument.type === "hash") {
+    return children(argument).filter((child) => child.type === "pair");
+  }
+  return [];
+}
+
+/** The keys a call was given as keywords, `id` in both `find_by(id: 1)` and `find_by({ id: 1 })`. */
+function keywordKeys(call: RbNode): string[] {
+  const keys: string[] = [];
+  for (const argument of argumentsOf(call)) {
+    for (const pair of pairsIn(argument)) {
+      const key = field(pair, "key");
       if (key !== null) {
-        picked.push(key.text.replace(/^:/, "").replace(/:$/, ""));
+        keys.push(bareName(key));
       }
     }
-    const receiver = receiverOf(current);
-    if (receiver !== null) {
-      walk(receiver);
+  }
+  return keys;
+}
+
+/** Whether the call was given something other than keywords, the `1` in `find(1)`. */
+function hasPositionalArgument(call: RbNode): boolean {
+  return argumentsOf(call).some((argument) => !isKeywordArgument(argument));
+}
+
+/** The columns a read asks for by name, `name` and `email` in `pluck(:name, :email)`. */
+function columnsAskedFor(call: RbNode, pattern: RbStoragePattern): string[] {
+  if (!(pattern.columnArguments ?? []).includes(methodOf(call))) {
+    return [];
+  }
+  return argumentsOf(call)
+    .filter((argument) => argument.type === "simple_symbol")
+    .map(bareName);
+}
+
+/** The primary key, where this call is a lookup by it and was given one. */
+function primaryKeySelector(call: RbNode, pattern: RbStoragePattern): string[] {
+  const byPrimaryKey = pattern.byPrimaryKey;
+  if (byPrimaryKey === undefined) {
+    return [];
+  }
+  const picks =
+    byPrimaryKey.methods.includes(methodOf(call)) &&
+    hasPositionalArgument(call);
+  return picks ? [byPrimaryKey.column] : [];
+}
+
+/**
+ * What the chain was given to pick rows by: the keywords of every read
+ * along it, and the primary key where a lookup by it was given one
+ * positionally.
+ */
+function selectorOf(call: RbNode, pattern: RbStoragePattern): string[] {
+  const picked: string[] = [];
+  for (const link of chainLinks(call)) {
+    picked.push(...primaryKeySelector(link, pattern));
+    if (pattern.reads.includes(methodOf(link))) {
+      picked.push(...keywordKeys(link));
     }
-  };
-  walk(node);
+  }
   return [...new Set(picked)];
+}
+
+/**
+ * The columns a call states. A write states them as the data it was given,
+ * and a read only where it asks for columns by name. An argument written as
+ * a variable states none, and saying nothing is the answer rather than a
+ * reason to guess.
+ */
+function fieldsOf(
+  call: RbNode,
+  pattern: RbStoragePattern,
+  kind: StorageKind,
+): string[] {
+  if (kind === "write") {
+    return [...new Set(keywordKeys(call))];
+  }
+  return [
+    ...new Set(
+      chainLinks(call).flatMap((link) => columnsAskedFor(link, pattern)),
+    ),
+  ];
 }
 
 function storageEffect(
   call: RbNode,
   container: string,
   pattern: RbStoragePattern,
-  kind: "read" | "write",
+  kind: StorageKind,
   selector: string[],
+  fields: string[],
 ): Effect {
   const operation = methodOf(call);
   return {
@@ -161,42 +282,11 @@ function storageEffect(
     interaction: {
       class: "storage-access",
       kind,
-      fields: [],
+      fields,
       operation,
       ...(selector.length > 0 ? { selector } : {}),
     },
   };
-}
-
-/** The effect of a call on a model, `Order.where(id: 1).first`. */
-function modelCallEffects(
-  call: RbNode,
-  file: string,
-  options: RbStorageOptions,
-): Effect[] {
-  const constant = rootConstant(call);
-  if (constant === null) {
-    return [];
-  }
-  const pattern = modelPattern(constant, file, options);
-  if (pattern === undefined) {
-    return [];
-  }
-  const kind = pattern.writes.includes(methodOf(call)) ? "write" : "read";
-  return [
-    storageEffect(
-      call,
-      constantName(constant),
-      pattern,
-      kind,
-      selectorOf(call),
-    ),
-  ];
-}
-
-/** Every method a pattern in this run counts as changing what is stored. */
-function writeMethods(patterns: readonly RbStoragePattern[]): Set<string> {
-  return new Set(patterns.flatMap((pattern) => pattern.writes));
 }
 
 /**
@@ -241,46 +331,121 @@ function projectDeclares(
     .some((row) => String(row[1]) === method);
 }
 
+/** A class a call was made on, and the name to report the work under. */
+interface CallReceiver {
+  readonly classKey: string;
+  readonly container: string;
+}
+
+/** The class a constant refers to, reported under the constant as written. */
+function constantReceiver(
+  constant: RbNode,
+  file: string,
+  facts: Database,
+): CallReceiver | undefined {
+  const classKey = classBehind(facts, file, constant);
+  return classKey === undefined
+    ? undefined
+    : { classKey, container: constantName(constant) };
+}
+
+/** The class the rules settle a receiver on, reported under the name it is declared as. */
+function settledReceiver(
+  receiver: RbNode,
+  file: string,
+  facts: Database,
+  enclosing: RbNode | null,
+): CallReceiver | undefined {
+  const classKey = classSettledOn(facts, readKey(file, receiver, enclosing));
+  if (classKey === undefined) {
+    return undefined;
+  }
+  const container = declaredName(facts, classKey);
+  return container === undefined ? undefined : { classKey, container };
+}
+
 /**
- * The write a call makes on a receiver written as something other than a
- * constant. Only a write, because a read on an instance is as likely an
- * attribute read or a project method the walk follows. No selector: the
- * record is already in hand, so the keywords are the data being written
- * rather than a `where`.
+ * The class a chain was called on. A chain written from a constant is
+ * settled by the bindings for that name, and any other receiver goes to
+ * the rules.
  */
-function instanceWriteEffects(
+function receiverClass(
+  call: RbNode,
+  file: string,
+  options: RbStorageOptions,
+  enclosing: RbNode | null,
+): CallReceiver | undefined {
+  const constant = rootConstant(call);
+  if (constant !== null) {
+    return constantReceiver(constant, file, options.facts);
+  }
+  const receiver = receiverOf(call);
+  if (receiver === null) {
+    return undefined;
+  }
+  return settledReceiver(receiver, file, options.facts, enclosing);
+}
+
+/**
+ * The call in a chain that did the database work: the outermost one whose
+ * method the library defines. What comes after it is a method on the result,
+ * which the reach walk follows, so `Order.find(id)&.summary` is still the
+ * `find`. Null when the library defines none of them.
+ */
+function libraryCallIn(call: RbNode, options: RbStorageOptions): RbNode | null {
+  return (
+    chainLinks(call).find((link) =>
+      someLibraryDefines(options, methodOf(link)),
+    ) ?? null
+  );
+}
+
+/**
+ * The database work one chain does, whether it was written from the model
+ * itself or from a record in hand. A method the project declares on the
+ * class says nothing here: the reach walk steps into that body, which
+ * reports the work it does, and recording it here as well would count it
+ * twice.
+ */
+function modelCallEffects(
   call: RbNode,
   file: string,
   options: RbStorageOptions,
   enclosing: RbNode | null,
 ): Effect[] {
-  const receiver = receiverOf(call);
-  const method = methodOf(call);
-  if (receiver === null || !writeMethods(options.patterns).has(method)) {
+  const worked = libraryCallIn(call, options);
+  if (worked === null) {
     return [];
   }
-  const classKey = classSettledOn(
-    options.facts,
-    readKey(file, receiver, enclosing),
-  );
-  if (classKey === undefined) {
+  const method = methodOf(worked);
+  const target = receiverClass(worked, file, options, enclosing);
+  if (target === undefined) {
     return [];
   }
-  const pattern = options.patterns.find(
-    (candidate) =>
-      candidate.writes.includes(method) &&
-      reachesBase(options.facts, classKey, candidate.baseClasses),
-  );
-  if (
-    pattern === undefined ||
-    projectDeclares(options.facts, classKey, method)
-  ) {
-    return [];
+
+  for (const pattern of options.patterns) {
+    const kind = kindOfCall(pattern, method);
+    if (
+      kind === undefined ||
+      !reachesBase(options.facts, target.classKey, pattern.baseClasses)
+    ) {
+      continue;
+    }
+    if (projectDeclares(options.facts, target.classKey, method)) {
+      return [];
+    }
+    return [
+      storageEffect(
+        worked,
+        target.container,
+        pattern,
+        kind,
+        selectorOf(worked, pattern),
+        fieldsOf(worked, pattern, kind),
+      ),
+    ];
   }
-  const container = declaredName(options.facts, classKey);
-  return container === undefined
-    ? []
-    : [storageEffect(call, container, pattern, "write", [])];
+  return [];
 }
 
 /** Whether a node is the loader itself, the receiverless `dataloader`. */
@@ -338,7 +503,7 @@ function loaderCallEffects(
       const pattern = modelPattern(argument, file, options);
       if (pattern !== undefined) {
         effects.push(
-          storageEffect(call, constantName(argument), pattern, "read", []),
+          storageEffect(call, constantName(argument), pattern, "read", [], []),
         );
       }
     }
@@ -352,19 +517,8 @@ function effectsOfCall(
   options: RbStorageOptions,
   enclosing: RbNode | null,
 ): Effect[] {
-  const onModel = modelCallEffects(call, file, options);
-  if (onModel.length > 0) {
-    return onModel;
-  }
-  // A chain starting at a constant has already been settled by name, so
-  // asking the rules about its receiver would settle nothing new.
-  const onInstance =
-    rootConstant(call) === null
-      ? instanceWriteEffects(call, file, options, enclosing)
-      : [];
-  return onInstance.length > 0
-    ? onInstance
-    : loaderCallEffects(call, file, options);
+  const onModel = modelCallEffects(call, file, options, enclosing);
+  return onModel.length > 0 ? onModel : loaderCallEffects(call, file, options);
 }
 
 /**
@@ -391,15 +545,16 @@ function receiverKeysToAsk(
   options: RbStorageOptions,
   enclosing: RbNode | null,
 ): string[] {
-  const writes = writeMethods(options.patterns);
   const keys: string[] = [];
   for (const call of chains) {
-    const receiver = receiverOf(call);
-    if (
-      receiver !== null &&
-      writes.has(methodOf(call)) &&
-      rootConstant(call) === null
-    ) {
+    // The same call the effect would be recorded at, so
+    // `@status.update(x).present?` asks about `@status`.
+    const worked = libraryCallIn(call, options);
+    if (worked === null || rootConstant(worked) !== null) {
+      continue;
+    }
+    const receiver = receiverOf(worked);
+    if (receiver !== null) {
       keys.push(readKey(file, receiver, enclosing));
     }
   }

@@ -1203,7 +1203,9 @@ function railsWithModels(): RubyPack {
       {
         baseClasses: ["ActiveRecord::Base"],
         writes: ["update", "save", "destroy"],
+        reads: ["find", "where", "first"],
         givesBack: ["find", "where", "first"],
+        byPrimaryKey: { methods: ["find"], column: "id" },
         storageSystem: "postgresql",
       },
     ],
@@ -1232,6 +1234,28 @@ function writeAccountModel(): void {
     "  end",
     "end",
   ]);
+}
+
+/** The database work a summary reports, as what each access says it did. */
+function storageAccessesOf(
+  summary: BehavioralSummary,
+): Array<Record<string, unknown>> {
+  return summary.transitions.flatMap((transition) =>
+    transition.effects.flatMap((effect) =>
+      effect.type === "interaction" &&
+      effect.interaction.class === "storage-access"
+        ? [
+            {
+              kind: effect.interaction.kind,
+              operation: effect.interaction.operation,
+              ...(effect.interaction.selector === undefined
+                ? {}
+                : { selector: effect.interaction.selector }),
+            },
+          ]
+        : [],
+    ),
+  );
 }
 
 /** The call an action makes, and the summary it was linked to. */
@@ -1314,5 +1338,61 @@ describe("a call on what an ActiveRecord finder gave back", () => {
     expect(
       callTo(action as BehavioralSummary, "account.suspend_account"),
     ).toBeUndefined();
+  });
+
+  it("follows a class method the project declares rather than calling it database work", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  def self.suspend_all(reason)",
+      "    where(reason: reason).first",
+      "  end",
+      "end",
+    ]);
+    write("app/controllers/accounts_controller.rb", [
+      "class AccountsController < ApplicationController",
+      "  def suspend",
+      "    Account.suspend_all(params[:reason])",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extractRails();
+    const model = summaries.find(
+      (summary) => summary.location.file === "app/models/account.rb",
+    );
+    const action = summaries.find(
+      (summary) => summary.identity.exportPath?.[0] === "AccountsController",
+    );
+    expect(storageAccessesOf(action as BehavioralSummary)).toEqual([]);
+    expect(callTo(action as BehavioralSummary, "Account.suspend_all")).toBe(
+      summaryIdentifier(model as BehavioralSummary),
+    );
+  });
+
+  it("reports no gap for the finder it recorded as a read", async () => {
+    writeAccountModel();
+    write("app/controllers/accounts_controller.rb", [
+      "class AccountsController < ApplicationController",
+      "  def show",
+      "    Account.find(params[:id])",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extractRails();
+    const action = summaries.find(
+      (summary) => summary.identity.exportPath?.[1] === "show",
+    ) as BehavioralSummary;
+
+    expect(storageAccessesOf(action)).toEqual([
+      { kind: "read", operation: "find", selector: ["id"] },
+    ]);
+    expect(action.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
   });
 });
