@@ -48,6 +48,48 @@ const RETURNS_A_RECORD = [
   "reload",
 ];
 
+/**
+ * Methods that run a query the moment they are called: the finders, and the
+ * terminals that make a relation fetch its rows.
+ */
+const RUNS_A_QUERY = [
+  "find",
+  "find_by",
+  "find_by!",
+  "find_sole_by",
+  "sole",
+  "first",
+  "first!",
+  "last",
+  "last!",
+  "take",
+  "take!",
+  "exists?",
+  "count",
+  "size",
+  "any?",
+  "none?",
+  "many?",
+  "empty?",
+  "pluck",
+  "pick",
+  "ids",
+  "sum",
+  "average",
+  "minimum",
+  "maximum",
+  "calculate",
+  "to_a",
+  "each",
+  "map",
+  "find_each",
+  "find_in_batches",
+  "in_batches",
+  "load",
+  "reload",
+  "find_or_initialize_by",
+];
+
 /** Methods that hand back a relation, which a later read narrows to one record. */
 const RETURNS_A_RELATION = [
   "where",
@@ -82,10 +124,20 @@ const RETURNS_A_RELATION = [
 ];
 
 /**
- * The base class the library gives a model, and the methods that change what
- * is stored rather than read it. Everything here is ActiveRecord's own. A
- * project's `ApplicationRecord` is matched by following what it extends, so
- * nothing about any project belongs in this list.
+ * A relation builder runs no query until something asks it for rows, but a
+ * body that writes one is asking for what it narrows to, so the builders
+ * count as reads alongside the terminals. `where.not(...)` hangs off a bare
+ * `where`, so the negation is a method of its own rather than a keyword on
+ * the call before it.
+ */
+const READS = [...RUNS_A_QUERY, ...RETURNS_A_RELATION, "not"];
+
+/**
+ * The base class the library gives a model, the methods that read the
+ * database and the methods that change what is stored. Everything here is
+ * ActiveRecord's own. A project's `ApplicationRecord` is matched by
+ * following what it extends, so nothing about any project belongs in
+ * these lists.
  */
 export function activeRecordStorage(
   options: ActiveRecordPackOptions,
@@ -111,8 +163,18 @@ export function activeRecordStorage(
         "delete",
         "delete_all",
         "touch",
+        // These two read first and store only when the read found
+        // nothing, and a write is the stronger of the two claims.
+        "find_or_create_by",
+        "find_or_create_by!",
       ],
+      reads: READS,
       givesBack: [...RETURNS_A_RECORD, ...RETURNS_A_RELATION],
+      byPrimaryKey: {
+        methods: ["find", "exists?", "update", "destroy", "delete"],
+        column: "id",
+      },
+      columnArguments: ["select", "pluck", "pick"],
       associations: {
         singular: ["has_one", "belongs_to"],
         plural: ["has_many", "has_and_belongs_to_many"],
@@ -165,7 +227,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "rubygems", name: "rails" },
   ],
   reads:
-    "ActiveRecord calls (Ruby): a call matches when the constant its receivers start at reaches \`ActiveRecord::Base\`, following what each class extends through the project.",
+    "ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches \`ActiveRecord::Base\`, following what each class extends through the project.",
   configuration: {
     file: "suss.activerecord.json",
     example: { storageSystem: "postgresql" },

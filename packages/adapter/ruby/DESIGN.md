@@ -279,7 +279,10 @@ storage: [
   {
     baseClasses: ["ActiveRecord::Base"],
     writes: ["update", "destroy", "save", "create", "delete_all"],
+    reads: ["find", "find_by", "where", "first", "pluck", "count"],
     givesBack: ["find", "where", "first"],
+    byPrimaryKey: { methods: ["find", "update", "destroy"], column: "id" },
+    columnArguments: ["select", "pluck", "pick"],
     associations: {
       singular: ["has_one", "belongs_to"],
       plural: ["has_many", "has_and_belongs_to_many"],
@@ -290,26 +293,32 @@ storage: [
 ]
 ```
 
-A call matches when the constant its receivers start at reaches one of those
-base classes. Rails puts its own class in between, and following `extends`
-through the project and matching `extendsNamed` at the library takes care of
-that:
+One rule covers every call. It is database work when `reads` or `writes` lists
+its method, the class behind its receiver reaches one of those base classes,
+and the project does not declare that method itself. Rails puts its own class
+between the library and every model, and following `extends` through the
+project and matching `extendsNamed` at the library takes care of that:
 
 ```ruby
 class ApplicationRecord < ActiveRecord::Base; end
 class Order < ApplicationRecord; end
 
 Order.where(id: 1).first   # one read, against Order, picking rows by id
+Order.new(name: name)      # nothing: a constructor asks the database for nothing
+Order.transaction { ... }  # nothing: the calls inside it are the database work
+Order.recent_for(account)  # nothing: the walk steps into the project's own method
 ```
 
-A chain is one thing the code does, so that counts once. The method the chain
-ends with tells a read from a write, and the keywords along it become the
-selector. `fields` comes back empty. The constant can be written any way Ruby
-allows: `Order`, `Shop::Order`, or `::Order` for the top-level class from
-inside a module that has its own `Order`. The binding facts settle which class
-each spelling means.
+A chain is one thing the code does, so the first of those counts once. The
+method the chain ends with tells a read from a write. A chain a project method
+ends says nothing at all, because the walk follows that method and its body
+reports what it does. The constant can be written any way Ruby allows:
+`Order`, `Shop::Order`, or `::Order` for the top-level class from inside a
+module that has its own `Order`. The binding facts settle which class each
+spelling means.
 
-A receiver written as something else goes to the rules instead:
+A receiver written as something else goes to the rules instead, and the same
+rule decides:
 
 ```ruby
 def set_order
@@ -318,18 +327,16 @@ end
 
 def suspend
   @order.update!(suspended_at: Time.now)   # one write, against Order
+  @order.reference                         # nothing: not a method the pack lists
 end
 ```
 
-Only a write is recorded that way. A read on an instance is as likely an
-attribute read or a project method the reach walk follows, and calling it
-database work would be wrong more often than right. The receiver's key is the
-one `calleeSpellings` derives for the walk, and `wantedObjectOf` is the answer;
-exactly one class counts, and two make picking one a guess. The class still has
-to reach a base the pack lists. `container` is the name the class is declared
-under, which `rbConstantName` puts in the facts alongside the bindings. There
-is no selector, because the record is already in hand and the keywords are the
-data being written rather than a `where`.
+The receiver's key is the one `calleeSpellings` derives for the walk, and
+`wantedObjectOf` is the answer; exactly one class counts, and two make picking
+one a guess. `container` is the name the class is declared under, which
+`rbConstantName` puts in the facts alongside the bindings. An association
+reaches the model it targets, so `@account.statuses.find(params[:id])` is a
+read against `Status`.
 
 A call whose method the project writes itself is skipped: `wantedDeclaredName`
 says which methods the class's ancestry declares, the reach walk steps into
@@ -337,6 +344,28 @@ that body, and the body reports whatever database work it does. A module mixed
 in with `include` is in that ancestry, so a `def save` in a concern is stepped
 into rather than recorded here as a write. A block parameter is not bound in
 the facts, so `orders.each { |o| o.save }` says nothing.
+
+## What a read picked and what a write set
+
+`selector` is what the chain was given to pick rows by: the keywords of every
+read along it, whether they were written bare or inside braces, plus the
+primary key where a method in `byPrimaryKey` was given a positional argument.
+`fields` is what a write was given as data, and on a read it is only the
+columns the call asked for by name:
+
+```ruby
+Order.find(params[:id])                      # read, selector id
+Order.find_by(email: email)                  # read, selector email
+Order.where(a: 1).order(:b).first            # read, selector a
+Order.pluck(:name, :email)                   # read, fields name and email
+Order.create(name: name, email: email)       # write, fields name and email
+Order.where(id: id).update_all(state: 1)     # write, selector id, fields state
+Order.create(attrs)                          # write, no fields
+```
+
+An argument written as a variable or as `params` states no column, and the
+last line is the answer rather than a gap: nothing here guesses at what a
+variable was set to.
 
 A library that batches reads on the caller's behalf puts the model in an
 argument instead of on the receiver. graphql-ruby's dataloader is one: a
@@ -359,9 +388,12 @@ an association is declared on another class, which nothing here reads yet.
 A pack also says which of its library's methods give back one of the model,
 in `givesBack` on the same storage pattern. ActiveRecord's list is `find`,
 `first`, `create` and the rest that come back with a record, plus `where`,
-`order`, `limit` and the rest that come back with a relation. Every one of
-those, paired with every base class the pattern lists, goes into the facts
-as `givesBackOne(base, method)` while the run is being read:
+`order`, `limit` and the rest that come back with a relation. That is a
+different question from `reads`, and the two lists differ: `new` and `build`
+give back a record and ask the database for nothing, while `update_all` runs
+a query and gives back a count. Every method in `givesBack`, paired with
+every base class the pattern lists, goes into the facts as
+`givesBackOne(base, method)` while the run is being read:
 
 ```
 givesBackOne  ActiveRecord::Base  find

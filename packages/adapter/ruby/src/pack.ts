@@ -89,18 +89,35 @@ export interface RbClientResponse {
  * Ruby writes no return type, so a call is matched by what its receiver
  * inherits from. A model is a class that reaches one of these base classes,
  * whether the project declares an intermediate one or not.
+ *
+ * `reads` and `writes` are the whole of what the library does to the
+ * database. A method in neither list is the project's own or the
+ * language's, and the reach walk follows it instead.
  */
 export interface RbStoragePattern {
   /** Base classes the library gives a model, `ActiveRecord::Base` for Rails. */
   baseClasses: string[];
-  /** Methods that change what is stored. Anything else reads. */
+  /** Methods the library defines that change what is stored. */
   writes: string[];
+  /** Methods the library defines that run a query. */
+  reads: string[];
   /** Methods whose result is the model again: one record, or a relation a later read narrows to one. */
   givesBack: string[];
+  /** Methods that pick rows by the primary key when they are given a positional argument, and the column that is. */
+  byPrimaryKey?: RbPrimaryKeyLookup;
+  /** Read methods whose symbol arguments are the columns they ask for. */
+  columnArguments?: string[];
   /** How the library declares that one model reaches another, when it has such a thing. */
   associations?: RbAssociationCalls;
   /** Which database is behind the connection, which the project settles. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
+}
+
+/** Which methods take the primary key positionally, and what that column is called. */
+export interface RbPrimaryKeyLookup {
+  methods: string[];
+  /** The column the library uses unless a model says another. */
+  column: string;
 }
 
 /**

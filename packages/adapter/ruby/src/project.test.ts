@@ -478,6 +478,7 @@ describe("the method behind a field", () => {
         {
           baseClasses: ["ActiveRecord::Base"],
           writes: ["update", "destroy", "save"],
+          reads: ["find", "where", "first"],
           givesBack: ["find", "where", "first"],
           storageSystem: "postgresql",
         },
@@ -530,6 +531,7 @@ describe("the method behind a field", () => {
         {
           baseClasses: ["ActiveRecord::Base"],
           writes: ["update", "destroy", "save"],
+          reads: ["find", "where", "first"],
           givesBack: ["find", "where", "first"],
           storageSystem: "postgresql",
         },
@@ -740,7 +742,13 @@ describe("what a pack's storage patterns put in the facts", () => {
     protocol: "postgresql",
     discovery: [],
     storage: [
-      { baseClasses, writes: [], givesBack, storageSystem: "postgresql" },
+      {
+        baseClasses,
+        writes: [],
+        reads: [],
+        givesBack,
+        storageSystem: "postgresql",
+      },
     ],
   });
 

@@ -57,7 +57,9 @@ const graphqlWithActiveRecord: RubyPack = {
     {
       baseClasses: ["ActiveRecord::Base"],
       writes: ["create", "update", "destroy", "save", "delete_all"],
+      reads: ["find", "where", "first"],
       givesBack: ["find", "where", "first"],
+      byPrimaryKey: { methods: ["find"], column: "id" },
       storageSystem: "postgresql",
     },
   ],
