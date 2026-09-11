@@ -156,7 +156,7 @@ export function emitModelQueryFacts(
         ]);
       }
       for (const relationship of model.relationships ?? []) {
-        db.add("pyRelationshipConstructor", [
+        db.add("associationConstructor", [
           relationship.module,
           relationship.name,
         ]);

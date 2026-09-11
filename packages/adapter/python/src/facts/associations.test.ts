@@ -11,7 +11,6 @@ import { emitModuleImportFacts } from "../facts.js";
 import { findPythonFiles } from "../index.js";
 import { parsePython } from "../parser.js";
 import { bindModule } from "../scope.js";
-import { PYTHON_PROGRAM } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
 /** A project on disk, since which library a constructor comes from is what settles a match. */
@@ -30,8 +29,8 @@ async function factsFor(files: Record<string, string>): Promise<Database> {
     });
     emitValueFacts(db, file, tree.rootNode);
   }
-  db.add("pyRelationshipConstructor", ["sqlmodel", "Relationship"]);
-  db.add("pyRelationshipConstructor", ["sqlalchemy.orm", "relationship"]);
+  db.add("associationConstructor", ["sqlmodel", "Relationship"]);
+  db.add("associationConstructor", ["sqlalchemy.orm", "relationship"]);
   return db;
 }
 
@@ -48,7 +47,7 @@ function targetNames(db: Database): Record<string, string> {
     db.facts("binds").map((row) => [String(row[0]), String(row[1])]),
   );
   const found: Record<string, string> = {};
-  for (const row of db.facts("pyRelationshipField")) {
+  for (const row of db.facts("fieldCall")) {
     const target = bound.get(String(row[3]));
     found[String(row[1])] =
       target === undefined ? "" : (declared.get(target) ?? "");
@@ -58,7 +57,7 @@ function targetNames(db: Database): Record<string, string> {
 
 /** What a read of an expression settles on, which is what the shared rules decide. */
 function objectsBehind(db: Database, key: string): string[] {
-  askResolution(db, [key], "wanted", PYTHON_PROGRAM);
+  askResolution(db, [key]);
   return db
     .facts("wantedObjectOf")
     .filter((row) => String(row[0]) === key)
@@ -137,6 +136,68 @@ describe("the class a model's field is about", () => {
       participants: "Participant",
       reporter: "Participant",
     });
+  });
+
+  it("is read from either side of a union with None", async () => {
+    const db = await factsFor({
+      "models.py": [
+        "from sqlmodel import Relationship, SQLModel",
+        "",
+        "class Item(SQLModel, table=True):",
+        "    pass",
+        "",
+        "class User(SQLModel, table=True):",
+        "    leading: None | Item = Relationship()",
+        "    trailing: Item | None = Relationship()",
+        "",
+      ].join("\n"),
+    });
+
+    expect(targetNames(db)).toEqual({ leading: "Item", trailing: "Item" });
+  });
+
+  it("is left unstated for a union of two classes, which names no one of them", async () => {
+    const db = await factsFor({
+      "models.py": [
+        "from sqlmodel import Relationship, SQLModel",
+        "",
+        "class User(SQLModel, table=True):",
+        "    either: Item | Draft = Relationship()",
+        "",
+      ].join("\n"),
+    });
+
+    expect(db.size("fieldCall")).toBe(0);
+  });
+
+  it("is left unstated for an annotation written with interpolation", async () => {
+    const db = await factsFor({
+      "models.py": [
+        "from sqlmodel import Relationship, SQLModel",
+        "",
+        "class User(SQLModel, table=True):",
+        '    items: list[f"{prefix}Item"] = Relationship()',
+        "",
+      ].join("\n"),
+    });
+
+    expect(db.size("fieldCall")).toBe(0);
+  });
+
+  it("is left unstated when the call is given only keywords and no annotation", async () => {
+    const db = await factsFor({
+      "models.py": [
+        "from sqlalchemy.orm import relationship",
+        "from base import Base",
+        "",
+        "class Case(Base):",
+        '    participants = relationship(back_populates="case")',
+        "",
+      ].join("\n"),
+      "base.py": "class Base:\n    pass\n",
+    });
+
+    expect(db.size("fieldCall")).toBe(0);
   });
 
   it("is left unstated when the call is given neither an annotation nor a class", async () => {

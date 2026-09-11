@@ -921,6 +921,50 @@ describe("an association a class declares", () => {
 });
 
 /**
+ * The other way an adapter can say a class has one: it read a field
+ * given a call, `statuses = relationship("Status")`, and a pack said
+ * which callable makes that call an association.
+ */
+const FIELD_CALL_FACTS: Array<[string, ...string[]]> = [
+  ...ASSOCIATION_FACTS,
+  ["fieldCall", "Account", "statuses", "#relationship", "statusesTarget"],
+  ["imports", "#relationship", "sqlalchemy.orm", "relationship"],
+];
+
+describe("an association a pack's own constructor declares", () => {
+  it("settles a read of the field on the class the call is about", () => {
+    expect(
+      objectsOf(
+        [
+          ...FIELD_CALL_FACTS,
+          ["associationConstructor", "sqlalchemy.orm", "relationship"],
+        ],
+        "statusesRead",
+      ),
+    ).toEqual(["Status"]);
+  });
+
+  it("leaves a field alone when the callable comes from somewhere else", () => {
+    // A project function of the same name, imported from the project.
+    expect(
+      objectsOf(
+        [
+          ...ASSOCIATION_FACTS,
+          ["fieldCall", "Account", "statuses", "#own", "statusesTarget"],
+          ["imports", "#own", "app.helpers", "relationship"],
+          ["associationConstructor", "sqlalchemy.orm", "relationship"],
+        ],
+        "statusesRead",
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a field alone when no pack declared the callable", () => {
+    expect(objectsOf(FIELD_CALL_FACTS, "statusesRead")).toEqual([]);
+  });
+});
+
+/**
  * `class User(SQLModel, table=True)`, with `deactivate` written on it.
  * The pack's word is that `get`, `query` and `exec` take the class at
  * argument 0, that `select` does the same when it is imported from

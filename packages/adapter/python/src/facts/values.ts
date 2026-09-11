@@ -513,13 +513,10 @@ function assignedValue(right: PyNode): PyNode {
 function sideBesidesNone(node: PyNode): PyNode | null {
   const left = field(node, "left");
   const right = field(node, "right");
-  if (left === null || right === null) {
-    return null;
-  }
-  if (right.type === "none") {
+  if (right?.type === "none") {
     return left;
   }
-  if (left.type === "none") {
+  if (left?.type === "none") {
     return right;
   }
   return null;
@@ -531,24 +528,26 @@ function sideBesidesNone(node: PyNode): PyNode | null {
  * `Mapped[list["Item"]]` and `Item | None` are each about Item. A
  * forward reference comes back as the string it is written as.
  */
-function annotatedClass(node: PyNode): PyNode | null {
+function annotatedClass(node: PyNode | undefined): PyNode | null {
+  if (node === undefined) {
+    return null;
+  }
   if (node.type === "identifier" || node.type === "string") {
     return node;
   }
   if (node.type === "type") {
-    const inner = children(node)[0];
-    return inner === undefined ? null : annotatedClass(inner);
+    return annotatedClass(children(node)[0]);
   }
   if (node.type === "generic_type") {
     const parameter = children(node).find(
       (child) => child.type === "type_parameter",
     );
-    const first = parameter === undefined ? undefined : children(parameter)[0];
-    return first === undefined ? null : annotatedClass(first);
+    return annotatedClass(
+      parameter === undefined ? undefined : children(parameter)[0],
+    );
   }
   if (node.type === "binary_operator") {
-    const side = sideBesidesNone(node);
-    return side === null ? null : annotatedClass(side);
+    return annotatedClass(sideBesidesNone(node) ?? undefined);
   }
   return null;
 }
@@ -597,7 +596,7 @@ function fieldClassKey(
 
 /**
  * A class-body field given a call, with the callee and the class the
- * field is about. Which callee declares a relationship is a pack's word,
+ * field is about. Which callee makes it an association is a pack's word,
  * so the rules do that matching and this states only what it read.
  */
 function emitFieldCall(
@@ -616,14 +615,7 @@ function emitFieldCall(
   if (callee === null || target === null) {
     return;
   }
-  add(
-    emitter,
-    "pyRelationshipField",
-    classKey,
-    name,
-    valueKey(emitter, callee),
-    target,
-  );
+  add(emitter, "fieldCall", classKey, name, valueKey(emitter, callee), target);
 }
 
 /** The declaration a class-body statement makes, under whatever the grammar wraps it in. */

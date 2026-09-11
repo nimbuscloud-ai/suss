@@ -109,6 +109,10 @@ export type {
 //                               function n that module mod exports
 //   declaresAssociation(c, n, t)  class c declares an association n,
 //                               and t refers to the class it targets
+//   fieldCall(c, n, callee, t)  c's field n is given a call of callee,
+//                               and t refers to the class n is about
+//   associationConstructor(mod, n)  a pack's word: a field given the n
+//                               module mod exports is an association
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -577,6 +581,19 @@ export const RESOLUTION_RULES = [
     [v("cls"), v("n"), v("t")],
     [lit("declaresAssociation", v("cls"), v("n"), v("t"))],
     "declared association",
+  ),
+  // The same, for a language that buries the declaration in an ordinary
+  // assignment. Keying on the module the callable came from is what
+  // keeps a project function spelled the same way out.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("t")],
+    [
+      lit("fieldCall", v("cls"), v("n"), v("c"), v("t")),
+      lit("comesFrom", v("c"), v("m"), v("name")),
+      lit("associationConstructor", v("m"), v("name")),
+    ],
+    "constructed association",
   ),
 
   // The library base a class's ancestry arrives at, however many of a

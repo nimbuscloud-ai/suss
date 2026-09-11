@@ -46,6 +46,8 @@ describe("camelize", () => {
     ["status", "Status"],
     ["media_attachment", "MediaAttachment"],
     ["a_b_c", "ABC"],
+    ["_leading", "Leading"],
+    ["double__underscore", "DoubleUnderscore"],
   ])("reads %s as %s", (word, camelized) => {
     expect(camelize(word)).toBe(camelized);
   });

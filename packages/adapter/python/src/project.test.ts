@@ -1288,6 +1288,25 @@ describe("what a pack's model declarations put in the facts", () => {
     ).toEqual([["sqlmodel", "select", "0"]]);
   });
 
+  it("keys a relationship constructor by the module it comes from", () => {
+    const db = new Database();
+    emitModelQueryFacts(db, [
+      packWithModels([
+        {
+          baseNames: ["SQLModel"],
+          givesBack: [],
+          entryMethods: [],
+          entryFunctions: [],
+          relationships: [{ module: "sqlmodel", name: "Relationship" }],
+        },
+      ]),
+    ]);
+
+    expect(
+      db.facts("associationConstructor").map((row) => row.map(String)),
+    ).toEqual([["sqlmodel", "Relationship"]]);
+  });
+
   it("says nothing for a pack that declares no models at all", () => {
     const db = new Database();
     emitModelQueryFacts(db, [flaskRestxLike]);
@@ -1295,5 +1314,6 @@ describe("what a pack's model declarations put in the facts", () => {
     expect(db.size("givesBackOne")).toBe(0);
     expect(db.size("givesBackOneOfArgument")).toBe(0);
     expect(db.size("givesBackOneOfImport")).toBe(0);
+    expect(db.size("associationConstructor")).toBe(0);
   });
 });

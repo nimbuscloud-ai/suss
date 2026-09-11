@@ -161,6 +161,60 @@ describe("an association ActiveRecord declares", () => {
     ).toEqual([String(account?.[0])]);
   });
 
+  it("reads a name written as a string", async () => {
+    const db = await factsFor({
+      "models.rb": [
+        "class Status; end",
+        "",
+        "class User",
+        '  has_many "statuses"',
+        "end",
+        "",
+      ].join("\n"),
+    });
+
+    expect(targetsOf(db)).toEqual({ statuses: "Status" });
+  });
+
+  it("reads a written class pinned to the top level past a nearer one", async () => {
+    const db = await factsFor({
+      "top.rb": "class Status; end\n",
+      "admin.rb": [
+        "module Admin",
+        "  class Status; end",
+        "",
+        "  class Account",
+        "    has_many :statuses, class_name: '::Status'",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    });
+
+    expect(targetsOf(db)).toEqual({ statuses: "Status" });
+  });
+
+  it("says nothing for a call that names no association", async () => {
+    const db = await factsFor({
+      "models.rb": [
+        "class User",
+        "  has_many class_name: 'Status'",
+        "end",
+        "",
+      ].join("\n"),
+    });
+
+    expect(db.size("declaresAssociation")).toBe(0);
+  });
+
+  it("says nothing when the name is neither a symbol nor a string", async () => {
+    const db = await factsFor({
+      "models.rb": ["class User", "  has_many STATUSES", "end", ""].join("\n"),
+    });
+
+    expect(db.size("declaresAssociation")).toBe(0);
+  });
+
   it("is left out when no pack says what one looks like", async () => {
     const db = new Database();
     const tree = await parseRuby("class Account\n  has_many :statuses\nend\n");

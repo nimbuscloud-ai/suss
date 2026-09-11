@@ -98,10 +98,7 @@ export function associationsDeclaredIn(
     if (statement.type !== "call" || field(statement, "receiver") !== null) {
       continue;
     }
-    const method = field(statement, "method")?.text;
-    if (method === undefined) {
-      continue;
-    }
+    const method = field(statement, "method")?.text ?? "";
     for (const declaration of calls) {
       const plural = declaration.plural.includes(method);
       if (!plural && !declaration.singular.includes(method)) {
