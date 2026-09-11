@@ -245,6 +245,7 @@ export {
 export {
   type WrapperIndex,
   wrapperChain,
+  wrapperFor,
   wrapperIndex,
 } from "./wrapperChain.js";
 

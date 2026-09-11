@@ -18,6 +18,7 @@ import {
   readWrapperMetadata,
   withinScope,
   withWrapperMetadata,
+  wrapperFor,
   wrapperIndex,
 } from "@suss/behavioral-ir";
 
@@ -83,7 +84,7 @@ function composeOne(
         };
 
   const wrappers = covering.flatMap((reference): ResolvedWrapper[] => {
-    const found = chain.find(reference);
+    const found = wrapperFor(chain, reference);
     return found === undefined ? [] : [{ reference, summary: found }];
   });
   if (wrappers.length === 0) {

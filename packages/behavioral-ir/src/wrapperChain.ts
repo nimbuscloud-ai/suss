@@ -12,11 +12,8 @@ import { readWrapperMetadata } from "./metadata.js";
 
 import type { BehavioralSummary, WrapperReference } from "./index.js";
 
-/** The summaries of a run, ready to answer where a wrapper reference points. */
-export interface WrapperIndex {
-  /** The summary this reference points at, or undefined when the run has none. */
-  find(reference: WrapperReference): BehavioralSummary | undefined;
-}
+/** A run's summaries by the file and name a wrapper reference spells. */
+export type WrapperIndex = ReadonlyMap<string, BehavioralSummary[]>;
 
 function keyOf(file: string, name: string): string {
   return `${file}::${name}`;
@@ -35,21 +32,26 @@ export function wrapperIndex(
     }
     sharing.push(summary);
   }
+  return byKey;
+}
 
-  return {
-    // Two functions written out at their registrations in one file go
-    // by the same name, and the line is what tells them apart.
-    find: (reference) => {
-      const sharing = byKey.get(keyOf(reference.file, reference.name)) ?? [];
-      if (reference.line === undefined) {
-        return sharing[0];
-      }
-      return (
-        sharing.find((one) => one.location.range.start === reference.line) ??
-        sharing[0]
-      );
-    },
-  };
+/**
+ * The summary this reference points at, or undefined when the run has
+ * none. Two functions written out at their registrations in one file go
+ * by the same name, and the line is what tells them apart.
+ */
+export function wrapperFor(
+  index: WrapperIndex,
+  reference: WrapperReference,
+): BehavioralSummary | undefined {
+  const sharing = index.get(keyOf(reference.file, reference.name)) ?? [];
+  if (reference.line === undefined) {
+    return sharing[0];
+  }
+  return (
+    sharing.find((one) => one.location.range.start === reference.line) ??
+    sharing[0]
+  );
 }
 
 /** The chain recorded on a unit, in the order it runs. */

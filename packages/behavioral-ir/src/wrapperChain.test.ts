@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { withWrapperMetadata } from "./metadata.js";
-import { wrapperChain, wrapperIndex } from "./wrapperChain.js";
+import { wrapperChain, wrapperFor, wrapperIndex } from "./wrapperChain.js";
 
 import type { BehavioralSummary } from "./index.js";
 
@@ -23,23 +23,25 @@ describe("wrapperIndex", () => {
   const index = wrapperIndex([first, second]);
 
   it("takes the one that starts on the line the reference gives", () => {
-    expect(index.find({ file: "src/app.ts", name: "use", line: 9 })).toBe(
-      second,
-    );
+    expect(
+      wrapperFor(index, { file: "src/app.ts", name: "use", line: 9 }),
+    ).toBe(second);
   });
 
   it("takes the first of that name when the reference gives no line", () => {
-    expect(index.find({ file: "src/app.ts", name: "use" })).toBe(first);
+    expect(wrapperFor(index, { file: "src/app.ts", name: "use" })).toBe(first);
   });
 
   it("falls back to the first when no summary starts on that line", () => {
-    expect(index.find({ file: "src/app.ts", name: "use", line: 40 })).toBe(
-      first,
-    );
+    expect(
+      wrapperFor(index, { file: "src/app.ts", name: "use", line: 40 }),
+    ).toBe(first);
   });
 
   it("finds nothing for a file the run has no summaries from", () => {
-    expect(index.find({ file: "src/other.ts", name: "use" })).toBeUndefined();
+    expect(
+      wrapperFor(index, { file: "src/other.ts", name: "use" }),
+    ).toBeUndefined();
   });
 });
 

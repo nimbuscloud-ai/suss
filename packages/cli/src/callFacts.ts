@@ -21,6 +21,7 @@ import {
   displayLabel,
   summaryIdentifier,
   wrapperChain,
+  wrapperFor,
   wrapperIndex,
 } from "@suss/behavioral-ir";
 import {
@@ -128,7 +129,7 @@ export function readCallFacts(
     const fn = functionOf(summary);
     units.set(fn, [...(units.get(fn) ?? []), summary]);
     for (const reference of wrapperChain(summary)) {
-      const wrapper = chain.find(reference);
+      const wrapper = wrapperFor(chain, reference);
       if (wrapper !== undefined) {
         wraps.push([fn, functionOf(wrapper), reference.name]);
       }
