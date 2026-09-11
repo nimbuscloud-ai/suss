@@ -3,10 +3,10 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 933,
-    "internal": 3449,
-    "consumers": 1857,
-    "pairs": 1854,
-    "unfollowedCalls": 506,
+    "internal": 3459,
+    "consumers": 1861,
+    "pairs": 1858,
+    "unfollowedCalls": 505,
     "findingErrors": 0
   },
   "packages": {
@@ -27,9 +27,9 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 89,
-      "internal": 834,
-      "consumers": 205,
-      "unfollowedCalls": 113
+      "internal": 843,
+      "consumers": 202,
+      "unfollowedCalls": 112
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
@@ -41,7 +41,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 43,
-      "internal": 225,
+      "internal": 226,
       "consumers": 191,
       "unfollowedCalls": 42
     },
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 30,
       "internal": 537,
-      "consumers": 330,
+      "consumers": 335,
       "unfollowedCalls": 57
     },
     "packages/client/aiohttp": {
@@ -70,7 +70,7 @@
       "name": "@suss/client-apollo",
       "exports": 2,
       "internal": 1,
-      "consumers": 21,
+      "consumers": 23,
       "unfollowedCalls": 0
     },
     "packages/client/axios": {

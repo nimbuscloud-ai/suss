@@ -534,13 +534,15 @@ function projectSignature(project: Project): string {
 
 function buildFragmentIndex(project: Project): FragmentDefinitions {
   const definitions = new Map<string, string | null>();
-  const sourceFiles = [...project.getSourceFiles()].sort((left, right) =>
-    left.getFilePath().localeCompare(right.getFilePath()),
-  );
+  const sourceFiles = [...project.getSourceFiles()]
+    .filter(
+      (sourceFile) =>
+        !sourceFile.isInNodeModules() && !sourceFile.isDeclarationFile(),
+    )
+    .sort((left, right) =>
+      left.getFilePath().localeCompare(right.getFilePath()),
+    );
   for (const sourceFile of sourceFiles) {
-    if (sourceFile.isInNodeModules() || sourceFile.isDeclarationFile()) {
-      continue;
-    }
     // The text test comes first because this runs over every file the
     // project has, and walking the AST of each is the expensive half.
     if (!FRAGMENT_DEFINITION_TEXT.test(sourceFile.getFullText())) {
@@ -550,7 +552,48 @@ function buildFragmentIndex(project: Project): FragmentDefinitions {
       recordFragmentDefinitions(text, definitions);
     }
   }
+  for (const text of graphqlFileTextsNear(sourceFiles)) {
+    recordFragmentDefinitions(text, definitions);
+  }
   return definitions;
+}
+
+/**
+ * What the `.graphql` and `.gql` files beside the source say. Codegen
+ * scans them for documents the same way it scans the TypeScript, so a
+ * fragment written in one is a fragment the build can put into any
+ * document that spreads it.
+ */
+function graphqlFileTextsNear(
+  sourceFiles: ReadonlyArray<SourceFile>,
+): string[] {
+  const roots = [
+    ...new Set(
+      sourceFiles.map((sourceFile) => path.dirname(sourceFile.getFilePath())),
+    ),
+  ].sort();
+  const texts: string[] = [];
+  for (const root of roots) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of [...entries].sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      if (entry.isFile() && /\.(graphql|gql)$/.test(entry.name)) {
+        try {
+          texts.push(fs.readFileSync(path.join(root, entry.name), "utf8"));
+        } catch {
+          // A file the run cannot read says nothing either way.
+        }
+      }
+    }
+  }
+  return texts;
 }
 
 /**

@@ -1,5 +1,9 @@
 // discovery.test.ts: exhaustive tests for discoverUnits (Task 2.4)
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -2579,6 +2583,50 @@ describe("graphqlHookCall discovery, spreads resolved from the project", () => {
       "fragment UserCard on User",
     );
     expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("indexes a fragment written in a graphql file beside the source", () => {
+    const project = createProject();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-fragment-index-"));
+    fs.writeFileSync(
+      path.join(dir, "userCard.graphql"),
+      "fragment UserCard on User { id name avatarUrl }\n",
+    );
+    const file = project.createSourceFile(
+      path.join(dir, "profile.ts"),
+      profileQueryModule("query Profile { user { ...UserCard } }"),
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    const document = units[0].operationInfo?.document ?? "";
+    expect(document).toContain("fragment UserCard on User");
+    expect(document).toContain("avatarUrl");
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("uses neither body when a graphql file and a module disagree", () => {
+    const project = createProject();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-fragment-index-"));
+    fs.writeFileSync(
+      path.join(dir, "userCard.graphql"),
+      "fragment UserCard on User { id email }\n",
+    );
+    project.createSourceFile(
+      path.join(dir, "userCard.ts"),
+      `
+      import { gql } from "./generated/gql.js";
+      export const UserCardFragment = gql(/* GraphQL */ \`
+        fragment UserCard on User { id name }
+      \`);
+    `,
+    );
+    const file = project.createSourceFile(
+      path.join(dir, "profile.ts"),
+      profileQueryModule("query Profile { user { ...UserCard } }"),
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.unresolvedFragments).toEqual(["UserCard"]);
+    expect(units[0].operationInfo?.ambiguousFragments).toEqual(["UserCard"]);
+    expect(units[0].operationInfo?.document).not.toContain("fragment UserCard");
   });
 
   it("leaves a name nothing in the project defines unresolved", () => {

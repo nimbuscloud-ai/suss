@@ -98,7 +98,7 @@ export function pairGraphqlOperations(
     const unresolvedFragments = meta?.unresolvedFragments ?? [];
     if (unresolvedFragments.length > 0) {
       findings.push(
-        danglingSpreadFinding(
+        ...danglingSpreadFindings(
           operation,
           unresolvedFragments,
           meta?.fragmentRegistry,
@@ -668,16 +668,26 @@ function ambiguousProviderFinding(
  * and "unknown" (or no value, on an older artifact) means a client
  * construction could not be read, so the throw cannot be claimed.
  */
-function danglingSpreadFinding(
+function danglingSpreadFindings(
   operation: BehavioralSummary,
   fragmentNames: string[],
   registry: "configured" | "absent" | "unknown" | undefined,
   ambiguous: string[],
-): Finding {
-  if (registry === "absent") {
-    return unknownFragmentFinding(operation, fragmentNames);
+): Finding[] {
+  if (registry !== "absent") {
+    return [unresolvedFragmentsFinding(operation, fragmentNames, ambiguous)];
   }
-  return unresolvedFragmentsFinding(operation, fragmentNames, ambiguous);
+  // A name the project defines two ways is defined, so the query does
+  // not throw on it; the reader could not say which body the build
+  // takes, which is the info finding.
+  const clashing = fragmentNames.filter((name) => ambiguous.includes(name));
+  const missing = fragmentNames.filter((name) => !ambiguous.includes(name));
+  return [
+    ...(missing.length > 0 ? [unknownFragmentFinding(operation, missing)] : []),
+    ...(clashing.length > 0
+      ? [unresolvedFragmentsFinding(operation, clashing, clashing)]
+      : []),
+  ];
 }
 
 /**
