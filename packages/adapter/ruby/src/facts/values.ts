@@ -4,7 +4,14 @@
 
 import { startsAtName, valueLeftByWrites } from "@suss/resolution";
 
-import { field, NESTING_TYPES, OWN_BODY_TYPES } from "../ast.js";
+import {
+  bareCallArgumentGroups,
+  field,
+  INCLUDE_CALL,
+  NESTING_TYPES,
+  OWN_BODY_TYPES,
+  PREPEND_CALL,
+} from "../ast.js";
 import {
   collectWrites,
   ownerOfName,
@@ -645,6 +652,83 @@ function emitCandidates(
 
 const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
+/** A name a rule can join on. A mixin written any other way has none. */
+const CONSTANT_REF_TYPES = new Set(["constant", "scope_resolution"]);
+
+/**
+ * The modules given to one kind of mixin call, in the order Ruby's own
+ * ancestors list has them. Each call goes in front of the ones before
+ * it, and `include A, B` puts A in front of B, which is why the
+ * arguments of one call and the calls themselves are each reversed.
+ */
+function mixedInConstants(body: RbNode, callName: string): RbNode[] {
+  return bareCallArgumentGroups(body, callName)
+    .flatMap((group) => [...group].reverse())
+    .reverse()
+    .map(readThrough)
+    .filter((argument) => CONSTANT_REF_TYPES.has(argument.type));
+}
+
+/**
+ * A module mixed in with `include` or `prepend` is an ancestor in
+ * Ruby's own lookup, so `extends` is the fact for it and every rule
+ * that already walks an ancestry reaches what the module declares.
+ *
+ * `extendsNamed` is left alone. It says which library base a class
+ * arrives at, and a module is never one, so naming a mixin there would
+ * give a class a second base for a pack to match on.
+ */
+function emitMixinFacts(
+  emitter: Emitter,
+  classKey: string,
+  body: RbNode,
+  callName: string,
+): void {
+  for (const mixin of mixedInConstants(body, callName)) {
+    add(emitter, "extends", classKey, valueKey(emitter, mixin));
+  }
+}
+
+/**
+ * A receiverless call whose block runs on the class or module it is
+ * written in, and whether that has to be a module. ActiveSupport's
+ * `included` and `prepended` run their block on the class doing the
+ * including; `with_options` runs its block with extra keywords wherever
+ * it is written.
+ */
+const BLOCK_RUNS_ON_BODY: Record<string, { moduleOnly: boolean }> = {
+  included: { moduleOnly: true },
+  prepended: { moduleOnly: true },
+  with_options: { moduleOnly: false },
+};
+
+/** The body of a block that runs on the enclosing class or module, or null when this statement has no such block. */
+function blockRunOnBody(statement: RbNode, isModule: boolean): RbNode | null {
+  if (statement.type !== "call" || field(statement, "receiver") !== null) {
+    return null;
+  }
+  const method = field(statement, "method");
+  const runs = method === null ? undefined : BLOCK_RUNS_ON_BODY[method.text];
+  if (runs === undefined || (runs.moduleOnly && !isModule)) {
+    return null;
+  }
+  const block = field(statement, "block");
+  return block === null ? null : field(block, "body");
+}
+
+/**
+ * The statements a class or module body runs, with a block that runs on
+ * the body itself opened out where it is written. Without that, a
+ * method or a value a concern declares inside `included do` belongs to
+ * the block and nothing can read it off the module.
+ */
+function bodyStatementsRun(body: RbNode, isModule: boolean): RbNode[] {
+  return children(body).flatMap((statement) => {
+    const inner = blockRunOnBody(statement, isModule);
+    return inner === null ? [statement] : bodyStatementsRun(inner, isModule);
+  });
+}
+
 /**
  * A class or a module is an object containing its methods, which is the
  * treatment an array and a hash already get. That is what lets a method
@@ -655,6 +739,14 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   const classKey = nodeId(emitter.filePath, cls);
   add(emitter, "objectValue", classKey);
 
+  const body = field(cls, "body");
+  // Ruby looks a method up through what is prepended, then the class
+  // itself, then what is included, then the superclass chain.
+  if (body !== null) {
+    emitMixinFacts(emitter, classKey, body, PREPEND_CALL);
+    emitMixinFacts(emitter, classKey, body, INCLUDE_CALL);
+  }
+
   const superclass = field(cls, "superclass");
   const base = superclass === null ? null : (children(superclass)[0] ?? null);
   if (base !== null) {
@@ -664,14 +756,15 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     add(emitter, "extendsNamed", classKey, base.text);
   }
 
-  const body = field(cls, "body");
   const collected = new Map<string, NameWrite[]>();
   const within: Emitter = {
     ...emitter,
     selfKey: classKey,
     instanceWrites: collected,
   };
-  for (const statement of body === null ? [] : children(body)) {
+  const statements =
+    body === null ? [] : bodyStatementsRun(body, cls.type === "module");
+  for (const statement of statements) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
       const right = field(statement, "right");

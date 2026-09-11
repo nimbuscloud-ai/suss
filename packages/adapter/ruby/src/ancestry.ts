@@ -3,7 +3,9 @@
 
 import {
   bareCallArgumentGroups,
+  INCLUDE_CALL,
   instanceMethodsByName,
+  PREPEND_CALL,
   runStatements,
 } from "./ast.js";
 import { resolveConstantFile } from "./constantPath.js";
@@ -15,10 +17,6 @@ import type { BlockConfigures } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { RbNode } from "./parser.js";
 import type { ClassInfo } from "./scope.js";
-
-/** Ruby's own module keywords. `extend` is not one: it adds class methods, and a field is answered by an instance method. */
-const INCLUDE_CALL = "include";
-const PREPEND_CALL = "prepend";
 
 /** One class or module body a walk reached, with the definitions its own file makes, since a bare constant is shadowed per file. */
 export interface ReachedBody {

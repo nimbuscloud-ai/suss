@@ -115,6 +115,15 @@ export const OWN_BODY_TYPES = new Set([
 /** A class and a module both open a body a definition can be written inside. */
 export const NESTING_TYPES = new Set(["class", "module"]);
 
+/**
+ * Ruby's own module keywords. `extend` is not one: it adds class
+ * methods, and a field is answered by an instance method. The syntactic
+ * ancestry and the facts read the same two calls, so both sides agree on
+ * which constant is mixed in.
+ */
+export const INCLUDE_CALL = "include";
+export const PREPEND_CALL = "prepend";
+
 /** A call's arguments are values it is handed, not statements the body runs. */
 const ARGUMENT_LIST_TYPE = "argument_list";
 
