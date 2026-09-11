@@ -20,7 +20,12 @@ import { Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "../moduleExports.js";
 
-import type { ImportDeclaration, Project, SourceFile } from "ts-morph";
+import type {
+  ImportDeclaration,
+  Project,
+  SourceFile,
+  Symbol as TsSymbol,
+} from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -379,8 +384,8 @@ function assembledDocumentResolution(
       },
     };
   }
-  const dangling = danglingFragmentSpreads(text);
-  if (dangling === null) {
+  const spreads = fragmentSpreadsIn(text);
+  if (spreads === null) {
     if (interpolations.length === 0) {
       // Unparseable text with nothing dropped is what the reader found;
       // hand it through unchanged and let the caller's parse decide.
@@ -393,7 +398,7 @@ function assembledDocumentResolution(
       },
     };
   }
-  const filled = fillDanglingSpreads(text, dangling, arg, assembly);
+  const filled = fillDanglingSpreads(text, spreads, arg, assembly);
   if (filled.unresolved.length > 0) {
     return {
       document: filled.text,
@@ -424,32 +429,35 @@ interface FilledDocument {
 
 /**
  * Give a build-time assembled document a definition for each spread in
- * it, out of the fragments the project writes elsewhere. A
- * document a library's tag sends as written gets nothing: whatever its
- * template does not define is dangling at run time, which is what the
- * spreads left over say. A fragment can spread another, so this repeats
- * until it appends nothing new, and the set of appended names stops a
- * cycle.
+ * it, out of the fragments the project writes elsewhere. A document a
+ * library's tag sends as written gets nothing: whatever its template
+ * does not define is dangling at run time, which is what the spreads
+ * left over say.
+ *
+ * An appended fragment brings the spreads it makes with it, so this
+ * goes on until there are none left to look up. A name already in the
+ * document, appended or unresolved is settled, which is what stops a
+ * cycle between two fragments that spread each other.
  */
 function fillDanglingSpreads(
   text: string,
-  dangling: string[],
+  spreads: FragmentSpreads,
   arg: Node,
   assembly: DocumentAssembly,
 ): FilledDocument {
-  if (dangling.length === 0 || assembly.tagOrigin !== "project") {
-    return { text, unresolved: dangling, ambiguous: [] };
+  if (spreads.dangling.length === 0 || assembly.tagOrigin !== "project") {
+    return { text, unresolved: spreads.dangling, ambiguous: [] };
   }
   const definitions = projectFragmentDefinitions(arg.getProject());
-  const appended = new Set<string>();
+  const settled = new Set<string>(spreads.defined);
   const unresolved = new Set<string>();
   const ambiguous = new Set<string>();
   let filled = text;
-  let pending = dangling;
+  let pending = spreads.dangling;
   while (pending.length > 0) {
-    let grew = false;
+    const brought: string[] = [];
     for (const name of pending) {
-      if (appended.has(name) || unresolved.has(name)) {
+      if (settled.has(name) || unresolved.has(name)) {
         continue;
       }
       const definition = definitions.get(name);
@@ -462,20 +470,11 @@ function fillDanglingSpreads(
         ambiguous.add(name);
         continue;
       }
-      filled += `\n\n${definition}`;
-      appended.add(name);
-      grew = true;
+      filled += `\n\n${definition.text}`;
+      settled.add(name);
+      brought.push(...definition.spreads);
     }
-    if (!grew) {
-      break;
-    }
-    const left = danglingFragmentSpreads(filled);
-    if (left === null) {
-      // A printed definition appended to a document that parsed parses
-      // too, so this only guards against a graphql-js surprise.
-      return { text, unresolved: dangling, ambiguous: [] };
-    }
-    pending = left;
+    pending = brought;
   }
   return {
     text: filled,
@@ -484,11 +483,19 @@ function fillDanglingSpreads(
   };
 }
 
+/** One fragment definition, ready to append to a document. */
+interface IndexedFragment {
+  /** The definition as printed GraphQL. */
+  text: string;
+  /** The fragments it spreads, which have to be appended with it. */
+  spreads: string[];
+}
+
 /**
- * Every fragment the project defines, by name, as printed GraphQL. A
- * `null` value means two documents define that name differently.
+ * Every fragment the project defines, by name. A `null` value means two
+ * documents define that name differently.
  */
-type FragmentDefinitions = ReadonlyMap<string, string | null>;
+type FragmentDefinitions = ReadonlyMap<string, IndexedFragment | null>;
 
 interface CachedFragmentIndex {
   definitions: FragmentDefinitions;
@@ -533,7 +540,7 @@ function projectSignature(project: Project): string {
 }
 
 function buildFragmentIndex(project: Project): FragmentDefinitions {
-  const definitions = new Map<string, string | null>();
+  const definitions = new Map<string, IndexedFragment | null>();
   const sourceFiles = [...project.getSourceFiles()]
     .filter(
       (sourceFile) =>
@@ -621,7 +628,7 @@ function documentTextsIn(sourceFile: SourceFile): string[] {
 
 function recordFragmentDefinitions(
   text: string,
-  definitions: Map<string, string | null>,
+  definitions: Map<string, IndexedFragment | null>,
 ): void {
   let doc: GraphqlDocumentNode;
   try {
@@ -635,15 +642,21 @@ function recordFragmentDefinitions(
     }
     const name = definition.name.value;
     const printed = graphqlPrint(definition);
-    if (!definitions.has(name)) {
-      definitions.set(name, printed);
+    const found = definitions.get(name);
+    if (found === undefined) {
+      const spreads = new Set<string>();
+      collectDanglingSpreads(definition.selectionSet, NO_NAMES, spreads);
+      definitions.set(name, { text: printed, spreads: [...spreads] });
       continue;
     }
-    if (definitions.get(name) !== printed) {
+    if (found?.text !== printed) {
       definitions.set(name, null);
     }
   }
 }
+
+/** Nothing is defined here, so every spread counts as one to collect. */
+const NO_NAMES: ReadonlySet<string> = new Set();
 
 function describeInterpolations(interpolations: string[]): string {
   const quoted = interpolations.map((text) => `\`${text}\``).join(", ");
@@ -652,11 +665,19 @@ function describeInterpolations(interpolations: string[]): string {
     : `expressions ${quoted}`;
 }
 
+/** What one document says about fragments. */
+interface FragmentSpreads {
+  /** The fragments the document defines. */
+  defined: ReadonlySet<string>;
+  /** The spreads in it with no definition there, sorted so two runs agree. */
+  dangling: string[];
+}
+
 /**
- * Fragment spreads in `text` with no matching definition in it, or
- * null when the text does not parse. Sorted so two runs agree.
+ * The fragments `text` defines and the spreads it leaves dangling, or
+ * null when the text does not parse.
  */
-function danglingFragmentSpreads(text: string): string[] | null {
+function fragmentSpreadsIn(text: string): FragmentSpreads | null {
   let doc: GraphqlDocumentNode;
   try {
     doc = graphqlParse(text);
@@ -678,7 +699,7 @@ function danglingFragmentSpreads(text: string): string[] | null {
       collectDanglingSpreads(def.selectionSet, defined, dangling);
     }
   }
-  return [...dangling].sort();
+  return { defined, dangling: [...dangling].sort() };
 }
 
 function collectDanglingSpreads(
@@ -793,49 +814,44 @@ type DocumentTagOrigin = "project" | "library";
  * everywhere it appears without one.
  */
 function documentTagOrigin(tag: Node): DocumentTagOrigin {
-  const declaredIn = tagDeclarationFile(tag);
-  if (declaredIn !== null) {
-    return declaredIn.isInNodeModules() ? "library" : "project";
-  }
-  const importDeclaration = importDeclarationOf(tag);
-  if (importDeclaration === null) {
+  const symbol = tag.getSymbol();
+  if (symbol === undefined) {
     return "library";
   }
-  // The generated directory is usually gitignored, so in a fresh
-  // checkout the specifier resolves to nothing and how it is written
-  // is all there is to go on.
+  const importDeclaration = importCarrying(symbol);
+  if (importDeclaration === null) {
+    return originOf(declarationFileOf(symbol));
+  }
+  // Through the alias chain, so a project module that passes a
+  // library's tag along is still that library's.
+  const target = declarationFileOf(resolveAliasedSymbol(symbol));
+  if (target !== null) {
+    return originOf(target);
+  }
+  // The import resolves to nothing, which is the usual state of the
+  // generated directory: it is gitignored, so a fresh checkout has only
+  // the specifier to go on.
   return isProjectSpecifier(importDeclaration) ? "project" : "library";
 }
 
-/**
- * The file the tag is declared in, through any re-export chain, so a
- * project module that passes a library's tag along is still that
- * library's. Null when the import resolves to nothing.
- */
-function tagDeclarationFile(tag: Node): SourceFile | null {
-  const symbol = tag.getSymbol();
-  if (symbol === undefined) {
-    return null;
-  }
-  const resolved = resolveAliasedSymbol(symbol) ?? symbol;
-  for (const declaration of resolved.getDeclarations()) {
-    if (
-      Node.isImportSpecifier(declaration) ||
-      Node.isImportClause(declaration)
-    ) {
-      continue;
+function originOf(declaredIn: SourceFile | null): DocumentTagOrigin {
+  return declaredIn === null || declaredIn.isInNodeModules()
+    ? "library"
+    : "project";
+}
+
+/** The file a name is written in, past the imports that carry it. */
+function declarationFileOf(symbol: TsSymbol | undefined): SourceFile | null {
+  for (const declaration of symbol?.getDeclarations() ?? []) {
+    if (importDeclarationAround(declaration) === null) {
+      return declaration.getSourceFile();
     }
-    return declaration.getSourceFile();
   }
   return null;
 }
 
-/** The `import ... from "..."` a tag's name was brought in by. */
-function importDeclarationOf(tag: Node): ImportDeclaration | null {
-  const symbol = tag.getSymbol();
-  if (symbol === undefined) {
-    return null;
-  }
+/** The import a name came in through, or null when it is written here. */
+function importCarrying(symbol: TsSymbol): ImportDeclaration | null {
   for (const declaration of symbol.getDeclarations()) {
     const importDeclaration = importDeclarationAround(declaration);
     if (importDeclaration !== null) {
@@ -845,6 +861,7 @@ function importDeclarationOf(tag: Node): ImportDeclaration | null {
   return null;
 }
 
+/** The `import ... from "..."` a declaration is part of, if it is one. */
 function importDeclarationAround(declaration: Node): ImportDeclaration | null {
   if (Node.isImportSpecifier(declaration)) {
     return declaration.getImportDeclaration();
