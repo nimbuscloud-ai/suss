@@ -2,11 +2,11 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 930,
-    "internal": 3452,
-    "consumers": 1849,
-    "pairs": 1846,
-    "unfollowedCalls": 504,
+    "exports": 933,
+    "internal": 3449,
+    "consumers": 1857,
+    "pairs": 1854,
+    "unfollowedCalls": 506,
     "findingErrors": 0
   },
   "packages": {
@@ -28,13 +28,13 @@
       "name": "@suss/adapter-typescript",
       "exports": 89,
       "internal": 834,
-      "consumers": 204,
+      "consumers": 205,
       "unfollowedCalls": 113
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 119,
-      "internal": 41,
+      "exports": 122,
+      "internal": 42,
       "consumers": 11,
       "unfollowedCalls": 7
     },
@@ -55,9 +55,9 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 30,
-      "internal": 536,
-      "consumers": 325,
-      "unfollowedCalls": 55
+      "internal": 537,
+      "consumers": 330,
+      "unfollowedCalls": 57
     },
     "packages/client/aiohttp": {
       "name": "@suss/client-aiohttp",
@@ -202,8 +202,8 @@
     "packages/extractor": {
       "name": "@suss/extractor",
       "exports": 69,
-      "internal": 89,
-      "consumers": 19,
+      "internal": 84,
+      "consumers": 21,
       "unfollowedCalls": 15
     },
     "packages/framework/activerecord": {
