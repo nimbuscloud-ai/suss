@@ -4,9 +4,9 @@
  * One rule covers both ways a call is written. It is database work when the
  * pack lists its method as a read or a write, the class behind its receiver
  * reaches a base class the pack lists, and the project does not declare that
- * method itself. Every other call is one for the reach walk to follow, so a
- * constructor, a transaction and a project method on a model all say nothing
- * here. The README says why ancestry.
+ * method itself. A chain counts once, at the outermost call the library
+ * defines, and every other call is left to the reach walk. The README says
+ * why ancestry.
  *
  * The class behind the receiver comes from the constant bindings for a chain
  * written from a constant and from the resolution rules otherwise. A loader
@@ -387,10 +387,25 @@ function receiverClass(
 }
 
 /**
+ * The call in a chain that did the database work: the outermost one whose
+ * method the library defines. What comes after it is a method on the result,
+ * which the reach walk follows, so `Order.find(id)&.summary` is still the
+ * `find`. Null when the library defines none of them.
+ */
+function libraryCallIn(call: RbNode, options: RbStorageOptions): RbNode | null {
+  return (
+    chainLinks(call).find((link) =>
+      someLibraryDefines(options, methodOf(link)),
+    ) ?? null
+  );
+}
+
+/**
  * The database work one chain does, whether it was written from the model
- * itself or from a record in hand. A method the project declares says
- * nothing here: the reach walk steps into that body, which reports the
- * work it does, and recording it here as well would count it twice.
+ * itself or from a record in hand. A method the project declares on the
+ * class says nothing here: the reach walk steps into that body, which
+ * reports the work it does, and recording it here as well would count it
+ * twice.
  */
 function modelCallEffects(
   call: RbNode,
@@ -398,11 +413,12 @@ function modelCallEffects(
   options: RbStorageOptions,
   enclosing: RbNode | null,
 ): Effect[] {
-  const method = methodOf(call);
-  if (!someLibraryDefines(options, method)) {
+  const worked = libraryCallIn(call, options);
+  if (worked === null) {
     return [];
   }
-  const target = receiverClass(call, file, options, enclosing);
+  const method = methodOf(worked);
+  const target = receiverClass(worked, file, options, enclosing);
   if (target === undefined) {
     return [];
   }
@@ -420,12 +436,12 @@ function modelCallEffects(
     }
     return [
       storageEffect(
-        call,
+        worked,
         target.container,
         pattern,
         kind,
-        selectorOf(call, pattern),
-        fieldsOf(call, pattern, kind),
+        selectorOf(worked, pattern),
+        fieldsOf(worked, pattern, kind),
       ),
     ];
   }
@@ -531,12 +547,14 @@ function receiverKeysToAsk(
 ): string[] {
   const keys: string[] = [];
   for (const call of chains) {
-    const receiver = receiverOf(call);
-    if (
-      receiver !== null &&
-      rootConstant(call) === null &&
-      someLibraryDefines(options, methodOf(call))
-    ) {
+    // The same call the effect would be recorded at, so
+    // `@status.update(x).present?` asks about `@status`.
+    const worked = libraryCallIn(call, options);
+    if (worked === null || rootConstant(worked) !== null) {
+      continue;
+    }
+    const receiver = receiverOf(worked);
+    if (receiver !== null) {
       keys.push(readKey(file, receiver, enclosing));
     }
   }

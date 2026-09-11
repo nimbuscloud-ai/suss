@@ -112,8 +112,10 @@ the module, and the module is in every including model's ancestry.
 ## What comes out
 
 One `interaction` effect per chain, with `class: "storage-access"`. The chain
-above is one read, not three calls. The method the chain ends with tells a
-read from a write.
+above is one read, not three calls. The effect lands on the outermost call
+ActiveRecord defines, and that call tells a read from a write. A method of
+your own written after it, as in `Status.find(id)&.proper`, does not hide the
+read: the reach walk follows that method and reports whatever its body does.
 
 `selector` is what the chain picked rows by: the keywords of every read along
 it, plus the primary key where a lookup by it was given one. `fields` is what

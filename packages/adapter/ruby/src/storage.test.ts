@@ -154,7 +154,7 @@ const ACCOUNTS_CONTROLLER = [
   "",
 ].join("\n");
 
-/** A model with a class method of the project's own, and one it takes from the library. */
+/** A model with a class method and an instance method of the project's own. */
 const PROJECT_METHODS = [
   "class ApplicationRecord < ActiveRecord::Base",
   "end",
@@ -162,6 +162,10 @@ const PROJECT_METHODS = [
   "class Order < ApplicationRecord",
   "  def self.recent_for(account)",
   "    where(account: account)",
+  "  end",
+  "",
+  "  def summary",
+  "    name",
   "  end",
   "end",
   "",
@@ -456,10 +460,58 @@ describe("the database work a Ruby body does", () => {
       ).toBe(false);
     });
 
-    it("says nothing about a chain a project method ends, since the walk follows it", async () => {
-      expect(
-        await effectsFor("found = Order.where(id: id).recent_for(account)\n"),
-      ).toEqual([]);
+    it("records the read a chain did before a project method the walk follows", async () => {
+      const effects = await effectsFor(
+        "found = Order.where(id: id).recent_for(account)\n",
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "where",
+        selector: ["id"],
+      });
+    });
+  });
+
+  describe("a chain that goes on past the call the library defines", () => {
+    it("records the finder a safely navigated project method follows", async () => {
+      const effects = await effectsFor(
+        "quoted = Order.find(params[:id])&.summary\n",
+        PROJECT_METHODS,
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Order");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "find",
+        selector: ["id"],
+      });
+    });
+
+    it("records the read an attribute read follows", async () => {
+      const effects = await effectsFor("name = Order.where(a: 1).first.name\n");
+
+      expect(effects).toHaveLength(1);
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "first",
+        selector: ["a"],
+      });
+    });
+
+    it("records the read a predicate on the result follows", async () => {
+      const effects = await effectsFor(
+        "there = Order.find_by(email: email).present?\n",
+      );
+
+      expect(effects).toHaveLength(1);
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "find_by",
+        selector: ["email"],
+      });
     });
   });
 

@@ -309,10 +309,16 @@ Order.transaction { ... }  # nothing: the calls inside it are the database work
 Order.recent_for(account)  # nothing: the walk steps into the project's own method
 ```
 
-A chain is one thing the code does, so the first of those counts once. The
-method the chain ends with tells a read from a write. A chain a project method
-ends says nothing at all, because the walk follows that method and its body
-reports what it does. The constant can be written any way Ruby allows:
+A chain is one thing the code does, so the first of those counts once, at the
+outermost call the library defines. That call tells a read from a write, and
+anything written after it is a method on the result, which the walk follows:
+
+```ruby
+Order.find(params[:id])&.summary   # one read, against Order, picking by id
+Order.where(a: 1).first.name       # one read, against Order, picking by a
+```
+
+The constant can be written any way Ruby allows:
 `Order`, `Shop::Order`, or `::Order` for the top-level class from inside a
 module that has its own `Order`. The binding facts settle which class each
 spelling means.
