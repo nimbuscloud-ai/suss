@@ -7,7 +7,7 @@ import { associationsDeclaredIn } from "./associations.js";
 import { nodeId } from "./values.js";
 
 import type { Database } from "@suss/datalog";
-import type { RbAssociationCalls } from "../pack.js";
+import type { RbAssociationCalls, RbInflections } from "../pack.js";
 import type { RbNode } from "../parser.js";
 import type { AssociationDeclaration } from "./associations.js";
 
@@ -88,6 +88,7 @@ export function collectFileConstants(
   filePath: string,
   root: RbNode,
   associationCalls: readonly RbAssociationCalls[] = [],
+  inflections?: RbInflections,
 ): FileConstants {
   const definitions: ConstantDefinition[] = [];
   const references: ConstantReference[] = [];
@@ -114,6 +115,7 @@ export function collectFileConstants(
           classKey,
           inside,
           associationCalls,
+          inflections,
         )) {
           associations.push(declared);
           references.push(declared.target);

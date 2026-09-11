@@ -3,13 +3,13 @@
  * `has_many :statuses` says Status without writing Status down.
  *
  * The rules and their order are ActiveSupport's own, copied from the
- * `inflections.rb` it loads before a project's initializers run. A
- * project may teach the inflector more words in
- * `config/initializers/inflections.rb`; that file is not read, so a word
- * it covers is inflected here the default way and the association points
- * at a name the project declares nowhere. Such a declaration then says
- * nothing rather than saying something wrong.
+ * `inflections.rb` it loads before a project's initializers run. What a
+ * project taught its own inflector arrives from the pack, as
+ * `RbInflections`, and is searched before these, the way ActiveSupport
+ * searches the newest rule first.
  */
+
+import type { RbInflections } from "./pack.js";
 
 /**
  * A plural and the singular it comes from, in the order ActiveSupport
@@ -78,9 +78,18 @@ const UNCOUNTABLE: ReadonlySet<string> = new Set([
 ]);
 
 /** The singular of a word, the way ActiveSupport's `singularize` reads it. */
-export function singularize(word: string): string {
-  if (UNCOUNTABLE.has(word.toLowerCase())) {
+export function singularize(word: string, project?: RbInflections): string {
+  if (
+    UNCOUNTABLE.has(word.toLowerCase()) ||
+    (project?.uncountable ?? []).some(
+      (uncountable) => uncountable.toLowerCase() === word.toLowerCase(),
+    )
+  ) {
     return word;
+  }
+  const own = projectSingular(word, project);
+  if (own !== null) {
+    return own;
   }
   for (let at = SINGULAR_RULES.length - 1; at >= 0; at--) {
     const [pattern, replacement] = SINGULAR_RULES[at] as readonly [
@@ -94,12 +103,73 @@ export function singularize(word: string): string {
   return word;
 }
 
-/** The constant name a snake_case word becomes: `media_attachment` is `MediaAttachment`. */
-export function camelize(word: string): string {
+/** What the project's own rules make of the word, or null when none of them matches. A rule declared later is searched first. */
+function projectSingular(
+  word: string,
+  project: RbInflections | undefined,
+): string | null {
+  const irregular = [...(project?.irregular ?? [])].reverse();
+  for (const [plural, singular] of irregular) {
+    if (plural.toLowerCase() === word.toLowerCase()) {
+      return matchingCase(word, singular);
+    }
+  }
+  const rules = [...(project?.singular ?? [])].reverse();
+  for (const [rule, replacement] of rules) {
+    const applied = applyRule(word, rule, replacement);
+    if (applied !== null) {
+      return applied;
+    }
+  }
+  return null;
+}
+
+/** A rule written `/body/flags` is a pattern; anything else is the text to replace, the way Ruby's `sub` takes a string. */
+function applyRule(
+  word: string,
+  rule: string,
+  replacement: string,
+): string | null {
+  const written = /^\/(.*)\/([a-z]*)$/s.exec(rule);
+  if (written === null) {
+    return word.includes(rule) ? word.replace(rule, replacement) : null;
+  }
+  // Ruby's `m` makes the dot match a newline, which JavaScript spells `s`.
+  const flags = (written[2] ?? "").replace("m", "s").replace(/[^is]/g, "");
+  const pattern = new RegExp(written[1] ?? "", flags);
+  return pattern.test(word)
+    ? word.replace(pattern, replacement.replace(/\\(\d)/g, "$$$1"))
+    : null;
+}
+
+/** The replacement with the first letter's case taken from the word it replaces, which is what ActiveSupport's irregulars do. */
+function matchingCase(word: string, replacement: string): string {
+  const first = word[0];
+  if (first === undefined || first !== first.toUpperCase()) {
+    return replacement;
+  }
+  return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+}
+
+/** The constant name a snake_case word becomes: `media_attachment` is `MediaAttachment`, and `api_token` is `APIToken` where the project registered `API`. */
+export function camelize(
+  word: string,
+  acronyms: readonly string[] = [],
+): string {
   return word
     .split("_")
-    .map((part) => (part === "" ? "" : part[0].toUpperCase() + part.slice(1)))
+    .map((part) => capitalize(part, acronyms))
     .join("");
+}
+
+function capitalize(part: string, acronyms: readonly string[]): string {
+  if (part === "") {
+    return "";
+  }
+  const acronym = acronyms.find(
+    (known) => known.toLowerCase() === part.toLowerCase(),
+  );
+  return acronym ?? part[0]?.toUpperCase() + part.slice(1);
 }
 
 /**
@@ -107,6 +177,13 @@ export function camelize(word: string): string {
  * does not say which. A call spelled in the plural, `has_many
  * :statuses`, is singularised first.
  */
-export function associationTargetName(name: string, plural: boolean): string {
-  return camelize(plural ? singularize(name) : name);
+export function associationTargetName(
+  name: string,
+  plural: boolean,
+  project?: RbInflections,
+): string {
+  return camelize(
+    plural ? singularize(name, project) : name,
+    project?.acronyms ?? [],
+  );
 }

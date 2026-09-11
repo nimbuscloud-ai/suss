@@ -21,11 +21,15 @@ import {
   expandPathPattern,
   readEngines,
 } from "./engines.js";
-import { inflectionFiles, readAcronyms } from "./inflections.js";
+import { inflectionFiles, readInflections } from "./inflections.js";
 import { drawDirectoryOf, readRoutes } from "./routes.js";
 import { RACK_STATUS_CODE_NAMES } from "./statusCodes.js";
 
-import type { ControllerActions, RubyPack } from "@suss/adapter-ruby";
+import type {
+  ControllerActions,
+  RbInflections,
+  RubyPack,
+} from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { Route, RoutesInput } from "./routes.js";
 
@@ -180,6 +184,14 @@ const BODY_BLOCKS = [
   { name: "with_options" },
 ];
 
+/** What a project that registered nothing taught its inflector. */
+const EMPTY_INFLECTIONS: Required<RbInflections> = {
+  acronyms: [],
+  irregular: [],
+  uncountable: [],
+  singular: [],
+};
+
 /** The routing key `config/routes.rb` gives a controller, from the class name the adapter reads: `Admin::OrdersController` -> `admin/orders`. */
 function controllerKeyFromQualified(
   qualifiedName: string,
@@ -235,10 +247,11 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
 
   // The acronyms decide how every constant maps to a file and a routing
   // key, so they are read once, before anything is resolved.
-  const acronyms =
+  const inflections =
     options.configDirectory === undefined
-      ? []
-      : readAcronyms(options.configDirectory);
+      ? EMPTY_INFLECTIONS
+      : readInflections(options.configDirectory);
+  const acronyms = inflections.acronyms;
 
   const routesInput = (): RoutesInput => ({
     routesFile: {
@@ -302,6 +315,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     protocol: "http",
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,
+    inflections,
     // Every file routing or naming is read from decides an action's
     // binding without being walked, so the cache key has to read them
     // here. This runs before the grammar loads, so nothing parses Ruby.

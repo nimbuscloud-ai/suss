@@ -6,7 +6,7 @@ import { parseRuby } from "../parser.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import { emitValueFacts } from "./values.js";
 
-import type { RbAssociationCalls } from "../pack.js";
+import type { RbAssociationCalls, RbInflections } from "../pack.js";
 
 /** ActiveRecord's own four calls, as the pack declares them. */
 const ACTIVE_RECORD: RbAssociationCalls = {
@@ -15,13 +15,18 @@ const ACTIVE_RECORD: RbAssociationCalls = {
   classNameKeyword: "class_name",
 };
 
-async function factsFor(files: Record<string, string>) {
+async function factsFor(
+  files: Record<string, string>,
+  inflections?: RbInflections,
+) {
   const db = new Database();
   const constants = [];
   for (const [file, source] of Object.entries(files)) {
     const tree = await parseRuby(source);
     emitValueFacts(db, file, tree.rootNode);
-    constants.push(collectFileConstants(file, tree.rootNode, [ACTIVE_RECORD]));
+    constants.push(
+      collectFileConstants(file, tree.rootNode, [ACTIVE_RECORD], inflections),
+    );
   }
   emitConstantBindings(db, constants);
   return db;
@@ -69,6 +74,32 @@ describe("an association ActiveRecord declares", () => {
       account: "Account",
       tags: "Tag",
     });
+  });
+
+  it("reaches a class only the project's own inflections spell", async () => {
+    const models = [
+      "class Cow; end",
+      "class APIToken; end",
+      "",
+      "class Account",
+      "  has_many :kine",
+      "  has_many :api_tokens",
+      "end",
+      "",
+    ].join("\n");
+
+    expect(targetsOf(await factsFor({ "models.rb": models }))).toEqual({
+      kine: "",
+      api_tokens: "",
+    });
+    expect(
+      targetsOf(
+        await factsFor(
+          { "models.rb": models },
+          { acronyms: ["API"], irregular: [["kine", "cow"]] },
+        ),
+      ),
+    ).toEqual({ kine: "Cow", api_tokens: "APIToken" });
   });
 
   it("takes the class the declaration writes over the one its name would give", async () => {

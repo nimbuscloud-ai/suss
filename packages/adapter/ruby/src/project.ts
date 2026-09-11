@@ -49,7 +49,7 @@ import {
 } from "./facts/constants.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
-import { bodyBlocksIn } from "./pack.js";
+import { bodyBlocksIn, inflectionsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 import { dropPropertyReads, reachedFunctions } from "./reach/closure.js";
 import { buildReachContext } from "./reach/context.js";
@@ -231,6 +231,7 @@ export async function extractRubyProject(
   const definitions = new Map<string, RbNode>();
   const associationCalls = associationCallsIn(options.packs);
   const bodyBlocks = bodyBlocksIn(options.packs);
+  const inflections = inflectionsIn(options.packs);
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const root = await cache.get(file);
@@ -242,7 +243,9 @@ export async function extractRubyProject(
       for (const [key, method] of methodDefinitionsIn(file, root)) {
         definitions.set(key, method);
       }
-      constants.push(collectFileConstants(file, root, associationCalls));
+      constants.push(
+        collectFileConstants(file, root, associationCalls, inflections),
+      );
     });
   }
   const dynamicNames = timer.time("discover", () => {

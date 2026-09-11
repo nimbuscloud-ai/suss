@@ -462,7 +462,18 @@ it from the association's own name: `has_many :statuses` reaches
 itself ships. `class_name: "Status"` on the call says the name instead,
 and a call that writes a `class_name` the adapter cannot read as a plain
 string declares nothing rather than falling back to a name that would be
-wrong. A project's own `config/initializers/inflections.rb` is not read.
+wrong.
+
+A project may teach its own inflector more words. Where it writes them,
+and how, is the library's business, so the pack reads them and declares
+the result in `inflections` on the pack: acronyms, irregular plurals,
+uncountable words, and singularisation rules, each one a plain word or a
+pattern with nothing of the library left in it. Those are searched
+before the defaults, the way ActiveSupport searches its newest rule
+first, so `has_many :kine` reaches `Cow` in a project that said so and
+reaches nothing in a project that did not. An acronym stays whole in the
+constant name, which is how `has_many :api_tokens` reaches `APIToken`
+rather than `ApiToken`.
 
 That reference is looked up from the nesting the declaring class is
 written in, the way every other constant read is, so a `has_many

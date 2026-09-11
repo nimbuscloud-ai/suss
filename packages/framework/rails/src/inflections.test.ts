@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { inflectionFiles, readAcronyms } from "./inflections.js";
+import {
+  inflectionFiles,
+  readAcronyms,
+  readInflections,
+} from "./inflections.js";
 
 describe("readAcronyms", () => {
   let tmpDir: string;
@@ -73,5 +77,54 @@ describe("readAcronyms", () => {
   it("is empty for a project with no initializers", () => {
     expect(readAcronyms(tmpDir)).toEqual([]);
     expect(inflectionFiles(tmpDir)).toEqual([]);
+  });
+
+  it("reads the irregulars, uncountables and singular rules beside the acronyms", () => {
+    writeInitializer(
+      "inflections.rb",
+      [
+        "ActiveSupport::Inflector.inflections(:en) do |inflect|",
+        '  inflect.acronym "API"',
+        '  inflect.irregular "person", "people"',
+        "  inflect.uncountable %w( fish sheep )",
+        '  inflect.uncountable "equipment"',
+        "  inflect.singular 'data', 'data'",
+        "  inflect.singular(/(quiz)zes$/i, '\\1')",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(readInflections(tmpDir)).toEqual({
+      acronyms: ["API"],
+      irregular: [["people", "person"]],
+      uncountable: ["equipment", "fish", "sheep"],
+      singular: [
+        ["data", "data"],
+        ["/(quiz)zes$/i", "\\1"],
+      ],
+    });
+  });
+
+  it("leaves the scaffolded file's commented-out examples unread", () => {
+    writeInitializer(
+      "inflections.rb",
+      [
+        "# ActiveSupport::Inflector.inflections(:en) do |inflect|",
+        '#   inflect.irregular "person", "people"',
+        "#   inflect.uncountable %w( fish sheep )",
+        "# end",
+        "",
+        "ActiveSupport::Inflector.inflections(:en) do |inflect|",
+        '  inflect.acronym "API"',
+        "end",
+      ].join("\n"),
+    );
+
+    expect(readInflections(tmpDir)).toEqual({
+      acronyms: ["API"],
+      irregular: [],
+      uncountable: [],
+      singular: [],
+    });
   });
 });

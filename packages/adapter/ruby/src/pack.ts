@@ -12,6 +12,23 @@ import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { GraphqlTypeNameConvention } from "./scope.js";
 
+/** Everything the run's packs read from their own projects' inflectors, pooled in the order the packs are listed. */
+export function inflectionsIn(packs: readonly RubyPack[]): RbInflections {
+  const pooled: RbInflections = {
+    acronyms: [],
+    irregular: [],
+    uncountable: [],
+    singular: [],
+  };
+  for (const pack of packs) {
+    pooled.acronyms?.push(...(pack.inflections?.acronyms ?? []));
+    pooled.irregular?.push(...(pack.inflections?.irregular ?? []));
+    pooled.uncountable?.push(...(pack.inflections?.uncountable ?? []));
+    pooled.singular?.push(...(pack.inflections?.singular ?? []));
+  }
+  return pooled;
+}
+
 /** Every body block the run's packs declare, pooled, with the fields each left out settled. */
 export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
   const pooled = new Map<string, BodyBlockKind>();
@@ -55,6 +72,25 @@ export interface RubyPack {
   loaders?: RbLoaderPattern[];
   /** Calls the library gives a class or module body whose block runs as part of that body. */
   bodyBlocks?: RbBodyBlock[];
+  /** What the project taught the library's inflector, which comes ahead of the adapter's own defaults. */
+  inflections?: RbInflections;
+}
+
+/**
+ * The words and rules a project registered with its library's
+ * inflector. The library says where a project writes them and how; what
+ * arrives here is the reading, so the adapter applies them without
+ * knowing any of that.
+ */
+export interface RbInflections {
+  /** Words a constant name keeps whole: `API` gives `APIToken` rather than `ApiToken`. */
+  acronyms?: string[];
+  /** A plural and the singular it comes from: `["people", "person"]`. */
+  irregular?: Array<[plural: string, singular: string]>;
+  /** Words spelled the same in both numbers. */
+  uncountable?: string[];
+  /** A rule turning a word singular, and what the part it matched becomes. A rule written `/body/flags` is a pattern; anything else is the text to replace. */
+  singular?: Array<[rule: string, replacement: string]>;
 }
 
 /**

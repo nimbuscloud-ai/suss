@@ -68,3 +68,48 @@ describe("the class an association targets", () => {
     expect(associationTargetName("sheep", true)).toBe("Sheep");
   });
 });
+
+describe("what the project taught its own inflector", () => {
+  const PROJECT = {
+    acronyms: ["API"],
+    irregular: [["people", "person"]] as Array<[string, string]>,
+    uncountable: ["equipment"],
+    singular: [
+      ["data", "data"],
+      ["/(quiz)zes$/i", "\\1"],
+    ] as Array<[string, string]>,
+  };
+
+  it("singularises an irregular the defaults spell another way", () => {
+    expect(singularize("people")).toBe("person");
+    expect(singularize("kine", PROJECT)).toBe("kine");
+    expect(singularize("people", { irregular: [["people", "persona"]] })).toBe(
+      "persona",
+    );
+  });
+
+  it("keeps the case of the word it replaces, the way ActiveSupport does", () => {
+    expect(singularize("Kine", { irregular: [["kine", "cow"]] })).toBe("Cow");
+    expect(singularize("kine", { irregular: [["kine", "cow"]] })).toBe("cow");
+  });
+
+  it("keeps a word the project called uncountable", () => {
+    expect(singularize("equipments", PROJECT)).toBe("equipment");
+    expect(singularize("equipment", PROJECT)).toBe("equipment");
+  });
+
+  it("applies a rule written as a string and one written as a pattern", () => {
+    expect(singularize("data", PROJECT)).toBe("data");
+    expect(singularize("quizzes", PROJECT)).toBe("quiz");
+  });
+
+  it("keeps an acronym whole in the constant name", () => {
+    expect(camelize("api_token", ["API"])).toBe("APIToken");
+    expect(camelize("api_token")).toBe("ApiToken");
+  });
+
+  it("reaches a class only the project's own words spell", () => {
+    expect(associationTargetName("people", true, PROJECT)).toBe("Person");
+    expect(associationTargetName("api_tokens", true, PROJECT)).toBe("APIToken");
+  });
+});
