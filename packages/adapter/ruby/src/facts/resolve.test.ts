@@ -243,6 +243,80 @@ describe("a method Ruby runs by reading it off a constant", () => {
   });
 });
 
+/** The same run, with a pack's word on what an association declaration looks like. */
+async function modelFactsFor(source: string) {
+  const tree = await parseRuby(source);
+  const db = new Database();
+  emitValueFacts(db, "f.rb", tree.rootNode);
+  emitConstantBindings(db, [
+    collectFileConstants("f.rb", tree.rootNode, [
+      {
+        singular: ["belongs_to"],
+        plural: ["has_many"],
+        classNameKeyword: "class_name",
+      },
+    ]),
+  ]);
+  for (const method of ["find", "where", "first"]) {
+    db.add("givesBackOne", ["ActiveRecord::Base", method]);
+  }
+  return db;
+}
+
+/** Mastodon's shape: a concern declares the association, a controller reads it off a finder's result. */
+const ASSOCIATION_SOURCE = [
+  "class ApplicationRecord < ActiveRecord::Base",
+  "end",
+  "",
+  "class Status < ApplicationRecord",
+  "end",
+  "",
+  "module Account::Associations",
+  "  extend ActiveSupport::Concern",
+  "",
+  "  included do",
+  "    has_many :statuses",
+  "  end",
+  "end",
+  "",
+  "class Account < ApplicationRecord",
+  "  include Account::Associations",
+  "end",
+  "",
+  "class StatusesController",
+  "  def show",
+  "    @account = Account.find(1)",
+  "    @status = @account.statuses.find(2)",
+  "  end",
+  "end",
+  "",
+].join("\n");
+
+describe("a call on an association", () => {
+  it("settles on the class the association reaches", async () => {
+    const db = await modelFactsFor(ASSOCIATION_SOURCE);
+    const status = classBehind(db, "f.rb#Status");
+    const read = String(
+      db
+        .facts("readsProperty")
+        .find((row) => String(row[2]) === "statuses")?.[0],
+    );
+    const callee = String(
+      db
+        .facts("readsProperty")
+        .find(
+          (row) => String(row[1]) === read && String(row[2]) === "find",
+        )?.[0],
+    );
+    const find = String(
+      db.facts("call").find((row) => String(row[1]) === callee)?.[0],
+    );
+
+    expect(objectsBehind(db, read)).toEqual([status]);
+    expect(objectsBehind(db, find)).toEqual([status]);
+  });
+});
+
 /** The shape a Rails concern takes: a method declared inside `included do`, mixed into a model. */
 const CONCERN_SOURCE = [
   "module Payable",

@@ -51,5 +51,6 @@
   "scalar_one_or_none": "SQLAlchemy: Result.scalar_one_or_none, the only row's first column or nothing",
   "get": "language: Python spells dict.get and os.environ.get the same way. SQLAlchemy: Session.get, the row of a mapped class with the given primary key",
   "all": "SQLAlchemy: the method that runs the query and returns every row",
-  "query": "SQLAlchemy: Session.query, which starts a 1.x query over a mapped class"
+  "query": "SQLAlchemy: Session.query, which starts a 1.x query over a mapped class",
+  "relationship": "SQLAlchemy: sqlalchemy.orm.relationship, the constructor a mapped class's field is given to reach another mapped class"
 }

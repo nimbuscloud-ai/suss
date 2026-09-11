@@ -5,8 +5,9 @@ using SQLModel.
 
 ## What this package is
 
-A pattern pack. It states the types SQLModel hands back from a query and
-the methods that change what is stored, and the Python adapter does the
+A pattern pack. It states the types SQLModel hands back from a query,
+the methods that change what is stored, and the constructor a model's
+field is given to reach another model, and the Python adapter does the
 matching.
 
 ```ts
@@ -72,6 +73,31 @@ A statement is the operation its constructor says: `update(Item).where(...).valu
 
 Raw SQL handed to `text("...")` is read as its own effect, with the kind and
 the table taken from the statement.
+
+## What a relationship says
+
+`Relationship`, imported from `sqlmodel`, says a model's field reaches
+another model:
+
+```python
+class User(SQLModel, table=True):
+    items: list["Item"] = Relationship(back_populates="owner")
+```
+
+```ts
+relationships: [{ module: "sqlmodel", name: "Relationship" }]
+```
+
+The model comes from the annotation, with the wrappers taken off, and a
+forward reference in quotes is settled by the module's imports the same
+way the bare name would be. The callable has to come from `sqlmodel`, so
+a project function spelled `Relationship` matches nothing. The
+sqlalchemy pack's `relationship` is included as well, since a SQLModel
+project reaches into `sqlalchemy.orm` for what SQLModel does not
+re-export.
+
+With that, `user.items` is one `Item`, and a `select` over it or a call
+on an element composes the way any settled model does.
 
 ## License
 

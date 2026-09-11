@@ -846,6 +846,125 @@ describe("a method a pack says gives back one of the class", () => {
 });
 
 /**
+ * A second model alongside the one above, and the finder that leaves an
+ * Account behind for an association to be read off: `@account =
+ * Account.find(id)`.
+ */
+const ASSOCIATION_FACTS: Array<[string, ...string[]]> = [
+  ...MODEL_FACTS,
+  ["objectValue", "Status"],
+  ["extends", "Status", "#AppRecord"],
+  ["binds", "#Status", "Status"],
+  ["binds", "statusesTarget", "Status"],
+  ["readsProperty", "findCallee", "#Account", "find"],
+  ["call", "findCall", "findCallee"],
+  ["binds", "account", "findCall"],
+  ["readsProperty", "statusesRead", "account", "statuses"],
+];
+
+describe("an association a class declares", () => {
+  it("settles a read of its name on the class it targets", () => {
+    // @account.statuses
+    expect(
+      objectsOf(
+        [
+          ...ASSOCIATION_FACTS,
+          ["declaresAssociation", "Account", "statuses", "statusesTarget"],
+        ],
+        "statusesRead",
+      ),
+    ).toEqual(["Status"]);
+  });
+
+  it("is reached through what the model mixes in", () => {
+    // module Account::Associations, included by Account
+    expect(
+      objectsOf(
+        [
+          ...ASSOCIATION_FACTS,
+          ["objectValue", "Associations"],
+          ["binds", "#Associations", "Associations"],
+          ["extends", "Account", "#Associations"],
+          ["declaresAssociation", "Associations", "statuses", "statusesTarget"],
+        ],
+        "statusesRead",
+      ),
+    ).toEqual(["Status"]);
+  });
+
+  it("composes with a finder on the target", () => {
+    // @account.statuses.find(params[:id])
+    expect(
+      objectsOf(
+        [
+          ...ASSOCIATION_FACTS,
+          ["declaresAssociation", "Account", "statuses", "statusesTarget"],
+          ["readsProperty", "statusFindCallee", "statusesRead", "find"],
+          ["call", "statusFindCall", "statusFindCallee"],
+        ],
+        "statusFindCall",
+      ),
+    ).toEqual(["Status"]);
+  });
+
+  it("says nothing about a name no class in the ancestry declares", () => {
+    expect(
+      objectsOf(
+        [
+          ...ASSOCIATION_FACTS,
+          ["declaresAssociation", "Status", "account", "accountTarget"],
+        ],
+        "statusesRead",
+      ),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The other way an adapter can say a class has one: it read a field
+ * given a call, `statuses = relationship("Status")`, and a pack said
+ * which callable makes that call an association.
+ */
+const FIELD_CALL_FACTS: Array<[string, ...string[]]> = [
+  ...ASSOCIATION_FACTS,
+  ["fieldCall", "Account", "statuses", "#relationship", "statusesTarget"],
+  ["imports", "#relationship", "sqlalchemy.orm", "relationship"],
+];
+
+describe("an association a pack's own constructor declares", () => {
+  it("settles a read of the field on the class the call is about", () => {
+    expect(
+      objectsOf(
+        [
+          ...FIELD_CALL_FACTS,
+          ["associationConstructor", "sqlalchemy.orm", "relationship"],
+        ],
+        "statusesRead",
+      ),
+    ).toEqual(["Status"]);
+  });
+
+  it("leaves a field alone when the callable comes from somewhere else", () => {
+    // A project function of the same name, imported from the project.
+    expect(
+      objectsOf(
+        [
+          ...ASSOCIATION_FACTS,
+          ["fieldCall", "Account", "statuses", "#own", "statusesTarget"],
+          ["imports", "#own", "app.helpers", "relationship"],
+          ["associationConstructor", "sqlalchemy.orm", "relationship"],
+        ],
+        "statusesRead",
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a field alone when no pack declared the callable", () => {
+    expect(objectsOf(FIELD_CALL_FACTS, "statusesRead")).toEqual([]);
+  });
+});
+
+/**
  * `class User(SQLModel, table=True)`, with `deactivate` written on it.
  * The pack's word is that `get`, `query` and `exec` take the class at
  * argument 0, that `select` does the same when it is imported from

@@ -123,6 +123,10 @@ export function sqlmodelModels(): PyModelQueries[] {
       ...model.entryFunctions,
       { module: "sqlmodel", name: "select", argument: 0 },
     ],
+    relationships: [
+      ...(model.relationships ?? []),
+      { module: "sqlmodel", name: "Relationship" },
+    ],
   }));
 }
 

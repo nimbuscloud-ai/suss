@@ -107,6 +107,12 @@ export type {
 //   givesBackOneOfArgument(base, m, k)   the same, with the class at k
 //   givesBackOneOfImport(mod, n, k)      the same, for the bare
 //                               function n that module mod exports
+//   declaresAssociation(c, n, t)  class c declares an association n,
+//                               and t refers to the class it targets
+//   fieldCall(c, n, callee, t)  c's field n is given a call of callee,
+//                               and t refers to the class n is about
+//   associationConstructor(mod, n)  a pack's word: a field given the n
+//                               module mod exports is an association
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -566,6 +572,28 @@ export const RESOLUTION_RULES = [
       lit("comesTo", v("base"), v("baseCls")),
       lit("contains", v("baseCls"), v("n"), v("held")),
     ],
+  ),
+  // An association is read off an instance as a property, and stating
+  // it as `contains` is what puts it on the ancestry rule, so a concern
+  // or a base class can be the one that declares it.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("t")],
+    [lit("declaresAssociation", v("cls"), v("n"), v("t"))],
+    "declared association",
+  ),
+  // The same, for a language that buries the declaration in an ordinary
+  // assignment. Keying on the module the callable came from is what
+  // keeps a project function spelled the same way out.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("t")],
+    [
+      lit("fieldCall", v("cls"), v("n"), v("c"), v("t")),
+      lit("comesFrom", v("c"), v("m"), v("name")),
+      lit("associationConstructor", v("m"), v("name")),
+    ],
+    "constructed association",
   ),
 
   // The library base a class's ancestry arrives at, however many of a

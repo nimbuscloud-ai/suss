@@ -32,5 +32,6 @@
   "expunge_all": "SQLModel: the Session method that detaches every object",
   "values": "SQLModel: the statement method that supplies column values",
   "text": "SQLModel: the function that wraps a statement the project wrote as SQL, re-exported from SQLAlchemy",
-  "SQLModel": "SQLModel: the base a model is written under, `class User(SQLModel, table=True)`"
+  "SQLModel": "SQLModel: the base a model is written under, `class User(SQLModel, table=True)`",
+  "Relationship": "SQLModel: the constructor a model's field is given to reach another model, `items: list[Item] = Relationship()`"
 }

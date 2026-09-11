@@ -113,6 +113,11 @@ export function activeRecordStorage(
         "touch",
       ],
       givesBack: [...RETURNS_A_RECORD, ...RETURNS_A_RELATION],
+      associations: {
+        singular: ["has_one", "belongs_to"],
+        plural: ["has_many", "has_and_belongs_to_many"],
+        classNameKeyword: "class_name",
+      },
       storageSystem: options.storageSystem,
     },
   ];

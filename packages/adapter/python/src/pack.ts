@@ -108,6 +108,21 @@ export interface PyModelQueries {
   entryMethods: PyModelEntryMethod[];
   /** Functions the library exports that do the same, called on their own rather than read off a session. */
   entryFunctions: PyModelEntryFunction[];
+  /** The library's own constructors for a field that reaches another model. */
+  relationships?: PyRelationshipConstructor[];
+}
+
+/**
+ * `items: list[Item] = Relationship(...)`: the callable a model's field
+ * is given to say it reaches another model, and where it comes from. A
+ * project function spelled the same way is somebody else's, so the
+ * import is what settles a match.
+ */
+export interface PyRelationshipConstructor {
+  /** The module it is imported from, `sqlmodel` or `sqlalchemy.orm`. */
+  module: string;
+  /** Its name, `Relationship` or `relationship`. */
+  name: string;
 }
 
 /** `session.get(User, id)`: the method, and where the class is written. */

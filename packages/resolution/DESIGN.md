@@ -82,6 +82,45 @@ and a base a library hands back from a call. The last is SQLAlchemy's
 `Base = declarative_base()`, where the walk stops at the call and the
 imported function is the name to match on.
 
+An association is the same idea in every language that has models: a
+field on one class whose value is one or many of another. Rails writes
+one as `has_many :statuses`, SQLModel as `items: list[Item] =
+Relationship(...)`, and in both the library gives back the other model
+when that name is read off an instance. An adapter says so one of two
+ways, and both land on `contains`.
+
+An adapter that read the declaration itself says
+`declaresAssociation(cls, n, t)`, with `t` a reference the run's own
+bindings settle on the class it targets. One whose language buries
+the declaration in an ordinary assignment says what it read of every
+class-body field given a call, `fieldCall(cls, n, callee, t)`, and a
+pack says which callable makes one an association,
+`associationConstructor(module, name)`. The rule joins the callee
+through `comesFrom`, the way the declared import finder does, so a
+project function spelled `relationship` matches nothing. Stating the
+field either way and letting a rule decide is what keeps the adapter out
+of the matching.
+
+Both go to `contains` rather than to a step of their own, because
+`contains` already walks the ancestry: a model that gets its
+associations from a concern or a base class declares them too, and the
+property read already steps to what `contains` gives back. The target
+lands on the class, so a finder composes from there and
+`@account.statuses.find(id)` is one Status.
+
+They go to `contains` directly rather than through a relation of their
+own that says what an association is. `declaresAssociation`, `fieldCall`
+and `associationConstructor` stay things an adapter states and the rules
+only read, the way `holdsProperty` is. Give an adapter's own relation a
+rule as well and the demand rewrite empties it between questions, taking
+the adapter's facts with it, which is what a relation derived on demand
+is allowed to do.
+
+Nothing says whether an association is a collection. A relation and a
+record settle on the same class today, the way `Account.where(x)` and
+`Account.find(x)` both do, so no rule has anything to do with the
+difference.
+
 `holdsProperty` is something an adapter states and the rules only read.
 What a value contains, a base class included, comes out as `contains`,
 so a method a base declares is found on a subclass that never overrode
