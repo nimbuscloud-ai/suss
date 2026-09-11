@@ -719,7 +719,15 @@ function matchedChains(
     }
     const pattern = resolvedMethodPattern(options, callee);
     if (pattern !== undefined) {
-      matched.push({ chain, pattern, operation: chain.operation });
+      // On its own the call only returned a session or a query. The
+      // database work is inside the project's own function, which the
+      // walk steps into and which reports it there.
+      const returnedOnly = chain.last === chain.root;
+      matched.push({
+        chain,
+        pattern,
+        operation: returnedOnly ? null : chain.operation,
+      });
     }
   }
   return matched;
