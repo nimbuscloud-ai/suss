@@ -65,7 +65,7 @@ import type {
   TimingReport,
 } from "@suss/extractor";
 import type { ReachSeed } from "./discovery.js";
-import type { RubyPack } from "./pack.js";
+import type { RbAssociationCalls, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { Seed } from "./reach/closure.js";
 
@@ -121,6 +121,21 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
  * so this is the only thing that says `Account.find(id)` is one Account,
  * and the shared `declared finder` rule is what reads it.
  */
+/**
+ * What every storage pattern in the run says an association declaration
+ * looks like. The constants pass reads a model's body with these, since
+ * that is where the class a target name refers to is settled.
+ */
+export function associationCallsIn(
+  packs: readonly RubyPack[],
+): RbAssociationCalls[] {
+  return packs.flatMap((pack) =>
+    (pack.storage ?? []).flatMap((pattern) =>
+      pattern.associations === undefined ? [] : [pattern.associations],
+    ),
+  );
+}
+
 export function emitStorageFacts(
   db: Database,
   packs: readonly RubyPack[],
@@ -212,6 +227,7 @@ export async function extractRubyProject(
   // during discovery.
   const parsed: { file: string; root: RbNode }[] = [];
   const definitions = new Map<string, RbNode>();
+  const associationCalls = associationCallsIn(options.packs);
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const root = await cache.get(file);
@@ -223,7 +239,7 @@ export async function extractRubyProject(
       for (const [key, method] of methodDefinitionsIn(file, root)) {
         definitions.set(key, method);
       }
-      constants.push(collectFileConstants(file, root));
+      constants.push(collectFileConstants(file, root, associationCalls));
     });
   }
   timer.time("discover", () => {

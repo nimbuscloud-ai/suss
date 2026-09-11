@@ -53,5 +53,10 @@
   "from": "ActiveRecord::QueryMethods#from: sets what the relation selects from",
   "references": "ActiveRecord::QueryMethods#references: says which included associations the conditions mention",
   "only": "ActiveRecord::SpawnMethods#only: keeps only the named parts of the query",
-  "except": "ActiveRecord::SpawnMethods#except: drops the named parts of the query"
+  "except": "ActiveRecord::SpawnMethods#except: drops the named parts of the query",
+  "has_many": "ActiveRecord::Associations::ClassMethods#has_many: declares a collection of another model",
+  "has_one": "ActiveRecord::Associations::ClassMethods#has_one: declares one record of another model",
+  "belongs_to": "ActiveRecord::Associations::ClassMethods#belongs_to: declares the model this one's foreign key points at",
+  "has_and_belongs_to_many": "ActiveRecord::Associations::ClassMethods#has_and_belongs_to_many: declares a collection joined through a table with no model",
+  "class_name": "ActiveRecord::Associations::ClassMethods: the option that says which class an association reaches, when the association's name does not"
 }

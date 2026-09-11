@@ -5,9 +5,9 @@ Rails.
 
 ## What this package is
 
-A pattern pack. It states the base class ActiveRecord gives every model and
-the methods that change what is stored, and the Ruby adapter does the
-matching.
+A pattern pack. It states the base class ActiveRecord gives every model,
+the methods that change what is stored, and the four calls a model writes
+to declare an association, and the Ruby adapter does the matching.
 
 ```ts
 import { graphqlRubyFramework } from "@suss/framework-graphql-ruby";
@@ -48,6 +48,33 @@ class Order < ApplicationRecord; end
 
 Order.where(id: 1).first   # one read, against Order, picking rows by id
 ```
+
+## What an association says
+
+`has_many`, `has_one`, `belongs_to` and `has_and_belongs_to_many` in a
+model's body each say that model reaches another one. The pack lists the
+four call names, split by whether Rails writes the name in the singular
+or the plural, and the keyword that says the class outright:
+
+```ts
+associations: {
+  singular: ["has_one", "belongs_to"],
+  plural: ["has_many", "has_and_belongs_to_many"],
+  classNameKeyword: "class_name",
+}
+```
+
+The adapter turns each declaration into a fact the shared rules read, so
+`@account.statuses.find(params[:id])` is a read against `Status`. The
+class comes from `class_name:` when the call writes one, and otherwise
+from the association's own name put through the inflections
+ActiveSupport ships. A project's own
+`config/initializers/inflections.rb` is not read, so a word it teaches
+Rails about inflects the default way here and the association reaches a
+name nothing in the project declares, which says nothing at all.
+
+A concern is covered too. `has_many` inside an `included do` belongs to
+the module, and the module is in every including model's ancestry.
 
 ## What comes out
 

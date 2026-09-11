@@ -280,6 +280,11 @@ storage: [
     baseClasses: ["ActiveRecord::Base"],
     writes: ["update", "destroy", "save", "create", "delete_all"],
     givesBack: ["find", "where", "first"],
+    associations: {
+      singular: ["has_one", "belongs_to"],
+      plural: ["has_many", "has_and_belongs_to_many"],
+      classNameKeyword: "class_name",
+    },
     storageSystem: "postgresql",
   },
 ]
@@ -374,6 +379,42 @@ states the same step a second time in `RUBY_RULES` for that spelling.
 The storage recognizer asks the same rules about a receiver that is not
 written as a constant, which is how `@account.update(attrs)` after that
 `before_action` is recorded as a write against `Account`.
+
+## What an association reaches
+
+`associations` on the same storage pattern says which class-body calls
+declare that one model reaches another, split by whether the library
+writes the call's name in the singular or the plural. Every such call the
+adapter reads in a class or module body becomes one fact:
+
+```
+declaresAssociation  app/models/account.rb:0-812  statuses  app/models/account.rb:0-812#association:statuses
+```
+
+The third column is a constant reference the adapter makes up, because
+the class an association reaches is usually written nowhere. Rails gets
+it from the association's own name: `has_many :statuses` reaches
+`Status`, singularised and camelised by the inflections ActiveSupport
+itself ships. `class_name: "Status"` on the call says the name instead,
+and a call that writes a `class_name` the adapter cannot read as a plain
+string declares nothing rather than falling back to a name that would be
+wrong. A project's own `config/initializers/inflections.rb` is not read.
+
+That reference is looked up from the nesting the declaring class is
+written in, the way every other constant read is, so a `has_many
+:statuses` inside `Admin::Account` reaches `Admin::Status` before it
+reaches `Status`. The shared rules take it from there: a read of
+`statuses` on one Account steps to the Status class, and `find` on that
+composes the same way `Account.where(x).first` does.
+
+A concern needs nothing extra. The mixed-in module is in the `extends`
+ancestry and the statements inside its `included do` and `with_options`
+blocks are read as the module's own, so `has_many :statuses` written
+there is an association of every class that includes it.
+
+Nothing says whether an association is a collection. `@account.statuses`
+and `@account.profile` both settle on the class, which is what
+`Account.where(x)` and `Account.find(x)` already do.
 
 ## What a file reads from the environment
 

@@ -97,8 +97,26 @@ export interface RbStoragePattern {
   writes: string[];
   /** Methods whose result is the model again: one record, or a relation a later read narrows to one. */
   givesBack: string[];
+  /** How the library declares that one model reaches another, when it has such a thing. */
+  associations?: RbAssociationCalls;
   /** Which database is behind the connection, which the project settles. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
+}
+
+/**
+ * The class-body calls a library gives a model for declaring an
+ * association, and where one says which class it reaches. The two lists
+ * are apart because the target's name is the association's singularised
+ * for a plural call and the association's as written for a singular one,
+ * and only the library knows which of its calls is which.
+ */
+export interface RbAssociationCalls {
+  /** Calls written in the singular, `belongs_to :account` and `has_one :profile`. */
+  singular: string[];
+  /** Calls written in the plural, `has_many :statuses`. */
+  plural: string[];
+  /** The keyword whose value is the target class's name instead, `class_name`. */
+  classNameKeyword: string;
 }
 
 /**

@@ -3,10 +3,13 @@
 // straight to its definition. The README says how the lookup works.
 
 import { field, NESTING_TYPES } from "../ast.js";
+import { associationsDeclaredIn } from "./associations.js";
 import { nodeId } from "./values.js";
 
 import type { Database } from "@suss/datalog";
+import type { RbAssociationCalls } from "../pack.js";
 import type { RbNode } from "../parser.js";
+import type { AssociationDeclaration } from "./associations.js";
 
 /** A definition every file in the run can see, under the name it is written as. */
 export interface ConstantDefinition {
@@ -29,6 +32,8 @@ export interface FileConstants {
   readonly filePath: string;
   readonly definitions: readonly ConstantDefinition[];
   readonly references: readonly ConstantReference[];
+  /** Empty unless a pack in the run said what an association declaration looks like. */
+  readonly associations: readonly AssociationDeclaration[];
 }
 
 function children(node: RbNode): RbNode[] {
@@ -76,13 +81,17 @@ function isDeclaration(node: RbNode, parent: RbNode | null): boolean {
 /**
  * Every constant this file defines and every one it reads. One walk, because
  * the nesting a reference is written inside is what the walk already knows.
+ * An association's target is read here too: the name it inflects to has no
+ * node in the source, and the nesting is what settles which class it means.
  */
 export function collectFileConstants(
   filePath: string,
   root: RbNode,
+  associationCalls: readonly RbAssociationCalls[] = [],
 ): FileConstants {
   const definitions: ConstantDefinition[] = [];
   const references: ConstantReference[] = [];
+  const associations: AssociationDeclaration[] = [];
 
   const walk = (
     node: RbNode,
@@ -93,12 +102,22 @@ export function collectFileConstants(
       const name = field(node, "name");
       const written = name === null ? null : writtenName(name);
       if (written !== null) {
+        const classKey = nodeId(filePath, node);
         definitions.push({
           qualifiedName: qualify(nesting, written),
-          key: nodeId(filePath, node),
+          key: classKey,
           kind: "declaration",
         });
         const inside = [...nesting, ...written.split("::")];
+        for (const declared of associationsDeclaredIn(
+          node,
+          classKey,
+          inside,
+          associationCalls,
+        )) {
+          associations.push(declared);
+          references.push(declared.target);
+        }
         for (const child of children(node)) {
           walk(child, node, inside);
         }
@@ -143,7 +162,7 @@ export function collectFileConstants(
   };
 
   walk(root, null, []);
-  return { filePath, definitions, references };
+  return { filePath, definitions, references, associations };
 }
 
 /**
@@ -153,6 +172,10 @@ export function collectFileConstants(
  * `binds(refKey, defKey)` is the link itself. `rbConstantFrom(from, to)`
  * is the same link at file level, which is the closest thing to an
  * import graph a language without imports has.
+ *
+ * `declaresAssociation` is emitted here as well, because an association's
+ * target is one of those references and the shared rules read the pair
+ * together.
  */
 export function emitConstantBindings(
   db: Database,
@@ -190,6 +213,13 @@ export function emitConstantBindings(
   };
 
   for (const file of files) {
+    for (const declared of file.associations) {
+      db.add("declaresAssociation", [
+        declared.classKey,
+        declared.name,
+        declared.target.key,
+      ]);
+    }
     for (const reference of file.references) {
       for (let depth = reference.nesting.length; depth >= 0; depth--) {
         const candidate = qualify(
