@@ -143,6 +143,7 @@ export function sqlalchemyModels(): PyModelQueries[] {
       givesBack: [...NARROWS_A_QUERY, ...RUNS_A_QUERY],
       entryMethods: SESSION_ENTRY_METHODS,
       entryFunctions: [{ module: "sqlalchemy", name: "select", argument: 0 }],
+      relationships: [{ module: "sqlalchemy.orm", name: "relationship" }],
     },
   ];
 }

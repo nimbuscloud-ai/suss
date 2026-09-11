@@ -5,8 +5,9 @@ using SQLAlchemy.
 
 ## What this package is
 
-A pattern pack. It states the types SQLAlchemy hands back from a query and
-the methods that change what is stored, and the Python adapter does the
+A pattern pack. It states the types SQLAlchemy hands back from a query,
+the methods that change what is stored, and the constructor a model's
+field is given to reach another model, and the Python adapter does the
 matching.
 
 ```ts
@@ -88,6 +89,26 @@ A 2.0 statement is the operation its constructor says: `update(User).where(...).
 
 Raw SQL handed to `text("...")` is read as its own effect, with the kind and
 the table taken from the statement.
+
+## What a relationship says
+
+`relationship`, imported from `sqlalchemy.orm`, says a model's field
+reaches another model:
+
+```ts
+relationships: [{ module: "sqlalchemy.orm", name: "relationship" }]
+```
+
+The model comes from the field's annotation when there is one, with the
+wrappers taken off (`Mapped[Item]`, `Mapped[list["Item"]]`,
+`Optional[Item]`, `Item | None`), and otherwise from the first argument
+the call was given, which is how `participants =
+relationship("Participant")` reads. The callable has to come from
+`sqlalchemy.orm`, so a project function spelled `relationship` matches
+nothing.
+
+With that, `case.participants` is one `Participant`, and a call on it
+composes the way any settled model does.
 
 ## License
 

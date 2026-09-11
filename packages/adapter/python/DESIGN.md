@@ -344,6 +344,7 @@ models: [
     givesBack: ["filter", "where", "first", "all"],
     entryMethods: [{ method: "get", argument: 0 }],
     entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
+    relationships: [{ module: "sqlmodel", name: "Relationship" }],
   },
 ]
 ```
@@ -375,6 +376,34 @@ table=True)` give the name written in the class list, which the adapter
 puts in the facts as `extendsNamed`. `Base = declarative_base()` gives
 the name of the function that built it, which the shared rules reach
 through the call the base was written as.
+
+## What a relationship reaches
+
+`relationships` says which callables the library gives a project for a
+field that reaches another model: SQLModel's `Relationship` and
+SQLAlchemy's `relationship`. The adapter states what it read of every
+class-body field given a call, whichever call that is:
+
+```
+pyRelationshipField  app/models.py:40-260  items  app/models.py#Relationship  app/models.py#Item
+```
+
+The third column is the callable, the fourth the class the field is
+about. One rule then turns the pair into `declaresAssociation`, joining
+the callable through `comesFrom` so a project function spelled
+`Relationship` is somebody else's and matches nothing.
+
+The class comes from the annotation when there is one, with the wrappers
+taken off: `list[Item]`, `List[Item]`, `Optional[Item]`, `Item | None`,
+`Mapped[Item]` and `Mapped[list["Item"]]` are each about `Item`. A
+forward reference in quotes gets the key the same name written bare
+would have, so the module's imports settle it either way. With no
+annotation the first argument the call was given says the class, which
+is how `participants = relationship("Participant")` reads.
+
+From there the shared rules do the rest: `user.items` is one `Item`, and
+a `select` over it or a call on an element composes the way any settled
+class does.
 
 ## Where a mount is written
 

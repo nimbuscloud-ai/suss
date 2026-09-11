@@ -2,18 +2,44 @@
 // The rules live in @suss/resolution and are the same ones the TypeScript
 // adapter evaluates, so a Python value is followed the way any value is.
 
+import { lit, rule, variable as v } from "@suss/datalog";
 import {
   askResolution,
   placeholderValues,
+  resolutionProgram,
   writtenValueOf as sharedWrittenValueOf,
   singleAnswers,
 } from "@suss/resolution";
 
 import type { Database } from "@suss/datalog";
 
+/** The one thing Python says beyond the shared rules: which field is an association. */
+export const PYTHON_RULES = [
+  // A model's field is an association when the callable behind it is the
+  // one a pack declared, reached through the module it was imported
+  // from, which is what keeps a project `relationship` of its own out.
+  rule(
+    "declaresAssociation",
+    [v("cls"), v("n"), v("t")],
+    [
+      lit("pyRelationshipField", v("cls"), v("n"), v("c"), v("t")),
+      lit("comesFrom", v("c"), v("m"), v("name")),
+      lit("pyRelationshipConstructor", v("m"), v("name")),
+    ],
+    "declared relationship",
+  ),
+];
+
+/**
+ * The shared rules with Python's own, and the questions, as one program.
+ * Every question this adapter asks runs over it, so the whole run shares
+ * one evaluation state.
+ */
+export const PYTHON_PROGRAM = resolutionProgram(PYTHON_RULES);
+
 /** Ask what these calls come down to, then derive. */
 export function resolveCalls(db: Database, callKeys: readonly string[]): void {
-  askResolution(db, callKeys);
+  askResolution(db, callKeys, "wanted", PYTHON_PROGRAM);
 }
 
 /** The single expression a value was written as, asking the rules about `key` first. */
@@ -34,7 +60,7 @@ export interface SubjectOrigin {
  * imports what the name refers to.
  */
 export function originsOf(db: Database, nameKey: string): SubjectOrigin[] {
-  askResolution(db, [nameKey], "wantedOrigin");
+  askResolution(db, [nameKey], "wantedOrigin", PYTHON_PROGRAM);
   return db
     .facts("wantedComesFrom")
     .filter((row) => String(row[0]) === nameKey)
@@ -67,7 +93,7 @@ export function subjectConstructions(
   }
 
   const askSubjects = (keys: Iterable<string>): void => {
-    askResolution(db, keys, "wantedSubject");
+    askResolution(db, keys, "wantedSubject", PYTHON_PROGRAM);
   };
   askSubjects(valueKeys);
   const placeholders = placeholderValues(db);

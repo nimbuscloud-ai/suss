@@ -155,6 +155,12 @@ export function emitModelQueryFacts(
           String(entry.argument),
         ]);
       }
+      for (const relationship of model.relationships ?? []) {
+        db.add("pyRelationshipConstructor", [
+          relationship.module,
+          relationship.name,
+        ]);
+      }
     }
   }
 }

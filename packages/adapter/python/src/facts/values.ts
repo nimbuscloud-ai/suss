@@ -24,6 +24,7 @@ import {
   fields,
   isFunction,
   LATER_BODY_TYPES,
+  stringLiteralValue,
 } from "../ast.js";
 
 import type { Database } from "@suss/datalog";
@@ -508,6 +509,123 @@ function assignedValue(right: PyNode): PyNode {
   return outer?.text === "Annotated" && first !== undefined ? first : right;
 }
 
+/** The side of `Item | None` that is not None, or null when neither side is None. */
+function sideBesidesNone(node: PyNode): PyNode | null {
+  const left = field(node, "left");
+  const right = field(node, "right");
+  if (left === null || right === null) {
+    return null;
+  }
+  if (right.type === "none") {
+    return left;
+  }
+  if (left.type === "none") {
+    return right;
+  }
+  return null;
+}
+
+/**
+ * The class an annotation is about, with the wrappers an ORM writes a
+ * relationship inside taken off: `list[Item]`, `Optional[Item]`,
+ * `Mapped[list["Item"]]` and `Item | None` are each about Item. A
+ * forward reference comes back as the string it is written as.
+ */
+function annotatedClass(node: PyNode): PyNode | null {
+  if (node.type === "identifier" || node.type === "string") {
+    return node;
+  }
+  if (node.type === "type") {
+    const inner = children(node)[0];
+    return inner === undefined ? null : annotatedClass(inner);
+  }
+  if (node.type === "generic_type") {
+    const parameter = children(node).find(
+      (child) => child.type === "type_parameter",
+    );
+    const first = parameter === undefined ? undefined : children(parameter)[0];
+    return first === undefined ? null : annotatedClass(first);
+  }
+  if (node.type === "binary_operator") {
+    const side = sideBesidesNone(node);
+    return side === null ? null : annotatedClass(side);
+  }
+  return null;
+}
+
+/**
+ * The key a reference to a class joins on. A forward reference in quotes
+ * gets the key the same name written bare would have, so the imports
+ * behind it settle it the same way.
+ */
+function classReferenceKey(emitter: Emitter, node: PyNode): string | null {
+  if (node.type === "identifier") {
+    return valueKey(emitter, node);
+  }
+  const written = stringLiteralValue(node);
+  if (written === null) {
+    return null;
+  }
+  return nameKey(emitter.filePath, emitter.enclosing, written);
+}
+
+/** The first argument a call is given by position, or null when everything it is given is a keyword. */
+function firstPositional(call: PyNode): PyNode | null {
+  const args = field(call, "arguments");
+  for (const argument of args === null ? [] : children(args)) {
+    if (argument.type !== "keyword_argument") {
+      return argument;
+    }
+  }
+  return null;
+}
+
+/** The class a field is about: its annotation, or the class the call is given. */
+function fieldClassKey(
+  emitter: Emitter,
+  assignment: PyNode,
+  call: PyNode,
+): string | null {
+  const annotation = field(assignment, "type");
+  const annotated = annotation === null ? null : annotatedClass(annotation);
+  if (annotated !== null) {
+    return classReferenceKey(emitter, annotated);
+  }
+  const first = firstPositional(call);
+  return first === null ? null : classReferenceKey(emitter, first);
+}
+
+/**
+ * A class-body field given a call, with the callee and the class the
+ * field is about. Which callee declares a relationship is a pack's word,
+ * so the rules do that matching and this states only what it read.
+ */
+function emitFieldCall(
+  emitter: Emitter,
+  classKey: string,
+  name: string,
+  assignment: PyNode,
+  value: PyNode,
+): void {
+  if (value.type !== "call") {
+    return;
+  }
+  const callee = field(value, "function");
+  const target =
+    callee === null ? null : fieldClassKey(emitter, assignment, value);
+  if (callee === null || target === null) {
+    return;
+  }
+  add(
+    emitter,
+    "pyRelationshipField",
+    classKey,
+    name,
+    valueKey(emitter, callee),
+    target,
+  );
+}
+
 /** The declaration a class-body statement makes, under whatever the grammar wraps it in. */
 function declaredBy(statement: PyNode): PyNode {
   if (statement.type === "decorated_definition") {
@@ -581,6 +699,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
           left.text,
           valueKey(emitter, right),
         );
+        emitFieldCall(emitter, classKey, left.text, member, right);
       }
       continue;
     }
