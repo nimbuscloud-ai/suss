@@ -1,13 +1,16 @@
 import { Node, type SourceFile } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { accessContextFor, ResolutionStore } from "@suss/adapter-typescript";
 import { createTestProject } from "@suss/test-project";
 
 import { envVarRecognizer, findProcessEnvReads } from "./envVars.js";
 import nodeRuntimePack from "./index.js";
 
+import type { Accessed } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
+import type { Project } from "ts-morph";
 
 const raise = (msg: string): never => {
   throw new Error(msg);
@@ -18,9 +21,25 @@ function makeProject(userSource: string): SourceFile {
   return project.createSourceFile("user.ts", userSource);
 }
 
+/**
+ * The store the adapter hands a recognizer, over the whole project: a
+ * question about a parameter is answered from the files that call it,
+ * which no query starting at the parameter reaches on its own.
+ */
+function storeOver(project: Project): ResolutionStore {
+  const store = new ResolutionStore();
+  const files = project
+    .getSourceFiles()
+    .filter((one) => !one.isInNodeModules());
+  store.extractFiles(files);
+  store.notePossibleCallers(files);
+  return store;
+}
+
 function recognizeWith(
   recognizer: AccessRecognizer,
   sourceFile: SourceFile,
+  resolution?: ResolutionStore,
 ): Effect[] {
   const effects: Effect[] = [];
   // The same node filter and dedupe the adapter's dispatch applies: a
@@ -33,7 +52,7 @@ function recognizeWith(
     ) {
       return;
     }
-    const ctx = { access: node, sourceFile };
+    const ctx = accessContextFor(node as Accessed, sourceFile, resolution);
     const emitted = recognizer(node, ctx);
     for (const effect of emitted ?? []) {
       const key = JSON.stringify(effect);
@@ -49,6 +68,15 @@ function recognizeWith(
 
 function recognizeAll(sourceFile: SourceFile): Effect[] {
   return recognizeWith(envVarRecognizer(), sourceFile);
+}
+
+/** Every read the recognizer finds with the store the adapter would give it. */
+function recognizeWithStore(sourceFile: SourceFile): Effect[] {
+  return recognizeWith(
+    envVarRecognizer(),
+    sourceFile,
+    storeOver(sourceFile.getProject()),
+  );
 }
 
 function configReadEffectsOf(effects: Effect[]): Array<
@@ -215,7 +243,7 @@ describe("env-var recognizer — happy path", () => {
       declare const key: string;
       const value = process.env[key];
     `);
-    expect(configReadEffectsOf(recognizeAll(file))).toEqual([]);
+    expect(configReadEffectsOf(recognizeWithStore(file))).toEqual([]);
   });
 
   it("reports nothing for an index that names no variable", () => {
@@ -443,7 +471,7 @@ describe("node runtime pack — env-var wiring", () => {
       }
       export const table = requireEnv("TABLE_NAME");
     `);
-    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
   });
 
   it("follows a helper written as an arrow on a const", () => {
@@ -455,11 +483,11 @@ describe("node runtime pack — env-var wiring", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });
 
-  it("says nothing when the helper has no name to find callers by", () => {
+  it("says nothing about a helper called where it is written", () => {
     const sourceFile = makeProject(`
       export const table = ((name: string) => process.env[name] ?? "")("TABLE_NAME");
     `);
-    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
   });
 
   it("says nothing about a computed read of a non-name expression", () => {
@@ -476,7 +504,7 @@ describe("node runtime pack — env-var wiring", () => {
       }
       export const table = requireEnv(pickName());
     `);
-    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
   });
 
   it("follows a literal across two helpers, each handing its parameter on", () => {
@@ -578,7 +606,9 @@ describe("node runtime pack — env-var wiring", () => {
     `);
     expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
   });
+});
 
+describe("a helper's body resolved from the callers' side", () => {
   it("follows a literal from a caller in another file", () => {
     const project = createTestProject();
     const helper = project.createSourceFile(
@@ -592,8 +622,138 @@ describe("node runtime pack — env-var wiring", () => {
       `import { requireEnv } from "./env.js";
       export const table = requireEnv("TABLE_NAME");`,
     );
-    const reads = configReadEffectsOf(recognizeAll(helper));
+    const reads = configReadEffectsOf(recognizeWithStore(helper));
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("reads a name the caller built from a prefix and a constant", () => {
+    const project = createTestProject();
+    const helper = project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      const suffix = "TABLE";
+      export const table = requireEnv("APP_" + suffix);`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(helper));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["APP_TABLE"]);
+  });
+
+  it("follows both literals back through a helper that hands its parameter on", () => {
+    const project = createTestProject();
+    const helper = project.createSourceFile(
+      "env.ts",
+      `function inner(name: string): string {
+        return process.env[name] ?? "";
+      }
+      export function getEnv(key: string): string {
+        return inner(key);
+      }`,
+    );
+    project.createSourceFile(
+      "a.ts",
+      `import { getEnv } from "./env.js";
+      export const table = getEnv("TABLE_NAME");`,
+    );
+    project.createSourceFile(
+      "b.ts",
+      `import { getEnv } from "./env.js";
+      export const queue = getEnv("QUEUE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(helper));
+    expect(reads.map((read) => read.interaction.name).sort()).toEqual([
+      "QUEUE_URL",
+      "TABLE_NAME",
+    ]);
+  });
+
+  it("stops rather than going round two helpers that call each other", () => {
+    const project = createTestProject();
+    const helper = project.createSourceFile(
+      "env.ts",
+      `function first(name: string): string {
+        return process.env[name] ?? second(name);
+      }
+      function second(name: string): string {
+        return first(name);
+      }
+      export function getEnv(key: string): string {
+        return first(key);
+      }`,
+    );
+    project.createSourceFile(
+      "a.ts",
+      `import { getEnv } from "./env.js";
+      export const table = getEnv("TABLE_NAME");`,
+    );
+    project.createSourceFile(
+      "b.ts",
+      `import { getEnv } from "./env.js";
+      export const queue = getEnv("QUEUE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(helper));
+    expect(reads.map((read) => read.interaction.name).sort()).toEqual([
+      "QUEUE_URL",
+      "TABLE_NAME",
+    ]);
+  });
+
+  it("says nothing for a name only the run would know", () => {
+    const project = createTestProject();
+    const helper = project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      declare const key: string;
+      export const table = requireEnv(key);`,
+    );
+    expect(configReadEffectsOf(recognizeWithStore(helper))).toEqual([]);
+  });
+
+  it("says nothing for a name a caller works out at run time", () => {
+    const project = createTestProject();
+    const helper = project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      declare function pickName(): string;
+      export function boot(): string {
+        const key = pickName();
+        return requireEnv(key);
+      }`,
+    );
+    expect(configReadEffectsOf(recognizeWithStore(helper))).toEqual([]);
+  });
+
+  it("says nothing when the recognizer runs without a store", () => {
+    const project = createTestProject();
+    const helper = project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    expect(configReadEffectsOf(recognizeAll(helper))).toEqual([]);
   });
 });
 
