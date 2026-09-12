@@ -136,6 +136,21 @@ function fill(facts: Array<[string, Tuple]>): Database {
 }
 
 /**
+ * Every row derived for a relation, under each name the rewrite gave
+ * it. A relation asked for two ways is split into one relation per
+ * adornment, and which ways it is asked depends on the whole rule set.
+ */
+function derivedFor(db: Database, relation: string): string[] {
+  const names = ON_DEMAND.map((one) => one.head.relation).filter(
+    (name) => name === relation || name.startsWith(`${relation}:`),
+  );
+  const rows = new Set(
+    names.flatMap((name) => db.facts(name).map((tuple) => tuple.join("|"))),
+  );
+  return [...rows].sort();
+}
+
+/**
  * What a caller reads back after asking one of the two questions about
  * `value`. `wanted` asks what the value is and reads the three answer
  * relations keyed by it; `wantedOrigin` asks where the name came from
@@ -299,11 +314,6 @@ describe("deriving the resolution rules on demand", () => {
     // The target's own `comesTo` is not among them either. Demand
     // follows the steps out of the value asked about, and nobody asked
     // what the far end of the chain comes to.
-    expect(
-      db
-        .facts("comesTo")
-        .map((t) => t.join("|"))
-        .sort(),
-    ).toEqual(["asked|target"]);
+    expect(derivedFor(db, "comesTo")).toEqual(["asked|target"]);
   });
 });

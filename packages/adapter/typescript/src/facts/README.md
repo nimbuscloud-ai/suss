@@ -132,6 +132,14 @@ function or an object, so a parameter given a GraphQL document has no
 knows what kind of value it is after. This is what turns one project
 hook in front of `useQuery` into one operation per component.
 
+REST client wrappers read the same question. A generated HTTP client
+builds its request out of a parameter, so the path and the verb at the
+library call are holes. The store says which calls filled that
+parameter, the evaluator is asked again with it bound to what each
+caller wrote, and the round repeats outward while a hole is left, which
+turns a client nobody calls directly into one request per service
+method.
+
 `returnsCall(func, call)` is the other half of that reading: whether
 running the function hands that call back, so a wrapper that forwards
 the library's result is told from one that returns something of its

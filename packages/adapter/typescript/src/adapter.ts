@@ -18,12 +18,10 @@ import path from "node:path";
 import {
   type BindingElement,
   type CallExpression,
-  type Identifier,
   Node,
   type ParameterDeclaration,
   Project,
   type SourceFile,
-  SyntaxKind,
 } from "ts-morph";
 
 import {
@@ -70,6 +68,7 @@ import {
   stampModuleImports,
   type TerminalPattern,
 } from "@suss/extractor";
+import { force, literalOf, pathOf, type Value } from "@suss/values";
 
 import {
   bodyContentOf,
@@ -121,6 +120,11 @@ import {
 import { readRegisteringFiles } from "./discovery/registrationCall.js";
 import { stringPropertyOf } from "./discovery/resolveValue.js";
 import {
+  expandRestWrapperCallers,
+  parametersAsHoles,
+  type SinkReading,
+} from "./discovery/restWrapper.js";
+import {
   buildWrapperIndex,
   type WrapperIndex,
 } from "./discovery/wrapperIndex.js";
@@ -163,6 +167,7 @@ import {
   workspaceRootFor,
 } from "./summaryIdentity.js";
 import { createTimer, type Timer, type TimingReport } from "./timing.js";
+import { evaluatedValueUnder } from "./values/evaluator.js";
 import {
   computeAdapterPacksDigest,
   declineWhenRunFromSource,
@@ -883,7 +888,9 @@ function extractConsumerBinding(
   }
 
   const method = extractBindingMethod(binding, callSite, pack, resolution);
-  const path = extractBindingPath(binding, callSite, pack, resolution);
+  const path = statedPath(
+    extractBindingPath(binding, callSite, pack, resolution),
+  );
 
   // Wrapper expansion looks for a null `path` to spot a forwarding
   // wrapper, so return a partial binding rather than nothing.
@@ -1713,48 +1720,57 @@ function internalImportsOf(project: Project, file: string): string[] {
   return [...targets].sort();
 }
 
-// A wrapper is a client function whose path comes from one of its own
-// parameters, so the callers that pass a literal are what pin down a
-// boundary. A summary synthesized for one has no caller-local branches.
+// A wrapper is a client function whose path or method comes from one of
+// its own parameters, so the callers that write a literal are what pin
+// down a boundary.
 interface WrapperInfo {
   summary: BehavioralSummary;
   func: FunctionRoot;
-  pathParamPosition: number;
+  sink: WrapperSink;
+}
+
+/** The library call inside a wrapper, and how its pack reads a request off it. */
+interface WrapperSink {
+  call: CallExpression;
+  extraction: BindingExtraction;
+  /** What the wrapper's own binding says, for a pack that reads a contract. */
+  statedMethod: string | null;
 }
 
 function expandWrapperCallers(
   summaries: BehavioralSummary[],
   project: Project,
+  frameworks: PatternPack[],
   options?: ExtractorOptions,
   resolution?: ResolutionStore,
 ): BehavioralSummary[] {
+  if (resolution === undefined) {
+    return summaries;
+  }
   const wrappers: WrapperInfo[] = [];
   // Building the lookup walks the project's directory tree, so it waits
   // for the first summary that needs it.
   let lookup: SourceFileLookup | null = null;
+  const discovered = new Map<string, DiscoveredUnit[]>();
 
   for (const s of summaries) {
-    if (s.kind !== "client") {
-      continue;
-    }
-    const binding = s.identity.boundaryBinding;
-    if (
-      binding === null ||
-      binding.semantics.name !== "rest" ||
-      binding.semantics.method === null
-    ) {
+    const pack = wrapperPackOf(s, frameworks);
+    if (pack === null) {
       continue;
     }
     lookup ??= createSourceFileLookup(project);
-    const located = findWrapperPathParam(s, lookup);
-    if (located === null) {
+    const func = lookup.functionAt(s.location);
+    if (func === null || func.getParameters().length === 0) {
       continue;
     }
-    wrappers.push({
-      summary: s,
-      func: located.func,
-      pathParamPosition: located.pathParamPosition,
-    });
+    const sink = sinkIn(func, pack, s, discovered, resolution);
+    if (
+      sink === null ||
+      sinkReading(sink, parametersAsHoles(func), resolution) !== null
+    ) {
+      continue;
+    }
+    wrappers.push({ summary: s, func, sink });
   }
 
   if (wrappers.length === 0) {
@@ -1763,140 +1779,186 @@ function expandWrapperCallers(
 
   const derived: BehavioralSummary[] = [];
   for (const wrapper of wrappers) {
-    derived.push(
-      ...synthesizeCallerSummaries(wrapper, project, options, resolution),
-    );
+    derived.push(...synthesizeCallerSummaries(wrapper, resolution, options));
   }
   return [...summaries, ...derived];
 }
 
-// One caller passing a literal is enough for the store to say what the
-// parameter is, so a filled-in path does not mean the function wrote
-// one. What makes it a wrapper is forwarding the parameter.
-function findWrapperPathParam(
+/** The pack a client summary was recognized by, or null when it is not one. */
+function wrapperPackOf(
   summary: BehavioralSummary,
-  lookup: SourceFileLookup,
-): { func: FunctionRoot; pathParamPosition: number } | null {
-  const func = lookup.functionAt(summary.location);
-  if (func === null) {
+  frameworks: PatternPack[],
+): PatternPack | null {
+  const binding = summary.identity.boundaryBinding;
+  if (
+    summary.kind !== "client" ||
+    binding === null ||
+    binding.semantics.name !== "rest"
+  ) {
     return null;
   }
-  const names = func.getParameters().map((p) => p.getName());
-  if (names.length === 0) {
-    return null;
+  return frameworks.find((p) => p.name === binding.recognition) ?? null;
+}
+
+/**
+ * The library call this summary was built from, found by asking the
+ * pack's discovery about the file again. What each file gave back is
+ * kept, so a file with several client calls is read once.
+ */
+function sinkIn(
+  func: FunctionRoot,
+  pack: PatternPack,
+  summary: BehavioralSummary,
+  discovered: Map<string, DiscoveredUnit[]>,
+  resolution: ResolutionStore,
+): WrapperSink | null {
+  const file = func.getSourceFile();
+  const key = `${pack.name}:${file.getFilePath()}`;
+  let units = discovered.get(key);
+  if (units === undefined) {
+    units = discoverUnits(file, pack.discovery, resolution);
+    discovered.set(key, units);
   }
-  for (const call of func.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const first = call.getArguments()[0];
-    if (first === undefined || !Node.isIdentifier(first)) {
+  for (const unit of units) {
+    const extraction = (
+      unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind)
+    )?.bindingExtraction;
+    if (
+      unit.func !== func ||
+      unit.callSite === undefined ||
+      extraction === undefined
+    ) {
       continue;
     }
-    const at = names.indexOf(first.getText());
-    if (at !== -1) {
-      return { func, pathParamPosition: at };
-    }
+    const semantics = summary.identity.boundaryBinding?.semantics;
+    return {
+      call: unit.callSite.callExpression,
+      extraction,
+      statedMethod: semantics?.name === "rest" ? semantics.method : null,
+    };
   }
   return null;
+}
+
+/** The request the sink states under these bindings, or null when it states none. */
+function sinkReading(
+  sink: WrapperSink,
+  bindings: ReadonlyMap<string, Value>,
+  resolution: ResolutionStore,
+): SinkReading | null {
+  const path = sinkPath(sink, bindings, resolution);
+  if (path === undefined) {
+    return null;
+  }
+  const method = sinkMethod(sink, bindings, resolution);
+  return method === undefined ? null : { path, method };
+}
+
+function sinkArgumentValue(
+  sink: WrapperSink,
+  position: number,
+  bindings: ReadonlyMap<string, Value>,
+  resolution: ResolutionStore,
+): Value | undefined {
+  const argument = sink.call.getArguments()[position];
+  return argument === undefined
+    ? undefined
+    : evaluatedValueUnder(argument, resolution, bindings);
+}
+
+function fieldValue(
+  record: Value | undefined,
+  name: string,
+): Value | undefined {
+  if (record?.kind !== "record") {
+    return undefined;
+  }
+  const field = record.fields.get(name);
+  return field === undefined ? undefined : force(field.value);
+}
+
+function sinkPath(
+  sink: WrapperSink,
+  bindings: ReadonlyMap<string, Value>,
+  resolution: ResolutionStore,
+): string | undefined {
+  const p = sink.extraction.path;
+  if (p.type === "fromArgument") {
+    const value = sinkArgumentValue(sink, p.position, bindings, resolution);
+    return value === undefined ? undefined : statedPath(pathOf(value));
+  }
+  if (p.type === "fromArgumentProperty") {
+    const record = sinkArgumentValue(sink, p.position, bindings, resolution);
+    const value = fieldValue(record, p.property);
+    return value === undefined ? undefined : statedPath(pathOf(value));
+  }
+  return undefined;
+}
+
+function sinkMethod(
+  sink: WrapperSink,
+  bindings: ReadonlyMap<string, Value>,
+  resolution: ResolutionStore,
+): string | undefined {
+  const m = sink.extraction.method;
+  if (m.type === "literal") {
+    return m.value;
+  }
+  if (m.type === "fromClientMethod") {
+    return sink.statedMethod ?? undefined;
+  }
+  if (m.type !== "fromArgumentProperty") {
+    return undefined;
+  }
+  const record = sinkArgumentValue(sink, m.position, bindings, resolution);
+  if (record?.kind !== "record") {
+    return undefined;
+  }
+  const value = fieldValue(record, m.property);
+  if (value === undefined) {
+    // A settled config object that never mentions a method is what the
+    // library's own default is about; an open one is still waiting on
+    // a caller.
+    return record.open ? undefined : m.default;
+  }
+  return literalOf(value) ?? undefined;
+}
+
+/**
+ * A path built out of holes and separators says nothing about where the
+ * request went, so it is no path at all.
+ */
+function statedPath(path: string | undefined): string | undefined {
+  if (path === undefined) {
+    return undefined;
+  }
+  const written = path.replace(/\{[^}]*\}/g, "");
+  return written === path || /[^/]/.test(written) ? path : undefined;
 }
 
 function synthesizeCallerSummaries(
   wrapper: WrapperInfo,
-  _project: Project,
+  resolution: ResolutionStore,
   options?: ExtractorOptions,
-  resolution?: ResolutionStore,
 ): BehavioralSummary[] {
-  const nameNode = wrapperNameNode(wrapper.func);
-  if (nameNode === null) {
-    return [];
-  }
-
-  const refs = nameNode.findReferencesAsNodes();
   const seen = new Set<string>();
   const out: BehavioralSummary[] = [];
+  const callers = expandRestWrapperCallers(
+    wrapper.func,
+    (bindings) => sinkReading(wrapper.sink, bindings, resolution),
+    resolution,
+  );
 
-  for (const ref of refs) {
-    if (ref === nameNode) {
-      continue;
-    }
-    const callExpr = enclosingCall(ref);
-    if (callExpr === null) {
-      continue;
-    }
-
-    const args = callExpr.getArguments();
-    const pathArg = args[wrapper.pathParamPosition];
-    if (pathArg === undefined) {
-      continue;
-    }
-    const path = pathFromArgument(pathArg, resolution);
-    if (path === undefined) {
-      continue;
-    }
-
-    const callerFunc = enclosingFunction(callExpr);
-    if (callerFunc === null) {
-      continue;
-    }
-
-    const dedupKey = `${callerFunc.getStart()}:${callExpr.getStart()}`;
+  for (const { caller, call, reading } of callers) {
+    const dedupKey = `${caller.getStart()}:${call.getStart()}`;
     if (seen.has(dedupKey)) {
       continue;
     }
     seen.add(dedupKey);
-
-    out.push(buildCallerSummary(wrapper, callerFunc, callExpr, path, options));
+    out.push(buildCallerSummary(wrapper, caller, call, reading, options));
   }
 
   return out;
-}
-
-function wrapperNameNode(func: FunctionRoot): Identifier | null {
-  if (Node.isFunctionDeclaration(func) || Node.isMethodDeclaration(func)) {
-    const name = func.getNameNode();
-    if (name !== undefined && Node.isIdentifier(name)) {
-      return name;
-    }
-  }
-  // An arrow or function expression takes the name of the variable it is
-  // assigned to.
-  const parent = func.getParent();
-  if (parent !== undefined && Node.isVariableDeclaration(parent)) {
-    const nameNode = parent.getNameNode();
-    if (Node.isIdentifier(nameNode)) {
-      return nameNode;
-    }
-  }
-  return null;
-}
-
-function enclosingCall(node: Node): CallExpression | null {
-  let current: Node | undefined = node.getParent();
-  while (current !== undefined) {
-    if (Node.isCallExpression(current)) {
-      return current;
-    }
-    if (Node.isPropertyAccessExpression(current)) {
-      current = current.getParent();
-      continue;
-    }
-    return null;
-  }
-  return null;
-}
-
-function enclosingFunction(node: Node): FunctionRoot | null {
-  let current: Node | undefined = node.getParent();
-  while (current !== undefined) {
-    if (
-      Node.isFunctionDeclaration(current) ||
-      Node.isFunctionExpression(current) ||
-      Node.isArrowFunction(current) ||
-      Node.isMethodDeclaration(current)
-    ) {
-      return current as FunctionRoot;
-    }
-    current = current.getParent();
-  }
-  return null;
 }
 
 function callerName(func: FunctionRoot): string {
@@ -1910,6 +1972,10 @@ function callerName(func: FunctionRoot): string {
       return nameNode.getText();
     }
   }
+  // An arrow written as a member of an object literal: `client.get`.
+  if (parent !== undefined && Node.isPropertyAssignment(parent)) {
+    return parent.getName();
+  }
   return "anonymous";
 }
 
@@ -1917,12 +1983,10 @@ function buildCallerSummary(
   wrapper: WrapperInfo,
   callerFunc: FunctionRoot,
   callExpr: CallExpression,
-  path: string,
+  reading: SinkReading,
   options?: ExtractorOptions,
 ): BehavioralSummary {
   const wrapperBinding = wrapper.summary.identity.boundaryBinding;
-  const wrapperRest =
-    wrapperBinding?.semantics.name === "rest" ? wrapperBinding.semantics : null;
 
   const syntheticPack: PatternPack = {
     name: wrapperBinding?.recognition ?? "unknown",
@@ -1954,8 +2018,8 @@ function buildCallerSummary(
   const raw = extractCodeStructure(unit, syntheticPack);
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
-    method: wrapperRest?.method ?? null,
-    path,
+    method: reading.method,
+    path: reading.path,
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
 
@@ -2434,6 +2498,7 @@ export function createTypeScriptAdapter(
         expandWrapperCallers(
           wrapperInput,
           project,
+          config.frameworks,
           config.extractorOptions,
           resolution,
         ),
