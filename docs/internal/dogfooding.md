@@ -137,8 +137,8 @@ rendering, gap annotations), see [CLI reference: Reading the output](/reference/
 
 ## Where the unmatched summaries come from
 
-The run leaves 154 providers and 3 consumers unpaired, plus the
-753 with no binding. Every group has a cause.
+The run leaves providers and consumers unpaired, plus a large
+group with no binding. Every group has a cause.
 
 **The 753 with no binding are expected.** All of them have
 `recognition: "reachable"` and `kind: "library"`. They are the
@@ -183,7 +183,7 @@ factories in the TypeScript adapter): the method exists and pairs
 when something calls it, and today nothing outside the package
 does.
 
-**The 3 unmatched consumers ask for a method that exists only on a
+**The 5 unmatched consumers ask for a method that exists only on a
 value's declared return type.** `SuppressionFileSchema.safeParse(...)`
 and `IntentDocSchema.safeParse(...)` both call a method zod puts on
 every schema object, which comes from the imported `ZodType` type
@@ -192,10 +192,15 @@ rather than from anything the schema's own file builds.
 a method `@suss/datalog`'s `Database` class declares; `evaluate`
 returns the `Database` instance its caller handed it rather than
 building one, so the value the call chases back to is a function
-parameter, not an object literal a factory constructed. All three
-need reading a declared or inferred type to find the method, which
-`factorySurface` does not do: it reads what a function's own body
-returns, not what the type checker says that return is.
+parameter, not an object literal a factory constructed. `@suss/runtime-node`'s
+`callerLiteralReads` and `forwardedParameter` each call
+`findEnclosingFunction(node).getParameters()`; `findEnclosingFunction`
+returns whichever function-shaped ancestor it walked to, and
+`getParameters` is a method ts-morph declares on that node's type, not
+one the adapter's own code builds. All five need reading a declared or
+inferred type to find the method, which `factorySurface` does not do:
+it reads what a function's own body returns, not what the type checker
+says that return is.
 
 A method the language declares on every value used to land here too,
 and that was noise: `readSqlAccess(...).map(...)` asked for

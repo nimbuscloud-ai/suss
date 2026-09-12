@@ -38,10 +38,12 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { functionTargetOf } from "../resolve/functionBehind.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type {
   ClassDeclaration,
+  Identifier,
   ReturnStatement,
   ShorthandPropertyAssignment,
 } from "ts-morph";
@@ -199,39 +201,12 @@ function collectFromReturnValue(
  * binds to, when it is declared in the same file. Null for a binding
  * from another file (an import) or anything not a plain function.
  */
-function sameFileFunctionBehind(id: Node): FunctionRoot | null {
-  const symbol = id.getSymbol();
-  if (symbol === undefined) {
+function sameFileFunctionBehind(id: Identifier): FunctionRoot | null {
+  const target = functionTargetOf(id);
+  if (target === null || target.file !== id.getSourceFile().getFilePath()) {
     return null;
   }
-  return functionAmong(
-    symbol.getDeclarations(),
-    id.getSourceFile().getFilePath(),
-  );
-}
-
-function functionAmong(
-  declarations: Node[],
-  filePath: string,
-): FunctionRoot | null {
-  for (const decl of declarations) {
-    if (decl.getSourceFile().getFilePath() !== filePath) {
-      continue;
-    }
-    if (Node.isFunctionDeclaration(decl)) {
-      return decl;
-    }
-    if (Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer();
-      if (
-        init !== undefined &&
-        (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-      ) {
-        return init;
-      }
-    }
-  }
-  return null;
+  return target.func;
 }
 
 function collectFromObjectLiteral(
@@ -294,14 +269,7 @@ function collectShorthandFunction(
   if (seen.has(name)) {
     return;
   }
-  const symbol = prop.getValueSymbol();
-  if (symbol === undefined) {
-    return;
-  }
-  const fn = functionAmong(
-    symbol.getDeclarations(),
-    prop.getSourceFile().getFilePath(),
-  );
+  const fn = sameFileFunctionBehind(prop.getNameNode());
   if (fn !== null) {
     seen.add(name);
     out.push({ func: fn, name });

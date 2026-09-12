@@ -35,6 +35,7 @@ export {
   stringValueOf,
   writtenNodeOf,
 } from "./discovery/resolveValue.js";
+export { findEnclosingFunction } from "./discovery/shared.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
 // Exported so a pack's test harness can give recognizers the same

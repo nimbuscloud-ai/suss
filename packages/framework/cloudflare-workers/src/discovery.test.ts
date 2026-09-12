@@ -54,6 +54,15 @@ beforeAll(() => {
      export default { fetch: serve };`,
   );
   write(
+    "src/overloaded.ts",
+    `interface Env { SERVICE_ORIGIN: string }
+     async function serve(request: Request, settings: Env): Promise<Response>;
+     async function serve(request: Request, settings: Env): Promise<Response> {
+       return new Response(settings.SERVICE_ORIGIN, { status: 200 });
+     }
+     export default { fetch: serve };`,
+  );
+  write(
     "src/listener.ts",
     `addEventListener("fetch", (event: FetchEvent) => {
        event.respondWith(new Response("hi", { status: 200 }));
@@ -200,6 +209,11 @@ describe("cloudflareWorkersDiscovery", () => {
 
   it("follows a trigger to a function declared elsewhere in the file", async () => {
     const units = inFile(await run(), "named.ts");
+    expect(units.map((u) => u.identity.name)).toEqual(["fetch"]);
+  });
+
+  it("follows a trigger to a function written as TS overload signatures", async () => {
+    const units = inFile(await run(), "overloaded.ts");
     expect(units.map((u) => u.identity.name)).toEqual(["fetch"]);
   });
 

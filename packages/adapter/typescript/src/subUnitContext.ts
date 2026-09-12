@@ -21,6 +21,7 @@ import {
   Node,
 } from "ts-morph";
 
+import { resolveDecl } from "./resolve/functionBehind.js";
 import { isDescentStop } from "./walk/descent.js";
 
 import type { FunctionRoot } from "./conditions.js";
@@ -214,30 +215,14 @@ function resolveAttributeValueFunction(
       if (!isWithinFunction(decl, parent)) {
         continue;
       }
-      const fn = tryExtractFunction(decl);
-      if (fn !== null) {
-        return { func: fn, localName: expr.getText() };
+      const resolved = resolveDecl(decl, expr.getText());
+      if (resolved !== null) {
+        return { func: resolved.func, localName: expr.getText() };
       }
     }
     return null;
   }
 
-  return null;
-}
-
-function tryExtractFunction(decl: Node): FunctionRoot | null {
-  if (Node.isFunctionDeclaration(decl)) {
-    return decl;
-  }
-  if (Node.isVariableDeclaration(decl)) {
-    const init = decl.getInitializer();
-    if (init === undefined) {
-      return null;
-    }
-    if (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) {
-      return init as FunctionRoot;
-    }
-  }
   return null;
 }
 
