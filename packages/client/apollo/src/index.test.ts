@@ -902,7 +902,7 @@ describe("apolloClientPack, interpolated string constants", () => {
       export const AUTHOR_FIELDS = \`author { name \${RESULT_FIELDS} }\`;
       ${search}
     `);
-    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.SEARCH"]);
     const graphql = readGraphqlMetadata(summaries[0]);
     expect(graphql?.document).toBeUndefined();
     expect(graphql?.unresolvedDocument?.reason).toContain("selection set");

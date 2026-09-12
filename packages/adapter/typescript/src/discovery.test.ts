@@ -2383,7 +2383,7 @@ describe("graphqlHookCall discovery", () => {
     );
   });
 
-  it("keeps the selection open across a spliced string, so a hole in it counts", () => {
+  it("leaves the operation unread when the constant has a hole in it", () => {
     const project = createProject();
     const file = project.createSourceFile(
       "page.ts",
@@ -2393,6 +2393,33 @@ describe("graphqlHookCall discovery", () => {
       const PET_FIELDS = \`id \${extraFields}\`;
       const GET_PET = gql\`
         query GetPet { pet { \${PET_FIELDS} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reason).toContain(
+      "selection set",
+    );
+  });
+
+  it("leaves the operation unread when a constant interpolates a document", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const PET_FIELDS = gql\`fragment PetFields on Pet { id name }\`;
+      const SELECTION = \`...PetFields \${PET_FIELDS}\`;
+      const GET_PET = gql\`
+        query GetPet { pet { \${SELECTION} } }
       \`;
       export function usePet() {
         return useQuery(GET_PET);

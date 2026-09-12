@@ -19,6 +19,7 @@ import {
 import { Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { stringValueOf } from "./resolveValue.js";
 
 import type {
   ImportDeclaration,
@@ -157,13 +158,6 @@ interface DocumentAssembly {
   resolution: ResolutionStore | undefined;
   /** Tagged templates (or tag calls) already spliced into this document. */
   seen: Set<Node>;
-  /**
-   * Expressions part-way through being read as plain string text. A
-   * string constant may interpolate another, so reaching one that is
-   * already open means the constants interpolate each other and there is
-   * no text to arrive at.
-   */
-  assembling: Set<Node>;
   /** Written text of each `${...}` that resolved to no document. */
   unresolvedInterpolations: string[];
   /**
@@ -188,7 +182,6 @@ function startAssembly(
   return {
     resolution,
     seen: new Set(),
-    assembling: new Set(),
     unresolvedInterpolations: [],
     unresolvedInsideSelection: false,
     tagOrigin: null,
@@ -201,16 +194,10 @@ function startAssembly(
  * place; one that does not is dropped and recorded on the assembly, at
  * top level as a lost fragment definition and inside a selection set
  * as a lost selection.
- *
- * `openDepth` is how many selection sets were already open where this
- * template was written. It is zero for a document, which starts at the
- * top level, and it is the depth at the interpolation point for a plain
- * string spliced as text, which continues the document around it.
  */
 function assembledTemplateText(
   template: Node,
   assembly: DocumentAssembly,
-  openDepth = 0,
 ): string | null {
   if (Node.isNoSubstitutionTemplateLiteral(template)) {
     return innerTemplateText(template);
@@ -220,17 +207,12 @@ function assembledTemplateText(
   }
   let text = template.getHead().getLiteralText();
   for (const span of template.getTemplateSpans()) {
-    const depth = openDepth + openBraceDepth(text);
-    const spliced = interpolatedDocumentText(
-      span.getExpression(),
-      assembly,
-      depth,
-    );
+    const spliced = interpolatedDocumentText(span.getExpression(), assembly);
     if (spliced === null) {
       assembly.unresolvedInterpolations.push(
         singleLine(span.getExpression().getText()),
       );
-      if (depth > 0) {
+      if (openBraceDepth(text) > 0) {
         assembly.unresolvedInsideSelection = true;
       }
     } else {
@@ -262,18 +244,17 @@ function openBraceDepth(text: string): number {
  * The document text an interpolated `${...}` expression contributes:
  * an inline gql tag, a named document constant (same module, imported,
  * or behind a barrel), a `.graphql` file import, or a generated
- * TypedDocumentNode literal. Failing all of those, a plain string, whose
- * text becomes part of the document the way it is written. Anything else
- * returns null and the caller records the expression as unresolved
- * rather than guessing.
+ * TypedDocumentNode literal. Failing all of those, whatever string the
+ * value evaluator says the expression comes to, which becomes part of
+ * the document the way it is written. Anything else returns null and
+ * the caller records the expression as unresolved rather than guessing.
  *
- * The plain string comes last so a tagged template is read as the
- * document it is rather than as the text inside it.
+ * The string comes last so a tagged template is read as the document it
+ * is rather than as the text inside it.
  */
 function interpolatedDocumentText(
   expr: Node,
   assembly: DocumentAssembly,
-  openDepth: number,
 ): string | null {
   const stripped = stripDocumentNodeCasts(expr);
   const inline = documentTextFromExpression(stripped, assembly);
@@ -292,67 +273,7 @@ function interpolatedDocumentText(
   if (fromFacts !== null) {
     return fromFacts;
   }
-  return plainStringText(stripped, assembly, openDepth);
-}
-
-/**
- * The text a plain string contributes where it is interpolated. A
- * project that shares a field list between operations writes it as a
- * string rather than as a fragment, and at run time the template
- * evaluates to the surrounding document with that text in it, so
- * splicing the text is reading what the operation sends. Whether the
- * result is GraphQL the schema accepts is left to the parse that already
- * runs on the assembled document.
- *
- * Returns null when the expression is already being read, which is
- * where a pair of constants that interpolate each other ends up.
- */
-function plainStringText(
-  expr: Node,
-  assembly: DocumentAssembly,
-  openDepth: number,
-): string | null {
-  if (assembly.assembling.has(expr)) {
-    return null;
-  }
-  assembly.assembling.add(expr);
-  const text = writtenStringText(expr, assembly, openDepth);
-  assembly.assembling.delete(expr);
-  return text;
-}
-
-/**
- * A plain string is a string literal, a template literal with no
- * substitutions, or a template expression assembled the same way a
- * document is, so a substitution inside it that is itself a document
- * splices as one and a substitution nobody can read is recorded on the
- * assembly. A name goes to the fact layer for the expression it is
- * written as, the way a document constant does; a name with no store
- * behind it, or one the store cannot settle on a single write, has no
- * written text here.
- */
-function writtenStringText(
-  expr: Node,
-  assembly: DocumentAssembly,
-  openDepth: number,
-): string | null {
-  if (Node.isStringLiteral(expr)) {
-    return expr.getLiteralValue();
-  }
-  if (
-    Node.isNoSubstitutionTemplateLiteral(expr) ||
-    Node.isTemplateExpression(expr)
-  ) {
-    return assembledTemplateText(expr, assembly, openDepth);
-  }
-  if (assembly.resolution === undefined || !Node.isIdentifier(expr)) {
-    return null;
-  }
-  const written = assembly.resolution.resolveWrittenValue(expr);
-  if (written === null) {
-    return null;
-  }
-  return plainStringText(stripDocumentNodeCasts(written), assembly, openDepth);
+  return stringValueOf(stripped, assembly.resolution);
 }
 
 export type GraphqlOperationType = "query" | "mutation" | "subscription";
